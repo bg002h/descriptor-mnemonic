@@ -65,7 +65,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// Read an LEB128 unsigned u64. Returns `Err` for truncation or overflow.
-    #[allow(dead_code)] // Will be used by Task 2.13+ decoder arms.
+    #[allow(dead_code)] // Used by Task 2.16+ decoder arms (after/older timelock values).
     fn read_varint_u64(&mut self) -> Result<u64, Error> {
         let start = self.offset;
         let remaining = &self.bytes[self.offset..];
@@ -99,7 +99,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// Read exactly `N` bytes as an array. Returns `Err` if fewer remain.
-    #[allow(dead_code)] // Will be used by hash-literal decoder arms (Task 2.13+).
+    #[allow(dead_code)] // Used by Task 2.17+ hash-literal decoder arms.
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], Error> {
         if self.offset + N > self.bytes.len() {
             return Err(Error::InvalidBytecode {
@@ -126,7 +126,6 @@ impl<'a> Cursor<'a> {
     }
 
     /// Current offset in the byte stream (for error messages on caller side).
-    #[allow(dead_code)] // Will be used by Task 2.13+ decoder arms for nested-error context.
     fn offset(&self) -> usize {
         self.offset
     }
@@ -138,7 +137,7 @@ fn decode_descriptor(
     keys: &[DescriptorPublicKey],
 ) -> Result<Descriptor<DescriptorPublicKey>, Error> {
     let tag_byte = cur.read_byte()?;
-    let tag_offset = cur.offset - 1;
+    let tag_offset = cur.offset() - 1;
     let tag = Tag::from_byte(tag_byte).ok_or(Error::InvalidBytecode {
         offset: tag_offset,
         kind: BytecodeErrorKind::UnknownTag(tag_byte),
@@ -442,20 +441,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn decode_placeholder_index_above_127_uses_single_byte() {
-        // Per D-7, the placeholder index is a single byte. We can't easily
-        // construct a 200-key wallet to test the full path, but we can
-        // confirm the placeholder-decoding path doesn't accidentally
-        // consume extra bytes by exercising wsh(0) with 0 keys (no
-        // placeholders touched). Assert via wsh(0) round-trip producing
-        // exactly [0x05, 0x00] back.
-        let d = decode_template(&[0x05, 0x00], &[]).unwrap();
-        use std::collections::HashMap;
-        let encoded = crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
-        assert_eq!(encoded, vec![0x05, 0x00]);
-        assert_eq!(encoded.len(), 2);
-    }
+    // The decoder-side counterpart to encode.rs's
+    // `encode_placeholder_index_above_127_uses_single_byte` is intentionally
+    // deferred to Task 2.15: PkK/PkH leaves with index ≥128 require either
+    // the c: wrapper (so wsh(pk(K)) becomes parser-driven) or a 200-key
+    // wallet fixture. Both belong in the wrapper task. Don't add a stub
+    // test here — the encoder-side coverage already pins the wire format.
 
     // --- Cursor-level tests (private API but exercised here for coverage) ---
 
