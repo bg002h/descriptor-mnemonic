@@ -38,29 +38,57 @@ For **single-agent dispatches**, the agent's commit includes the report file alo
 
 ## Format
 
-Reports are Markdown. No strict schema, but typical sections:
+Reports are Markdown. The header block is **required** (so an auditor can answer "what was changed/reviewed and why" from the file alone, without `git show`); body sections are conventional but flexible.
 
 ```markdown
-# Phase X bucket Y / Task X.Y
+# <Title — phase + task or bucket id>
 
 **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
-**Commit:** <SHA>
-**File(s):** path1, path2
+**Commit:** <SHA(s) — list every commit produced>
+**File(s):** <every file path read or modified, one per line if multiple>
+**Role:** implementer | reviewer (spec) | reviewer (code-quality) | fixup
 
 ## Summary
 <1-3 sentences>
 
-## Implementation notes
+[... body sections — see "Body conventions" below ...]
+```
+
+### Required header fields
+
+- **`Status`** — one of the four values listed
+- **`Commit`** — the SHA(s) of the commit(s) this report describes. For reviewer reports that don't produce a commit, list the commit being REVIEWED here (so the entry is greppable by SHA).
+- **`File(s)`** — every file the report concerns. For implementers, list files modified or created. **For reviewers, list every file actually inspected**, even if the commit-under-review only touched a subset (e.g., a code-quality reviewer may also read a sibling file to confirm a pattern). This is what `git show <commit> --stat` cannot tell you.
+- **`Role`** — one of `implementer`, `reviewer (spec)`, `reviewer (code-quality)`, `fixup`. Lets a future audit grep by role to find e.g. all spec reviews.
+
+### Body conventions
+
+```markdown
+## Implementation notes        (implementers only)
 <algorithmic decisions, alternatives considered, fixture choices>
 
+## What was reviewed           (reviewers only — restate the spec / scope)
+<one paragraph summarizing what the report's checks were against>
+
 ## Test results
-<count, gates, empirical observations>
+<count, gates, empirical observations, any conditional skips>
+
+## Findings                    (reviewers only)
+<what passed, what didn't — typically a checklist or per-issue listing>
 
 ## Follow-up items (for FOLLOWUPS.md)
 - <short-id-suggestion>: <one-line description, with file/line if relevant>
 
 ## Concerns / deviations
-<anything the implementer wants the controller to know>
+<anything the agent wants the controller to know>
 ```
 
-This format mirrors what implementer prompts already ask for in their "Report Format" section; the addition is just persisting it to disk.
+The implementer prompts already ask for most of this in their "Report Format" section. The persistence step is just routing the same content to a file in addition to returning it to the controller.
+
+## Required of every dispatched subagent
+
+In the dispatch prompt, the controller MUST include language like:
+
+> Save your final report verbatim to `design/agent-reports/<filename>.md` as part of your commit (or as a separate commit if you don't produce code). Include the required header block from `design/agent-reports/README.md` — Status, Commit, File(s) (every file you read or modified), Role.
+
+For parallel-batch dispatches, also instruct: "do NOT write to `design/FOLLOWUPS.md` directly — the controller aggregates after the batch."
