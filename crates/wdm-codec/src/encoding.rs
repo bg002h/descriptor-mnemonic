@@ -325,6 +325,37 @@ pub fn bch_verify_regular(hrp: &str, data_with_checksum: &[u8]) -> bool {
     polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) == WDM_REGULAR_CONST
 }
 
+/// Compute the 15-character BCH checksum for the long code.
+///
+/// Same algorithm as [`bch_create_checksum_regular`] but uses the long-code
+/// polymod parameters (`GEN_LONG`, `LONG_SHIFT`, `LONG_MASK`) and target
+/// constant ([`WDM_LONG_CONST`]). Produces a 15-element checksum array.
+pub fn bch_create_checksum_long(hrp: &str, data: &[u8]) -> [u8; 15] {
+    let mut input = hrp_expand(hrp);
+    input.extend_from_slice(data);
+    input.extend(std::iter::repeat_n(0, 15));
+    let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK)
+        ^ WDM_LONG_CONST;
+    let mut out = [0u8; 15];
+    for (i, slot) in out.iter_mut().enumerate() {
+        *slot = ((polymod >> (5 * (14 - i))) & 0x1F) as u8;
+    }
+    out
+}
+
+/// Verify a long-code BCH checksum.
+///
+/// Same algorithm as [`bch_verify_regular`] with long-code parameters.
+/// Returns false if `data_with_checksum` is shorter than 15 symbols.
+pub fn bch_verify_long(hrp: &str, data_with_checksum: &[u8]) -> bool {
+    if data_with_checksum.len() < 15 {
+        return false;
+    }
+    let mut input = hrp_expand(hrp);
+    input.extend_from_slice(data_with_checksum);
+    polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) == WDM_LONG_CONST
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,5 +714,62 @@ mod tests {
         // covers only the HRP preamble. encode → verify must round-trip.
         let checksum = bch_create_checksum_regular("wdm", &[]);
         assert!(bch_verify_regular("wdm", &checksum));
+    }
+
+    #[test]
+    fn bch_round_trip_long() {
+        let hrp = "wdm";
+        let data: Vec<u8> = (0..16).collect();
+        let checksum = bch_create_checksum_long(hrp, &data);
+        assert_eq!(checksum.len(), 15);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        assert!(bch_verify_long(hrp, &full));
+    }
+
+    #[test]
+    fn bch_verify_rejects_single_char_tampering_long() {
+        // Flipping one bit in one symbol breaks verification.
+        // (Spot check; BCH detects all single-symbol errors by construction.)
+        let hrp = "wdm";
+        let data: Vec<u8> = (0..16).collect();
+        let checksum = bch_create_checksum_long(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        full[7] ^= 0x01;
+        assert!(!bch_verify_long(hrp, &full));
+    }
+
+    #[test]
+    fn bch_verify_rejects_too_short_input_long() {
+        // Less than 15 symbols cannot hold a long-code checksum.
+        assert!(!bch_verify_long("wdm", &[0; 14]));
+        assert!(!bch_verify_long("wdm", &[]));
+    }
+
+    #[test]
+    fn bch_known_vector_long() {
+        // Independently computed (Python reference) ground truth.
+        // Input: HRP "wdm", data = [0, 1, 2, ..., 15]
+        // Expected checksum: [15, 13, 21, 28, 0, 1, 29, 17, 1, 26, 1, 25, 9, 30, 5]
+        let data: Vec<u8> = (0..16).collect();
+        let expected: [u8; 15] = [15, 13, 21, 28, 0, 1, 29, 17, 1, 26, 1, 25, 9, 30, 5];
+        let actual = bch_create_checksum_long("wdm", &data);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn bch_zero_data_does_not_self_validate_long() {
+        // All-zeros must not validate, by NUMS construction of WDM_LONG_CONST.
+        let mut zero = vec![0u8; 16];
+        zero.extend(std::iter::repeat_n(0, 15));
+        assert!(!bch_verify_long("wdm", &zero));
+    }
+
+    #[test]
+    fn bch_round_trip_empty_data_long() {
+        // Degenerate but valid: checksum covers only the HRP preamble.
+        let checksum = bch_create_checksum_long("wdm", &[]);
+        assert!(bch_verify_long("wdm", &checksum));
     }
 }
