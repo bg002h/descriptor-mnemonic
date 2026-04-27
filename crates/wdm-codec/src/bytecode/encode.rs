@@ -14,7 +14,8 @@
 
 use std::collections::HashMap;
 
-use miniscript::descriptor::{Descriptor, DescriptorPublicKey};
+use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh, WshInner};
+use miniscript::{Miniscript, Segwitv0, Terminal};
 
 use crate::Error;
 use crate::bytecode::Tag;
@@ -86,17 +87,91 @@ impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
     }
 }
 
-impl EncodeTemplate for miniscript::descriptor::Wsh<DescriptorPublicKey> {
+impl EncodeTemplate for Wsh<DescriptorPublicKey> {
     fn encode_template(
         &self,
-        _out: &mut Vec<u8>,
-        _placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+        out: &mut Vec<u8>,
+        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
     ) -> Result<(), Error> {
-        // TODO Task 2.5+: dispatch into the inner WshInner (SortedMulti or Ms).
-        Err(Error::PolicyScopeViolation(
-            "wsh() inner encoding not yet implemented (Task 2.5+)".to_string(),
-        ))
+        self.as_inner().encode_template(out, placeholder_map)
     }
+}
+
+impl EncodeTemplate for WshInner<DescriptorPublicKey> {
+    fn encode_template(
+        &self,
+        out: &mut Vec<u8>,
+        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+    ) -> Result<(), Error> {
+        match self {
+            WshInner::Ms(ms) => ms.encode_template(out, placeholder_map),
+            WshInner::SortedMulti(_) => Err(Error::PolicyScopeViolation(
+                "sortedmulti() encoding not yet implemented (Task 2.6)".to_string(),
+            )),
+        }
+    }
+}
+
+impl EncodeTemplate for Miniscript<DescriptorPublicKey, Segwitv0> {
+    fn encode_template(
+        &self,
+        out: &mut Vec<u8>,
+        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+    ) -> Result<(), Error> {
+        self.node.encode_template(out, placeholder_map)
+    }
+}
+
+impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
+    fn encode_template(
+        &self,
+        out: &mut Vec<u8>,
+        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+    ) -> Result<(), Error> {
+        match self {
+            Terminal::True => {
+                out.push(Tag::True.as_byte());
+                Ok(())
+            }
+            Terminal::False => {
+                out.push(Tag::False.as_byte());
+                Ok(())
+            }
+            Terminal::PkK(key) => {
+                out.push(Tag::PkK.as_byte());
+                encode_key(key, out, placeholder_map)
+            }
+            Terminal::PkH(key) => {
+                out.push(Tag::PkH.as_byte());
+                encode_key(key, out, placeholder_map)
+            }
+            other => Err(Error::PolicyScopeViolation(format!(
+                "Terminal variant not yet implemented (Task 2.6+): {other:?}"
+            ))),
+        }
+    }
+}
+
+/// Emit a `DescriptorPublicKey` as a placeholder reference.
+///
+/// Looks up `key` in `placeholder_map` and writes `Tag::Placeholder`
+/// (`0x32`) followed by the LEB128-encoded index. Returns
+/// [`Error::PolicyScopeViolation`] if the key is not present in the map
+/// (v0.1 forbids inline keys; every leaf key must come through the
+/// wallet-policy key information vector).
+fn encode_key(
+    key: &DescriptorPublicKey,
+    out: &mut Vec<u8>,
+    placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+) -> Result<(), Error> {
+    let &index = placeholder_map.get(key).ok_or_else(|| {
+        Error::PolicyScopeViolation(format!(
+            "inline key not in placeholder_map (v0.1 forbids inline keys): {key}"
+        ))
+    })?;
+    out.push(Tag::Placeholder.as_byte());
+    crate::bytecode::varint::encode_u64(u64::from(index), out);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -175,18 +250,99 @@ mod tests {
     }
 
     #[test]
-    fn wsh_skeleton_returns_inner_not_implemented_error() {
-        // Wsh top-level dispatches to the inner walker, which currently returns
-        // the Task 2.5+ stub error. The Wsh tag byte is still pushed before
-        // the inner returns Err — that's the controller's choice here, since
-        // the next tasks will replace the inner stub.
-        let d = parse_descriptor(
-            "wsh(pk(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5))",
-        );
-        let err = encode_template(&d, &empty_map()).unwrap_err();
+    fn encode_wsh_false() {
+        // wsh(0) = top-level Wsh wrapping the False (always-false) terminal.
+        let d = parse_descriptor("wsh(0)");
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+        // Tag::Wsh = 0x05, Tag::False = 0x00.
+        assert_eq!(bytes, vec![0x05, 0x00]);
+    }
+
+    #[test]
+    fn encode_wsh_true() {
+        // wsh(1) = top-level Wsh wrapping the True (always-true) terminal.
+        let d = parse_descriptor("wsh(1)");
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+        assert_eq!(bytes, vec![0x05, 0x01]);
+    }
+
+    #[test]
+    fn encode_terminal_pk_k_with_placeholder() {
+        // Construct a Terminal::PkK directly and verify encoding.
+        // Going through the parser would require c:pk_k wrapping (Task 2.10),
+        // so we drive the Terminal-level encoder directly.
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 0u8);
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::PkK(key);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &map).unwrap();
+
+        // Expected: Tag::PkK (0x1B), Tag::Placeholder (0x32), varint(0) (0x00).
+        assert_eq!(out, vec![0x1B, 0x32, 0x00]);
+    }
+
+    #[test]
+    fn encode_terminal_pk_h_with_placeholder() {
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let key = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 7u8);
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::PkH(key);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &map).unwrap();
+
+        // Expected: Tag::PkH (0x1C), Tag::Placeholder (0x32), varint(7) (0x07).
+        assert_eq!(out, vec![0x1C, 0x32, 0x07]);
+    }
+
+    #[test]
+    fn encode_pk_k_rejects_inline_key() {
+        // A key not in the placeholder_map must produce PolicyScopeViolation.
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::PkK(key);
+        let mut out = Vec::new();
+        let err = term.encode_template(&mut out, &empty_map()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("wsh") || msg.contains("Task 2.5")),
-            "expected PolicyScopeViolation mentioning wsh inner or Task 2.5"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("inline key")),
+            "expected PolicyScopeViolation about inline key, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn encode_unsupported_terminal_returns_error() {
+        // A terminal we haven't wired up yet (e.g. After) returns an
+        // explicit "not yet implemented" PolicyScopeViolation.
+        use miniscript::AbsLockTime;
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::After(AbsLockTime::from_consensus(1234).unwrap());
+        let mut out = Vec::new();
+        let err = term.encode_template(&mut out, &empty_map()).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("not yet implemented")),
+            "expected not-yet-implemented PolicyScopeViolation, got: {err:?}"
         );
     }
 }
