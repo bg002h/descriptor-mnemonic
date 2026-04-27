@@ -268,6 +268,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
+### `8-negative-fixture-placeholder-strings` — negative vector `input_strings` are placeholder-grade, not confirmed-correct WDM strings
+
+- **Surfaced:** Phase 8 implementation (Task 8.3); implementer's own follow-up
+- **Where:** `crates/wdm-codec/src/vectors.rs` `NEGATIVE_FIXTURES` array, vectors n02–n30
+- **What:** Most negative `input_strings` in the negative fixture array are representative placeholders (short all-`q` data-part strings, synthetic patterns) rather than confirmed-correct WDM strings that provably trigger the named error variant via `decode()`. The placeholders demonstrate the right error *class* (e.g., `MixedCase`, `InvalidStringLength`) but were not programmatically verified to map to exact variant names. Vectors n12 (`EmptyChunkList`) and n30 (`PolicyTooLarge`) have empty `input_strings` because those errors cannot be triggered via a WDM string at all (they require calling lower-level APIs directly). For cross-implementation interoperability, the negative vectors should either (a) be generated dynamically at vector-generation time by exercising the actual error paths, or (b) document precisely which API surface they target when `input_strings` is empty.
+- **Why deferred:** Generating confirmed-correct error-triggering strings programmatically requires significant per-variant fixture work (encoding valid policies, mutating them exactly, verifying the error variant). The schema is correct; the fixture quality is sufficient for the v0.1 schema lock-in purpose. The positive vectors are fully confirmed.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
 ### `7-serialize-derives` — manual JSON construction vs `#[derive(Serialize)]` on library types
 
 - **Surfaced:** Phase 7 implementation

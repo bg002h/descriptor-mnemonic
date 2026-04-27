@@ -8,7 +8,7 @@
 //! - 7.4: `wdm verify`
 //! - 7.5: `wdm inspect`
 //! - 7.6: `wdm bytecode`
-//! - 7.7: `wdm vectors` — **deferred to Phase 8** (depends on `gen_vectors` binary)
+//! - 7.7: `wdm vectors` — implemented in Phase 8 (shares `build_test_vectors` with `gen_vectors`)
 //! - 7.8: `--path` argument parser for `wdm encode`
 
 use std::process;
@@ -98,10 +98,10 @@ enum Command {
         policy: String,
     },
 
-    /// Generate test vectors (deferred to Phase 8).
+    /// Generate test vectors as JSON and print to stdout.
     ///
-    /// This subcommand is defined as a placeholder but is not yet implemented.
-    /// Use the `gen_vectors` binary directly until v0.2.
+    /// Outputs the same content as `gen_vectors --output -` (write mode prints to stderr).
+    /// Use `wdm vectors > vectors.json` to capture the output.
     Vectors,
 }
 
@@ -390,6 +390,13 @@ fn cmd_inspect(string: &str) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+fn cmd_vectors() -> Result<(), anyhow::Error> {
+    let vectors = wdm_codec::vectors::build_test_vectors();
+    let json = serde_json::to_string_pretty(&vectors)?;
+    println!("{json}");
+    Ok(())
+}
+
 fn cmd_bytecode(policy_str: &str) -> Result<(), anyhow::Error> {
     let policy: WalletPolicy = policy_str
         .parse()
@@ -438,12 +445,7 @@ fn main() {
 
         Command::Bytecode { policy } => cmd_bytecode(&policy),
 
-        Command::Vectors => {
-            eprintln!(
-                "wdm vectors: not yet implemented — use gen_vectors directly until v0.2 (Task 7.7 deferred to Phase 8)"
-            );
-            process::exit(1);
-        }
+        Command::Vectors => cmd_vectors(),
     };
 
     if let Err(e) = result {

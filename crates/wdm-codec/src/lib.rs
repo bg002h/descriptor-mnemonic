@@ -27,6 +27,7 @@ pub use encoding::{
 pub use error::{BytecodeErrorKind, Error, Result};
 pub use options::{DecodeOptions, EncodeOptions};
 pub use policy::{WalletPolicy, WdmBackup};
+pub use vectors::{NegativeVector, TestVectorFile, Vector};
 pub use wallet_id::{
     ChunkWalletId, WalletId, WalletIdSeed, WalletIdWords, compute_wallet_id_for_policy,
 };
