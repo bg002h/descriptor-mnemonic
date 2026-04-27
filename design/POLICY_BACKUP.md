@@ -739,8 +739,7 @@ of what was adopted vs. rejected:
 
 ### Still open
 
-- **DECIDE:** Hash function for Wallet ID derivation (SHA-256 truncated,
-  BLAKE3, or HMAC variant).
+- **RESOLVED (2026-04-26):** Hash function for Wallet ID derivation is **SHA-256 truncated to 16 bytes**. Decision matches `bitcoin::hashes::sha256` (already a transitive dependency); avoids adding BLAKE3 or HMAC.
 - **DECIDE:** Reference implementation language. Rust is leading
   candidate (descriptor-codec is Rust; rust-miniscript is Rust;
   rust-bitcoin is the reference ecosystem). Python second choice for
