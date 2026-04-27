@@ -636,7 +636,8 @@ mod tests {
 
     #[test]
     fn bch_verify_rejects_single_char_tampering_regular() {
-        // Flipping any one symbol must break verification.
+        // Flipping one bit in one symbol breaks verification.
+        // (Spot check; BCH detects all single-symbol errors by construction.)
         let hrp = "wdm";
         let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let checksum = bch_create_checksum_regular(hrp, &data);
@@ -674,5 +675,13 @@ mod tests {
         let mut zero = vec![0u8; 8];
         zero.extend(std::iter::repeat_n(0, 13));
         assert!(!bch_verify_regular("wdm", &zero));
+    }
+
+    #[test]
+    fn bch_round_trip_empty_data_regular() {
+        // Empty data part is a degenerate but valid input: the checksum
+        // covers only the HRP preamble. encode → verify must round-trip.
+        let checksum = bch_create_checksum_regular("wdm", &[]);
+        assert!(bch_verify_regular("wdm", &checksum));
     }
 }
