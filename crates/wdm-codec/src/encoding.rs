@@ -57,7 +57,9 @@ pub fn bytes_to_5bit(bytes: &[u8]) -> Vec<u8> {
 }
 
 /// Convert a sequence of 5-bit values back to 8-bit bytes.
-/// Returns None if the bit padding is non-zero (i.e., trailing bits are nonzero).
+///
+/// Returns `None` if any value in `values` is ≥ 32 (out of 5-bit range),
+/// or if the trailing padding bits are non-zero.
 pub fn five_bit_to_bytes(values: &[u8]) -> Option<Vec<u8>> {
     let mut acc: u32 = 0;
     let mut bits = 0u32;
@@ -127,6 +129,14 @@ mod tests {
         let bytes = vec![0xFF];
         let fives = bytes_to_5bit(&bytes);
         assert_eq!(fives, vec![31, 28]);
+    }
+
+    #[test]
+    fn bytes_to_5bit_round_trip_multibyte() {
+        // 3 bytes = 24 bits → 5 five-bit groups (25 bits, 1 pad bit).
+        let bytes = vec![0xDE, 0xAD, 0xBE];
+        let back = five_bit_to_bytes(&bytes_to_5bit(&bytes)).unwrap();
+        assert_eq!(back, bytes);
     }
 
     #[test]
