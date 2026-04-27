@@ -169,15 +169,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `p10-cross-platform-ci-sanity` — confirm GitHub Actions green on Windows + macOS
-
-- **Surfaced:** Phase 10 Task 10.2; deferred at controller closure
-- **Where:** `.github/workflows/ci.yml` (added in Phase 5-F)
-- **What:** The workflow runs Linux jobs (test + clippy + fmt + doc) on every push. The implementation plan also asks for Windows + macOS sanity. Local `cargo test` passes on Linux; cross-platform behavior can only be verified after pushing to GitHub. Defer until the first push of `main` and the `wdm-codec-v0.1.0` tag.
-- **Why deferred:** can't run GitHub Actions locally; non-blocker for the local v0.1.0 tag.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
 ### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
 
 - **Surfaced:** Phase 10 Task 10.7 closure
@@ -359,6 +350,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 - **Surfaced:** Phase 8 implementation (Task 8.3); implementer's own follow-up
 - **Status:** resolved `c46f2c0` via option (b) — `vectors.rs` `NEGATIVE_FIXTURES` rustdoc rewritten to honestly document fixture provenance: `expected_error_variant` is the authoritative contract; `input_strings` are representative placeholders demonstrating the error class; n12, n29, n30 explicitly flagged as targeting lower-level APIs (`reassemble_chunks`, `policy.parse`, `chunking_decision`). The original misleading "all placeholder inputs are confirmed to trigger the correct variant" claim was deleted. Dynamic generation (option a) deferred as `8-negative-fixture-dynamic-generation` (open, v0.2).
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `p10-cross-platform-ci-sanity` — confirm GitHub Actions green on Windows + macOS
+
+- **Surfaced:** Phase 10 Task 10.2; deferred at controller closure
+- **Status:** resolved `651c402` (post-push verification at run [25022150945](https://github.com/bg002h/descriptor-mnemonic/actions/runs/25022150945)) — full pipeline now green across `cargo test (ubuntu/windows/macos)` + `cargo clippy` + `cargo fmt` + `cargo doc`. Required four code/CI fixes that previous local-only validation never caught: `f4c8d3c` (workflow `git clone --depth` couldn't reach the SHA on a non-default branch), `06557a3` (matrix-ize the test job), `b12b814` (clippy 1.85.0 `precedence` lint in `polymod_step`), and `651c402` + `c46f2c0` (clippy 1.85.0 `format_collect` lint in `vectors.rs` and `bin/wdm.rs`). Lesson: pin a CI-equivalent toolchain locally if you need pre-push lint parity.
 - **Tier:** v0.1-nice-to-have (closed)
 
 ---
