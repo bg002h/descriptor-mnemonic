@@ -701,6 +701,8 @@ git push
 
 ## Phase 1 — Encoding Layer (~1.5 d, parallel with P2)
 
+> **Post-implementation note (2026-04-26 / 2026-04-27)**: Tasks 1.1–1.3 shipped substantially as designed. Tasks 1.4–1.9 diverged: the plan below assumed a BIP 93 verbatim checksum (codex32-style polymod with `MS32_CONST` target residue and no HRP-mixing). The actual design combines BIP 93's polymod constants with BIP 173-style `hrp_expand` preprocessing and WDM-specific NUMS-derived target constants (`SHA-256("shibbolethnums")` truncated to 65/75 bits). The BIP draft `bip/bip-wallet-descriptor-mnemonic.mediawiki` documents the shipped design, including a §"Why new target constants?" rationale. Each diverged task carries a STATUS box below summarizing the shipped form; consult the actual source under `crates/wdm-codec/src/encoding.rs` and the git history (commits `d5ed864..0e0b3f7`) for ground truth.
+
 ### Task 1.1: BchCode enum
 
 **Files:**
@@ -1042,6 +1044,8 @@ git push
 
 ### Task 1.4: BCH polynomial constants from BIP 93
 
+> **STATUS (shipped at commits `28b399b`, `29009b6`, then re-targeted in `e476d25`)**: Plan assumed `[u32; 13]` / `[u32; 15]` coefficient arrays. The actual BIP 93 reference uses a polymod-style representation with 5 wide values per code (~65 bits regular, ~75 bits long), so the shipped form is `[u128; 5]`. Verified byte-for-byte against `bip-0093.mediawiki` master. The originally-named `MS32_REGULAR_CONST` / `MS32_LONG_CONST` (codex32 target residues) were later replaced by `WDM_REGULAR_CONST` / `WDM_LONG_CONST` (NUMS-derived) in commit `e476d25`; see Task 1.6 STATUS. Shipped constants: `GEN_REGULAR`, `GEN_LONG`, `POLYMOD_INIT`, `REGULAR_SHIFT=60`, `LONG_SHIFT=70`, `REGULAR_MASK`, `LONG_MASK`, plus the WDM_*_CONST targets. See `crates/wdm-codec/src/encoding.rs`. **The step-by-step plan below is historical; do not re-execute.**
+
 **Files:**
 - Modify: `crates/wdm-codec/src/encoding.rs`
 
@@ -1152,6 +1156,8 @@ git push
 
 ### Task 1.5: BCH polynomial multiplication (GF arithmetic)
 
+> **STATUS (shipped at commits `0585ebd`, `d2380cc`)**: Plan signature `polymod_step(accum: u32, value: u32, gen: &[u32]) -> u32` was BIP 173-style (30-bit residue). The actual BIP 93 polymod operates on a 65/75-bit residue, so the shipped signature is `polymod_step(residue: u128, value: u128, r#gen: &[u128; 5], shift: u32, mask: u128) -> u128`, parameterized to handle both regular and long codes via the same function. The `r#gen` raw identifier is required because Edition 2024 reserves `gen` as a keyword. Private fn (no `pub`); 6 unit tests exercise it directly. See `crates/wdm-codec/src/encoding.rs`. **Plan below is historical; do not re-execute.**
+
 **Files:**
 - Modify: `crates/wdm-codec/src/encoding.rs`
 
@@ -1206,6 +1212,8 @@ git push
 ```
 
 ### Task 1.6: BCH checksum encode + verify (regular code)
+
+> **STATUS (shipped at commits `e476d25` (constants), `68b2d5b`, `6aaff29`)**: Two design pivots from the plan: **(1) HRP-mixing** — WDM prepends BIP 173-style `hrp_expand("wdm")` = `[3, 3, 3, 0, 23, 4, 13]` to the polymod input, not the codex32 verbatim form. **(2) NUMS target constant** — `WDM_REGULAR_CONST = 0x0815c07747a3392e7` (top 65 bits of `SHA-256("shibbolethnums")`) replaces BIP 93's `MS32_CONST`. Shipped functions: `bch_create_checksum_regular(hrp, data)`, `bch_verify_regular(hrp, data_with_checksum)` (note `_create_` infix, distinct from plan's `bch_checksum_*` name). Includes `hrp_expand`, `polymod_run` helpers; known-vector test asserts agreement with an independent Python reference. BIP draft §"Why new target constants?" documents the design rationale. See `crates/wdm-codec/src/encoding.rs`. **Plan below is historical; do not re-execute.**
 
 **Files:**
 - Modify: `crates/wdm-codec/src/encoding.rs`
@@ -1324,6 +1332,8 @@ git push
 
 ### Task 1.7: BCH checksum encode + verify (long code)
 
+> **STATUS (shipped at commits `c0a8e1b`, `1be5199`)**: Mirror of Task 1.6 for the long code. Target constant: `WDM_LONG_CONST = 0x205701dd1e8ce4b9f47` (top 75 bits of `SHA-256("shibbolethnums")`). Functions: `bch_create_checksum_long`, `bch_verify_long` (named with `_create_` infix matching Task 1.6). Reuses `hrp_expand` and `polymod_run` from Task 1.6 — only the constants differ. Known-vector test against Python reference. See `crates/wdm-codec/src/encoding.rs`. **Plan below is historical; do not re-execute.**
+
 **Files:**
 - Modify: `crates/wdm-codec/src/encoding.rs`
 
@@ -1409,6 +1419,8 @@ git push
 ```
 
 ### Task 1.8: BCH error correction (regular and long)
+
+> **STATUS (shipped at commits `864a759`, `e17cbc5`)**: Implemented as brute-force 1-error correction (try every position × every replacement). Functions: `bch_correct_regular(hrp, data_with_checksum) -> Result<CorrectionResult, crate::Error>`, `bch_correct_long(...)`. Errors use the existing `Error::BchUncorrectable` variant. The 1-error and 4-error paths share a private generic helper `brute_force_one_error<F>` parameterized by the verify function. **BIP-spec gap**: BIP draft §"Error-correction guarantees" promises 4-substitution correction; v0.1 ships only the 1-error baseline. The deferred 4-error syndrome decoder (Berlekamp-Massey + Forney) is tracked via in-source TODO and is mandated for v0.2 per the Pre-Execution Checklist. The 2-error test deliberately verifies v0.1 returns `BchUncorrectable` rather than risking silent miscorrection. `CorrectionResult` is `#[non_exhaustive]` for forward compat with v0.2 fields (e.g., confidence score, syndrome metadata). See `crates/wdm-codec/src/encoding.rs`. **Plan below is historical; do not re-execute.**
 
 **Files:**
 - Modify: `crates/wdm-codec/src/encoding.rs`
@@ -1570,6 +1582,8 @@ git push
 > **NOTE for implementer:** The full 4-error BCH correction is a substantial algorithmic task (Berlekamp-Massey / Chien search / Forney's algorithm over GF(2^5)). For v0.1's stated DoD ("BCH correction paths exercised by ≥1 named test"), the brute-force 1-error path satisfies the conformance requirement. If time permits in P5.5 spec reconciliation, replace with the full algorithm; otherwise document the limitation in the BIP and defer.
 
 ### Task 1.9: Encode/decode full WDM strings (HRP + data + checksum)
+
+> **STATUS (shipped at commits `62f4278`, `0e0b3f7`, `91299d6`)**: Phase 1 capstone. Plan signature `encode_string(header, payload, code: BchCode) -> String` was changed: **the `code` parameter was removed** because per the BIP the choice is fully determined by data length, and exposing it lets callers produce undecodable strings. Shipped signature: `encode_string(header: &[u8], payload: &[u8]) -> Result<String, crate::Error>`, returning `Err(InvalidStringLength)` for unencodable lengths (94–95 reserved gap or out-of-range). `decode_string(s) -> Result<DecodedString, crate::Error>` performs case check, HRP match, length, alphabet (new `Error::InvalidChar { ch, position }` variant), and 1-error auto-correction. `DecodedString` is `#[non_exhaustive]`. Re-exported from `lib.rs`: `encode_string`, `decode_string`, `DecodedString`, plus `bytes_to_5bit` and `five_bit_to_bytes` for callers needing direct byte ↔ 5-bit conversion. Touches `error.rs`, `encoding.rs`, `lib.rs`. **Plan below is historical; do not re-execute.**
 
 **Files:**
 - Modify: `crates/wdm-codec/src/encoding.rs`
