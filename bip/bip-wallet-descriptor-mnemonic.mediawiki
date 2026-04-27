@@ -81,7 +81,7 @@ Forward compatibility is preserved: WDM v0 readers MUST reject backups marked wi
 A single WDM string is structured as:
 
 <pre>
-  &lt;HRP&gt; &lt;separator&gt; &lt;header&gt; &lt;payload&gt; &lt;checksum&gt;
+  <HRP> <separator> <header> <payload> <checksum>
 </pre>
 
 Each component is described below.
@@ -387,7 +387,7 @@ For operators with a fixed number of children, child sub-trees follow the operat
 In WDM v0, every key position in the bytecode (i.e., a child slot of <code>pk_k</code>, <code>pk_h</code>, <code>pkh</code>, <code>wpkh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>tr</code>) MUST be a placeholder reference of the form:
 
 <pre>
-  0x32 &lt;index&gt;
+  0x32 <index>
 </pre>
 
 where <code>&lt;index&gt;</code> is a single byte (0–255) identifying which entry in the BIP 388 key information vector this position uses. Inline keys (raw xpubs, raw pubkeys) are NOT permitted in v0 bytecode. This guarantees that the Template Card encodes the wallet structure without containing any key material.
