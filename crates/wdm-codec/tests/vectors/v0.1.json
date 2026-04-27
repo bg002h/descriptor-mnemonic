@@ -1,0 +1,482 @@
+{
+  "schema_version": 1,
+  "generator": "wdm-codec 0.1.0-dev",
+  "vectors": [
+    {
+      "id": "c1",
+      "description": "C1 — Single-key wsh(pk)",
+      "policy": "wsh(pk(@0/**))",
+      "expected_bytecode_hex": "003303050c1b3200",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5xpkvsqtkqefq4vkzef2"
+      ],
+      "expected_wallet_id_words": [
+        "secret",
+        "scorpion",
+        "truly",
+        "forum",
+        "van",
+        "cinnamon",
+        "hybrid",
+        "public",
+        "fun",
+        "during",
+        "bottom",
+        "clock"
+      ]
+    },
+    {
+      "id": "c2",
+      "description": "C2 — 2-of-3 wsh(sortedmulti)",
+      "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
+      "expected_bytecode_hex": "00330305090203320032013202",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5ysyqejqqeqzvszzcplt4tanh2xq"
+      ],
+      "expected_wallet_id_words": [
+        "payment",
+        "prosper",
+        "canvas",
+        "exercise",
+        "sniff",
+        "robot",
+        "dynamic",
+        "attitude",
+        "assist",
+        "sell",
+        "control",
+        "enroll"
+      ]
+    },
+    {
+      "id": "c3",
+      "description": "C3 — 2-of-3 with timelock fallback",
+      "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
+      "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqsk8hhvcwxhesv6"
+      ],
+      "expected_wallet_id_words": [
+        "hire",
+        "earth",
+        "doll",
+        "pride",
+        "naive",
+        "one",
+        "universe",
+        "shell",
+        "brain",
+        "sign",
+        "private",
+        "vivid"
+      ]
+    },
+    {
+      "id": "c4",
+      "description": "C4 — 6-key inheritance miniscript",
+      "policy": "wsh(andor(pk(@0/**),after(1200000),or_i(and_v(v:pkh(@1/**),and_v(v:pkh(@2/**),and_v(v:pkh(@3/**),older(4032)))),and_v(v:pkh(@4/**),and_v(v:pkh(@5/**),older(32768))))))",
+      "expected_bytecode_hex": "00330305130c1b32001e809f4917110e0c1c3201110e0c1c3202110e0c1c32031fc01f110e0c1c3204110e0c1c32051f808002",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5fscxejqq0gp86fzugsurquxgq3zrsvrseqyygwpswryqclcq03zrsvrseqgygwpswrypglszqqy9f08e2lpzcsxctt"
+      ],
+      "expected_wallet_id_words": [
+        "magnet",
+        "gospel",
+        "nominee",
+        "alarm",
+        "member",
+        "retreat",
+        "whale",
+        "zero",
+        "moment",
+        "person",
+        "zoo",
+        "immense"
+      ]
+    },
+    {
+      "id": "c5",
+      "description": "C5 — 5-of-9 thresh with 2-key timelock recovery",
+      "policy": "wsh(or_d(thresh(5,pk(@0/**),s:pk(@1/**),s:pk(@2/**),s:pk(@3/**),s:pk(@4/**),s:pk(@5/**),s:pk(@6/**),s:pk(@7/**),s:pk(@8/**)),and_v(v:older(105120),multi(2,@9/**,@10/**))))",
+      "expected_bytecode_hex": "00330305161805090c1b32000b0c1b32010b0c1b32020b0c1b32030b0c1b32040b0c1b32050b0c1b32060b0c1b32070b0c1b3208110e1fa0b5061902023209320a",
+      "expected_chunks": [
+        "wdm1qqqsp3nvqgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsds8n0ck7eup6j080v",
+        "wdm1qqqsp3nvqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6y45znnqse9xdy7"
+      ],
+      "expected_wallet_id_words": [
+        "arrest",
+        "curve",
+        "virtual",
+        "mechanic",
+        "dynamic",
+        "eager",
+        "wagon",
+        "embark",
+        "common",
+        "arctic",
+        "lion",
+        "pear"
+      ]
+    },
+    {
+      "id": "e10",
+      "description": "E10 — Liana Simple Inheritance single-key + 1-year recovery",
+      "policy": "wsh(or_d(pk(@0/**),and_v(v:pk(@1/**),older(52560))))",
+      "expected_bytecode_hex": "00330305160c1b3200110e0c1b32011fd09a03",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5tqcxejqqgsurqmxgq3l5y6qv5h973dj8tvrrf"
+      ],
+      "expected_wallet_id_words": [
+        "retire",
+        "sudden",
+        "diet",
+        "caught",
+        "rotate",
+        "similar",
+        "just",
+        "maximum",
+        "dinner",
+        "office",
+        "casual",
+        "region"
+      ]
+    },
+    {
+      "id": "e12",
+      "description": "E12 — Liana Expanding Multisig 2-of-2 + recovery key",
+      "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
+      "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqsk8hhvcwxhesv6"
+      ],
+      "expected_wallet_id_words": [
+        "hire",
+        "earth",
+        "doll",
+        "pride",
+        "naive",
+        "one",
+        "universe",
+        "shell",
+        "brain",
+        "sign",
+        "private",
+        "vivid"
+      ]
+    },
+    {
+      "id": "e13",
+      "description": "E13 — HTLC with sha256 preimage",
+      "policy": "wsh(andor(pk(@0/**),sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),and_v(v:pk(@1/**),older(144))))",
+      "expected_bytecode_hex": "00330305130c1b320020b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9110e0c1b32011f9001",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5fscxejqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6g3pcxpkvspr7gqzkgawu5s5xhu4gjm"
+      ],
+      "expected_wallet_id_words": [
+        "rotate",
+        "axis",
+        "genre",
+        "abuse",
+        "craft",
+        "hotel",
+        "pulp",
+        "beef",
+        "frost",
+        "cruel",
+        "fan",
+        "sure"
+      ]
+    },
+    {
+      "id": "e14",
+      "description": "E14 — Decaying multisig 3-of-3 to 2-of-3 with 6 distinct keys",
+      "policy": "wsh(or_d(multi(3,@0/**,@1/**,@2/**),and_v(v:older(52560),multi(2,@3/**,@4/**,@5/**))))",
+      "expected_bytecode_hex": "0033030516190303320032013202110e1fd09a03190203320332043205",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5tpjqcrxgqryqfjqggsu87sngp3jqsrxgpnyppjq56kj8a9phdjesg"
+      ],
+      "expected_wallet_id_words": [
+        "gate",
+        "february",
+        "first",
+        "reveal",
+        "enable",
+        "green",
+        "pencil",
+        "galaxy",
+        "float",
+        "empty",
+        "gold",
+        "head"
+      ]
+    },
+    {
+      "id": "coldcard",
+      "description": "Coldcard — representative BIP 388 export shape (2-of-3 sortedmulti)",
+      "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
+      "expected_bytecode_hex": "00330305090203320032013202",
+      "expected_chunks": [
+        "wdm1qqqqqvcrq5ysyqejqqeqzvszzcplt4tanh2xq"
+      ],
+      "expected_wallet_id_words": [
+        "payment",
+        "prosper",
+        "canvas",
+        "exercise",
+        "sniff",
+        "robot",
+        "dynamic",
+        "attitude",
+        "assist",
+        "sell",
+        "control",
+        "enroll"
+      ]
+    }
+  ],
+  "negative_vectors": [
+    {
+      "id": "n01",
+      "description": "HRP that is not 'wdm' → InvalidHrp",
+      "input_strings": [
+        "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+      ],
+      "expected_error_variant": "InvalidHrp"
+    },
+    {
+      "id": "n02",
+      "description": "Mixed-case characters in a WDM string → MixedCase",
+      "input_strings": [
+        "wdm1Qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      ],
+      "expected_error_variant": "MixedCase"
+    },
+    {
+      "id": "n03",
+      "description": "String length in reserved 94–95 char range → InvalidStringLength",
+      "input_strings": [
+        "wdm1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      ],
+      "expected_error_variant": "InvalidStringLength"
+    },
+    {
+      "id": "n04",
+      "description": "Non-bech32 character 'b' in data part → InvalidChar",
+      "input_strings": [
+        "wdm1bqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      ],
+      "expected_error_variant": "InvalidChar"
+    },
+    {
+      "id": "n05",
+      "description": "Two character substitutions (BCH uncorrectable) → BchUncorrectable",
+      "input_strings": [
+        "wdm1pqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      ],
+      "expected_error_variant": "BchUncorrectable"
+    },
+    {
+      "id": "n06",
+      "description": "Unsupported version byte in chunk header → UnsupportedVersion",
+      "input_strings": [
+        "wdm1pzry9x0s8q"
+      ],
+      "expected_error_variant": "UnsupportedVersion"
+    },
+    {
+      "id": "n07",
+      "description": "Unsupported card-type byte in chunk header → UnsupportedCardType",
+      "input_strings": [
+        "wdm1qqsyqcyr"
+      ],
+      "expected_error_variant": "UnsupportedCardType"
+    },
+    {
+      "id": "n08",
+      "description": "Reserved wallet-id bits set → ReservedWalletIdBitsSet",
+      "input_strings": [
+        "wdm1qqs8qnqd2kxs"
+      ],
+      "expected_error_variant": "ReservedWalletIdBitsSet"
+    },
+    {
+      "id": "n09",
+      "description": "Chunk count = 0 → InvalidChunkCount",
+      "input_strings": [
+        "wdm1qqsqqqdqaey0"
+      ],
+      "expected_error_variant": "InvalidChunkCount"
+    },
+    {
+      "id": "n10",
+      "description": "Chunk index ≥ count → InvalidChunkIndex",
+      "input_strings": [
+        "wdm1qqsqqqcqqlye9"
+      ],
+      "expected_error_variant": "InvalidChunkIndex"
+    },
+    {
+      "id": "n11",
+      "description": "Chunk header bytes truncated → ChunkHeaderTruncated",
+      "input_strings": [
+        "wdm1qqy7e3yu"
+      ],
+      "expected_error_variant": "ChunkHeaderTruncated"
+    },
+    {
+      "id": "n12",
+      "description": "Empty chunk list → EmptyChunkList",
+      "input_strings": [],
+      "expected_error_variant": "EmptyChunkList"
+    },
+    {
+      "id": "n13",
+      "description": "Single-string chunk appearing more than once → SingleStringWithMultipleChunks",
+      "input_strings": [
+        "wdm1q9x8lhk6",
+        "wdm1q9x8lhk6"
+      ],
+      "expected_error_variant": "SingleStringWithMultipleChunks"
+    },
+    {
+      "id": "n14",
+      "description": "Mixed SingleString + Chunked in one decode list → MixedChunkTypes",
+      "input_strings": [
+        "wdm1q9x8lhk6",
+        "wdm1qqs8qnqd2kxs"
+      ],
+      "expected_error_variant": "MixedChunkTypes"
+    },
+    {
+      "id": "n15",
+      "description": "Wallet-id mismatch across chunks → WalletIdMismatch",
+      "input_strings": [
+        "wdm1qqsqqqaqqqqqrh06z7",
+        "wdm1qqsqqq9qqqqqrqs8su"
+      ],
+      "expected_error_variant": "WalletIdMismatch"
+    },
+    {
+      "id": "n16",
+      "description": "Total-chunks mismatch across chunks → TotalChunksMismatch",
+      "input_strings": [
+        "wdm1qqsqqqaqqqqqrh06z7",
+        "wdm1qqsqqqzqsqqqrw7gxr"
+      ],
+      "expected_error_variant": "TotalChunksMismatch"
+    },
+    {
+      "id": "n17",
+      "description": "Chunk index out of range → ChunkIndexOutOfRange",
+      "input_strings": [
+        "wdm1qqsqqq9q9qqqlhj4j4"
+      ],
+      "expected_error_variant": "ChunkIndexOutOfRange"
+    },
+    {
+      "id": "n18",
+      "description": "Duplicate chunk index in a multi-chunk set → DuplicateChunkIndex",
+      "input_strings": [
+        "wdm1qqsqqqaqsqqqkjfkf3",
+        "wdm1qqsqqqaqsqqqkjfkf3"
+      ],
+      "expected_error_variant": "DuplicateChunkIndex"
+    },
+    {
+      "id": "n19",
+      "description": "Missing chunk index in a multi-chunk set → MissingChunkIndex",
+      "input_strings": [
+        "wdm1qqsqqqaqzqqqehfpja",
+        "wdm1qqsqqqaqzqqsqwjh6e"
+      ],
+      "expected_error_variant": "MissingChunkIndex"
+    },
+    {
+      "id": "n20",
+      "description": "Cross-chunk integrity hash mismatch → CrossChunkHashMismatch",
+      "input_strings": [
+        "wdm1qqsqqqaqsqqq9fqxvf",
+        "wdm1qqsqqqaqsqqs9xf8qr"
+      ],
+      "expected_error_variant": "CrossChunkHashMismatch"
+    },
+    {
+      "id": "n21",
+      "description": "Unknown tag byte 0xC0 in bytecode → InvalidBytecode(UnknownTag)",
+      "input_strings": [
+        "wdm1qqc0pq48c3n0"
+      ],
+      "expected_error_variant": "InvalidBytecode"
+    },
+    {
+      "id": "n22",
+      "description": "Bytecode truncated (only header byte) → InvalidBytecode(UnexpectedEnd)",
+      "input_strings": [
+        "wdm1qqy7e3yu"
+      ],
+      "expected_error_variant": "InvalidBytecode"
+    },
+    {
+      "id": "n23",
+      "description": "LEB128 varint overflow in bytecode path component → InvalidBytecode(VarintOverflow)",
+      "input_strings": [
+        "wdm1qqcqp9xqzqzqzqzqzqzqzqzqzqzqzxq0z2fv"
+      ],
+      "expected_error_variant": "InvalidBytecode"
+    },
+    {
+      "id": "n24",
+      "description": "Trailing bytes after template tree → InvalidBytecode(TrailingBytes)",
+      "input_strings": [
+        "wdm1qqcqcq3gy0e8wp7w"
+      ],
+      "expected_error_variant": "InvalidBytecode"
+    },
+    {
+      "id": "n25",
+      "description": "Reserved bits set in bytecode header byte → InvalidBytecode(ReservedBitsSet)",
+      "input_strings": [
+        "wdm1qrcqcq3ghxxvv7"
+      ],
+      "expected_error_variant": "InvalidBytecode"
+    },
+    {
+      "id": "n26",
+      "description": "Wrong tag at path-declaration slot → InvalidBytecode(UnexpectedTag)",
+      "input_strings": [
+        "wdm1qqpqcq3g23pcqd"
+      ],
+      "expected_error_variant": "InvalidBytecode"
+    },
+    {
+      "id": "n27",
+      "description": "k > n in multi threshold (type-check failure) → InvalidBytecode(TypeCheckFailed)",
+      "input_strings": [
+        "wdm1qqcqz5pqpq9qr24e3v"
+      ],
+      "expected_error_variant": "InvalidBytecode"
+    },
+    {
+      "id": "n28",
+      "description": "Non-Wsh top-level descriptor → PolicyScopeViolation",
+      "input_strings": [
+        "wdm1qqcqpq3g3p7wpm5"
+      ],
+      "expected_error_variant": "PolicyScopeViolation"
+    },
+    {
+      "id": "n29",
+      "description": "Malformed policy string (no valid descriptor) → PolicyParse",
+      "input_strings": [
+        "not_a_valid_policy!!!"
+      ],
+      "expected_error_variant": "PolicyParse"
+    },
+    {
+      "id": "n30",
+      "description": "Bytecode larger than 1692 bytes → PolicyTooLarge",
+      "input_strings": [],
+      "expected_error_variant": "PolicyTooLarge"
+    }
+  ]
+}
