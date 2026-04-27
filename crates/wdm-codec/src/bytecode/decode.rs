@@ -403,12 +403,52 @@ fn decode_terminal(
             let bytes = cur.read_array::<20>()?;
             Terminal::Hash160(bitcoin::hashes::hash160::Hash::from_byte_array(bytes))
         }
-        // Task 2.18+ inner-fragment tags will be added here progressively
-        // (logical operators).
-        // For now, anything else is either out of v0.1 scope or deferred.
+        Tag::AndV => {
+            let left = decode_miniscript(cur, keys)?;
+            let right = decode_miniscript(cur, keys)?;
+            Terminal::AndV(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::AndB => {
+            let left = decode_miniscript(cur, keys)?;
+            let right = decode_miniscript(cur, keys)?;
+            Terminal::AndB(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::AndOr => {
+            let a = decode_miniscript(cur, keys)?;
+            let b = decode_miniscript(cur, keys)?;
+            let c = decode_miniscript(cur, keys)?;
+            Terminal::AndOr(std::sync::Arc::new(a), std::sync::Arc::new(b), std::sync::Arc::new(c))
+        }
+        Tag::OrB => {
+            let left = decode_miniscript(cur, keys)?;
+            let right = decode_miniscript(cur, keys)?;
+            Terminal::OrB(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::OrC => {
+            let left = decode_miniscript(cur, keys)?;
+            let right = decode_miniscript(cur, keys)?;
+            Terminal::OrC(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::OrD => {
+            let left = decode_miniscript(cur, keys)?;
+            let right = decode_miniscript(cur, keys)?;
+            Terminal::OrD(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::OrI => {
+            let left = decode_miniscript(cur, keys)?;
+            let right = decode_miniscript(cur, keys)?;
+            Terminal::OrI(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        // After Task 2.18 every Segwitv0 Terminal variant is decoded above.
+        // The wildcard remains required to compile because Tag is
+        // #[non_exhaustive] and its variant set includes top-level-only and
+        // reserved tags that must not appear inside an inner fragment.
+        // Per D-8, this guard is reachable for tags valid at other positions
+        // (e.g. Tag::Wsh appearing mid-tree) and emits a structural
+        // PolicyScopeViolation rather than a deferred-milestone stub.
         _ => {
             return Err(Error::PolicyScopeViolation(format!(
-                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.18+)",
+                "Tag {tag:?} (0x{:02x}) is not a valid inner-fragment tag",
                 tag.as_byte()
             )));
         }
@@ -569,14 +609,16 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_unimplemented_inner_tag() {
-        // [Wsh, AndV, ...] — Task 2.15 added wrappers (Alt/Swap/Check/...)
-        // and RawPkH, but AndV (0x11) is still deferred to Task 2.18
-        // (logical operators).
-        let err = decode_template(&[0x05, 0x11], &[]).unwrap_err();
+    fn decode_rejects_top_level_only_tag_mid_tree() {
+        // Tag::Wsh (0x05) is valid at the top level but cannot appear inside
+        // an inner fragment. After Task 2.18 every Segwitv0 terminal tag is
+        // implemented; this test pins the catch-all behavior for genuinely
+        // misplaced tags.
+        let bytes = vec![0x05, 0x05]; // [Wsh outer, Wsh inner — invalid mid-tree]
+        let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("not yet implemented")),
-            "expected not-yet-implemented PolicyScopeViolation, got {err:?}"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("not a valid inner-fragment tag")),
+            "expected PolicyScopeViolation about invalid inner-fragment tag, got {err:?}"
         );
     }
 
@@ -1253,6 +1295,109 @@ mod tests {
                 kind: BytecodeErrorKind::Truncated, ..
             }),
             "expected Truncated for ripemd160, got {err:?}"
+        );
+    }
+
+    // --- Logical-operator round-trips and rejections (Task 2.18) -----------
+
+    #[test]
+    fn decode_wsh_or_d_with_constants_round_trip() {
+        // wsh(or_d(0,1)) — or_d takes B-dissat-unit + B; both 0 and 1
+        // satisfy the typing rules. Parser-driven round-trip.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            "wsh(or_d(0,1))"
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_wsh_or_i_with_constants_round_trip() {
+        // wsh(or_i(0,1)) — or_i parses with two arbitrary B-typed children.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            "wsh(or_i(0,1))"
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_wsh_andor_with_constants_round_trip() {
+        // wsh(andor(0, 1, 0)) — andor takes B-dissat + B + B.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            "wsh(andor(0,1,0))"
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_or_d_known_vector() {
+        // [Wsh, OrD, False, True] = [0x05, 0x16, 0x00, 0x01]
+        let bytes = vec![0x05, 0x16, 0x00, 0x01];
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        use std::collections::HashMap;
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_andor_known_vector() {
+        // [Wsh, AndOr, False, True, False] = [0x05, 0x13, 0x00, 0x01, 0x00]
+        let bytes = vec![0x05, 0x13, 0x00, 0x01, 0x00];
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        use std::collections::HashMap;
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_logical_op_rejects_truncated_after_first_child() {
+        // [Wsh, AndV, True] — only one child present; AndV needs two.
+        let bytes = vec![0x05, 0x11, 0x01];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        // After reading the True child, the decoder tries to read the second
+        // child and the cursor is at EOF. The next read_byte call returns
+        // UnexpectedEnd.
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::UnexpectedEnd, ..
+            }),
+            "expected UnexpectedEnd, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_andor_rejects_truncated_after_two_children() {
+        // [Wsh, AndOr, False, True] — AndOr expects 3 children, only 2 present.
+        let bytes = vec![0x05, 0x13, 0x00, 0x01];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::UnexpectedEnd, ..
+            }),
+            "expected UnexpectedEnd, got {err:?}"
         );
     }
 }
