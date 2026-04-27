@@ -363,6 +363,12 @@ pub fn bch_verify_long(hrp: &str, data_with_checksum: &[u8]) -> bool {
 /// Returned by [`bch_correct_regular`] / [`bch_correct_long`] when correction
 /// succeeds. `corrections_applied == 0` means the input was already valid;
 /// `> 0` means substitutions were applied at the indicated positions.
+///
+/// Marked `#[non_exhaustive]` to allow future fields (e.g., confidence
+/// score, syndrome metadata) without breaking downstream struct-literal
+/// construction. Construct via the [`bch_correct_regular`] /
+/// [`bch_correct_long`] APIs.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CorrectionResult {
     /// The corrected `data_with_checksum` slice (input may have been modified).
@@ -433,12 +439,14 @@ fn brute_force_one_error<F>(
 where
     F: Fn(&str, &[u8]) -> bool,
 {
-    for i in 0..data_with_checksum.len() {
+    // Single allocation; mutate in place and restore between positions.
+    let mut trial = data_with_checksum.to_vec();
+    for i in 0..trial.len() {
+        let orig = trial[i];
         for v in 0..32u8 {
-            if v == data_with_checksum[i] {
+            if v == orig {
                 continue;
             }
-            let mut trial = data_with_checksum.to_vec();
             trial[i] = v;
             if verify(hrp, &trial) {
                 return Some(CorrectionResult {
@@ -448,6 +456,7 @@ where
                 });
             }
         }
+        trial[i] = orig;
     }
     None
 }
@@ -906,6 +915,11 @@ mod tests {
     #[test]
     fn bch_correct_regular_two_errors_uncorrectable_v0_1() {
         // v0.1 baseline cannot fix 2-error damage; spec promises this in v0.2.
+        // Choice of positions 3 and 7 with delta +1: the BCH code's minimum
+        // distance ≥ 9 means no 2-error pattern is reachable as a 1-substitution
+        // from any other valid codeword. This specific pair was verified
+        // empirically not to alias to a different 1-correctable string under
+        // the v0.1 brute-force decoder.
         let hrp = "wdm";
         let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let checksum = bch_create_checksum_regular(hrp, &data);
