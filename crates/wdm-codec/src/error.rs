@@ -2,7 +2,16 @@
 
 use thiserror::Error;
 
-/// Forward declaration; defined fully in chunking.rs once available.
+/// Forward declaration; the authoritative implementation lives in
+/// `wallet_id.rs` once Phase 4 of the implementation plan lands.
+///
+/// TODO P4: move `ChunkWalletId` to `crate::wallet_id`, make the inner
+/// `u32` private, and gate construction through `ChunkWalletId::new(bits: u32)`
+/// which enforces `bits <= MAX = (1 << 20) - 1`. Once moved, replace the
+/// definition here with `use crate::wallet_id::ChunkWalletId;` and update
+/// the re-export in `lib.rs`. The `pub(crate) u32` field below is a
+/// temporary convenience for v0.1 scaffolding only — do not let chunking.rs
+/// rely on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChunkWalletId(pub(crate) u32);
 
@@ -145,10 +154,16 @@ mod tests {
     }
 
     #[test]
-    fn miniscript_error_is_wrapped_as_string() {
-        // A real miniscript error will be wrapped as String; here we just
-        // confirm the conversion compiles and produces our variant.
-        let _e: Error = Error::Miniscript("test".to_string());
+    fn miniscript_error_is_wrapped_via_from_impl() {
+        // Exercise the From<miniscript::Error> impl, not just the variant
+        // constructor. Catches typos in the From body and verifies that
+        // miniscript::Error implements Display (an upstream assumption).
+        let parse_result = "not_a_valid_descriptor".parse::<miniscript::descriptor::Descriptor<miniscript::descriptor::DescriptorPublicKey>>();
+        let ms_err = parse_result.expect_err("intentionally invalid descriptor");
+        let e: Error = ms_err.into();
+        assert!(matches!(e, Error::Miniscript(_)));
+        let s = e.to_string();
+        assert!(s.starts_with("miniscript:"), "got: {s}");
     }
 
     #[test]
