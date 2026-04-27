@@ -1,0 +1,7 @@
+# Claude / agent metadata
+.claude/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
