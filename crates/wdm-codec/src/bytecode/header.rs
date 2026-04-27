@@ -4,7 +4,7 @@
 //! Bit layout (per BIP §"Bytecode header"):
 //!
 //! ```text
-//! Bits 7–4: Bytecode version (v0 = 0x0). Decoders MUST reject unknown versions.
+//! Bits 7–4: Bytecode version (v0 = 0x0).
 //! Bit  3:   Reserved. MUST be 0 in v0.
 //! Bit  2:   Fingerprints flag. 1 if fingerprints block present, 0 otherwise.
 //! Bits 1–0: Reserved. MUST be 0 in v0.
@@ -44,7 +44,7 @@ impl BytecodeHeader {
     /// - `Err(Error::UnsupportedVersion(nibble))` if the version nibble is not 0.
     ///   The version check is performed **before** the reserved-bit check so that
     ///   a byte like `0x14` (version 1 + fingerprints) reports unsupported-version
-    ///   rather than reserved-bits-set.
+    ///   rather than reserved-bits-set. Decoders MUST reject unknown versions.
     /// - `Err(Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::ReservedBitsSet { .. } })`
     ///   if any reserved bit is non-zero.
     /// - `Ok(BytecodeHeader)` otherwise.
@@ -77,27 +77,27 @@ impl BytecodeHeader {
     /// Serialize the header back to a single byte.
     ///
     /// `from_byte(h.as_byte()) == Ok(h)` for any valid header `h`.
-    pub fn as_byte(&self) -> u8 {
-        (self.version << 4)
-            | if self.fingerprints {
-                FINGERPRINTS_BIT
-            } else {
-                0
-            }
+    pub const fn as_byte(self) -> u8 {
+        let fp = if self.fingerprints {
+            FINGERPRINTS_BIT
+        } else {
+            0
+        };
+        (self.version << 4) | fp
     }
 
     /// Returns the 4-bit format version (0 for v0).
-    pub fn version(&self) -> u8 {
+    pub fn version(self) -> u8 {
         self.version
     }
 
     /// Returns `true` iff the fingerprints block is present in the bytecode stream.
-    pub fn fingerprints(&self) -> bool {
+    pub fn fingerprints(self) -> bool {
         self.fingerprints
     }
 
     /// Construct a valid v0 header.
-    pub fn v0(fingerprints: bool) -> Self {
+    pub const fn new_v0(fingerprints: bool) -> Self {
         BytecodeHeader {
             version: 0,
             fingerprints,
@@ -140,19 +140,22 @@ mod tests {
         assert_eq!(h.as_byte(), 0x04);
     }
 
-    // --- v0 constructor ---
+    // --- new_v0 constructor ---
 
     #[test]
     fn v0_constructor_no_fingerprints() {
-        assert_eq!(BytecodeHeader::v0(false).as_byte(), 0x00);
+        assert_eq!(BytecodeHeader::new_v0(false).as_byte(), 0x00);
     }
 
     #[test]
     fn v0_constructor_with_fingerprints() {
-        assert_eq!(BytecodeHeader::v0(true).as_byte(), 0x04);
+        assert_eq!(BytecodeHeader::new_v0(true).as_byte(), 0x04);
     }
 
     // --- Reserved-bit rejection ---
+    //
+    // Note: bit 2 is the fingerprints flag, not a reserved bit; the round-trip
+    // and constructor tests above cover it. Only bits 3, 1, and 0 are reserved.
 
     #[test]
     fn reserved_bit_0_set() {
