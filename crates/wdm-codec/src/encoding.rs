@@ -164,13 +164,22 @@ pub const GEN_REGULAR: [u128; 5] = [
     0x07729a039cfc75f5a,
 ];
 
-/// Expected residue after polymod over a valid regular-code data part (BIP 93 `MS32_CONST`).
-pub const MS32_CONST: u128 = 0x10ce0795c2fd1e62a;
+/// Expected residue after polymod over a valid regular-code data part.
+///
+/// BIP 93 names this `MS32_CONST` in the Python reference implementation;
+/// renamed here for symmetry with [`MS32_LONG_CONST`].
+pub const MS32_REGULAR_CONST: u128 = 0x10ce0795c2fd1e62a;
 
-/// Initial residue value for the polymod algorithm (BIP 93).
+/// Initial residue value for both the regular and long polymod algorithms (BIP 93).
+///
+/// Both `ms32_polymod` and `ms32_long_polymod` start with this residue before
+/// processing any input characters.
 pub const POLYMOD_INIT: u128 = 0x23181b3;
 
-/// Top-5-bit shift for the regular code residue (60).
+/// Right-shift amount to extract the top 5 bits from a 65-bit regular-code residue.
+///
+/// Usage: `b = residue >> REGULAR_SHIFT` gives the 5-bit feedback selector
+/// for the polymod algorithm.
 pub const REGULAR_SHIFT: u32 = 60;
 
 /// Mask preserving the low 60 bits of a 65-bit regular-code residue.
@@ -194,7 +203,10 @@ pub const GEN_LONG: [u128; 5] = [
 /// Expected residue after polymod over a valid long-code data part (BIP 93 `MS32_LONG_CONST`).
 pub const MS32_LONG_CONST: u128 = 0x43381e570bf4798ab26;
 
-/// Top-5-bit shift for the long code residue (70).
+/// Right-shift amount to extract the top 5 bits from a 75-bit long-code residue.
+///
+/// Usage: `b = residue >> LONG_SHIFT` gives the 5-bit feedback selector
+/// for the polymod algorithm.
 pub const LONG_SHIFT: u32 = 70;
 
 /// Mask preserving the low 70 bits of a 75-bit long-code residue.
@@ -353,7 +365,7 @@ mod tests {
 
     #[test]
     fn ms32_constants_match_bip93() {
-        assert_eq!(MS32_CONST, 0x10ce0795c2fd1e62a);
+        assert_eq!(MS32_REGULAR_CONST, 0x10ce0795c2fd1e62a);
         assert_eq!(MS32_LONG_CONST, 0x43381e570bf4798ab26);
         assert_eq!(POLYMOD_INIT, 0x23181b3);
     }
