@@ -407,7 +407,14 @@ fn cmd_bytecode(policy_str: &str) -> Result<(), anyhow::Error> {
         .map_err(|e| anyhow::anyhow!("bytecode encode failed: {e}"))?;
 
     // One continuous lowercase hex string (easy to pipe).
-    let hex: String = bytecode.iter().map(|b| format!("{b:02x}")).collect();
+    let hex: String =
+        bytecode
+            .iter()
+            .fold(String::with_capacity(bytecode.len() * 2), |mut acc, b| {
+                use std::fmt::Write;
+                write!(acc, "{b:02x}").unwrap();
+                acc
+            });
     println!("{hex}");
 
     Ok(())
