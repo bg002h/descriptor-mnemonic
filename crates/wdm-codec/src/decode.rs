@@ -66,6 +66,14 @@ use crate::{
 /// - `Confirmed` — zero BCH corrections, all verifications `true`.
 /// - `High` — some BCH auto-corrections applied, all verifications still `true`.
 /// - `Probabilistic` and `Failed` are **never produced** in v0.1.
+///
+/// # Note on `char_position` in corrections
+///
+/// Note on [`Correction.char_position`][crate::Correction::char_position]:
+/// when this function reports BCH corrections in the [`DecodeReport`], each
+/// `Correction.char_position` is a 0-indexed offset into the chunk's
+/// data part (the chars after the `wdm1` HRP+separator). This matches the
+/// coordinate system used by the encoding layer's `decode_string`.
 pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult, Error> {
     // Stage 1 + 2: per-string parse and BCH validate/correct.
     // `decode_string` handles HRP check, case check, length check, and BCH correction.
@@ -142,10 +150,13 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
     let mut chunks: Vec<Chunk> = Vec::with_capacity(decoded_strings.len());
 
     for (data_5bit, _code) in decoded_strings {
-        let bytes = five_bit_to_bytes(&data_5bit).ok_or(Error::InvalidBytecode {
-            offset: 0,
-            kind: crate::BytecodeErrorKind::Truncated,
-        })?;
+        // five_bit_to_bytes can only return None when the input length is not a
+        // multiple of 8 five-bit groups (i.e. the byte count cannot be represented
+        // exactly). After a successful BCH decode + checksum strip the BCH layer
+        // always emits length-aligned 5-bit data, so None is structurally
+        // impossible here. If this ever fires, the BCH layer has a bug.
+        let bytes = five_bit_to_bytes(&data_5bit)
+            .expect("five_bit_to_bytes failed after successful BCH decode — structurally impossible (BCH layer emits length-aligned 5-bit data)");
         let (header, header_len) = ChunkHeader::from_bytes(&bytes)?;
         let fragment = bytes[header_len..].to_vec();
         chunks.push(Chunk { header, fragment });
@@ -216,6 +227,10 @@ mod tests {
         EncodeOptions::default()
     }
 
+    fn force_chunking_opts() -> EncodeOptions {
+        EncodeOptions::default().with_force_chunking(true)
+    }
+
     // -----------------------------------------------------------------------
     // 1. decode_round_trip_single_string_regular
     // -----------------------------------------------------------------------
@@ -262,20 +277,19 @@ mod tests {
 
     #[test]
     fn decode_round_trip_chunked_two_chunks() {
-        // Use a large-ish policy that produces ≥2 chunks.
-        let p = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
-        let bytecode = p.to_bytecode().expect("bytecode");
+        // Use force_chunking to guarantee the Chunked encoding path is exercised
+        // (Chunked header + cross-chunk hash) regardless of encoder details.
+        // The sha256 terminal embeds a 32-byte hash, driving the bytecode well
+        // above the Regular single-chunk fragment capacity (45 bytes), so ≥2
+        // physical chunks are produced deterministically.
+        let p = policy(
+            "wsh(and_v(v:pk(@0/**),sha256(1111111111111111111111111111111111111111111111111111111111111111)))",
+        );
 
-        // Only run this test if the bytecode actually forces chunking (>56 bytes).
-        if bytecode.len() <= 56 {
-            // Policy fits single-string; skip chunked round-trip for this policy.
-            return;
-        }
-
-        let backup = encode(&p, &encode_opts()).expect("encode");
+        let backup = encode(&p, &force_chunking_opts()).expect("encode");
         assert!(
             backup.chunks.len() >= 2,
-            "expected ≥2 chunks, got {}",
+            "expected ≥2 chunks for sha256 policy under force_chunking, got {}",
             backup.chunks.len()
         );
 
@@ -417,28 +431,7 @@ mod tests {
     #[test]
     fn decode_rejects_chunks_with_duplicate_indices() {
         let p = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
-        let backup = encode(&p, &encode_opts()).expect("encode");
-
-        if backup.chunks.len() < 2 {
-            // Policy fits in a single chunk; use force_chunking to ensure multi-chunk.
-            let opts = EncodeOptions {
-                force_chunking: true,
-                ..Default::default()
-            };
-            // Use a policy that definitely produces multiple chunks.
-            let p2 = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
-            let backup2 = encode(&p2, &opts).expect("encode2");
-            let raw0 = backup2.chunks[0].raw.as_str();
-            // Pass the same chunk twice → duplicate index 0.
-            let err = decode(&[raw0, raw0], &default_opts())
-                .expect_err("should reject duplicate chunk index");
-            assert!(
-                matches!(err, Error::DuplicateChunkIndex(0)),
-                "expected DuplicateChunkIndex(0), got {err:?}"
-            );
-            return;
-        }
-
+        let backup = encode(&p, &force_chunking_opts()).expect("encode");
         let raw0 = backup.chunks[0].raw.as_str();
         // Pass chunk 0 twice → duplicate index 0.
         let err = decode(&[raw0, raw0], &default_opts())
@@ -525,13 +518,9 @@ mod tests {
     #[test]
     fn decode_report_chunked_clean_confirmed() {
         let p = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
-        let bytecode = p.to_bytecode().expect("bytecode");
 
-        if bytecode.len() <= 56 {
-            return; // fits single-string; skip
-        }
-
-        let backup = encode(&p, &encode_opts()).expect("encode");
+        // force_chunking guarantees a multi-chunk backup regardless of encoder details.
+        let backup = encode(&p, &force_chunking_opts()).expect("encode");
         let raws: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
         let result = decode(&raws, &default_opts()).expect("decode");
 

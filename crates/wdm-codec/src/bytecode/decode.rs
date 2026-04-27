@@ -16,10 +16,10 @@ use bitcoin::hashes::Hash;
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
 use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
-use crate::bytecode::cursor::Cursor;
-use crate::bytecode::Tag;
-use crate::error::BytecodeErrorKind;
 use crate::Error;
+use crate::bytecode::Tag;
+use crate::bytecode::cursor::Cursor;
+use crate::error::BytecodeErrorKind;
 
 /// Decode a canonical WDM bytecode stream into a wallet-policy descriptor.
 ///
