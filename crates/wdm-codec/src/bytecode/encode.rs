@@ -232,6 +232,11 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
                 Ok(())
             }
             Terminal::Hash256(h) => {
+                // h is miniscript::hash256::Hash — a forward-display newtype
+                // around sha256d::Hash. as_byte_array() returns the *internal*
+                // byte order (NOT the reversed display order of sha256d).
+                // Decoders MUST round-trip via hash256::Hash::from_byte_array,
+                // not sha256d::Hash::from_hex.
                 out.push(Tag::Hash256.as_byte());
                 out.extend_from_slice(h.as_byte_array());
                 Ok(())
@@ -995,7 +1000,14 @@ mod tests {
         use miniscript::Terminal;
         use miniscript::hash256;
 
-        let bytes: [u8; 32] = [0xAB; 32];
+        // Asymmetric byte pattern (descending then ascending) — exposes any
+        // accidental byte-order reversal that a [0xAA; 32] palindrome would mask.
+        let bytes: [u8; 32] = [
+            0x1f, 0x1e, 0x1d, 0x1c, 0x1b, 0x1a, 0x19, 0x18,
+            0x17, 0x16, 0x15, 0x14, 0x13, 0x12, 0x11, 0x10,
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        ];
         let h = hash256::Hash::from_byte_array(bytes);
         let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Hash256(h);
         let mut out = Vec::new();
