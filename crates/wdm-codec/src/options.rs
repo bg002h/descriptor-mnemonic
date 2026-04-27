@@ -47,6 +47,29 @@ pub struct EncodeOptions {
     pub wallet_id_seed: Option<WalletIdSeed>,
 }
 
+impl EncodeOptions {
+    /// Force chunked encoding even when bytecode fits in a single string.
+    /// See [`EncodeOptions::force_chunking`] for full semantics.
+    pub fn with_force_chunking(mut self, force: bool) -> Self {
+        self.force_chunking = force;
+        self
+    }
+
+    /// Force the long BCH code even when regular fits.
+    /// See [`EncodeOptions::force_long_code`] for full semantics.
+    pub fn with_force_long_code(mut self, force: bool) -> Self {
+        self.force_long_code = force;
+        self
+    }
+
+    /// Override the chunk-header `wallet_id` with this seed.
+    /// See [`EncodeOptions::wallet_id_seed`] for full semantics.
+    pub fn with_seed(mut self, seed: WalletIdSeed) -> Self {
+        self.wallet_id_seed = Some(seed);
+        self
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DecodeOptions
 // ---------------------------------------------------------------------------
@@ -117,6 +140,27 @@ mod tests {
         assert_eq!(opts.wallet_id_seed, Some(seed));
         assert!(!opts.force_chunking);
         assert!(!opts.force_long_code);
+    }
+
+    #[test]
+    fn encode_options_builder_chain() {
+        let seed = WalletIdSeed::from(0xdeadbeefu32);
+        let opts = EncodeOptions::default()
+            .with_force_chunking(true)
+            .with_force_long_code(true)
+            .with_seed(seed);
+        assert!(opts.force_chunking);
+        assert!(opts.force_long_code);
+        assert_eq!(opts.wallet_id_seed, Some(seed));
+    }
+
+    #[test]
+    fn encode_options_builder_default_passthrough() {
+        let opts = EncodeOptions::default();
+        let opts = opts.with_force_chunking(false);
+        assert!(!opts.force_chunking);
+        assert!(!opts.force_long_code);
+        assert_eq!(opts.wallet_id_seed, None);
     }
 
     #[test]
