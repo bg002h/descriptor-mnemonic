@@ -13,4 +13,5 @@ pub mod wallet_id;
 pub use encoding::{
     BchCode, DecodedString, bytes_to_5bit, decode_string, encode_string, five_bit_to_bytes,
 };
-pub use error::{BytecodeErrorKind, ChunkWalletId, Error, Result};
+pub use error::{BytecodeErrorKind, Error, Result};
+pub use wallet_id::{ChunkWalletId, WalletId, WalletIdWords};

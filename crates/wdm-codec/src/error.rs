@@ -2,18 +2,9 @@
 
 use thiserror::Error;
 
-/// Forward declaration; the authoritative implementation lives in
-/// `wallet_id.rs` once Phase 4 of the implementation plan lands.
-///
-/// TODO P4: move `ChunkWalletId` to `crate::wallet_id`, make the inner
-/// `u32` private, and gate construction through `ChunkWalletId::new(bits: u32)`
-/// which enforces `bits <= MAX = (1 << 20) - 1`. Once moved, replace the
-/// definition here with `use crate::wallet_id::ChunkWalletId;` and update
-/// the re-export in `lib.rs`. The `pub(crate) u32` field below is a
-/// temporary convenience for v0.1 scaffolding only — do not let chunking.rs
-/// rely on it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChunkWalletId(pub(crate) u32);
+// `ChunkWalletId` is defined in `wallet_id` and re-exported here so that
+// `Error` variants can reference it without a cross-module path.
+pub use crate::wallet_id::ChunkWalletId;
 
 /// All errors that wdm-codec can return.
 #[non_exhaustive]
