@@ -792,4 +792,35 @@ mod tests {
             .expect("from_bytecode must succeed for 11-key inheritance policy");
         assert_eq!(p2.key_count(), 11, "round-trip must preserve key_count=11");
     }
+
+    /// Verify that a policy containing a `sha256()` hash terminal round-trips.
+    ///
+    /// Prior to the upstream `WalletPolicyTranslator` patch (apoelstra fork
+    /// branch `fix/wallet-policy-hash-terminals`, applied via the workspace
+    /// `[patch]` redirect in `Cargo.toml`), `WalletPolicy::into_descriptor()`
+    /// panicked on any descriptor with a hash terminal — the translator used
+    /// `translate_hash_fail!` in both directions. The fix replaced those macro
+    /// invocations with manual hex-String ↔ binary-Hash conversion methods.
+    ///
+    /// This test pins the round-trip for an HTLC-style template
+    /// `wsh(and_v(v:pk(@0/**),sha256(<32-byte hash>)))` — the v0.1 corpus
+    /// E13 shape. Includes a hash whose binary form contains `0x32` to also
+    /// guard against the (already-fixed) `count_placeholder_indices`
+    /// over-count bug, in case anyone reintroduces a byte-scan in the future.
+    #[test]
+    fn to_bytecode_round_trip_with_sha256_terminal() {
+        // SHA-256("hello world"). Bytes 1, 4, 7, … contain `0x32`-adjacent
+        // values; the actual binary has at least one `0x32` near offset 27,
+        // guarding the placeholder-count code path against payload-byte
+        // collisions.
+        let policy_str = "wsh(and_v(v:pk(@0/**),sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9)))";
+        let p: WalletPolicy = policy_str.parse().expect("HTLC-shape policy must parse");
+        assert_eq!(p.key_count(), 1, "single placeholder @0");
+        let bytes = p
+            .to_bytecode()
+            .expect("to_bytecode must succeed for a hash-terminal-bearing policy");
+        let p2 = WalletPolicy::from_bytecode(&bytes)
+            .expect("from_bytecode must succeed for a hash-terminal-bearing policy");
+        assert_eq!(p2.key_count(), 1, "round-trip must preserve key_count=1");
+    }
 }
