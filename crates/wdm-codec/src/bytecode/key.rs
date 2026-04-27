@@ -11,8 +11,12 @@
 use miniscript::descriptor::DescriptorPublicKey;
 
 /// A key reference appearing in the canonical bytecode of a WDM wallet policy.
+///
+/// Marked `#[non_exhaustive]` so v1+ variants (e.g. inline-key extensions
+/// or origin/fingerprint metadata) can be added without breaking downstream
+/// `match` consumers. See decision D-2 in `design/PHASE_2_DECISIONS.md`.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WdmKey {
     /// BIP 388 placeholder reference (`@i`) into the wallet policy's key
     /// information vector at index `i`.
