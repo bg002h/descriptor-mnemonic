@@ -47,6 +47,41 @@ pub fn path_to_indicator(path: &DerivationPath) -> Option<u8> {
     DICT.iter().find(|(_, p)| p == path).map(|(ind, _)| *ind)
 }
 
+/// Serialize a derivation path into its wire form for use in a WDM path
+/// declaration.
+///
+/// If the path has a known dictionary indicator (`path_to_indicator` returns
+/// `Some(b)`), the output is exactly `[b]` — one byte.
+///
+/// Otherwise, the output is an explicit encoding:
+/// - `0xFE` marker byte
+/// - LEB128-encoded component count
+/// - For each component, LEB128-encoded child number `2c` (unhardened)
+///   or `2c + 1` (hardened), computed as `u64` to avoid overflow.
+///
+/// This function does **not** prepend `Tag::SharedPath` (0x33); that is the
+/// path-declaration framing layer's responsibility.
+pub fn encode_path(path: &DerivationPath) -> Vec<u8> {
+    use crate::bytecode::varint::encode_u64;
+    use bitcoin::bip32::ChildNumber;
+
+    if let Some(indicator) = path_to_indicator(path) {
+        return vec![indicator];
+    }
+
+    let mut out = Vec::new();
+    out.push(0xFE);
+    encode_u64(path.len() as u64, &mut out);
+    for child in path {
+        let encoded = match child {
+            ChildNumber::Normal { index } => 2u64 * u64::from(*index),
+            ChildNumber::Hardened { index } => 2u64 * u64::from(*index) + 1,
+        };
+        encode_u64(encoded, &mut out);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +160,110 @@ mod tests {
             "both forms must yield the same indicator"
         );
         assert_eq!(path_to_indicator(&h_form), Some(0x01));
+    }
+
+    // ── encode_path tests ────────────────────────────────────────────────────
+
+    /// All 13 dictionary entries encode to exactly one byte (their indicator).
+    #[test]
+    fn encode_dictionary_entry_uses_single_byte() {
+        for &(ind, _) in FIXTURE {
+            let path = indicator_to_path(ind).expect("fixture entry must exist");
+            let encoded = encode_path(path);
+            assert_eq!(
+                encoded,
+                vec![ind],
+                "dictionary entry 0x{ind:02x} should encode to single byte"
+            );
+        }
+    }
+
+    /// A path not in the dictionary encodes with the 0xFE explicit marker.
+    #[test]
+    fn encode_unknown_path_uses_explicit_form() {
+        // m/44'/0'/1' is not in the dictionary (account index 1, not 0).
+        let path = DerivationPath::from_str("m/44'/0'/1'").unwrap();
+        assert!(
+            path_to_indicator(&path).is_none(),
+            "test path must not be in the dictionary"
+        );
+        let encoded = encode_path(&path);
+        assert_eq!(encoded[0], 0xFE, "must start with explicit marker");
+
+        // Decode component count from LEB128 at byte 1.
+        let (count, cnt_len) =
+            crate::bytecode::varint::decode_u64(&encoded[1..]).expect("valid LEB128 count");
+        assert_eq!(count, 3, "m/44'/0'/1' has 3 components");
+
+        // Verify each encoded child number: hardened c → 2c+1.
+        // 44' → 89, 0' → 1, 1' → 3
+        let expected_raw: &[u64] = &[89, 1, 3];
+        let mut pos = 1 + cnt_len;
+        for &expected in expected_raw {
+            let (val, len) =
+                crate::bytecode::varint::decode_u64(&encoded[pos..]).expect("valid LEB128 child");
+            assert_eq!(val, expected, "child number mismatch");
+            pos += len;
+        }
+        assert_eq!(pos, encoded.len(), "no trailing bytes");
+    }
+
+    /// m/0' (single hardened component) → [0xFE, 0x01, 0x01].
+    #[test]
+    fn encode_explicit_hardened_marker() {
+        let path = DerivationPath::from_str("m/0'").unwrap();
+        assert_eq!(encode_path(&path), vec![0xFE, 0x01, 0x01]);
+    }
+
+    /// m/0 (single unhardened component) → [0xFE, 0x01, 0x00].
+    #[test]
+    fn encode_explicit_unhardened() {
+        let path = DerivationPath::from_str("m/0").unwrap();
+        assert_eq!(encode_path(&path), vec![0xFE, 0x01, 0x00]);
+    }
+
+    /// m/44'/0 → [0xFE, 0x02, 0x59, 0x00].
+    ///   count = 2 → 0x02
+    ///   44 hardened → 2*44+1 = 89 = 0x59
+    ///   0  unhardened → 0x00
+    #[test]
+    fn encode_explicit_mixed() {
+        let path = DerivationPath::from_str("m/44'/0").unwrap();
+        assert_eq!(encode_path(&path), vec![0xFE, 0x02, 0x59, 0x00]);
+    }
+
+    /// m (empty path) → [0xFE, 0x00]. Empty path is not in the dictionary.
+    #[test]
+    fn encode_explicit_empty_path() {
+        let path = DerivationPath::from_str("m").unwrap();
+        assert!(
+            path_to_indicator(&path).is_none(),
+            "empty path must not be in the dictionary"
+        );
+        assert_eq!(encode_path(&path), vec![0xFE, 0x00]);
+    }
+
+    /// m/100 exercises multi-byte LEB128: 2*100 = 200 = 0xC8 > 127.
+    /// LEB128(200) = [0xC8, 0x01] → output [0xFE, 0x01, 0xC8, 0x01].
+    #[test]
+    fn encode_explicit_large_child_number() {
+        let path = DerivationPath::from_str("m/100").unwrap();
+        assert_eq!(encode_path(&path), vec![0xFE, 0x01, 0xC8, 0x01]);
+    }
+
+    /// m/2147483647' (max BIP32 hardened index).
+    /// encoded = 2*(2^31-1)+1 = 2^32-1 = 0xFFFFFFFF.
+    /// LEB128(0xFFFF_FFFF) = [0xFF, 0xFF, 0xFF, 0xFF, 0x0F].
+    /// Output: [0xFE, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F].
+    #[test]
+    fn encode_explicit_max_child() {
+        let path = DerivationPath::from_str("m/2147483647'").unwrap();
+        let mut expected_leb = Vec::new();
+        crate::bytecode::varint::encode_u64(0xFFFF_FFFF_u64, &mut expected_leb);
+        let mut expected = vec![0xFE, 0x01];
+        expected.extend_from_slice(&expected_leb);
+        assert_eq!(encode_path(&path), expected);
+        // Also verify the LEB128 bytes themselves for documentation.
+        assert_eq!(expected_leb, vec![0xFF, 0xFF, 0xFF, 0xFF, 0x0F]);
     }
 }
