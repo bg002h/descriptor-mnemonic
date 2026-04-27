@@ -247,7 +247,7 @@ pub const LONG_MASK: u128 = 0x3fffffffffffffffff;
 /// loop. See <https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki> .
 fn polymod_step(residue: u128, value: u128, r#gen: &[u128; 5], shift: u32, mask: u128) -> u128 {
     let b = residue >> shift;
-    let mut new_residue = (residue & mask) << 5 ^ value;
+    let mut new_residue = ((residue & mask) << 5) ^ value;
     for (i, &g) in r#gen.iter().enumerate() {
         if (b >> i) & 1 != 0 {
             new_residue ^= g;
