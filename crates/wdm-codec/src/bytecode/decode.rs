@@ -18,6 +18,7 @@ use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
 use crate::Error;
 use crate::bytecode::Tag;
+use crate::bytecode::cursor::Cursor;
 use crate::error::BytecodeErrorKind;
 
 /// Decode a canonical WDM bytecode stream into a wallet-policy descriptor.
@@ -39,94 +40,6 @@ pub fn decode_template(
     let descriptor = decode_descriptor(&mut cur, keys)?;
     cur.require_empty()?;
     Ok(descriptor)
-}
-
-/// Cursor-style byte stream reader. Tracks current offset for error reporting.
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
-
-    /// Read a single byte. Returns `Err(InvalidBytecode { kind: UnexpectedEnd })` if at EOF.
-    fn read_byte(&mut self) -> Result<u8, Error> {
-        if self.offset >= self.bytes.len() {
-            return Err(Error::InvalidBytecode {
-                offset: self.offset,
-                kind: BytecodeErrorKind::UnexpectedEnd,
-            });
-        }
-        let b = self.bytes[self.offset];
-        self.offset += 1;
-        Ok(b)
-    }
-
-    /// Read an LEB128 unsigned u64. Returns `Err` for truncation or overflow.
-    fn read_varint_u64(&mut self) -> Result<u64, Error> {
-        let start = self.offset;
-        let remaining = &self.bytes[self.offset..];
-        match crate::bytecode::varint::decode_u64(remaining) {
-            Some((v, consumed)) => {
-                self.offset += consumed;
-                Ok(v)
-            }
-            None => {
-                // varint::decode_u64 returns None for either truncation or
-                // overflow. A u64 LEB128 fits in at most 10 bytes; if the
-                // buffer holds 10+ continuation bytes (no terminator within
-                // the legal width), the failure is overflow, not truncation.
-                // Otherwise the most plausible cause is truncation (stream
-                // ended before a terminator).
-                let kind = if remaining.is_empty() {
-                    BytecodeErrorKind::UnexpectedEnd
-                } else if remaining.len() >= 10 && remaining.iter().take(10).all(|b| b & 0x80 != 0)
-                {
-                    BytecodeErrorKind::VarintOverflow
-                } else {
-                    BytecodeErrorKind::Truncated
-                };
-                Err(Error::InvalidBytecode {
-                    offset: start,
-                    kind,
-                })
-            }
-        }
-    }
-
-    /// Read exactly `N` bytes as an array. Returns `Err` if fewer remain.
-    fn read_array<const N: usize>(&mut self) -> Result<[u8; N], Error> {
-        if self.offset + N > self.bytes.len() {
-            return Err(Error::InvalidBytecode {
-                offset: self.offset,
-                kind: BytecodeErrorKind::Truncated,
-            });
-        }
-        let mut buf = [0u8; N];
-        buf.copy_from_slice(&self.bytes[self.offset..self.offset + N]);
-        self.offset += N;
-        Ok(buf)
-    }
-
-    /// Require the cursor is at end-of-stream. Returns `Err(TrailingBytes)` if not.
-    fn require_empty(&self) -> Result<(), Error> {
-        if self.offset < self.bytes.len() {
-            Err(Error::InvalidBytecode {
-                offset: self.offset,
-                kind: BytecodeErrorKind::TrailingBytes,
-            })
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Current offset in the byte stream (for error messages on caller side).
-    fn offset(&self) -> usize {
-        self.offset
-    }
 }
 
 /// Decode the top-level `Descriptor`. v0.1 only accepts `Tag::Wsh`.

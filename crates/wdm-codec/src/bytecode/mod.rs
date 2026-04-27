@@ -1,5 +1,6 @@
 //! Bytecode encoding and decoding for canonical WDM bytecode.
 
+pub mod cursor;
 pub mod decode;
 pub mod encode;
 pub mod header;
