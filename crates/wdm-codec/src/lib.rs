@@ -5,6 +5,7 @@
 pub mod bytecode;
 pub mod chunking;
 pub mod decode_report;
+pub mod encode;
 pub mod encoding;
 pub mod error;
 pub mod options;
@@ -17,6 +18,7 @@ pub use chunking::{
     MAX_CHUNK_COUNT, chunk_bytes, chunking_decision, reassemble_chunks,
 };
 pub use decode_report::{Confidence, DecodeOutcome, DecodeReport, DecodeResult, Verifications};
+pub use encode::encode;
 pub use encoding::{
     BchCode, DecodedString, bytes_to_5bit, decode_string, encode_string, five_bit_to_bytes,
 };
