@@ -46,3 +46,5 @@ rand = "0.8"
 # strum::EnumIter for tests/error_coverage.rs exhaustiveness CI gate
 strum = { version = "0.26", features = ["derive"] }
 hex = "0.4"
+assert_cmd = "2"
+predicates = "3"

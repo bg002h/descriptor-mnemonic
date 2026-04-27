@@ -16,10 +16,10 @@ use bitcoin::hashes::Hash;
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
 use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
-use crate::Error;
-use crate::bytecode::Tag;
 use crate::bytecode::cursor::Cursor;
+use crate::bytecode::Tag;
 use crate::error::BytecodeErrorKind;
+use crate::Error;
 
 /// Decode a canonical WDM bytecode stream into a wallet-policy descriptor.
 ///
@@ -103,8 +103,23 @@ fn decode_wsh_inner(
             let k = cur.read_byte()? as usize;
             let n = cur.read_byte()? as usize;
             let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
-            for _ in 0..n {
-                pks.push(decode_placeholder(cur, keys)?);
+            for i in 0..n {
+                match decode_placeholder(cur, keys) {
+                    Ok(pk) => pks.push(pk),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
             }
             // miniscript v13: Wsh::new_sortedmulti takes a Threshold<Pk, MAX>.
             // Construct the threshold first, then wrap in Wsh.
@@ -179,8 +194,23 @@ fn decode_terminal(
             let k = cur.read_byte()? as usize;
             let n = cur.read_byte()? as usize;
             let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
-            for _ in 0..n {
-                pks.push(decode_placeholder(cur, keys)?);
+            for i in 0..n {
+                match decode_placeholder(cur, keys) {
+                    Ok(pk) => pks.push(pk),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
             }
             let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
                 offset: tag_offset,
@@ -201,8 +231,23 @@ fn decode_terminal(
             let k = cur.read_byte()? as usize;
             let n = cur.read_byte()? as usize;
             let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
-            for _ in 0..n {
-                pks.push(decode_placeholder(cur, keys)?);
+            for i in 0..n {
+                match decode_placeholder(cur, keys) {
+                    Ok(pk) => pks.push(pk),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
             }
             let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
                 offset: tag_offset,
@@ -217,9 +262,23 @@ fn decode_terminal(
             let n = cur.read_byte()? as usize;
             let mut children: Vec<std::sync::Arc<Miniscript<DescriptorPublicKey, Segwitv0>>> =
                 Vec::with_capacity(n);
-            for _ in 0..n {
-                let child = decode_miniscript(cur, keys)?;
-                children.push(std::sync::Arc::new(child));
+            for i in 0..n {
+                match decode_miniscript(cur, keys) {
+                    Ok(child) => children.push(std::sync::Arc::new(child)),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
             }
             let thresh = Threshold::new(k, children).map_err(|e| Error::InvalidBytecode {
                 offset: tag_offset,
@@ -750,8 +809,8 @@ mod tests {
     fn decode_multi_rejects_truncated_mid_keys() {
         // [Wsh, Multi, k=2, n=3, Placeholder, 0, Placeholder, 1] — only 2 of
         // the 3 promised keys are present. The first two placeholder lookups
-        // succeed; the third loop iteration runs out of bytes when reading
-        // the next placeholder tag.
+        // succeed; the third loop iteration runs out of bytes. The explicit
+        // arity check converts this into MissingChildren { expected: 3, got: 2 }.
         use std::str::FromStr;
         let k0 = DescriptorPublicKey::from_str(
             "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
@@ -768,11 +827,14 @@ mod tests {
             matches!(
                 err,
                 Error::InvalidBytecode {
-                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    kind: BytecodeErrorKind::MissingChildren {
+                        expected: 3,
+                        got: 2
+                    },
                     ..
                 }
             ),
-            "expected UnexpectedEnd mid-multisig, got {err:?}"
+            "expected MissingChildren {{ expected: 3, got: 2 }} mid-multisig, got {err:?}"
         );
     }
 

@@ -548,26 +548,17 @@ fn rejects_invalid_bytecode_varint_overflow() {
     );
 }
 
-/// 24. `BytecodeErrorKind::MissingChildren` — variant defined but not yet emitted.
+/// 24. `BytecodeErrorKind::MissingChildren` — emitted by the explicit arity check.
 ///
-/// The `MissingChildren` variant is declared in `BytecodeErrorKind` but no
-/// current code path in v0.1 emits it. Multi/Thresh truncation surfaces as
-/// `UnexpectedEnd` (the cursor runs off the end of the buffer) rather than a
-/// counted-children check. Marked `#[ignore]` until a future release adds an
-/// explicit arity check that produces `MissingChildren`.
-///
-/// FOLLOW-UP: wire `MissingChildren` in `decode_terminal` for `Multi`/`Thresh`
-/// when the buffer is exhausted mid-children loop (emitting "expected N, got M"
-/// rather than `UnexpectedEnd`).
+/// `multi(k=2, n=2)` with only 1 placeholder provided: the decoder reads
+/// the first placeholder successfully, then on the second iteration hits end
+/// of buffer. The arity check intercepts the `UnexpectedEnd` from the cursor
+/// and converts it into `MissingChildren { expected: 2, got: 1 }`.
 #[test]
-#[ignore = "BytecodeErrorKind::MissingChildren is defined but not yet emitted by any v0.1 code path; \
-            truncation in multi/thresh currently surfaces as UnexpectedEnd instead. \
-            Follow-up: add explicit arity check to decode_terminal."]
 fn rejects_invalid_bytecode_missing_children() {
     use wdm_codec::bytecode::Tag;
 
-    // multi(2, @0) — k=2, n=2, only 1 key provided.
-    // Current behaviour: UnexpectedEnd (cursor overrun), not MissingChildren.
+    // multi(2, @0) — k=2, n=2, only 1 key provided (second is absent).
     let bytes: Vec<u8> = vec![
         0x00,
         Tag::SharedPath.as_byte(),
@@ -585,11 +576,14 @@ fn rejects_invalid_bytecode_missing_children() {
         matches!(
             err,
             Error::InvalidBytecode {
-                kind: BytecodeErrorKind::MissingChildren { .. },
+                kind: BytecodeErrorKind::MissingChildren {
+                    expected: 2,
+                    got: 1
+                },
                 ..
             }
         ),
-        "expected MissingChildren, got {:?}",
+        "expected MissingChildren {{ expected: 2, got: 1 }}, got {:?}",
         err
     );
 }
