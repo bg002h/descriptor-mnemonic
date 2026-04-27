@@ -43,24 +43,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
-### `5d-from-impl` — add `From<ChunkCode> for BchCode` impl
-
-- **Surfaced:** Phase 5-D code review of `308b2e1`
-- **Where:** `crates/wdm-codec/src/encode.rs` (currently has a private `chunk_code_to_bch_code` helper); the `From` impl should live in `crates/wdm-codec/src/chunking.rs` (next to `ChunkCode`'s definition).
-- **What:** `ChunkCode` (in `chunking.rs`) and `BchCode` (in `encoding.rs`) are parallel two-variant enums (`Regular`/`Long`). Code currently does the bridge via a private function in `encode.rs`. A `From<ChunkCode> for BchCode` impl on `ChunkCode`'s home module would be more idiomatic and consumable from any future call site (e.g., `decode.rs`'s eventual structural use).
-- **Why deferred:** the parallel 5-E task was running on `decode.rs`; we kept buckets file-disjoint to avoid edit conflicts, so chunking.rs was untouchable during the 5-D nit-fix pass.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
-### `5d-decision-cross-reference` — note force_long_code post-processor in chunking_decision rustdoc
-
-- **Surfaced:** Phase 5-D code review of `308b2e1`
-- **Where:** `crates/wdm-codec/src/chunking.rs` `chunking_decision` rustdoc
-- **What:** `force_long_code` selection logic now lives in two places: `chunking_decision` (which prefers Regular) and `encode.rs::encode` (which post-processes the plan to Long when `options.force_long_code` is set). Add a one-line comment in `chunking_decision`'s rustdoc directing readers to the post-processor.
-- **Why deferred:** parallel 5-E task held `chunking.rs`; same reason as `5d-from-impl`.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
 ### `5e-checksum-correction-fallback` — `Correction.corrected = 'q'` for checksum-region corrections
 
 - **Surfaced:** Phase 5-E code review of `7b7400b`; `// TODO(post-v0.1)` added inline at `decode.rs:119` in `111f176`
@@ -133,15 +115,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `p10-miniscript-dep-audit` — release-readiness audit of the miniscript git pin
-
-- **Surfaced:** Phase 5 D-1 (`design/PHASE_5_DECISIONS.md`); Phase 7 carry-forward CF-1 documents adjacent context
-- **Where:** `crates/wdm-codec/Cargo.toml` (current `miniscript = { git = "...", rev = "..." }` pin to apoelstra fork) and root `Cargo.toml` (the workspace `[patch]` redirect)
-- **What:** Before tagging `wdm-codec-v0.1.0` we MUST either (a) have the dependency pointed at a published miniscript release that includes `WalletPolicy`, or (b) explicitly document the git-dep status in `Cargo.toml`, the BIP draft, and the README. The hash-terminal patch (PR #1 to apoelstra) needs to either land upstream or be embedded in the released crate's history with a clear pin and rationale.
-- **Why deferred:** explicitly a Phase 10 task.
-- **Status:** open
-- **Tier:** v0.1-blocker
-
 ### `external-pr-1-hash-terminals` — apoelstra/rust-miniscript PR #1
 
 - **Surfaced:** Phase 5-B; submitted 2026-04-27
@@ -169,30 +142,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.1-nice-to-have
 
-### `6c-encode-options-builder` — `EncodeOptions` `#[non_exhaustive]` blocks struct-update syntax from external tests
-
-- **Surfaced:** Phase 6 bucket C; Task 6.18 (`natural_long_code_boundary`)
-- **Where:** `crates/wdm-codec/src/options.rs::EncodeOptions`
-- **What:** `EncodeOptions` is `#[non_exhaustive]` (correctly, for forward compat) but this means external integration tests cannot write `EncodeOptions { force_long_code: true, ..Default::default() }` — that syntax requires the type to be exhaustive at the call site. The bucket-C tests had to use conditional shape-detection (`if bytecode.len() > 48 && bytecode.len() <= 56`) instead of explicit force-long-code testing. Add a fluent builder: `EncodeOptions::default().with_force_chunking(true).with_force_long_code(true).with_seed(seed)` so external tests can exercise the option matrix directly.
-- **Why deferred:** caught at integration-test time; non-blocking for v0.1 since internal unit tests can use struct-update via the same-crate exception.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
 ### `6d-rand-gen-keyword` — `rng.r#gen()` raw-identifier workaround for Rust 2024 reserved keyword
 
 - **Surfaced:** Phase 6 bucket D; Task 6.20 (`many_substitutions_always_rejected`)
 - **Where:** `crates/wdm-codec/tests/ecc.rs`
 - **What:** Rust 2024 edition (which we're on, per `Cargo.toml`) reserved `gen` as a keyword for generators. `rand 0.8`'s `Rng::gen` method now requires `r#gen()` raw-identifier syntax to call. When `rand` migrates to a newer API (e.g., `rng.random::<u64>()` in `rand` 0.9+), this workaround can be removed.
 - **Why deferred:** rand 0.9 migration is a separate concern; `r#gen()` works correctly today.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
-### `6e-missing-children-unreachable` — `BytecodeErrorKind::MissingChildren` defined but never emitted
-
-- **Surfaced:** Phase 6 bucket E; Task 6.21 — `rejects_invalid_bytecode_missing_children` is `#[ignore]`d
-- **Where:** `crates/wdm-codec/src/error.rs` (the variant) and `crates/wdm-codec/src/bytecode/decode.rs` (where it should fire but currently UnexpectedEnd does instead)
-- **What:** `BytecodeErrorKind::MissingChildren { expected, got }` exists in the enum (Phase 0.5 scaffolding) but no v0.1 code path produces it. When a `Multi`/`Thresh` operator's children loop exhausts the input mid-child, `Cursor::read_byte` surfaces `UnexpectedEnd` first, before any explicit arity check could fire. To make the variant reachable: add an explicit `count - emitted_children == got` check at the end of each variable-arity decoder branch, emitting `MissingChildren` if non-zero. The `rejects_invalid_bytecode_missing_children` conformance test is `#[ignore]`d until that arity check lands.
-- **Why deferred:** the diagnostic gain (more specific error message for "stream truncated mid-children") is small; `UnexpectedEnd` correctly identifies the failure today.
 - **Status:** open
 - **Tier:** v0.1-nice-to-have
 
@@ -205,57 +160,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `5e-skip-silent` — tests with size-conditional assertions skip silently
-
-- **Surfaced:** Phase 5-E code review of `7b7400b`
-- **Where:** `crates/wdm-codec/src/decode.rs:270` (`if bytecode.len() <= 56 { return; }`) and `decode.rs:530` (same pattern)
-- **What:** Two tests gate their main assertion behind a size check; if the encoder ever shifts capacity (e.g., from a tag-table renumbering or LEB128 width change) the tests would silently pass without exercising the chunked path. Better: pass `EncodeOptions { force_chunking: true, ..Default() }` so the chunked path is exercised deterministically regardless of bytecode length.
-- **Why deferred:** caught at review; non-blocking since the tests still pass on actual v0.1 byte counts.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
-### `5e-dead-branch` — `decode_rejects_chunks_with_duplicate_indices` has unreachable fallback
-
-- **Surfaced:** Phase 5-E code review of `7b7400b`
-- **Where:** `crates/wdm-codec/src/decode.rs:418-450`
-- **What:** The early `if backup.chunks.len() < 2` branch re-encodes the SAME 9-key multisig policy with `force_chunking: true` and asserts the same outcome as the fallthrough. Since the 9-key multisig already chunks under the default plan, the early branch is unreachable. Either remove the branch (simplify to the always-multi-chunk path) or restructure to test a smaller policy with `force_chunking` deliberately.
-- **Why deferred:** caught at review; test still passes correctly.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
-### `5e-correction-position-doc` — rustdoc cross-reference for `Correction.char_position` coordinate system
-
-- **Surfaced:** Phase 5-E code review of `7b7400b`
-- **Where:** `crates/wdm-codec/src/decode.rs` (the `decode` rustdoc); `crates/wdm-codec/src/chunking.rs:447` already documents `Correction.char_position` semantics
-- **What:** `Correction.char_position` is a 0-indexed offset within the chunk's data part (after `wdm1` HRP+separator). The decode path consumes `corrected_positions` from `DecodedString`, which uses the same coordinate system. A one-line cross-reference in `decode`'s rustdoc reaffirming this would prevent confusion for callers building diagnostic UIs.
-- **Why deferred:** documentation polish, not algorithmic.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
 ### `4a-from-bytes-shape` — reconsider `Chunk::from_bytes` shape (slice+usize vs `&mut Cursor`)
 
 - **Surfaced:** Phase 4-A code review of `aefdf3f` (deferred to "after 4-E"); 4-E used the slice+usize shape unchanged
 - **Where:** `crates/wdm-codec/src/chunking.rs::Chunk::from_bytes` (returns `Result<(Self, usize), Error>`)
 - **What:** Phase 2/3's bytecode parsers use `&mut Cursor<'_>` for stream consumption; `Chunk::from_bytes` returns a slice + consumed-byte-count tuple. The two shapes do equivalent work but diverge stylistically. Consolidating on Cursor would let callers chain chunk parses inside a longer buffer; consolidating on slice+usize would let bytecode parsers expose simpler APIs. v0.1 has no caller that needs to switch shapes. Defer until either Phase 7 (CLI parsing of multi-chunk inputs) or any non-test consumer surfaces a need.
 - **Why deferred:** premature; no consumer needs the conversion.
-- **Status:** open
-- **Tier:** v0.2
-
-### `5e-five-bit-truncated-mapping` — `five_bit_to_bytes` failure error-variant choice
-
-- **Surfaced:** Phase 5-E code review of `7b7400b`
-- **Where:** `crates/wdm-codec/src/decode.rs:144-147`
-- **What:** When `five_bit_to_bytes` returns `None` (data part isn't a multiple of 8 bits), the decode maps to `Error::InvalidBytecode { offset: 0, kind: Truncated }`. After a successful BCH-validated decode, this branch should be unreachable in practice — `unreachable!()` with a justification comment, or a dedicated error variant like `Error::FiveBitConversionFailed`, would be more honest than reusing `Truncated`. The current mapping is plausible (it IS a sense of "truncated") but the offset:0 is meaningless for this particular failure mode.
-- **Why deferred:** caught at review; non-load-bearing diagnostic concern.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
-### `7-cli-integration-tests` — CLI integration tests via `assert_cmd`
-
-- **Surfaced:** Phase 7 implementation (Task 7 prompt, §Tests)
-- **Where:** `crates/wdm-codec/tests/cli.rs` (does not yet exist)
-- **What:** Happy-path and error-path integration tests for all five CLI subcommands (`encode`, `decode`, `verify`, `inspect`, `bytecode`) using `assert_cmd`. The v0.1 ship target prioritizes CLI shipping over CLI test coverage; the binary was smoke-tested manually for correctness.
-- **Why deferred:** `assert_cmd` is not a dev-dependency; adding it was de-prioritized per the v0.1 decision in the Phase 7 spec (pick option b: skip CLI tests, backfill in v0.2).
 - **Status:** open
 - **Tier:** v0.2
 
@@ -393,6 +303,66 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 5-A code review of `56124c3`
 - **Status:** resolved `2ec1d41` (Phase 5-A followup); rustdoc explicitly notes BIP 388 template form (`@N`-only) and that origin xpubs appear only in full-descriptor display.
 - **Tier:** v0.1-nice-to-have (closed)
+
+### `5d-from-impl` — add `From<ChunkCode> for BchCode` impl
+
+- **Surfaced:** Phase 5-D code review of `308b2e1`
+- **Status:** resolved `430dbfc` (post-v0.1 followup batch 1, bucket A); `From<ChunkCode> for BchCode` impl added in `chunking.rs`; private `chunk_code_to_bch_code` helper in `encode.rs` removed and call sites switched to `BchCode::from(plan.code)`.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5d-decision-cross-reference` — note force_long_code post-processor in chunking_decision rustdoc
+
+- **Surfaced:** Phase 5-D code review of `308b2e1`
+- **Status:** resolved `430dbfc` (post-v0.1 followup batch 1, bucket A); `chunking_decision` rustdoc now cross-references `EncodeOptions.force_long_code` and the `encode.rs` post-processor.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `6c-encode-options-builder` — `EncodeOptions` `#[non_exhaustive]` blocks struct-update syntax from external tests
+
+- **Surfaced:** Phase 6 bucket C; Task 6.18 (`natural_long_code_boundary`)
+- **Status:** resolved `a74e21b` (post-v0.1 followup batch 1, bucket B); fluent builder added — `EncodeOptions::default().with_force_chunking(true).with_force_long_code(true).with_seed(seed)` now works from external integration tests despite `#[non_exhaustive]`.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5e-skip-silent` — tests with size-conditional assertions skip silently
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Status:** resolved `fa83737` (post-v0.1 followup batch 1, bucket C); tests at `decode.rs:270` and `decode.rs:530` now use `with_force_chunking(true)` so the chunked path is exercised deterministically regardless of bytecode length.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5e-dead-branch` — `decode_rejects_chunks_with_duplicate_indices` has unreachable fallback
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Status:** resolved `fa83737` (post-v0.1 followup batch 1, bucket C); the unreachable `if backup.chunks.len() < 2` branch removed; test now goes straight to the multi-chunk assertion path on the 9-key multisig.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5e-correction-position-doc` — rustdoc cross-reference for `Correction.char_position` coordinate system
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Status:** resolved `fa83737` (post-v0.1 followup batch 1, bucket C); `decode` rustdoc now cross-references the `Correction.char_position` coordinate system documented at `chunking.rs::Correction`.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5e-five-bit-truncated-mapping` — `five_bit_to_bytes` failure error-variant choice
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Status:** resolved `fa83737` (post-v0.1 followup batch 1, bucket C); branch now `unreachable!()` with a justification comment that successful BCH validation guarantees a multiple-of-8 data part.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `6e-missing-children-unreachable` — `BytecodeErrorKind::MissingChildren` defined but never emitted
+
+- **Surfaced:** Phase 6 bucket E; Task 6.21 — `rejects_invalid_bytecode_missing_children` was `#[ignore]`d
+- **Status:** resolved `1ccc1d4` (post-v0.1 followup batch 1, bucket D); explicit arity check added in variable-arity decoder branches now emits `MissingChildren { expected, got }`; conformance test un-`#[ignore]`d (test count: 1 ignored → 0 ignored).
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `7-cli-integration-tests` — CLI integration tests via `assert_cmd`
+
+- **Surfaced:** Phase 7 implementation (Task 7 prompt, §Tests)
+- **Status:** resolved `1ccc1d4` (post-v0.1 followup batch 1, bucket E); `tests/cli.rs` added with 12 `assert_cmd` tests (8 happy-path + 4 error-path) covering `encode`, `decode`, `verify`, `inspect`, `bytecode`; `assert_cmd = "2"` and `predicates = "3"` added as dev-deps. Closed early (was tier'd v0.2; accelerated to post-v0.1 nice-to-have).
+- **Tier:** v0.2 (closed; accelerated)
+
+### `p10-miniscript-dep-audit` — release-readiness audit of the miniscript git pin
+
+- **Surfaced:** Phase 5 D-1 (`design/PHASE_5_DECISIONS.md`); Phase 7 carry-forward CF-1 documents adjacent context
+- **Status:** resolved at tag `wdm-codec-v0.1.0` (`fef8dcb`) via option (b): git-dep pin documented in `crates/wdm-codec/Cargo.toml`, the workspace `[patch]` rationale captured in the root `Cargo.toml`, the BIP draft's reference-implementation section names the apoelstra fork dep, and the root README status notes the dep. Tag annotation message also contains the dep rationale. Forward work (flipping the `[patch]` block off when upstream PR merges) is tracked separately as `external-pr-1-hash-terminals`.
+- **Tier:** v0.1-blocker (closed)
 
 ---
 
