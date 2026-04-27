@@ -1,7 +1,7 @@
 # Phase 9 — Documentation (Tasks 9.1-9.5)
 
 **Status:** DONE
-**Commit:** <pending — to be filled in after commit>
+**Commit:** 6a08a22
 **File(s):**
 README.md
 bip/README.md
