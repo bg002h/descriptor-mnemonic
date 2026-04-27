@@ -13,6 +13,7 @@
 //! `design/PHASE_2_DECISIONS.md` D-4 for rationale.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, SortedMultiVec, Wsh, WshInner};
 use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
@@ -55,6 +56,25 @@ trait EncodeTemplate {
         out: &mut Vec<u8>,
         placeholder_map: &HashMap<DescriptorPublicKey, u8>,
     ) -> Result<(), Error>;
+}
+
+/// Forward `EncodeTemplate` through `Arc<T>`.
+///
+/// Miniscript's `Terminal` AST stores child fragments as
+/// `Arc<Miniscript<...>>`, so logical operators (and_v / and_b / and_or /
+/// or_*) recurse through `Arc` references. Without this impl, calling
+/// `child.encode_template(...)` on an `&Arc<Miniscript<...>>` would not
+/// resolve to the trait method directly. This blanket impl makes any
+/// `Arc<T>` where `T: EncodeTemplate` itself implement `EncodeTemplate`
+/// by dereferencing once.
+impl<T: EncodeTemplate> EncodeTemplate for Arc<T> {
+    fn encode_template(
+        &self,
+        out: &mut Vec<u8>,
+        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+    ) -> Result<(), Error> {
+        (**self).encode_template(out, placeholder_map)
+    }
 }
 
 impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
@@ -154,6 +174,42 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
                 // rejected at the top level, so this is effectively dead code today.
                 out.push(Tag::MultiA.as_byte());
                 thresh.encode_template(out, placeholder_map)
+            }
+            Terminal::AndV(left, right) => {
+                out.push(Tag::AndV.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::AndB(left, right) => {
+                out.push(Tag::AndB.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::AndOr(a, b, c) => {
+                out.push(Tag::AndOr.as_byte());
+                a.encode_template(out, placeholder_map)?;
+                b.encode_template(out, placeholder_map)?;
+                c.encode_template(out, placeholder_map)
+            }
+            Terminal::OrB(left, right) => {
+                out.push(Tag::OrB.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::OrC(left, right) => {
+                out.push(Tag::OrC.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::OrD(left, right) => {
+                out.push(Tag::OrD.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::OrI(left, right) => {
+                out.push(Tag::OrI.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
             }
             other => Err(Error::PolicyScopeViolation(format!(
                 "unsupported Terminal fragment in v0.1 scope: {other:?}"
@@ -529,5 +585,225 @@ mod tests {
         assert_eq!(bytes[6], Tag::Placeholder.as_byte()); // 0x32
         assert_eq!(bytes[7], 0x01); // idx 1
         assert_eq!(bytes.len(), 8);
+    }
+
+    // ---- Logical operators (Task 2.7) -------------------------------------
+    //
+    // Test fixtures for and_v / and_b / and_or / or_b / or_c / or_d / or_i.
+    //
+    // Type-system constraints (miniscript correctness rules) limit which
+    // combinations of `0` (False, B-type, dissatisfiable+unit) and `1`
+    // (True, B-type, non-dissatisfiable+unit) parse cleanly:
+    //
+    //   - and_or(B-du-unit, B, B): `andor(0,1,0)` parses (False is dis+unit)
+    //   - or_d(B-du-unit, B):      `or_d(0,1)`     parses
+    //   - or_i(B,B / V,V / K,K):   `or_i(0,1)`     parses
+    //
+    //   - and_v(V, B/V/K): needs V-type left (v: wrapper, Task 2.10)
+    //   - and_b(B, W):     needs W-type right (a:/s: wrapper, Task 2.10)
+    //   - or_b(E, W):      same — needs W-type
+    //   - or_c(B-du, V):   needs V-type right
+    //
+    // For the four arms not reachable through the parser at this phase,
+    // we drive the encoder directly with hand-built `Terminal::*` nodes
+    // whose children are `Arc<Miniscript<_, _>>` built from `True`/`False`
+    // via `Miniscript::from_ast`. This bypasses miniscript's typing
+    // validator (since we never wrap the outer logical-op `Terminal` in
+    // `Miniscript::from_ast`) and exercises only the encoder, which is
+    // what these tests are about.
+
+    fn make_true_arc() -> Arc<Miniscript<DescriptorPublicKey, Segwitv0>> {
+        // True is B/zudemsx — accepted by `from_ast` unconditionally.
+        Arc::new(Miniscript::from_ast(Terminal::True).unwrap())
+    }
+
+    fn make_false_arc() -> Arc<Miniscript<DescriptorPublicKey, Segwitv0>> {
+        Arc::new(Miniscript::from_ast(Terminal::False).unwrap())
+    }
+
+    #[test]
+    fn encode_wsh_or_d_with_constants() {
+        // or_d(0, 1) parses: False is B-dissat-unit (left requirement),
+        // True is B (right). Emits Wsh, OrD, False, True.
+        let d = parse_descriptor("wsh(or_d(0,1))");
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Wsh.as_byte(),   // 0x05
+                Tag::OrD.as_byte(),   // 0x16
+                Tag::False.as_byte(), // 0x00
+                Tag::True.as_byte(),  // 0x01
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_wsh_or_i_with_constants() {
+        // or_i(0, 1) parses: both children B-type. Emits Wsh, OrI, False, True.
+        let d = parse_descriptor("wsh(or_i(0,1))");
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Wsh.as_byte(),   // 0x05
+                Tag::OrI.as_byte(),   // 0x17
+                Tag::False.as_byte(), // 0x00
+                Tag::True.as_byte(),  // 0x01
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_wsh_andor_with_constants() {
+        // andor(0, 1, 0) parses: False is B-dissat-unit (the `a` branch
+        // requirement), and all three children are B-type. Encoding emits
+        // children in argument order: a, b, c.
+        let d = parse_descriptor("wsh(andor(0,1,0))");
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Wsh.as_byte(),   // 0x05
+                Tag::AndOr.as_byte(), // 0x13
+                Tag::False.as_byte(), // 0x00 (a)
+                Tag::True.as_byte(),  // 0x01 (b)
+                Tag::False.as_byte(), // 0x00 (c)
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_and_v_direct() {
+        // and_v needs a V-type left, which requires a v: wrapper (Task 2.10).
+        // Drive the encoder directly with True/False children — the encoder
+        // is type-blind and just emits tag + children in order.
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::AndV(make_true_arc(), make_false_arc());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Tag::AndV.as_byte(),  // 0x11
+                Tag::True.as_byte(),  // 0x01
+                Tag::False.as_byte(), // 0x00
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_and_b_direct() {
+        // and_b needs B + W children; W requires a:/s: wrappers (Task 2.10).
+        // Encoder is type-blind, so we drive it directly with True/False.
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::AndB(make_true_arc(), make_false_arc());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Tag::AndB.as_byte(),  // 0x12
+                Tag::True.as_byte(),  // 0x01
+                Tag::False.as_byte(), // 0x00
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_or_b_direct() {
+        // or_b needs E + W; W requires wrapping (Task 2.10). Drive directly.
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::OrB(make_false_arc(), make_true_arc());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Tag::OrB.as_byte(),   // 0x14
+                Tag::False.as_byte(), // 0x00
+                Tag::True.as_byte(),  // 0x01
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_or_c_direct() {
+        // or_c needs B-du-unit + V; V needs v: wrapper (Task 2.10). Drive directly.
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::OrC(make_false_arc(), make_true_arc());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Tag::OrC.as_byte(),   // 0x15
+                Tag::False.as_byte(), // 0x00
+                Tag::True.as_byte(),  // 0x01
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_and_or_direct_three_children() {
+        // and_or via direct construction. Confirms three children encode
+        // in argument order (a, b, c) with the AndOr tag in front.
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::AndOr(make_false_arc(), make_true_arc(), make_false_arc());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Tag::AndOr.as_byte(), // 0x13
+                Tag::False.as_byte(), // 0x00 (a)
+                Tag::True.as_byte(),  // 0x01 (b)
+                Tag::False.as_byte(), // 0x00 (c)
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_or_d_recurses_into_pk_k_children() {
+        // Confirms the Arc forwarding impl recurses through PkK children
+        // and that a placeholder lookup works inside a logical-operator
+        // subtree. or_d(pk_k(K0), pk_k(K1)) — neither pk_k branch is
+        // actually B-du-unit on its own (pk_k is K-type), so this would
+        // not parse, but the encoder is type-blind.
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+
+        let left: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
+            Arc::new(Miniscript::from_ast(Terminal::PkK(k0)).unwrap());
+        let right: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
+            Arc::new(Miniscript::from_ast(Terminal::PkK(k1)).unwrap());
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::OrD(left, right);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &map).unwrap();
+
+        // Expected: OrD, then for each PkK child:
+        //   PkK tag, Placeholder tag, varint(idx).
+        assert_eq!(
+            out,
+            vec![
+                Tag::OrD.as_byte(),         // 0x16
+                Tag::PkK.as_byte(),         // 0x1B
+                Tag::Placeholder.as_byte(), // 0x32
+                0x00,                       // idx 0
+                Tag::PkK.as_byte(),         // 0x1B
+                Tag::Placeholder.as_byte(), // 0x32
+                0x01,                       // idx 1
+            ]
+        );
     }
 }
