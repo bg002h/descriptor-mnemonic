@@ -171,7 +171,7 @@ const CORPUS_FIXTURES: &[(&str, &str, &str)] = &[
 ///   the same error path. Implementations that need byte-for-byte negative
 ///   vectors should (a) generate them locally by exercising the actual error
 ///   path, or (b) wait for v0.2 to provide programmatically-generated
-///   negative vectors (tracked as `8-negative-fixture-placeholder-strings`
+///   negative vectors (tracked as `8-negative-fixture-dynamic-generation`
 ///   in `design/FOLLOWUPS.md`).
 /// - The positive vectors (`Vector` array) are fully validated round-trip
 ///   fixtures and ARE byte-for-byte authoritative.
@@ -440,14 +440,14 @@ fn build_positive_vectors() -> Vec<Vector> {
             panic!("vector builder: failed to encode bytecode for {id:?}: {e}")
         });
 
-        let expected_bytecode_hex: String = bytecode.iter().fold(
-            String::with_capacity(bytecode.len() * 2),
-            |mut acc, b| {
-                use std::fmt::Write;
-                write!(acc, "{b:02x}").unwrap();
-                acc
-            },
-        );
+        let expected_bytecode_hex: String =
+            bytecode
+                .iter()
+                .fold(String::with_capacity(bytecode.len() * 2), |mut acc, b| {
+                    use std::fmt::Write;
+                    write!(acc, "{b:02x}").unwrap();
+                    acc
+                });
 
         let opts = EncodeOptions::default();
         let backup = encode(&policy, &opts)
