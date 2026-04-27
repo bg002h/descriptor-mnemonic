@@ -18,12 +18,33 @@ use std::fmt;
 // ---------------------------------------------------------------------------
 
 /// A 16-byte Wallet ID formed by taking the first 16 bytes of the SHA-256
-/// hash of the wallet's canonical WDM bytecode (Tier-3 Wallet ID).
+/// hash of the wallet's canonical WDM bytecode (the "Tier-3" Wallet ID).
 ///
 /// The full 128 bits serve as a collision-resistant identifier for the wallet;
 /// the BIP-39 encoding ([`WalletIdWords`]) gives a human-friendly 12-word
 /// form, and [`ChunkWalletId`] extracts the 20 most-significant bits for use
 /// in chunk headers.
+///
+/// # Two-WalletId story
+///
+/// WDM uses **two distinct wallet identifiers** with different override
+/// semantics. This `WalletId` is the **content-derived** Tier-3 identifier,
+/// always equal to `SHA-256(canonical_bytecode)[0..16]`. It is **never**
+/// affected by [`WalletIdSeed`] or [`crate::EncodeOptions::wallet_id_seed`].
+/// In contrast, the 20-bit [`ChunkWalletId`] embedded in chunk headers can be
+/// overridden by [`WalletIdSeed`] for deterministic test-vector generation.
+///
+/// The relationship is:
+///
+/// ```text
+/// default ChunkWalletId  =  WalletId.truncate()       // first 20 bits of SHA-256
+/// override ChunkWalletId =  WalletIdSeed.truncate()   // top 20 bits of seed
+/// ```
+///
+/// A user holding only the 12-word [`WalletIdWords`] form of this `WalletId`
+/// can verify which seed corresponds to which `@i` placeholder in their
+/// recovered wallet policy. See `IMPLEMENTATION_PLAN_v0.1.md` §4
+/// "Wallet ID semantics" and the BIP draft §"Wallet identifier".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WalletId([u8; 16]);
 
@@ -222,6 +243,26 @@ impl IntoIterator for WalletIdWords {
 ///
 /// The upper 12 bits of the inner `u32` are always zero.  Construct via
 /// [`ChunkWalletId::new`]; direct tuple-struct access is intentionally private.
+///
+/// # Why 20 bits, and how it relates to [`WalletId`]
+///
+/// Each chunk in a chunked WDM backup carries this 20-bit field in its
+/// 7-byte header so that a decoder can verify that all chunks belong to
+/// the same wallet **before** any BCH-corrected fragment bytes are
+/// concatenated. 20 bits gives ~1-in-1M cross-wallet collision resistance,
+/// adequate for engraving misfile detection while keeping the chunk header
+/// compact.
+///
+/// By default, `ChunkWalletId == WalletId::truncate()`, so a user who knows
+/// the 12-word [`WalletIdWords`] of their Tier-3 [`WalletId`] can predict
+/// what the chunk-header field SHOULD be and confirm it matches at decode
+/// time. This binding is the crux of WDM's "verify the recovery without
+/// access to the original media" property.
+///
+/// The binding can be broken on purpose by passing a [`WalletIdSeed`] in
+/// [`crate::EncodeOptions::wallet_id_seed`]; this is used by the test-vector
+/// generator to fix the chunk-header bits to a known value independent of
+/// the bytecode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ChunkWalletId(u32);
 
@@ -255,14 +296,35 @@ impl ChunkWalletId {
 // WalletIdSeed
 // ---------------------------------------------------------------------------
 
-/// Optional 4-byte seed that, when supplied via `EncodeOptions`,
-/// overrides the chunk-header `wallet_id` field.
+/// Optional 4-byte seed that, when supplied via
+/// [`crate::EncodeOptions::wallet_id_seed`], overrides the chunk-header
+/// `wallet_id` field.
 ///
 /// The Tier-3 16-byte [`WalletId`] is *always* content-derived and is NOT
 /// affected by this seed (per `IMPLEMENTATION_PLAN_v0.1.md` §4 "Wallet ID
-/// semantics"). The seed is only used to override the 20-bit `ChunkWalletId`
-/// embedded in chunk headers — for example, to generate deterministic test
-/// vectors.
+/// semantics" and the BIP draft §"Wallet identifier"). The seed is only used
+/// to override the 20-bit [`ChunkWalletId`] embedded in chunk headers.
+///
+/// # When to use this
+///
+/// Production encoders should leave [`crate::EncodeOptions::wallet_id_seed`]
+/// at `None` so that the chunk-header field is content-derived from the
+/// canonical bytecode and a holder of the Tier-3 mnemonic can verify it.
+///
+/// Set this seed only for:
+/// - **Deterministic test-vector generation** — fixing the chunk-header
+///   bits to a known value across implementations.
+/// - **Synthetic conformance tests** — exercising the chunk-header parser
+///   with arbitrary 20-bit values without recomputing SHA-256.
+///
+/// Setting this seed in production breaks the "Tier-3 mnemonic predicts the
+/// chunk-header bits" property and is therefore a footgun for end users.
+///
+/// # Debug redaction
+///
+/// `Debug` deliberately redacts the byte contents (printing
+/// `WalletIdSeed(<redacted>)`) so log spew cannot accidentally leak
+/// the seed.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WalletIdSeed([u8; 4]);
 

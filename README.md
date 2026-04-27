@@ -4,8 +4,10 @@
 > early specification produced by an AI assistant in collaboration with
 > the author, but has not yet been reviewed end-to-end by a human or by
 > the broader bitcoin community. Tag values, header layout, HRP, and
-> structural decisions are subject to change. No reference implementation
-> exists yet. Treat as a working sketch, not a finalized spec.
+> structural decisions are subject to change. A reference implementation
+> exists at [`crates/wdm-codec/`](crates/wdm-codec/) and locks the v0.1
+> wire format with committed test vectors, but the spec text itself
+> remains pre-review. Treat as a working sketch, not a finalized spec.
 
 A specification for backing up bitcoin wallet policies on durable media
 (paper, steel) in a form that is compact, hand-transcribable, and
@@ -19,14 +21,13 @@ versions) cosigners' extended public keys.
 
 ## What this repository contains
 
-This repository is the format specification only. A reference
-implementation will be developed in a separate phase and released under
-matching terms.
-
 ```
 .
 ├── bip/
+│   ├── README.md                                  ← BIP draft index
 │   └── bip-wallet-descriptor-mnemonic.mediawiki   ← the formal BIP draft
+├── crates/
+│   └── wdm-codec/                                 ← Rust reference implementation
 ├── design/
 │   ├── POLICY_BACKUP.md   ← design rationale, decisions log, open items
 │   ├── PRIOR_ART.md       ← survey of related encoding schemes
@@ -38,9 +39,10 @@ matching terms.
 ## Where to start reading
 
 - **For format users / implementers:** `bip/bip-wallet-descriptor-mnemonic.mediawiki` is the canonical spec.
+- **For the reference implementation:** [`crates/wdm-codec/README.md`](crates/wdm-codec/README.md) — quickstart, CLI, library API.
 - **For why the spec is the way it is:** `design/POLICY_BACKUP.md` documents the design decisions and tradeoffs in detail.
 - **For comparison with existing formats:** `design/PRIOR_ART.md`.
-- **For what real miniscripts look like under WDM encoding:** `design/CORPUS.md`.
+- **For what real miniscripts look like under WDM encoding:** `design/CORPUS.md` and the locked test vectors at `crates/wdm-codec/tests/vectors/v0.1.json`.
 
 ## What WDM is for
 
@@ -69,14 +71,22 @@ Foreign xpubs (multi-party multisig where you don't hold all seeds) and per-plac
 
 ## Status
 
-This specification is in **Pre-Draft, AI only, not yet human reviewed** status. The structure of the spec is in place but has not been validated by independent review or by working implementations. Open decisions and unresolved questions are tracked in `design/POLICY_BACKUP.md` §8.
+This specification is in **Pre-Draft, AI only, not yet human reviewed** status. The structure of the spec is in place but has not been validated by independent review. Open decisions and unresolved questions are tracked in `design/POLICY_BACKUP.md` §8.
+
+The Rust reference implementation in [`crates/wdm-codec/`](crates/wdm-codec/) implements the v0.1 scope:
+
+- Full encode → bytecode → chunking → codex32 → BCH-checksummed string round-trip.
+- Decode pipeline with per-stage diagnostics (`DecodeReport` + `Confidence`).
+- 438 unit + integration tests, including 12 corpus round-trips, 30 negative conformance vectors, and BCH known-vectors cross-checked against an independent Python implementation.
+- v0.1 test vectors locked in `crates/wdm-codec/tests/vectors/v0.1.json` (schema in `src/vectors.rs`).
+- A `wdm` CLI for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations.
 
 The `Draft` status (the first formal BIP 2 status) will be claimed only after the spec has been reviewed by at least one human contributor end-to-end.
 
 The next development steps are tracked in `design/POLICY_BACKUP.md` §10:
 
-1. Reference implementation (Rust)
-2. Concrete test vectors for the corpus
+1. ~~Reference implementation (Rust)~~ — done; see `crates/wdm-codec/`.
+2. ~~Concrete test vectors for the corpus~~ — done; locked in `tests/vectors/v0.1.json`.
 3. Implementation experience to refine the spec
 4. Submission to bitcoin-dev for community review
 5. Formal BIP submission
@@ -84,8 +94,8 @@ The next development steps are tracked in `design/POLICY_BACKUP.md` §10:
 ## License
 
 The specification text in this repository is dedicated to the public
-domain under [CC0-1.0](LICENSE). Reference implementation code (when
-added) will be released under a permissive license.
+domain under [CC0-1.0](LICENSE). The reference implementation in
+`crates/wdm-codec/` is released under the same CC0-1.0 license.
 
 ## Contact
 

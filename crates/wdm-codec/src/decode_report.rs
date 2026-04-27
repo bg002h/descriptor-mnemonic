@@ -84,7 +84,26 @@ pub struct Verifications {
 // DecodeReport
 // ---------------------------------------------------------------------------
 
-/// Full decode diagnostic report.
+/// Full diagnostic report from one [`crate::decode()`] call.
+///
+/// Every successful decode produces this report alongside the recovered
+/// [`WalletPolicy`]. The report tells the caller WHAT happened during decode
+/// (any BCH corrections, which structural checks passed) and HOW MUCH to
+/// trust the result (the [`Confidence`] field).
+///
+/// # When to consult each field
+///
+/// - **Show [`Self::confidence`] to the user** before they rely on the
+///   recovered policy. `Confirmed` is "as good as the original engraving";
+///   `High` means BCH had to fix transcription typos but everything still
+///   verifies.
+/// - **Show [`Self::corrections`] when non-empty**: the user transcribed
+///   one or more chunks slightly wrong; surfacing "we fixed your card 1
+///   character 17 from `q` to `p`" lets them double-check the original
+///   media.
+/// - **Use [`Self::verifications`] for forensic analysis** when something
+///   went wrong; these are pre-flight checks that all return `true` on a
+///   successful v0.1 decode but expose which stage validated each property.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodeReport {
@@ -102,7 +121,16 @@ pub struct DecodeReport {
 // DecodeResult
 // ---------------------------------------------------------------------------
 
-/// Result of a successful (or partially-successful) decode.
+/// The result of a successful [`crate::decode()`]: the recovered
+/// [`WalletPolicy`] plus a [`DecodeReport`].
+///
+/// Pair this with [`crate::WdmBackup`] from the encode side to see the
+/// type-state graph: encode produces `WdmBackup`, decode produces
+/// `DecodeResult`. The `WdmBackup` is the engraving-side artifact; the
+/// `DecodeResult` is the recovery-side artifact.
+///
+/// Marked `#[non_exhaustive]` so v0.2+ can add fields (e.g. recovered
+/// fingerprints or a derivation hint) without breaking pattern matching.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodeResult {

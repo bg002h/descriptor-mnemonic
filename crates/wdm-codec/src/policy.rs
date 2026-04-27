@@ -130,8 +130,43 @@ fn all_dummy_keys() -> Vec<DescriptorPublicKey> {
 // WalletPolicy newtype
 // ---------------------------------------------------------------------------
 
-/// WDM wallet policy: thin newtype around `miniscript::descriptor::WalletPolicy`
-/// with WDM-specific canonical-form output and shared-path extraction.
+/// A BIP 388 wallet policy with WDM-specific canonical-form output and
+/// shared-path extraction.
+///
+/// Thin newtype around `miniscript::descriptor::WalletPolicy`; constructed
+/// from a BIP 388 string via `parse()` (i.e. [`std::str::FromStr`]):
+///
+/// ```
+/// use std::str::FromStr;
+/// use wdm_codec::WalletPolicy;
+///
+/// let p = WalletPolicy::from_str("wsh(pk(@0/**))")?;
+/// # Ok::<(), wdm_codec::Error>(())
+/// ```
+///
+/// Both forms are accepted:
+/// - **Template form** (no key info attached): `wsh(pk(@0/**))`. The `/**`
+///   suffix is the BIP 388 shorthand for `/<0;1>/*`.
+/// - **Full descriptor** (origin + xpubs): `wsh(pk([fingerprint/path]xpub.../<0;1>/*))`
+///
+/// # Canonical form
+///
+/// [`Self::to_canonical_string`] returns the BIP 388 §"Round-trip canonical
+/// form" output (no whitespace, hardened-with-`'`, `/**` expanded to
+/// `/<0;1>/*`). This is the form the codec hashes for the Tier-3
+/// [`crate::WalletId`].
+///
+/// # Bytecode encoding
+///
+/// [`Self::to_bytecode`] emits the WDM canonical bytecode: a 1-byte format
+/// header, a path declaration, and the operator tree. [`Self::from_bytecode`]
+/// is its inverse. See the [`crate::bytecode`] module for the on-the-wire
+/// format and the BIP draft §"Canonical bytecode".
+///
+/// # Stability
+///
+/// Marked `#[non_exhaustive]` so that v0.2+ can grow private fields (e.g. a
+/// cached canonical-form string) without breaking pattern matching.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalletPolicy {
@@ -373,12 +408,31 @@ impl WalletPolicy {
 // WdmBackup
 // ---------------------------------------------------------------------------
 
-/// The output of `encode(policy, options)`: chunks ready to engrave,
-/// plus the Tier-3 12-word Wallet ID for verification.
+/// The output of [`crate::encode()`]: chunks ready to engrave, plus the
+/// Tier-3 12-word Wallet ID for verification.
+///
+/// # Invariants
 ///
 /// `chunks` is non-empty: a single-string backup has `chunks.len() == 1`
 /// with `chunk_index == 0, total_chunks == 1`. A chunked backup has
-/// `chunks.len() in 2..=32`.
+/// `chunks.len() in 1..=32` and every chunk's `total_chunks` equals
+/// `chunks.len()`. (A 1-chunk Chunked backup is possible when the user
+/// passes [`crate::EncodeOptions::force_chunking`] on a small input.)
+///
+/// # What to do with this
+///
+/// The `raw: String` field of each [`crate::EncodedChunk`] is the
+/// codex32-derived string starting with `wdm1…`. Engrave or print these
+/// strings on durable media. The 12-word [`crate::WalletIdWords`] is the
+/// human-friendly Tier-3 [`crate::WalletId`]; users can write this down
+/// alongside the engraved cards as a verifier — at decode time, comparing
+/// the 12-word form against the recovered policy's `WalletId` confirms
+/// "I have the right backup for this wallet".
+///
+/// # Stability
+///
+/// Marked `#[non_exhaustive]` so v0.2+ can add fields (e.g. encoder
+/// metadata) without breaking pattern-matching consumers.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WdmBackup {

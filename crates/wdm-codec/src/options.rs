@@ -1,4 +1,4 @@
-//! Options passed to the top-level `encode()` and `decode()` functions.
+//! Options passed to the top-level [`crate::encode()`] and [`crate::decode()`] functions.
 
 use crate::wallet_id::WalletIdSeed;
 
@@ -6,30 +6,44 @@ use crate::wallet_id::WalletIdSeed;
 // EncodeOptions
 // ---------------------------------------------------------------------------
 
-/// Options controlling the encode pipeline.
+/// Options controlling the [`crate::encode()`] pipeline.
 ///
 /// All fields default to "natural" behavior:
 /// - `force_chunking = false`: single-string is preferred when bytecode fits.
 /// - `force_long_code = false`: regular BCH code is preferred when it fits.
 /// - `wallet_id_seed = None`: chunk-header `wallet_id` is content-derived.
+///
+/// Marked `#[non_exhaustive]` so future v0.2+ knobs (e.g. shared-path
+/// override) can be added without breaking external callers. Within this
+/// crate, construct with `..Default::default()` and override only the
+/// fields you need; downstream callers must use the same pattern.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EncodeOptions {
     /// Force chunked encoding even when bytecode fits in a single string.
     ///
     /// Use case: ergonomic chunk size when you'd rather engrave 2 short
-    /// strings than 1 long one (per BIP §"Chunking" line 438).
+    /// strings than 1 long one (per BIP §"Chunking" line 438). Setting this
+    /// on a small input produces a 1-chunk Chunked card (with the 7-byte
+    /// chunk-header overhead) instead of a SingleString card with the 2-byte
+    /// header.
     pub force_chunking: bool,
-    /// Force long BCH code even when regular fits.
+    /// Force the long BCH code (15-char checksum) even when the regular code
+    /// (13-char checksum) fits.
     ///
-    /// Pairs with `force_chunking = true` to test long-code behavior on
-    /// small inputs.
+    /// The long code carries more payload per chunk at the cost of two extra
+    /// transcribed characters per string. Most often paired with
+    /// `force_chunking = true` to test long-code behavior on small inputs.
     pub force_long_code: bool,
-    /// Override the chunk-header `wallet_id` with this seed instead of
+    /// Override the chunk-header [`crate::ChunkWalletId`] with this seed instead of
     /// using the first 20 bits of the content-derived SHA-256.
     ///
-    /// The Tier-3 16-byte WalletId is unaffected. Used for deterministic
-    /// test-vector generation.
+    /// The Tier-3 16-byte [`crate::WalletId`] is **unaffected** by this
+    /// option (per `IMPLEMENTATION_PLAN_v0.1.md` §4 "Wallet ID semantics"
+    /// and the BIP draft §"Wallet identifier"). Used for deterministic
+    /// test-vector generation; production encoders should leave this `None`
+    /// so the chunk-header bits remain predictable from the Tier-3 mnemonic.
+    /// See [`WalletIdSeed`] for the full rationale and footgun warning.
     pub wallet_id_seed: Option<WalletIdSeed>,
 }
 
@@ -37,16 +51,26 @@ pub struct EncodeOptions {
 // DecodeOptions
 // ---------------------------------------------------------------------------
 
-/// Options controlling the decode pipeline.
+/// Options controlling the [`crate::decode()`] pipeline.
 ///
 /// v0.1 has no public knobs; the type exists so v0.2+ can add builder
-/// methods without breaking existing call sites. Erasure decoding is
-/// supported internally for use by guided recovery (v0.3); v0.1 callers
-/// do not invoke that path.
+/// methods without breaking existing call sites. Construct with
+/// [`DecodeOptions::new`] (or `DecodeOptions::default()`).
 ///
-/// Note: NOT `#[non_exhaustive]` because all fields are private — callers
-/// can never construct via struct literal regardless. Adding private fields
-/// stays non-breaking.
+/// # Reserved internal fields
+///
+/// The struct holds a private `erasures: Vec<(usize, usize)>` field reserved
+/// for v0.3 guided-recovery erasure decoding (where the user reports "I
+/// can't read these characters" and the decoder uses BCH ECC to fill them
+/// in beyond the substitution-only correction limit). v0.1 callers cannot
+/// populate this list, and the v0.1 [`crate::decode()`] function silently
+/// ignores it.
+///
+/// # Stability
+///
+/// **Not** marked `#[non_exhaustive]` because all fields are private —
+/// callers can never construct via struct literal regardless, so adding
+/// private fields in future versions stays a non-breaking change.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DecodeOptions {
     // private; v0.3 will expose via with_erasure_hint

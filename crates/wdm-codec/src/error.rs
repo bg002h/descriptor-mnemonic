@@ -1,4 +1,11 @@
 //! Error types for wdm-codec.
+//!
+//! [`enum@Error`] is the single error type returned by every fallible operation in
+//! the public API. The variants are organized by which pipeline stage
+//! produces them, so the [`crate::decode()`] documentation lists which
+//! variants can fire from which stage. See each variant's rustdoc for the
+//! WHEN (which call returns this) and the CORRECTIVE ACTION a caller should
+//! take.
 
 use thiserror::Error;
 
@@ -6,23 +13,69 @@ use thiserror::Error;
 // `Error` variants can reference it without a cross-module path.
 pub use crate::wallet_id::ChunkWalletId;
 
-/// All errors that wdm-codec can return.
+/// Every error wdm-codec can return.
+///
+/// Marked `#[non_exhaustive]` so v0.2+ can add variants (e.g. for taproot,
+/// foreign xpubs, BIP 393 recovery annotations) without breaking exhaustive
+/// `match` consumers. Match with a `_` arm to remain forward-compatible.
+///
+/// # Variants by pipeline stage
+///
+/// Stage 1 (per-string parse): [`Error::InvalidHrp`], [`Error::MixedCase`],
+/// [`Error::InvalidStringLength`], [`Error::InvalidChar`].
+///
+/// Stage 2 (BCH validate/correct): [`Error::BchUncorrectable`].
+///
+/// Stage 3 (header parse): [`Error::ChunkHeaderTruncated`],
+/// [`Error::UnsupportedVersion`], [`Error::UnsupportedCardType`],
+/// [`Error::ReservedWalletIdBitsSet`], [`Error::InvalidChunkCount`],
+/// [`Error::InvalidChunkIndex`].
+///
+/// Stage 4 (reassembly): [`Error::EmptyChunkList`],
+/// [`Error::MixedChunkTypes`], [`Error::SingleStringWithMultipleChunks`],
+/// [`Error::WalletIdMismatch`], [`Error::TotalChunksMismatch`],
+/// [`Error::ChunkIndexOutOfRange`], [`Error::DuplicateChunkIndex`],
+/// [`Error::MissingChunkIndex`], [`Error::CrossChunkHashMismatch`].
+///
+/// Stage 5 (bytecode parse): [`Error::InvalidBytecode`],
+/// [`Error::PolicyScopeViolation`].
+///
+/// Encode-side: [`Error::PolicyTooLarge`], [`Error::PolicyParse`],
+/// [`Error::Miniscript`].
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum Error {
     /// HRP did not match the expected `"wdm"`.
+    ///
+    /// Returned by [`crate::decode_string`] / [`crate::decode()`]. The user
+    /// transcribed a non-WDM bech32 string (e.g. a Bitcoin address). Caller
+    /// should reject the input and ask the user for a `wdm1…` string.
     #[error("invalid HRP: expected 'wdm', got '{0}'")]
     InvalidHrp(String),
 
     /// Bech32 string contained mixed-case characters.
+    ///
+    /// BIP 173 forbids mixed-case bech32 strings to avoid HRP confusion.
+    /// Caller should normalize the input to a single case (e.g.
+    /// `s.to_lowercase()`) before retrying — most engraved cards are
+    /// upper-case for legibility.
     #[error("invalid case: bech32 strings must be all-lowercase or all-uppercase")]
     MixedCase,
 
     /// Total string length is invalid (e.g., the reserved 94 or 95 char range).
+    ///
+    /// The 94–95-char range is reserved-invalid in BIP 93 codex32 to avoid
+    /// ambiguity between regular and long codes. Caller should re-read the
+    /// physical card and verify the character count is in {≤93, 96..=108}.
     #[error("invalid string length: {0}")]
     InvalidStringLength(usize),
 
     /// String contains a character that is not in the bech32 alphabet.
+    ///
+    /// The bech32 alphabet excludes `b`, `i`, `o`, and `1` (separator) to
+    /// reduce transcription errors. Caller should show `position` to the
+    /// user and ask them to re-check the engraved character; common
+    /// confusions are `b↔6`, `i↔1`, `o↔0`.
     #[error("invalid character '{ch}' at position {position} (not in bech32 alphabet)")]
     InvalidChar {
         /// The invalid character encountered.
@@ -31,11 +84,23 @@ pub enum Error {
         position: usize,
     },
 
-    /// BCH error correction failed (more than 4 substitutions).
+    /// BCH error correction failed: too many corrupted characters.
+    ///
+    /// v0.1 corrects at most 1 substitution; v0.2 will reach the spec
+    /// promised 4-error correction via Berlekamp-Massey decoding. Caller
+    /// should ask the user to re-transcribe the chunk; if multiple chunks
+    /// fail, the engraved card may be too damaged for recovery without
+    /// erasure hints (deferred to v0.3).
     #[error("BCH decode failed: too many errors to correct")]
     BchUncorrectable,
 
     /// Bytecode parse failed at a specific offset.
+    ///
+    /// Returned by [`crate::WalletPolicy::from_bytecode`] (and therefore
+    /// by [`crate::decode()`] after reassembly). The `kind` field carries
+    /// the specific reason; see [`BytecodeErrorKind`] for the full catalog.
+    /// Generally indicates either a transcription error that BCH could not
+    /// catch (statistically rare) or an attacker-crafted input.
     #[error("invalid bytecode at offset {offset}: {kind}")]
     InvalidBytecode {
         /// Byte offset within the canonical bytecode where the parse failed.
@@ -44,15 +109,29 @@ pub enum Error {
         kind: BytecodeErrorKind,
     },
 
-    /// Format version is not supported by this implementation.
+    /// Format version nibble is not supported by this implementation.
+    ///
+    /// v0.1 accepts only version `0`. A non-zero version means the card
+    /// was engraved by a later WDM version (v0.2+) that this implementation
+    /// does not yet understand. Caller should ask the user to use a newer
+    /// decoder.
     #[error("unsupported format version: {0}")]
     UnsupportedVersion(u8),
 
-    /// Card type is not supported.
+    /// Card type byte is not in the supported set.
+    ///
+    /// v0.1 defines two card types: `0x00` (single-string) and `0x01`
+    /// (chunked). Other values are reserved for future extensions and
+    /// will surface here on the v0.1 decoder.
     #[error("unsupported card type: {0}")]
     UnsupportedCardType(u8),
 
-    /// Chunk index is out of range for the declared total.
+    /// Chunk index is out of range for the declared total (`index >= total`).
+    ///
+    /// Returned during reassembly when a chunk's header reports an index
+    /// that doesn't fit its declared `total`. Indicates a corrupted chunk
+    /// header that BCH could not catch. Caller should ask the user to
+    /// re-verify the affected chunk.
     #[error("chunk index {index} out of range (total chunks: {total})")]
     ChunkIndexOutOfRange {
         /// The reported chunk index.
@@ -62,10 +141,19 @@ pub enum Error {
     },
 
     /// A chunk index appears more than once during reassembly.
+    ///
+    /// The user supplied two chunks with the same `chunk_index`. Most often
+    /// the user accidentally duplicated one chunk on input. Caller should
+    /// deduplicate the input list and retry.
     #[error("duplicate chunk index: {0}")]
     DuplicateChunkIndex(u8),
 
     /// Two chunks reported different wallet identifiers.
+    ///
+    /// The user mixed chunks from two different wallets in one decode call.
+    /// Compare the `expected` and `got` 20-bit fields against the Tier-3
+    /// [`crate::WalletId`] truncations to identify which chunk is foreign,
+    /// then ask the user to retry with a single wallet's chunks.
     #[error("wallet identifier mismatch across chunks: expected {expected:?}, got {got:?}")]
     WalletIdMismatch {
         /// The expected (first-seen) chunk wallet identifier.
@@ -75,6 +163,11 @@ pub enum Error {
     },
 
     /// Two chunks reported different total chunk counts.
+    ///
+    /// Indicates either a corrupted chunk-header byte (BCH didn't catch
+    /// it because the corruption flipped a checksum-symbol-equivalent bit)
+    /// or chunks from two different chunked backups mixed together. Caller
+    /// should re-verify the affected chunk against the original media.
     #[error("total-chunks mismatch across chunks: expected {expected}, got {got}")]
     TotalChunksMismatch {
         /// The expected (first-seen) total.
@@ -84,18 +177,40 @@ pub enum Error {
     },
 
     /// Policy violates the v0.1 implementation scope.
+    ///
+    /// v0.1 supports only the BIP 388 wallet-policy subset: `wsh()` segwit-v0
+    /// top-level, all keys placeholder-referenced, all `@i` placeholders
+    /// share one derivation path. Foreign xpubs, taproot, MuSig2, and
+    /// per-placeholder paths are deferred to v0.2+. Caller should display
+    /// the embedded message to the user.
     #[error("policy violates v0.1 scope: {0}")]
     PolicyScopeViolation(String),
 
     /// Cross-chunk integrity hash did not match the reassembled bytecode.
+    ///
+    /// The 4-byte trailing hash appended to the chunk stream is
+    /// `SHA-256(canonical_bytecode)[0..4]`. A mismatch indicates either
+    /// a fragment-byte transcription error that BCH did not catch
+    /// (statistically rare given the per-chunk ECC) or a chunk reordering
+    /// bug. Caller should ask the user to re-verify each chunk character
+    /// by character.
     #[error("cross-chunk hash mismatch")]
     CrossChunkHashMismatch,
 
     /// Chunk count field is invalid (must be 1–32).
+    ///
+    /// The chunk-count byte must be in `1..=32`. `0` and `>32` are both
+    /// invalid; v0.1 caps chunked backups at 32 chunks (the chunk-index
+    /// field is 5 bits + 1 implicit). Indicates a corrupted chunk header.
     #[error("invalid chunk count: {0} (must be 1–32)")]
     InvalidChunkCount(u8),
 
-    /// Chunk index is out of range for the declared count (index must be < count).
+    /// Chunk index is out of range for the declared count (`index >= count`).
+    ///
+    /// Returned by [`crate::ChunkHeader::from_bytes`] when a single chunk's
+    /// header is internally inconsistent. Distinct from
+    /// [`Error::ChunkIndexOutOfRange`], which compares against the
+    /// first-seen `total` across multiple chunks.
     #[error("invalid chunk index: {index} >= count {count}")]
     InvalidChunkIndex {
         /// The chunk index that was rejected.
@@ -107,12 +222,17 @@ pub enum Error {
     /// The three wallet-id bytes in a chunk header had the reserved top 4 bits set.
     ///
     /// The wallet-id field is 20 bits wide; the top 4 bits of the three-byte
-    /// encoding must be zero.  Any non-zero high nibble in the first byte
-    /// triggers this error.
+    /// big-endian encoding must be zero. Any non-zero high nibble in the
+    /// first byte triggers this error and indicates a corrupted chunk header.
     #[error("reserved wallet-id bits set: top 4 bits of wallet-id field must be zero")]
     ReservedWalletIdBitsSet,
 
     /// The chunk header bytes were truncated (too short to contain a complete header).
+    ///
+    /// SingleString headers are 2 bytes; Chunked headers are 7 bytes. A
+    /// short input indicates either a truncated string at the codex32
+    /// layer (probably caught earlier as [`Error::InvalidStringLength`])
+    /// or, for synthetic byte-level inputs, a malformed payload.
     #[error("chunk header truncated: have {have} bytes, need {need}")]
     ChunkHeaderTruncated {
         /// Number of bytes actually available.
@@ -122,6 +242,12 @@ pub enum Error {
     },
 
     /// Bytecode is too large for any v0 chunking plan.
+    ///
+    /// v0.1 supports up to 32 long chunks × 53 fragment bytes − 4 hash
+    /// bytes = 1692 bytes of canonical bytecode. Returned by
+    /// [`crate::chunking_decision`] / [`crate::encode()`]. Caller should
+    /// reject the policy as too complex for engraving and consider
+    /// splitting the wallet across multiple cards (a v0.2 feature).
     #[error(
         "policy too large: {bytecode_len} bytes exceeds maximum {max_supported} for v0 chunking"
     )]
@@ -133,26 +259,49 @@ pub enum Error {
     },
 
     /// `reassemble_chunks` was called with an empty chunk list.
+    ///
+    /// Returned by [`crate::reassemble_chunks`] / [`crate::decode()`] when
+    /// the input slice is empty. Caller must supply at least one chunk.
     #[error("reassemble_chunks called with an empty chunk list")]
     EmptyChunkList,
 
     /// An expected chunk index was absent from the chunk list during reassembly.
+    ///
+    /// In a chunked backup with declared `count`, every index in `0..count`
+    /// must be present exactly once. The reported index is the lowest one
+    /// missing. Caller should ask the user to locate the missing chunk
+    /// (most often: missed a card, transcribed only some chunks).
     #[error("missing chunk index {0} during reassembly")]
     MissingChunkIndex(u8),
 
     /// The chunk list contained both SingleString and Chunked variants.
+    ///
+    /// A backup is either a single SingleString chunk OR a set of Chunked
+    /// chunks; the two cannot coexist in one decode call. Caller mixed
+    /// chunks from different backups and should retry with one set.
     #[error("mixed chunk types: chunk list must be all SingleString or all Chunked")]
     MixedChunkTypes,
 
     /// A SingleString chunk appeared in a multi-chunk list (length > 1).
+    ///
+    /// A SingleString backup has exactly one chunk by construction; passing
+    /// multiple is a caller mistake. Caller should pass `&[only_chunk]`.
     #[error("single-string chunk appeared in a multi-chunk list")]
     SingleStringWithMultipleChunks,
 
     /// Policy parse error from the BIP 388 string form.
+    ///
+    /// Returned by [`std::str::FromStr`] on [`crate::WalletPolicy`]. The
+    /// embedded string is the upstream miniscript parser error and should
+    /// be displayed to the user.
     #[error("policy parse error: {0}")]
     PolicyParse(String),
 
-    /// Wraps a miniscript error as a string to insulate from upstream churn.
+    /// Wraps an upstream miniscript error as a string.
+    ///
+    /// Used for errors that originate from the `miniscript` crate but don't
+    /// fit any of the more specific WDM variants. The string form insulates
+    /// our public API from upstream `miniscript::Error` churn.
     #[error("miniscript: {0}")]
     Miniscript(String),
 }
