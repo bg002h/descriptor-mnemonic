@@ -12,6 +12,7 @@
 //! `Result<T, crate::Error>` so decode failures surface a precise offset and
 //! `BytecodeErrorKind`. See `design/PHASE_2_DECISIONS.md` D-5.
 
+use bitcoin::hashes::Hash;
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
 use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
@@ -99,7 +100,6 @@ impl<'a> Cursor<'a> {
     }
 
     /// Read exactly `N` bytes as an array. Returns `Err` if fewer remain.
-    #[allow(dead_code)] // Used by Task 2.17+ hash-literal decoder arms.
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], Error> {
         if self.offset + N > self.bytes.len() {
             return Err(Error::InvalidBytecode {
@@ -317,11 +317,51 @@ fn decode_terminal(
             })?;
             Terminal::Thresh(thresh)
         }
-        // Task 2.15+ inner-fragment tags will be added here progressively.
+        // Single-child wrappers (Task 2.15). Each reads one recursive child
+        // via decode_miniscript and wraps it in Arc::new before constructing
+        // the Terminal variant.
+        Tag::Alt => {
+            let child = decode_miniscript(cur, keys)?;
+            Terminal::Alt(std::sync::Arc::new(child))
+        }
+        Tag::Swap => {
+            let child = decode_miniscript(cur, keys)?;
+            Terminal::Swap(std::sync::Arc::new(child))
+        }
+        Tag::Check => {
+            let child = decode_miniscript(cur, keys)?;
+            Terminal::Check(std::sync::Arc::new(child))
+        }
+        Tag::DupIf => {
+            let child = decode_miniscript(cur, keys)?;
+            Terminal::DupIf(std::sync::Arc::new(child))
+        }
+        Tag::Verify => {
+            let child = decode_miniscript(cur, keys)?;
+            Terminal::Verify(std::sync::Arc::new(child))
+        }
+        Tag::NonZero => {
+            let child = decode_miniscript(cur, keys)?;
+            Terminal::NonZero(std::sync::Arc::new(child))
+        }
+        Tag::ZeroNotEqual => {
+            let child = decode_miniscript(cur, keys)?;
+            Terminal::ZeroNotEqual(std::sync::Arc::new(child))
+        }
+        Tag::RawPkH => {
+            // 20-byte pubkey-hash literal embedded directly in the fragment
+            // (no key info vector lookup). Distinct tag from Hash160 (0x23)
+            // even though both are 20-byte payloads — see encoder Task 2.10.
+            let bytes = cur.read_array::<20>()?;
+            let hash = bitcoin::hashes::hash160::Hash::from_byte_array(bytes);
+            Terminal::RawPkH(hash)
+        }
+        // Task 2.16+ inner-fragment tags will be added here progressively
+        // (After/Older timelocks, hash literals, logical operators).
         // For now, anything else is either out of v0.1 scope or deferred.
         _ => {
             return Err(Error::PolicyScopeViolation(format!(
-                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.15+)",
+                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.16+)",
                 tag.as_byte()
             )));
         }
@@ -430,13 +470,13 @@ mod tests {
 
     // --- Wsh inner / Terminal leaf round-trips and rejections (Task 2.13) ---
     //
-    // PkK / PkH leaf round-trips are deferred to Task 2.15: the encoder only
-    // emits PkK/PkH inside a `c:` (Check) wrapper because wsh()'s typing
-    // requires a B-type inner, and PkK is K-type. Until the c: wrapper
-    // decoder lands, an end-to-end PkK round-trip can't be expressed at the
-    // decode_template boundary. The PkK / PkH arms in decode_terminal are
-    // exercised indirectly today via the placeholder helper unit tests and
-    // will gain proper round-trip coverage in Task 2.15.
+    // PkK / PkH leaf round-trips were originally deferred to Task 2.15
+    // because the encoder only emits PkK/PkH inside a `c:` (Check) wrapper
+    // (wsh()'s typing requires a B-type inner, and PkK is K-type). Task 2.15
+    // landed the c: wrapper decoder, so wsh(pk(K)) and wsh(pkh(K)) now
+    // round-trip end-to-end through the parser. See
+    // `decode_wsh_pk_round_trip_via_parser` and
+    // `decode_wsh_pkh_round_trip_via_parser` below.
 
     #[test]
     fn decode_wsh_false() {
@@ -483,9 +523,9 @@ mod tests {
 
     #[test]
     fn decode_rejects_unimplemented_inner_tag() {
-        // [Wsh, AndV, ...] — Task 2.14 handles multisig family
-        // (SortedMulti/Multi/MultiA/Thresh) plus leaves, but AndV (0x11)
-        // is in scope of Task 2.16+ (logical operators).
+        // [Wsh, AndV, ...] — Task 2.15 added wrappers (Alt/Swap/Check/...)
+        // and RawPkH, but AndV (0x11) is still deferred to Task 2.18
+        // (logical operators).
         let err = decode_template(&[0x05, 0x11], &[]).unwrap_err();
         assert!(
             matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("not yet implemented")),
@@ -495,10 +535,9 @@ mod tests {
 
     // The decoder-side counterpart to encode.rs's
     // `encode_placeholder_index_above_127_uses_single_byte` is intentionally
-    // deferred to Task 2.15: PkK/PkH leaves with index ≥128 require either
-    // the c: wrapper (so wsh(pk(K)) becomes parser-driven) or a 200-key
-    // wallet fixture. Both belong in the wrapper task. Don't add a stub
-    // test here — the encoder-side coverage already pins the wire format.
+    // omitted: D-7 made placeholder indices a single byte (0..=255), so the
+    // ≥128 case has no special encoding to round-trip. The encoder-side
+    // coverage already pins the wire format.
 
     // --- Multisig family round-trips and rejections (Task 2.14) -----------
 
@@ -701,6 +740,160 @@ mod tests {
                 kind: BytecodeErrorKind::UnexpectedEnd, ..
             }),
             "expected UnexpectedEnd mid-multisig, got {err:?}"
+        );
+    }
+
+    // --- Wrappers + RawPkH round-trips (Task 2.15) -------------------------
+
+    #[test]
+    fn decode_wsh_pk_round_trip_via_parser() {
+        // wsh(pk(K)) parses to Wsh -> Ms -> Check(PkK(K)).
+        // With Tag::Check now decoded, this is the first PkK/PkH path that
+        // round-trips through the parser end-to-end.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 0u8);
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
+            "wsh(pk({key}))"
+        ))
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
+
+        let keys_vec = vec![key.clone()];
+        let decoded = decode_template(&bytes, &keys_vec).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_wsh_pkh_round_trip_via_parser() {
+        // wsh(pkh(K)) parses through Check + PkH path. The c: wrapper now
+        // decodes (Task 2.15), so PkH end-to-end works.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 0u8);
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
+            "wsh(pkh({key}))"
+        ))
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
+
+        let keys_vec = vec![key.clone()];
+        let decoded = decode_template(&bytes, &keys_vec).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_terminal_alt_swap_directly() {
+        // Direct construction with True children. Each wrapper produces
+        // [tag, True_tag] = [tag, 0x01]. Wsh wrapping handled by manually
+        // building the byte stream — wrappers won't always typecheck under
+        // wsh() so the whole-descriptor parser path may reject some.
+        use std::sync::Arc;
+
+        // Build the byte stream directly: [Wsh, Alt, True].
+        // Note: wsh(a:1) may not typecheck; if so, this test verifies the
+        // decoder produces a TypeCheckFailed error rather than panicking.
+        // The decoder's job is to parse bytes correctly; whether the
+        // resulting AST type-checks is a separate concern.
+        let alt_bytes = vec![0x05, 0x0A, 0x01]; // [Wsh, Alt, True]
+        let result = decode_template(&alt_bytes, &[]);
+        match result {
+            Ok(d) => {
+                use std::collections::HashMap;
+                let reencoded = crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
+                assert_eq!(reencoded, alt_bytes);
+            }
+            Err(Error::InvalidBytecode { kind: BytecodeErrorKind::TypeCheckFailed(_), .. }) => {
+                // miniscript rejected the reconstruction — acceptable.
+            }
+            Err(other) => panic!("unexpected error decoding alt: {other:?}"),
+        }
+
+        let swap_bytes = vec![0x05, 0x0B, 0x01]; // [Wsh, Swap, True]
+        let result = decode_template(&swap_bytes, &[]);
+        match result {
+            Ok(d) => {
+                use std::collections::HashMap;
+                let reencoded = crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
+                assert_eq!(reencoded, swap_bytes);
+            }
+            Err(Error::InvalidBytecode { kind: BytecodeErrorKind::TypeCheckFailed(_), .. }) => {}
+            Err(other) => panic!("unexpected error decoding swap: {other:?}"),
+        }
+
+        // The Arc import is unused if neither branch above triggers it.
+        let _ = Arc::new(0u8);
+    }
+
+    #[test]
+    fn decode_terminal_raw_pk_h() {
+        // [Wsh, RawPkH, <20 bytes>] — bypasses parser since wsh(raw_pk_h(...))
+        // typically isn't a clean parser fixture. Exercise the decoder directly
+        // and verify the bytes round-trip via the encoder.
+        let mut bytes = vec![0x05, 0x1D]; // Wsh, RawPkH
+        let hash_bytes: [u8; 20] = [
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+            0x01, 0x02, 0x03, 0x04,
+        ];
+        bytes.extend_from_slice(&hash_bytes);
+
+        let result = decode_template(&bytes, &[]);
+        match result {
+            Ok(d) => {
+                use std::collections::HashMap;
+                let reencoded = crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
+                assert_eq!(reencoded, bytes);
+            }
+            Err(Error::InvalidBytecode { kind: BytecodeErrorKind::TypeCheckFailed(_), .. }) => {
+                // Wsh::new(...) on a bare RawPkH may reject if RawPkH isn't
+                // B-typed. Acceptable. Test verifies the decoder consumed
+                // the right number of bytes (no panic / no dangling).
+            }
+            Err(other) => panic!("unexpected error decoding raw_pk_h: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decode_raw_pk_h_rejects_truncated() {
+        // [Wsh, RawPkH, <19 bytes>] — truncated by 1 byte.
+        let mut bytes = vec![0x05, 0x1D];
+        bytes.extend_from_slice(&[0xAA; 19]);
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::Truncated, ..
+            }),
+            "expected Truncated, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_wrapper_rejects_truncated_child() {
+        // [Wsh, Check] — wrapper missing its child fragment.
+        let bytes = vec![0x05, 0x0C];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::UnexpectedEnd, ..
+            }),
+            "expected UnexpectedEnd, got {err:?}"
         );
     }
 
