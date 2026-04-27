@@ -36,10 +36,12 @@ pub fn decode_u64(bytes: &[u8]) -> Option<(u64, usize)> {
             return None;
         }
         let chunk = (b & 0x7F) as u64;
-        // Detect overflow: chunk left-shifted by `shift` must fit in u64.
-        let shifted = chunk.checked_shl(shift)?;
-        // Detect overflow when shift = 63: a payload byte with anything
-        // above bit 0 in its 7-bit chunk would overflow.
+        // shift is always in 0..=63 here (the guard above rules out 64+),
+        // so a plain `<<` is safe and faster than `checked_shl`.
+        // Numerical overflow into bits ≥ 64 is caught by the next check.
+        let shifted = chunk << shift;
+        // 10th byte (shift == 63): only bit 0 of the 7-bit payload may be set;
+        // anything higher would push beyond u64::MAX.
         if shift == 63 && chunk > 1 {
             return None;
         }
@@ -124,7 +126,8 @@ mod tests {
 
     #[test]
     fn decode_rejects_overflow() {
-        // 11 continuation bytes plus a terminator: too many bytes for u64.
+        // 10 continuation bytes followed by a terminator: 11 bytes total,
+        // one more than the 10-byte maximum a u64 LEB128 can use.
         let too_long: Vec<u8> = vec![0xFF; 10].into_iter().chain(std::iter::once(0x01)).collect();
         assert_eq!(decode_u64(&too_long), None);
         // 10 bytes where the last one has bits beyond what fits in u64
