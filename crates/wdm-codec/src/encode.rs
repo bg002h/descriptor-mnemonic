@@ -5,7 +5,7 @@
 
 use crate::{
     BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, Result, WalletPolicy, WdmBackup,
-    chunking::{chunk_bytes, chunking_decision},
+    chunking::{ChunkHeader, chunk_bytes, chunking_decision},
     encoding::encode_string,
     wallet_id::{ChunkWalletId, compute_wallet_id},
 };
@@ -85,22 +85,28 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBacku
     let chunks = chunk_bytes(&bytecode, plan, chunk_wallet_id)?;
 
     // Stage 5: encode each chunk to a codex32 string.
-    let total_chunks = chunks.len();
-    let mut encoded_chunks: Vec<EncodedChunk> = Vec::with_capacity(total_chunks);
-    for (i, chunk) in chunks.into_iter().enumerate() {
+    // Hoist the BCH code lookup — it is plan-level, not per-chunk.
+    let bch_code = chunk_code_to_bch_code(match plan {
+        ChunkingPlan::SingleString { code } => code,
+        ChunkingPlan::Chunked { code, .. } => code,
+    });
+    let chunk_count = chunks.len();
+    let mut encoded_chunks: Vec<EncodedChunk> = Vec::with_capacity(chunk_count);
+    for chunk in chunks {
+        // Read chunk_index and total_chunks from the header — canonical source.
+        let (chunk_index, total_chunks) = match &chunk.header {
+            ChunkHeader::SingleString { .. } => (0u8, 1u8),
+            ChunkHeader::Chunked { index, count, .. } => (*index, *count),
+        };
         let header_bytes = chunk.header.to_bytes();
         let raw = encode_string(&header_bytes, &chunk.fragment)?;
-        // Determine the BCH code from the plan; encode_string auto-selects
-        // the code from the data-part length, but we record it explicitly.
-        let code = chunk_code_to_bch_code(match plan {
-            ChunkingPlan::SingleString { code } => code,
-            ChunkingPlan::Chunked { code, .. } => code,
-        });
+        // encode_string auto-selects the code from the data-part length, but
+        // we record it explicitly from the plan for structured output.
         encoded_chunks.push(EncodedChunk {
             raw,
-            chunk_index: i as u8,
-            total_chunks: total_chunks as u8,
-            code,
+            chunk_index,
+            total_chunks,
+            code: bch_code,
         });
     }
 
