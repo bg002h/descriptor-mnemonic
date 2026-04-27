@@ -159,6 +159,16 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
 /// [`Error::PolicyScopeViolation`] if the key is not present in the map
 /// (v0.1 forbids inline keys; every leaf key must come through the
 /// wallet-policy key information vector).
+///
+/// **Equality semantics**: `DescriptorPublicKey`'s derived `PartialEq`
+/// includes the `origin` field (BIP 32 fingerprint + derivation path).
+/// Callers that build `placeholder_map` from one parse of the descriptor
+/// and re-parse the descriptor for encoding will get matching keys. But
+/// callers that build the map from a stripped-origin form and then encode
+/// a with-origin form (or vice versa) will see this function report
+/// "inline key" even though the bare key bytes match. Real BIP 388 wallet
+/// policies always carry origin metadata; ensure your map is built from
+/// the same parsed descriptor instance.
 fn encode_key(
     key: &DescriptorPublicKey,
     out: &mut Vec<u8>,
@@ -231,8 +241,8 @@ mod tests {
         );
         let err = encode_template(&d, &empty_map()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("taproot") || msg.contains("tr()")),
-            "expected PolicyScopeViolation mentioning taproot/tr()"
+            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("taproot")),
+            "expected PolicyScopeViolation mentioning taproot"
         );
     }
 
@@ -326,6 +336,9 @@ mod tests {
             matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("inline key")),
             "expected PolicyScopeViolation about inline key, got: {err:?}"
         );
+        // Pin the documented dirty-buffer-on-error contract: the PkK arm
+        // pushed Tag::PkK before encode_key returned Err, so out is non-empty.
+        assert_eq!(out, vec![Tag::PkK.as_byte()]);
     }
 
     #[test]
