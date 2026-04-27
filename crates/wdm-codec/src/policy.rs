@@ -171,6 +171,22 @@ fn all_dummy_keys() -> Vec<DescriptorPublicKey> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalletPolicy {
     inner: InnerWalletPolicy,
+    /// The shared derivation path recovered from a bytecode decode, preserved
+    /// so a subsequent `to_bytecode` produces a byte-identical re-encoding for
+    /// template-only policies.
+    ///
+    /// `Some(path)` iff this policy was constructed via
+    /// [`Self::from_bytecode`]; `None` for policies built via `parse()` /
+    /// [`std::str::FromStr`] or any other constructor. Populating this field
+    /// from the decoded `Tag::SharedPath` declaration is what makes
+    /// `encode → decode → encode` first-pass byte-stable: without it the
+    /// re-encode would otherwise pick up the dummy-key origin path
+    /// (`m/44'/0'/0'`) attached to the substituted placeholder keys.
+    ///
+    /// Consulted by [`Self::to_bytecode`] under the Phase A precedence rule
+    /// (Phase B will layer `EncodeOptions::shared_path` on top):
+    /// `decoded_shared_path` > `shared_path()` > BIP 84 mainnet fallback.
+    decoded_shared_path: Option<DerivationPath>,
 }
 
 impl FromStr for WalletPolicy {
@@ -178,7 +194,10 @@ impl FromStr for WalletPolicy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         InnerWalletPolicy::from_str(s)
-            .map(|inner| WalletPolicy { inner })
+            .map(|inner| WalletPolicy {
+                inner,
+                decoded_shared_path: None,
+            })
             .map_err(|e| crate::Error::PolicyParse(e.to_string()))
     }
 }
@@ -276,15 +295,21 @@ impl WalletPolicy {
     /// from the descriptor's first key (for policies with real keys), encodes
     /// the tree, then composes the three sections. See PHASE_5_DECISIONS.md D-7.
     ///
-    /// # Shared-path fallback
+    /// # Shared-path precedence (Phase A)
     ///
-    /// For template-only policies (no key_info attached), the descriptor's
-    /// first key is the dummy entry at index 0, whose origin path is
-    /// `m/84'/0'/0'` (BIP 84 mainnet). The encoded bytecode therefore carries
-    /// `m/84'/0'/0'` as the path declaration in this case. This is a deliberate
-    /// pragmatic choice for v0.1: the round-trip will succeed, and the caller can
-    /// supply a real shared path via `EncodeOptions::shared_path` in a future
-    /// release (see Phase 5 decision D-10).
+    /// When choosing the path declaration to emit, `to_bytecode` consults
+    /// (in order):
+    ///
+    /// 1. `self.decoded_shared_path` — populated by [`Self::from_bytecode`]
+    ///    so a `decode → encode` cycle is byte-stable on the first pass.
+    /// 2. `self.shared_path()` — for policies parsed from full descriptor
+    ///    strings with real origin info.
+    /// 3. BIP 84 mainnet fallback (`m/84'/0'/0'`) — for template-only policies
+    ///    constructed via `parse()` with no decoded path. This is the v0.1
+    ///    behavior preserved as the final-tier fallback.
+    ///
+    /// Phase B will extend this with `EncodeOptions::shared_path` as the
+    /// highest-precedence override; see `design/IMPLEMENTATION_PLAN_v0.2.md`.
     pub fn to_bytecode(&self) -> Result<Vec<u8>, Error> {
         let count = self.key_count();
         if count > MAX_DUMMY_KEYS {
@@ -315,17 +340,25 @@ impl WalletPolicy {
         // --- Step 3: encode the descriptor tree ---
         let tree_bytes = encode_template(&descriptor, &placeholder_map)?;
 
-        // --- Step 4: extract shared path from the already-materialized descriptor ---
-        // If the policy had real keys (the policy was parsed from a full descriptor
-        // string), self.inner still holds the original keys in its key_info. We
-        // already cloned it and set dummies, so we can't retrieve the real keys from
-        // `descriptor` here — they'd be the dummies. Use self.shared_path() for the
-        // real-keys case (one extra materialization is acceptable here; the common
-        // template-only case avoids it via the dummy fallback).
-        let shared_path = self.shared_path().unwrap_or_else(|| {
-            // Template-only policy: first dummy key carries origin m/84'/0'/0'.
-            // See rustdoc above for rationale.
-            DerivationPath::from_str("m/84'/0'/0'").expect("hardcoded BIP 84 path is always valid")
+        // --- Step 4: select shared path per the Phase A precedence rule ---
+        //
+        // Precedence: decoded_shared_path > shared_path() > BIP 84 mainnet.
+        //
+        // `decoded_shared_path` is populated by `from_bytecode` so a decode→encode
+        // cycle is byte-stable on the first pass. Without it the re-encode would
+        // otherwise reach `shared_path()` and surface the dummy-key origin
+        // (`m/44'/0'/0'`) that was attached during decode, breaking byte-identity.
+        //
+        // For the real-keys case (policy parsed from a full descriptor with origin
+        // info), `decoded_shared_path` is None and `shared_path()` returns the
+        // origin from the inner key_info. One extra descriptor materialization is
+        // acceptable here; the hot template-only case avoids it via the fallback
+        // chain ending at the BIP 84 default.
+        let shared_path = self.decoded_shared_path.clone().unwrap_or_else(|| {
+            self.shared_path().unwrap_or_else(|| {
+                DerivationPath::from_str("m/84'/0'/0'")
+                    .expect("hardcoded BIP 84 path is always valid")
+            })
         });
 
         // --- Step 5: compose [header][path declaration][tree bytes] ---
@@ -368,7 +401,7 @@ impl WalletPolicy {
 
         // --- Step 2: parse the path declaration ---
         let mut cursor = Cursor::new(&bytes[1..]);
-        let _shared_path = decode_declaration(&mut cursor)?;
+        let shared_path = decode_declaration(&mut cursor)?;
         let path_consumed = cursor.offset();
 
         // --- Step 3: decode the template tree (Option A fix for D-8) ---
@@ -398,9 +431,17 @@ impl WalletPolicy {
         // --- Step 4: construct WalletPolicy from the descriptor ---
         // `from_descriptor` collects `descriptor.iter_pk()` which returns only the
         // keys actually referenced in the decoded tree — not all 32 dummies.
+        //
+        // We stash the on-wire `shared_path` on the returned `WalletPolicy` so a
+        // subsequent `to_bytecode` reproduces the original path declaration
+        // verbatim. This is what makes `encode → decode → encode` first-pass
+        // byte-stable for template-only policies.
         let inner = InnerWalletPolicy::from_descriptor(&descriptor)
             .map_err(|e| Error::PolicyScopeViolation(e.to_string()))?;
-        Ok(WalletPolicy { inner })
+        Ok(WalletPolicy {
+            inner,
+            decoded_shared_path: Some(shared_path),
+        })
     }
 }
 
@@ -1008,6 +1049,74 @@ mod tests {
         assert_eq!(
             recovered_id, original_id,
             "wallet_id() must recover the original WalletId"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // decoded_shared_path — first-pass byte-stable round-trip
+    // -----------------------------------------------------------------------
+
+    /// `from_bytecode` must populate `decoded_shared_path` from the wire shared
+    /// path, and `to_bytecode` must consult it so a `decode → encode` cycle is
+    /// byte-identical to the original bytecode for template-only policies.
+    ///
+    /// This guards against two regressions simultaneously:
+    /// - BIP 84 default fallback in `to_bytecode` (would emit `m/84'/0'/0'`)
+    /// - dummy-key origin path leaking through (would emit `m/44'/0'/0'`)
+    ///
+    /// Using `m/48'/0'/0'/2'` (BIP 48 multisig P2WSH; named indicator 0x05)
+    /// distinguishes the correct behavior from both fallbacks.
+    #[test]
+    fn from_bytecode_populates_decoded_shared_path_consulted_by_to_bytecode() {
+        use crate::bytecode::Tag;
+
+        // Build a minimal valid bytecode: header + SharedPath(BIP 48 indicator 0x05) + tree.
+        // Tree: wsh(pk(@0/**)) = [Wsh, Check, PkK, Placeholder, 0x00].
+        let original: Vec<u8> = vec![
+            0x00,                       // header v0, no fingerprints
+            Tag::SharedPath.as_byte(),  // 0x33
+            0x05,                       // BIP 48 P2WSH multisig: m/48'/0'/0'/2'
+            Tag::Wsh.as_byte(),         // 0x05
+            Tag::Check.as_byte(),       // 0x0C
+            Tag::PkK.as_byte(),         // 0x1B
+            Tag::Placeholder.as_byte(), // 0x32
+            0x00,                       // placeholder index 0
+        ];
+
+        // Decode then immediately re-encode.
+        let policy = WalletPolicy::from_bytecode(&original).expect("decode must succeed");
+
+        // decoded_shared_path must be populated with m/48'/0'/0'/2'.
+        let expected_path = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
+        assert_eq!(
+            policy.decoded_shared_path.as_ref(),
+            Some(&expected_path),
+            "from_bytecode must populate decoded_shared_path with the on-wire path"
+        );
+
+        // Re-encoding must produce byte-identical output (FIRST-pass byte-stability).
+        let re_encoded = policy.to_bytecode().expect("re-encode must succeed");
+        assert_eq!(
+            re_encoded, original,
+            "to_bytecode must consult decoded_shared_path; first-pass byte-equality required"
+        );
+
+        // Specifically the path-indicator byte must NOT be the BIP 84 fallback (0x03)
+        // nor the dummy-key origin path (which would serialize differently). It must
+        // be the BIP 48 named indicator 0x05.
+        assert_eq!(
+            re_encoded[2], 0x05,
+            "shared-path indicator must round-trip as 0x05 (m/48'/0'/0'/2'), not the 0x03 BIP 84 fallback"
+        );
+    }
+
+    #[test]
+    fn parse_does_not_set_decoded_shared_path() {
+        // Default constructor (FromStr) must leave decoded_shared_path as None.
+        let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
+        assert!(
+            p.decoded_shared_path.is_none(),
+            "FromStr-constructed policy must have decoded_shared_path == None"
         );
     }
 

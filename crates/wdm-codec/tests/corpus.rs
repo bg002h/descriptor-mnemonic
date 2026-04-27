@@ -177,26 +177,25 @@ fn corpus_coldcard_bip388_export() {
 // ---------------------------------------------------------------------------
 // encode-decode-encode idempotency (Task 6.12)
 //
-// For each corpus policy, verify two stability invariants across the full
-// encode -> decode -> encode pipeline:
+// For each corpus policy, verify the full encode -> decode -> encode pipeline
+// is FIRST-pass byte-stable for template-only policies:
 //
 // Invariant 1: chunk count is preserved across both encode-decode cycles.
 //
-// Invariant 2: structural idempotency -- the template (canonical string) is
+// Invariant 2: raw-byte equality between the FIRST and SECOND encodes.
+//   The Phase A `6a-bytecode-roundtrip-path-mismatch` fix gives `WalletPolicy`
+//   a `decoded_shared_path` field populated by `from_bytecode` and consulted
+//   by `to_bytecode`, so the re-encode reproduces the same path declaration
+//   verbatim instead of leaking the dummy-key origin path (`m/44'/0'/0'`).
+//
+// Invariant 3: structural idempotency -- the template (canonical string) is
 // preserved after a second decode cycle:
 //   decode(encode(p)).canonical == decode(encode(decode(encode(p)))).canonical
 //
-// Invariant 3: second-pass determinism -- encoding the decoded policy twice
-// from the same decoded WalletPolicy gives byte-identical output.
-//
-// Note on raw-byte identity: raw-byte equality across the FIRST and SECOND
-// encodes is NOT asserted here.  In v0.1 the shared-path declaration
-// embedded in the bytecode is derived from the dummy-key origin on decode
-// (m/44'/0'/0') rather than the BIP-84 fallback used for template-only
-// policies on initial parse (m/84'/0'/0').  This is a deliberate v0.1
-// pragmatic choice documented in to_bytecode() rustdoc and
-// PHASE_5_DECISIONS.md D-10.  Structural equality is the correct invariant
-// for the current implementation.
+// Invariant 4: second-pass determinism -- encoding the decoded policy twice
+// from the same decoded WalletPolicy gives byte-identical output (was the
+// strongest invariant pre-Phase-A; now redundant with Invariant 2 but kept
+// as a regression guard against any future encoder non-determinism).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -248,10 +247,24 @@ fn corpus_encode_decode_encode_idempotency() {
             policy_str,
         );
 
-        // Invariant 2: structural (template) form is preserved.
+        // Invariant 2: FIRST-pass raw-byte equality. With the Phase A
+        // `decoded_shared_path` fix, encode -> decode -> encode is byte-stable
+        // on the very first round-trip for template-only policies.
+        for (i, (c1, c2)) in backup1.chunks.iter().zip(backup2.chunks.iter()).enumerate() {
+            assert_eq!(
+                c1.raw, c2.raw,
+                concat!(
+                    "idempotency: first-pass byte-equality violated for chunk[{}],",
+                    " policy {:?}\n  encode1: {}\n  encode2: {}"
+                ),
+                i, policy_str, c1.raw, c2.raw,
+            );
+        }
+
+        // Invariant 3: structural (template) form is preserved.
         common::assert_structural_eq(&decode_result1.policy, &decode_result2.policy);
 
-        // Invariant 3: second-pass determinism -- encoding the decoded policy
+        // Invariant 4: second-pass determinism -- encoding the decoded policy
         // again must give byte-identical output.
         let backup2b =
             encode(&decode_result1.policy, &EncodeOptions::default()).unwrap_or_else(|e| {
@@ -269,8 +282,8 @@ fn corpus_encode_decode_encode_idempotency() {
             assert_eq!(
                 c2.raw, c2b.raw,
                 concat!(
-                    "idempotency: second encode is not deterministic for chunk[{}],",
-                    " policy {:?}\n  run1: {}\n  run2: {}"
+                    "idempotency: second encode is not deterministic for chunk[{}]",
+                    " (Invariant 4), policy {:?}\n  run1: {}\n  run2: {}"
                 ),
                 i, policy_str, c2.raw, c2b.raw,
             );
