@@ -301,8 +301,8 @@ pub fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 13));
-    let polymod = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK)
-        ^ WDM_REGULAR_CONST;
+    let polymod =
+        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ WDM_REGULAR_CONST;
     let mut out = [0u8; 13];
     for (i, slot) in out.iter_mut().enumerate() {
         *slot = ((polymod >> (5 * (12 - i))) & 0x1F) as u8;
@@ -334,8 +334,7 @@ pub fn bch_create_checksum_long(hrp: &str, data: &[u8]) -> [u8; 15] {
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 15));
-    let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK)
-        ^ WDM_LONG_CONST;
+    let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) ^ WDM_LONG_CONST;
     let mut out = [0u8; 15];
     for (i, slot) in out.iter_mut().enumerate() {
         *slot = ((polymod >> (5 * (14 - i))) & 0x1F) as u8;
@@ -500,8 +499,7 @@ pub fn encode_string(header: &[u8], payload: &[u8]) -> Result<String, crate::Err
         BchCode::Long => bch_create_checksum_long(HRP, &data_5bit).to_vec(),
     };
 
-    let mut full =
-        String::with_capacity(HRP.len() + 1 + data_5bit.len() + checksum.len());
+    let mut full = String::with_capacity(HRP.len() + 1 + data_5bit.len() + checksum.len());
     full.push_str(HRP);
     full.push(SEPARATOR);
     for &v in &data_5bit {
@@ -565,8 +563,8 @@ pub fn decode_string(s: &str) -> Result<DecodedString, crate::Error> {
         return Err(Error::InvalidHrp(hrp.to_string()));
     }
 
-    let code = bch_code_for_length(data_part.len())
-        .ok_or(Error::InvalidStringLength(data_part.len()))?;
+    let code =
+        bch_code_for_length(data_part.len()).ok_or(Error::InvalidStringLength(data_part.len()))?;
 
     let mut values: Vec<u8> = Vec::with_capacity(data_part.len());
     for (i, c) in data_part.chars().enumerate() {
@@ -764,7 +762,7 @@ mod tests {
         // SHA-256(b"shibbolethnums") interpreted as a big-endian 256-bit
         // integer. If anyone "fixes" the hex values without updating the
         // derivation, this test fails.
-        use bitcoin::hashes::{sha256, Hash};
+        use bitcoin::hashes::{Hash, sha256};
         let h = sha256::Hash::hash(b"shibbolethnums");
         let bytes = h.to_byte_array();
         // First 16 bytes of the hash interpreted as a big-endian u128.
@@ -811,7 +809,9 @@ mod tests {
             assert_eq!(
                 polymod_step(r, 0, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
                 GEN_REGULAR[i as usize],
-                "bit {} of b should isolate GEN_REGULAR[{}]", i, i
+                "bit {} of b should isolate GEN_REGULAR[{}]",
+                i,
+                i
             );
         }
     }
@@ -826,11 +826,8 @@ mod tests {
         );
         // b = 0b11111 → XOR all 5.
         let r = 0b11111u128 << REGULAR_SHIFT;
-        let expected = GEN_REGULAR[0]
-            ^ GEN_REGULAR[1]
-            ^ GEN_REGULAR[2]
-            ^ GEN_REGULAR[3]
-            ^ GEN_REGULAR[4];
+        let expected =
+            GEN_REGULAR[0] ^ GEN_REGULAR[1] ^ GEN_REGULAR[2] ^ GEN_REGULAR[3] ^ GEN_REGULAR[4];
         assert_eq!(
             polymod_step(r, 0, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
             expected
@@ -1150,7 +1147,11 @@ mod tests {
     #[test]
     fn encode_starts_with_hrp_and_separator() {
         let s = encode_string(&[], &[1, 2, 3]).unwrap();
-        assert!(s.starts_with("wdm1"), "string did not start with wdm1: {}", s);
+        assert!(
+            s.starts_with("wdm1"),
+            "string did not start with wdm1: {}",
+            s
+        );
     }
 
     #[test]
@@ -1171,10 +1172,7 @@ mod tests {
             .enumerate()
             .map(|(i, c)| if i == 5 { c.to_ascii_uppercase() } else { c })
             .collect();
-        assert!(matches!(
-            decode_string(&bad),
-            Err(crate::Error::MixedCase)
-        ));
+        assert!(matches!(decode_string(&bad), Err(crate::Error::MixedCase)));
     }
 
     #[test]

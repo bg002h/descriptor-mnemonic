@@ -16,9 +16,9 @@ use bitcoin::hashes::Hash;
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
 use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
+use crate::Error;
 use crate::bytecode::Tag;
 use crate::error::BytecodeErrorKind;
-use crate::Error;
 
 /// Decode a canonical WDM bytecode stream into a wallet-policy descriptor.
 ///
@@ -83,8 +83,7 @@ impl<'a> Cursor<'a> {
                 // ended before a terminator).
                 let kind = if remaining.is_empty() {
                     BytecodeErrorKind::UnexpectedEnd
-                } else if remaining.len() >= 10
-                    && remaining.iter().take(10).all(|b| b & 0x80 != 0)
+                } else if remaining.len() >= 10 && remaining.iter().take(10).all(|b| b & 0x80 != 0)
                 {
                     BytecodeErrorKind::VarintOverflow
                 } else {
@@ -143,11 +142,9 @@ fn decode_descriptor(
     })?;
     match tag {
         Tag::Wsh => decode_wsh_inner(cur, keys),
-        Tag::Sh | Tag::Pkh | Tag::Wpkh | Tag::Tr | Tag::Bare => {
-            Err(Error::PolicyScopeViolation(format!(
-                "v0.1 does not support top-level tag {tag:?}"
-            )))
-        }
+        Tag::Sh | Tag::Pkh | Tag::Wpkh | Tag::Tr | Tag::Bare => Err(Error::PolicyScopeViolation(
+            format!("v0.1 does not support top-level tag {tag:?}"),
+        )),
         // Reserved key tags (descriptor-codec inline-key forms unused in v0.1).
         Tag::ReservedOrigin
         | Tag::ReservedNoOrigin
@@ -162,11 +159,9 @@ fn decode_descriptor(
         | Tag::ReservedMultiXPriv
         | Tag::ReservedNoWildcard
         | Tag::ReservedUnhardenedWildcard
-        | Tag::ReservedHardenedWildcard => {
-            Err(Error::PolicyScopeViolation(format!(
-                "v0.1 rejects inline-key tag {tag:?} (deferred to v1+)"
-            )))
-        }
+        | Tag::ReservedHardenedWildcard => Err(Error::PolicyScopeViolation(format!(
+            "v0.1 rejects inline-key tag {tag:?} (deferred to v1+)"
+        ))),
         // A known fragment tag (e.g. AndV, PkK, True) appearing at the top
         // level — malformed input from a v0.1 perspective. Use
         // PolicyScopeViolation rather than UnknownTag because the byte was
@@ -417,7 +412,11 @@ fn decode_terminal(
             let a = decode_miniscript(cur, keys)?;
             let b = decode_miniscript(cur, keys)?;
             let c = decode_miniscript(cur, keys)?;
-            Terminal::AndOr(std::sync::Arc::new(a), std::sync::Arc::new(b), std::sync::Arc::new(c))
+            Terminal::AndOr(
+                std::sync::Arc::new(a),
+                std::sync::Arc::new(b),
+                std::sync::Arc::new(c),
+            )
         }
         Tag::OrB => {
             let left = decode_miniscript(cur, keys)?;
@@ -499,7 +498,10 @@ mod tests {
         let err = decode_template(&[], &empty_keys()).unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::UnexpectedEnd }
+            Error::InvalidBytecode {
+                offset: 0,
+                kind: BytecodeErrorKind::UnexpectedEnd
+            }
         ));
     }
 
@@ -509,7 +511,10 @@ mod tests {
         let err = decode_template(&[0xFF], &empty_keys()).unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::UnknownTag(0xFF) }
+            Error::InvalidBytecode {
+                offset: 0,
+                kind: BytecodeErrorKind::UnknownTag(0xFF)
+            }
         ));
     }
 
@@ -589,9 +594,13 @@ mod tests {
         // looking for the inner tag.
         let err = decode_template(&[0x05], &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnexpectedEnd, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
             "expected InvalidBytecode UnexpectedEnd, got {err:?}"
         );
     }
@@ -601,9 +610,13 @@ mod tests {
         // [Wsh, 0xFF] — 0xFF is not a valid Tag.
         let err = decode_template(&[0x05, 0xFF], &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnknownTag(0xFF), ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnknownTag(0xFF),
+                    ..
+                }
+            ),
             "expected InvalidBytecode UnknownTag(0xFF), got {err:?}"
         );
     }
@@ -655,9 +668,9 @@ mod tests {
         map.insert(k1.clone(), 1u8);
         map.insert(k2.clone(), 2u8);
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
-            "wsh(sortedmulti(2,{k0},{k1},{k2}))"
-        ))
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(sortedmulti(2,{k0},{k1},{k2}))"),
+        )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
 
@@ -665,7 +678,10 @@ mod tests {
         let keys_vec = vec![k0.clone(), k1.clone(), k2.clone()];
         let decoded = decode_template(&bytes, &keys_vec).unwrap();
         let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
-        assert_eq!(reencoded, bytes, "round-trip should produce identical bytes");
+        assert_eq!(
+            reencoded, bytes,
+            "round-trip should produce identical bytes"
+        );
     }
 
     #[test]
@@ -692,9 +708,9 @@ mod tests {
         map.insert(k1.clone(), 1u8);
         map.insert(k2.clone(), 2u8);
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
-            "wsh(multi(2,{k0},{k1},{k2}))"
-        ))
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(multi(2,{k0},{k1},{k2}))"),
+        )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
 
@@ -764,9 +780,9 @@ mod tests {
         map.insert(k1.clone(), 1u8);
         map.insert(k2.clone(), 2u8);
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
-            "wsh(sortedmulti(2,{k0},{k1},{k2}))"
-        ))
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(sortedmulti(2,{k0},{k1},{k2}))"),
+        )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
 
@@ -784,9 +800,13 @@ mod tests {
         let bytes = vec![0x05, 0x19, 0x02];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnexpectedEnd, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
             "expected UnexpectedEnd after truncated k, got {err:?}"
         );
     }
@@ -799,9 +819,13 @@ mod tests {
         let bytes = vec![0x05, 0x09, 0x02];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnexpectedEnd, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
             "expected UnexpectedEnd after truncated SortedMulti k, got {err:?}"
         );
     }
@@ -825,9 +849,13 @@ mod tests {
         let bytes = vec![0x05, 0x19, 0x02, 0x03, 0x32, 0x00, 0x32, 0x01];
         let err = decode_template(&bytes, &[k0, k1]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnexpectedEnd, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
             "expected UnexpectedEnd mid-multisig, got {err:?}"
         );
     }
@@ -849,9 +877,9 @@ mod tests {
         let mut map = HashMap::new();
         map.insert(key.clone(), 0u8);
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
-            "wsh(pk({key}))"
-        ))
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(pk({key}))"),
+        )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
 
@@ -875,9 +903,9 @@ mod tests {
         let mut map = HashMap::new();
         map.insert(key.clone(), 0u8);
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
-            "wsh(pkh({key}))"
-        ))
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(pkh({key}))"),
+        )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
 
@@ -904,10 +932,14 @@ mod tests {
         match result {
             Ok(d) => {
                 use std::collections::HashMap;
-                let reencoded = crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
+                let reencoded =
+                    crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
                 assert_eq!(reencoded, alt_bytes);
             }
-            Err(Error::InvalidBytecode { kind: BytecodeErrorKind::TypeCheckFailed(_), .. }) => {
+            Err(Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TypeCheckFailed(_),
+                ..
+            }) => {
                 // miniscript rejected the reconstruction — acceptable.
             }
             Err(other) => panic!("unexpected error decoding alt: {other:?}"),
@@ -918,10 +950,14 @@ mod tests {
         match result {
             Ok(d) => {
                 use std::collections::HashMap;
-                let reencoded = crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
+                let reencoded =
+                    crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
                 assert_eq!(reencoded, swap_bytes);
             }
-            Err(Error::InvalidBytecode { kind: BytecodeErrorKind::TypeCheckFailed(_), .. }) => {}
+            Err(Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TypeCheckFailed(_),
+                ..
+            }) => {}
             Err(other) => panic!("unexpected error decoding swap: {other:?}"),
         }
     }
@@ -933,9 +969,8 @@ mod tests {
         // and verify the bytes round-trip via the encoder.
         let mut bytes = vec![0x05, 0x1D]; // Wsh, RawPkH
         let hash_bytes: [u8; 20] = [
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-            0x01, 0x02, 0x03, 0x04,
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE,
+            0xFF, 0x00, 0x01, 0x02, 0x03, 0x04,
         ];
         bytes.extend_from_slice(&hash_bytes);
 
@@ -943,10 +978,14 @@ mod tests {
         match result {
             Ok(d) => {
                 use std::collections::HashMap;
-                let reencoded = crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
+                let reencoded =
+                    crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
                 assert_eq!(reencoded, bytes);
             }
-            Err(Error::InvalidBytecode { kind: BytecodeErrorKind::TypeCheckFailed(_), .. }) => {
+            Err(Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TypeCheckFailed(_),
+                ..
+            }) => {
                 // Wsh::new(...) on a bare RawPkH may reject if RawPkH isn't
                 // B-typed. Acceptable. Test verifies the decoder consumed
                 // the right number of bytes (no panic / no dangling).
@@ -962,9 +1001,13 @@ mod tests {
         bytes.extend_from_slice(&[0xAA; 19]);
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::Truncated, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::Truncated,
+                    ..
+                }
+            ),
             "expected Truncated, got {err:?}"
         );
     }
@@ -975,9 +1018,13 @@ mod tests {
         let bytes = vec![0x05, 0x0C];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnexpectedEnd, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
             "expected UnexpectedEnd, got {err:?}"
         );
     }
@@ -999,7 +1046,10 @@ mod tests {
         let err = cur.read_byte().unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::UnexpectedEnd }
+            Error::InvalidBytecode {
+                offset: 0,
+                kind: BytecodeErrorKind::UnexpectedEnd
+            }
         ));
     }
 
@@ -1027,7 +1077,10 @@ mod tests {
         let err = cur.read_array::<3>().unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::Truncated }
+            Error::InvalidBytecode {
+                offset: 0,
+                kind: BytecodeErrorKind::Truncated
+            }
         ));
     }
 
@@ -1049,7 +1102,10 @@ mod tests {
         let err = cur.require_empty().unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::TrailingBytes }
+            Error::InvalidBytecode {
+                offset: 0,
+                kind: BytecodeErrorKind::TrailingBytes
+            }
         ));
     }
 
@@ -1061,14 +1117,14 @@ mod tests {
         use std::collections::HashMap;
         use std::str::FromStr;
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            "wsh(after(1234))"
-        )
-        .unwrap();
+        let descriptor =
+            miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str("wsh(after(1234))")
+                .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1079,14 +1135,14 @@ mod tests {
         use std::collections::HashMap;
         use std::str::FromStr;
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            "wsh(older(4032))"
-        )
-        .unwrap();
+        let descriptor =
+            miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str("wsh(older(4032))")
+                .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1101,7 +1157,8 @@ mod tests {
         let bytes = vec![0x05, 0x1E, 0xD2, 0x09];
         let decoded = decode_template(&bytes, &[]).unwrap();
         use std::collections::HashMap;
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1111,7 +1168,8 @@ mod tests {
         let bytes = vec![0x05, 0x1F, 0xC0, 0x1F];
         let decoded = decode_template(&bytes, &[]).unwrap();
         use std::collections::HashMap;
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1123,9 +1181,13 @@ mod tests {
         let bytes = vec![0x05, 0x1E, 0x80];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::Truncated, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::Truncated,
+                    ..
+                }
+            ),
             "expected Truncated, got {err:?}"
         );
     }
@@ -1139,9 +1201,13 @@ mod tests {
         bytes.extend_from_slice(&[0x80, 0x80, 0x80, 0x80, 0x10]);
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::VarintOverflow, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::VarintOverflow,
+                    ..
+                }
+            ),
             "expected VarintOverflow, got {err:?}"
         );
     }
@@ -1156,9 +1222,13 @@ mod tests {
         let bytes = vec![0x05, 0x1E, 0x00];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::TypeCheckFailed(_), ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::TypeCheckFailed(_),
+                    ..
+                }
+            ),
             "expected TypeCheckFailed for after(0), got {err:?}"
         );
     }
@@ -1171,9 +1241,13 @@ mod tests {
         let bytes = vec![0x05, 0x1F, 0x00];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::TypeCheckFailed(_), ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::TypeCheckFailed(_),
+                    ..
+                }
+            ),
             "expected TypeCheckFailed for older(0), got {err:?}"
         );
     }
@@ -1188,13 +1262,14 @@ mod tests {
 
         let hex = "0000000000000000000000000000000000000000000000000000000000000001";
         let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            &format!("wsh(sha256({hex}))")
+            &format!("wsh(sha256({hex}))"),
         )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1205,13 +1280,14 @@ mod tests {
 
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            &format!("wsh(hash256({hex}))")
+            &format!("wsh(hash256({hex}))"),
         )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1223,13 +1299,14 @@ mod tests {
         // 20-byte hex literal.
         let hex = "1122334455667788990011223344556677889900";
         let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            &format!("wsh(ripemd160({hex}))")
+            &format!("wsh(ripemd160({hex}))"),
         )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1240,13 +1317,14 @@ mod tests {
 
         let hex = "aabbccddeeff00112233445566778899aabbccdd";
         let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            &format!("wsh(hash160({hex}))")
+            &format!("wsh(hash160({hex}))"),
         )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1256,17 +1334,17 @@ mod tests {
         // would expose a byte-order reversal bug if it crept in (parallel to
         // the encoder side test for hash256).
         let hash_bytes: [u8; 32] = [
-            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+            0x1c, 0x1d, 0x1e, 0x1f,
         ];
         let mut bytes = vec![0x05, 0x20]; // [Wsh, Sha256]
         bytes.extend_from_slice(&hash_bytes);
 
         let decoded = decode_template(&bytes, &[]).unwrap();
         use std::collections::HashMap;
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1277,9 +1355,13 @@ mod tests {
         bytes.extend_from_slice(&[0xAA; 31]);
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::Truncated, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::Truncated,
+                    ..
+                }
+            ),
             "expected Truncated, got {err:?}"
         );
     }
@@ -1291,9 +1373,13 @@ mod tests {
         bytes.extend_from_slice(&[0xBB; 19]);
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::Truncated, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::Truncated,
+                    ..
+                }
+            ),
             "expected Truncated for ripemd160, got {err:?}"
         );
     }
@@ -1307,14 +1393,14 @@ mod tests {
         use std::collections::HashMap;
         use std::str::FromStr;
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            "wsh(or_d(0,1))"
-        )
-        .unwrap();
+        let descriptor =
+            miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str("wsh(or_d(0,1))")
+                .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1324,14 +1410,14 @@ mod tests {
         use std::collections::HashMap;
         use std::str::FromStr;
 
-        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            "wsh(or_i(0,1))"
-        )
-        .unwrap();
+        let descriptor =
+            miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str("wsh(or_i(0,1))")
+                .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1342,13 +1428,14 @@ mod tests {
         use std::str::FromStr;
 
         let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
-            "wsh(andor(0,1,0))"
+            "wsh(andor(0,1,0))",
         )
         .unwrap();
         let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
 
         let decoded = decode_template(&bytes, &[]).unwrap();
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1358,7 +1445,8 @@ mod tests {
         let bytes = vec![0x05, 0x16, 0x00, 0x01];
         let decoded = decode_template(&bytes, &[]).unwrap();
         use std::collections::HashMap;
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1368,7 +1456,8 @@ mod tests {
         let bytes = vec![0x05, 0x13, 0x00, 0x01, 0x00];
         let decoded = decode_template(&bytes, &[]).unwrap();
         use std::collections::HashMap;
-        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        let reencoded =
+            crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
         assert_eq!(reencoded, bytes);
     }
 
@@ -1381,9 +1470,13 @@ mod tests {
         // child and the cursor is at EOF. The next read_byte call returns
         // UnexpectedEnd.
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnexpectedEnd, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
             "expected UnexpectedEnd, got {err:?}"
         );
     }
@@ -1394,9 +1487,13 @@ mod tests {
         let bytes = vec![0x05, 0x13, 0x00, 0x01];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode {
-                kind: BytecodeErrorKind::UnexpectedEnd, ..
-            }),
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
             "expected UnexpectedEnd, got {err:?}"
         );
     }

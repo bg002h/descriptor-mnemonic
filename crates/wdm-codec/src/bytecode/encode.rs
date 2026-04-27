@@ -572,9 +572,7 @@ mod tests {
         map.insert(k1.clone(), 1u8);
         map.insert(k2.clone(), 2u8);
 
-        let d = parse_descriptor(&format!(
-            "wsh(sortedmulti(2,{k0},{k1},{k2}))"
-        ));
+        let d = parse_descriptor(&format!("wsh(sortedmulti(2,{k0},{k1},{k2}))"));
         let bytes = encode_template(&d, &map).unwrap();
 
         // SortedMultiVec::pks() returns keys in parse order (insertion into
@@ -960,9 +958,10 @@ mod tests {
         assert_eq!(
             bytes,
             vec![
-                Tag::Wsh.as_byte(),    // 0x05
-                Tag::After.as_byte(),  // 0x1E
-                0xE8, 0x07,            // varint(1000)
+                Tag::Wsh.as_byte(),   // 0x05
+                Tag::After.as_byte(), // 0x1E
+                0xE8,
+                0x07, // varint(1000)
             ]
         );
     }
@@ -976,9 +975,10 @@ mod tests {
         assert_eq!(
             bytes,
             vec![
-                Tag::Wsh.as_byte(),    // 0x05
-                Tag::Older.as_byte(),  // 0x1F
-                0x90, 0x01,            // varint(144)
+                Tag::Wsh.as_byte(),   // 0x05
+                Tag::Older.as_byte(), // 0x1F
+                0x90,
+                0x01, // varint(144)
             ]
         );
     }
@@ -1003,10 +1003,11 @@ mod tests {
             out,
             vec![
                 Tag::Thresh.as_byte(), // 0x18
-                0x02, 0x03,            // k=2, n=3
-                Tag::False.as_byte(),  // 0x00
-                Tag::True.as_byte(),   // 0x01
-                Tag::False.as_byte(),  // 0x00
+                0x02,
+                0x03,                 // k=2, n=3
+                Tag::False.as_byte(), // 0x00
+                Tag::True.as_byte(),  // 0x01
+                Tag::False.as_byte(), // 0x00
             ]
         );
     }
@@ -1014,15 +1015,14 @@ mod tests {
     #[test]
     fn encode_terminal_sha256() {
         // Sha256(0x00..0x1F) — 32-byte hash with deterministic content.
-        use bitcoin::hashes::{sha256, Hash};
+        use bitcoin::hashes::{Hash, sha256};
         use miniscript::Segwitv0;
         use miniscript::Terminal;
 
         let bytes: [u8; 32] = [
-            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+            0x1c, 0x1d, 0x1e, 0x1f,
         ];
         let h = sha256::Hash::from_byte_array(bytes);
         let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Sha256(h);
@@ -1049,10 +1049,9 @@ mod tests {
         // Asymmetric byte pattern (descending then ascending) — exposes any
         // accidental byte-order reversal that a [0xAA; 32] palindrome would mask.
         let bytes: [u8; 32] = [
-            0x1f, 0x1e, 0x1d, 0x1c, 0x1b, 0x1a, 0x19, 0x18,
-            0x17, 0x16, 0x15, 0x14, 0x13, 0x12, 0x11, 0x10,
-            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x1f, 0x1e, 0x1d, 0x1c, 0x1b, 0x1a, 0x19, 0x18, 0x17, 0x16, 0x15, 0x14, 0x13, 0x12,
+            0x11, 0x10, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+            0x0c, 0x0d, 0x0e, 0x0f,
         ];
         let h = hash256::Hash::from_byte_array(bytes);
         let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Hash256(h);
@@ -1067,14 +1066,13 @@ mod tests {
 
     #[test]
     fn encode_terminal_ripemd160() {
-        use bitcoin::hashes::{ripemd160, Hash};
+        use bitcoin::hashes::{Hash, ripemd160};
         use miniscript::Segwitv0;
         use miniscript::Terminal;
 
         let bytes: [u8; 20] = [
-            0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
-            0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-            0x77, 0x88, 0x99, 0xAA,
+            0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44,
+            0x55, 0x66, 0x77, 0x88, 0x99, 0xAA,
         ];
         let h = ripemd160::Hash::from_byte_array(bytes);
         let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Ripemd160(h);
@@ -1089,7 +1087,7 @@ mod tests {
 
     #[test]
     fn encode_terminal_hash160() {
-        use bitcoin::hashes::{hash160, Hash};
+        use bitcoin::hashes::{Hash, hash160};
         use miniscript::Segwitv0;
         use miniscript::Terminal;
 
@@ -1097,9 +1095,8 @@ mod tests {
         // tests) — exposes any accidental byte-order reversal that a uniform
         // palindrome like [0x42; 20] would mask.
         let bytes: [u8; 20] = [
-            0x13, 0x12, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C,
-            0x0B, 0x0A, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
-            0x06, 0x07, 0x08, 0x09,
+            0x13, 0x12, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x00, 0x01, 0x02, 0x03,
+            0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
         ];
         let h = hash160::Hash::from_byte_array(bytes);
         let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Hash160(h);
@@ -1227,9 +1224,8 @@ mod tests {
         use miniscript::Terminal;
 
         let bytes: [u8; 20] = [
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-            0x01, 0x02, 0x03, 0x04,
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE,
+            0xFF, 0x00, 0x01, 0x02, 0x03, 0x04,
         ];
         let h = hash160::Hash::from_byte_array(bytes);
         let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::RawPkH(h);
@@ -1266,6 +1262,10 @@ mod tests {
         // Under LEB128, 200 would emit as [0xC8, 0x01] — total 4 bytes.
         // Under single-byte, 200 emits as [0xC8] — total 3 bytes.
         assert_eq!(out, vec![0x1B, 0x32, 0xC8]);
-        assert_eq!(out.len(), 3, "single-byte placeholder index must be exactly 1 byte");
+        assert_eq!(
+            out.len(),
+            3,
+            "single-byte placeholder index must be exactly 1 byte"
+        );
     }
 }

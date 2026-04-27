@@ -10,7 +10,7 @@ pub mod policy;
 pub mod vectors;
 pub mod wallet_id;
 
-pub use error::{BytecodeErrorKind, ChunkWalletId, Error, Result};
 pub use encoding::{
-    bytes_to_5bit, decode_string, encode_string, five_bit_to_bytes, BchCode, DecodedString,
+    BchCode, DecodedString, bytes_to_5bit, decode_string, encode_string, five_bit_to_bytes,
 };
+pub use error::{BytecodeErrorKind, ChunkWalletId, Error, Result};

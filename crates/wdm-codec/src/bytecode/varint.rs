@@ -128,7 +128,10 @@ mod tests {
     fn decode_rejects_overflow() {
         // 10 continuation bytes followed by a terminator: 11 bytes total,
         // one more than the 10-byte maximum a u64 LEB128 can use.
-        let too_long: Vec<u8> = vec![0xFF; 10].into_iter().chain(std::iter::once(0x01)).collect();
+        let too_long: Vec<u8> = vec![0xFF; 10]
+            .into_iter()
+            .chain(std::iter::once(0x01))
+            .collect();
         assert_eq!(decode_u64(&too_long), None);
         // 10 bytes where the last one has bits beyond what fits in u64
         // (10th byte is the highest-order; must be ≤ 0x01 to fit).
