@@ -5,3 +5,7 @@
 .DS_Store
 *.swp
 *~
+
+# Cargo build output
+/target/
+**/target/
