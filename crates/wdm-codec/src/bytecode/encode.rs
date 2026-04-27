@@ -211,6 +211,20 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
                 left.encode_template(out, placeholder_map)?;
                 right.encode_template(out, placeholder_map)
             }
+            Terminal::Thresh(thresh) => {
+                out.push(Tag::Thresh.as_byte());
+                thresh.encode_template(out, placeholder_map)
+            }
+            Terminal::After(after) => {
+                out.push(Tag::After.as_byte());
+                crate::bytecode::varint::encode_u64(u64::from(after.to_consensus_u32()), out);
+                Ok(())
+            }
+            Terminal::Older(older) => {
+                out.push(Tag::Older.as_byte());
+                crate::bytecode::varint::encode_u64(u64::from(older.to_consensus_u32()), out);
+                Ok(())
+            }
             other => Err(Error::PolicyScopeViolation(format!(
                 "unsupported Terminal fragment in v0.1 scope: {other:?}"
             ))),
@@ -444,14 +458,15 @@ mod tests {
 
     #[test]
     fn encode_unsupported_terminal_returns_error() {
-        // A terminal we haven't wired up yet (e.g. After) returns an
-        // out-of-v0.1-scope PolicyScopeViolation via the catch-all arm.
-        use miniscript::AbsLockTime;
+        // A terminal we haven't wired up yet (e.g. Verify wrapper, Task 2.10)
+        // returns an out-of-v0.1-scope PolicyScopeViolation via the catch-all
+        // arm. After/Older were moved out of the catch-all in Task 2.8.
         use miniscript::Segwitv0;
         use miniscript::Terminal;
 
-        let term: Terminal<DescriptorPublicKey, Segwitv0> =
-            Terminal::After(AbsLockTime::from_consensus(1234).unwrap());
+        let inner: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
+            Arc::new(Miniscript::from_ast(Terminal::True).unwrap());
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Verify(inner);
         let mut out = Vec::new();
         let err = term.encode_template(&mut out, &empty_map()).unwrap_err();
         assert!(
@@ -810,6 +825,116 @@ mod tests {
                 Tag::PkK.as_byte(),         // 0x1B
                 Tag::Placeholder.as_byte(), // 0x32
                 0x01,                       // idx 1
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_after() {
+        // After(LockTime) emits Tag::After + varint(consensus_u32).
+        // 1234 in LEB128: 1234 = 0x4D2 = 0b100_1101_0010
+        //   low 7 bits = 0b101_0010 = 0xD2, top bit set (continuation)
+        //   high 7 bits = 0b000_1001 = 0x09, top bit clear (last)
+        // → bytes [0xD2, 0x09]
+        use miniscript::AbsLockTime;
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::After(AbsLockTime::from_consensus(1234).unwrap());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(out, vec![Tag::After.as_byte(), 0xD2, 0x09]);
+    }
+
+    #[test]
+    fn encode_terminal_after_small() {
+        // After(127) — single LEB128 byte (0x7F).
+        use miniscript::AbsLockTime;
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::After(AbsLockTime::from_consensus(127).unwrap());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(out, vec![Tag::After.as_byte(), 0x7F]);
+    }
+
+    #[test]
+    fn encode_terminal_older() {
+        // Older(4032) — 28 days in blocks.
+        // 4032 = 0xFC0 = 0b1111_1100_0000
+        //   low 7 bits = 0b100_0000 = 0x40, continuation
+        //   high 7 bits = 0b001_1111 = 0x1F, last
+        // → bytes [0xC0, 0x1F]
+        use miniscript::RelLockTime;
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> =
+            Terminal::Older(RelLockTime::from_consensus(4032).unwrap());
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(out, vec![Tag::Older.as_byte(), 0xC0, 0x1F]);
+    }
+
+    #[test]
+    fn encode_wsh_after_via_parser() {
+        // wsh(after(1000)) — full pipeline.
+        // 1000 LEB128: 1000 = 0x3E8, low 7 bits = 0x68 + continuation = 0xE8, high = 0x07.
+        let d = parse_descriptor("wsh(after(1000))");
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Wsh.as_byte(),    // 0x05
+                Tag::After.as_byte(),  // 0x1E
+                0xE8, 0x07,            // varint(1000)
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_wsh_older_via_parser() {
+        // wsh(older(144)) — 144 blocks (1 day).
+        // 144 LEB128: 144 = 0x90, low 7 bits = 0x10 + continuation = 0x90, high = 0x01.
+        let d = parse_descriptor("wsh(older(144))");
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Wsh.as_byte(),    // 0x05
+                Tag::Older.as_byte(),  // 0x1F
+                0x90, 0x01,            // varint(144)
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_thresh_2_of_3_with_constants() {
+        // thresh(2, 0, 1, 0) -> Tag::Thresh + varint(2) + varint(3) + 3 children.
+        // Threshold<Arc<Miniscript>, MAX> reuses the generic Threshold impl.
+        use miniscript::Threshold;
+
+        let zero: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
+            Arc::new(Miniscript::from_ast(Terminal::False).unwrap());
+        let one: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
+            Arc::new(Miniscript::from_ast(Terminal::True).unwrap());
+
+        let thresh = Threshold::new(2, vec![zero.clone(), one.clone(), zero]).unwrap();
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Thresh(thresh);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+
+        assert_eq!(
+            out,
+            vec![
+                Tag::Thresh.as_byte(), // 0x18
+                0x02, 0x03,            // k=2, n=3
+                Tag::False.as_byte(),  // 0x00
+                Tag::True.as_byte(),   // 0x01
+                Tag::False.as_byte(),  // 0x00
             ]
         );
     }
