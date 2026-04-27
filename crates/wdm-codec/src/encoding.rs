@@ -153,7 +153,7 @@ pub enum CaseStatus {
 /// (top 5 bits = current `b`, bottom 60 bits = masked state).
 ///
 /// Verified against the canonical reference at
-/// https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
+/// <https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki>.
 pub const GEN_REGULAR: [u128; 5] = [
     0x19dc500ce73fde210,
     0x1bfae00def77fe529,
@@ -201,7 +201,7 @@ pub const REGULAR_MASK: u128 = 0x0fffffffffffffff;
 /// The long polymod uses a 75-bit residue (top 5 bits = `b`, bottom 70 bits = masked state).
 ///
 /// Verified against the canonical reference at
-/// https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
+/// <https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki>.
 pub const GEN_LONG: [u128; 5] = [
     0x3d59d273535ea62d897,
     0x7a9becb6361c6c51507,
