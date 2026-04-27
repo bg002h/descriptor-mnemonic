@@ -30,6 +30,33 @@
 
 ---
 
+## Pre-Execution Checklist
+
+Items flagged by review passes that the implementer / first subagent should keep in mind:
+
+1. **Task 1.4 polynomial constants must come from BIP 93 reference Python.** The placeholder zeros in `GEN_REGULAR` and `GEN_LONG` will silently compile but produce wrong checksums. Fetch from `https://github.com/bitcoin/bips/blob/master/bip-0093/codex32_secret_share.py` and paste the verified values before Task 1.6's tests can pass. Cross-check the first 3 values printed against the BIP 93 spec text.
+
+2. **Task 1.6 needs a known-vector test against BIP 93 output, not just a self-round-trip.** Write a Python one-liner using the BIP 93 reference impl to compute `bch_checksum_regular("wdm", [0,1,2,3])` (or another fixed input). Paste the expected 13-character output as a `const EXPECTED: [u8; 13]` in the test. Without this, all internal round-trip tests are mutually consistent but unverified against the spec.
+
+3. **Task 1.8 acknowledges a BIP-spec gap.** The BIP claims 4-substitution correction; v0.1 ships brute-force 1-error correction. **P5.5 must update the BIP** to either: (a) note the v0.1 implementation limitation explicitly, or (b) commit to landing the full Berlekamp-Massey/Forney decoder before tagging v0.1.0. This is mandatory, not optional. Add to the P5.5 checklist.
+
+4. **`Tag::from_byte` uses `unsafe transmute`** for the byte→enum conversion. Sound for v0.1's contiguous 0x00–0x33 variants but UB if a future variant is added with a non-contiguous explicit value. P10 self-review must verify continuity OR refactor to a `match` expression. Adding a non-contiguous variant in v0.2 (e.g., `Fingerprints = 0x35`) without updating `from_byte` would be UB.
+
+5. **Tasks 6.5 (C4) and 6.9 (E13) policy strings live in `design/CORPUS.md`**, not in this task plan. The implementer / subagent must read CORPUS.md before expanding those tasks.
+
+6. **Coldcard exemplar policy (Task 6.11)** is sourced externally. Look in:
+   - https://github.com/Coldcard/firmware/blob/edge/docs/miniscript.md
+   - Coldcard's official documentation
+   - Bitcoin Stack Exchange tagged with `coldcard` and `wallet-policy`
+
+   At least one valid BIP 388 wallet policy string from public Coldcard sources must round-trip losslessly to satisfy DoD.
+
+7. **Task 8.4 `--verify` mode is typed-struct comparison, not byte-level diff.** Deserialize both committed and regenerated JSON to typed `TestVectorFile`, compare struct-by-struct. This insulates against `serde_json` formatter changes between releases.
+
+8. **Recommended execution split:** Inline through Task 2.3 (about 3 days of fully-expanded TDD work in this plan), then switch to subagent-driven for P2.4 onward. P0–P2.3 are complete enough that delegating to a subagent adds context-loading overhead without producing better expansions.
+
+---
+
 ## File Structure
 
 ```
