@@ -10,14 +10,36 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  check:
-    name: cargo check (linux)
+  test:
+    name: cargo test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Clone patched miniscript fork (fix/wallet-policy-hash-terminals)
+        run: |
+          git clone --depth 50 https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
+          cd ../rust-miniscript-fork
+          git checkout dbfe077
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --all-targets
+      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --doc
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone patched miniscript fork (fix/wallet-policy-hash-terminals)
+        run: |
+          git clone --depth 50 https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
+          cd ../rust-miniscript-fork
+          git checkout dbfe077
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   fmt:
     name: cargo fmt
@@ -29,6 +51,18 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
-# Tests, clippy, doc, llvm-cov, gen_vectors --verify, Windows/macOS sanity
-# are added at P5 once we have testable code. CI is intentionally minimal
-# at P0 to fail-fast on broken Cargo.toml changes only.
+  doc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone patched miniscript fork (fix/wallet-policy-hash-terminals)
+        run: |
+          git clone --depth 50 https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
+          cd ../rust-miniscript-fork
+          git checkout dbfe077
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps --document-private-items
