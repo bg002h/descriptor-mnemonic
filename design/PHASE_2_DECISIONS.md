@@ -27,6 +27,41 @@ Living document of decisions made during autonomous execution of Phase 2 (Byteco
 
 ---
 
+### D-4 (Task 2.4): Encoder takes `Descriptor<DescriptorPublicKey>` + placeholder map, mirrors `descriptor-codec` walker pattern
+
+**Context**: Phase 2 needs an encoder turning a BIP 388 wallet policy into canonical bytecode. The plan said "walk a miniscript AST"; the upstream `descriptor-codec` (CC0) walks a `Descriptor<DescriptorPublicKey>` via a `trait EncodeTemplate` impl per fragment type. WDM differs only in that key positions get replaced by `Tag::Placeholder` + LEB128 index drawn from the wallet policy's key information vector — there is no separate payload byte stream as in descriptor-codec.
+
+**Decision**: Public encoder API for v0.1:
+
+```rust
+pub fn encode_template(
+    descriptor: &miniscript::Descriptor<miniscript::descriptor::DescriptorPublicKey>,
+    placeholder_map: &std::collections::HashMap<miniscript::descriptor::DescriptorPublicKey, u8>,
+) -> Result<Vec<u8>, crate::Error>;
+```
+
+Internal walker is a private `trait EncodeTemplate` mirroring descriptor-codec's structure but emitting only the `template` byte stream (no `payload`). For each leaf key encountered, look up `placeholder_map`; if present, emit `Tag::Placeholder` + `varint::encode_u64(index)`; if missing, return `Error::PolicyScopeViolation` with a descriptive message (v0.1 forbids inline keys in the wallet-policy framing).
+
+**Rationale**:
+- Reuses miniscript's existing types and parsing (no custom AST).
+- Mirrors descriptor-codec line-by-line for the common operator arms — easier to verify correctness against the reference.
+- Placeholder substitution at the leaf is the only WDM-specific divergence; one well-marked seam.
+- Caller-provided `placeholder_map` keeps the encoder pure (no parsing of `@i` strings inside the encoder).
+
+**Alternatives considered**:
+- **Custom `WdmDescriptor`/`WdmAst` type**: rejected — would duplicate miniscript's type hierarchy. YAGNI.
+- **Use `Descriptor<WdmKey>`**: rejected — requires implementing `MiniscriptKey`, `ToPublicKey`, and other traits on `WdmKey`, each with non-trivial bodies. Large surface.
+- **Encoder returns `(template, payload)` mirroring descriptor-codec**: rejected — WDM v0.1 has no payload concept. The Template Card carries only the template; key material lives on the Xpub Cards (separate structure entirely).
+
+**v0.1 scope reminders** (enforced inside the encoder; emit `PolicyScopeViolation` on violation):
+- Only `Wsh()` top-level (no Sh, Bare, Pkh, Wpkh, Tr in v0.1).
+- All keys MUST be in `placeholder_map` (no inline keys).
+- No taproot.
+
+**Verify in code**: `crates/wdm-codec/src/bytecode/encode.rs` (Task 2.4 onwards). Public re-export from `crates/wdm-codec/src/lib.rs` once stable.
+
+---
+
 ### D-3 (Task 2.1 review fix): `Tag` marked `#[non_exhaustive]`
 
 **Context**: Task 2.1's code review flagged that `Tag` lacks `#[non_exhaustive]` despite the module-level doc forecasting new tags (e.g., fingerprints 0x35 in v0.2). Without the attribute, downstream `match tag { ... }` consumers will get a hard compile error when v0.2 adds variants.
