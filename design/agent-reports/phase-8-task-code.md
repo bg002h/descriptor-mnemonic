@@ -1,7 +1,7 @@
 # Phase 8 — code work (Tasks 8.1, 8.2, 8.3, 8.4, 8.7, 7.7)
 
 **Status:** DONE_WITH_CONCERNS
-**Commit:** (see below — committed after this report was written)
+**Commit:** f241025
 **File(s):**
 - `crates/wdm-codec/src/vectors.rs`
 - `crates/wdm-codec/src/lib.rs`
