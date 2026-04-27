@@ -29,7 +29,8 @@ fn chunk_code_to_bch_code(c: ChunkCode) -> BchCode {
 /// 1. **Bytecode** — `policy.to_bytecode()` produces canonical WDM bytecode.
 /// 2. **Chunking plan** — [`chunking_decision`] selects single-string or
 ///    chunked encoding. `force_long_code` can upgrade Regular → Long after
-///    the fact. `force_chunking` causes chunked encoding even for short input.
+///    the fact. `chunking_mode = ChunkingMode::ForceChunked` causes chunked
+///    encoding even for short input.
 /// 3. **Wallet IDs** — the *chunk-header* 20-bit `wallet_id` is derived from
 ///    `options.wallet_id_seed` (if present) or the content hash. The
 ///    *Tier-3* 16-byte `WalletId` is **always** content-derived, never
@@ -49,7 +50,7 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBacku
     let bytecode = policy.to_bytecode()?;
 
     // Stage 3: decide chunking plan, then apply force_long_code override.
-    let mut plan = chunking_decision(bytecode.len(), options.force_chunking)?;
+    let mut plan = chunking_decision(bytecode.len(), options.chunking_mode)?;
     if options.force_long_code {
         plan = match plan {
             // Regular single-string → Long single-string (long capacity ≥ regular, always fits).
@@ -129,7 +130,7 @@ mod tests {
     use super::*;
     use crate::{
         EncodeOptions, WalletPolicy,
-        chunking::ChunkHeader,
+        chunking::{ChunkHeader, ChunkingMode},
         wallet_id::{WalletIdSeed, compute_wallet_id},
     };
 
@@ -241,7 +242,7 @@ mod tests {
     fn encode_force_chunked_with_short_input() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             ..Default::default()
         };
         let backup = encode(&p, &opts).expect("encode");
@@ -317,7 +318,7 @@ mod tests {
         let p = policy("wsh(pk(@0/**))");
         let seed_val: u32 = 0x1234_5678;
         let opts = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             wallet_id_seed: Some(WalletIdSeed::from(seed_val)),
             ..Default::default()
         };
@@ -340,7 +341,7 @@ mod tests {
                 );
             }
             ChunkHeader::SingleString { .. } => {
-                panic!("expected Chunked header when force_chunking=true");
+                panic!("expected Chunked header when chunking_mode=ForceChunked");
             }
         }
     }
@@ -353,7 +354,7 @@ mod tests {
     fn encode_chunk_header_wallet_id_is_content_derived_without_seed() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             ..Default::default()
         };
         let backup = encode(&p, &opts).expect("encode");
@@ -376,7 +377,7 @@ mod tests {
                 );
             }
             ChunkHeader::SingleString { .. } => {
-                panic!("expected Chunked header when force_chunking=true");
+                panic!("expected Chunked header when chunking_mode=ForceChunked");
             }
         }
     }
@@ -417,14 +418,14 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Bonus: verify force_long_code with force_chunking upgrades chunked Regular → Long
+    // Bonus: verify force_long_code with ChunkingMode::ForceChunked upgrades chunked Regular → Long
     // -----------------------------------------------------------------------
 
     #[test]
     fn encode_force_chunked_force_long_produces_long_code() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             force_long_code: true,
             ..Default::default()
         };
@@ -442,7 +443,7 @@ mod tests {
         // The Tier-3 is compute_wallet_id(bytecode); chunk-header = .truncate().
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             ..Default::default()
         };
         let backup = encode(&p, &opts).expect("encode");

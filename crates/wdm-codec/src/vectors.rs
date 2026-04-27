@@ -184,7 +184,7 @@ const CORPUS_FIXTURES: &[(&str, &str, &str)] = &[
 /// - `n12` (`EmptyChunkList`): requires calling `reassemble_chunks(&[])`
 ///   directly with an empty slice; `decode()` rejects empty input earlier
 ///   with a different variant.
-/// - `n30` (`PolicyTooLarge`): triggered by `chunking_decision(1693, false)`
+/// - `n30` (`PolicyTooLarge`): triggered by `chunking_decision(1693, ChunkingMode::Auto)`
 ///   directly; the encode pipeline rejects oversized policies before
 ///   producing a string.
 ///
@@ -392,7 +392,7 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
     NegativeFixture {
         id: "n30",
         description: "Bytecode larger than 1692 bytes → PolicyTooLarge",
-        // Synthetic path: chunking_decision(1693, false) returns this error.
+        // Synthetic path: chunking_decision(1693, ChunkingMode::Auto) returns this error.
         // No WDM string exists for this case — callers use chunking_decision directly.
         input_strings: &[],
         expected_error_variant: "PolicyTooLarge",

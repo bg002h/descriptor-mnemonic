@@ -458,7 +458,7 @@ impl WalletPolicy {
 /// with `chunk_index == 0, total_chunks == 1`. A chunked backup has
 /// `chunks.len() in 1..=32` and every chunk's `total_chunks` equals
 /// `chunks.len()`. (A 1-chunk Chunked backup is possible when the user
-/// passes [`crate::EncodeOptions::force_chunking`] on a small input.)
+/// passes [`crate::EncodeOptions::chunking_mode`] = [`crate::ChunkingMode::ForceChunked`] on a small input.)
 ///
 /// # What to do with this
 ///

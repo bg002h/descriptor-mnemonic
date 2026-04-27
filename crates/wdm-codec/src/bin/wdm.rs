@@ -223,7 +223,7 @@ fn cmd_encode(
     };
 
     let mut opts = EncodeOptions::default();
-    opts.force_chunking = force_chunked;
+    opts = opts.with_force_chunking(force_chunked);
     opts.force_long_code = force_long_code;
     opts.wallet_id_seed = wallet_id_seed;
 

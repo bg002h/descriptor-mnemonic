@@ -242,6 +242,31 @@ impl From<ChunkCode> for crate::BchCode {
 }
 
 // ---------------------------------------------------------------------------
+// ChunkingMode
+// ---------------------------------------------------------------------------
+
+/// Chunking-mode selector. Replaces the previous `force_chunked: bool`
+/// parameter on [`chunking_decision`] for self-documenting call sites.
+///
+/// The selector is also exposed via [`crate::EncodeOptions::chunking_mode`];
+/// the [`crate::EncodeOptions::with_force_chunking`] builder method translates
+/// `bool → ChunkingMode` for source-compatibility with v0.1.1 callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChunkingMode {
+    /// Single-string when bytecode fits; chunked otherwise.
+    Auto,
+    /// Force chunked encoding even when single-string would fit.
+    ForceChunked,
+}
+
+impl Default for ChunkingMode {
+    /// Default is [`ChunkingMode::Auto`] — single-string when bytecode fits.
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ChunkingPlan
 // ---------------------------------------------------------------------------
 
@@ -271,7 +296,7 @@ pub enum ChunkingPlan {
         code: ChunkCode,
         /// Maximum bytes per chunk fragment (≤ `code.fragment_capacity()`).
         fragment_size: usize,
-        /// Total number of chunks (1–32; in practice ≥ 2 unless `force_chunked`).
+        /// Total number of chunks (1–32; in practice ≥ 2 unless [`ChunkingMode::ForceChunked`]).
         count: usize,
     },
 }
@@ -284,10 +309,10 @@ pub enum ChunkingPlan {
 ///
 /// # Selection rules
 ///
-/// 1. If `force_chunked` is `false` and `bytecode_len ≤ 48` (regular single-string
-///    capacity), return `SingleString { Regular }`.
-/// 2. Else if `force_chunked` is `false` and `bytecode_len ≤ 56` (long single-string
-///    capacity), return `SingleString { Long }`.
+/// 1. If `mode` is [`ChunkingMode::Auto`] and `bytecode_len ≤ 48` (regular
+///    single-string capacity), return `SingleString { Regular }`.
+/// 2. Else if `mode` is [`ChunkingMode::Auto`] and `bytecode_len ≤ 56` (long
+///    single-string capacity), return `SingleString { Long }`.
 /// 3. Otherwise (chunked path): the byte stream is `bytecode_len + 4` (the
 ///    4-byte cross-chunk SHA-256 hash is appended before splitting).
 ///    - Try **Regular** first: `count = ⌈(bytecode_len + 4) / 45⌉`.
@@ -297,13 +322,14 @@ pub enum ChunkingPlan {
 ///    - Else return [`Error::PolicyTooLarge`] with `max_supported =`
 ///      [`MAX_BYTECODE_LEN`] (= 32 × 53 − 4 = 1692).
 ///
-/// The `force_chunked` flag (BIP line 438) lets encoders chunk even small
-/// bytecodes, e.g. to fit on physical media.  When forced, the single-string
-/// checks in steps 1–2 are skipped; selection within the chunked path is
-/// unchanged (Regular preferred, Long fallback).
+/// The [`ChunkingMode::ForceChunked`] mode (BIP line 438) lets encoders chunk
+/// even small bytecodes, e.g. to fit on physical media. When forced, the
+/// single-string checks in steps 1–2 are skipped; selection within the
+/// chunked path is unchanged (Regular preferred, Long fallback).
 ///
-/// Note: when `force_chunked = true`, this function still prefers Regular over
-/// Long (matching the unforced behavior); the BIP is silent on this preference.
+/// Note: when [`ChunkingMode::ForceChunked`] is used, this function still
+/// prefers Regular over Long (matching the [`ChunkingMode::Auto`] behavior);
+/// the BIP is silent on this preference.
 ///
 /// ## Notes
 ///
@@ -314,9 +340,9 @@ pub enum ChunkingPlan {
 /// # Errors
 ///
 /// Returns [`Error::PolicyTooLarge`] when `bytecode_len` exceeds [`MAX_BYTECODE_LEN`].
-pub fn chunking_decision(bytecode_len: usize, force_chunked: bool) -> Result<ChunkingPlan> {
-    // Steps 1 & 2: single-string path (skipped when force_chunked).
-    if !force_chunked {
+pub fn chunking_decision(bytecode_len: usize, mode: ChunkingMode) -> Result<ChunkingPlan> {
+    // Steps 1 & 2: single-string path (skipped when ForceChunked).
+    if matches!(mode, ChunkingMode::Auto) {
         if bytecode_len <= ChunkCode::Regular.single_string_capacity() {
             return Ok(ChunkingPlan::SingleString {
                 code: ChunkCode::Regular,
@@ -956,7 +982,7 @@ mod tests {
     #[test]
     fn chunking_decision_zero_byte_input() {
         // 0-byte bytecode, unforced → SingleString { Regular } (fits within 48-byte capacity).
-        let plan = chunking_decision(0, false).unwrap();
+        let plan = chunking_decision(0, ChunkingMode::Auto).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::SingleString {
@@ -966,7 +992,7 @@ mod tests {
 
         // 0-byte bytecode, forced → Chunked { Regular, 45, 1 }:
         // stream = 0 + 4 = 4; count = ceil(4/45) = 1.
-        let plan_forced = chunking_decision(0, true).unwrap();
+        let plan_forced = chunking_decision(0, ChunkingMode::ForceChunked).unwrap();
         assert_eq!(
             plan_forced,
             ChunkingPlan::Chunked {
@@ -980,7 +1006,7 @@ mod tests {
     #[test]
     fn single_string_long_explicit_49_bytes() {
         // 49 bytes exceeds Regular capacity (48) but fits Long (56) → SingleString { Long }.
-        let plan = chunking_decision(49, false).unwrap();
+        let plan = chunking_decision(49, ChunkingMode::Auto).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::SingleString {
@@ -992,7 +1018,7 @@ mod tests {
     #[test]
     fn single_string_short_input() {
         // Small bytecode → SingleString { Regular }.
-        let plan = chunking_decision(10, false).unwrap();
+        let plan = chunking_decision(10, ChunkingMode::Auto).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::SingleString {
@@ -1004,7 +1030,7 @@ mod tests {
     #[test]
     fn single_string_regular_at_boundary() {
         // At the regular capacity boundary: 48 → Regular; 49 → falls through.
-        let at = chunking_decision(48, false).unwrap();
+        let at = chunking_decision(48, ChunkingMode::Auto).unwrap();
         assert_eq!(
             at,
             ChunkingPlan::SingleString {
@@ -1013,7 +1039,7 @@ mod tests {
         );
 
         // 49 bytes is over regular single-string but still fits long single-string.
-        let over = chunking_decision(49, false).unwrap();
+        let over = chunking_decision(49, ChunkingMode::Auto).unwrap();
         assert_eq!(
             over,
             ChunkingPlan::SingleString {
@@ -1026,7 +1052,7 @@ mod tests {
     #[test]
     fn single_string_long_at_boundary() {
         // At the long capacity boundary: 56 → Long; 57 → chunked path.
-        let at = chunking_decision(56, false).unwrap();
+        let at = chunking_decision(56, ChunkingMode::Auto).unwrap();
         assert_eq!(
             at,
             ChunkingPlan::SingleString {
@@ -1035,7 +1061,7 @@ mod tests {
         );
 
         // 57 bytes exceeds both single-string capacities → must be a Chunked plan.
-        let over = chunking_decision(57, false).unwrap();
+        let over = chunking_decision(57, ChunkingMode::Auto).unwrap();
         assert!(
             matches!(over, ChunkingPlan::Chunked { .. }),
             "57 bytes should return Chunked, got {over:?}"
@@ -1046,7 +1072,7 @@ mod tests {
     fn force_chunked_skips_single_string() {
         // force_chunked=true with a short bytecode → Chunked, not SingleString.
         // count = ceil((10 + 4) / 45) = ceil(14/45) = 1.
-        let plan = chunking_decision(10, true).unwrap();
+        let plan = chunking_decision(10, ChunkingMode::ForceChunked).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::Chunked {
@@ -1061,7 +1087,7 @@ mod tests {
     fn chunked_regular_minimal() {
         // 57 bytes is just over long single-string capacity.
         // stream = 57 + 4 = 61; count = ceil(61/45) = 2.
-        let plan = chunking_decision(57, false).unwrap();
+        let plan = chunking_decision(57, ChunkingMode::Auto).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::Chunked {
@@ -1076,7 +1102,7 @@ mod tests {
     fn chunked_regular_at_max_chunks() {
         // Exactly 32 regular chunks: stream = 32 * 45 = 1440, bytecode_len = 1436.
         // count = ceil(1440/45) = 32.
-        let plan = chunking_decision(1436, false).unwrap();
+        let plan = chunking_decision(1436, ChunkingMode::Auto).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::Chunked {
@@ -1092,7 +1118,7 @@ mod tests {
         // 1437 + 4 = 1441 > 1440 (32*45), so regular needs 33 chunks → overflow.
         // long: count = ceil(1441/53) = ceil(1441/53) = 28.
         // 1441 / 53 = 27.188... → ceil = 28.
-        let plan = chunking_decision(1437, false).unwrap();
+        let plan = chunking_decision(1437, ChunkingMode::Auto).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::Chunked {
@@ -1107,7 +1133,7 @@ mod tests {
     fn chunked_long_at_max_chunks() {
         // Exactly 32 long chunks: stream = 32 * 53 = 1696, bytecode_len = 1692.
         // count = ceil(1696/53) = 32.
-        let plan = chunking_decision(1692, false).unwrap();
+        let plan = chunking_decision(1692, ChunkingMode::Auto).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::Chunked {
@@ -1121,7 +1147,7 @@ mod tests {
     #[test]
     fn reject_too_large() {
         // 1693 bytes: stream = 1697 > 1696 (32*53). Must return PolicyTooLarge.
-        let err = chunking_decision(1693, false).unwrap_err();
+        let err = chunking_decision(1693, ChunkingMode::Auto).unwrap_err();
         assert!(
             matches!(
                 err,
@@ -1137,7 +1163,7 @@ mod tests {
     #[test]
     fn force_chunked_at_max() {
         // force_chunked=true at bytecode_len=1692 → same long-32 plan.
-        let plan = chunking_decision(1692, true).unwrap();
+        let plan = chunking_decision(1692, ChunkingMode::ForceChunked).unwrap();
         assert_eq!(
             plan,
             ChunkingPlan::Chunked {
@@ -1151,7 +1177,7 @@ mod tests {
     #[test]
     fn force_chunked_too_large() {
         // force_chunked=true at bytecode_len=1693 → PolicyTooLarge.
-        let err = chunking_decision(1693, true).unwrap_err();
+        let err = chunking_decision(1693, ChunkingMode::ForceChunked).unwrap_err();
         assert!(
             matches!(
                 err,

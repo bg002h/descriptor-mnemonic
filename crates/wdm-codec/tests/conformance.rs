@@ -15,8 +15,9 @@
 mod common;
 
 use wdm_codec::{
-    BytecodeErrorKind, Chunk, ChunkHeader, ChunkWalletId, DecodeOptions, EncodeOptions, Error,
-    WalletPolicy, chunk_bytes, chunking_decision, decode, encode, reassemble_chunks,
+    BytecodeErrorKind, Chunk, ChunkHeader, ChunkWalletId, ChunkingMode, DecodeOptions,
+    EncodeOptions, Error, WalletPolicy, chunk_bytes, chunking_decision, decode, encode,
+    reassemble_chunks,
 };
 
 // ---------------------------------------------------------------------------
@@ -845,7 +846,7 @@ fn rejects_miniscript() {
 #[test]
 fn rejects_policy_too_large() {
     // 1693 bytes exceeds MAX_BYTECODE_LEN (1692).
-    let err = chunking_decision(1693, false).unwrap_err();
+    let err = chunking_decision(1693, ChunkingMode::Auto).unwrap_err();
     assert!(
         matches!(
             err,

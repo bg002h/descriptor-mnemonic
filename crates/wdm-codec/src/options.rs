@@ -1,5 +1,6 @@
 //! Options passed to the top-level [`crate::encode()`] and [`crate::decode()`] functions.
 
+use crate::chunking::ChunkingMode;
 use crate::wallet_id::WalletIdSeed;
 
 // ---------------------------------------------------------------------------
@@ -9,7 +10,7 @@ use crate::wallet_id::WalletIdSeed;
 /// Options controlling the [`crate::encode()`] pipeline.
 ///
 /// All fields default to "natural" behavior:
-/// - `force_chunking = false`: single-string is preferred when bytecode fits.
+/// - `chunking_mode = ChunkingMode::Auto`: single-string is preferred when bytecode fits.
 /// - `force_long_code = false`: regular BCH code is preferred when it fits.
 /// - `wallet_id_seed = None`: chunk-header `wallet_id` is content-derived.
 ///
@@ -20,20 +21,27 @@ use crate::wallet_id::WalletIdSeed;
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EncodeOptions {
-    /// Force chunked encoding even when bytecode fits in a single string.
+    /// How chunking is selected: [`ChunkingMode::Auto`] picks single-string
+    /// when bytecode fits; [`ChunkingMode::ForceChunked`] forces a chunked
+    /// encoding even when single-string would fit.
     ///
-    /// Use case: ergonomic chunk size when you'd rather engrave 2 short
-    /// strings than 1 long one (per BIP §"Chunking" line 438). Setting this
-    /// on a small input produces a 1-chunk Chunked card (with the 7-byte
-    /// chunk-header overhead) instead of a SingleString card with the 2-byte
-    /// header.
-    pub force_chunking: bool,
+    /// Use case for `ForceChunked`: ergonomic chunk size when you'd rather
+    /// engrave 2 short strings than 1 long one (per BIP §"Chunking" line 438).
+    /// Setting this on a small input produces a 1-chunk Chunked card (with
+    /// the 7-byte chunk-header overhead) instead of a SingleString card with
+    /// the 2-byte header.
+    ///
+    /// Replaces the v0.1 `force_chunking: bool` field. The
+    /// [`EncodeOptions::with_force_chunking`] builder method still accepts a
+    /// `bool` for source-compatibility.
+    pub chunking_mode: ChunkingMode,
     /// Force the long BCH code (15-char checksum) even when the regular code
     /// (13-char checksum) fits.
     ///
     /// The long code carries more payload per chunk at the cost of two extra
     /// transcribed characters per string. Most often paired with
-    /// `force_chunking = true` to test long-code behavior on small inputs.
+    /// `chunking_mode = ChunkingMode::ForceChunked` to test long-code behavior
+    /// on small inputs.
     pub force_long_code: bool,
     /// Override the chunk-header [`crate::ChunkWalletId`] with this seed instead of
     /// using the first 20 bits of the content-derived SHA-256.
@@ -49,9 +57,17 @@ pub struct EncodeOptions {
 
 impl EncodeOptions {
     /// Force chunked encoding even when bytecode fits in a single string.
-    /// See [`EncodeOptions::force_chunking`] for full semantics.
+    ///
+    /// `bool` shim retained for source-compatibility with v0.1.1 callers:
+    /// `true` selects [`ChunkingMode::ForceChunked`], `false` selects
+    /// [`ChunkingMode::Auto`]. See [`EncodeOptions::chunking_mode`] for full
+    /// semantics.
     pub fn with_force_chunking(mut self, force: bool) -> Self {
-        self.force_chunking = force;
+        self.chunking_mode = if force {
+            ChunkingMode::ForceChunked
+        } else {
+            ChunkingMode::Auto
+        };
         self
     }
 
@@ -125,7 +141,7 @@ mod tests {
     #[test]
     fn encode_options_default_is_all_off() {
         let opts = EncodeOptions::default();
-        assert!(!opts.force_chunking);
+        assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
         assert!(opts.wallet_id_seed.is_none());
     }
@@ -138,7 +154,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(opts.wallet_id_seed, Some(seed));
-        assert!(!opts.force_chunking);
+        assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
     }
 
@@ -149,7 +165,7 @@ mod tests {
             .with_force_chunking(true)
             .with_force_long_code(true)
             .with_seed(seed);
-        assert!(opts.force_chunking);
+        assert_eq!(opts.chunking_mode, ChunkingMode::ForceChunked);
         assert!(opts.force_long_code);
         assert_eq!(opts.wallet_id_seed, Some(seed));
     }
@@ -158,9 +174,25 @@ mod tests {
     fn encode_options_builder_default_passthrough() {
         let opts = EncodeOptions::default();
         let opts = opts.with_force_chunking(false);
-        assert!(!opts.force_chunking);
+        assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
         assert_eq!(opts.wallet_id_seed, None);
+    }
+
+    #[test]
+    fn with_force_chunking_translates_bool_to_enum() {
+        // True → ForceChunked
+        let opts = EncodeOptions::default().with_force_chunking(true);
+        assert_eq!(opts.chunking_mode, ChunkingMode::ForceChunked);
+
+        // False → Auto (round-trip from ForceChunked)
+        let opts = opts.with_force_chunking(false);
+        assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
+    }
+
+    #[test]
+    fn chunking_mode_default_is_auto() {
+        assert_eq!(ChunkingMode::default(), ChunkingMode::Auto);
     }
 
     #[test]

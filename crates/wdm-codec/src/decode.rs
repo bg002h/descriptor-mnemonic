@@ -212,7 +212,8 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
 mod tests {
     use super::*;
     use crate::{
-        DecodeOptions, EncodeOptions, WalletPolicy, encode::encode, wallet_id::WalletIdSeed,
+        DecodeOptions, EncodeOptions, WalletPolicy, chunking::ChunkingMode, encode::encode,
+        wallet_id::WalletIdSeed,
     };
 
     fn policy(s: &str) -> WalletPolicy {
@@ -306,7 +307,7 @@ mod tests {
     fn decode_round_trip_chunked_with_seed() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             wallet_id_seed: Some(WalletIdSeed::from(0xDEAD_BEEFu32)),
             ..Default::default()
         };
@@ -400,12 +401,12 @@ mod tests {
         let p_b = policy("wsh(pk(@0/**))");
 
         let opts_a = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             wallet_id_seed: Some(WalletIdSeed::from(0x1111_1111u32)),
             ..Default::default()
         };
         let opts_b = EncodeOptions {
-            force_chunking: true,
+            chunking_mode: ChunkingMode::ForceChunked,
             wallet_id_seed: Some(WalletIdSeed::from(0x2222_2222u32)),
             ..Default::default()
         };
