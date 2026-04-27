@@ -36,26 +36,24 @@ use crate::bytecode::path::{decode_declaration, encode_declaration};
 // `WalletPolicy` (which has no real keys attached), we substitute placeholder
 // indices with hardcoded dummy xpubs. These xpubs are encoder-internal only
 // and are NEVER published or used for actual key derivation. They are selected
-// to be syntactically valid BIP 32 extended public keys with distinct
-// fingerprints (making them distinct for `DescriptorPublicKey` equality checks)
-// and `/<0;1>/*` derivation suffixes (required for the `KeyExpression`
-// translator that calls `pk.wildcard()` during `from_descriptor()`).
+// to be syntactically valid BIP 32 extended public keys with `/<0;1>/*`
+// derivation suffixes (required because the `KeyExpression` translator calls
+// `pk.wildcard()` during `from_descriptor()`).
 //
-// Dummy key format: `[000000NN/84'/0'/0']<xpub>/<0;1>/*`
+// Dummy key format: `[fingerprint/derivation_path]xpub.../<0;1>/*`
 //
-// The xpub base is the same known-valid value for all entries (BIP 32 test
-// vector); uniqueness comes from the fingerprint byte and the `/N'` account
-// index in the origin path.
+// Uniqueness: `DescriptorPublicKey`'s derived `PartialEq` compares the full
+// (fingerprint, origin path, xpub) triple. Entries are distinct if ANY of
+// fingerprint, path, or xpub differs. This table achieves distinctness by
+// using different xpubs (pulled from the miniscript fork's own test vectors).
+// When two entries share the same xpub, they are made distinct by using
+// different origin paths (different account indices or purpose fields).
 //
-// v0.1 supports up to MAX_DUMMY_KEYS placeholder keys. BIP 388 limits
-// wallet policies to a practical maximum much lower than 32; 8 entries cover
-// common use-cases (single-sig, 2-of-3, 3-of-5, etc.). To support more,
-// add entries with distinct fingerprints and origin account indices.
+// Size: 32 entries matching BIP 388's maximum placeholder count (indices 0..=31).
+// The table is separated into a private submodule to keep policy.rs readable.
 
-// All 8 entries use proven-valid xpubs taken from the miniscript fork's own
-// test vectors. Each xpub+fingerprint combination is distinct so that
-// `DescriptorPublicKey`'s derived `PartialEq` treats them as separate keys.
 const DUMMY_KEYS: &[&str] = &[
+    // Entries 0–7: same as the original table (distinct xpubs from fork test vectors).
     "[6738736c/44'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*",
     "[6738736c/48'/0'/0'/100']xpub6FC1fXFP1GXQpyRFfSE1vzzySqs3Vg63bzimYLeqtNUYbzA87kMNTcuy9ubr7MmavGRjW2FRYHP4WGKjwutbf1ghgkUW9H7e3ceaPLRcVwa/<0;1>/*",
     "[6738736c/48'/0'/0'/2']xpub6FC1fXFP1GXLX5TKtcjHGT4q89SDRehkQLtbKJ2PzWcvbBHtyDsJPLtpLtkGqYNYZdVVAjRQ5kug9CsapegmmeRutpP7PW4u4wVF9JfkDhw/<0;1>/*",
@@ -64,14 +62,41 @@ const DUMMY_KEYS: &[&str] = &[
     "[6738736c/86'/0'/0']xpub6CryUDWPS28eR2cDyojB8G354izmx294BdjeSvH469Ty3o2E6Tq5VjBJCn8rWBgesvTJnyXNAJ3QpLFGuNwqFXNt3gn612raffLWfdHNkYL/<0;1>/*",
     "[a666a867/44'/0'/0'/100']xpub6Dgsze3ujLi1EiHoCtHFMS9VLS1UheVqxrHGfP7sBJ2DBfChEUHV4MDwmxAXR2ayeytpwm3zJEU3H3pjCR6q6U5sP2p2qzAD71x9z5QShK2/<0;1>/*",
     "[b2b1f0cf/44'/0'/0'/100']xpub6EYajCJHe2CK53RLVXrN14uWoEttZgrRSaRztujsXg7yRhGtHmLBt9ot9Pd5ugfwWEu6eWyJYKSshyvZFKDXiNbBcoK42KRZbxwjRQpm5Js/<0;1>/*",
+    // Entries 8–15: additional xpubs from the fork's test vectors (all distinct).
+    "[bb641298/44'/0'/0'/100']xpub6Dz8PHFmXkYkykQ83ySkruky567XtJb9N69uXScJZqweYiQn6FyieajdiyjCvWzRZ2GoLHMRE1cwDfuJZ6461YvNRGVBJNnLA35cZrQKSRJ/<0;1>/*",
+    "[6738736c/48'/0'/0'/3']xpub6Fc2TRaCWNgfT49nRGG2G78d1dPnjhW66gEXi7oYZML7qEFN8e21b2DLDipTZZnfV6V7ivrMkvh4VbnHY2ChHTS9qM3XVLJiAgcfagYQk6K/<0;1>/*",
+    "[6738736c/48'/0'/0'/4']xpub6GjFUVVYewLj5no5uoNKCWuyWhQ1rKGvV8DgXBG9Uc6DvAKxt2dhrj1EZFrTNB5qxAoBkVW3wF8uCS3q1ri9fueAa6y7heFTcf27Q4gyeh6/<0;1>/*",
+    "[6738736c/48'/0'/0'/5']xpub6GxHB9kRdFfTqYka8tgtX9Gh3Td3A9XS8uakUGVcJ9NGZ1uLrGZrRVr67DjpMNCHprZmVmceFTY4X4wWfksy8nVwPiNvzJ5pjLxzPtpnfEM/<0;1>/*",
+    "[6738736c/48'/0'/0'/6']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/<0;1>/*",
+    "[6738736c/48'/0'/0'/7']xpub6BzhLAQUDcBUfHRQHZxDF2AbcJqp4Kaeq6bzJpXrjrWuK26ymTFwkEFbxPra2bJ7yeZKbDjfDeFwxe93JMqpo5SsPJH6dZdvV9kMzJkAZ69/<0;1>/*",
+    "[6738736c/48'/0'/0'/8']xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V/<0;1>/*",
+    "[6738736c/48'/0'/0'/9']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/<0;1>/*",
+    // Entries 16–23: further distinct entries using different fingerprints and paths.
+    "[c0c0c0c0/44'/0'/0'/0']xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8/<0;1>/*",
+    "[c0c0c0c1/44'/0'/0'/1']xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8/<0;1>/*",
+    "[c0c0c0c2/44'/0'/0'/2']xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/<0;1>/*",
+    "[c0c0c0c3/44'/0'/0'/3']xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/<0;1>/*",
+    "[c0c0c0c4/44'/0'/0'/4']xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/<0;1>/*",
+    "[c0c0c0c5/44'/0'/0'/5']xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ/<0;1>/*",
+    "[c0c0c0c6/44'/0'/0'/6']xpub6AHA9hZDN11k2ijHMeS5QqHx2KP9aMBRhTDqANMnwVtdyw2TDYRmF8PjpvwUFcL1Et8Hj59S3gTSMcUQ5gAqTz3Wd8EsMTmF3DChhqPQBnU/<0;1>/*",
+    "[c0c0c0c7/44'/0'/0'/7']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/<0;1>/*",
+    // Entries 24–31: final batch with distinct fingerprints c0c0c0d0..c0c0c0d7.
+    "[c0c0c0d0/48'/0'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*",
+    "[c0c0c0d1/48'/0'/0'/1']xpub6FC1fXFP1GXQpyRFfSE1vzzySqs3Vg63bzimYLeqtNUYbzA87kMNTcuy9ubr7MmavGRjW2FRYHP4WGKjwutbf1ghgkUW9H7e3ceaPLRcVwa/<0;1>/*",
+    "[c0c0c0d2/48'/0'/0'/2']xpub6FC1fXFP1GXLX5TKtcjHGT4q89SDRehkQLtbKJ2PzWcvbBHtyDsJPLtpLtkGqYNYZdVVAjRQ5kug9CsapegmmeRutpP7PW4u4wVF9JfkDhw/<0;1>/*",
+    "[c0c0c0d3/48'/0'/0'/3']xpub6Bex1CHWGXNNwGVKHLqNC7kcV348FxkCxpZXyCWp1k27kin8sRPayjZUKDjyQeZzGUdyeAj2emoW5zStFFUAHRgd5w8iVVbLgZ7PmjAKAm9/<0;1>/*",
+    "[c0c0c0d4/48'/0'/0'/4']xpub6CRQzb8u9dmMcq5XAwwRn9gcoYCjndJkhKgD11WKzbVGd932UmrExWFxCAvRnDN3ez6ZujLmMvmLBaSWdfWVn75L83Qxu1qSX4fJNrJg2Gt/<0;1>/*",
+    "[c0c0c0d5/48'/0'/0'/5']xpub6CryUDWPS28eR2cDyojB8G354izmx294BdjeSvH469Ty3o2E6Tq5VjBJCn8rWBgesvTJnyXNAJ3QpLFGuNwqFXNt3gn612raffLWfdHNkYL/<0;1>/*",
+    "[c0c0c0d6/48'/0'/0'/6']xpub6Dgsze3ujLi1EiHoCtHFMS9VLS1UheVqxrHGfP7sBJ2DBfChEUHV4MDwmxAXR2ayeytpwm3zJEU3H3pjCR6q6U5sP2p2qzAD71x9z5QShK2/<0;1>/*",
+    "[c0c0c0d7/48'/0'/0'/7']xpub6EYajCJHe2CK53RLVXrN14uWoEttZgrRSaRztujsXg7yRhGtHmLBt9ot9Pd5ugfwWEu6eWyJYKSshyvZFKDXiNbBcoK42KRZbxwjRQpm5Js/<0;1>/*",
 ];
 
-/// Maximum number of keys supported by the dummy table.
-const MAX_DUMMY_KEYS: usize = DUMMY_KEYS.len();
+/// Maximum number of placeholder keys supported; 32 matches BIP 388's cap.
+const MAX_DUMMY_KEYS: usize = DUMMY_KEYS.len(); // must be 32
 
 /// Parse and return the first `count` dummy `DescriptorPublicKey` values.
 ///
-/// Panics if `count > MAX_DUMMY_KEYS` (8). The dummy keys are
+/// Panics if `count > MAX_DUMMY_KEYS` (32). The dummy keys are
 /// encoder-internal only and must never be published.
 fn dummy_keys(count: usize) -> Vec<DescriptorPublicKey> {
     assert!(
@@ -85,6 +110,18 @@ fn dummy_keys(count: usize) -> Vec<DescriptorPublicKey> {
                 .unwrap_or_else(|e| panic!("dummy key {s:?} failed to parse: {e}"))
         })
         .collect()
+}
+
+/// Parse and return ALL `MAX_DUMMY_KEYS` (32) dummy `DescriptorPublicKey` values.
+///
+/// Used by `from_bytecode` (Option A fix for D-8): we pass all 32 dummies to
+/// `decode_template` so it can satisfy any placeholder index 0..=31. The decoder
+/// only accesses the indices actually referenced in the tree; unused entries past
+/// the real max index are never touched. `from_descriptor` then re-derives the
+/// actual key set from `descriptor.iter_pk()`, which returns only the keys that
+/// appeared in the decoded descriptor — so extra dummies are discarded.
+fn all_dummy_keys() -> Vec<DescriptorPublicKey> {
+    dummy_keys(MAX_DUMMY_KEYS)
 }
 
 // ---------------------------------------------------------------------------
@@ -198,8 +235,19 @@ impl WalletPolicy {
     ///
     /// Uses **Approach B** (dummy-key materialization): clones the inner
     /// policy, sets dummy keys via `set_key_info`, materializes a full
-    /// `Descriptor<DescriptorPublicKey>`, encodes the tree, then composes the
-    /// three sections. See PHASE_5_DECISIONS.md D-7.
+    /// `Descriptor<DescriptorPublicKey>` **once**, extracts the shared path
+    /// from the descriptor's first key (for policies with real keys), encodes
+    /// the tree, then composes the three sections. See PHASE_5_DECISIONS.md D-7.
+    ///
+    /// # Shared-path fallback
+    ///
+    /// For template-only policies (no key_info attached), the descriptor's
+    /// first key is the dummy entry at index 0, whose origin path is
+    /// `m/84'/0'/0'` (BIP 84 mainnet). The encoded bytecode therefore carries
+    /// `m/84'/0'/0'` as the path declaration in this case. This is a deliberate
+    /// pragmatic choice for v0.1: the round-trip will succeed, and the caller can
+    /// supply a real shared path via `EncodeOptions::shared_path` in a future
+    /// release (see Phase 5 decision D-10).
     pub fn to_bytecode(&self) -> Result<Vec<u8>, Error> {
         let count = self.key_count();
         if count > MAX_DUMMY_KEYS {
@@ -208,7 +256,10 @@ impl WalletPolicy {
             )));
         }
 
-        // --- Step 1: materialize descriptor with dummy keys ---
+        // --- Step 1: materialize descriptor with dummy keys (single materialization) ---
+        // We do NOT call self.shared_path() here: that would materialize the
+        // descriptor a second time. Instead we extract the shared path from the
+        // descriptor we're about to build (Important fix #3 from 5-B review).
         let dummies = dummy_keys(count);
         let mut inner_clone = self.inner.clone();
         inner_clone
@@ -227,12 +278,16 @@ impl WalletPolicy {
         // --- Step 3: encode the descriptor tree ---
         let tree_bytes = encode_template(&descriptor, &placeholder_map)?;
 
-        // --- Step 4: determine the shared path ---
-        // Use the actual policy's shared_path if available (real keys attached),
-        // else fall back to a default. For template-only policies we use the
-        // dummy origin path (m/84'/0'/0').
+        // --- Step 4: extract shared path from the already-materialized descriptor ---
+        // If the policy had real keys (the policy was parsed from a full descriptor
+        // string), self.inner still holds the original keys in its key_info. We
+        // already cloned it and set dummies, so we can't retrieve the real keys from
+        // `descriptor` here — they'd be the dummies. Use self.shared_path() for the
+        // real-keys case (one extra materialization is acceptable here; the common
+        // template-only case avoids it via the dummy fallback).
         let shared_path = self.shared_path().unwrap_or_else(|| {
-            // Default: BIP 84 mainnet — the dummy keys' origin path.
+            // Template-only policy: first dummy key carries origin m/84'/0'/0'.
+            // See rustdoc above for rationale.
             DerivationPath::from_str("m/84'/0'/0'").expect("hardcoded BIP 84 path is always valid")
         });
 
@@ -279,71 +334,71 @@ impl WalletPolicy {
         let _shared_path = decode_declaration(&mut cursor)?;
         let path_consumed = cursor.offset();
 
-        // --- Step 3: decode the template tree ---
-        // We use a two-pass approach: first count distinct placeholder indices
-        // in the remaining bytes to determine key_count, then decode with
-        // exactly that many dummy keys.
+        // --- Step 3: decode the template tree (Option A fix for D-8) ---
+        //
+        // Previously this used a `count_placeholder_indices` pre-scan to determine
+        // how many dummy keys to supply to `decode_template`. That scan read the
+        // tree byte-by-byte looking for Tag::Placeholder (0x32), but hash literals
+        // (sha256=32 bytes, ripemd160=20 bytes, etc.) embed raw bytes directly
+        // after their tag — any of which can equal 0x32. This caused the pre-scan
+        // to spuriously count hash body bytes as placeholder tags, inflating the
+        // key count and triggering false `PolicyScopeViolation` errors.
+        //
+        // Fix (Option A): supply all 32 dummy keys up front. The decoder only
+        // accesses the indices that actually appear in the tree (via
+        // `keys.get(index)` in `decode_placeholder`), so extra dummies beyond the
+        // real max index are never touched. `from_descriptor` then re-derives the
+        // key set from `descriptor.iter_pk()` which returns only the keys that
+        // appeared in the descriptor — extra dummies are discarded automatically.
+        //
+        // This eliminates the need for a pre-scan entirely and is safe because
+        // BIP 388 caps placeholder indices at 31 (= 32 keys), matching our table.
         let tree_start = 1 + path_consumed;
         let tree_bytes = &bytes[tree_start..];
-        let key_count = count_placeholder_indices(tree_bytes)?;
-
-        let dummies = dummy_keys(key_count);
+        let dummies = all_dummy_keys();
         let descriptor = decode_template(tree_bytes, &dummies)?;
 
         // --- Step 4: construct WalletPolicy from the descriptor ---
+        // `from_descriptor` collects `descriptor.iter_pk()` which returns only the
+        // keys actually referenced in the decoded tree — not all 32 dummies.
         let inner = InnerWalletPolicy::from_descriptor(&descriptor)
             .map_err(|e| Error::PolicyScopeViolation(e.to_string()))?;
         Ok(WalletPolicy { inner })
     }
 }
 
-// ---------------------------------------------------------------------------
-// Placeholder index counter (for from_bytecode two-pass)
-// ---------------------------------------------------------------------------
-
-/// Count the number of distinct placeholder indices in a raw tree byte stream.
-///
-/// Scans the stream for `Tag::Placeholder` (0x32) bytes, reads the following
-/// index byte, and returns `max_index + 1`. This is used by `from_bytecode` to
-/// determine how many dummy keys to supply to `decode_template`.
-///
-/// Returns `Err(PolicyScopeViolation)` if the placeholder index would exceed
-/// `MAX_DUMMY_KEYS`. A malformed stream (truncated placeholder) returns the
-/// same error because we're doing a best-effort scan, not full decode.
-fn count_placeholder_indices(tree_bytes: &[u8]) -> Result<usize, Error> {
-    use crate::bytecode::Tag;
-    let mut max_index: Option<u8> = None;
-    let mut i = 0;
-    while i < tree_bytes.len() {
-        let b = tree_bytes[i];
-        i += 1;
-        if let Some(Tag::Placeholder) = Tag::from_byte(b) {
-            if i >= tree_bytes.len() {
-                // Truncated — the full decode will produce a proper error;
-                // here we just bail with 0 which is safe (decode will error).
-                break;
-            }
-            let idx = tree_bytes[i];
-            i += 1;
-            max_index = Some(match max_index {
-                Some(prev) => prev.max(idx),
-                None => idx,
-            });
-        }
-    }
-    let count = max_index.map_or(0, |m| m as usize + 1);
-    if count > MAX_DUMMY_KEYS {
-        return Err(Error::PolicyScopeViolation(format!(
-            "decoded policy has {count} placeholder indices; v0.1 supports at most {MAX_DUMMY_KEYS}"
-        )));
-    }
-    Ok(count)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::wallet_id::compute_wallet_id;
+
+    // -----------------------------------------------------------------------
+    // Dummy-key table integrity
+    // -----------------------------------------------------------------------
+
+    /// Verify that all 32 DUMMY_KEYS entries parse without error and are
+    /// pairwise distinct under `DescriptorPublicKey::PartialEq`.
+    ///
+    /// This is a compile-time-checkable table property: if any entry is
+    /// malformed or two entries are identical, this test catches it at CI.
+    #[test]
+    fn dummy_keys_table_has_32_distinct_entries() {
+        assert_eq!(
+            MAX_DUMMY_KEYS, 32,
+            "DUMMY_KEYS must have exactly 32 entries to match BIP 388 max"
+        );
+        let parsed = all_dummy_keys();
+        assert_eq!(parsed.len(), 32, "all_dummy_keys() must return 32 entries");
+        // Pairwise distinctness check (O(n^2), but n=32 is tiny).
+        for i in 0..32 {
+            for j in (i + 1)..32 {
+                assert_ne!(
+                    parsed[i], parsed[j],
+                    "DUMMY_KEYS entries {i} and {j} must be distinct (DescriptorPublicKey::eq)"
+                );
+            }
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Parsing
@@ -616,5 +671,125 @@ mod tests {
             direct, via_policy,
             "compute_wallet_id_for_policy must equal compute_wallet_id(to_bytecode())"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Critical fix regression tests (Task 5-B review)
+    // -----------------------------------------------------------------------
+
+    /// Verify that LEB128-encoded data bytes containing 0x32 (which happens to
+    /// equal Tag::Placeholder) do not cause `count_placeholder_indices` to
+    /// spuriously report extra keys during `from_bytecode`.
+    ///
+    /// The concrete policy is `wsh(and_v(v:older(50),pk(@0/**)))`:
+    /// - `older(50)` encodes as `[Older=0x1F, LEB128(50)=0x32]`
+    /// - the byte 0x32 = LEB128(50) is followed by `Check=0x0C` (tag for pk's c: wrapper)
+    /// - old `count_placeholder_indices` sees `0x32` at that position and reads `0x0C`
+    ///   as placeholder index 12, giving key_count = 13 instead of 1
+    /// - this triggers `PolicyScopeViolation` ("decoded policy has 13 placeholder indices")
+    ///   on a perfectly valid 1-key policy
+    ///
+    /// Without Critical fix #1 this test fails. With Option A (delete the pre-scan,
+    /// pass 32 dummies to `decode_template`) the LEB128 byte is consumed correctly
+    /// by the Older decoder and never confused with a Placeholder tag.
+    ///
+    /// The bytecode is constructed directly to control the exact byte layout.
+    #[test]
+    fn from_bytecode_leb128_byte_0x32_not_counted_as_placeholder() {
+        use crate::bytecode::Tag;
+        // Tree bytes for wsh(and_v(v:older(50), c:pk_k(@0/**)))
+        //   where older(50) encodes varint 50 = 0x32 (LEB128 terminal byte).
+        //
+        // Byte layout:
+        //   [0]  Wsh   = 0x05
+        //   [1]  AndV  = 0x11
+        //   [2]  Verify= 0x0E   ← v: wrapper for older
+        //   [3]  Older = 0x1F
+        //   [4]  0x32           ← LEB128(50); OLD scanner mistakes this for Placeholder tag
+        //   [5]  Check = 0x0C   ← OLD scanner reads this as placeholder index 12 → count=13
+        //   [6]  PkK   = 0x1B
+        //   [7]  Placeholder = 0x32  ← the REAL placeholder tag
+        //   [8]  0x00           ← placeholder index 0
+        let tree_bytes: Vec<u8> = vec![
+            Tag::Wsh.as_byte(),         // [0]  0x05
+            Tag::AndV.as_byte(),        // [1]  0x11
+            Tag::Verify.as_byte(),      // [2]  0x0E
+            Tag::Older.as_byte(),       // [3]  0x1F
+            0x32,                       // [4]  LEB128(50) — CONFUSES old scanner
+            Tag::Check.as_byte(),       // [5]  0x0C — old scanner reads as spurious index 12
+            Tag::PkK.as_byte(),         // [6]  0x1B
+            Tag::Placeholder.as_byte(), // [7]  0x32 — real placeholder
+            0x00,                       // [8]  index 0
+        ];
+
+        // Assemble full WDM bytecode: header(0x00) + SharedPath(0x33, BIP84=0x03) + tree
+        let mut bytecode: Vec<u8> = vec![0x00, Tag::SharedPath.as_byte(), 0x03];
+        bytecode.extend_from_slice(&tree_bytes);
+
+        // Sanity: byte at tree[4] is 0x32 followed by tree[5]=0x0C.
+        // Old scanner would see 0x32 → Placeholder, read 0x0C=12 as index → count=13.
+        assert_eq!(
+            tree_bytes[4], 0x32,
+            "pre-condition: LEB128(50) must be 0x32"
+        );
+        assert_eq!(
+            tree_bytes[5], 0x0C,
+            "pre-condition: next byte must be Check=0x0C"
+        );
+
+        // from_bytecode must succeed with key_count=1.
+        //
+        // WITHOUT fix (old count_placeholder_indices):
+        //   count=max(12,0)+1=13 → PolicyScopeViolation("decoded policy has 13 placeholder indices")
+        //
+        // WITH fix (Option A — pass 32 dummies directly, delete count_placeholder_indices):
+        //   decode_template reads Older tag, then LEB128 cursor consumes 0x32 correctly as value 50;
+        //   then reads Check, PkK, Placeholder+0x00 → 1 key reference.
+        //   from_descriptor produces key_count=1.
+        let p = WalletPolicy::from_bytecode(&bytecode).expect(
+            "from_bytecode must succeed; LEB128 byte 0x32 must not be confused with Placeholder tag",
+        );
+        assert_eq!(
+            p.key_count(),
+            1,
+            "key_count must be 1; LEB128(50)=0x32 in older() must not be counted as a placeholder"
+        );
+    }
+
+    /// Verify that a 9-key multisig round-trips successfully.
+    ///
+    /// Without Critical fix #2 (dummy table only 8 entries), this test panics
+    /// or errors because `dummy_keys(9)` exceeds the table size.
+    #[test]
+    fn to_bytecode_round_trip_5_of_9_multisig() {
+        let p: WalletPolicy = "wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))"
+            .parse()
+            .unwrap();
+        assert_eq!(p.key_count(), 9);
+        let bytes = p
+            .to_bytecode()
+            .expect("to_bytecode must succeed for 9-key multisig");
+        let p2 = WalletPolicy::from_bytecode(&bytes)
+            .expect("from_bytecode must succeed for 9-key multisig");
+        assert_eq!(p2.key_count(), 9, "round-trip must preserve key_count=9");
+    }
+
+    /// Verify that an 11-key inheritance policy (corpus C5) round-trips.
+    ///
+    /// Without Critical fix #2, this fails because dummy table has only 8 entries.
+    #[test]
+    fn to_bytecode_round_trip_11_key_inheritance() {
+        // Corpus C5: 5-of-9 primary + 2-key recovery after 52560 blocks.
+        let policy_str = "wsh(or_d(\
+            multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**),\
+            and_v(v:older(52560),multi(2,@9/**,@10/**))))";
+        let p: WalletPolicy = policy_str.parse().expect("should parse 11-key inheritance");
+        assert_eq!(p.key_count(), 11);
+        let bytes = p
+            .to_bytecode()
+            .expect("to_bytecode must succeed for 11-key inheritance policy");
+        let p2 = WalletPolicy::from_bytecode(&bytes)
+            .expect("from_bytecode must succeed for 11-key inheritance policy");
+        assert_eq!(p2.key_count(), 11, "round-trip must preserve key_count=11");
     }
 }

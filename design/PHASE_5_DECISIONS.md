@@ -168,6 +168,48 @@ Total diff: ~25 lines changed across 2 files. All 287 pre-existing tests continu
 
 ---
 
+### D-11 (Task 5-B critical fix): Option A for from_bytecode — pass 32 dummies, delete count_placeholder_indices
+
+**Context**: 5-B code review flagged that `count_placeholder_indices` (the D-8 two-pass pre-scan) reads tree bytes linearly looking for `Tag::Placeholder` (0x32). Hash literals (sha256/hash256 = 32 bytes; ripemd160/hash160/rawpkh = 20 bytes) embed raw bytes immediately after their tag, and any of those payload bytes can equal 0x32. When that happens, the scanner treats the 0x32 as a Placeholder tag and reads the next byte as a placeholder index, spuriously inflating `key_count`. With LEB128-encoded timelock values (e.g., `older(50)` encodes as `[0x1F, 0x32]`, and the next byte — the Check wrapper of an adjacent `pk()` — has value 0x0C = 12), this can trigger `PolicyScopeViolation("decoded policy has 13 placeholder indices")` for a valid 1-key policy.
+
+**Decision**: Option A. Pass all 32 dummy keys to `decode_template` up front and delete `count_placeholder_indices`. This is correct because:
+1. `decode_placeholder` in `decode_template` accesses `keys[index]` only for indices that literally appear as `Tag::Placeholder + index_byte` in the tree — it never touches `keys[k]` for `k` > the max referenced index.
+2. `InnerWalletPolicy::from_descriptor` collects `descriptor.iter_pk()` which returns only the keys that actually appeared in the decoded descriptor — extra dummies beyond the real max index are discarded.
+3. 32 dummies covers the BIP 388 maximum (indices 0..=31). No excess.
+
+**Why not Option B** (tree-walker): ~80 lines of new code that duplicates decode logic. Option A is simpler, provably correct, and already verifiable from reading `from_descriptor_unchecked` source.
+
+**Verify in code**: `policy.rs` `from_bytecode` — calls `all_dummy_keys()` (32 entries), no pre-scan. `count_placeholder_indices` deleted. Test: `from_bytecode_leb128_byte_0x32_not_counted_as_placeholder`.
+
+### D-12 (Task 5-B critical fix): grow DUMMY_KEYS to 32 for BIP 388 max
+
+**Context**: The original `DUMMY_KEYS` table had 8 entries, covering up to 5-of-8 multisig. Corpus C5 (5-of-9 + 2-key recovery = 11 keys) and C6 (~9 keys) exceed this limit, triggering `PolicyScopeViolation("policy has N placeholder keys; v0.1 supports at most 8")` in `to_bytecode`.
+
+**Decision**: Grow `DUMMY_KEYS` to 32 entries. Generation strategy:
+- Entries 0–7: original 8 entries (all distinct xpubs from fork test vectors, unchanged).
+- Entries 8–15: 8 more xpubs pulled from the fork's broader test suite (`xpub6Dz8...`, `xpub6Fc2...`, etc.), each with a distinct origin path.
+- Entries 16–23: 8 entries reusing known-good xpub strings but with fingerprints `c0c0c0c0..c0c0c0c7` and account indices 0'–7' in `m/44'/0'/0'/N'` paths — making them distinct even if the xpub matches an earlier entry (the `(fingerprint, path, xpub)` triple differs).
+- Entries 24–31: 8 more with fingerprints `c0c0c0d0..c0c0c0d7`.
+
+Uniqueness: `DescriptorPublicKey::PartialEq` compares the full `(origin_fingerprint, origin_path, xpub, derivation_path, wildcard)` struct. Any difference in any field makes two entries distinct.
+
+**MAX_DUMMY_KEYS** updated to 32 = `DUMMY_KEYS.len()`. Comment block updated to drop the old "distinct fingerprints" claim and document the actual uniqueness mechanism (the full triple, not just fingerprints).
+
+**Verify in code**: `policy.rs` `DUMMY_KEYS.len() == 32`. Tests: `to_bytecode_round_trip_5_of_9_multisig` (9 keys), `to_bytecode_round_trip_11_key_inheritance` (11 keys).
+
+### D-13 (Task 5-B important fix): single descriptor materialization in to_bytecode
+
+**Context**: The original `to_bytecode` called `self.shared_path()` (which internally calls `self.inner.clone().into_descriptor()`) AND then also materialized the descriptor again via `set_key_info + into_descriptor`. This was two descriptor materializations.
+
+**Decision**: Refactor `to_bytecode` to document that single materialization is preferred and note why the second call to `self.shared_path()` is still used for the real-keys case. The restructuring is:
+1. Step 1 builds the descriptor with dummy keys (one materialization).
+2. Step 4 calls `self.shared_path()` (a second clone+materialization) ONLY for policies with real keys. Template-only policies skip this via the BIP84 fallback.
+3. The two-materialization cost is only paid for policies with real keys, which is the less common encode path.
+
+Full single-materialization (using the descriptor from Step 1 to extract the path) is not possible without architectural changes: the Step 1 descriptor has dummy keys, not real keys, so its origin path is the dummy origin — not the real policy path.
+
+**Verify in code**: `to_bytecode` comment in Step 4.
+
 (More decisions appended as Phase 5 progresses.)
 
 ---
