@@ -280,6 +280,11 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
                 child.encode_template(out, placeholder_map)
             }
             Terminal::RawPkH(h) => {
+                // RawPkH encodes a 20-byte pubkey hash literal embedded directly
+                // in the miniscript fragment (no key info vector lookup). This is
+                // distinct from Terminal::Hash160 which encodes a hash-preimage
+                // commitment under the same 20-byte width. Distinct tags
+                // (RawPkH = 0x1D vs Hash160 = 0x23) keep the wire format unambiguous.
                 out.push(Tag::RawPkH.as_byte());
                 out.extend_from_slice(h.as_byte_array());
                 Ok(())
@@ -1068,7 +1073,14 @@ mod tests {
         use miniscript::Segwitv0;
         use miniscript::Terminal;
 
-        let bytes: [u8; 20] = [0x42; 20];
+        // Asymmetric pattern (matches the convention in the sha256/hash256
+        // tests) — exposes any accidental byte-order reversal that a uniform
+        // palindrome like [0x42; 20] would mask.
+        let bytes: [u8; 20] = [
+            0x13, 0x12, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C,
+            0x0B, 0x0A, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+            0x06, 0x07, 0x08, 0x09,
+        ];
         let h = hash160::Hash::from_byte_array(bytes);
         let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Hash160(h);
         let mut out = Vec::new();
