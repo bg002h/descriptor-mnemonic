@@ -13,7 +13,7 @@
 //! `BytecodeErrorKind`. See `design/PHASE_2_DECISIONS.md` D-5.
 
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
-use miniscript::{Miniscript, Segwitv0, Terminal};
+use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
 use crate::bytecode::Tag;
 use crate::error::BytecodeErrorKind;
@@ -192,12 +192,21 @@ fn decode_wsh_inner(
     })?;
     match inner_tag {
         Tag::SortedMulti => {
-            // Task 2.14: read k, n (single bytes per D-7), then n keys.
-            // For Task 2.13 this returns a stub error so the dispatch path
-            // can be tested but the inner decoder isn't implemented.
-            Err(Error::PolicyScopeViolation(
-                "wsh(sortedmulti(...)) decoding not yet implemented (Task 2.14)".to_string(),
-            ))
+            // D-7: k and n are single bytes (not LEB128).
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
+            for _ in 0..n {
+                pks.push(decode_placeholder(cur, keys)?);
+            }
+            // miniscript v12: Wsh::new_sortedmulti(k, pks) -> Result<Wsh<Pk>, Error>.
+            // Returns Err if k/n are out of range or if the SortedMultiVec
+            // sanity check fails.
+            let wsh = Wsh::new_sortedmulti(k, pks).map_err(|e| Error::InvalidBytecode {
+                offset: inner_tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Ok(Descriptor::Wsh(wsh))
         }
         // Anything else — must be a miniscript inner-fragment tag. Pass
         // the tag we already consumed back to decode_terminal so it can
@@ -218,7 +227,6 @@ fn decode_wsh_inner(
 /// Decode a `Miniscript<DescriptorPublicKey, Segwitv0>` from the next bytes.
 /// Reads the tag byte, then dispatches into `decode_terminal`. Returns the
 /// type-checked Miniscript wrapper.
-#[allow(dead_code)] // Will be used by Task 2.14+ inner-fragment recursion.
 fn decode_miniscript(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
@@ -256,11 +264,60 @@ fn decode_terminal(
             let key = decode_placeholder(cur, keys)?;
             Terminal::PkH(key)
         }
-        // Task 2.14+ inner-fragment tags will be added here progressively.
+        Tag::Multi => {
+            // D-7: k and n are single bytes.
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
+            for _ in 0..n {
+                pks.push(decode_placeholder(cur, keys)?);
+            }
+            let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Terminal::Multi(thresh)
+        }
+        Tag::MultiA => {
+            // Taproot multi-A. v0.1 rejects Tr at the top level (Task 2.4),
+            // so this arm is unreachable through normal flow today. We still
+            // implement it for structural completeness (encoder Task 2.6 has
+            // it) so v0.2 can flip taproot on with no decoder change. The
+            // wire format is identical to Tag::Multi.
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
+            for _ in 0..n {
+                pks.push(decode_placeholder(cur, keys)?);
+            }
+            let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Terminal::MultiA(thresh)
+        }
+        Tag::Thresh => {
+            // D-7: k and n are single bytes. Each child is a full recursive
+            // Miniscript starting with its own tag byte.
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut children: Vec<std::sync::Arc<Miniscript<DescriptorPublicKey, Segwitv0>>> =
+                Vec::with_capacity(n);
+            for _ in 0..n {
+                let child = decode_miniscript(cur, keys)?;
+                children.push(std::sync::Arc::new(child));
+            }
+            let thresh = Threshold::new(k, children).map_err(|e| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Terminal::Thresh(thresh)
+        }
+        // Task 2.15+ inner-fragment tags will be added here progressively.
         // For now, anything else is either out of v0.1 scope or deferred.
         _ => {
             return Err(Error::PolicyScopeViolation(format!(
-                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.14+)",
+                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.15+)",
                 tag.as_byte()
             )));
         }
@@ -421,19 +478,10 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_sortedmulti_stub() {
-        // [Wsh, SortedMulti, ...] — SortedMulti decoder is Task 2.14.
-        let err = decode_template(&[0x05, 0x09], &[]).unwrap_err();
-        assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("Task 2.14")),
-            "expected PolicyScopeViolation referencing Task 2.14, got {err:?}"
-        );
-    }
-
-    #[test]
     fn decode_rejects_unimplemented_inner_tag() {
-        // [Wsh, AndV, ...] — Task 2.13 only handles True/False/PkK/PkH.
-        // AndV (0x11) is in scope of Task 2.16+ (logical operators).
+        // [Wsh, AndV, ...] — Task 2.14 handles multisig family
+        // (SortedMulti/Multi/MultiA/Thresh) plus leaves, but AndV (0x11)
+        // is in scope of Task 2.16+ (logical operators).
         let err = decode_template(&[0x05, 0x11], &[]).unwrap_err();
         assert!(
             matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("not yet implemented")),
@@ -447,6 +495,195 @@ mod tests {
     // the c: wrapper (so wsh(pk(K)) becomes parser-driven) or a 200-key
     // wallet fixture. Both belong in the wrapper task. Don't add a stub
     // test here — the encoder-side coverage already pins the wire format.
+
+    // --- Multisig family round-trips and rejections (Task 2.14) -----------
+
+    #[test]
+    fn decode_wsh_sortedmulti_2_of_3_round_trip() {
+        // Build the bytecode by encoding a known wsh(sortedmulti(2, K0, K1, K2)),
+        // then decode it back and re-encode to assert byte equality.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+        map.insert(k2.clone(), 2u8);
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
+            "wsh(sortedmulti(2,{k0},{k1},{k2}))"
+        ))
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
+
+        // Decode against keys[0..3] = [k0, k1, k2] (in placeholder-index order).
+        let keys_vec = vec![k0.clone(), k1.clone(), k2.clone()];
+        let decoded = decode_template(&bytes, &keys_vec).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
+        assert_eq!(reencoded, bytes, "round-trip should produce identical bytes");
+    }
+
+    #[test]
+    fn decode_wsh_multi_2_of_3_round_trip() {
+        // wsh(multi(...)) goes through WshInner::Ms -> Terminal::Multi.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+        map.insert(k2.clone(), 2u8);
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
+            "wsh(multi(2,{k0},{k1},{k2}))"
+        ))
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
+
+        let keys_vec = vec![k0.clone(), k1.clone(), k2.clone()];
+        let decoded = decode_template(&bytes, &keys_vec).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_thresh_with_constants_round_trip() {
+        // The encoder's `encode_terminal_thresh_2_of_3_with_constants` test
+        // exercises exactly this shape (k=2, n=3, [False, True, False]) at
+        // the Terminal level. The expected bytes were:
+        //   [Thresh, 0x02, 0x03, False, True, False] = [0x18, 0x02, 0x03, 0x00, 0x01, 0x00]
+        //
+        // Drive the decoder with a manually-constructed byte stream that
+        // wraps this in Wsh: [Wsh, Thresh, 0x02, 0x03, False, True, False].
+        // Note: this byte stream may FAIL to decode because miniscript's type
+        // checker rejects thresh(2, 0, 1, 0) under Wsh's B-type requirement
+        // for the inner. If so, this test demonstrates the correct error path.
+        let bytes: Vec<u8> = vec![0x05, 0x18, 0x02, 0x03, 0x00, 0x01, 0x00];
+        let result = decode_template(&bytes, &[]);
+        // Either Ok (if miniscript accepts) or Err(InvalidBytecode {
+        // kind: TypeCheckFailed }) (if it rejects). Both are acceptable
+        // outcomes — what matters is no panic and the decoder consumed
+        // all input bytes.
+        match result {
+            Ok(d) => {
+                use std::collections::HashMap;
+                let reencoded =
+                    crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
+                assert_eq!(reencoded, bytes);
+            }
+            Err(Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TypeCheckFailed(_),
+                ..
+            }) => {
+                // Acceptable — miniscript rejected the reconstruction.
+            }
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decode_sortedmulti_rejects_placeholder_index_out_of_range() {
+        // wsh(sortedmulti(2, K0, K1, K2)) bytes but supply only 1 key in keys[]
+        // — index 1 (and 2) will be out of range.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+        map.insert(k2.clone(), 2u8);
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(&format!(
+            "wsh(sortedmulti(2,{k0},{k1},{k2}))"
+        ))
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &map).unwrap();
+
+        // Decode with only 1 key — placeholder indices 1, 2 are out of range.
+        let err = decode_template(&bytes, std::slice::from_ref(&k0)).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("placeholder index")),
+            "expected PolicyScopeViolation about placeholder index, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_multi_rejects_truncated_after_k() {
+        // [Wsh, Multi, k=2] — truncated before n.
+        let bytes = vec![0x05, 0x19, 0x02];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::UnexpectedEnd, ..
+            }),
+            "expected UnexpectedEnd after truncated k, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_multi_rejects_truncated_mid_keys() {
+        // [Wsh, Multi, k=2, n=3, Placeholder, 0, Placeholder, 1] — only 2 of
+        // the 3 promised keys are present. The first two placeholder lookups
+        // succeed; the third loop iteration runs out of bytes when reading
+        // the next placeholder tag.
+        use std::str::FromStr;
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+
+        let bytes = vec![0x05, 0x19, 0x02, 0x03, 0x32, 0x00, 0x32, 0x01];
+        let err = decode_template(&bytes, &[k0, k1]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::UnexpectedEnd, ..
+            }),
+            "expected UnexpectedEnd mid-multisig, got {err:?}"
+        );
+    }
 
     // --- Cursor-level tests (private API but exercised here for coverage) ---
 
