@@ -247,8 +247,6 @@ pub const LONG_MASK: u128 = 0x3fffffffffffffffff;
 ///
 /// This is a direct port of BIP 93's `ms32_polymod` / `ms32_long_polymod` inner
 /// loop. See https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
-// Consumed by Task 1.6's checksum encode/verify; tests exercise it directly.
-#[allow(dead_code)]
 fn polymod_step(residue: u128, value: u128, r#gen: &[u128; 5], shift: u32, mask: u128) -> u128 {
     let b = residue >> shift;
     let mut new_residue = (residue & mask) << 5 ^ value;
@@ -258,6 +256,73 @@ fn polymod_step(residue: u128, value: u128, r#gen: &[u128; 5], shift: u32, mask:
         }
     }
     new_residue
+}
+
+/// BIP 173-style HRP-expansion: produces the 5-bit-symbol prelude that gets
+/// prepended to the data part before running the BCH polymod.
+///
+/// For each HRP character `c`, emits `c >> 5` (high 3 bits); then emits a
+/// single 0 separator; then emits each character's `c & 31` (low 5 bits).
+/// The result has length `2 * hrp.len() + 1` for ASCII HRPs.
+///
+/// For `hrp_expand("wdm")` this returns `[3, 3, 3, 0, 23, 4, 13]`.
+pub fn hrp_expand(hrp: &str) -> Vec<u8> {
+    let bytes = hrp.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() * 2 + 1);
+    for &c in bytes {
+        out.push(c >> 5);
+    }
+    out.push(0);
+    for &c in bytes {
+        out.push(c & 31);
+    }
+    out
+}
+
+/// Run polymod over a sequence of 5-bit values using the parameters for
+/// either the regular or long BCH code, starting from POLYMOD_INIT.
+fn polymod_run(values: &[u8], r#gen: &[u128; 5], shift: u32, mask: u128) -> u128 {
+    let mut residue = POLYMOD_INIT;
+    for &v in values {
+        residue = polymod_step(residue, v as u128, r#gen, shift, mask);
+    }
+    residue
+}
+
+/// Compute the 13-character BCH checksum for the regular code over the
+/// HRP-expanded preamble plus the data part.
+///
+/// `data` is the sequence of 5-bit values for the data part (header + payload),
+/// not including the checksum. Returns the 13-element checksum array, ready
+/// to append to `data` to form the full data-part-plus-checksum.
+///
+/// The algorithm runs polymod over `hrp_expand(hrp) || data || [0; 13]`,
+/// then XORs the result with [`WDM_REGULAR_CONST`] to extract the checksum.
+pub fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
+    let mut input = hrp_expand(hrp);
+    input.extend_from_slice(data);
+    input.extend(std::iter::repeat_n(0, 13));
+    let polymod = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK)
+        ^ WDM_REGULAR_CONST;
+    let mut out = [0u8; 13];
+    for (i, slot) in out.iter_mut().enumerate() {
+        *slot = ((polymod >> (5 * (12 - i))) & 0x1F) as u8;
+    }
+    out
+}
+
+/// Verify a regular-code BCH checksum.
+///
+/// `data_with_checksum` is the full data part including the trailing 13
+/// checksum characters. Returns `true` iff the polymod over
+/// `hrp_expand(hrp) || data_with_checksum` equals [`WDM_REGULAR_CONST`].
+pub fn bch_verify_regular(hrp: &str, data_with_checksum: &[u8]) -> bool {
+    if data_with_checksum.len() < 13 {
+        return false;
+    }
+    let mut input = hrp_expand(hrp);
+    input.extend_from_slice(data_with_checksum);
+    polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) == WDM_REGULAR_CONST
 }
 
 #[cfg(test)]
@@ -540,5 +605,74 @@ mod tests {
             polymod_step(r, 5, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
             GEN_REGULAR[0] ^ 5
         );
+    }
+
+    #[test]
+    fn hrp_expand_wdm_matches_spec() {
+        // BIP 173 hrp_expand for the WDM HRP. The seven-element prelude is
+        // documented in the BIP draft §"Checksum".
+        assert_eq!(hrp_expand("wdm"), vec![3, 3, 3, 0, 23, 4, 13]);
+    }
+
+    #[test]
+    fn hrp_expand_empty_returns_just_separator() {
+        // Edge case: empty HRP yields just the [0] separator.
+        assert_eq!(hrp_expand(""), vec![0]);
+    }
+
+    #[test]
+    fn bch_round_trip_regular() {
+        // Encode then verify a small data part. The verify call sees the
+        // full data + checksum, so polymod returns WDM_REGULAR_CONST exactly.
+        let hrp = "wdm";
+        let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let checksum = bch_create_checksum_regular(hrp, &data);
+        assert_eq!(checksum.len(), 13);
+
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        assert!(bch_verify_regular(hrp, &full));
+    }
+
+    #[test]
+    fn bch_verify_rejects_single_char_tampering_regular() {
+        // Flipping any one symbol must break verification.
+        let hrp = "wdm";
+        let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let checksum = bch_create_checksum_regular(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        full[5] ^= 0x01;
+        assert!(!bch_verify_regular(hrp, &full));
+    }
+
+    #[test]
+    fn bch_verify_rejects_too_short_input_regular() {
+        // Less than 13 symbols cannot hold a checksum.
+        assert!(!bch_verify_regular("wdm", &[0, 1, 2]));
+        assert!(!bch_verify_regular("wdm", &[]));
+    }
+
+    #[test]
+    fn bch_known_vector_regular() {
+        // Independently computed (Python reference) ground truth for one
+        // specific input. If polymod, HRP-mixing, or the target constant
+        // ever drift, this test catches it.
+        //
+        // Input: HRP "wdm", data = [0, 1, 2, 3, 4, 5, 6, 7]
+        // Expected checksum: [8, 15, 19, 11, 11, 21, 18, 31, 14, 12, 14, 26, 15]
+        let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let expected: [u8; 13] = [8, 15, 19, 11, 11, 21, 18, 31, 14, 12, 14, 26, 15];
+        let actual = bch_create_checksum_regular("wdm", &data);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn bch_zero_data_does_not_self_validate_regular() {
+        // The all-zeros data + all-zeros checksum must NOT validate, because
+        // WDM_REGULAR_CONST was chosen NUMS-style to avoid this trivial case.
+        let mut zero = vec![0u8; 8];
+        zero.extend(std::iter::repeat_n(0, 13));
+        assert!(!bch_verify_regular("wdm", &zero));
     }
 }
