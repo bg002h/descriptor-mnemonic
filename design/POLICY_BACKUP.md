@@ -199,10 +199,12 @@ The Template Card MAY include a 4-byte master fingerprint per `@i`. Tradeoffs:
   goes with which `@i`. Catches user error early ("this seed doesn't match
   any `@i` in this Template Card"). Costs 4 bytes per key.
 
-**DECIDE:** Default to fingerprints **omitted** in v0. The space savings are
-worth more than the convenience, and the restore-time matching algorithm is
-trivial. Make fingerprint inclusion an optional flag in the Template Card
-header for users who explicitly want it.
+**RESOLVED (2026-04-27):** Default to fingerprints **omitted** in v0. The space
+savings are worth more than the convenience, and the restore-time matching
+algorithm is trivial. Fingerprint inclusion is gated on bit 2 of the bytecode
+header (`BytecodeHeader::fingerprints`) — implemented in Phase 3-1; the
+fingerprints-block format itself is a v0.2 deferral (see FOLLOWUPS.md
+`p2-fingerprints-block`).
 
 ---
 
@@ -254,10 +256,11 @@ cryptographic primitives only.
 - v1+ policies with foreign xpubs: each foreign xpub adds ~80 B →
   always multi-string
 
-**DECIDE:** codex32-derived encoding is the encoding layer. BIP 39
-4-letter prefix is no longer the conservative fallback — Bytewords + a
-stronger external ECC layer takes its place if codex32-derivation proves
-unworkable. See `PRIOR_ART.md` §3 for Bytewords rationale.
+**RESOLVED (2026-04-27):** codex32-derived encoding is the encoding layer.
+BIP 39 4-letter prefix is no longer the conservative fallback — Bytewords +
+a stronger external ECC layer takes its place if codex32-derivation proves
+unworkable. See `PRIOR_ART.md` §3 for Bytewords rationale. Implemented in
+Phase 1 (`crates/wdm-codec/src/encoding.rs`).
 
 ---
 
@@ -425,9 +428,16 @@ Plus checksum = 24 chars (regular) or 26 chars (long).
 
 #### Cross-chunk integrity
 
-Before chunking, append a 4-byte truncated hash (BLAKE3 or SHA-256 —
-**DECIDE**) of the canonical bytecode to the bytecode itself. This hash
-is part of the byte stream that gets chunked.
+Before chunking, append a 4-byte truncated hash of the canonical bytecode
+to the bytecode itself. This hash is part of the byte stream that gets
+chunked.
+
+**RESOLVED (2026-04-27):** Use SHA-256 truncated to 4 bytes
+(`SHA-256(canonical_bytecode)[0..4]`). Matches the Tier-3 Wallet ID hash
+function (line 742 above) so the same `bitcoin::hashes::sha256` dependency
+covers both. The BIP §"Cross-chunk hash" already specifies SHA-256;
+documented here for symmetry. Implemented in Phase 4-E
+(`chunk_bytes` and `reassemble_chunks` in `chunking.rs`).
 
 After reassembling chunks, the decoder:
 1. Concatenates fragments in index order
@@ -736,42 +746,74 @@ of what was adopted vs. rejected:
   prevent re-litigation. See §6.9.
 - **RESOLVED:** Guided recovery — mandatory in conformant tools, not
   optional. See §6.10.
+- **RESOLVED (2026-04-26):** Hash function for Wallet ID derivation is **SHA-256 truncated to 16 bytes**. Decision matches `bitcoin::hashes::sha256` (already a transitive dependency); avoids adding BLAKE3 or HMAC.
+
+### Resolved 2026-04-27 (Phase 5.5 spec reconciliation pass)
+
+- **RESOLVED:** Reference implementation language is **Rust**. Crate
+  shipped at `crates/wdm-codec/` (`wdm-codec = 0.1.0-dev`). Tracks
+  `bitcoin = 0.32` and `miniscript = 13` (apoelstra fork pin pending PR
+  merge per FOLLOWUPS.md `external-pr-1-hash-terminals`).
+- **RESOLVED:** HRP value is **`"wdm"`** — locked in across
+  `encoding.rs`, the BIP draft (line 84 of
+  `bip/bip-wallet-descriptor-mnemonic.mediawiki`), and the README.
+  `"wp"` and `"dm"` are no longer alternatives.
+- **RESOLVED:** Maintain `wdm-codec` as a separate crate; do NOT
+  upstream BIP 388 extensions to `descriptor-codec` (the CC0 reference).
+  Tag-table compatibility with descriptor-codec is preserved for
+  cross-implementation interop, but the WDM-specific framing layer
+  (header byte + path declaration + chunking) lives in our crate. The
+  one upstream contribution that does happen is to `rust-miniscript`
+  for `WalletPolicy` (per Phase 5 D-1).
+- **RESOLVED:** Encrypted Template Card variant is **not in v0.1**.
+  May revisit in v1+ if user demand surfaces (tracked in FOLLOWUPS.md
+  by reference; not yet a stable short-id since no design work has
+  begun).
+- **RESOLVED:** Path dictionary code values — locked to the 13 entries
+  in BIP §"Path dictionary" (lines 245–273 of the BIP). Implemented in
+  Phase 3-2 (`crates/wdm-codec/src/bytecode/path.rs`); 5 round-trip
+  tests pin every entry.
+- **RESOLVED:** Threshold operators (`thresh(k,...)`) — encoding via
+  `Tag::Thresh = 0x18` with single-byte k + count fields per Phase 2
+  D-7. Variable-arity children follow. Implemented in Phase 2 across
+  `bytecode/encode.rs` and `bytecode/decode.rs`.
+- **RESOLVED:** Chunk-header field encoding — finalized in Phase 4-A
+  (`ChunkHeader::to_bytes`/`from_bytes`): version 1 byte, type 1 byte
+  (0=SingleString, 1=Chunked), `wallet_id` 3 bytes BE (20 bits, top
+  4 zero), count 1 byte (1..=32), index 1 byte (`< count`). Total 2
+  bytes (SingleString) or 7 bytes (Chunked) before codex32 5-bit
+  packing.
+- **RESOLVED:** Wallet-id is **content-derived by default**
+  (`SHA-256(canonical_bytecode)[0..16]` for Tier-3, truncated to first
+  20 bits for the chunk-header `ChunkWalletId`). The `EncodeOptions`
+  field `wallet_id_seed` provides a deterministic override for the
+  chunk-header field only (Tier-3 stays content-derived). Single-string
+  cards carry no chunk-header `wallet_id`. Implemented across Phase
+  4-B/4-C/5-D.
+- **RESOLVED:** Cross-chunk hash function is **SHA-256 truncated to 4
+  bytes** — see §6.8 above and BIP §"Cross-chunk hash". Same hash
+  function as the Tier-3 Wallet ID derivation (different truncation).
+- **RESOLVED:** Interop / BIP candidacy — pursuing as a BIP from the
+  start. Draft at `bip/bip-wallet-descriptor-mnemonic.mediawiki`,
+  proposed BIP number 3993 or 3939 (line 2 of the draft). Reference
+  implementation matures alongside the draft.
 
 ### Still open
 
-- **RESOLVED (2026-04-26):** Hash function for Wallet ID derivation is **SHA-256 truncated to 16 bytes**. Decision matches `bitcoin::hashes::sha256` (already a transitive dependency); avoids adding BLAKE3 or HMAC.
-- **DECIDE:** Reference implementation language. Rust is leading
-  candidate (descriptor-codec is Rust; rust-miniscript is Rust;
-  rust-bitcoin is the reference ecosystem). Python second choice for
-  reach.
-- **DECIDE:** HRP value — proposed `"wdm"`. Alternatives: `"wp"`, `"dm"`.
-  Defer until spec is mature enough to register.
-- **DECIDE:** Whether to upstream BIP 388 extensions to descriptor-codec
-  or maintain a fork.
-- **DECIDE:** Whether to support an optional encrypted Template Card
-  variant for users who want structural privacy.
-- **OPEN:** Path dictionary — exact code values for BIP 44/49/84/86/48
-  and any other "standard enough" paths.
-- **OPEN:** Taproot tree encoding — descriptor-codec has a TapTree tag
-  (0x08), but how it nests with `@i` placeholders for our wallet-policy
-  framing needs design.
-- **OPEN:** Threshold operators (`thresh(k,...)`) — encoding for arbitrary
-  k and arbitrarily many sub-expressions.
-- **OPEN:** MuSig2 — does the format support `musig(...)` placeholders,
-  and if so, how is the participant set encoded? Coldcard does not
-  currently support MuSig2 in miniscript, which may justify deferring.
+- **OPEN (v0.2):** Taproot tree encoding — descriptor-codec has a
+  TapTree tag (0x08), but how it nests with `@i` placeholders for our
+  wallet-policy framing needs design. Tracked in FOLLOWUPS.md as
+  `p2-taproot-tr-taptree`.
+- **OPEN (v1+):** MuSig2 — does the format support `musig(...)`
+  placeholders, and if so, how is the participant set encoded? Coldcard
+  does not currently support MuSig2 in miniscript, which justifies
+  deferring beyond v0.2.
 - **OPEN:** Wallet name — is a human-readable name part of the Template
-  Card payload, or stored separately?
+  Card payload, or stored separately? UX question without a clear
+  technical answer yet.
 - **OPEN:** Policy mutability — what's the spec story when a user
   changes a timelock by one block? Force re-stamp? Allow versioning of
-  "the same wallet" across policies?
-- **OPEN:** finalize tag values for chunk-header fields (version, type,
-  wallet-id format, count/index encoding); see §6.8.
-- **OPEN:** wallet-id — derived from content vs. random; whether
-  single-string cards carry one.
-- **OPEN:** cross-chunk hash function — BLAKE3 vs. truncated SHA-256.
-- **OPEN:** Interop / BIP candidacy — pursue as a BIP from the start, or
-  let the reference implementation mature first?
+  "the same wallet" across policies? Governance question.
 - **OPEN (v1+):** BIP 393 recovery annotations. BIP 393 ("Output Script
   Descriptor Annotations") extends BIP 380 descriptors with a
   `?key=value&...#CHECKSUM` syntax carrying three operational recovery
