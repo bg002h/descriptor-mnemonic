@@ -86,7 +86,7 @@ impl fmt::Display for WalletId {
 }
 
 impl fmt::LowerHex for WalletId {
-    /// Same output as [`Display`] — 32 lowercase hex digits, no separator.
+    /// Same output as [`std::fmt::Display`] — 32 lowercase hex digits, no separator.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self, f)
     }

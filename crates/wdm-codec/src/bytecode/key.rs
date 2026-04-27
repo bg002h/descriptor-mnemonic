@@ -2,7 +2,7 @@
 //! bytecode.
 //!
 //! In v0.1 every key in a WDM-encoded BIP 388 wallet policy is a
-//! [`WdmKey::Placeholder(u8)`] referencing the policy's key information vector
+//! [`WdmKey::Placeholder`] referencing the policy's key information vector
 //! at that index. The [`WdmKey::Key`] variant is reserved for v1+ inline-key
 //! support; v0.1 encoders MUST NOT emit it and v0.1 decoders MUST reject any
 //! bytecode that would deserialize to it (those tags 0x24..=0x31 are the

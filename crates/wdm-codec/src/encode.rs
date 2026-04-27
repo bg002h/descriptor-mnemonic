@@ -41,7 +41,7 @@ fn chunk_code_to_bch_code(c: ChunkCode) -> BchCode {
 ///
 /// # Errors
 ///
-/// Returns [`Error::PolicyTooLarge`] when the bytecode exceeds the maximum
+/// Returns [`crate::Error::PolicyTooLarge`] when the bytecode exceeds the maximum
 /// supported length (1692 bytes). Propagates any error from
 /// [`WalletPolicy::to_bytecode`] or [`encode_string`].
 pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBackup> {

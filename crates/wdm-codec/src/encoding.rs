@@ -244,7 +244,7 @@ pub const LONG_MASK: u128 = 0x3fffffffffffffffff;
 /// the returned residue feed the next iteration's `b` selector.
 ///
 /// This is a direct port of BIP 93's `ms32_polymod` / `ms32_long_polymod` inner
-/// loop. See https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
+/// loop. See <https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki> .
 fn polymod_step(residue: u128, value: u128, r#gen: &[u128; 5], shift: u32, mask: u128) -> u128 {
     let b = residue >> shift;
     let mut new_residue = (residue & mask) << 5 ^ value;
