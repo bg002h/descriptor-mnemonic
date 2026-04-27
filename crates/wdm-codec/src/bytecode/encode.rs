@@ -156,7 +156,7 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
                 thresh.encode_template(out, placeholder_map)
             }
             other => Err(Error::PolicyScopeViolation(format!(
-                "Terminal variant not yet implemented (Task 2.6+): {other:?}"
+                "unsupported Terminal fragment in v0.1 scope: {other:?}"
             ))),
         }
     }
@@ -389,7 +389,7 @@ mod tests {
     #[test]
     fn encode_unsupported_terminal_returns_error() {
         // A terminal we haven't wired up yet (e.g. After) returns an
-        // explicit "not yet implemented" PolicyScopeViolation.
+        // out-of-v0.1-scope PolicyScopeViolation via the catch-all arm.
         use miniscript::AbsLockTime;
         use miniscript::Segwitv0;
         use miniscript::Terminal;
@@ -399,16 +399,18 @@ mod tests {
         let mut out = Vec::new();
         let err = term.encode_template(&mut out, &empty_map()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("not yet implemented")),
-            "expected not-yet-implemented PolicyScopeViolation, got: {err:?}"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("unsupported Terminal")),
+            "expected unsupported-Terminal PolicyScopeViolation, got: {err:?}"
         );
     }
 
     #[test]
     fn encode_wsh_sortedmulti_2_of_3() {
-        // Three distinct keys, indexed 0, 1, 2 in placeholder_map.
-        // wsh(sortedmulti(2, K0, K1, K2)) -> [Wsh, SortedMulti, varint(2),
-        // varint(3), Placeholder, idx(0), Placeholder, idx(1), Placeholder, idx(2)]
+        // Three distinct keys with placeholder indices 0, 1, 2.
+        // wsh(sortedmulti(2, K0, K1, K2)) emits structurally:
+        //   [Wsh, SortedMulti, varint(2), varint(3), <3 placeholder records>]
+        // (See the comment near the assertions for why we don't pin a specific
+        // per-record index order.)
         let k0 = DescriptorPublicKey::from_str(
             "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
         )
@@ -427,19 +429,18 @@ mod tests {
         map.insert(k1.clone(), 1u8);
         map.insert(k2.clone(), 2u8);
 
-        // sortedmulti() reorders keys lexicographically. Construct the descriptor
-        // string with keys in the original order; the Descriptor parser will
-        // sort them. The placeholder map must contain all three regardless.
         let d = parse_descriptor(&format!(
             "wsh(sortedmulti(2,{k0},{k1},{k2}))"
         ));
         let bytes = encode_template(&d, &map).unwrap();
 
-        // Manually compute expected: tag bytes + varints. SortedMultiVec emits
-        // keys in canonical order (lexicographic by the inner key bytes), so
-        // we don't know the index order without inspecting the keys' sorted
-        // order. We assert structural shape instead: starts with Wsh +
-        // SortedMulti + varint(2) + varint(3), then 3 placeholder records.
+        // SortedMultiVec::pks() returns keys in parse order (insertion into
+        // the descriptor string), not in BIP 67 lexicographic order — sorting
+        // is deferred to witness construction via sorted_node(). Since our
+        // three test keys' parse-order-vs-placeholder-index mapping is not
+        // load-bearing, we assert structural shape (Wsh + SortedMulti + the
+        // two varints + 3 placeholder records of 2 bytes each = 10 bytes)
+        // and that each emitted index is in the valid range [0, 2].
         assert_eq!(bytes[0], Tag::Wsh.as_byte()); // 0x05
         assert_eq!(bytes[1], Tag::SortedMulti.as_byte()); // 0x09
         assert_eq!(bytes[2], 0x02); // varint(2)
