@@ -147,6 +147,59 @@ pub enum CaseStatus {
     Mixed,
 }
 
+/// BCH polymod constants for the regular checksum (BCH(93,80,8)).
+///
+/// Source: BIP 93 (codex32) reference implementation, `ms32_polymod` function.
+/// These five values are XORed into the running residue based on the top 5 bits
+/// of the residue at each step. The polymod operation uses a 65-bit residue
+/// (top 5 bits = current `b`, bottom 60 bits = masked state).
+///
+/// Verified against the canonical reference at
+/// https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
+pub const GEN_REGULAR: [u128; 5] = [
+    0x19dc500ce73fde210,
+    0x1bfae00def77fe529,
+    0x1fbd920fffe7bee52,
+    0x1739640bdeee3fdad,
+    0x07729a039cfc75f5a,
+];
+
+/// Expected residue after polymod over a valid regular-code data part (BIP 93 `MS32_CONST`).
+pub const MS32_CONST: u128 = 0x10ce0795c2fd1e62a;
+
+/// Initial residue value for the polymod algorithm (BIP 93).
+pub const POLYMOD_INIT: u128 = 0x23181b3;
+
+/// Top-5-bit shift for the regular code residue (60).
+pub const REGULAR_SHIFT: u32 = 60;
+
+/// Mask preserving the low 60 bits of a 65-bit regular-code residue.
+pub const REGULAR_MASK: u128 = 0x0fffffffffffffff;
+
+/// BCH polymod constants for the long checksum (BCH(108,93,8)).
+///
+/// Source: BIP 93 (codex32) reference implementation, `ms32_long_polymod` function.
+/// The long polymod uses a 75-bit residue (top 5 bits = `b`, bottom 70 bits = masked state).
+///
+/// Verified against the canonical reference at
+/// https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
+pub const GEN_LONG: [u128; 5] = [
+    0x3d59d273535ea62d897,
+    0x7a9becb6361c6c51507,
+    0x543f9b7e6c38d8a2a0e,
+    0x0c577eaeccf1990d13c,
+    0x1887f74f8dc71b10651,
+];
+
+/// Expected residue after polymod over a valid long-code data part (BIP 93 `MS32_LONG_CONST`).
+pub const MS32_LONG_CONST: u128 = 0x43381e570bf4798ab26;
+
+/// Top-5-bit shift for the long code residue (70).
+pub const LONG_SHIFT: u32 = 70;
+
+/// Mask preserving the low 70 bits of a 75-bit long-code residue.
+pub const LONG_MASK: u128 = 0x3fffffffffffffffff;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +317,54 @@ mod tests {
     fn case_check_digits_only_is_lower() {
         // Digits have no case; result must be Lower (BIP 173: no-letter strings are lower).
         assert_eq!(case_check("1234"), CaseStatus::Lower);
+    }
+
+    #[test]
+    fn gen_regular_has_5_entries() {
+        assert_eq!(GEN_REGULAR.len(), 5);
+    }
+
+    #[test]
+    fn gen_long_has_5_entries() {
+        assert_eq!(GEN_LONG.len(), 5);
+    }
+
+    #[test]
+    fn gen_regular_matches_bip93_canonical_values() {
+        // Cross-checked against https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki
+        // ms32_polymod GEN array. If this fails, the constants drifted from the BIP.
+        assert_eq!(GEN_REGULAR[0], 0x19dc500ce73fde210);
+        assert_eq!(GEN_REGULAR[1], 0x1bfae00def77fe529);
+        assert_eq!(GEN_REGULAR[2], 0x1fbd920fffe7bee52);
+        assert_eq!(GEN_REGULAR[3], 0x1739640bdeee3fdad);
+        assert_eq!(GEN_REGULAR[4], 0x07729a039cfc75f5a);
+    }
+
+    #[test]
+    fn gen_long_matches_bip93_canonical_values() {
+        // Cross-checked against https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki
+        // ms32_long_polymod GEN array.
+        assert_eq!(GEN_LONG[0], 0x3d59d273535ea62d897);
+        assert_eq!(GEN_LONG[1], 0x7a9becb6361c6c51507);
+        assert_eq!(GEN_LONG[2], 0x543f9b7e6c38d8a2a0e);
+        assert_eq!(GEN_LONG[3], 0x0c577eaeccf1990d13c);
+        assert_eq!(GEN_LONG[4], 0x1887f74f8dc71b10651);
+    }
+
+    #[test]
+    fn ms32_constants_match_bip93() {
+        assert_eq!(MS32_CONST, 0x10ce0795c2fd1e62a);
+        assert_eq!(MS32_LONG_CONST, 0x43381e570bf4798ab26);
+        assert_eq!(POLYMOD_INIT, 0x23181b3);
+    }
+
+    #[test]
+    fn polymod_masks_are_consistent_with_shifts() {
+        // The mask must be (1 << shift) - 1 so that masking preserves bits below
+        // the shift boundary, exactly matching the BIP 93 algorithm.
+        assert_eq!(REGULAR_MASK, (1u128 << REGULAR_SHIFT) - 1);
+        assert_eq!(LONG_MASK, (1u128 << LONG_SHIFT) - 1);
+        assert_eq!(REGULAR_SHIFT, 60);
+        assert_eq!(LONG_SHIFT, 70);
     }
 }
