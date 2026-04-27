@@ -66,7 +66,6 @@ impl<'a> Cursor<'a> {
     }
 
     /// Read an LEB128 unsigned u64. Returns `Err` for truncation or overflow.
-    #[allow(dead_code)] // Used by Task 2.16+ decoder arms (after/older timelock values).
     fn read_varint_u64(&mut self) -> Result<u64, Error> {
         let start = self.offset;
         let remaining = &self.bytes[self.offset..];
@@ -356,12 +355,40 @@ fn decode_terminal(
             let hash = bitcoin::hashes::hash160::Hash::from_byte_array(bytes);
             Terminal::RawPkH(hash)
         }
-        // Task 2.16+ inner-fragment tags will be added here progressively
-        // (After/Older timelocks, hash literals, logical operators).
+        Tag::After => {
+            let v = cur.read_varint_u64()?;
+            let v32 = u32::try_from(v).map_err(|_| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::VarintOverflow,
+            })?;
+            let lock = miniscript::AbsLockTime::from_consensus(v32).map_err(|e| {
+                Error::InvalidBytecode {
+                    offset: tag_offset,
+                    kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+                }
+            })?;
+            Terminal::After(lock)
+        }
+        Tag::Older => {
+            let v = cur.read_varint_u64()?;
+            let v32 = u32::try_from(v).map_err(|_| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::VarintOverflow,
+            })?;
+            let lock = miniscript::RelLockTime::from_consensus(v32).map_err(|e| {
+                Error::InvalidBytecode {
+                    offset: tag_offset,
+                    kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+                }
+            })?;
+            Terminal::Older(lock)
+        }
+        // Task 2.17+ inner-fragment tags will be added here progressively
+        // (hash literals, logical operators).
         // For now, anything else is either out of v0.1 scope or deferred.
         _ => {
             return Err(Error::PolicyScopeViolation(format!(
-                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.16+)",
+                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.17+)",
                 tag.as_byte()
             )));
         }
@@ -962,5 +989,98 @@ mod tests {
             err,
             Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::TrailingBytes }
         ));
+    }
+
+    // --- After/Older timelock round-trips and rejections (Task 2.16) -------
+
+    #[test]
+    fn decode_wsh_after_round_trip_via_parser() {
+        // wsh(after(1234)) parses to Wsh -> Ms -> After. Round-trip end-to-end.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            "wsh(after(1234))"
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_wsh_older_round_trip_via_parser() {
+        // wsh(older(4032)) — 4032 blocks (~28 days) is the conventional
+        // segwit recovery delay. Tests the rel-locktime path.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            "wsh(older(4032))"
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_after_known_vector() {
+        // Pin the wire format independently of the encoder.
+        // [Wsh, After, varint(1234)] = [0x05, 0x1E, 0xD2, 0x09]
+        // 1234 LEB128:
+        //   1234 = 0x4D2 = 0b100_1101_0010
+        //   low 7: 0b101_0010 = 0x52, with continuation = 0xD2
+        //   high 7: 0b000_1001 = 0x09, last
+        let bytes = vec![0x05, 0x1E, 0xD2, 0x09];
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        use std::collections::HashMap;
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_older_known_vector() {
+        // [Wsh, Older, varint(4032)] = [0x05, 0x1F, 0xC0, 0x1F]
+        let bytes = vec![0x05, 0x1F, 0xC0, 0x1F];
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        use std::collections::HashMap;
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_after_rejects_truncated_varint() {
+        // [Wsh, After, 0x80] — continuation bit set, no terminator. The
+        // varint reader's heuristic should call this Truncated (fewer than
+        // 10 continuation bytes).
+        let bytes = vec![0x05, 0x1E, 0x80];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::Truncated, ..
+            }),
+            "expected Truncated, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_after_rejects_overflow_above_u32() {
+        // varint encoding a value > u32::MAX.
+        // u32::MAX = 0xFFFFFFFF; encode (0xFFFFFFFF + 1) = 0x100000000 = 2^32.
+        // LEB128 of 2^32: 5 bytes [0x80, 0x80, 0x80, 0x80, 0x10].
+        let mut bytes = vec![0x05, 0x1E];
+        bytes.extend_from_slice(&[0x80, 0x80, 0x80, 0x80, 0x10]);
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::VarintOverflow, ..
+            }),
+            "expected VarintOverflow, got {err:?}"
+        );
     }
 }
