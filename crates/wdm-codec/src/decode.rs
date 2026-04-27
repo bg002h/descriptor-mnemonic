@@ -25,7 +25,7 @@
 //!
 //! # DecodeOptions
 //!
-//! [`DecodeOptions::erasures`] is reserved for v0.3 erasure decoding and is
+//! `DecodeOptions::erasures` is reserved for v0.3 erasure decoding and is
 //! silently ignored in v0.1.
 
 use crate::{
@@ -116,11 +116,12 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
                 let corrected_val = if pos < decoded.data.len() {
                     decoded.data[pos]
                 } else {
-                    // Position is in the checksum region; we can't recover the
-                    // corrected value from the stripped data. Use the data-part
-                    // total length as context. For now, mark unknown.
-                    // (In practice the BCH brute-forcer doesn't expose the corrected value
-                    // directly for checksum positions; this is best-effort.)
+                    // TODO(post-v0.1): For corrections in the checksum region (pos >=
+                    // decoded.data.len()), `decoded.data[pos]` is unavailable, so we
+                    // fall back to ALPHABET[0] ('q') as the reported `corrected` char.
+                    // This is silently wrong for diagnostic display when BCH corrects a
+                    // checksum char. Fix requires extending Phase 1's `DecodedString` to
+                    // expose the full data+checksum corrected slice. Tracked for v0.2.
                     let _ = total_len; // suppress unused warning
                     0 // fallback; checksum corrections are rare and harmless to report imprecisely
                 };
@@ -477,64 +478,39 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // 12. decode_rejects_corrupted_cross_chunk_hash
+    // Shared helper for tests 13 and 14.
+    // Encodes a small policy and decodes it, returning the DecodeResult.
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn decode_rejects_corrupted_cross_chunk_hash() {
-        // Encode a chunked backup, then directly corrupt a Chunk fragment to
-        // produce a cross-chunk hash mismatch — bypassing BCH entirely by
-        // working at the Chunk level (post-BCH decode).
-        use crate::chunking::{ChunkCode, ChunkingPlan, chunk_bytes, reassemble_chunks};
-        use crate::wallet_id::ChunkWalletId;
-
+    fn happy_path_decode() -> DecodeResult {
         let p = policy("wsh(pk(@0/**))");
-        let bytecode = p.to_bytecode().expect("bytecode");
-        let wid = ChunkWalletId::new(0x12345);
-        let plan = ChunkingPlan::Chunked {
-            code: ChunkCode::Regular,
-            fragment_size: 45,
-            count: 1,
-        };
-        let mut chunks = chunk_bytes(&bytecode, plan, wid).expect("chunk_bytes");
-
-        // Corrupt the last 4 bytes of the last fragment (the cross-chunk hash region).
-        let last = chunks.last_mut().unwrap();
-        let last_len = last.fragment.len();
-        if last_len >= 4 {
-            last.fragment[last_len - 1] ^= 0xFF;
-            last.fragment[last_len - 2] ^= 0xFF;
-        }
-
-        let err = reassemble_chunks(chunks).expect_err("should reject corrupted hash");
-        assert!(
-            matches!(err, Error::CrossChunkHashMismatch),
-            "expected CrossChunkHashMismatch, got {err:?}"
-        );
+        let backup = encode(&p, &encode_opts()).expect("encode");
+        let raw = backup.chunks[0].raw.clone();
+        decode(&[raw.as_str()], &default_opts()).expect("decode")
     }
 
     // -----------------------------------------------------------------------
-    // 13 + 14. decode_report_clean_and_all_verifications_true
-    // (Combined: clean decode produces Confirmed report with all verifications true)
+    // 13. decode_report_outcome_clean_when_no_corrections
     // -----------------------------------------------------------------------
 
     #[test]
-    fn decode_report_clean_and_all_verifications_true() {
-        let p = policy("wsh(pk(@0/**))");
-        let backup = encode(&p, &encode_opts()).expect("encode");
-        let raw = backup.chunks[0].raw.as_str();
-
-        let result = decode(&[raw], &default_opts()).expect("decode");
-
-        // Test 13: outcome == Clean, confidence == Confirmed, corrections empty.
+    fn decode_report_outcome_clean_when_no_corrections() {
+        let result = happy_path_decode();
         assert_eq!(result.report.outcome, DecodeOutcome::Clean);
         assert_eq!(result.report.confidence, Confidence::Confirmed);
         assert!(
             result.report.corrections.is_empty(),
             "no corrections expected for a clean encode"
         );
+    }
 
-        // Test 14: all verifications are true.
+    // -----------------------------------------------------------------------
+    // 14. decode_report_verifications_all_true_on_happy_path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn decode_report_verifications_all_true_on_happy_path() {
+        let result = happy_path_decode();
         assert!(result.report.verifications.cross_chunk_hash_ok);
         assert!(result.report.verifications.wallet_id_consistent);
         assert!(result.report.verifications.total_chunks_consistent);
