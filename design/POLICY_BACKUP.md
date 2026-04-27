@@ -235,13 +235,13 @@ cryptographic primitives only.
   - Payload version byte (1 byte)
   - Payload type tag (1 byte: Template Card v0, Wallet ID, etc.)
   - **OPEN:** wallet name field — included or separate?
-- **Multi-string scheme:** required in v0. Single codex32 strings cap at
-  46 bytes (regular) or ~54 bytes (long); arbitrary-length policies must
-  be supportable. Each chunk is an independently-valid codex32-derived
-  string with its own BCH ECC; chunks carry index + count + wallet-id
-  for correct reassembly; a 4-byte canonical-bytecode hash appended
-  before chunking provides cross-chunk integrity. See §6.8 for the
-  chunk format.
+- **Multi-string scheme:** required in v0. Single codex32 strings (with
+  the 2-character slim header) cap at 48 bytes (regular) or 56 bytes
+  (long) of bytecode. Arbitrary-length policies must be supportable.
+  Each chunk is an independently-valid codex32-derived string with its
+  own BCH ECC; chunks carry index + count + wallet-id for correct
+  reassembly; a 4-byte canonical-bytecode hash appended before chunking
+  provides cross-chunk integrity. See §6.8 for the chunk format.
 
 ### Payload size envelope
 
@@ -443,8 +443,12 @@ mixed in (despite wallet-id check).
 
 | Code | Per-chunk fragment | Max chunks | Max policy bytecode |
 |---|---|---|---|
-| Regular | ~38 bytes | 32 | ~1216 bytes |
-| Long | ~46 bytes | 32 | ~1472 bytes |
+| Regular | 45 bytes | 32 | 1436 bytes |
+| Long | 53 bytes | 32 | 1692 bytes |
+
+(Per-chunk fragment = ⌊(93 − 8 − 13) × 5 / 8⌋ = 45 bytes for regular;
+⌊(108 − 8 − 15) × 5 / 8⌋ = 53 bytes for long. Max policy bytecode = 32 ×
+fragment − 4 bytes for the cross-chunk hash.)
 
 Realistic miniscripts top out at a few hundred bytes; typical wallets
 fit in 1–4 chunks.

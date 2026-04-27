@@ -105,7 +105,7 @@ For '''single-string Template Cards''' (the common case for small wallets), the 
 * '''Version''' (1 char, 5 bits): WDM format version. Currently <code>0</code> (the bech32 character with value 0, namely <code>q</code>). Decoders MUST reject unknown versions.
 * '''Type''' (1 char, 5 bits): card type. Value <code>0</code> = single-string Template Card. Value <code>1</code> = chunked Template Card. Other values reserved for future use; decoders MUST reject unknown types.
 
-For '''chunked Template Cards''', the header is ten bech32 characters:
+For '''chunked Template Cards''', the header is eight bech32 characters:
 
 * Version (1 char): as above.
 * Type (1 char): value <code>1</code>.
@@ -169,17 +169,17 @@ Maximum payload bytes:
 * Regular: ⌊(93 − 2 − 13) × 5 / 8⌋ = 48 bytes
 * Long: ⌊(108 − 2 − 15) × 5 / 8⌋ = 56 bytes
 
-For a chunked Template Card with the 10-character header:
+For a chunked Template Card with the 8-character header:
 * HRP + separator: 4 characters
-* Header: 10 characters
+* Header: 8 characters
 * Fragment: variable
 * Checksum: 13 (regular) or 15 (long) characters
 
 Maximum fragment bytes per chunk:
-* Regular: ⌊(93 − 10 − 13) × 5 / 8⌋ = 43 bytes
-* Long: ⌊(108 − 10 − 15) × 5 / 8⌋ = 51 bytes
+* Regular: ⌊(93 − 8 − 13) × 5 / 8⌋ = 45 bytes
+* Long: ⌊(108 − 8 − 15) × 5 / 8⌋ = 53 bytes
 
-With up to 32 chunks of long-code chunked encoding, a Template Card can encode up to 32 × 51 − 4 = 1628 bytes of canonical bytecode (subtracting the 4-byte cross-chunk hash). This is sufficient for any practical wallet policy.
+With up to 32 chunks of long-code chunked encoding, a Template Card can encode up to 32 × 53 − 4 = 1692 bytes of canonical bytecode (subtracting the 4-byte cross-chunk hash). This is sufficient for any practical wallet policy.
 
 ===Bytecode layer===
 
@@ -427,7 +427,7 @@ Encoders MUST produce canonical form. Decoders MUST accept canonical form and SH
 
 ===Chunking===
 
-When a Template Card's canonical bytecode (including the cross-chunk hash, defined below) exceeds the maximum payload of a single long-code codex32 string (51 bytes), the encoding MUST be chunked. Encoders MAY also chunk smaller bytecodes for ergonomic reasons (e.g., to fit on physical media) but SHOULD prefer single-string encoding when the payload fits.
+When a Template Card's canonical bytecode exceeds the maximum payload of a single long-code codex32 string (56 bytes), the encoding MUST be chunked. (The 4-byte cross-chunk integrity hash is appended only when chunking is used; it does not factor into the single-string capacity decision.) Encoders MAY also chunk smaller bytecodes for ergonomic reasons (e.g., to fit on physical media) but SHOULD prefer single-string encoding when the payload fits.
 
 ====Cross-chunk hash====
 
