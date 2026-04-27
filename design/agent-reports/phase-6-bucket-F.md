@@ -2,7 +2,8 @@
 
 **Status:** DONE_WITH_CONCERNS (at landing time; concerns resolved by integrated state)
 **Commit:** `6c00eba`
-**File:** `crates/wdm-codec/tests/error_coverage.rs` (NEW)
+**File(s):** `crates/wdm-codec/tests/error_coverage.rs` (NEW); read `crates/wdm-codec/src/error.rs` for variant enumeration; read `crates/wdm-codec/Cargo.toml` to confirm strum dev-dep
+**Role:** implementer
 **Tests added:** 5 (1 main exhaustiveness test + 4 helper unit tests)
 
 ## Summary

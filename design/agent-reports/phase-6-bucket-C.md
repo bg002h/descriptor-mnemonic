@@ -2,7 +2,8 @@
 
 **Status:** DONE
 **Commit:** `d98b51b`
-**File:** `crates/wdm-codec/tests/chunking.rs` (NEW)
+**File(s):** `crates/wdm-codec/tests/chunking.rs` (NEW)
+**Role:** implementer
 **Tests added:** 4
 
 ## Summary

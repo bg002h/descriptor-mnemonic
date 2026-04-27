@@ -2,7 +2,8 @@
 
 **Status:** DONE
 **Commit:** `860f3ee`
-**File:** `crates/wdm-codec/tests/upstream_shapes.rs` (NEW)
+**File(s):** `crates/wdm-codec/tests/upstream_shapes.rs` (NEW)
+**Role:** implementer
 **Tests added:** 9 (0 ignored)
 
 ## Summary

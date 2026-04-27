@@ -2,7 +2,8 @@
 
 **Status:** DONE
 **Commit:** `296d69d`
-**File:** `crates/wdm-codec/tests/corpus.rs` (NEW)
+**File(s):** `crates/wdm-codec/tests/corpus.rs` (NEW); read `design/CORPUS.md` for fixture sourcing
+**Role:** implementer
 **Tests added:** 12
 
 ## Summary

@@ -2,7 +2,8 @@
 
 **Status:** DONE
 **Commit:** `afc4564`
-**File:** `crates/wdm-codec/tests/conformance.rs` (NEW)
+**File(s):** `crates/wdm-codec/tests/conformance.rs` (NEW); read `crates/wdm-codec/src/error.rs` for variant enumeration
+**Role:** implementer
 **Tests added:** 34 (33 pass, 1 ignored)
 
 ## Summary

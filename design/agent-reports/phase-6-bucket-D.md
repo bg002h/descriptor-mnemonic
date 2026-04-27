@@ -2,7 +2,8 @@
 
 **Status:** DONE
 **Commit:** `b937aee`
-**File:** `crates/wdm-codec/tests/ecc.rs` (NEW)
+**File(s):** `crates/wdm-codec/tests/ecc.rs` (NEW)
+**Role:** implementer
 **Tests added:** 2
 
 ## Summary
