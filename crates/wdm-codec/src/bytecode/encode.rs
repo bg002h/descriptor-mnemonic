@@ -251,6 +251,46 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
                 out.extend_from_slice(h.as_byte_array());
                 Ok(())
             }
+            Terminal::Alt(child) => {
+                out.push(Tag::Alt.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::Swap(child) => {
+                out.push(Tag::Swap.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::Check(child) => {
+                out.push(Tag::Check.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::DupIf(child) => {
+                out.push(Tag::DupIf.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::Verify(child) => {
+                out.push(Tag::Verify.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::NonZero(child) => {
+                out.push(Tag::NonZero.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::ZeroNotEqual(child) => {
+                out.push(Tag::ZeroNotEqual.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::RawPkH(h) => {
+                out.push(Tag::RawPkH.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            // Defensive catch-all for any Terminal variant added in a future
+            // miniscript version. v0.1's Segwitv0 scope is fully covered above;
+            // this arm is unreachable today (Terminal is not #[non_exhaustive]
+            // in the workspace-pinned miniscript v12, so the compiler proves
+            // unreachability — the #[allow] keeps the guard in place against
+            // a future upgrade that adds new variants).
+            #[allow(unreachable_patterns)]
             other => Err(Error::PolicyScopeViolation(format!(
                 "unsupported Terminal fragment in v0.1 scope: {other:?}"
             ))),
@@ -480,25 +520,6 @@ mod tests {
         // pushed Tag::PkK before encode_template on the key returned Err,
         // so out is non-empty.
         assert_eq!(out, vec![Tag::PkK.as_byte()]);
-    }
-
-    #[test]
-    fn encode_unsupported_terminal_returns_error() {
-        // A terminal we haven't wired up yet (e.g. Verify wrapper, Task 2.10)
-        // returns an out-of-v0.1-scope PolicyScopeViolation via the catch-all
-        // arm. After/Older were moved out of the catch-all in Task 2.8.
-        use miniscript::Segwitv0;
-        use miniscript::Terminal;
-
-        let inner: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
-            Arc::new(Miniscript::from_ast(Terminal::True).unwrap());
-        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Verify(inner);
-        let mut out = Vec::new();
-        let err = term.encode_template(&mut out, &empty_map()).unwrap_err();
-        assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("unsupported Terminal")),
-            "expected unsupported-Terminal PolicyScopeViolation, got: {err:?}"
-        );
     }
 
     #[test]
@@ -1073,5 +1094,119 @@ mod tests {
         expected.push(0x01);
         assert_eq!(bytes, expected);
         assert_eq!(bytes.len(), 34); // Wsh + Sha256 + 32 bytes
+    }
+
+    #[test]
+    fn encode_terminal_check() {
+        // c:pk_k(K) — Check wrapping a PkK leaf. The 'pk(K)' descriptor parses
+        // to Wsh -> Ms -> Check(PkK), so we exercise the parser path here.
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 0u8);
+
+        let d = parse_descriptor(&format!("wsh(pk({key}))"));
+        let bytes = encode_template(&d, &map).unwrap();
+
+        // Expected: Wsh + Check + PkK + Placeholder + idx(0)
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Wsh.as_byte(),         // 0x05
+                Tag::Check.as_byte(),       // 0x0C
+                Tag::PkK.as_byte(),         // 0x1B
+                Tag::Placeholder.as_byte(), // 0x32
+                0x00,                       // idx 0
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_verify_via_parser() {
+        // v:pk(K) — Verify(Check(PkK(K))). Parser exposes via wsh(and_v(v:pk(K), 1)).
+        // Since and_v(V, *) is B-typed, this parses as a wsh inner.
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 0u8);
+
+        let d = parse_descriptor(&format!("wsh(and_v(v:pk({key}),1))"));
+        let bytes = encode_template(&d, &map).unwrap();
+
+        // Expected: Wsh + AndV + Verify + Check + PkK + Placeholder + idx(0) + True
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Wsh.as_byte(),         // 0x05
+                Tag::AndV.as_byte(),        // 0x11
+                Tag::Verify.as_byte(),      // 0x0E
+                Tag::Check.as_byte(),       // 0x0C
+                Tag::PkK.as_byte(),         // 0x1B
+                Tag::Placeholder.as_byte(), // 0x32
+                0x00,                       // idx 0
+                Tag::True.as_byte(),        // 0x01
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_terminal_alt_swap_directly() {
+        // Direct construction tests for two wrappers that are harder to
+        // parse-drive without a specific typing context.
+        let true_ms: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
+            Arc::new(Miniscript::from_ast(Terminal::True).unwrap());
+
+        let alt: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Alt(true_ms.clone());
+        let mut out = Vec::new();
+        alt.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(out, vec![Tag::Alt.as_byte(), Tag::True.as_byte()]);
+
+        let swap: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Swap(true_ms.clone());
+        let mut out = Vec::new();
+        swap.encode_template(&mut out, &empty_map()).unwrap();
+        assert_eq!(out, vec![Tag::Swap.as_byte(), Tag::True.as_byte()]);
+    }
+
+    #[test]
+    fn encode_terminal_dup_if_non_zero_zero_not_equal_directly() {
+        let true_ms: Arc<Miniscript<DescriptorPublicKey, Segwitv0>> =
+            Arc::new(Miniscript::from_ast(Terminal::True).unwrap());
+
+        for (term_ctor, tag) in [
+            (Terminal::DupIf as fn(_) -> _, Tag::DupIf),
+            (Terminal::NonZero as fn(_) -> _, Tag::NonZero),
+            (Terminal::ZeroNotEqual as fn(_) -> _, Tag::ZeroNotEqual),
+        ] {
+            let term: Terminal<DescriptorPublicKey, Segwitv0> = term_ctor(true_ms.clone());
+            let mut out = Vec::new();
+            term.encode_template(&mut out, &empty_map()).unwrap();
+            assert_eq!(out, vec![tag.as_byte(), Tag::True.as_byte()]);
+        }
+    }
+
+    #[test]
+    fn encode_terminal_raw_pk_h() {
+        use bitcoin::hashes::{Hash, hash160};
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let bytes: [u8; 20] = [
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+            0x01, 0x02, 0x03, 0x04,
+        ];
+        let h = hash160::Hash::from_byte_array(bytes);
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::RawPkH(h);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+
+        let mut expected = vec![Tag::RawPkH.as_byte()]; // 0x1D
+        expected.extend_from_slice(&bytes);
+        assert_eq!(out, expected);
+        assert_eq!(out.len(), 21); // 1 tag + 20 hash bytes
     }
 }
