@@ -115,13 +115,16 @@ impl ChunkHeader {
     /// - [`Error::ChunkHeaderTruncated`] — fewer bytes than the minimum header.
     /// - [`Error::UnsupportedVersion`] — version byte is not `0`.
     /// - [`Error::UnsupportedCardType`] — type byte is not `0` or `1`.
-    /// - [`Error::InvalidWalletIdEncoding`] — top 4 bits of wallet-id are set.
+    /// - [`Error::ReservedWalletIdBitsSet`] — top 4 bits of wallet-id are set.
     /// - [`Error::InvalidChunkCount`] — count is `0` or `> 32`.
     /// - [`Error::InvalidChunkIndex`] — `index >= count`.
     pub fn from_bytes(bytes: &[u8]) -> Result<(Self, usize)> {
         // Need at least 2 bytes for version + type.
         if bytes.len() < SINGLE_HEADER_LEN {
-            return Err(Error::ChunkHeaderTruncated);
+            return Err(Error::ChunkHeaderTruncated {
+                have: bytes.len(),
+                need: SINGLE_HEADER_LEN,
+            });
         }
 
         let version = bytes[0];
@@ -135,13 +138,16 @@ impl ChunkHeader {
             TYPE_CHUNKED => {
                 // Need 7 bytes total for the chunked header.
                 if bytes.len() < CHUNKED_HEADER_LEN {
-                    return Err(Error::ChunkHeaderTruncated);
+                    return Err(Error::ChunkHeaderTruncated {
+                        have: bytes.len(),
+                        need: CHUNKED_HEADER_LEN,
+                    });
                 }
 
                 // Wallet-id: 3 bytes, top 4 bits of first byte must be zero.
                 let hi = bytes[2];
                 if hi & 0xF0 != 0 {
-                    return Err(Error::InvalidWalletIdEncoding);
+                    return Err(Error::ReservedWalletIdBitsSet);
                 }
                 let w = ((hi as u32) << 16) | ((bytes[3] as u32) << 8) | (bytes[4] as u32);
                 // Belt-and-suspenders: the high-bit check above ensures w <= MAX.
@@ -795,8 +801,8 @@ mod tests {
         let bytes = [0x00u8, 0x01, 0x10, 0x00, 0x00, 0x01, 0x00];
         let err = ChunkHeader::from_bytes(&bytes).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidWalletIdEncoding),
-            "expected InvalidWalletIdEncoding, got {err:?}"
+            matches!(err, Error::ReservedWalletIdBitsSet),
+            "expected ReservedWalletIdBitsSet, got {err:?}"
         );
     }
 
@@ -805,8 +811,8 @@ mod tests {
         // Only 1 byte — too short for the 2-byte SingleString header.
         let err = ChunkHeader::from_bytes(&[0x00]).unwrap_err();
         assert!(
-            matches!(err, Error::ChunkHeaderTruncated),
-            "expected ChunkHeaderTruncated, got {err:?}"
+            matches!(err, Error::ChunkHeaderTruncated { have: 1, need: 2 }),
+            "expected ChunkHeaderTruncated {{ have: 1, need: 2 }}, got {err:?}"
         );
     }
 
@@ -814,8 +820,8 @@ mod tests {
     fn reject_truncated_input_empty() {
         let err = ChunkHeader::from_bytes(&[]).unwrap_err();
         assert!(
-            matches!(err, Error::ChunkHeaderTruncated),
-            "expected ChunkHeaderTruncated, got {err:?}"
+            matches!(err, Error::ChunkHeaderTruncated { have: 0, need: 2 }),
+            "expected ChunkHeaderTruncated {{ have: 0, need: 2 }}, got {err:?}"
         );
     }
 
@@ -824,8 +830,28 @@ mod tests {
         // type=1 but only 3 bytes — too short for the 7-byte Chunked header.
         let err = ChunkHeader::from_bytes(&[0x00, 0x01, 0x00]).unwrap_err();
         assert!(
-            matches!(err, Error::ChunkHeaderTruncated),
-            "expected ChunkHeaderTruncated, got {err:?}"
+            matches!(err, Error::ChunkHeaderTruncated { have: 3, need: 7 }),
+            "expected ChunkHeaderTruncated {{ have: 3, need: 7 }}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn reject_truncated_chunked_two_bytes() {
+        // [0x00, 0x01]: version + type=Chunked, but no wallet_id/count/index.
+        let err = ChunkHeader::from_bytes(&[0x00, 0x01]).unwrap_err();
+        assert!(
+            matches!(err, Error::ChunkHeaderTruncated { have: 2, need: 7 }),
+            "expected ChunkHeaderTruncated {{ have: 2, need: 7 }}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn reject_truncated_chunked_five_bytes() {
+        // [0x00, 0x01, 0x00, 0x00, 0x00]: version + type + 3 wallet_id bytes, but no count/index.
+        let err = ChunkHeader::from_bytes(&[0x00, 0x01, 0x00, 0x00, 0x00]).unwrap_err();
+        assert!(
+            matches!(err, Error::ChunkHeaderTruncated { have: 5, need: 7 }),
+            "expected ChunkHeaderTruncated {{ have: 5, need: 7 }}, got {err:?}"
         );
     }
 
@@ -844,6 +870,42 @@ mod tests {
     // -----------------------------------------------------------------------
     // chunking_decision tests
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn chunking_decision_zero_byte_input() {
+        // 0-byte bytecode, unforced → SingleString { Regular } (fits within 48-byte capacity).
+        let plan = chunking_decision(0, false).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::SingleString {
+                code: ChunkCode::Regular
+            }
+        );
+
+        // 0-byte bytecode, forced → Chunked { Regular, 45, 1 }:
+        // stream = 0 + 4 = 4; count = ceil(4/45) = 1.
+        let plan_forced = chunking_decision(0, true).unwrap();
+        assert_eq!(
+            plan_forced,
+            ChunkingPlan::Chunked {
+                code: ChunkCode::Regular,
+                fragment_size: 45,
+                count: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn single_string_long_explicit_49_bytes() {
+        // 49 bytes exceeds Regular capacity (48) but fits Long (56) → SingleString { Long }.
+        let plan = chunking_decision(49, false).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::SingleString {
+                code: ChunkCode::Long
+            }
+        );
+    }
 
     #[test]
     fn single_string_short_input() {

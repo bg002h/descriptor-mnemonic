@@ -104,17 +104,22 @@ pub enum Error {
         count: u8,
     },
 
-    /// The three wallet-id bytes in a chunk header had illegal high bits set.
+    /// The three wallet-id bytes in a chunk header had the reserved top 4 bits set.
     ///
     /// The wallet-id field is 20 bits wide; the top 4 bits of the three-byte
     /// encoding must be zero.  Any non-zero high nibble in the first byte
     /// triggers this error.
-    #[error("invalid wallet-id encoding: top 4 bits of wallet-id field must be zero")]
-    InvalidWalletIdEncoding,
+    #[error("reserved wallet-id bits set: top 4 bits of wallet-id field must be zero")]
+    ReservedWalletIdBitsSet,
 
     /// The chunk header bytes were truncated (too short to contain a complete header).
-    #[error("chunk header truncated: input too short")]
-    ChunkHeaderTruncated,
+    #[error("chunk header truncated: have {have} bytes, need {need}")]
+    ChunkHeaderTruncated {
+        /// Number of bytes actually available.
+        have: usize,
+        /// Minimum number of bytes required for a complete header.
+        need: usize,
+    },
 
     /// Bytecode is too large for any v0 chunking plan.
     #[error(
