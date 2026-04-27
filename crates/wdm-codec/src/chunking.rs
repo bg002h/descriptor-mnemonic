@@ -342,17 +342,22 @@ pub enum ChunkingPlan {
 /// Returns [`Error::PolicyTooLarge`] when `bytecode_len` exceeds [`MAX_BYTECODE_LEN`].
 pub fn chunking_decision(bytecode_len: usize, mode: ChunkingMode) -> Result<ChunkingPlan> {
     // Steps 1 & 2: single-string path (skipped when ForceChunked).
-    if matches!(mode, ChunkingMode::Auto) {
-        if bytecode_len <= ChunkCode::Regular.single_string_capacity() {
-            return Ok(ChunkingPlan::SingleString {
-                code: ChunkCode::Regular,
-            });
+    // Exhaustive match so a future ChunkingMode variant forces a compile-time
+    // decision here rather than silently falling through to the chunked path.
+    match mode {
+        ChunkingMode::Auto => {
+            if bytecode_len <= ChunkCode::Regular.single_string_capacity() {
+                return Ok(ChunkingPlan::SingleString {
+                    code: ChunkCode::Regular,
+                });
+            }
+            if bytecode_len <= ChunkCode::Long.single_string_capacity() {
+                return Ok(ChunkingPlan::SingleString {
+                    code: ChunkCode::Long,
+                });
+            }
         }
-        if bytecode_len <= ChunkCode::Long.single_string_capacity() {
-            return Ok(ChunkingPlan::SingleString {
-                code: ChunkCode::Long,
-            });
-        }
+        ChunkingMode::ForceChunked => {}
     }
 
     // Steps 3 & 4: chunked path.

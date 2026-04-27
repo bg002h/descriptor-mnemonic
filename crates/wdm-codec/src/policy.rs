@@ -186,6 +186,14 @@ pub struct WalletPolicy {
     /// Consulted by [`Self::to_bytecode`] under the Phase A precedence rule
     /// (Phase B will layer `EncodeOptions::shared_path` on top):
     /// `decoded_shared_path` > `shared_path()` > BIP 84 mainnet fallback.
+    ///
+    /// **Equality semantics:** because `WalletPolicy` derives `PartialEq`,
+    /// two logically-equivalent template-only policies — one built via
+    /// `parse()` (`decoded_shared_path == None`) and one built via
+    /// [`Self::from_bytecode`] (`decoded_shared_path == Some(_)`) — compare
+    /// unequal even though their `inner` `WalletPolicy` is structurally
+    /// identical. Callers that want construction-path-agnostic equality
+    /// should compare via `.to_canonical_string()` instead of `==`.
     decoded_shared_path: Option<DerivationPath>,
 }
 

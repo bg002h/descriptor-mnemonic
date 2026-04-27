@@ -52,15 +52,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `p4-chunking-mode-enum` — `force_chunked: bool` → `ChunkingMode { Auto, ForceChunked }`
-
-- **Surfaced:** Phase 4-D code review of `1fe9505`
-- **Where:** `crates/wdm-codec/src/chunking.rs` `chunking_decision` signature
-- **What:** Replacing the bool with a typed enum makes call sites self-documenting. v0.1 has only test call sites; if real consumers multiply (CLI, top-level encode), the readability win compounds.
-- **Why deferred:** premature for v0.1; bool was correct at the time of the call-site count.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `p2-taproot-tr-taptree` — taproot `Tr` / `TapTree` operator support
 
 - **Surfaced:** Phase 2 (D-2, D-4, plan task 2.11 marked deferred)
@@ -96,15 +87,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** waiting for upstream maintainer review.
 - **Status:** open
 - **Tier:** external
-
-### `6a-bytecode-roundtrip-path-mismatch` — encode→decode→encode is not byte-stable for template-only policies
-
-- **Surfaced:** Phase 6 bucket A (corpus.rs idempotency test); Task 6.12 had to be reframed
-- **Where:** `crates/wdm-codec/src/policy.rs::to_bytecode` (the BIP 84 fallback when `shared_path()` is None) and `from_bytecode` (which substitutes dummy keys whose origin path is `m/44'/0'/0'`)
-- **What:** First-pass `encode(policy_from_template_str)` uses the BIP 84 mainnet path (`m/84'/0'/0'`) as the shared-path fallback for template-only policies (per Phase 5-B D-10). After `decode_bytecode`, the reconstructed `WalletPolicy` carries dummy keys with `m/44'/0'/0'` origin. Second-pass `encode(reconstructed)` therefore uses `m/44'/0'/0'` and produces a different path declaration. So `encode → decode → encode` is NOT byte-stable; only `(encode → decode → encode) → (decode → encode)` (i.e., second pass onward) is byte-stable. The Task 6.12 idempotency test now asserts second-pass equality plus structural equality only.
-- **Why deferred:** v0.1 round-trips correctly at the structural level; byte-stability would require either (a) `WalletPolicy` storing the decoded shared path so re-encode reuses it, or (b) `from_bytecode` stashing the path on the WalletPolicy newtype. Both touch Phase 5-B's API surface.
-- **Status:** open
-- **Tier:** v0.2
 
 ### `p2-fingerprints-block` — v0.2 fingerprints block support
 
@@ -150,6 +132,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** stylistic; not a contract issue. The BIP draft predates the impl; the spec's status is independent.
 - **Status:** open
 - **Tier:** v0.1-nice-to-have
+
+### `p4-chunking-mode-stale-test-names` — sweep `force_chunked_*` test names + comments to new terminology
+
+- **Surfaced:** Phase A bucket A reviewer (Opus 4.7) on commit `fbbe6ec`
+- **Where:** `crates/wdm-codec/src/chunking.rs:1072,1164,1178` (test fn names + inline comments) and `crates/wdm-codec/src/decode.rs:231` (`force_chunking_opts` helper); `crates/wdm-codec/src/options.rs:34-36` (field rustdoc could cross-reference `ChunkingMode` directly); `crates/wdm-codec/src/policy.rs:461` (doc-link line ~120 chars vs surrounding ~80; reflow optional).
+- **What:** Cosmetic test-name + comment + rustdoc sweep to align terminology with the new `ChunkingMode { Auto, ForceChunked }` enum. All sites are functionally correct; only the names/comments are stale.
+- **Why deferred:** test-only churn; bundle into a single sweep before v0.2.0 release rather than spreading across phases.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
+
+### `p4-with-chunking-mode-builder` — additive `EncodeOptions::with_chunking_mode(ChunkingMode)` builder
+
+- **Surfaced:** Phase A bucket A dispatch (deferred per controller); reaffirmed by reviewer
+- **Where:** `crates/wdm-codec/src/options.rs::EncodeOptions`
+- **What:** Today the only chunking-mode builder is `with_force_chunking(self, force: bool)`, kept as a `bool → enum` shim for v0.1.1 source-compat. When a third `ChunkingMode` variant is introduced (e.g., Phase D's `MaxChunkBytes(u8)` per BIP §"Chunking" line 438, if it lands), add `with_chunking_mode(ChunkingMode)` so callers can select the new variant explicitly.
+- **Why deferred:** purely additive; no existing or imminent caller needs it.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
+
+### `wallet-policy-eq-migration-note` — document `WalletPolicy` `PartialEq` semantics around `decoded_shared_path` in MIGRATION.md
+
+- **Surfaced:** Phase A bucket B reviewer (Opus 4.7) on commit `86ca5df`
+- **Where:** `MIGRATION.md` (to be created at Phase G); `crates/wdm-codec/src/policy.rs` field rustdoc (already added inline by controller fixup commit)
+- **What:** With the new `decoded_shared_path: Option<DerivationPath>` field and derived `PartialEq, Eq`, two logically-equivalent template-only policies — one from `parse()` (`None`) and one from `from_bytecode()` (`Some(...)`) — compare unequal. Field rustdoc now says so. MIGRATION.md needs a corresponding "Phase A breaking changes" bullet pointing at this so v0.1.x consumers upgrading to v0.2 understand the new equality semantics + the recommended `.to_canonical_string()` workaround for construction-path-agnostic equality.
+- **Why deferred:** MIGRATION.md is a Phase G deliverable; this entry is a tracker so the doc isn't missed at release prep.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
 
 ---
 
@@ -348,6 +357,18 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 4-A code review of `aefdf3f` (deferred to "after 4-E"); 4-E used the slice+usize shape unchanged
 - **Status:** wont-fix — through v0.1.1 no caller has surfaced needing the shape switched. Phase 7 CLI consumed `Chunk::from_bytes` via the slice+usize shape without friction; no Phase 5–10 consumer needed the Cursor shape. Both shapes do equivalent work; consolidating now is style-only churn. Revisit only if a non-test consumer surfaces a concrete need.
 - **Tier:** v0.2 (closed)
+
+### `p4-chunking-mode-enum` — `force_chunked: bool` → `ChunkingMode { Auto, ForceChunked }`
+
+- **Surfaced:** Phase 4-D code review of `1fe9505`
+- **Status:** resolved `fbbe6ec` (v0.2 Phase A bucket A) — pub enum `ChunkingMode { Auto, ForceChunked }` added to `chunking.rs`; `pub fn chunking_decision(usize, ChunkingMode)`; `EncodeOptions.force_chunking: bool` → `chunking_mode: ChunkingMode`. `with_force_chunking(self, bool)` builder preserved as a `bool → enum` shim for v0.1.1 source-compat. Wire format unchanged; vectors verify byte-identical. 2 new tests cover the bool↔enum shim and `Default = Auto`. Reviewer `APPROVE_WITH_FOLLOWUPS`; the `matches!` → exhaustive `match` nit applied inline by controller; 3 minor follow-ups filed (`p4-chunking-mode-stale-test-names`, `p4-with-chunking-mode-builder`).
+- **Tier:** v0.2 (closed; breaking — see commit `fbbe6ec` body for full migration note)
+
+### `6a-bytecode-roundtrip-path-mismatch` — encode→decode→encode is not byte-stable for template-only policies
+
+- **Surfaced:** Phase 6 bucket A (corpus.rs idempotency test); Task 6.12 had to be reframed
+- **Status:** resolved `86ca5df` (v0.2 Phase A bucket B) — `WalletPolicy` newtype gains `decoded_shared_path: Option<DerivationPath>` field; `from_bytecode` populates it from `decode_declaration`'s return value; `to_bytecode` consults it under the Phase A precedence rule (`decoded_shared_path > shared_path() > BIP 84 fallback`). Public signatures of `from_bytecode` / `to_bytecode` unchanged. `tests/corpus.rs` idempotency test tightened to assert FIRST-pass raw-byte equality (was second-pass-onward only). New inline test in `policy.rs` proves the round-trip for `m/48'/0'/0'/2'` (distinguishes from both BIP 84 fallback and dummy-key origin). Wire format unchanged; vectors verify byte-identical. Reviewer `APPROVE_WITH_FOLLOWUPS`; the field rustdoc note about `PartialEq` semantics applied inline by controller; MIGRATION.md follow-up filed (`wallet-policy-eq-migration-note`).
+- **Tier:** v0.2 (closed; behavioral — see commit `86ca5df` body for full migration note)
 
 ---
 
