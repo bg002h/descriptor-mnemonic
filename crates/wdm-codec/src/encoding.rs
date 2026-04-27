@@ -86,15 +86,20 @@ pub fn five_bit_to_bytes(values: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// The fixed human-readable part for WDM strings.
+///
+/// Mandated by the WDM spec (BIP 93 codex32 derivation). The value `"wdm"`
+/// is permanently assigned and must not be made configurable.
 pub const HRP: &str = "wdm";
 
-/// The bech32 separator character.
+/// The bech32 separator character between HRP and data-part (BIP 173 §3).
 pub const SEPARATOR: char = '1';
 
 /// Determine the BchCode variant from a total data-part length.
 ///
-/// Returns `None` for invalid lengths (94 and 95 are reserved-invalid;
-/// lengths > 108 or < 14 are also rejected).
+/// Boundaries are from BIP 93 (codex32): regular code `BCH(93,80,8)` caps at 93,
+/// long code `BCH(108,93,8)` runs 96–108, and lengths 94–95 are explicitly
+/// reserved-invalid to prevent ambiguity in code-variant selection. Lengths
+/// below 14 or above 108 are also rejected.
 pub fn bch_code_for_length(data_part_len: usize) -> Option<BchCode> {
     match data_part_len {
         14..=93 => Some(BchCode::Regular),
@@ -105,6 +110,11 @@ pub fn bch_code_for_length(data_part_len: usize) -> Option<BchCode> {
 }
 
 /// Check whether a string is all-lowercase, all-uppercase, or mixed.
+///
+/// Only ASCII letters are considered; non-ASCII characters (digits, punctuation,
+/// Unicode letters) are treated as neither case. This is appropriate for WDM
+/// strings, whose alphabet is a subset of ASCII. An empty string or one with
+/// no ASCII letters returns [`CaseStatus::Lower`].
 pub fn case_check(s: &str) -> CaseStatus {
     let mut has_lower = false;
     let mut has_upper = false;
@@ -113,6 +123,9 @@ pub fn case_check(s: &str) -> CaseStatus {
             has_lower = true;
         } else if c.is_ascii_uppercase() {
             has_upper = true;
+        }
+        if has_lower && has_upper {
+            break;
         }
     }
     match (has_lower, has_upper) {
@@ -240,5 +253,16 @@ mod tests {
     #[test]
     fn case_check_mixed() {
         assert_eq!(case_check("wDm1qq"), CaseStatus::Mixed);
+    }
+
+    #[test]
+    fn case_check_empty_string_is_lower() {
+        assert_eq!(case_check(""), CaseStatus::Lower);
+    }
+
+    #[test]
+    fn case_check_digits_only_is_lower() {
+        // Digits have no case; result must be Lower (BIP 173: no-letter strings are lower).
+        assert_eq!(case_check("1234"), CaseStatus::Lower);
     }
 }
