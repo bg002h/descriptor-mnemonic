@@ -8,6 +8,7 @@
 //! - [`ChunkWalletId`] — the 20-bit chunk-header field derived from a
 //!   `WalletId` by taking its first 20 bits.
 
+use bitcoin::hashes::{Hash, sha256};
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -101,6 +102,51 @@ impl From<[u8; 16]> for WalletId {
     fn from(bytes: [u8; 16]) -> Self {
         Self(bytes)
     }
+}
+
+// ---------------------------------------------------------------------------
+// compute_wallet_id
+// ---------------------------------------------------------------------------
+
+/// Compute a 16-byte [`WalletId`] by truncating the SHA-256 of canonical
+/// bytecode.
+///
+/// # Algorithm
+///
+/// ```text
+/// SHA-256(canonical_bytecode)[0..16]
+/// ```
+///
+/// The first 16 bytes of the 32-byte SHA-256 digest are used directly as the
+/// `WalletId` (128 bits).  This is the Tier-3 Wallet ID defined in the WDM
+/// spec (IMPLEMENTATION_PLAN §3, line 106).
+///
+/// The relationship to the chunk-header 20-bit field is:
+/// ```text
+/// ChunkWalletId = WalletId::truncate() = first 20 bits of SHA-256(bytecode)
+/// ```
+/// i.e. the `WalletId` and the chunk-header field share the same SHA-256 hash;
+/// the chunk-header simply keeps fewer bits.
+///
+/// # Phase note
+///
+/// This is the bytes-level primitive.  Phase 5 will add a
+/// `WalletPolicy`-aware wrapper (`compute_wallet_id_for_policy`) that
+/// canonicalizes a `WalletPolicy` to bytecode and then calls this function.
+///
+/// # Example
+///
+/// ```
+/// # use wdm_codec::wallet_id::compute_wallet_id;
+/// let id = compute_wallet_id(b"");
+/// // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb924...
+/// assert_eq!(id.to_string(), "e3b0c44298fc1c149afbf4c8996fb924");
+/// ```
+pub fn compute_wallet_id(canonical_bytecode: &[u8]) -> WalletId {
+    let digest = sha256::Hash::hash(canonical_bytecode);
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest.as_byte_array()[..16]);
+    WalletId::new(bytes)
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +349,70 @@ mod tests {
                 "word {i} ({word:?}) contains non-lowercase-ASCII characters"
             );
         }
+    }
+
+    // --- compute_wallet_id ---
+
+    #[test]
+    fn compute_wallet_id_known_input() {
+        // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        // First 16 bytes as hex: e3b0c44298fc1c149afbf4c8996fb924
+        let id = compute_wallet_id(b"");
+        assert_eq!(
+            id.to_string(),
+            "e3b0c44298fc1c149afbf4c8996fb924",
+            "SHA-256(\"\") truncated to 16 bytes should match known vector"
+        );
+    }
+
+    #[test]
+    fn compute_wallet_id_deterministic() {
+        // Same input must always produce the same WalletId.
+        let id1 = compute_wallet_id(b"hello world");
+        let id2 = compute_wallet_id(b"hello world");
+        assert_eq!(id1, id2, "compute_wallet_id must be deterministic");
+    }
+
+    #[test]
+    fn compute_wallet_id_distinguishes_inputs() {
+        // Different inputs must produce different WalletIds.
+        let id_a = compute_wallet_id(b"a");
+        let id_b = compute_wallet_id(b"b");
+        assert_ne!(id_a, id_b, "distinct inputs must yield distinct WalletIds");
+    }
+
+    #[test]
+    fn compute_wallet_id_truncate_is_first_20_bits() {
+        // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb924...
+        // First 3 bytes: e3, b0, c4
+        // First 20 bits: (0xe3 << 12) | (0xb0 << 4) | (0xc4 >> 4)
+        //              = 0xe3000 | 0xb00 | 0xc
+        //              = 0xe3b0c
+        let id = compute_wallet_id(b"");
+        let chunk_id = id.truncate();
+
+        let expected: u32 = ((0xe3u32) << 12) | ((0xb0u32) << 4) | ((0xc4u32) >> 4);
+        assert_eq!(expected, 0xe3b0c, "manual bit-pack sanity check");
+        assert_eq!(
+            chunk_id.as_u32(),
+            0xe3b0c,
+            "ChunkWalletId must equal the first 20 bits of SHA-256(bytecode)"
+        );
+    }
+
+    #[test]
+    fn compute_wallet_id_with_typical_bytecode_input() {
+        // A plausible short canonical-bytecode prefix — must not panic and must
+        // return a valid WalletId (no specific value assertion needed here).
+        let fixture: &[u8] = &[0x05, 0x33, 0x01, 0x05, 0x1B, 0x32, 0x00];
+        let id = compute_wallet_id(fixture);
+        // 32-hex-char Display output sanity check.
+        let s = id.to_string();
+        assert_eq!(s.len(), 32, "WalletId Display must be 32 hex characters");
+        assert!(
+            s.chars().all(|c| c.is_ascii_hexdigit()),
+            "WalletId Display must be lowercase hex: {s:?}"
+        );
     }
 
     // --- ChunkWalletId ---
