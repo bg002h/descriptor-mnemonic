@@ -333,7 +333,7 @@ impl EncodeTemplate for DescriptorPublicKey {
             ))
         })?;
         out.push(Tag::Placeholder.as_byte());
-        crate::bytecode::varint::encode_u64(u64::from(index), out);
+        out.push(index);
         Ok(())
     }
 }
@@ -344,8 +344,18 @@ impl<T: EncodeTemplate, const MAX: usize> EncodeTemplate for Threshold<T, MAX> {
         out: &mut Vec<u8>,
         placeholder_map: &HashMap<DescriptorPublicKey, u8>,
     ) -> Result<(), Error> {
-        crate::bytecode::varint::encode_u64(self.k() as u64, out);
-        crate::bytecode::varint::encode_u64(self.n() as u64, out);
+        out.push(u8::try_from(self.k()).map_err(|_| {
+            Error::PolicyScopeViolation(format!(
+                "threshold k={} exceeds single-byte width (255)",
+                self.k()
+            ))
+        })?);
+        out.push(u8::try_from(self.n()).map_err(|_| {
+            Error::PolicyScopeViolation(format!(
+                "threshold n={} exceeds single-byte width (255)",
+                self.n()
+            ))
+        })?);
         for elem in self.iter() {
             elem.encode_template(out, placeholder_map)?;
         }
@@ -360,8 +370,18 @@ impl EncodeTemplate for SortedMultiVec<DescriptorPublicKey, Segwitv0> {
         placeholder_map: &HashMap<DescriptorPublicKey, u8>,
     ) -> Result<(), Error> {
         out.push(Tag::SortedMulti.as_byte());
-        crate::bytecode::varint::encode_u64(self.k() as u64, out);
-        crate::bytecode::varint::encode_u64(self.n() as u64, out);
+        out.push(u8::try_from(self.k()).map_err(|_| {
+            Error::PolicyScopeViolation(format!(
+                "threshold k={} exceeds single-byte width (255)",
+                self.k()
+            ))
+        })?);
+        out.push(u8::try_from(self.n()).map_err(|_| {
+            Error::PolicyScopeViolation(format!(
+                "threshold n={} exceeds single-byte width (255)",
+                self.n()
+            ))
+        })?);
         for pk in self.pks() {
             pk.encode_template(out, placeholder_map)?;
         }
@@ -1220,5 +1240,32 @@ mod tests {
         expected.extend_from_slice(&bytes);
         assert_eq!(out, expected);
         assert_eq!(out.len(), 21); // 1 tag + 20 hash bytes
+    }
+
+    #[test]
+    fn encode_placeholder_index_above_127_uses_single_byte() {
+        // BIP §"LEB128 encoding": placeholder index is a 1-byte field,
+        // not LEB128. For index < 128 the wire forms coincide; for ≥128
+        // they diverge. Pin the single-byte form here so a regression
+        // back to LEB128 (which would emit 2 bytes for 200) fails the test.
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 200u8);
+
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::PkK(key);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &map).unwrap();
+
+        // Expected: Tag::PkK (0x1B), Tag::Placeholder (0x32), 0xC8 (= 200).
+        // Under LEB128, 200 would emit as [0xC8, 0x01] — total 4 bytes.
+        // Under single-byte, 200 emits as [0xC8] — total 3 bytes.
+        assert_eq!(out, vec![0x1B, 0x32, 0xC8]);
+        assert_eq!(out.len(), 3, "single-byte placeholder index must be exactly 1 byte");
     }
 }

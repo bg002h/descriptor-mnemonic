@@ -109,15 +109,9 @@ pub enum Error {
     Miniscript(String),
 }
 
-impl From<miniscript::Error> for Error {
-    fn from(e: miniscript::Error) -> Self {
-        Error::Miniscript(e.to_string())
-    }
-}
-
 /// Kind of bytecode parse error, used inside [`Error::InvalidBytecode`].
 #[non_exhaustive]
-#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum BytecodeErrorKind {
     /// Tag byte does not correspond to any defined operator.
     #[error("unknown tag {0:#04x}")]
@@ -147,6 +141,13 @@ pub enum BytecodeErrorKind {
     /// Buffer had bytes remaining after the operator tree was fully consumed.
     #[error("trailing bytes after canonical bytecode")]
     TrailingBytes,
+
+    /// Reconstructed miniscript fragment failed type-check during
+    /// `Wsh::new(...)` or equivalent. Wraps the upstream miniscript
+    /// error message; carried as `String` to insulate from upstream
+    /// `miniscript::Error` churn.
+    #[error("miniscript type check failed: {0}")]
+    TypeCheckFailed(String),
 }
 
 /// Result type used throughout wdm-codec.
@@ -163,16 +164,29 @@ mod tests {
     }
 
     #[test]
-    fn miniscript_error_is_wrapped_via_from_impl() {
-        // Exercise the From<miniscript::Error> impl, not just the variant
-        // constructor. Catches typos in the From body and verifies that
-        // miniscript::Error implements Display (an upstream assumption).
+    fn miniscript_error_can_be_wrapped_explicitly() {
+        // The blanket From<miniscript::Error> impl was removed (Issue 3 from
+        // the Phase 2 decision review); call sites that need to wrap a
+        // miniscript error now construct Error::Miniscript explicitly.
         let parse_result = "not_a_valid_descriptor".parse::<miniscript::descriptor::Descriptor<miniscript::descriptor::DescriptorPublicKey>>();
         let ms_err = parse_result.expect_err("intentionally invalid descriptor");
-        let e: Error = ms_err.into();
+        let e = Error::Miniscript(ms_err.to_string());
         assert!(matches!(e, Error::Miniscript(_)));
         let s = e.to_string();
         assert!(s.starts_with("miniscript:"), "got: {s}");
+    }
+
+    #[test]
+    fn type_check_failed_variant_displays() {
+        let e = Error::InvalidBytecode {
+            offset: 7,
+            kind: BytecodeErrorKind::TypeCheckFailed(
+                "Bdu type required".to_string(),
+            ),
+        };
+        let s = e.to_string();
+        assert!(s.contains("offset 7"), "got: {s}");
+        assert!(s.contains("miniscript type check failed"), "got: {s}");
     }
 
     #[test]
