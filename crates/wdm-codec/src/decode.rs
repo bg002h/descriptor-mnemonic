@@ -32,7 +32,7 @@ use crate::{
     BchCode, Chunk, ChunkHeader, Confidence, DecodeOptions, DecodeOutcome, DecodeReport,
     DecodeResult, Error, Verifications, WalletPolicy,
     chunking::{Correction, reassemble_chunks},
-    encoding::{ALPHABET, decode_string, five_bit_to_bytes},
+    encoding::{decode_string, five_bit_to_bytes},
 };
 
 // ---------------------------------------------------------------------------
@@ -99,41 +99,18 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
             let data_chars: Vec<char> = s_lower[data_part_start..].chars().collect();
 
             for &pos in &decoded.corrected_positions {
-                // `pos` is an index into the 5-bit values array (which corresponds
-                // 1-to-1 to chars in the data part of the bech32 string).
-                // The corrected value is at decoded.data[pos] — but wait, the
-                // checksum has already been stripped from decoded.data. The
-                // corrections_applied positions index into data_with_checksum
-                // BEFORE stripping. We need the corrected 5-bit value.
-                // Since we can't reconstruct it without re-running BCH (the
-                // corrected data is in the 5-bit array before stripping), we use
-                // a different approach: the original char is data_chars[pos],
-                // and the corrected char we can infer from decoded.data if pos
-                // is before the strip point, otherwise it's in the checksum region.
-                let checksum_len = match decoded.code {
-                    BchCode::Regular => 13,
-                    BchCode::Long => 15,
-                };
-                let total_len = decoded.data.len() + checksum_len;
+                // `pos` is an index into the data-part 5-bit values, in the
+                // same coordinate system as `data_chars` (chars after `"wdm1"`).
+                // It may land in the data region (`pos < decoded.data.len()`)
+                // OR in the checksum region — both cases are answered uniformly
+                // by `DecodedString::corrected_char_at`, which retains the full
+                // post-correction symbol sequence (data + checksum).
                 let original_char = if pos < data_chars.len() {
                     data_chars[pos]
                 } else {
                     '?'
                 };
-                // Corrected 5-bit value:
-                let corrected_val = if pos < decoded.data.len() {
-                    decoded.data[pos]
-                } else {
-                    // TODO(post-v0.1): For corrections in the checksum region (pos >=
-                    // decoded.data.len()), `decoded.data[pos]` is unavailable, so we
-                    // fall back to ALPHABET[0] ('q') as the reported `corrected` char.
-                    // This is silently wrong for diagnostic display when BCH corrects a
-                    // checksum char. Fix requires extending Phase 1's `DecodedString` to
-                    // expose the full data+checksum corrected slice. Tracked for v0.2.
-                    let _ = total_len; // suppress unused warning
-                    0 // fallback; checksum corrections are rare and harmless to report imprecisely
-                };
-                let corrected_char = ALPHABET[corrected_val as usize] as char;
+                let corrected_char = decoded.corrected_char_at(pos);
                 all_corrections.push(Correction {
                     chunk_index: chunk_idx as u8,
                     char_position: pos,
@@ -533,5 +510,128 @@ mod tests {
         assert!(result.report.verifications.total_chunks_consistent);
         assert!(result.report.verifications.bytecode_well_formed);
         assert!(result.report.verifications.version_supported);
+    }
+
+    // -----------------------------------------------------------------------
+    // 15. decode_correction_in_data_region_reports_real_corrected_char
+    // -----------------------------------------------------------------------
+    //
+    // Closes followup `5e-checksum-correction-fallback`: data-region path.
+    //
+    // BCH ECC corrections inside the *data* region (i.e. before the checksum)
+    // have always reported the actual corrected character because
+    // `DecodedString.data` retained the corrected 5-bit symbol at that index.
+    // This test pins that historical behaviour so the parallel checksum-region
+    // fix doesn't regress it.
+
+    #[test]
+    fn decode_correction_in_data_region_reports_real_corrected_char() {
+        // Use the smallest valid single-string policy so we can find the
+        // data-region boundary deterministically.
+        let p = policy("wsh(pk(@0/**))");
+        let backup = encode(&p, &encode_opts()).expect("encode");
+        let raw = backup.chunks[0].raw.clone();
+
+        // Compute the data-region boundary: chars 0..3 are "wdm", char 3 is
+        // the '1' separator, chars 4.. are the data part. The data part is
+        // [data_5bit_symbols][13-char checksum] for the regular code.
+        let total_chars = raw.chars().count();
+        let data_part_len = total_chars - 4; // strip "wdm1"
+        let checksum_len = 13; // regular code
+        let data_region_len = data_part_len - checksum_len;
+        assert!(
+            data_region_len >= 1,
+            "test fixture must have a non-empty data region"
+        );
+
+        // Pick a position inside the data region (offset 2 from start of data
+        // part, well clear of the checksum boundary).
+        let data_part_pos = 2;
+        assert!(data_part_pos < data_region_len);
+        let abs_pos = 4 + data_part_pos; // position in the full string
+
+        let mut chars: Vec<char> = raw.chars().collect();
+        let original_char = chars[abs_pos];
+        // Flip to a different bech32 alphabet character.
+        let new_char = if original_char == 'q' { 'p' } else { 'q' };
+        chars[abs_pos] = new_char;
+        let corrupted: String = chars.into_iter().collect();
+
+        let result = decode(&[corrupted.as_str()], &default_opts()).expect("decode");
+        assert_eq!(
+            result.report.corrections.len(),
+            1,
+            "expected exactly one correction"
+        );
+        let c = &result.report.corrections[0];
+        assert_eq!(c.char_position, data_part_pos);
+        assert_eq!(
+            c.original, new_char,
+            "original should be the corrupted char"
+        );
+        assert_eq!(
+            c.corrected, original_char,
+            "corrected char must equal the actual restored character (data-region)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 16. decode_correction_in_checksum_region_reports_real_corrected_char
+    // -----------------------------------------------------------------------
+    //
+    // Closes followup `5e-checksum-correction-fallback`.
+    //
+    // Before the v0.2 fix, BCH corrections that landed inside the 13-char
+    // checksum region reported `Correction.corrected = 'q'` (= `ALPHABET[0]`)
+    // as a placeholder because `DecodedString.data` had the checksum stripped
+    // off, and the decode path had no way to look up the corrected symbol.
+    // After the fix, `DecodedString::corrected_char_at` exposes the post-BCH
+    // character at any data-part position, so the reported `corrected` is now
+    // the actual restored character — even for corruptions inside the
+    // checksum region.
+
+    #[test]
+    fn decode_correction_in_checksum_region_reports_real_corrected_char() {
+        let p = policy("wsh(pk(@0/**))");
+        let backup = encode(&p, &encode_opts()).expect("encode");
+        let raw = backup.chunks[0].raw.clone();
+
+        let total_chars = raw.chars().count();
+        let data_part_len = total_chars - 4;
+        let checksum_len = 13;
+        let data_region_len = data_part_len - checksum_len;
+
+        // Pick a position inside the checksum region. Use the middle of the
+        // 13-char checksum so we're clear of any boundary effects.
+        let data_part_pos = data_region_len + (checksum_len / 2);
+        let abs_pos = 4 + data_part_pos;
+
+        let mut chars: Vec<char> = raw.chars().collect();
+        let original_char = chars[abs_pos];
+        let new_char = if original_char == 'q' { 'p' } else { 'q' };
+        chars[abs_pos] = new_char;
+        let corrupted: String = chars.into_iter().collect();
+
+        let result = decode(&[corrupted.as_str()], &default_opts()).expect("decode");
+        assert_eq!(
+            result.report.corrections.len(),
+            1,
+            "expected exactly one correction"
+        );
+        let c = &result.report.corrections[0];
+        assert_eq!(c.char_position, data_part_pos);
+        assert_eq!(c.original, new_char);
+        assert_eq!(
+            c.corrected, original_char,
+            "corrected char must be the real restored character, not the legacy 'q' placeholder"
+        );
+        // Belt-and-braces: explicitly verify we are not reporting the historic
+        // placeholder 'q' (unless 'q' happens to be the genuine original char).
+        if original_char != 'q' {
+            assert_ne!(
+                c.corrected, 'q',
+                "checksum-region correction must not fall back to ALPHABET[0]='q' placeholder"
+            );
+        }
     }
 }

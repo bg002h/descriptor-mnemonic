@@ -515,6 +515,14 @@ pub fn encode_string(header: &[u8], payload: &[u8]) -> Result<String, crate::Err
 ///
 /// `data` is the data part as 5-bit values (header + payload, checksum stripped).
 /// Use [`five_bit_to_bytes`] to recover the original byte sequence.
+///
+/// The full post-correction 5-bit symbol sequence (data **plus** the trailing
+/// 13- or 15-char checksum) is retained internally and can be queried by
+/// [`DecodedString::corrected_char_at`] for any position in the data part —
+/// including positions that fall inside the checksum region. This is what
+/// the top-level [`decode`][crate::decode::decode] pipeline uses to report the
+/// real corrected character in [`Correction.corrected`][crate::Correction] when
+/// BCH ECC repairs a substitution inside the checksum.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedString {
@@ -526,6 +534,39 @@ pub struct DecodedString {
     pub corrections_applied: usize,
     /// Indices into the data-part (chars after `"wdm1"`) of any corrected positions.
     pub corrected_positions: Vec<usize>,
+    /// Full post-correction 5-bit symbol sequence (data part + checksum), in
+    /// the same coordinate system as [`Self::corrected_positions`].
+    ///
+    /// Length is `data.len() + 13` (regular code) or `data.len() + 15`
+    /// (long code). Indices `0..data.len()` mirror [`Self::data`] symbol-for-symbol;
+    /// indices `data.len()..` are the corrected checksum symbols. Use
+    /// [`Self::corrected_char_at`] for the human-readable bech32 character at
+    /// any position.
+    pub data_with_checksum: Vec<u8>,
+}
+
+impl DecodedString {
+    /// Look up the corrected bech32 character at the given position in the
+    /// data part (chars after the `"wdm1"` HRP+separator).
+    ///
+    /// `char_position` is 0-indexed. Positions `0..data.len()` are in the
+    /// data region; positions `data.len()..data.len() + checksum_len` are
+    /// inside the BCH checksum (13 chars for [`BchCode::Regular`], 15 for
+    /// [`BchCode::Long`]). All positions return the post-correction
+    /// character — i.e., what the symbol *should* be after BCH repair, which
+    /// is exactly what [`Correction.corrected`][crate::Correction::corrected]
+    /// is documented to report.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `char_position >= data_with_checksum.len()`. Callers are
+    /// responsible for clamping the position to a valid range; in the decode
+    /// pipeline this is guaranteed by the BCH layer (it never reports a
+    /// `corrected_position` outside the data part).
+    pub fn corrected_char_at(&self, char_position: usize) -> char {
+        let v = self.data_with_checksum[char_position];
+        ALPHABET[v as usize] as char
+    }
 }
 
 /// Decode a WDM string, validating HRP, case, length, and checksum.
@@ -595,6 +636,7 @@ pub fn decode_string(s: &str) -> Result<DecodedString, crate::Error> {
         code,
         corrections_applied: result.corrections_applied,
         corrected_positions: result.corrected_positions,
+        data_with_checksum: result.data,
     })
 }
 
