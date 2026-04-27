@@ -1083,4 +1083,36 @@ mod tests {
             "expected VarintOverflow, got {err:?}"
         );
     }
+
+    #[test]
+    fn decode_after_rejects_zero_value() {
+        // miniscript::AbsLockTime::from_consensus(0) returns Err — miniscript
+        // (ab)uses locktime 0 as a boolean false in script fragments and
+        // forbids it as an explicit value. The decoder maps this to
+        // BytecodeErrorKind::TypeCheckFailed.
+        // Wire: [Wsh, After, 0x00].
+        let bytes = vec![0x05, 0x1E, 0x00];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TypeCheckFailed(_), ..
+            }),
+            "expected TypeCheckFailed for after(0), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_older_rejects_zero_value() {
+        // RelLockTime::from_consensus(0) returns Err for the same miniscript
+        // reason as AbsLockTime: locktime 0 is forbidden.
+        // Wire: [Wsh, Older, 0x00].
+        let bytes = vec![0x05, 0x1F, 0x00];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TypeCheckFailed(_), ..
+            }),
+            "expected TypeCheckFailed for older(0), got {err:?}"
+        );
+    }
 }
