@@ -90,6 +90,18 @@ Internal walker is a private `trait EncodeTemplate` mirroring descriptor-codec's
 
 ## Tasks completed
 
-| Task | Commit | Status notes |
-|------|--------|--------------|
-| _(populated as I go)_ | | |
+| Task | Commit (feat / fix) | Status notes |
+|------|---------------------|--------------|
+| 2.1 Tag enum | `c543389` / `1f963a7` | 52 variants 0x00–0x33; `match`-based `from_byte` (D-1); `#[non_exhaustive]` (D-3). |
+| 2.2 LEB128 varint | `73e3501` / `046972a` | u64 encode/decode + 8 tests covering boundaries, overflow, truncation, trailing data. |
+| 2.3 WdmKey enum | `3732af8` / `2723211` | `Placeholder(u8)` + `Key(DescriptorPublicKey)`; `#[non_exhaustive]` per D-2; derives include `Hash`. |
+| 2.4 Encoder skeleton | `a92748c` / `5e4ba1a` | Public `encode_template`; private `EncodeTemplate` trait; Wsh-only at top level (D-4). |
+| 2.5 WshInner + leaves | `d97bef5` / `df209e7` | True/False/PkK/PkH terminals; `encode_key` migrated to trait impl. |
+| 2.6 Multisig | `1d3c594` / `cb68282` | sortedmulti, multi, multi_a; generic `Threshold` impl; `Arc` not yet needed. |
+| 2.7 Logical ops | `e3441a5` / `11a39cf` | and_v/and_b/and_or/or_b/or_c/or_d/or_i; Arc forwarding impl. |
+| 2.8 Threshold + timelocks | `6edafbb` (no fix needed) | thresh, after, older. |
+| 2.9 Hash literals | `be13f6e` / `4af599f` | sha256/hash256/ripemd160/hash160; hash256 byte-order doc + asymmetric test pattern. |
+| 2.10 Wrappers + RawPkH | `68e0173` / `ed1db96` | Alt/Swap/Check/DupIf/Verify/NonZero/ZeroNotEqual + RawPkH; Terminal coverage now complete; canary deleted. |
+| 2.11 Taproot (Tr/TapTree) | _deferred_ | v0.2 scope; v0.1 rejects `Descriptor::Tr` at the top level (Task 2.4). |
+
+**Phase 2 encoder is feature-complete as of `ed1db96`.** Next: decoder (Task 2.12 onwards).
