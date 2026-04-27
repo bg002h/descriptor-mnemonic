@@ -106,10 +106,13 @@ fn decode_wsh_inner(
             for _ in 0..n {
                 pks.push(decode_placeholder(cur, keys)?);
             }
-            // miniscript v12: Wsh::new_sortedmulti(k, pks) -> Result<Wsh<Pk>, Error>.
-            // Returns Err if k/n are out of range or if the SortedMultiVec
-            // sanity check fails.
-            let wsh = Wsh::new_sortedmulti(k, pks).map_err(|e| Error::InvalidBytecode {
+            // miniscript v13: Wsh::new_sortedmulti takes a Threshold<Pk, MAX>.
+            // Construct the threshold first, then wrap in Wsh.
+            let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
+                offset: inner_tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            let wsh = Wsh::new_sortedmulti(thresh).map_err(|e| Error::InvalidBytecode {
                 offset: inner_tag_offset,
                 kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
             })?;

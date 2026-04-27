@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use bitcoin::hashes::Hash;
-use miniscript::descriptor::{Descriptor, DescriptorPublicKey, SortedMultiVec, Wsh, WshInner};
+use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
 use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
 use crate::Error;
@@ -118,19 +118,6 @@ impl EncodeTemplate for Wsh<DescriptorPublicKey> {
     }
 }
 
-impl EncodeTemplate for WshInner<DescriptorPublicKey> {
-    fn encode_template(
-        &self,
-        out: &mut Vec<u8>,
-        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
-    ) -> Result<(), Error> {
-        match self {
-            WshInner::Ms(ms) => ms.encode_template(out, placeholder_map),
-            WshInner::SortedMulti(sortedmulti) => sortedmulti.encode_template(out, placeholder_map),
-        }
-    }
-}
-
 impl EncodeTemplate for Miniscript<DescriptorPublicKey, Segwitv0> {
     fn encode_template(
         &self,
@@ -167,6 +154,25 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
             Terminal::Multi(thresh) => {
                 out.push(Tag::Multi.as_byte());
                 thresh.encode_template(out, placeholder_map)
+            }
+            Terminal::SortedMulti(thresh) => {
+                out.push(Tag::SortedMulti.as_byte());
+                out.push(u8::try_from(thresh.k()).map_err(|_| {
+                    Error::PolicyScopeViolation(format!(
+                        "threshold k={} exceeds single-byte width (255)",
+                        thresh.k()
+                    ))
+                })?);
+                out.push(u8::try_from(thresh.n()).map_err(|_| {
+                    Error::PolicyScopeViolation(format!(
+                        "threshold n={} exceeds single-byte width (255)",
+                        thresh.n()
+                    ))
+                })?);
+                for pk in thresh.iter() {
+                    pk.encode_template(out, placeholder_map)?;
+                }
+                Ok(())
             }
             Terminal::MultiA(thresh) => {
                 // Taproot multi-A. v0.1 doesn't support taproot, but the encoding
@@ -358,32 +364,6 @@ impl<T: EncodeTemplate, const MAX: usize> EncodeTemplate for Threshold<T, MAX> {
         })?);
         for elem in self.iter() {
             elem.encode_template(out, placeholder_map)?;
-        }
-        Ok(())
-    }
-}
-
-impl EncodeTemplate for SortedMultiVec<DescriptorPublicKey, Segwitv0> {
-    fn encode_template(
-        &self,
-        out: &mut Vec<u8>,
-        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
-    ) -> Result<(), Error> {
-        out.push(Tag::SortedMulti.as_byte());
-        out.push(u8::try_from(self.k()).map_err(|_| {
-            Error::PolicyScopeViolation(format!(
-                "threshold k={} exceeds single-byte width (255)",
-                self.k()
-            ))
-        })?);
-        out.push(u8::try_from(self.n()).map_err(|_| {
-            Error::PolicyScopeViolation(format!(
-                "threshold n={} exceeds single-byte width (255)",
-                self.n()
-            ))
-        })?);
-        for pk in self.pks() {
-            pk.encode_template(out, placeholder_map)?;
         }
         Ok(())
     }

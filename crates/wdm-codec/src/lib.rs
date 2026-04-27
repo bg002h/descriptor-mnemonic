@@ -18,4 +18,5 @@ pub use encoding::{
     BchCode, DecodedString, bytes_to_5bit, decode_string, encode_string, five_bit_to_bytes,
 };
 pub use error::{BytecodeErrorKind, Error, Result};
+pub use policy::WalletPolicy;
 pub use wallet_id::{ChunkWalletId, WalletId, WalletIdWords};

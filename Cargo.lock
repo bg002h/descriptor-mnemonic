@@ -97,7 +97,7 @@ dependencies = [
  "bitcoin-io",
  "bitcoin-units",
  "bitcoin_hashes",
- "hex-conservative",
+ "hex-conservative 0.2.2",
  "hex_lit",
  "secp256k1",
 ]
@@ -130,7 +130,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26ec84b80c482df901772e931a9a681e26a1b9ee2302edeff23cb30328745c8b"
 dependencies = [
  "bitcoin-io",
- "hex-conservative",
+ "hex-conservative 0.2.2",
 ]
 
 [[package]]
@@ -246,6 +246,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex-conservative"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "366fa3443ac84474447710ec17bb00b05dfbd096137817981e86f992f21a2793"
+
+[[package]]
 name = "hex_lit"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -287,12 +293,12 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "miniscript"
-version = "12.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c14116d8342edd3626b0f8e84df16f4e6a76dc04799ba747493403236a1b8ac5"
+version = "13.0.0"
+source = "git+https://github.com/apoelstra/rust-miniscript?rev=f7f1689ba92a17b09b03ea12f7048c15d134583e#f7f1689ba92a17b09b03ea12f7048c15d134583e"
 dependencies = [
  "bech32",
  "bitcoin",
+ "hex-conservative 1.0.1",
 ]
 
 [[package]]

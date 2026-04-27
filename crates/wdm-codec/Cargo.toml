@@ -31,7 +31,7 @@ cli = ["dep:clap"]
 
 [dependencies]
 bitcoin = "0.32"
-miniscript = "12"
+miniscript = { git = "https://github.com/apoelstra/rust-miniscript", rev = "f7f1689ba92a17b09b03ea12f7048c15d134583e" }
 bech32 = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
