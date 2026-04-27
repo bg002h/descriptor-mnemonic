@@ -100,7 +100,7 @@ impl AsRef<[u8]> for WalletId {
 impl From<[u8; 16]> for WalletId {
     /// Construct a `WalletId` from a raw 16-byte array.
     fn from(bytes: [u8; 16]) -> Self {
-        Self(bytes)
+        Self::new(bytes)
     }
 }
 
@@ -126,7 +126,7 @@ impl From<[u8; 16]> for WalletId {
 /// ChunkWalletId = WalletId::truncate() = first 20 bits of SHA-256(bytecode)
 /// ```
 /// i.e. the `WalletId` and the chunk-header field share the same SHA-256 hash;
-/// the chunk-header simply keeps fewer bits.
+/// the chunk-header ([`WalletId::truncate`]) simply keeps fewer bits.
 ///
 /// # Phase note
 ///
@@ -139,14 +139,15 @@ impl From<[u8; 16]> for WalletId {
 /// ```
 /// # use wdm_codec::wallet_id::compute_wallet_id;
 /// let id = compute_wallet_id(b"");
-/// // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb924...
+/// // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb924 27ae41e4649b934ca495991b7852b855
+/// //              └─────── first 16 bytes ────────┘
 /// assert_eq!(id.to_string(), "e3b0c44298fc1c149afbf4c8996fb924");
 /// ```
 pub fn compute_wallet_id(canonical_bytecode: &[u8]) -> WalletId {
     let digest = sha256::Hash::hash(canonical_bytecode);
     let mut bytes = [0u8; 16];
     bytes.copy_from_slice(&digest.as_byte_array()[..16]);
-    WalletId::new(bytes)
+    WalletId::from(bytes)
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +160,13 @@ pub fn compute_wallet_id(canonical_bytecode: &[u8]) -> WalletId {
 /// all-lowercase English BIP-39 vocabulary, space-joined when displayed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalletIdWords([String; 12]);
+
+impl WalletIdWords {
+    /// Borrow the underlying 12-word array.
+    pub fn as_slice(&self) -> &[String; 12] {
+        &self.0
+    }
+}
 
 impl fmt::Display for WalletIdWords {
     /// Formats the words as a single space-separated string with no leading
@@ -242,12 +250,9 @@ mod tests {
         let id = WalletId::from([0xABu8; 16]);
         let s = id.to_string();
         assert_eq!(
-            s,
-            "abababababababababababababababababab"[..32].to_string(),
+            s, "abababababababababababababababab",
             "expected 32 lowercase hex chars"
         );
-        // Verify the exact string independently.
-        assert_eq!(s, "abababababababababababababababababab"[..32]);
         // LowerHex should produce the same output.
         assert_eq!(format!("{:x}", id), s);
     }
@@ -349,6 +354,19 @@ mod tests {
                 "word {i} ({word:?}) contains non-lowercase-ASCII characters"
             );
         }
+    }
+
+    #[test]
+    fn wallet_id_words_as_slice_yields_12_strings() {
+        let id = WalletId::from([0x55u8; 16]);
+        let words = id.to_words();
+        let slice = words.as_slice();
+        assert_eq!(slice.len(), 12, "as_slice must return exactly 12 words");
+        for (i, word) in slice.iter().enumerate() {
+            assert!(!word.is_empty(), "word {i} is empty");
+        }
+        // Borrowing via as_slice does not consume `words`.
+        assert_eq!(words.as_slice().len(), 12, "as_slice is re-borrowable");
     }
 
     // --- compute_wallet_id ---
