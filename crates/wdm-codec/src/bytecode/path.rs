@@ -100,9 +100,6 @@ pub fn encode_path(path: &DerivationPath) -> Vec<u8> {
 ///
 /// This function does **not** consume or expect a `Tag::SharedPath` prefix;
 /// that is the path-declaration framing layer's responsibility (Task 3.5').
-// Task 3.5' will call decode_path from the path-declaration framing layer.
-// Until that lands, suppress the dead-code lint so clippy stays clean.
-#[allow(dead_code)]
 pub(crate) fn decode_path(
     cur: &mut crate::bytecode::cursor::Cursor<'_>,
 ) -> Result<DerivationPath, crate::Error> {
@@ -119,7 +116,11 @@ pub(crate) fn decode_path(
 
     // Explicit form.
     if b == 0xFE {
-        let count = cur.read_varint_u64()? as usize;
+        let count_raw = cur.read_varint_u64()?;
+        let count = usize::try_from(count_raw).map_err(|_| crate::Error::InvalidBytecode {
+            offset: cur.offset(),
+            kind: crate::error::BytecodeErrorKind::VarintOverflow,
+        })?;
         let mut components = Vec::with_capacity(count);
         for _ in 0..count {
             let comp_offset = cur.offset();
@@ -135,7 +136,11 @@ pub(crate) fn decode_path(
                 });
             }
 
-            let index = (n >> 1) as u32;
+            // The bound check above (n <= 0xFFFF_FFFF) guarantees that
+            // n >> 1 <= 0x7FFF_FFFF, which fits in u32. The expect documents
+            // this proof and will crash loudly if the bound is ever weakened.
+            let index = u32::try_from(n >> 1)
+                .expect("bound-checked above: n <= 0xFFFF_FFFF so n>>1 <= 0x7FFF_FFFF");
             let child = if n & 1 == 1 {
                 ChildNumber::Hardened { index }
             } else {
@@ -154,6 +159,83 @@ pub(crate) fn decode_path(
         offset: indicator_offset,
         kind: BytecodeErrorKind::UnknownTag(b),
     })
+}
+
+/// Serialize a path declaration into its wire form.
+///
+/// A path declaration is a `Tag::SharedPath` (0x33) byte followed by the
+/// `encode_path` output:
+/// - 1 byte for dictionary-form paths: `[0x33, indicator]`
+/// - 1 + 1 + N bytes for explicit paths: `[0x33, 0xFE, count, …components]`
+///
+/// This is the framing layer defined in BIP §"Path declaration" (lines 222–236).
+/// The `Tag::SharedPath` byte is prepended here; `encode_path` handles the rest.
+///
+/// Intended to be called from the Phase 5 `encode_bytecode` wrapper, which
+/// concatenates `[header_byte] ++ encode_declaration(path) ++ encode_template(…)`.
+pub fn encode_declaration(path: &DerivationPath) -> Vec<u8> {
+    use crate::bytecode::Tag;
+    let mut out = Vec::new();
+    out.push(Tag::SharedPath.as_byte());
+    out.extend_from_slice(&encode_path(path));
+    out
+}
+
+/// Deserialize a path declaration from a cursor-style byte stream.
+///
+/// Reads a `Tag::SharedPath` (0x33) tag byte, then delegates to `decode_path`
+/// to consume the remainder of the declaration. The cursor is advanced past all
+/// consumed bytes, leaving it positioned at the first byte of the next structure
+/// (e.g., the template tree).
+///
+/// # Errors
+///
+/// - `InvalidBytecode { kind: UnexpectedEnd }` — if the stream is empty or the
+///   path indicator byte is missing.
+/// - `InvalidBytecode { kind: UnknownTag(b) }` — if the first byte is not a
+///   defined tag at all.
+/// - `InvalidBytecode { kind: UnexpectedTag { expected: 0x33, got: b } }` — if
+///   the first byte is a defined tag but not `Tag::SharedPath`.
+/// - Any error from `decode_path` for malformed path data.
+///
+/// This is `pub(crate)` because `Cursor` is `pub(crate)`. The Phase 5 framing
+/// layer operates on the same cursor and calls this function directly.
+// Phase 5 `decode_bytecode` will call this. Until that lands, suppress the
+// dead-code lint so clippy stays clean (decode_path is transitively unreachable
+// through this function, so both warnings are silenced by this one attribute).
+#[allow(dead_code)]
+pub(crate) fn decode_declaration(
+    cur: &mut crate::bytecode::cursor::Cursor<'_>,
+) -> Result<DerivationPath, crate::Error> {
+    use crate::bytecode::Tag;
+    use crate::error::BytecodeErrorKind;
+
+    let tag_offset = cur.offset();
+    let b = cur.read_byte()?;
+
+    match Tag::from_byte(b) {
+        Some(Tag::SharedPath) => {
+            // Correct tag — proceed to decode the path indicator + data.
+            decode_path(cur)
+        }
+        Some(_other) => {
+            // A valid tag, but not the one expected here.
+            Err(crate::Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::UnexpectedTag {
+                    expected: Tag::SharedPath.as_byte(),
+                    got: b,
+                },
+            })
+        }
+        None => {
+            // Not a defined tag at all — reuse the existing UnknownTag variant.
+            Err(crate::Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::UnknownTag(b),
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -274,8 +356,14 @@ mod tests {
             decode_path(&mut cur).unwrap_err()
         };
         assert!(
-            matches!(err, crate::Error::InvalidBytecode { .. }),
-            "expected InvalidBytecode for missing count, got {err:?}"
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
+            "expected UnexpectedEnd for missing count, got {err:?}"
         );
 
         // [0xFE, 0x02, 0x00] — count says 2 components but only 1 is present.
@@ -522,5 +610,160 @@ mod tests {
         assert_eq!(encode_path(&path), expected);
         // Also verify the LEB128 bytes themselves for documentation.
         assert_eq!(expected_leb, vec![0xFF, 0xFF, 0xFF, 0xFF, 0x0F]);
+    }
+
+    // ── path declaration tests (Task 3.5') ──────────────────────────────────
+
+    /// Helper: decode a declaration from a full byte slice via a cursor.
+    fn decode_declaration_from_slice(bytes: &[u8]) -> Result<DerivationPath, crate::Error> {
+        let mut cur = Cursor::new(bytes);
+        decode_declaration(&mut cur)
+    }
+
+    /// All 13 dictionary entries round-trip through encode_declaration →
+    /// decode_declaration. Output must be 2 bytes: [0x33, indicator].
+    #[test]
+    fn declaration_round_trip_dict() {
+        for &(ind, _) in FIXTURE {
+            let original = indicator_to_path(ind).expect("fixture entry must exist");
+            let encoded = encode_declaration(original);
+            assert_eq!(
+                encoded.len(),
+                2,
+                "dictionary declaration must be 2 bytes for indicator 0x{ind:02x}"
+            );
+            assert_eq!(encoded[0], 0x33, "first byte must be Tag::SharedPath");
+            assert_eq!(encoded[1], ind, "second byte must be the indicator");
+            let decoded = decode_declaration_from_slice(&encoded)
+                .unwrap_or_else(|e| panic!("decode failed for indicator 0x{ind:02x}: {e}"));
+            assert_eq!(
+                decoded, *original,
+                "round-trip mismatch for indicator 0x{ind:02x}"
+            );
+        }
+    }
+
+    /// Non-dictionary paths round-trip through encode_declaration →
+    /// decode_declaration. Output starts with [0x33, 0xFE, …].
+    #[test]
+    fn declaration_round_trip_explicit() {
+        let cases = ["m", "m/0'", "m/100", "m/44'/0", "m/44'/0'/1'"];
+        for path_str in &cases {
+            let original = DerivationPath::from_str(path_str).unwrap();
+            let encoded = encode_declaration(&original);
+            assert_eq!(encoded[0], 0x33, "first byte must be Tag::SharedPath");
+            assert_eq!(encoded[1], 0xFE, "second byte must be explicit marker 0xFE");
+            let decoded = decode_declaration_from_slice(&encoded)
+                .unwrap_or_else(|e| panic!("decode failed for '{path_str}': {e}"));
+            assert_eq!(decoded, original, "round-trip mismatch for '{path_str}'");
+        }
+    }
+
+    /// Pin the wire format: encode_declaration("m/44'/0'/0'") == [0x33, 0x01].
+    #[test]
+    fn encode_declaration_dictionary_byte_layout() {
+        let path = DerivationPath::from_str("m/44'/0'/0'").unwrap();
+        assert_eq!(encode_declaration(&path), vec![0x33, 0x01]);
+    }
+
+    /// Pin the wire format: encode_declaration("m/44'/0") == [0x33, 0xFE, 0x02, 0x59, 0x00].
+    ///   count=2, 44 hardened → 2*44+1=89=0x59, 0 unhardened → 0x00
+    #[test]
+    fn encode_declaration_explicit_byte_layout() {
+        let path = DerivationPath::from_str("m/44'/0").unwrap();
+        assert_eq!(
+            encode_declaration(&path),
+            vec![0x33, 0xFE, 0x02, 0x59, 0x00]
+        );
+    }
+
+    /// decode_declaration with a first byte that is a defined tag but not
+    /// Tag::SharedPath must return UnexpectedTag.
+    #[test]
+    fn decode_declaration_rejects_wrong_tag() {
+        // Tag::Wsh = 0x05 — a valid defined tag, but not Tag::SharedPath.
+        let bytes = [0x05u8, 0x01];
+        let err = decode_declaration_from_slice(&bytes).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedTag {
+                        expected: 0x33,
+                        got: 0x05
+                    },
+                    ..
+                }
+            ),
+            "expected UnexpectedTag {{ expected: 0x33, got: 0x05 }}, got {err:?}"
+        );
+    }
+
+    /// decode_declaration with a first byte that is not any defined tag must
+    /// return UnknownTag — not UnexpectedTag.
+    #[test]
+    fn decode_declaration_rejects_unknown_tag() {
+        // 0xC0 is not a defined tag byte.
+        let bytes = [0xC0u8];
+        let err = decode_declaration_from_slice(&bytes).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnknownTag(0xC0),
+                    ..
+                }
+            ),
+            "expected UnknownTag(0xC0), got {err:?}"
+        );
+    }
+
+    /// After decode_declaration, the cursor must be positioned immediately after
+    /// the declaration bytes. Strategy: append a sentinel byte, decode the
+    /// declaration, then read the sentinel and verify it.
+    #[test]
+    fn decode_declaration_advances_cursor() {
+        const SENTINEL: u8 = 0xAB;
+
+        // Dictionary path: declaration is 2 bytes, sentinel at index 2.
+        let path_dict = indicator_to_path(0x01).unwrap();
+        let mut buf = encode_declaration(path_dict);
+        buf.push(SENTINEL);
+        let mut cur = Cursor::new(&buf);
+        let _ = decode_declaration(&mut cur).unwrap();
+        assert_eq!(
+            cur.read_byte().unwrap(),
+            SENTINEL,
+            "cursor not advanced correctly after dictionary declaration decode"
+        );
+
+        // Explicit path: declaration is 5 bytes, sentinel at index 5.
+        let path_explicit = DerivationPath::from_str("m/44'/0").unwrap();
+        let mut buf = encode_declaration(&path_explicit);
+        buf.push(SENTINEL);
+        let mut cur = Cursor::new(&buf);
+        let _ = decode_declaration(&mut cur).unwrap();
+        assert_eq!(
+            cur.read_byte().unwrap(),
+            SENTINEL,
+            "cursor not advanced correctly after explicit declaration decode"
+        );
+    }
+
+    /// [0x33] alone (no indicator byte) must return UnexpectedEnd when
+    /// decode_path tries to read the missing indicator byte.
+    #[test]
+    fn decode_declaration_rejects_truncated() {
+        let err = decode_declaration_from_slice(&[0x33]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
+            "expected UnexpectedEnd for truncated declaration, got {err:?}"
+        );
     }
 }

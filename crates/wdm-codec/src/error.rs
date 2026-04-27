@@ -175,6 +175,20 @@ pub enum BytecodeErrorKind {
         /// The raw LEB128-decoded value that exceeded the valid range.
         encoded: u64,
     },
+
+    /// A tag byte was valid but not the tag expected at this position.
+    ///
+    /// For example, `decode_declaration` expects `Tag::SharedPath` (0x33) as
+    /// the first byte; if it reads a different defined tag, this variant is
+    /// returned. If the byte does not correspond to any defined tag at all,
+    /// [`BytecodeErrorKind::UnknownTag`] is returned instead.
+    #[error("unexpected tag: expected {expected:#04x}, got {got:#04x}")]
+    UnexpectedTag {
+        /// The tag byte value that was expected at this position.
+        expected: u8,
+        /// The tag byte value that was actually read.
+        got: u8,
+    },
 }
 
 /// Result type used throughout wdm-codec.

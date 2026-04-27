@@ -15,8 +15,8 @@ use crate::error::BytecodeErrorKind;
 
 /// Cursor-style byte stream reader. Tracks current offset for error reporting.
 pub(crate) struct Cursor<'a> {
-    pub(crate) bytes: &'a [u8],
-    pub(crate) offset: usize,
+    bytes: &'a [u8],
+    offset: usize,
 }
 
 impl<'a> Cursor<'a> {
