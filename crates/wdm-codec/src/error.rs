@@ -148,15 +148,6 @@ pub enum Error {
     #[error("single-string chunk appeared in a multi-chunk list")]
     SingleStringWithMultipleChunks,
 
-    /// Chunk byte buffer had unexpected trailing bytes after a complete chunk parse.
-    #[error("trailing chunk bytes: {consumed} consumed, {total} provided")]
-    TrailingChunkBytes {
-        /// Number of bytes consumed by the parsed chunk.
-        consumed: usize,
-        /// Total number of bytes provided.
-        total: usize,
-    },
-
     /// Policy parse error from the BIP 388 string form.
     #[error("policy parse error: {0}")]
     PolicyParse(String),

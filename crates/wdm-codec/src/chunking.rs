@@ -389,11 +389,6 @@ impl Chunk {
     /// contain exactly one complete chunk, or the caller must slice
     /// appropriately).
     ///
-    /// For standalone chunk buffers, callers should verify that the consumed
-    /// count equals `bytes.len()` to detect trailing garbage.  Use
-    /// [`Chunk::from_exact_bytes`] when the buffer is expected to contain
-    /// exactly one complete chunk with no trailing bytes.
-    ///
     /// # Errors
     ///
     /// Propagates all errors from [`ChunkHeader::from_bytes`].  If header
@@ -403,28 +398,6 @@ impl Chunk {
         let fragment = bytes[header_len..].to_vec();
         let consumed = header_len + fragment.len();
         Ok((Chunk { header, fragment }, consumed))
-    }
-
-    /// Parse a complete chunk from a byte slice, requiring no trailing bytes.
-    ///
-    /// This is the right shape when the entire byte buffer represents a single
-    /// chunk (the typical receiver-side case). Use [`Chunk::from_bytes`] when
-    /// parsing chunks from a longer stream where trailing bytes are expected.
-    ///
-    /// # Errors
-    ///
-    /// Propagates all errors from [`Chunk::from_bytes`].  Additionally returns
-    /// [`Error::TrailingChunkBytes`] if the buffer contains bytes beyond the
-    /// end of the parsed chunk.
-    pub fn from_exact_bytes(bytes: &[u8]) -> Result<Self> {
-        let (chunk, consumed) = Self::from_bytes(bytes)?;
-        if consumed != bytes.len() {
-            return Err(Error::TrailingChunkBytes {
-                consumed,
-                total: bytes.len(),
-            });
-        }
-        Ok(chunk)
     }
 }
 
@@ -1596,55 +1569,6 @@ mod tests {
             fragment,
         };
         assert_eq!(from_new, from_lit);
-    }
-
-    // -----------------------------------------------------------------------
-    // Chunk::from_exact_bytes tests (Item 4)
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn chunk_from_exact_bytes_round_trip() {
-        // SingleString variant.
-        let ss = Chunk {
-            header: ChunkHeader::SingleString { version: 0 },
-            fragment: vec![0xAA, 0xBB, 0xCC],
-        };
-        let bytes = ss.to_bytes();
-        let recovered = Chunk::from_exact_bytes(&bytes).unwrap();
-        assert_eq!(recovered, ss);
-
-        // Chunked variant.
-        let chunked = Chunk {
-            header: ChunkHeader::Chunked {
-                version: 0,
-                wallet_id: ChunkWalletId::new(0x12345),
-                count: 4,
-                index: 2,
-            },
-            fragment: vec![0x10, 0x20, 0x30],
-        };
-        let bytes2 = chunked.to_bytes();
-        let recovered2 = Chunk::from_exact_bytes(&bytes2).unwrap();
-        assert_eq!(recovered2, chunked);
-    }
-
-    #[test]
-    fn chunk_from_exact_bytes_agrees_with_from_bytes() {
-        // from_exact_bytes must return the same Chunk as from_bytes for any
-        // exact-length buffer (consumed == bytes.len() always holds because
-        // from_bytes takes all remaining bytes as the fragment).
-        let chunk = Chunk {
-            header: ChunkHeader::SingleString { version: 0 },
-            fragment: vec![0x01, 0x02],
-        };
-        let bytes = chunk.to_bytes();
-
-        let (from_bytes_chunk, consumed) = Chunk::from_bytes(&bytes).unwrap();
-        let exact_chunk = Chunk::from_exact_bytes(&bytes).unwrap();
-
-        assert_eq!(consumed, bytes.len());
-        assert_eq!(exact_chunk, from_bytes_chunk);
-        assert_eq!(exact_chunk, chunk);
     }
 
     // -----------------------------------------------------------------------
