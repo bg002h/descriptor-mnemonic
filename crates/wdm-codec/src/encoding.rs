@@ -22,8 +22,6 @@ pub enum BchCode {
 pub const ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
 /// Inverse lookup: char (lowercase ASCII) -> 5-bit value, or 0xFF if not in alphabet.
-// Used by Task 1.3 (HRP/length validation).
-#[allow(dead_code)]
 const ALPHABET_INV: [u8; 128] = build_alphabet_inv();
 
 const fn build_alphabet_inv() -> [u8; 128] {
@@ -459,6 +457,126 @@ where
         trial[i] = orig;
     }
     None
+}
+
+/// Encode a payload + header into a full WDM string with HRP, separator, and checksum.
+///
+/// `header` and `payload` are concatenated as raw bytes; the result is converted
+/// to 5-bit values via [`bytes_to_5bit`], then the BCH checksum is appended for
+/// the chosen [`BchCode`] variant. The full output string starts with `"wdm1"`
+/// (HRP + separator) and ends with 13 (regular) or 15 (long) checksum characters.
+///
+/// Caller chooses the code variant explicitly. Use [`bch_code_for_length`] on
+/// the data-part length to validate the choice if needed.
+pub fn encode_string(header: &[u8], payload: &[u8], code: BchCode) -> String {
+    let mut all_bytes = Vec::with_capacity(header.len() + payload.len());
+    all_bytes.extend_from_slice(header);
+    all_bytes.extend_from_slice(payload);
+    let data_5bit = bytes_to_5bit(&all_bytes);
+
+    let mut checksum: Vec<u8> = match code {
+        BchCode::Regular => bch_create_checksum_regular(HRP, &data_5bit).to_vec(),
+        BchCode::Long => bch_create_checksum_long(HRP, &data_5bit).to_vec(),
+    };
+
+    let mut full =
+        String::with_capacity(HRP.len() + 1 + data_5bit.len() + checksum.len());
+    full.push_str(HRP);
+    full.push(SEPARATOR);
+    for &v in &data_5bit {
+        full.push(ALPHABET[v as usize] as char);
+    }
+    for v in checksum.drain(..) {
+        full.push(ALPHABET[v as usize] as char);
+    }
+    full
+}
+
+/// Result of a successful WDM string decode.
+///
+/// `data` is the data part as 5-bit values (header + payload, checksum stripped).
+/// Use [`five_bit_to_bytes`] to recover the original byte sequence.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedString {
+    /// Data part as 5-bit values, with the trailing checksum already stripped.
+    pub data: Vec<u8>,
+    /// Detected BCH code variant.
+    pub code: BchCode,
+    /// Number of substitution errors corrected (0 = clean input, 1 = recovered).
+    pub corrections_applied: usize,
+    /// Indices into the data-part (chars after `"wdm1"`) of any corrected positions.
+    pub corrected_positions: Vec<usize>,
+}
+
+/// Decode a WDM string, validating HRP, case, length, and checksum.
+///
+/// Performs error correction up to one substitution (v0.1 brute-force baseline;
+/// v0.2 will add full 4-error syndrome decoding).
+///
+/// Errors:
+/// - [`Error::MixedCase`] if the string mixes upper and lower case.
+/// - [`Error::InvalidHrp`] if the HRP is missing or not `"wdm"`.
+/// - [`Error::InvalidStringLength`] if the data-part length isn't a valid WDM length.
+/// - [`Error::InvalidChar`] if the data part contains a non-bech32 character.
+/// - [`Error::BchUncorrectable`] if the checksum can't be repaired with one substitution.
+///
+/// [`Error::MixedCase`]: crate::Error::MixedCase
+/// [`Error::InvalidHrp`]: crate::Error::InvalidHrp
+/// [`Error::InvalidStringLength`]: crate::Error::InvalidStringLength
+/// [`Error::InvalidChar`]: crate::Error::InvalidChar
+/// [`Error::BchUncorrectable`]: crate::Error::BchUncorrectable
+pub fn decode_string(s: &str) -> Result<DecodedString, crate::Error> {
+    use crate::Error;
+
+    if matches!(case_check(s), CaseStatus::Mixed) {
+        return Err(Error::MixedCase);
+    }
+    let s_lower = s.to_lowercase();
+
+    let sep_pos = s_lower
+        .rfind(SEPARATOR)
+        .ok_or_else(|| Error::InvalidHrp(s_lower.clone()))?;
+    let (hrp, rest) = s_lower.split_at(sep_pos);
+    let data_part = &rest[1..]; // skip the '1' separator
+
+    if hrp != HRP {
+        return Err(Error::InvalidHrp(hrp.to_string()));
+    }
+
+    let code = bch_code_for_length(data_part.len())
+        .ok_or(Error::InvalidStringLength(data_part.len()))?;
+
+    let mut values: Vec<u8> = Vec::with_capacity(data_part.len());
+    for (i, c) in data_part.chars().enumerate() {
+        if !c.is_ascii() {
+            return Err(Error::InvalidChar { ch: c, position: i });
+        }
+        let v = ALPHABET_INV[c as usize];
+        if v == 0xFF {
+            return Err(Error::InvalidChar { ch: c, position: i });
+        }
+        values.push(v);
+    }
+
+    let correction = match code {
+        BchCode::Regular => bch_correct_regular(hrp, &values),
+        BchCode::Long => bch_correct_long(hrp, &values),
+    };
+    let result = correction?;
+
+    let checksum_len = match code {
+        BchCode::Regular => 13,
+        BchCode::Long => 15,
+    };
+    let data_only = result.data[..result.data.len() - checksum_len].to_vec();
+
+    Ok(DecodedString {
+        data: data_only,
+        code,
+        corrections_applied: result.corrections_applied,
+        corrected_positions: result.corrected_positions,
+    })
 }
 
 #[cfg(test)]
@@ -970,5 +1088,124 @@ mod tests {
         full[9] = (full[9] + 7) & 0x1F;
         let r = bch_correct_regular(hrp, &full).unwrap();
         assert_eq!(r.corrected_positions, vec![9]);
+    }
+
+    #[test]
+    fn encode_decode_round_trip_regular() {
+        let header = vec![0x42u8, 0x00];
+        let payload = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let s = encode_string(&header, &payload, BchCode::Regular);
+        assert!(s.starts_with("wdm1"));
+
+        let decoded = decode_string(&s).unwrap();
+        assert_eq!(decoded.code, BchCode::Regular);
+        assert_eq!(decoded.corrections_applied, 0);
+        assert!(decoded.corrected_positions.is_empty());
+
+        let bytes = five_bit_to_bytes(&decoded.data).unwrap();
+        let mut expected = header.clone();
+        expected.extend_from_slice(&payload);
+        assert_eq!(bytes, expected);
+    }
+
+    #[test]
+    fn encode_decode_round_trip_long() {
+        // Long-code data-part length must fall in 96..=108. Each byte = 8 bits
+        // = 1.6 bech32 chars; with the 15-char long-code checksum appended, the
+        // data_5bit length must be in 81..=93. 51 total bytes → ceil(51*8/5) = 82
+        // 5-bit chars → 82 + 15 = 97-char data part (inside the long range).
+        let header = vec![0u8; 2];
+        let payload = vec![0x55u8; 49];
+        let s = encode_string(&header, &payload, BchCode::Long);
+        let decoded = decode_string(&s).unwrap();
+        assert_eq!(decoded.code, BchCode::Long);
+
+        let bytes = five_bit_to_bytes(&decoded.data).unwrap();
+        let mut expected = header.clone();
+        expected.extend_from_slice(&payload);
+        assert_eq!(bytes, expected);
+    }
+
+    #[test]
+    fn encode_starts_with_hrp_and_separator() {
+        let s = encode_string(&[], &[1, 2, 3], BchCode::Regular);
+        assert!(s.starts_with("wdm1"), "string did not start with wdm1: {}", s);
+    }
+
+    #[test]
+    fn decode_rejects_invalid_hrp() {
+        let s = encode_string(&[], &[0u8; 10], BchCode::Regular);
+        let bad = s.replace("wdm", "btc");
+        assert!(matches!(
+            decode_string(&bad),
+            Err(crate::Error::InvalidHrp(_))
+        ));
+    }
+
+    #[test]
+    fn decode_rejects_mixed_case() {
+        let s = encode_string(&[], &[0u8; 10], BchCode::Regular);
+        let bad: String = s
+            .chars()
+            .enumerate()
+            .map(|(i, c)| if i == 5 { c.to_ascii_uppercase() } else { c })
+            .collect();
+        assert!(matches!(
+            decode_string(&bad),
+            Err(crate::Error::MixedCase)
+        ));
+    }
+
+    #[test]
+    fn decode_rejects_invalid_char() {
+        // 'b' is excluded from the bech32 alphabet; substitute one in the data
+        // part to force a parse-time character rejection.
+        let s = encode_string(&[], &[0u8; 10], BchCode::Regular);
+        // s looks like "wdm1...". Splice 'b' at index 5 (definitely past "wdm1").
+        let mut chars: Vec<char> = s.chars().collect();
+        chars[5] = 'b';
+        let bad: String = chars.into_iter().collect();
+        assert!(matches!(
+            decode_string(&bad),
+            Err(crate::Error::InvalidChar { .. })
+        ));
+    }
+
+    #[test]
+    fn decode_rejects_missing_separator() {
+        // No '1' at all in the string.
+        let bad = "wdmnoseparatorhere";
+        // Could be matched as InvalidHrp because rfind('1') returns None — actually
+        // we need to walk the function: rfind('1') returns None → returns
+        // InvalidHrp(s_lower). So a missing separator is reported as InvalidHrp.
+        assert!(matches!(
+            decode_string(bad),
+            Err(crate::Error::InvalidHrp(_))
+        ));
+    }
+
+    #[test]
+    fn decode_recovers_one_error() {
+        // Encode, corrupt one char in the data part, decode should auto-correct.
+        let header = vec![0x42u8];
+        let payload = vec![0x12, 0x34, 0x56, 0x78];
+        let s = encode_string(&header, &payload, BchCode::Regular);
+
+        let mut chars: Vec<char> = s.chars().collect();
+        // Corrupt position 6 (well within the data part).
+        // Replace with the next bech32 char in the alphabet (any deterministic 1-char swap).
+        let original_char = chars[6];
+        chars[6] = if original_char == 'q' { 'p' } else { 'q' };
+        let corrupted: String = chars.into_iter().collect();
+
+        let decoded = decode_string(&corrupted).unwrap();
+        assert_eq!(decoded.corrections_applied, 1);
+        assert_eq!(decoded.corrected_positions.len(), 1);
+
+        // The recovered data should match the original payload via bytes round-trip.
+        let bytes = five_bit_to_bytes(&decoded.data).unwrap();
+        let mut expected = header.clone();
+        expected.extend_from_slice(&payload);
+        assert_eq!(bytes, expected);
     }
 }

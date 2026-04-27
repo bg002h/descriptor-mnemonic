@@ -31,6 +31,15 @@ pub enum Error {
     #[error("invalid string length: {0}")]
     InvalidStringLength(usize),
 
+    /// String contains a character that is not in the bech32 alphabet.
+    #[error("invalid character '{ch}' at position {position} (not in bech32 alphabet)")]
+    InvalidChar {
+        /// The invalid character encountered.
+        ch: char,
+        /// Byte position within the data part.
+        position: usize,
+    },
+
     /// BCH error correction failed (more than 4 substitutions).
     #[error("BCH decode failed: too many errors to correct")]
     BchUncorrectable,
