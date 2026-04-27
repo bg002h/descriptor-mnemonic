@@ -402,6 +402,57 @@ impl Chunk {
 }
 
 // ---------------------------------------------------------------------------
+// EncodedChunk
+// ---------------------------------------------------------------------------
+
+/// One chunk of a chunked Template Card backup, ready to engrave.
+///
+/// `raw` is the codex32-derived string (e.g. `wdm10x...`) including HRP,
+/// type byte, header fields, fragment, and BCH checksum. `chunk_index`
+/// and `total_chunks` are extracted from the parsed header for caller
+/// convenience. `code` indicates whether the BCH checksum is regular
+/// (13 chars) or long (15 chars).
+///
+/// For type=0 (single-string) backups, `chunk_index = 0` and
+/// `total_chunks = 1`.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncodedChunk {
+    /// The full codex32 string (HRP + data + checksum), ready to engrave.
+    pub raw: String,
+    /// Zero-based index of this chunk within the sequence.
+    pub chunk_index: u8,
+    /// Total number of chunks in this sequence.
+    pub total_chunks: u8,
+    /// Whether the BCH checksum uses the regular (13 char) or long (15 char) code.
+    pub code: crate::BchCode,
+}
+
+// ---------------------------------------------------------------------------
+// Correction
+// ---------------------------------------------------------------------------
+
+/// One BCH error correction applied during decode.
+///
+/// Reported in `DecodeReport.corrections` so callers can surface
+/// "we fixed your transcription error at chunk 1 char 17" to users.
+///
+/// `original` is the character the user transcribed; `corrected`
+/// is what the BCH decoder computed. `char_position` is 0-indexed
+/// within the chunk's data part (after the HRP+separator).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Correction {
+    /// Zero-based index of the chunk where the correction was applied.
+    pub chunk_index: u8,
+    /// 0-indexed position within the chunk's data part (after HRP+separator).
+    pub char_position: usize,
+    /// The character the user transcribed (erroneous input).
+    pub original: char,
+    /// The character the BCH decoder computed (corrected value).
+    pub corrected: char,
+}
+
+// ---------------------------------------------------------------------------
 // chunk_bytes
 // ---------------------------------------------------------------------------
 
@@ -1647,5 +1698,37 @@ mod tests {
             matches!(err, Error::CrossChunkHashMismatch),
             "expected CrossChunkHashMismatch, got {err:?}"
         );
+    }
+
+    // --- EncodedChunk ---
+
+    #[test]
+    fn encoded_chunk_round_trip_via_struct_construction() {
+        let chunk = EncodedChunk {
+            raw: "wdm10xtest".to_string(),
+            chunk_index: 0,
+            total_chunks: 1,
+            code: crate::BchCode::Regular,
+        };
+        assert_eq!(chunk.raw, "wdm10xtest");
+        assert_eq!(chunk.chunk_index, 0);
+        assert_eq!(chunk.total_chunks, 1);
+        assert_eq!(chunk.code, crate::BchCode::Regular);
+    }
+
+    // --- Correction ---
+
+    #[test]
+    fn correction_struct_construction() {
+        let correction = Correction {
+            chunk_index: 1,
+            char_position: 17,
+            original: 'a',
+            corrected: 'z',
+        };
+        assert_eq!(correction.chunk_index, 1);
+        assert_eq!(correction.char_position, 17);
+        assert_eq!(correction.original, 'a');
+        assert_eq!(correction.corrected, 'z');
     }
 }

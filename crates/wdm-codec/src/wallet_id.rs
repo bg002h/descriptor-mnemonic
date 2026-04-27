@@ -1,12 +1,14 @@
 //! Wallet-identity types used across WDM chunking.
 //!
-//! This module provides three types:
+//! This module provides four types:
 //! - [`WalletId`] — 16-byte Tier-3 Wallet ID (first 16 bytes of SHA-256 of
 //!   canonical bytecode).
 //! - [`WalletIdWords`] — the 12 BIP-39 words derived deterministically from a
 //!   `WalletId`.
 //! - [`ChunkWalletId`] — the 20-bit chunk-header field derived from a
 //!   `WalletId` by taking its first 20 bits.
+//! - [`WalletIdSeed`] — optional 4-byte seed to override the chunk-header
+//!   `wallet_id` field during encoding.
 
 use bitcoin::hashes::{Hash, sha256};
 use std::fmt;
@@ -250,6 +252,67 @@ impl ChunkWalletId {
 }
 
 // ---------------------------------------------------------------------------
+// WalletIdSeed
+// ---------------------------------------------------------------------------
+
+/// Optional 4-byte seed that, when supplied via `EncodeOptions`,
+/// overrides the chunk-header `wallet_id` field.
+///
+/// The Tier-3 16-byte [`WalletId`] is *always* content-derived and is NOT
+/// affected by this seed (per `IMPLEMENTATION_PLAN_v0.1.md` §4 "Wallet ID
+/// semantics"). The seed is only used to override the 20-bit `ChunkWalletId`
+/// embedded in chunk headers — for example, to generate deterministic test
+/// vectors.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WalletIdSeed([u8; 4]);
+
+impl WalletIdSeed {
+    /// Get the underlying 4 bytes.
+    pub fn as_bytes(&self) -> &[u8; 4] {
+        &self.0
+    }
+
+    /// Return the seed as a 32-bit big-endian unsigned integer.
+    pub fn as_u32(&self) -> u32 {
+        u32::from_be_bytes(self.0)
+    }
+
+    /// Truncate this seed to a 20-bit [`ChunkWalletId`].
+    ///
+    /// Takes the high 20 bits of the u32 view (matches
+    /// [`WalletId::truncate`]'s big-endian-first-20-bits convention):
+    /// ```text
+    /// result = self.as_u32() >> 12
+    /// ```
+    /// This yields the top 20 bits of the 32-bit seed.
+    pub fn truncate(&self) -> ChunkWalletId {
+        let bits = self.as_u32() >> 12;
+        ChunkWalletId::new(bits)
+    }
+}
+
+impl fmt::Debug for WalletIdSeed {
+    /// Redacts the raw bytes to prevent accidental logging of seed material.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "WalletIdSeed(<redacted>)")
+    }
+}
+
+impl From<u32> for WalletIdSeed {
+    /// Construct from a `u32` using big-endian byte order (high byte first).
+    fn from(n: u32) -> Self {
+        Self(n.to_be_bytes())
+    }
+}
+
+impl From<[u8; 4]> for WalletIdSeed {
+    /// Construct directly from a 4-byte array.
+    fn from(bytes: [u8; 4]) -> Self {
+        Self(bytes)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -464,5 +527,42 @@ mod tests {
     #[test]
     fn chunk_wallet_id_max_is_20_bits() {
         assert_eq!(ChunkWalletId::MAX, 0xF_FFFF);
+    }
+
+    // --- WalletIdSeed ---
+
+    #[test]
+    fn wallet_id_seed_from_u32_is_big_endian() {
+        let seed = WalletIdSeed::from(0x1234_5678u32);
+        assert_eq!(seed.as_bytes(), &[0x12, 0x34, 0x56, 0x78]);
+    }
+
+    #[test]
+    fn wallet_id_seed_from_bytes_round_trip() {
+        let seed = WalletIdSeed::from([0xab; 4]);
+        assert_eq!(seed.as_bytes(), &[0xab; 4]);
+    }
+
+    #[test]
+    fn wallet_id_seed_as_u32_round_trip() {
+        let seed = WalletIdSeed::from(0x1234_5678u32);
+        assert_eq!(seed.as_u32(), 0x1234_5678);
+    }
+
+    #[test]
+    fn wallet_id_seed_debug_redacts_bytes() {
+        let s = format!("{:?}", WalletIdSeed::from(0xDEAD_BEEFu32));
+        assert_eq!(s, "WalletIdSeed(<redacted>)");
+        // Must not reveal any part of the raw bytes.
+        assert!(!s.to_lowercase().contains("dead"));
+        assert!(!s.to_lowercase().contains("beef"));
+        assert!(!s.to_lowercase().contains("de"));
+    }
+
+    #[test]
+    fn wallet_id_seed_truncate_takes_high_20_bits() {
+        // 0x12345678 >> 12 = 0x12345
+        let seed = WalletIdSeed::from(0x1234_5678u32);
+        assert_eq!(seed.truncate().as_u32(), 0x12345);
     }
 }

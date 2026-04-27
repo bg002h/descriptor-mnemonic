@@ -27,6 +27,8 @@ use crate::bytecode::decode::decode_template;
 use crate::bytecode::encode::encode_template;
 use crate::bytecode::header::BytecodeHeader;
 use crate::bytecode::path::{decode_declaration, encode_declaration};
+use crate::chunking::EncodedChunk;
+use crate::wallet_id::{WalletId, WalletIdWords};
 
 // ---------------------------------------------------------------------------
 // Dummy-key table (Approach B)
@@ -364,6 +366,57 @@ impl WalletPolicy {
         let inner = InnerWalletPolicy::from_descriptor(&descriptor)
             .map_err(|e| Error::PolicyScopeViolation(e.to_string()))?;
         Ok(WalletPolicy { inner })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WdmBackup
+// ---------------------------------------------------------------------------
+
+/// The output of `encode(policy, options)`: chunks ready to engrave,
+/// plus the Tier-3 12-word Wallet ID for verification.
+///
+/// `chunks` is non-empty: a single-string backup has `chunks.len() == 1`
+/// with `chunk_index == 0, total_chunks == 1`. A chunked backup has
+/// `chunks.len() in 2..=32`.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WdmBackup {
+    /// The encoded chunks ready to engrave.
+    pub chunks: Vec<EncodedChunk>,
+    /// The 12-word BIP-39 representation of the Tier-3 Wallet ID, for
+    /// user verification.
+    pub wallet_id_words: WalletIdWords,
+}
+
+impl WdmBackup {
+    /// Reconstruct the 16-byte [`WalletId`] from `wallet_id_words`.
+    ///
+    /// The 12-word form is the storage format; this method converts back to
+    /// the binary representation that is the derivation source for
+    /// `truncate -> ChunkWalletId`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stored `wallet_id_words` do not form a valid BIP-39
+    /// mnemonic — this should never happen for correctly constructed
+    /// `WdmBackup` values.
+    pub fn wallet_id(&self) -> WalletId {
+        use std::fmt::Write;
+        let words = self.wallet_id_words.as_slice();
+        let mut joined = String::new();
+        for (i, word) in words.iter().enumerate() {
+            if i > 0 {
+                joined.push(' ');
+            }
+            write!(joined, "{word}").expect("write to String cannot fail");
+        }
+        let mnemonic = bip39::Mnemonic::parse(&joined)
+            .expect("WalletIdWords must always form a valid BIP-39 mnemonic");
+        let entropy = mnemonic.to_entropy();
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&entropy[..16]);
+        WalletId::new(bytes)
     }
 }
 
@@ -894,5 +947,43 @@ mod tests {
             }
         }
         assert_eq!(pair_count, 12, "expected 4·3 = 12 ordered pairs");
+    }
+
+    // --- WdmBackup ---
+
+    #[test]
+    fn wdm_backup_wallet_id_round_trips_via_words() {
+        let original_id = WalletId::new([0xABu8; 16]);
+        let words = original_id.to_words();
+        let backup = WdmBackup {
+            chunks: vec![],
+            wallet_id_words: words,
+        };
+        let recovered_id = backup.wallet_id();
+        assert_eq!(
+            recovered_id, original_id,
+            "wallet_id() must recover the original WalletId"
+        );
+    }
+
+    #[test]
+    fn wdm_backup_struct_construction() {
+        use crate::BchCode;
+        use crate::chunking::EncodedChunk;
+
+        let id = WalletId::new([0x01u8; 16]);
+        let words = id.to_words();
+        let chunk = EncodedChunk {
+            raw: "wdm10xsmoke".to_string(),
+            chunk_index: 0,
+            total_chunks: 1,
+            code: BchCode::Regular,
+        };
+        let backup = WdmBackup {
+            chunks: vec![chunk],
+            wallet_id_words: words,
+        };
+        assert_eq!(backup.chunks.len(), 1);
+        assert_eq!(backup.chunks[0].chunk_index, 0);
     }
 }
