@@ -280,10 +280,14 @@ fn decode_terminal(
         }
         Tag::MultiA => {
             // Taproot multi-A. v0.1 rejects Tr at the top level (Task 2.4),
-            // so this arm is unreachable through normal flow today. We still
-            // implement it for structural completeness (encoder Task 2.6 has
-            // it) so v0.2 can flip taproot on with no decoder change. The
-            // wire format is identical to Tag::Multi.
+            // so this arm is unreachable through normal flow today. We
+            // implement the MultiA wire format here for completeness (encoder
+            // Task 2.6 emits it). Enabling taproot in v0.2 will additionally
+            // require: (a) a `Tag::Tr` arm in `decode_descriptor`, (b) a
+            // `Tag::TapTree` arm in a Tap-context dispatcher, and (c) a
+            // separate `decode_terminal` path that returns
+            // `Miniscript<_, Tap>` instead of `Miniscript<_, Segwitv0>`.
+            // This MultiA body alone is not sufficient.
             let k = cur.read_byte()? as usize;
             let n = cur.read_byte()? as usize;
             let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
@@ -656,6 +660,21 @@ mod tests {
                 kind: BytecodeErrorKind::UnexpectedEnd, ..
             }),
             "expected UnexpectedEnd after truncated k, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_sortedmulti_rejects_truncated_after_k() {
+        // [Wsh, SortedMulti, k=2] — truncated before n. Mirror of the Multi
+        // test above but routed through decode_wsh_inner instead of
+        // decode_terminal.
+        let bytes = vec![0x05, 0x09, 0x02];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::UnexpectedEnd, ..
+            }),
+            "expected UnexpectedEnd after truncated SortedMulti k, got {err:?}"
         );
     }
 
