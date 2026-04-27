@@ -27,6 +27,50 @@ Living document of decisions made during autonomous execution of Phase 2 (Byteco
 
 ---
 
+### D-5 (Task 2.12): Decoder output type and key substitution
+
+**Context**: With Phase 2's encoder feature-complete, the decoder needs a public API. Three reasonable options for the output type:
+
+- **(A)** `Result<Descriptor<DescriptorPublicKey>, Error>` — symmetric with encoder input. Caller must supply a `&[DescriptorPublicKey]` key info vector to substitute placeholders back into concrete keys.
+- **(B)** `Result<DecodedTemplate, Error>` where `DecodedTemplate` is a custom intermediate type holding `WdmKey::Placeholder(u8)` references unchanged. Caller substitutes keys later.
+- **(C)** Hybrid: decoder produces (B), with a separate `instantiate(keys: &[DescriptorPublicKey]) -> Result<Descriptor<...>, Error>` adapter.
+
+**Decision**: **(A)** — public API:
+
+```rust
+pub fn decode_template(
+    bytes: &[u8],
+    keys: &[DescriptorPublicKey],
+) -> Result<Descriptor<DescriptorPublicKey>, crate::Error>;
+```
+
+**Rationale**:
+- Symmetric with `encode_template`. A caller who encoded with `placeholder_map: HashMap<Pk, u8>` can decode with `keys: Vec<Pk>` (just `keys[i]`) and round-trip.
+- Reuses miniscript's existing types — no new public surface to maintain.
+- For `Tag::Placeholder` + LEB128 idx: the decoder looks up `keys[idx]` and returns `Error::PolicyScopeViolation` with "placeholder index out of range" if `idx >= keys.len()`.
+- For the v1+ `Reserved*` key tags (0x24..=0x31): the decoder rejects them with `Error::InvalidBytecode { kind: UnknownTag(b) }` since v0.1 cannot construct inline keys.
+
+**Internal design**: cursor-based reader + per-tag dispatch.
+
+```rust
+struct Cursor<'a> { bytes: &'a [u8], offset: usize }
+// fn read_byte / read_varint_u64 / read_array<const N: usize> / require_empty
+```
+
+Top-level reads `Tag::Wsh`, recursively parses Miniscript via tag dispatch, wraps in `Descriptor::Wsh(Wsh::new(...))`.
+
+**Alternatives considered**:
+- **(B) custom intermediate type**: rejected — adds public surface for marginal benefit. The 2-arg API in (A) is the natural inverse of `encode_template(d, &map)`.
+- **(C) hybrid**: deferred to v0.2. If real callers need lazy key substitution we can add the intermediate then.
+
+**Errors**:
+- `Error::InvalidBytecode { offset, kind: BytecodeErrorKind::* }` for malformed input (truncated, unknown tag, varint overflow).
+- `Error::PolicyScopeViolation(...)` for v0.1-out-of-scope inputs (Reserved* key tags, taproot tags if encountered).
+
+**Verify in code**: `crates/wdm-codec/src/bytecode/decode.rs` (Task 2.12 onwards).
+
+---
+
 ### D-4 (Task 2.4): Encoder takes `Descriptor<DescriptorPublicKey>` + placeholder map, mirrors `descriptor-codec` walker pattern
 
 **Context**: Phase 2 needs an encoder turning a BIP 388 wallet policy into canonical bytecode. The plan said "walk a miniscript AST"; the upstream `descriptor-codec` (CC0) walks a `Descriptor<DescriptorPublicKey>` via a `trait EncodeTemplate` impl per fragment type. WDM differs only in that key positions get replaced by `Tag::Placeholder` + LEB128 index drawn from the wallet policy's key information vector — there is no separate payload byte stream as in descriptor-codec.
