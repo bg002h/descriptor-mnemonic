@@ -27,6 +27,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 **During controller (main-thread) work:** when wrapping a task, the controller verifies all minor items from that task's reviews are either resolved or recorded here.
 
+**Persisting agent reports to disk (durable audit trail):** in addition to FOLLOWUPS.md, every implementer or reviewer subagent that produces a commit MUST also save its full final report (the verbatim text the agent returns to the controller) to `design/agent-reports/<filename>.md` per the file-naming convention in `design/agent-reports/README.md`. This protects against the controller losing minor items between conversation sessions: the raw report is durable on disk, and the post-batch FOLLOWUPS.md aggregation can re-read agent reports if the controller's working memory missed something. For parallel-batch dispatches, each agent saves to a distinct filename (no merge conflicts since filenames embed the bucket id).
+
 **When closing an item:** change `Status:` to `resolved <COMMIT>` (where `<COMMIT>` is the short SHA of the fix). Do not delete the entry — closure history is informative for future reviewers. After 6+ months of resolved entries, a separate cleanup pass can archive them to `FOLLOWUPS_ARCHIVE.md`.
 
 ## Tiers (definitions)
