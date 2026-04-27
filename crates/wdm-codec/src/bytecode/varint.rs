@@ -1,0 +1,1 @@
+//! bytecode::varint module — stub for v0.1.
