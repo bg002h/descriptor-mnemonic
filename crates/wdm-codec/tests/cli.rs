@@ -71,6 +71,111 @@ fn wdm_encode_json() {
     );
 }
 
+/// `wdm encode --json` output is stable and consumable: per-chunk objects
+/// expose the v0.1.1-contract field set (`raw`, `chunk_index`,
+/// `total_chunks`, `code`) with `code` rendered as a lowercase string
+/// (`"regular"` or `"long"`), and a top-level `wallet_id_words` string.
+///
+/// This guards the v0.2 wrapper-type refactor (closes FOLLOWUPS
+/// `7-serialize-derives`) against accidental shape drift — the wrappers
+/// must preserve the exact JSON contract the v0.1.1 hand-built
+/// `serde_json::json!{}` literal produced.
+#[test]
+fn wdm_encode_json_shape_is_stable() {
+    let output = Command::cargo_bin("wdm")
+        .expect("binary built")
+        .args(["encode", POLICY, "--json"])
+        .output()
+        .expect("encode --json ran");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("utf-8");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+
+    let words = v
+        .get("wallet_id_words")
+        .and_then(|w| w.as_str())
+        .expect("wallet_id_words string");
+    assert_eq!(
+        words.split_whitespace().count(),
+        12,
+        "wallet_id_words must be a 12-word BIP-39 mnemonic, got: {words:?}"
+    );
+
+    let chunks = v
+        .get("chunks")
+        .and_then(|c| c.as_array())
+        .expect("chunks array");
+    assert!(!chunks.is_empty());
+    let first = &chunks[0];
+    let raw = first.get("raw").and_then(|r| r.as_str()).expect("raw");
+    assert!(raw.starts_with("wdm1"));
+    assert!(first.get("chunk_index").and_then(|c| c.as_u64()).is_some());
+    assert!(first.get("total_chunks").and_then(|c| c.as_u64()).is_some());
+    let code = first.get("code").and_then(|c| c.as_str()).expect("code");
+    assert!(
+        code == "regular" || code == "long",
+        "code must be lowercase string `regular` or `long`, got: {code:?}"
+    );
+}
+
+/// `wdm decode --json` output exposes the v0.1.1-contract field set:
+/// top-level `policy` (canonical-string form) plus a `report` object with
+/// `outcome`, `confidence`, `corrections`, `verifications` (with all five
+/// flag fields).
+#[test]
+fn wdm_decode_json_shape_is_stable() {
+    let chunk = encode_first_chunk();
+
+    let output = Command::cargo_bin("wdm")
+        .expect("binary built")
+        .args(["decode", &chunk, "--json"])
+        .output()
+        .expect("decode --json ran");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("utf-8");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+
+    let policy = v
+        .get("policy")
+        .and_then(|p| p.as_str())
+        .expect("policy str");
+    assert!(policy.contains("wsh(pk("));
+
+    let report = v.get("report").expect("report object");
+    let outcome = report
+        .get("outcome")
+        .and_then(|o| o.as_str())
+        .expect("outcome");
+    assert_eq!(outcome, "Clean", "round-trip should yield Clean outcome");
+    let confidence = report
+        .get("confidence")
+        .and_then(|c| c.as_str())
+        .expect("confidence");
+    assert_eq!(confidence, "Confirmed");
+    assert!(
+        report
+            .get("corrections")
+            .and_then(|c| c.as_array())
+            .is_some()
+    );
+
+    let verifications = report.get("verifications").expect("verifications");
+    for flag in [
+        "bytecode_well_formed",
+        "cross_chunk_hash_ok",
+        "total_chunks_consistent",
+        "version_supported",
+        "wallet_id_consistent",
+    ] {
+        assert!(
+            verifications.get(flag).and_then(|f| f.as_bool()).is_some(),
+            "verifications.{flag} missing or non-bool"
+        );
+    }
+}
+
 /// `wdm encode --path bip48 <policy>` — exits 0, and the encoded bytecode's
 /// shared-path declaration reflects BIP 48 (named indicator 0x05) rather
 /// than the default-tier BIP 84 fallback (indicator 0x03).

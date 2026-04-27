@@ -16,7 +16,7 @@ name = "wdm_codec"
 
 [[bin]]
 name = "wdm"
-path = "src/bin/wdm.rs"
+path = "src/bin/wdm/main.rs"
 required-features = ["cli"]
 
 [[bin]]

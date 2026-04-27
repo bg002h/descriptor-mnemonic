@@ -21,6 +21,9 @@ use wdm_codec::{
     encode, five_bit_to_bytes, wallet_id::WalletIdSeed,
 };
 
+mod wdm_json;
+use wdm_json::{DecodeJson, EncodeJson};
+
 // ---------------------------------------------------------------------------
 // CLI structure
 // ---------------------------------------------------------------------------
@@ -225,24 +228,12 @@ fn cmd_encode(
     let backup = encode(&policy, &opts).map_err(|e| anyhow::anyhow!("encode failed: {e}"))?;
 
     if json {
-        // Manual JSON construction (option b per spec: avoids serde derives on
-        // library types that contain non-Serialize miniscript internals).
-        let chunks_json: Vec<serde_json::Value> = backup
-            .chunks
-            .iter()
-            .map(|c| {
-                serde_json::json!({
-                    "raw": c.raw,
-                    "chunk_index": c.chunk_index,
-                    "total_chunks": c.total_chunks,
-                    "code": match c.code { BchCode::Regular => "regular", BchCode::Long => "long" },
-                })
-            })
-            .collect();
-        let out = serde_json::json!({
-            "chunks": chunks_json,
-            "wallet_id_words": backup.wallet_id_words.to_string(),
-        });
+        // v0.2: derive-based wrappers (see `wdm_json` module). Output is
+        // byte-identical to v0.1.1's hand-built `serde_json::json!{}`
+        // literal — wrapper field order is alphabetical so
+        // `serde_json::to_string_pretty` reproduces the same key order
+        // that BTreeMap-backed `json!{}` produced.
+        let out = EncodeJson::from(&backup);
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         // Human-readable: one chunk string per line, wallet ID at the end.
@@ -262,35 +253,10 @@ fn cmd_decode(strings: &[String], json: bool) -> Result<(), anyhow::Error> {
         decode(&refs, &DecodeOptions::new()).map_err(|e| anyhow::anyhow!("decode failed: {e}"))?;
 
     if json {
-        let corr_json: Vec<serde_json::Value> = result
-            .report
-            .corrections
-            .iter()
-            .map(|c| {
-                serde_json::json!({
-                    "chunk_index": c.chunk_index,
-                    "char_position": c.char_position,
-                    "original": c.original.to_string(),
-                    "corrected": c.corrected.to_string(),
-                })
-            })
-            .collect();
-        let v = result.report.verifications;
-        let out = serde_json::json!({
-            "policy": result.policy.to_canonical_string(),
-            "report": {
-                "outcome": format!("{:?}", result.report.outcome),
-                "confidence": format!("{:?}", result.report.confidence),
-                "corrections": corr_json,
-                "verifications": {
-                    "cross_chunk_hash_ok": v.cross_chunk_hash_ok,
-                    "wallet_id_consistent": v.wallet_id_consistent,
-                    "total_chunks_consistent": v.total_chunks_consistent,
-                    "bytecode_well_formed": v.bytecode_well_formed,
-                    "version_supported": v.version_supported,
-                },
-            },
-        });
+        // v0.2: derive-based wrappers (see `wdm_json` module). Output is
+        // byte-identical to v0.1.1's hand-built `serde_json::json!{}`
+        // literal.
+        let out = DecodeJson::from(&result);
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         println!("{}", result.policy.to_canonical_string());
