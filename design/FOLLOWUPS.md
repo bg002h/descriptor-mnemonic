@@ -52,30 +52,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `p3-decode-declaration-from-bytes` — `decode_declaration_from_bytes(&[u8]) -> Result<(DerivationPath, usize), Error>` ergonomic alt
-
-- **Surfaced:** Phase 3.5' code review of `bdeb639`
-- **Where:** `crates/wdm-codec/src/bytecode/path.rs`
-- **What:** `decode_declaration` is currently `pub(crate)` and takes `&mut Cursor`. A `pub` slice-consuming variant returning `(DerivationPath, bytes_consumed)` would be friendlier for any future non-Cursor consumer (e.g., a one-off "parse this byte buffer" call site).
-- **Why deferred:** Phase 5's framing wrapper (now Task 5-B) consumed it via Cursor without needing the slice variant. No v0.1 consumer exists.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `p4-chunking-mode-enum` — `force_chunked: bool` → `ChunkingMode { Auto, ForceChunked }`
 
 - **Surfaced:** Phase 4-D code review of `1fe9505`
 - **Where:** `crates/wdm-codec/src/chunking.rs` `chunking_decision` signature
 - **What:** Replacing the bool with a typed enum makes call sites self-documenting. v0.1 has only test call sites; if real consumers multiply (CLI, top-level encode), the readability win compounds.
 - **Why deferred:** premature for v0.1; bool was correct at the time of the call-site count.
-- **Status:** open
-- **Tier:** v0.2
-
-### `p2-decoded-template-hybrid` — hybrid `DecodedTemplate` decoder shape
-
-- **Surfaced:** Phase 2 D-5 (`design/PHASE_2_DECISIONS.md`)
-- **Where:** `crates/wdm-codec/src/bytecode/decode.rs`
-- **What:** D-5 chose option (A) for `decode_template` (returns `Descriptor<DescriptorPublicKey>` directly via key substitution) over option (C) (returns a custom `DecodedTemplate` intermediate, with a separate `instantiate` adapter). If real callers ever need lazy key substitution (e.g., recovery flows that want to inspect the template before binding keys), add the intermediate type then.
-- **Why deferred:** v0.1 has no such caller. Option (A)'s 2-arg API is the natural inverse of `encode_template(d, &map)`.
 - **Status:** open
 - **Tier:** v0.2
 
@@ -130,15 +112,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/wdm-codec/src/bytecode/{header,decode}.rs`, `crates/wdm-codec/src/policy.rs::from_bytecode`
 - **What:** The bytecode header has a fingerprints flag (bit 2) and a reserved tag `Tag::Fingerprints = 0x35`, but v0.1 rejects any input with the flag set via `Error::PolicyScopeViolation`. v0.2 should implement the full fingerprints-block format (per BIP §"Fingerprints block"): a count byte followed by `count` 4-byte master-key fingerprints in placeholder index order, allowing recovery tools to verify which seed corresponds to which `@i` placeholder before deriving.
 - **Why deferred:** v0.1 spec scope. The recovery flow can match seeds to placeholders by trial derivation; the fingerprints block is an ergonomics + privacy improvement.
-- **Status:** open
-- **Tier:** v0.2
-
-### `4a-from-bytes-shape` — reconsider `Chunk::from_bytes` shape (slice+usize vs `&mut Cursor`)
-
-- **Surfaced:** Phase 4-A code review of `aefdf3f` (deferred to "after 4-E"); 4-E used the slice+usize shape unchanged
-- **Where:** `crates/wdm-codec/src/chunking.rs::Chunk::from_bytes` (returns `Result<(Self, usize), Error>`)
-- **What:** Phase 2/3's bytecode parsers use `&mut Cursor<'_>` for stream consumption; `Chunk::from_bytes` returns a slice + consumed-byte-count tuple. The two shapes do equivalent work but diverge stylistically. Consolidating on Cursor would let callers chain chunk parses inside a longer buffer; consolidating on slice+usize would let bytecode parsers expose simpler APIs. v0.1 has no caller that needs to switch shapes. Defer until either Phase 7 (CLI parsing of multi-chunk inputs) or any non-test consumer surfaces a need.
-- **Why deferred:** premature; no consumer needs the conversion.
 - **Status:** open
 - **Tier:** v0.2
 
@@ -357,6 +330,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 10 Task 10.2; deferred at controller closure
 - **Status:** resolved `651c402` (post-push verification at run [25022150945](https://github.com/bg002h/descriptor-mnemonic/actions/runs/25022150945)) — full pipeline now green across `cargo test (ubuntu/windows/macos)` + `cargo clippy` + `cargo fmt` + `cargo doc`. Required four code/CI fixes that previous local-only validation never caught: `f4c8d3c` (workflow `git clone --depth` couldn't reach the SHA on a non-default branch), `06557a3` (matrix-ize the test job), `b12b814` (clippy 1.85.0 `precedence` lint in `polymod_step`), and `651c402` + `c46f2c0` (clippy 1.85.0 `format_collect` lint in `vectors.rs` and `bin/wdm.rs`). Lesson: pin a CI-equivalent toolchain locally if you need pre-push lint parity.
 - **Tier:** v0.1-nice-to-have (closed)
+
+### `p3-decode-declaration-from-bytes` — `decode_declaration_from_bytes(&[u8]) -> Result<(DerivationPath, usize), Error>` ergonomic alt
+
+- **Surfaced:** Phase 3.5' code review of `bdeb639`
+- **Status:** resolved (post-v0.1.1 v0.2 batch 1) — new `pub fn decode_declaration_from_bytes(&[u8]) -> Result<(DerivationPath, usize), Error>` added to `crates/wdm-codec/src/bytecode/path.rs`. Constructs an internal Cursor, calls the existing `pub(crate)` cursor-based decoder, returns `(path, cur.offset())`. Four new tests cover dictionary path round-trip, explicit path round-trip, trailing-bytes-not-consumed semantics, and error propagation. Purely additive; no existing API changed.
+- **Tier:** v0.2 (closed)
+
+### `p2-decoded-template-hybrid` — hybrid `DecodedTemplate` decoder shape
+
+- **Surfaced:** Phase 2 D-5 (`design/PHASE_2_DECISIONS.md`)
+- **Status:** wont-fix — Phase 2 D-5 chose option (A) (`decode_template` returns `Descriptor<DescriptorPublicKey>` directly via key substitution); through v0.1.1 no caller has surfaced needing lazy key substitution. The 2-arg `decode_template(bytes, &keys)` API is the natural inverse of `encode_template(d, &map)`. Revisit only if a real recovery-flow consumer needs to inspect the template before binding keys.
+- **Tier:** v0.2 (closed)
+
+### `4a-from-bytes-shape` — reconsider `Chunk::from_bytes` shape (slice+usize vs `&mut Cursor`)
+
+- **Surfaced:** Phase 4-A code review of `aefdf3f` (deferred to "after 4-E"); 4-E used the slice+usize shape unchanged
+- **Status:** wont-fix — through v0.1.1 no caller has surfaced needing the shape switched. Phase 7 CLI consumed `Chunk::from_bytes` via the slice+usize shape without friction; no Phase 5–10 consumer needed the Cursor shape. Both shapes do equivalent work; consolidating now is style-only churn. Revisit only if a non-test consumer surfaces a concrete need.
+- **Tier:** v0.2 (closed)
 
 ---
 

@@ -235,6 +235,40 @@ pub(crate) fn decode_declaration(
     }
 }
 
+/// Decode a path declaration from a byte slice and return the parsed
+/// [`DerivationPath`] together with the number of bytes consumed.
+///
+/// Slice-consuming, public-facing entry point for parsing a single path
+/// declaration. Use this when you have a contiguous byte buffer and want to:
+///
+/// - decode a single path declaration without constructing a `Cursor`, or
+/// - know how far into the buffer the declaration ends, so you can
+///   continue parsing whatever follows.
+///
+/// # Returns
+///
+/// `(path, bytes_consumed)` on success. `bytes_consumed` reflects only the
+/// declaration itself; trailing bytes after the declaration are not
+/// inspected and not counted.
+///
+/// # Errors
+///
+/// - [`crate::Error::InvalidBytecode`] with `kind: UnknownTag(b)` if the
+///   first byte is not a defined tag.
+/// - [`crate::Error::InvalidBytecode`] with
+///   `kind: UnexpectedTag { expected: 0x33, got: b }` if the first byte is
+///   a defined tag but not `Tag::SharedPath`.
+/// - Any [`crate::Error::InvalidBytecode`] variant produced by the inner
+///   path decoder for malformed path data (e.g. `UnexpectedEnd`,
+///   `VarintOverflow`, `InvalidPathComponent`).
+pub fn decode_declaration_from_bytes(
+    bytes: &[u8],
+) -> Result<(DerivationPath, usize), crate::Error> {
+    let mut cur = crate::bytecode::cursor::Cursor::new(bytes);
+    let path = decode_declaration(&mut cur)?;
+    Ok((path, cur.offset()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -810,6 +844,85 @@ mod tests {
                 }
             ),
             "expected UnexpectedEnd for truncated declaration, got {err:?}"
+        );
+    }
+
+    // ── decode_declaration_from_bytes (slice-consuming pub API) ──────────────
+
+    /// Dictionary indicator: from_bytes returns the right path and the
+    /// declaration's exact byte length (2 for dictionary form).
+    #[test]
+    fn from_bytes_dictionary_returns_path_and_length() {
+        let path_dict = indicator_to_path(0x01).unwrap();
+        let buf = encode_declaration(path_dict);
+        let (decoded, consumed) = decode_declaration_from_bytes(&buf).unwrap();
+        assert_eq!(&decoded, path_dict, "decoded path mismatch");
+        assert_eq!(consumed, 2, "dictionary declaration should consume 2 bytes");
+        assert_eq!(consumed, buf.len(), "consumed should equal buffer length");
+    }
+
+    /// Explicit (non-dictionary) declaration: from_bytes returns the right
+    /// path and the exact declaration byte length.
+    #[test]
+    fn from_bytes_explicit_returns_path_and_length() {
+        let path_explicit = DerivationPath::from_str("m/44'/0").unwrap();
+        let buf = encode_declaration(&path_explicit);
+        let (decoded, consumed) = decode_declaration_from_bytes(&buf).unwrap();
+        assert_eq!(decoded, path_explicit, "decoded path mismatch");
+        assert_eq!(
+            consumed,
+            buf.len(),
+            "explicit declaration consumed should equal buffer length"
+        );
+        assert_eq!(consumed, 5, "this specific path encodes to 5 bytes");
+    }
+
+    /// Trailing bytes after the declaration must NOT be consumed; the
+    /// `consumed` count reports only the declaration's own length.
+    #[test]
+    fn from_bytes_does_not_consume_trailing_bytes() {
+        let path_dict = indicator_to_path(0x01).unwrap();
+        let mut buf = encode_declaration(path_dict);
+        buf.extend_from_slice(&[0xAB, 0xCD, 0xEF]);
+        let (decoded, consumed) = decode_declaration_from_bytes(&buf).unwrap();
+        assert_eq!(&decoded, path_dict);
+        assert_eq!(consumed, 2, "trailing bytes must not affect consumed count");
+        assert!(
+            consumed < buf.len(),
+            "consumed must be less than buf.len() when trailing bytes present"
+        );
+    }
+
+    /// Errors propagate identically to the cursor-based decode_declaration.
+    #[test]
+    fn from_bytes_propagates_errors() {
+        // Wrong tag (0x05 = Tag::Wsh).
+        let err = decode_declaration_from_bytes(&[0x05u8, 0x01]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedTag {
+                        expected: 0x33,
+                        got: 0x05
+                    },
+                    ..
+                }
+            ),
+            "expected UnexpectedTag, got {err:?}"
+        );
+
+        // Truncated (just the tag byte).
+        let err = decode_declaration_from_bytes(&[0x33u8]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
+            "expected UnexpectedEnd for truncated, got {err:?}"
         );
     }
 }
