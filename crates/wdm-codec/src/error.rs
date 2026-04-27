@@ -160,6 +160,21 @@ pub enum BytecodeErrorKind {
     /// `miniscript::Error` churn.
     #[error("miniscript type check failed: {0}")]
     TypeCheckFailed(String),
+
+    /// LEB128 child encoding decoded to a value outside the valid BIP32 range.
+    ///
+    /// BIP32 child indices are in `0..=2^31-1` for both normal and hardened
+    /// forms. The wire encoding maps child index `c` to `2c` (normal) or
+    /// `2c + 1` (hardened), so the maximum legal encoded value is
+    /// `2*(2^31 - 1) + 1 = 2^32 - 1 = 0xFFFF_FFFF`. Any decoded value above
+    /// that is rejected here.
+    #[error(
+        "invalid path component: encoded value {encoded} exceeds maximum BIP32 child encoding (2*(2^31-1)+1)"
+    )]
+    InvalidPathComponent {
+        /// The raw LEB128-decoded value that exceeded the valid range.
+        encoded: u64,
+    },
 }
 
 /// Result type used throughout wdm-codec.

@@ -82,10 +82,279 @@ pub fn encode_path(path: &DerivationPath) -> Vec<u8> {
     out
 }
 
+/// Deserialize a derivation path from its wire form.
+///
+/// Reads a single indicator byte from `cur`, then either:
+/// - Returns the corresponding dictionary path if the byte is one of the 13
+///   known indicators (`0x01`–`0x07`, `0x11`–`0x15`, `0x17`).
+/// - Decodes an explicit path if the byte is `0xFE`: reads a LEB128 component
+///   count, then that many LEB128-encoded child numbers. Each encoded value `n`
+///   maps to: hardened `n >> 1` if `n & 1 == 1`, else unhardened `n >> 1`.
+///   The maximum legal encoded value per component is `2*(2^31-1)+1 =
+///   0xFFFF_FFFF`; values above that are rejected with
+///   `BytecodeErrorKind::InvalidPathComponent`.
+/// - Rejects any other byte (reserved / `0xFF`) with
+///   `BytecodeErrorKind::UnknownTag(b)`. Path indicator bytes share the same
+///   "unrecognized 1-byte selector" semantics as operator tags, so reusing
+///   `UnknownTag` keeps the error surface small.
+///
+/// This function does **not** consume or expect a `Tag::SharedPath` prefix;
+/// that is the path-declaration framing layer's responsibility (Task 3.5').
+// Task 3.5' will call decode_path from the path-declaration framing layer.
+// Until that lands, suppress the dead-code lint so clippy stays clean.
+#[allow(dead_code)]
+pub(crate) fn decode_path(
+    cur: &mut crate::bytecode::cursor::Cursor<'_>,
+) -> Result<DerivationPath, crate::Error> {
+    use crate::error::BytecodeErrorKind;
+    use bitcoin::bip32::ChildNumber;
+
+    let indicator_offset = cur.offset();
+    let b = cur.read_byte()?;
+
+    // Fast path: dictionary lookup.
+    if let Some(path) = indicator_to_path(b) {
+        return Ok(path.clone());
+    }
+
+    // Explicit form.
+    if b == 0xFE {
+        let count = cur.read_varint_u64()? as usize;
+        let mut components = Vec::with_capacity(count);
+        for _ in 0..count {
+            let comp_offset = cur.offset();
+            let n = cur.read_varint_u64()?;
+
+            // Maximum legal encoded value: 2*(2^31-1)+1 = 0xFFFF_FFFF.
+            // Anything above that cannot be expressed as a valid BIP32 child
+            // index (0..=2^31-1) in either hardened or unhardened form.
+            if n > 0xFFFF_FFFF_u64 {
+                return Err(crate::Error::InvalidBytecode {
+                    offset: comp_offset,
+                    kind: BytecodeErrorKind::InvalidPathComponent { encoded: n },
+                });
+            }
+
+            let index = (n >> 1) as u32;
+            let child = if n & 1 == 1 {
+                ChildNumber::Hardened { index }
+            } else {
+                ChildNumber::Normal { index }
+            };
+            components.push(child);
+        }
+        return Ok(DerivationPath::from(components));
+    }
+
+    // Reserved / unknown indicator byte.
+    // Reusing UnknownTag because indicator bytes share the same semantics as
+    // operator tag bytes: both are unrecognized 1-byte selectors in a
+    // position where a specific set of values is required.
+    Err(crate::Error::InvalidBytecode {
+        offset: indicator_offset,
+        kind: BytecodeErrorKind::UnknownTag(b),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytecode::cursor::Cursor;
+    use crate::error::BytecodeErrorKind;
     use std::str::FromStr;
+
+    // ── decode_path helpers ──────────────────────────────────────────────────
+
+    /// Decode a path from a byte slice, asserting all bytes are consumed.
+    fn decode_all(bytes: &[u8]) -> Result<DerivationPath, crate::Error> {
+        let mut cur = Cursor::new(bytes);
+        let path = decode_path(&mut cur)?;
+        // Verify the cursor consumed everything.
+        assert_eq!(
+            cur.offset(),
+            bytes.len(),
+            "cursor did not consume all bytes"
+        );
+        Ok(path)
+    }
+
+    // ── decode_dictionary_round_trip ─────────────────────────────────────────
+
+    /// All 13 dictionary entries: encode_path → decode_path returns original path.
+    #[test]
+    fn decode_dictionary_round_trip() {
+        for &(ind, _) in FIXTURE {
+            let original = indicator_to_path(ind).expect("fixture entry must exist");
+            let encoded = encode_path(original);
+            let decoded = decode_all(&encoded)
+                .unwrap_or_else(|e| panic!("decode failed for indicator 0x{ind:02x}: {e}"));
+            assert_eq!(
+                decoded, *original,
+                "round-trip mismatch for indicator 0x{ind:02x}"
+            );
+        }
+    }
+
+    // ── decode_explicit_round_trip ───────────────────────────────────────────
+
+    /// Several non-dictionary paths round-trip through encode_path → decode_path.
+    #[test]
+    fn decode_explicit_round_trip() {
+        let cases = [
+            "m",
+            "m/0",
+            "m/0'",
+            "m/44'/0",
+            "m/44'/0'/1'",
+            "m/100",
+            "m/2147483647'",
+        ];
+        for path_str in &cases {
+            let original = DerivationPath::from_str(path_str).unwrap();
+            let encoded = encode_path(&original);
+            let decoded = decode_all(&encoded)
+                .unwrap_or_else(|e| panic!("decode failed for '{path_str}': {e}"));
+            assert_eq!(decoded, original, "round-trip mismatch for '{path_str}'");
+        }
+    }
+
+    // ── decode_explicit_canonical_byte_sequences ─────────────────────────────
+
+    /// Pin specific known byte sequences to their expected paths, independently
+    /// of encode_path, to guard against both sides drifting together.
+    #[test]
+    fn decode_explicit_canonical_byte_sequences() {
+        // [0xFE, 0x00] → m (empty path, 0 components)
+        let empty = decode_all(&[0xFE, 0x00]).unwrap();
+        assert_eq!(empty, DerivationPath::from_str("m").unwrap());
+
+        // [0xFE, 0x01, 0x00] → m/0 (1 component, unhardened index 0)
+        let m0 = decode_all(&[0xFE, 0x01, 0x00]).unwrap();
+        assert_eq!(m0, DerivationPath::from_str("m/0").unwrap());
+
+        // [0xFE, 0x02, 0x59, 0x00] → m/44'/0
+        //   count=2, 44 hardened→ 2*44+1=89=0x59, 0 unhardened→0x00
+        let m44h0 = decode_all(&[0xFE, 0x02, 0x59, 0x00]).unwrap();
+        assert_eq!(m44h0, DerivationPath::from_str("m/44'/0").unwrap());
+
+        // [0xFE, 0x01, 0x01] → m/0' (1 component, hardened index 0; n=1 → n&1==1 → hardened, index=0)
+        let m0h = decode_all(&[0xFE, 0x01, 0x01]).unwrap();
+        assert_eq!(m0h, DerivationPath::from_str("m/0'").unwrap());
+    }
+
+    // ── decode_rejects_reserved_indicator ───────────────────────────────────
+
+    /// Reserved and unknown indicator bytes must be rejected with UnknownTag.
+    #[test]
+    fn decode_rejects_reserved_indicator() {
+        for &b in &[0x00u8, 0x08, 0x10, 0x16, 0x18, 0xFD, 0xFF] {
+            let mut cur = Cursor::new(std::slice::from_ref(&b));
+            let err = decode_path(&mut cur).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    crate::Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnknownTag(got),
+                        ..
+                    } if got == b
+                ),
+                "expected UnknownTag(0x{b:02x}), got {err:?}"
+            );
+        }
+    }
+
+    // ── decode_rejects_truncated_explicit ────────────────────────────────────
+
+    /// Truncated explicit-form inputs must be rejected, not panic.
+    #[test]
+    fn decode_rejects_truncated_explicit() {
+        // [0xFE] only — no count byte.
+        let err = {
+            let mut cur = Cursor::new(&[0xFE]);
+            decode_path(&mut cur).unwrap_err()
+        };
+        assert!(
+            matches!(err, crate::Error::InvalidBytecode { .. }),
+            "expected InvalidBytecode for missing count, got {err:?}"
+        );
+
+        // [0xFE, 0x02, 0x00] — count says 2 components but only 1 is present.
+        let err = {
+            let mut cur = Cursor::new(&[0xFE, 0x02, 0x00]);
+            decode_path(&mut cur).unwrap_err()
+        };
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
+            "expected UnexpectedEnd for truncated components, got {err:?}"
+        );
+    }
+
+    // ── decode_rejects_invalid_child_component ───────────────────────────────
+
+    /// A component whose encoded value > 0xFFFF_FFFF must be rejected with
+    /// InvalidPathComponent. The simplest construction: encoded value 2^32
+    /// (= 2 * 2^31) in LEB128 = [0x80, 0x80, 0x80, 0x80, 0x10].
+    /// Full byte sequence: [0xFE, 0x01, 0x80, 0x80, 0x80, 0x80, 0x10].
+    #[test]
+    fn decode_rejects_invalid_child_component() {
+        // 2^32 = 0x100000000, LEB128 encoding: [0x80, 0x80, 0x80, 0x80, 0x10]
+        let bytes = [0xFE, 0x01, 0x80, 0x80, 0x80, 0x80, 0x10];
+        let mut cur = Cursor::new(&bytes);
+        let err = decode_path(&mut cur).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::InvalidPathComponent {
+                        encoded: 0x100000000
+                    },
+                    ..
+                }
+            ),
+            "expected InvalidPathComponent {{ encoded: 0x100000000 }}, got {err:?}"
+        );
+    }
+
+    // ── decode_leaves_cursor_at_correct_offset ───────────────────────────────
+
+    /// After decoding a path, the cursor must be positioned immediately after
+    /// the path bytes — not consuming extra bytes, not leaving bytes consumed.
+    /// Strategy: encode a path, append a sentinel byte, decode the path, then
+    /// read the sentinel and assert it matches.
+    #[test]
+    fn decode_leaves_cursor_at_correct_offset() {
+        const SENTINEL: u8 = 0xAB;
+
+        // Test with a dictionary path (single-byte indicator).
+        let path_dict = indicator_to_path(0x01).unwrap();
+        let mut encoded_dict = encode_path(path_dict);
+        encoded_dict.push(SENTINEL);
+        let mut cur = Cursor::new(&encoded_dict);
+        let _ = decode_path(&mut cur).unwrap();
+        assert_eq!(
+            cur.read_byte().unwrap(),
+            SENTINEL,
+            "cursor not at correct offset after dictionary path decode"
+        );
+
+        // Test with an explicit path (m/44'/0, 4 bytes: [0xFE, 0x02, 0x59, 0x00]).
+        let path_explicit = DerivationPath::from_str("m/44'/0").unwrap();
+        let mut encoded_explicit = encode_path(&path_explicit);
+        encoded_explicit.push(SENTINEL);
+        let mut cur = Cursor::new(&encoded_explicit);
+        let _ = decode_path(&mut cur).unwrap();
+        assert_eq!(
+            cur.read_byte().unwrap(),
+            SENTINEL,
+            "cursor not at correct offset after explicit path decode"
+        );
+    }
 
     /// Fixture: all 13 (indicator, path_str) pairs.
     const FIXTURE: &[(u8, &str)] = &[
@@ -178,7 +447,7 @@ mod tests {
         }
     }
 
-    /// A path not in the dictionary encodes with the 0xFE explicit marker.
+    /// A path not in the dictionary uses the 0xFE explicit form and round-trips.
     #[test]
     fn encode_unknown_path_uses_explicit_form() {
         // m/44'/0'/1' is not in the dictionary (account index 1, not 0).
@@ -189,23 +458,11 @@ mod tests {
         );
         let encoded = encode_path(&path);
         assert_eq!(encoded[0], 0xFE, "must start with explicit marker");
-
-        // Decode component count from LEB128 at byte 1.
-        let (count, cnt_len) =
-            crate::bytecode::varint::decode_u64(&encoded[1..]).expect("valid LEB128 count");
-        assert_eq!(count, 3, "m/44'/0'/1' has 3 components");
-
-        // Verify each encoded child number: hardened c → 2c+1.
-        // 44' → 89, 0' → 1, 1' → 3
-        let expected_raw: &[u64] = &[89, 1, 3];
-        let mut pos = 1 + cnt_len;
-        for &expected in expected_raw {
-            let (val, len) =
-                crate::bytecode::varint::decode_u64(&encoded[pos..]).expect("valid LEB128 child");
-            assert_eq!(val, expected, "child number mismatch");
-            pos += len;
-        }
-        assert_eq!(pos, encoded.len(), "no trailing bytes");
+        assert_eq!(
+            decode_all(&encoded).unwrap(),
+            path,
+            "encode→decode round-trip"
+        );
     }
 
     /// m/0' (single hardened component) → [0xFE, 0x01, 0x01].
