@@ -804,13 +804,12 @@ mod tests {
         // [tag, True_tag] = [tag, 0x01]. Wsh wrapping handled by manually
         // building the byte stream — wrappers won't always typecheck under
         // wsh() so the whole-descriptor parser path may reject some.
-        use std::sync::Arc;
-
-        // Build the byte stream directly: [Wsh, Alt, True].
-        // Note: wsh(a:1) may not typecheck; if so, this test verifies the
-        // decoder produces a TypeCheckFailed error rather than panicking.
+        //
         // The decoder's job is to parse bytes correctly; whether the
-        // resulting AST type-checks is a separate concern.
+        // resulting AST type-checks under wsh()'s B-type requirement is
+        // a separate concern handled by miniscript and surfaces as
+        // TypeCheckFailed.
+
         let alt_bytes = vec![0x05, 0x0A, 0x01]; // [Wsh, Alt, True]
         let result = decode_template(&alt_bytes, &[]);
         match result {
@@ -836,9 +835,6 @@ mod tests {
             Err(Error::InvalidBytecode { kind: BytecodeErrorKind::TypeCheckFailed(_), .. }) => {}
             Err(other) => panic!("unexpected error decoding swap: {other:?}"),
         }
-
-        // The Arc import is unused if neither branch above triggers it.
-        let _ = Arc::new(0u8);
     }
 
     #[test]
