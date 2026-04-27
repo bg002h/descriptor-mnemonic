@@ -7,4 +7,5 @@ pub mod path;
 pub mod tag;
 pub mod varint;
 
+pub use key::WdmKey;
 pub use tag::Tag;
