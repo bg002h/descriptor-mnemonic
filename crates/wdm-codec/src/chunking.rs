@@ -226,6 +226,21 @@ impl ChunkCode {
     }
 }
 
+impl From<ChunkCode> for crate::BchCode {
+    /// Convert a [`ChunkCode`] to its [`crate::BchCode`] equivalent.
+    ///
+    /// Both enums have parallel `Regular` and `Long` variants. This `From`
+    /// impl lets encode-pipeline code write `let bch: BchCode = code.into()`
+    /// instead of a manual `match`. The helper `chunk_code_to_bch_code` in
+    /// `encode.rs` is now redundant and could be removed in a follow-up.
+    fn from(code: ChunkCode) -> Self {
+        match code {
+            ChunkCode::Regular => crate::BchCode::Regular,
+            ChunkCode::Long => crate::BchCode::Long,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ChunkingPlan
 // ---------------------------------------------------------------------------
@@ -289,6 +304,12 @@ pub enum ChunkingPlan {
 ///
 /// Note: when `force_chunked = true`, this function still prefers Regular over
 /// Long (matching the unforced behavior); the BIP is silent on this preference.
+///
+/// ## Notes
+///
+/// Note: when `EncodeOptions::force_long_code` is set, the top-level
+/// `encode()` function post-processes the returned plan to swap Regular
+/// → Long. See `crates/wdm-codec/src/encode.rs::encode` Stage 3.
 ///
 /// # Errors
 ///
@@ -1730,5 +1751,16 @@ mod tests {
         assert_eq!(correction.char_position, 17);
         assert_eq!(correction.original, 'a');
         assert_eq!(correction.corrected, 'z');
+    }
+
+    // -----------------------------------------------------------------------
+    // From<ChunkCode> for BchCode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn chunk_code_converts_to_bch_code() {
+        use crate::BchCode;
+        assert_eq!(BchCode::from(ChunkCode::Regular), BchCode::Regular);
+        assert_eq!(BchCode::from(ChunkCode::Long), BchCode::Long);
     }
 }
