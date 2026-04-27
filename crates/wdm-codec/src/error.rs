@@ -142,6 +142,18 @@ pub enum BytecodeErrorKind {
     #[error("trailing bytes after canonical bytecode")]
     TrailingBytes,
 
+    /// The header byte had one or more reserved bits set to a non-zero value.
+    ///
+    /// `byte` is the raw header byte that was rejected; `mask` is the set of
+    /// bits that are reserved-MUST-be-zero (e.g. `0x0B` for v0: bits 3, 1, 0).
+    #[error("reserved bits set in header byte {byte:#04x} (reserved mask: {mask:#04x})")]
+    ReservedBitsSet {
+        /// The raw header byte that contained non-zero reserved bits.
+        byte: u8,
+        /// Bitmask of the reserved bits (those that must be zero).
+        mask: u8,
+    },
+
     /// Reconstructed miniscript fragment failed type-check during
     /// `Wsh::new(...)` or equivalent. Wraps the upstream miniscript
     /// error message; carried as `String` to insulate from upstream
@@ -180,9 +192,7 @@ mod tests {
     fn type_check_failed_variant_displays() {
         let e = Error::InvalidBytecode {
             offset: 7,
-            kind: BytecodeErrorKind::TypeCheckFailed(
-                "Bdu type required".to_string(),
-            ),
+            kind: BytecodeErrorKind::TypeCheckFailed("Bdu type required".to_string()),
         };
         let s = e.to_string();
         assert!(s.contains("offset 7"), "got: {s}");
