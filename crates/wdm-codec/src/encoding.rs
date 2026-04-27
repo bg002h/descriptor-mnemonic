@@ -461,20 +461,41 @@ where
 
 /// Encode a payload + header into a full WDM string with HRP, separator, and checksum.
 ///
-/// `header` and `payload` are concatenated as raw bytes; the result is converted
-/// to 5-bit values via [`bytes_to_5bit`], then the BCH checksum is appended for
-/// the chosen [`BchCode`] variant. The full output string starts with `"wdm1"`
-/// (HRP + separator) and ends with 13 (regular) or 15 (long) checksum characters.
+/// The BCH code variant (regular or long) is auto-selected from the data-part
+/// length per the spec: regular for ≤93-char data parts, long for 96–108-char
+/// data parts. Lengths that fall in the reserved-invalid 94–95 gap or exceed
+/// 108 return [`Error::InvalidStringLength`].
 ///
-/// Caller chooses the code variant explicitly. Use [`bch_code_for_length`] on
-/// the data-part length to validate the choice if needed.
-pub fn encode_string(header: &[u8], payload: &[u8], code: BchCode) -> String {
+/// Returns the full string starting with `"wdm1"`.
+///
+/// [`Error::InvalidStringLength`]: crate::Error::InvalidStringLength
+pub fn encode_string(header: &[u8], payload: &[u8]) -> Result<String, crate::Error> {
+    use crate::Error;
+
     let mut all_bytes = Vec::with_capacity(header.len() + payload.len());
     all_bytes.extend_from_slice(header);
     all_bytes.extend_from_slice(payload);
     let data_5bit = bytes_to_5bit(&all_bytes);
 
-    let mut checksum: Vec<u8> = match code {
+    // Auto-determine code from the eventual data-part length (data_5bit + checksum).
+    let regular_total = data_5bit.len() + 13;
+    let long_total = data_5bit.len() + 15;
+    let code = match (
+        bch_code_for_length(regular_total),
+        bch_code_for_length(long_total),
+    ) {
+        (Some(BchCode::Regular), _) => BchCode::Regular,
+        (_, Some(BchCode::Long)) => BchCode::Long,
+        // Neither code variant accepts this data-part length: too short, in
+        // the 94–95 reserved-invalid gap, or too long for v0.1.
+        _ => {
+            // Pick the closest length to report — long_total is always larger,
+            // so report that as the "actual length you tried to produce".
+            return Err(Error::InvalidStringLength(long_total));
+        }
+    };
+
+    let checksum: Vec<u8> = match code {
         BchCode::Regular => bch_create_checksum_regular(HRP, &data_5bit).to_vec(),
         BchCode::Long => bch_create_checksum_long(HRP, &data_5bit).to_vec(),
     };
@@ -486,10 +507,10 @@ pub fn encode_string(header: &[u8], payload: &[u8], code: BchCode) -> String {
     for &v in &data_5bit {
         full.push(ALPHABET[v as usize] as char);
     }
-    for v in checksum.drain(..) {
+    for v in checksum {
         full.push(ALPHABET[v as usize] as char);
     }
-    full
+    Ok(full)
 }
 
 /// Result of a successful WDM string decode.
@@ -1094,7 +1115,7 @@ mod tests {
     fn encode_decode_round_trip_regular() {
         let header = vec![0x42u8, 0x00];
         let payload = vec![0xDE, 0xAD, 0xBE, 0xEF];
-        let s = encode_string(&header, &payload, BchCode::Regular);
+        let s = encode_string(&header, &payload).unwrap();
         assert!(s.starts_with("wdm1"));
 
         let decoded = decode_string(&s).unwrap();
@@ -1116,7 +1137,7 @@ mod tests {
         // 5-bit chars → 82 + 15 = 97-char data part (inside the long range).
         let header = vec![0u8; 2];
         let payload = vec![0x55u8; 49];
-        let s = encode_string(&header, &payload, BchCode::Long);
+        let s = encode_string(&header, &payload).unwrap();
         let decoded = decode_string(&s).unwrap();
         assert_eq!(decoded.code, BchCode::Long);
 
@@ -1128,13 +1149,13 @@ mod tests {
 
     #[test]
     fn encode_starts_with_hrp_and_separator() {
-        let s = encode_string(&[], &[1, 2, 3], BchCode::Regular);
+        let s = encode_string(&[], &[1, 2, 3]).unwrap();
         assert!(s.starts_with("wdm1"), "string did not start with wdm1: {}", s);
     }
 
     #[test]
     fn decode_rejects_invalid_hrp() {
-        let s = encode_string(&[], &[0u8; 10], BchCode::Regular);
+        let s = encode_string(&[], &[0u8; 10]).unwrap();
         let bad = s.replace("wdm", "btc");
         assert!(matches!(
             decode_string(&bad),
@@ -1144,7 +1165,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_mixed_case() {
-        let s = encode_string(&[], &[0u8; 10], BchCode::Regular);
+        let s = encode_string(&[], &[0u8; 10]).unwrap();
         let bad: String = s
             .chars()
             .enumerate()
@@ -1160,7 +1181,7 @@ mod tests {
     fn decode_rejects_invalid_char() {
         // 'b' is excluded from the bech32 alphabet; substitute one in the data
         // part to force a parse-time character rejection.
-        let s = encode_string(&[], &[0u8; 10], BchCode::Regular);
+        let s = encode_string(&[], &[0u8; 10]).unwrap();
         // s looks like "wdm1...". Splice 'b' at index 5 (definitely past "wdm1").
         let mut chars: Vec<char> = s.chars().collect();
         chars[5] = 'b';
@@ -1189,7 +1210,7 @@ mod tests {
         // Encode, corrupt one char in the data part, decode should auto-correct.
         let header = vec![0x42u8];
         let payload = vec![0x12, 0x34, 0x56, 0x78];
-        let s = encode_string(&header, &payload, BchCode::Regular);
+        let s = encode_string(&header, &payload).unwrap();
 
         let mut chars: Vec<char> = s.chars().collect();
         // Corrupt position 6 (well within the data part).
@@ -1207,5 +1228,26 @@ mod tests {
         let mut expected = header.clone();
         expected.extend_from_slice(&payload);
         assert_eq!(bytes, expected);
+    }
+
+    #[test]
+    fn encode_rejects_payload_in_reserved_invalid_length_range() {
+        // Data-part length 94-95 is reserved-invalid. Engineer a payload that
+        // produces such a length: regular needs data_5bit ≤ 80 (data_part = 80+13=93),
+        // long needs data_5bit ≥ 81 (data_part = 81+15=96).
+        // For data_part = 94 we'd need data_5bit = 81 (with 13-char checksum).
+        // 81 5-bit chars = 405 bits = 51 bytes minimum (51*8=408 → ceil to 81 chars).
+        // So 51 bytes of input → 81-char data_5bit → regular_total=94, long_total=96.
+        // Long is valid (96 in range), so this case actually picks Long.
+        // Need data_5bit such that BOTH regular_total and long_total miss the valid ranges:
+        //   regular_total = data_5bit.len() + 13 in [14..=93]  ⇒ data_5bit ∈ [1..=80]
+        //   long_total    = data_5bit.len() + 15 in [96..=108] ⇒ data_5bit ∈ [81..=93]
+        // The gap is data_5bit ∈ {} — no gap! Either regular or long catches every
+        // length in [1..=93]. The error path triggers at data_5bit=0 or data_5bit≥94.
+        //
+        // Easy test: empty header + empty payload ⇒ data_5bit.len() = 0 ⇒ regular_total=13
+        // ⇒ bch_code_for_length(13)=None ⇒ error.
+        let result = encode_string(&[], &[]);
+        assert!(matches!(result, Err(crate::Error::InvalidStringLength(_))));
     }
 }

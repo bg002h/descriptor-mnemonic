@@ -36,7 +36,7 @@ pub enum Error {
     InvalidChar {
         /// The invalid character encountered.
         ch: char,
-        /// Byte position within the data part.
+        /// Zero-based character index within the data part (after the `"wdm1"` separator).
         position: usize,
     },
 
