@@ -5,13 +5,13 @@
 //! Special indicators `0xFE` (explicit path) and `0xFF` (no-path reserved)
 //! are *not* in this table; they are handled by the framing layer.
 
+use std::str::FromStr;
 use std::sync::LazyLock;
 
 use bitcoin::bip32::DerivationPath;
 
 /// The 13 v0 dictionary entries, parsed once on first access.
 static DICT: LazyLock<[(u8, DerivationPath); 13]> = LazyLock::new(|| {
-    use std::str::FromStr;
     [
         // Mainnet
         (0x01, DerivationPath::from_str("m/44'/0'/0'").unwrap()),
@@ -116,9 +116,10 @@ pub(crate) fn decode_path(
 
     // Explicit form.
     if b == 0xFE {
+        let count_offset = cur.offset();
         let count_raw = cur.read_varint_u64()?;
         let count = usize::try_from(count_raw).map_err(|_| crate::Error::InvalidBytecode {
-            offset: cur.offset(),
+            offset: count_offset,
             kind: crate::error::BytecodeErrorKind::VarintOverflow,
         })?;
         let mut components = Vec::with_capacity(count);
@@ -243,7 +244,6 @@ mod tests {
     use super::*;
     use crate::bytecode::cursor::Cursor;
     use crate::error::BytecodeErrorKind;
-    use std::str::FromStr;
 
     // ── decode_path helpers ──────────────────────────────────────────────────
 
@@ -501,6 +501,24 @@ mod tests {
         );
     }
 
+    /// `path_to_indicator` must use exact-equality, not prefix-match.
+    /// `m/44'/0'/0'` is indicator 0x01; `m/44'/0'/0'/0` (one extra component)
+    /// must return `None`, pinning that the lookup is not a prefix test.
+    #[test]
+    fn path_to_indicator_rejects_prefix_extension() {
+        let base = DerivationPath::from_str("m/44'/0'/0'").unwrap();
+        assert_eq!(
+            path_to_indicator(&base),
+            Some(0x01),
+            "base path m/44'/0'/0' must be in dictionary"
+        );
+        let extended = DerivationPath::from_str("m/44'/0'/0'/0").unwrap();
+        assert!(
+            path_to_indicator(&extended).is_none(),
+            "m/44'/0'/0'/0 has one extra component and must not match indicator 0x01"
+        );
+    }
+
     #[test]
     fn path_to_indicator_is_path_equality_not_string_equality() {
         // "h" and "'" are both valid hardened markers; DerivationPath normalises
@@ -610,6 +628,38 @@ mod tests {
         assert_eq!(encode_path(&path), expected);
         // Also verify the LEB128 bytes themselves for documentation.
         assert_eq!(expected_leb, vec![0xFF, 0xFF, 0xFF, 0xFF, 0x0F]);
+    }
+
+    /// 128 unhardened `0` children — the component *count* itself becomes a
+    /// 2-byte LEB128 (128 = 0x80, 0x01). Encodes as:
+    ///   [0xFE, 0x80, 0x01, <128 × 0x00>]
+    /// Verifies that neither encode_path nor decode_path hardcodes a single-byte
+    /// count. Round-trips through encode → decode and checks the byte prefix.
+    #[test]
+    fn decode_path_round_trip_multi_byte_component_count() {
+        use bitcoin::bip32::ChildNumber;
+
+        let components = vec![ChildNumber::Normal { index: 0 }; 128];
+        let original = DerivationPath::from(components);
+
+        let encoded = encode_path(&original);
+
+        // Count of 128 in LEB128 = [0x80, 0x01].
+        assert_eq!(encoded[0], 0xFE, "must start with explicit marker 0xFE");
+        assert_eq!(encoded[1], 0x80, "count LSB: LEB128(128) byte 0 = 0x80");
+        assert_eq!(encoded[2], 0x01, "count MSB: LEB128(128) byte 1 = 0x01");
+        // Total length: 1 (marker) + 2 (count) + 128 (components, each 0x00) = 131.
+        assert_eq!(
+            encoded.len(),
+            131,
+            "encoded length must be 1 + 2 + 128 = 131 bytes"
+        );
+
+        let decoded = decode_all(&encoded).expect("decode must succeed for 128-component path");
+        assert_eq!(
+            decoded, original,
+            "round-trip mismatch for 128-component path"
+        );
     }
 
     // ── path declaration tests (Task 3.5') ──────────────────────────────────
