@@ -1,5 +1,5 @@
 <pre>
-  BIP: ?
+  BIP: ? (3993 or 3939 suggested)
   Layer: Applications
   Title: Wallet Descriptor Mnemonic
   Author: bg002h <bcg@pm.me>

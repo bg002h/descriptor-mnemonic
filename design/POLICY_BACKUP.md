@@ -772,6 +772,24 @@ of what was adopted vs. rejected:
 - **OPEN:** cross-chunk hash function — BLAKE3 vs. truncated SHA-256.
 - **OPEN:** Interop / BIP candidacy — pursue as a BIP from the start, or
   let the reference implementation mature first?
+- **OPEN (v1+):** BIP 393 recovery annotations. BIP 393 ("Output Script
+  Descriptor Annotations") extends BIP 380 descriptors with a
+  `?key=value&...#CHECKSUM` syntax carrying three operational recovery
+  hints: `bh` (earliest block height to scan), `gl` (minimum address-gap
+  limit), `ml` (max silent-payment label index). These are exactly the
+  metadata a recovery tool needs after restoring a Template Card. v0 does
+  not carry them: BIP 388 wallet policies (the input to WDM) have no
+  equivalent annotation syntax today, and BIP 388 will not be revised.
+  v1+ design hook: allocate a new bytecode section — analogous to the
+  existing fingerprints block (`Tag::Fingerprints = 0x35`, gated by
+  bit 2 of the bytecode header) — for recovery hints. A natural slot is
+  `Tag::RecoveryHints = 0x36` (currently reserved per the tag table) gated
+  by a new header flag bit. The keys can be encoded as a small TLV
+  (one-byte key id + LEB128 value), since `bh`/`gl`/`ml` are all
+  unsigned integers; this avoids re-implementing URL-style key/value
+  parsing inside the bytecode layer. Decision deferred to v1+ scoping;
+  v0 implementations should silently ignore any out-of-band recovery
+  hints rather than encode them lossily.
 
 ---
 
