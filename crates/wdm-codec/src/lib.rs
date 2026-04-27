@@ -9,3 +9,5 @@ pub mod error;
 pub mod policy;
 pub mod vectors;
 pub mod wallet_id;
+
+pub use error::{BytecodeErrorKind, ChunkWalletId, Error, Result};
