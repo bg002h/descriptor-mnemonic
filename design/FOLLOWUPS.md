@@ -149,6 +149,51 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** external
 
+### `6a-bytecode-roundtrip-path-mismatch` — encode→decode→encode is not byte-stable for template-only policies
+
+- **Surfaced:** Phase 6 bucket A (corpus.rs idempotency test); Task 6.12 had to be reframed
+- **Where:** `crates/wdm-codec/src/policy.rs::to_bytecode` (the BIP 84 fallback when `shared_path()` is None) and `from_bytecode` (which substitutes dummy keys whose origin path is `m/44'/0'/0'`)
+- **What:** First-pass `encode(policy_from_template_str)` uses the BIP 84 mainnet path (`m/84'/0'/0'`) as the shared-path fallback for template-only policies (per Phase 5-B D-10). After `decode_bytecode`, the reconstructed `WalletPolicy` carries dummy keys with `m/44'/0'/0'` origin. Second-pass `encode(reconstructed)` therefore uses `m/44'/0'/0'` and produces a different path declaration. So `encode → decode → encode` is NOT byte-stable; only `(encode → decode → encode) → (decode → encode)` (i.e., second pass onward) is byte-stable. The Task 6.12 idempotency test now asserts second-pass equality plus structural equality only.
+- **Why deferred:** v0.1 round-trips correctly at the structural level; byte-stability would require either (a) `WalletPolicy` storing the decoded shared path so re-encode reuses it, or (b) `from_bytecode` stashing the path on the WalletPolicy newtype. Both touch Phase 5-B's API surface.
+- **Status:** open
+- **Tier:** v0.2
+
+### `6a-coldcard-corpus-shape` — Coldcard corpus entry uses representative shape (same as C2)
+
+- **Surfaced:** Phase 6 bucket A; Task 6.11
+- **Where:** `crates/wdm-codec/tests/corpus.rs::corpus_coldcard_bip388_export`
+- **What:** The Coldcard-specific corpus entry uses `wsh(sortedmulti(2,@0/**,@1/**,@2/**))` — a representative Coldcard Mk4 export shape per Coldcard docs — but is structurally identical to corpus C2. If a more distinct Coldcard-specific shape becomes important (e.g., a 2-of-3 with explicit BIP 48 origin metadata in the policy string), the format may need a small extension.
+- **Why deferred:** v0.1 corpus coverage is by *operator shape*, not by *export source*; C2's shape suffices.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
+### `6c-encode-options-builder` — `EncodeOptions` `#[non_exhaustive]` blocks struct-update syntax from external tests
+
+- **Surfaced:** Phase 6 bucket C; Task 6.18 (`natural_long_code_boundary`)
+- **Where:** `crates/wdm-codec/src/options.rs::EncodeOptions`
+- **What:** `EncodeOptions` is `#[non_exhaustive]` (correctly, for forward compat) but this means external integration tests cannot write `EncodeOptions { force_long_code: true, ..Default::default() }` — that syntax requires the type to be exhaustive at the call site. The bucket-C tests had to use conditional shape-detection (`if bytecode.len() > 48 && bytecode.len() <= 56`) instead of explicit force-long-code testing. Add a fluent builder: `EncodeOptions::default().with_force_chunking(true).with_force_long_code(true).with_seed(seed)` so external tests can exercise the option matrix directly.
+- **Why deferred:** caught at integration-test time; non-blocking for v0.1 since internal unit tests can use struct-update via the same-crate exception.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
+### `6d-rand-gen-keyword` — `rng.r#gen()` raw-identifier workaround for Rust 2024 reserved keyword
+
+- **Surfaced:** Phase 6 bucket D; Task 6.20 (`many_substitutions_always_rejected`)
+- **Where:** `crates/wdm-codec/tests/ecc.rs`
+- **What:** Rust 2024 edition (which we're on, per `Cargo.toml`) reserved `gen` as a keyword for generators. `rand 0.8`'s `Rng::gen` method now requires `r#gen()` raw-identifier syntax to call. When `rand` migrates to a newer API (e.g., `rng.random::<u64>()` in `rand` 0.9+), this workaround can be removed.
+- **Why deferred:** rand 0.9 migration is a separate concern; `r#gen()` works correctly today.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
+### `6e-missing-children-unreachable` — `BytecodeErrorKind::MissingChildren` defined but never emitted
+
+- **Surfaced:** Phase 6 bucket E; Task 6.21 — `rejects_invalid_bytecode_missing_children` is `#[ignore]`d
+- **Where:** `crates/wdm-codec/src/error.rs` (the variant) and `crates/wdm-codec/src/bytecode/decode.rs` (where it should fire but currently UnexpectedEnd does instead)
+- **What:** `BytecodeErrorKind::MissingChildren { expected, got }` exists in the enum (Phase 0.5 scaffolding) but no v0.1 code path produces it. When a `Multi`/`Thresh` operator's children loop exhausts the input mid-child, `Cursor::read_byte` surfaces `UnexpectedEnd` first, before any explicit arity check could fire. To make the variant reachable: add an explicit `count - emitted_children == got` check at the end of each variable-arity decoder branch, emitting `MissingChildren` if non-zero. The `rejects_invalid_bytecode_missing_children` conformance test is `#[ignore]`d until that arity check lands.
+- **Why deferred:** the diagnostic gain (more specific error message for "stream truncated mid-children") is small; `UnexpectedEnd` correctly identifies the failure today.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
 ### `p2-fingerprints-block` — v0.2 fingerprints block support
 
 - **Surfaced:** Phase 5-B; documented at `crates/wdm-codec/src/policy.rs:316-317` and `:668`
