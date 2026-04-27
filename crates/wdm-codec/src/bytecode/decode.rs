@@ -74,16 +74,20 @@ impl<'a> Cursor<'a> {
                 Ok(v)
             }
             None => {
-                // varint::decode_u64 returns None for both truncation and
-                // overflow; classify as VarintOverflow when the remaining
-                // bytes are non-empty (would have parsed if buffer continued
-                // and value fit), Truncated otherwise.
+                // varint::decode_u64 returns None for either truncation or
+                // overflow. A u64 LEB128 fits in at most 10 bytes; if the
+                // buffer holds 10+ continuation bytes (no terminator within
+                // the legal width), the failure is overflow, not truncation.
+                // Otherwise the most plausible cause is truncation (stream
+                // ended before a terminator).
                 let kind = if remaining.is_empty() {
                     BytecodeErrorKind::UnexpectedEnd
-                } else if remaining.iter().all(|b| b & 0x80 != 0) {
-                    BytecodeErrorKind::Truncated
-                } else {
+                } else if remaining.len() >= 10
+                    && remaining.iter().take(10).all(|b| b & 0x80 != 0)
+                {
                     BytecodeErrorKind::VarintOverflow
+                } else {
+                    BytecodeErrorKind::Truncated
                 };
                 Err(Error::InvalidBytecode {
                     offset: start,
@@ -171,11 +175,13 @@ fn decode_descriptor(
                 "v0.1 rejects inline-key tag {tag:?} (deferred to v1+)"
             )))
         }
-        // Anything else (a non-top-level fragment) at the top level is malformed.
-        _ => Err(Error::InvalidBytecode {
-            offset: tag_offset,
-            kind: BytecodeErrorKind::UnknownTag(tag_byte),
-        }),
+        // A known fragment tag (e.g. AndV, PkK, True) appearing at the top
+        // level — malformed input from a v0.1 perspective. Use
+        // PolicyScopeViolation rather than UnknownTag because the byte was
+        // recognised; only its position is wrong.
+        _ => Err(Error::PolicyScopeViolation(format!(
+            "tag {tag:?} (0x{tag_byte:02x}) is not valid at the top level in v0.1"
+        ))),
     }
 }
 
@@ -251,10 +257,12 @@ mod tests {
     #[test]
     fn decode_rejects_non_top_level_fragment_at_top() {
         // Tag::True is valid but only as a Miniscript fragment, not at top level.
+        // The decoder reports PolicyScopeViolation since the byte is recognized;
+        // only its placement is wrong.
         let err = decode_template(&[Tag::True.as_byte()], &empty_keys()).unwrap_err();
         assert!(
-            matches!(err, Error::InvalidBytecode { kind: BytecodeErrorKind::UnknownTag(_), .. }),
-            "expected InvalidBytecode UnknownTag for non-top-level tag, got {err:?}"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("top level")),
+            "expected PolicyScopeViolation about top-level placement, got {err:?}"
         );
     }
 
