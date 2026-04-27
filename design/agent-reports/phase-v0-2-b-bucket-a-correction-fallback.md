@@ -1,7 +1,7 @@
 # Phase v0.2-B Bucket A — `5e-checksum-correction-fallback`
 
 **Status:** DONE
-**Commit:** TBD (filled in post-commit; see most recent `feat(decode): report real corrected char ...`)
+**Commit:** `5f13812` (this commit)
 **File(s):**
 - `crates/wdm-codec/src/encoding.rs` (modified)
 - `crates/wdm-codec/src/decode.rs` (modified)
