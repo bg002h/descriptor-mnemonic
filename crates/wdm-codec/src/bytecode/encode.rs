@@ -15,6 +15,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bitcoin::hashes::Hash;
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, SortedMultiVec, Wsh, WshInner};
 use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
 
@@ -223,6 +224,26 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
             Terminal::Older(older) => {
                 out.push(Tag::Older.as_byte());
                 crate::bytecode::varint::encode_u64(u64::from(older.to_consensus_u32()), out);
+                Ok(())
+            }
+            Terminal::Sha256(h) => {
+                out.push(Tag::Sha256.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            Terminal::Hash256(h) => {
+                out.push(Tag::Hash256.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            Terminal::Ripemd160(h) => {
+                out.push(Tag::Ripemd160.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            Terminal::Hash160(h) => {
+                out.push(Tag::Hash160.as_byte());
+                out.extend_from_slice(h.as_byte_array());
                 Ok(())
             }
             other => Err(Error::PolicyScopeViolation(format!(
@@ -937,5 +958,108 @@ mod tests {
                 Tag::False.as_byte(),  // 0x00
             ]
         );
+    }
+
+    #[test]
+    fn encode_terminal_sha256() {
+        // Sha256(0x00..0x1F) — 32-byte hash with deterministic content.
+        use bitcoin::hashes::{sha256, Hash};
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let bytes: [u8; 32] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+        ];
+        let h = sha256::Hash::from_byte_array(bytes);
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Sha256(h);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+
+        let mut expected = vec![Tag::Sha256.as_byte()];
+        expected.extend_from_slice(&bytes);
+        assert_eq!(out, expected);
+        assert_eq!(out.len(), 33); // 1 tag + 32 hash bytes
+    }
+
+    #[test]
+    fn encode_terminal_hash256() {
+        // Terminal::Hash256 expects miniscript's hash256::Hash newtype
+        // (a forwarded wrapper around bitcoin::hashes::sha256d::Hash), not
+        // sha256d::Hash directly. The MiniscriptKey impl for
+        // DescriptorPublicKey sets `type Hash256 = miniscript::hash256::Hash`.
+        use bitcoin::hashes::Hash;
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+        use miniscript::hash256;
+
+        let bytes: [u8; 32] = [0xAB; 32];
+        let h = hash256::Hash::from_byte_array(bytes);
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Hash256(h);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+
+        let mut expected = vec![Tag::Hash256.as_byte()];
+        expected.extend_from_slice(&bytes);
+        assert_eq!(out, expected);
+        assert_eq!(out.len(), 33);
+    }
+
+    #[test]
+    fn encode_terminal_ripemd160() {
+        use bitcoin::hashes::{ripemd160, Hash};
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let bytes: [u8; 20] = [
+            0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
+            0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88, 0x99, 0xAA,
+        ];
+        let h = ripemd160::Hash::from_byte_array(bytes);
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Ripemd160(h);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+
+        let mut expected = vec![Tag::Ripemd160.as_byte()];
+        expected.extend_from_slice(&bytes);
+        assert_eq!(out, expected);
+        assert_eq!(out.len(), 21); // 1 tag + 20 hash bytes
+    }
+
+    #[test]
+    fn encode_terminal_hash160() {
+        use bitcoin::hashes::{hash160, Hash};
+        use miniscript::Segwitv0;
+        use miniscript::Terminal;
+
+        let bytes: [u8; 20] = [0x42; 20];
+        let h = hash160::Hash::from_byte_array(bytes);
+        let term: Terminal<DescriptorPublicKey, Segwitv0> = Terminal::Hash160(h);
+        let mut out = Vec::new();
+        term.encode_template(&mut out, &empty_map()).unwrap();
+
+        let mut expected = vec![Tag::Hash160.as_byte()];
+        expected.extend_from_slice(&bytes);
+        assert_eq!(out, expected);
+        assert_eq!(out.len(), 21);
+    }
+
+    #[test]
+    fn encode_wsh_sha256_via_parser() {
+        // wsh(sha256(<32-byte hex>)) — full pipeline. The hash literal is
+        // a B-type fragment so wsh accepts it directly.
+        let hex = "0000000000000000000000000000000000000000000000000000000000000001";
+        let d = parse_descriptor(&format!("wsh(sha256({hex}))"));
+        let bytes = encode_template(&d, &empty_map()).unwrap();
+
+        // Expected: Wsh + Sha256 + 32 bytes (last byte = 0x01, rest 0x00).
+        let mut expected = vec![Tag::Wsh.as_byte(), Tag::Sha256.as_byte()];
+        expected.extend(std::iter::repeat_n(0u8, 31));
+        expected.push(0x01);
+        assert_eq!(bytes, expected);
+        assert_eq!(bytes.len(), 34); // Wsh + Sha256 + 32 bytes
     }
 }
