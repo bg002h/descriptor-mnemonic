@@ -100,8 +100,8 @@ fn many_substitutions_always_rejected() {
     let mut rejected = 0usize;
 
     for _i in 0..n_iters {
-        let n_errors: usize = rng.gen_range(5..10); // 5–9 errors per iteration
-        let seed: u64 = rng.r#gen();
+        let n_errors: usize = rng.random_range(5..10); // 5–9 errors per iteration
+        let seed: u64 = rng.random();
         let corrupted = common::corrupt_n(original, n_errors, seed, code);
 
         match decode(&[corrupted.as_str()], &DecodeOptions::new()) {

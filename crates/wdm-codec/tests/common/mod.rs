@@ -152,7 +152,7 @@ pub fn corrupt_n(s: &str, n: usize, seed: u64, code: BchCode) -> String {
     let mut chosen_positions: Vec<usize> = Vec::with_capacity(n);
     for i in 0..n {
         let remaining = data_part_len - i;
-        let j = rng.gen_range(0..remaining);
+        let j = rng.random_range(0..remaining);
         chosen_positions.push(indices[j]);
         indices.swap(j, remaining - 1);
     }
@@ -175,7 +175,7 @@ pub fn corrupt_n(s: &str, n: usize, seed: u64, code: BchCode) -> String {
             });
 
         // Pick a different alphabet index uniformly from the remaining 31.
-        let pick = rng.gen_range(0..31usize); // 0..=30 → maps to one of 31 other chars
+        let pick = rng.random_range(0..31usize); // 0..=30 → maps to one of 31 other chars
         let new_idx = if pick < orig_idx { pick } else { pick + 1 };
         let new_char = BECH32_ALPHABET[new_idx] as char;
 
