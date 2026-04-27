@@ -402,16 +402,7 @@ impl WdmBackup {
     /// mnemonic — this should never happen for correctly constructed
     /// `WdmBackup` values.
     pub fn wallet_id(&self) -> WalletId {
-        use std::fmt::Write;
-        let words = self.wallet_id_words.as_slice();
-        let mut joined = String::new();
-        for (i, word) in words.iter().enumerate() {
-            if i > 0 {
-                joined.push(' ');
-            }
-            write!(joined, "{word}").expect("write to String cannot fail");
-        }
-        let mnemonic = bip39::Mnemonic::parse(&joined)
+        let mnemonic = bip39::Mnemonic::parse(self.wallet_id_words.to_string())
             .expect("WalletIdWords must always form a valid BIP-39 mnemonic");
         let entropy = mnemonic.to_entropy();
         let mut bytes = [0u8; 16];
