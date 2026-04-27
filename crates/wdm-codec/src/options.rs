@@ -1,5 +1,7 @@
 //! Options passed to the top-level [`crate::encode()`] and [`crate::decode()`] functions.
 
+use bitcoin::bip32::DerivationPath;
+
 use crate::chunking::ChunkingMode;
 use crate::wallet_id::WalletIdSeed;
 
@@ -13,13 +15,16 @@ use crate::wallet_id::WalletIdSeed;
 /// - `chunking_mode = ChunkingMode::Auto`: single-string is preferred when bytecode fits.
 /// - `force_long_code = false`: regular BCH code is preferred when it fits.
 /// - `wallet_id_seed = None`: chunk-header `wallet_id` is content-derived.
+/// - `shared_path = None`: encoder picks the shared path per the
+///   `WalletPolicy::to_bytecode` precedence chain (see that method's
+///   rustdoc).
 ///
-/// Marked `#[non_exhaustive]` so future v0.2+ knobs (e.g. shared-path
-/// override) can be added without breaking external callers. Within this
-/// crate, construct with `..Default::default()` and override only the
-/// fields you need; downstream callers must use the same pattern.
+/// Marked `#[non_exhaustive]` so future v0.2+ knobs (e.g. fingerprints)
+/// can be added without breaking external callers. Within this crate,
+/// construct with `..Default::default()` and override only the fields you
+/// need; downstream callers must use the same pattern.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EncodeOptions {
     /// How chunking is selected: [`ChunkingMode::Auto`] picks single-string
     /// when bytecode fits; [`ChunkingMode::ForceChunked`] forces a chunked
@@ -53,6 +58,15 @@ pub struct EncodeOptions {
     /// so the chunk-header bits remain predictable from the Tier-3 mnemonic.
     /// See [`WalletIdSeed`] for the full rationale and footgun warning.
     pub wallet_id_seed: Option<WalletIdSeed>,
+    /// Override the shared derivation path used in the bytecode's path
+    /// declaration. When `Some(path)`, this takes precedence over both
+    /// `WalletPolicy.decoded_shared_path` (populated by from_bytecode) and
+    /// `WalletPolicy.shared_path()` (real-key origin path). When `None`,
+    /// the encoder falls back to the existing precedence chain.
+    ///
+    /// See [`crate::WalletPolicy::to_bytecode`] for the full precedence
+    /// rule.
+    pub shared_path: Option<DerivationPath>,
 }
 
 impl EncodeOptions {
@@ -82,6 +96,14 @@ impl EncodeOptions {
     /// See [`EncodeOptions::wallet_id_seed`] for full semantics.
     pub fn with_seed(mut self, seed: WalletIdSeed) -> Self {
         self.wallet_id_seed = Some(seed);
+        self
+    }
+
+    /// Override the bytecode's shared derivation path declaration.
+    /// See [`EncodeOptions::shared_path`] for full semantics and
+    /// [`crate::WalletPolicy::to_bytecode`] for the precedence rule.
+    pub fn with_shared_path(mut self, path: DerivationPath) -> Self {
+        self.shared_path = Some(path);
         self
     }
 }
@@ -144,6 +166,7 @@ mod tests {
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
         assert!(opts.wallet_id_seed.is_none());
+        assert!(opts.shared_path.is_none());
     }
 
     #[test]
@@ -156,6 +179,7 @@ mod tests {
         assert_eq!(opts.wallet_id_seed, Some(seed));
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
+        assert!(opts.shared_path.is_none());
     }
 
     #[test]
@@ -168,6 +192,7 @@ mod tests {
         assert_eq!(opts.chunking_mode, ChunkingMode::ForceChunked);
         assert!(opts.force_long_code);
         assert_eq!(opts.wallet_id_seed, Some(seed));
+        assert!(opts.shared_path.is_none());
     }
 
     #[test]
@@ -177,6 +202,19 @@ mod tests {
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
         assert_eq!(opts.wallet_id_seed, None);
+        assert!(opts.shared_path.is_none());
+    }
+
+    #[test]
+    fn encode_options_with_shared_path_sets_field() {
+        use std::str::FromStr;
+        let custom = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
+        let opts = EncodeOptions::default().with_shared_path(custom.clone());
+        assert_eq!(opts.shared_path, Some(custom));
+        // Other fields remain at defaults.
+        assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
+        assert!(!opts.force_long_code);
+        assert!(opts.wallet_id_seed.is_none());
     }
 
     #[test]

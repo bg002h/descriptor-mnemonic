@@ -201,7 +201,7 @@ pub fn compute_wallet_id(canonical_bytecode: &[u8]) -> WalletId {
 pub fn compute_wallet_id_for_policy(
     policy: &crate::WalletPolicy,
 ) -> Result<WalletId, crate::Error> {
-    let bytecode = policy.to_bytecode()?;
+    let bytecode = policy.to_bytecode(&crate::EncodeOptions::default())?;
     Ok(compute_wallet_id(&bytecode))
 }
 

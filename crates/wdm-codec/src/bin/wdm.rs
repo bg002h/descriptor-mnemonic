@@ -187,27 +187,21 @@ fn cmd_encode(
     json: bool,
 ) -> Result<(), anyhow::Error> {
     // Parse the policy.
-    let mut policy: WalletPolicy = policy_str
+    let policy: WalletPolicy = policy_str
         .parse()
         .map_err(|e| anyhow::anyhow!("invalid policy: {e}"))?;
 
-    // Apply --path override if present.
-    // NOTE: In v0.1 the `--path` override is parsed and validated, but the
-    // EncodeOptions struct does not yet have a `shared_path` field — that is
-    // deferred to v0.2 (FOLLOWUPS.md: 7-encode-path-override). The option is
-    // accepted so the CLI surface is complete; a warning is printed if the
-    // user supplies it. The path is used to re-parse the policy with an
-    // explicit origin when the override is provided.
-    if let Some(path_str) = path_arg {
-        let _path = parse_path_arg(path_str).map_err(|e| anyhow::anyhow!("--path: {e}"))?;
-        // Re-parse is not straightforward without a full descriptor + xpub.
-        // We validate the path arg and warn that it has no effect in v0.1.
-        eprintln!(
-            "warning: --path is parsed but the shared-path override is not yet applied to the bytecode encoder (deferred to v0.2; see FOLLOWUPS.md 7-encode-path-override)"
-        );
-        let _ = policy; // suppress move-without-use lint
-        policy = policy_str.parse().map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
+    // Parse --path override if present. Phase B (v0.2) wires this through
+    // `EncodeOptions::shared_path`, which `WalletPolicy::to_bytecode` now
+    // honors as the highest-precedence shared-path source. See
+    // `IMPLEMENTATION_PLAN_v0.2.md` Phase B and the precedence rule in the
+    // `to_bytecode` rustdoc.
+    let shared_path_override = match path_arg {
+        Some(path_str) => {
+            Some(parse_path_arg(path_str).map_err(|e| anyhow::anyhow!("--path: {e}"))?)
+        }
+        None => None,
+    };
 
     // Parse --seed.
     let wallet_id_seed: Option<WalletIdSeed> = match seed_arg {
@@ -226,6 +220,7 @@ fn cmd_encode(
     opts = opts.with_force_chunking(force_chunked);
     opts.force_long_code = force_long_code;
     opts.wallet_id_seed = wallet_id_seed;
+    opts.shared_path = shared_path_override;
 
     let backup = encode(&policy, &opts).map_err(|e| anyhow::anyhow!("encode failed: {e}"))?;
 
@@ -403,7 +398,7 @@ fn cmd_bytecode(policy_str: &str) -> Result<(), anyhow::Error> {
         .map_err(|e| anyhow::anyhow!("invalid policy: {e}"))?;
 
     let bytecode = policy
-        .to_bytecode()
+        .to_bytecode(&EncodeOptions::default())
         .map_err(|e| anyhow::anyhow!("bytecode encode failed: {e}"))?;
 
     // One continuous lowercase hex string (easy to pipe).

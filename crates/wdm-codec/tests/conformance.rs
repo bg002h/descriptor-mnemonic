@@ -623,7 +623,7 @@ fn rejects_invalid_bytecode_unexpected_end() {
 fn rejects_invalid_bytecode_trailing_bytes() {
     // Encode a minimal valid policy and append a trailing byte.
     let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
-    let mut bytes = p.to_bytecode().unwrap();
+    let mut bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
     bytes.push(0xFF); // trailing byte
 
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();

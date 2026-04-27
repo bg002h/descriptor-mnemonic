@@ -84,7 +84,7 @@ fn chunk_hash_mismatch_rejects() {
 #[test]
 fn chunk_hash_correct_reassembly() {
     let p = chunked_policy();
-    let bytecode = p.to_bytecode().expect("bytecode");
+    let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
     if bytecode.len() <= 56 {
         // Policy fits single-string; skip — chunked reassembly is not exercised.
         eprintln!(
@@ -118,7 +118,7 @@ fn chunk_hash_correct_reassembly() {
 #[test]
 fn chunk_out_of_order_reassembly() {
     let p = chunked_policy();
-    let bytecode = p.to_bytecode().expect("bytecode");
+    let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
     if bytecode.len() <= 56 {
         eprintln!(
             "chunk_out_of_order_reassembly: bytecode is {} bytes (≤56), skipping",
@@ -174,7 +174,7 @@ fn natural_long_code_boundary() {
     // existing `encode_single_string_long_naturally` unit test in encode.rs.
     // It is expected to produce 49–56 bytes of canonical bytecode.
     let p = policy("wsh(multi(2,@0/**,@1/**,@2/**,@3/**))");
-    let bytecode = p.to_bytecode().expect("bytecode");
+    let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
 
     let backup = encode(&p, &EncodeOptions::default()).expect("encode");
     let raws: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();

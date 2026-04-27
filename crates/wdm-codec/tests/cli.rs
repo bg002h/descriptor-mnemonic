@@ -71,6 +71,67 @@ fn wdm_encode_json() {
     );
 }
 
+/// `wdm encode --path bip48 <policy>` — exits 0, and the encoded bytecode's
+/// shared-path declaration reflects BIP 48 (named indicator 0x05) rather
+/// than the default-tier BIP 84 fallback (indicator 0x03).
+///
+/// We verify the path via the parallel `wdm bytecode` invocation, which is
+/// not yet path-aware (it always emits the default-tier path) — so we
+/// instead decode the encoded chunk and compare its bytecode's path byte
+/// against the BIP 48 indicator. This proves the `--path` override flowed
+/// through `EncodeOptions::shared_path` to `WalletPolicy::to_bytecode`.
+#[test]
+fn wdm_encode_path_override_bip48_takes_effect() {
+    use wdm_codec::{DecodeOptions, decode};
+
+    let output = Command::cargo_bin("wdm")
+        .expect("binary built")
+        .args(["encode", "--path", "bip48", POLICY])
+        .output()
+        .expect("encode --path bip48 ran");
+    assert!(
+        output.status.success(),
+        "encode --path bip48 must succeed; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // The warning text from v0.1.1 ("--path is parsed but the shared-path
+    // override is not yet applied") must NOT appear; Phase B wires it
+    // through.
+    let stderr = String::from_utf8(output.stderr).expect("utf-8");
+    assert!(
+        !stderr.contains("--path is parsed but"),
+        "Phase B removed the v0.1.1 warning; got stderr: {stderr}"
+    );
+
+    // Take the first WDM chunk string from stdout.
+    let stdout = String::from_utf8(output.stdout).expect("utf-8");
+    let chunk = stdout
+        .lines()
+        .find(|l| l.starts_with("wdm1"))
+        .expect("at least one wdm1 chunk on stdout");
+
+    // Decode and inspect the underlying bytecode's path declaration.
+    // The Phase A precedence rule populates `decoded_shared_path` from the
+    // wire path, then `to_bytecode` reproduces it byte-identically. So we
+    // can re-encode the decoded policy and read the path-indicator byte.
+    let result = decode(&[chunk], &DecodeOptions::new()).expect("decode");
+    let bytecode = result
+        .policy
+        .to_bytecode(&wdm_codec::EncodeOptions::default())
+        .expect("re-encode bytecode");
+    // bytecode = [header=0x00, Tag::SharedPath=0x33, indicator, ...]
+    assert_eq!(
+        bytecode[1], 0x33,
+        "bytecode byte[1] must be Tag::SharedPath; got {:02x}",
+        bytecode[1]
+    );
+    assert_eq!(
+        bytecode[2], 0x05,
+        "with --path bip48 the shared-path indicator must be 0x05 (m/48'/0'/0'/2'), not 0x03 (default BIP 84). got {:02x}",
+        bytecode[2]
+    );
+}
+
 /// `wdm encode <policy> --force-chunked` — exits 0, the chunk string is
 /// longer than the single-string variant because the chunked header adds
 /// bytes.  We verify the output starts with `wdm1` and is structurally

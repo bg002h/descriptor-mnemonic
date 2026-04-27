@@ -21,7 +21,6 @@ use std::str::FromStr;
 use bitcoin::bip32::DerivationPath;
 use miniscript::descriptor::{DescriptorPublicKey, WalletPolicy as InnerWalletPolicy};
 
-use crate::Error;
 use crate::bytecode::cursor::Cursor;
 use crate::bytecode::decode::decode_template;
 use crate::bytecode::encode::encode_template;
@@ -29,6 +28,7 @@ use crate::bytecode::header::BytecodeHeader;
 use crate::bytecode::path::{decode_declaration, encode_declaration};
 use crate::chunking::EncodedChunk;
 use crate::wallet_id::{WalletId, WalletIdWords};
+use crate::{EncodeOptions, Error};
 
 // ---------------------------------------------------------------------------
 // Dummy-key table (Approach B)
@@ -183,9 +183,9 @@ pub struct WalletPolicy {
     /// re-encode would otherwise pick up the dummy-key origin path
     /// (`m/44'/0'/0'`) attached to the substituted placeholder keys.
     ///
-    /// Consulted by [`Self::to_bytecode`] under the Phase A precedence rule
-    /// (Phase B will layer `EncodeOptions::shared_path` on top):
-    /// `decoded_shared_path` > `shared_path()` > BIP 84 mainnet fallback.
+    /// Consulted by [`Self::to_bytecode`] under the Phase B precedence rule:
+    /// `EncodeOptions::shared_path` > `decoded_shared_path` > `shared_path()`
+    /// > BIP 84 mainnet fallback.
     ///
     /// **Equality semantics:** because `WalletPolicy` derives `PartialEq`,
     /// two logically-equivalent template-only policies — one built via
@@ -303,22 +303,28 @@ impl WalletPolicy {
     /// from the descriptor's first key (for policies with real keys), encodes
     /// the tree, then composes the three sections. See PHASE_5_DECISIONS.md D-7.
     ///
-    /// # Shared-path precedence (Phase A)
+    /// # Shared-path precedence (Phase B)
     ///
     /// When choosing the path declaration to emit, `to_bytecode` consults
     /// (in order):
     ///
+    /// 0. `opts.shared_path` — explicit caller override (e.g. from CLI
+    ///    `--path`). When `Some`, takes precedence over every other source.
     /// 1. `self.decoded_shared_path` — populated by [`Self::from_bytecode`]
     ///    so a `decode → encode` cycle is byte-stable on the first pass.
     /// 2. `self.shared_path()` — for policies parsed from full descriptor
     ///    strings with real origin info.
     /// 3. BIP 84 mainnet fallback (`m/84'/0'/0'`) — for template-only policies
-    ///    constructed via `parse()` with no decoded path. This is the v0.1
-    ///    behavior preserved as the final-tier fallback.
+    ///    constructed via `parse()` with no decoded path and no override.
+    ///    This is the v0.1 behavior preserved as the final-tier fallback.
     ///
-    /// Phase B will extend this with `EncodeOptions::shared_path` as the
-    /// highest-precedence override; see `design/IMPLEMENTATION_PLAN_v0.2.md`.
-    pub fn to_bytecode(&self) -> Result<Vec<u8>, Error> {
+    /// # Breaking change (v0.2)
+    ///
+    /// The signature changed from `to_bytecode(&self)` to
+    /// `to_bytecode(&self, opts: &EncodeOptions)` to thread the
+    /// `EncodeOptions::shared_path` override through. Callers that do not
+    /// need an override can pass `&EncodeOptions::default()`.
+    pub fn to_bytecode(&self, opts: &EncodeOptions) -> Result<Vec<u8>, Error> {
         let count = self.key_count();
         if count > MAX_DUMMY_KEYS {
             return Err(Error::PolicyScopeViolation(format!(
@@ -348,24 +354,30 @@ impl WalletPolicy {
         // --- Step 3: encode the descriptor tree ---
         let tree_bytes = encode_template(&descriptor, &placeholder_map)?;
 
-        // --- Step 4: select shared path per the Phase A precedence rule ---
+        // --- Step 4: select shared path per the Phase B precedence rule ---
         //
-        // Precedence: decoded_shared_path > shared_path() > BIP 84 mainnet.
+        // Precedence: opts.shared_path > decoded_shared_path > shared_path() >
+        // BIP 84 mainnet.
         //
-        // `decoded_shared_path` is populated by `from_bytecode` so a decode→encode
-        // cycle is byte-stable on the first pass. Without it the re-encode would
-        // otherwise reach `shared_path()` and surface the dummy-key origin
-        // (`m/44'/0'/0'`) that was attached during decode, breaking byte-identity.
+        // Tier 0 (`opts.shared_path`) is the explicit caller override — for
+        // example from `wdm encode --path bip48`. It wins unconditionally.
         //
-        // For the real-keys case (policy parsed from a full descriptor with origin
-        // info), `decoded_shared_path` is None and `shared_path()` returns the
-        // origin from the inner key_info. One extra descriptor materialization is
-        // acceptable here; the hot template-only case avoids it via the fallback
-        // chain ending at the BIP 84 default.
-        let shared_path = self.decoded_shared_path.clone().unwrap_or_else(|| {
-            self.shared_path().unwrap_or_else(|| {
-                DerivationPath::from_str("m/84'/0'/0'")
-                    .expect("hardcoded BIP 84 path is always valid")
+        // Tier 1 (`decoded_shared_path`) is populated by `from_bytecode` so a
+        // decode→encode cycle is byte-stable on the first pass. Without it the
+        // re-encode would otherwise reach `shared_path()` and surface the
+        // dummy-key origin (`m/44'/0'/0'`) that was attached during decode,
+        // breaking byte-identity.
+        //
+        // Tier 2 (`shared_path()`) handles the real-keys case (policy parsed
+        // from a full descriptor with origin info). One extra descriptor
+        // materialization is acceptable here; the hot template-only case
+        // avoids it via the fallback chain ending at the BIP 84 default.
+        let shared_path = opts.shared_path.clone().unwrap_or_else(|| {
+            self.decoded_shared_path.clone().unwrap_or_else(|| {
+                self.shared_path().unwrap_or_else(|| {
+                    DerivationPath::from_str("m/84'/0'/0'")
+                        .expect("hardcoded BIP 84 path is always valid")
+                })
             })
         });
 
@@ -674,7 +686,9 @@ mod tests {
     #[test]
     fn to_bytecode_round_trip_single_key() {
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
-        let bytes = p.to_bytecode().expect("to_bytecode should succeed");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode should succeed");
         let p2 = WalletPolicy::from_bytecode(&bytes).expect("from_bytecode should succeed");
         // Check structural equality: both policies should have the same
         // template (key_count, canonical string).
@@ -696,7 +710,9 @@ mod tests {
     #[test]
     fn to_bytecode_round_trip_multisig() {
         let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))".parse().unwrap();
-        let bytes = p.to_bytecode().expect("to_bytecode should succeed");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode should succeed");
         let p2 = WalletPolicy::from_bytecode(&bytes).expect("from_bytecode should succeed");
         assert_eq!(
             p.key_count(),
@@ -714,7 +730,7 @@ mod tests {
     fn to_bytecode_starts_with_header() {
         // First byte must be 0x00 (version 0, no fingerprints).
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
-        let bytes = p.to_bytecode().unwrap();
+        let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
         assert_eq!(
             bytes[0], 0x00,
             "first byte must be 0x00 (v0, no fingerprints)"
@@ -726,7 +742,7 @@ mod tests {
         // For a template-only policy the encoder uses the default path m/84'/0'/0'.
         // Path declaration: byte[1] = Tag::SharedPath (0x33), byte[2] = indicator 0x03.
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
-        let bytes = p.to_bytecode().unwrap();
+        let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
         assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath (0x33)");
         assert_eq!(
             bytes[2], 0x03,
@@ -740,7 +756,7 @@ mod tests {
         // returns m/84'/0'/0' and the path declaration uses indicator 0x03.
         let desc_str = "wsh(pk([6738736c/84'/0'/0']xpub6CRQzb8u9dmMcq5XAwwRn9gcoYCjndJkhKgD11WKzbVGd932UmrExWFxCAvRnDN3ez6ZujLmMvmLBaSWdfWVn75L83Qxu1qSX4fJNrJg2Gt/<0;1>/*))";
         let p: WalletPolicy = desc_str.parse().expect("should parse");
-        let bytes = p.to_bytecode().unwrap();
+        let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
         assert_eq!(bytes[0], 0x00, "header must be 0x00");
         assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
         assert_eq!(bytes[2], 0x03, "byte[2] must be BIP 84 indicator 0x03");
@@ -783,7 +799,7 @@ mod tests {
     #[test]
     fn encode_bytecode_free_fn_matches_method() {
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
-        let via_method = p.to_bytecode().unwrap();
+        let via_method = p.to_bytecode(&EncodeOptions::default()).unwrap();
         let via_fn = crate::encode_bytecode(&p).unwrap();
         assert_eq!(
             via_method, via_fn,
@@ -794,7 +810,7 @@ mod tests {
     #[test]
     fn decode_bytecode_free_fn_matches_method() {
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
-        let bytes = p.to_bytecode().unwrap();
+        let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
         let via_method = WalletPolicy::from_bytecode(&bytes).unwrap();
         let via_fn = crate::decode_bytecode(&bytes).unwrap();
         assert_eq!(
@@ -811,7 +827,7 @@ mod tests {
     #[test]
     fn compute_wallet_id_for_policy_matches_compute_wallet_id_of_to_bytecode() {
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
-        let bytecode = p.to_bytecode().unwrap();
+        let bytecode = p.to_bytecode(&EncodeOptions::default()).unwrap();
         let direct = compute_wallet_id(&bytecode);
         let via_policy = crate::wallet_id::compute_wallet_id_for_policy(&p).unwrap();
         assert_eq!(
@@ -914,7 +930,7 @@ mod tests {
             .unwrap();
         assert_eq!(p.key_count(), 9);
         let bytes = p
-            .to_bytecode()
+            .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for 9-key multisig");
         let p2 = WalletPolicy::from_bytecode(&bytes)
             .expect("from_bytecode must succeed for 9-key multisig");
@@ -933,7 +949,7 @@ mod tests {
         let p: WalletPolicy = policy_str.parse().expect("should parse 11-key inheritance");
         assert_eq!(p.key_count(), 11);
         let bytes = p
-            .to_bytecode()
+            .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for 11-key inheritance policy");
         let p2 = WalletPolicy::from_bytecode(&bytes)
             .expect("from_bytecode must succeed for 11-key inheritance policy");
@@ -971,7 +987,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("policy must parse ({policy_str:?}): {e}"));
         assert_eq!(p.key_count(), expected_key_count, "input key_count");
         let bytes = p
-            .to_bytecode()
+            .to_bytecode(&EncodeOptions::default())
             .unwrap_or_else(|e| panic!("to_bytecode must succeed for {policy_str:?}: {e}"));
         let p2 = WalletPolicy::from_bytecode(&bytes)
             .unwrap_or_else(|e| panic!("from_bytecode must succeed for {policy_str:?}: {e}"));
@@ -1103,7 +1119,9 @@ mod tests {
         );
 
         // Re-encoding must produce byte-identical output (FIRST-pass byte-stability).
-        let re_encoded = policy.to_bytecode().expect("re-encode must succeed");
+        let re_encoded = policy
+            .to_bytecode(&EncodeOptions::default())
+            .expect("re-encode must succeed");
         assert_eq!(
             re_encoded, original,
             "to_bytecode must consult decoded_shared_path; first-pass byte-equality required"
@@ -1125,6 +1143,113 @@ mod tests {
         assert!(
             p.decoded_shared_path.is_none(),
             "FromStr-constructed policy must have decoded_shared_path == None"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // EncodeOptions::shared_path override (Phase B tier 0)
+    // -----------------------------------------------------------------------
+
+    /// `EncodeOptions::shared_path` must apply to the bytecode's path
+    /// declaration when set, replacing the default-fallback BIP 84 path.
+    ///
+    /// We pick `m/48'/0'/0'/2'` (BIP 48 P2WSH multisig, named indicator
+    /// 0x05) so the assertion distinguishes the override from the
+    /// default-tier BIP 84 mainnet (indicator 0x03).
+    #[test]
+    fn to_bytecode_honors_encode_options_shared_path_override() {
+        let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
+        let custom = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
+        let opts = EncodeOptions::default().with_shared_path(custom);
+        let bytes = p
+            .to_bytecode(&opts)
+            .expect("to_bytecode with override must succeed");
+
+        // Header byte = 0x00, then SharedPath tag = 0x33, then indicator.
+        assert_eq!(bytes[0], 0x00, "header must be 0x00");
+        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[2], 0x05,
+            "override path m/48'/0'/0'/2' must serialize as named indicator 0x05, not the default 0x03"
+        );
+    }
+
+    /// Tier-0 (`EncodeOptions::shared_path`) must beat tier-1
+    /// (`WalletPolicy.decoded_shared_path`).
+    ///
+    /// Setup: build a `WalletPolicy` whose `decoded_shared_path` is
+    /// `m/84'/0'/0'` (BIP 84 mainnet, indicator 0x03), then encode with an
+    /// override pointing to `m/48'/0'/0'/2'` (indicator 0x05). The result
+    /// must reflect 0x05 — proving the override wins.
+    #[test]
+    fn to_bytecode_override_wins_over_decoded_shared_path() {
+        use crate::bytecode::Tag;
+
+        // Construct a bytecode whose shared path is m/84'/0'/0' (indicator 0x03),
+        // then decode it to populate `decoded_shared_path`.
+        let original: Vec<u8> = vec![
+            0x00,                       // header v0, no fingerprints
+            Tag::SharedPath.as_byte(),  // 0x33
+            0x03,                       // BIP 84 mainnet: m/84'/0'/0'
+            Tag::Wsh.as_byte(),         // 0x05
+            Tag::Check.as_byte(),       // 0x0C
+            Tag::PkK.as_byte(),         // 0x1B
+            Tag::Placeholder.as_byte(), // 0x32
+            0x00,                       // placeholder index 0
+        ];
+        let policy = WalletPolicy::from_bytecode(&original).expect("decode must succeed");
+        // Sanity: the decoded path is populated as tier 1.
+        assert_eq!(
+            policy.decoded_shared_path.as_ref(),
+            Some(&DerivationPath::from_str("m/84'/0'/0'").unwrap()),
+            "from_bytecode must populate decoded_shared_path with m/84'/0'/0'"
+        );
+
+        // Override (tier 0) selects m/48'/0'/0'/2' (indicator 0x05); it MUST win
+        // over the populated decoded_shared_path (tier 1, indicator 0x03).
+        let override_path = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
+        let opts = EncodeOptions::default().with_shared_path(override_path);
+        let bytes = policy
+            .to_bytecode(&opts)
+            .expect("to_bytecode with override must succeed");
+
+        assert_eq!(
+            bytes[2], 0x05,
+            "tier-0 EncodeOptions::shared_path override must beat tier-1 decoded_shared_path"
+        );
+        assert_ne!(
+            bytes[2], 0x03,
+            "the override must NOT be silently ignored in favor of decoded_shared_path"
+        );
+    }
+
+    /// When `EncodeOptions::shared_path` is `None`, the precedence chain falls
+    /// back to `decoded_shared_path` (tier 1). This is the existing Phase A
+    /// invariant; this test pins it after the tier-0 addition so a future
+    /// regression in the override branch cannot silently lose tier-1 behavior.
+    #[test]
+    fn to_bytecode_default_options_still_consult_decoded_shared_path() {
+        use crate::bytecode::Tag;
+
+        let original: Vec<u8> = vec![
+            0x00,
+            Tag::SharedPath.as_byte(),
+            0x05, // BIP 48: m/48'/0'/0'/2'
+            Tag::Wsh.as_byte(),
+            Tag::Check.as_byte(),
+            Tag::PkK.as_byte(),
+            Tag::Placeholder.as_byte(),
+            0x00,
+        ];
+        let policy = WalletPolicy::from_bytecode(&original).expect("decode must succeed");
+
+        // No override: tier 1 wins.
+        let bytes = policy
+            .to_bytecode(&EncodeOptions::default())
+            .expect("re-encode must succeed");
+        assert_eq!(
+            bytes, original,
+            "with override=None, encode-decode-encode is byte-stable via decoded_shared_path"
         );
     }
 

@@ -436,9 +436,11 @@ fn build_positive_vectors() -> Vec<Vector> {
             panic!("vector builder: failed to parse corpus policy {id:?}: {e}")
         });
 
-        let bytecode = policy.to_bytecode().unwrap_or_else(|e| {
-            panic!("vector builder: failed to encode bytecode for {id:?}: {e}")
-        });
+        let bytecode = policy
+            .to_bytecode(&EncodeOptions::default())
+            .unwrap_or_else(|e| {
+                panic!("vector builder: failed to encode bytecode for {id:?}: {e}")
+            });
 
         let expected_bytecode_hex: String =
             bytecode

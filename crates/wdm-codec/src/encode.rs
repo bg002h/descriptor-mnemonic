@@ -46,8 +46,10 @@ fn chunk_code_to_bch_code(c: ChunkCode) -> BchCode {
 /// supported length (1692 bytes). Propagates any error from
 /// [`WalletPolicy::to_bytecode`] or [`encode_string`].
 pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBackup> {
-    // Stage 2: encode policy to canonical bytecode.
-    let bytecode = policy.to_bytecode()?;
+    // Stage 2: encode policy to canonical bytecode. The encoder consults
+    // `options.shared_path` first per the Phase B precedence rule; see
+    // [`WalletPolicy::to_bytecode`].
+    let bytecode = policy.to_bytecode(options)?;
 
     // Stage 3: decide chunking plan, then apply force_long_code override.
     let mut plan = chunking_decision(bytecode.len(), options.chunking_mode)?;
@@ -189,7 +191,9 @@ mod tests {
         // bytecode to push past the 48-byte Regular capacity while staying
         // within the 56-byte Long capacity. Check actual bytecode length first.
         let p = policy("wsh(multi(2,@0/**,@1/**,@2/**,@3/**))");
-        let bytecode = p.to_bytecode().expect("bytecode encode");
+        let bytecode = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("bytecode encode");
         // Only run this test if the bytecode falls in the Long-single-string range.
         if bytecode.len() > 48 && bytecode.len() <= 56 {
             let opts = EncodeOptions::default();
@@ -211,7 +215,7 @@ mod tests {
         // We need bytecode ~80 bytes. A multi(5,@0..@8) in wsh gives many keys.
         // Use the known policy and check it forces chunking.
         let p = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
-        let bytecode = p.to_bytecode().expect("bytecode");
+        let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
         let opts = EncodeOptions::default();
         let backup = encode(&p, &opts).expect("encode");
 
@@ -275,7 +279,7 @@ mod tests {
         let opts = EncodeOptions::default();
         let backup = encode(&p, &opts).expect("encode");
 
-        let bytecode = p.to_bytecode().expect("bytecode");
+        let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
         let expected_wallet_id = compute_wallet_id(&bytecode);
 
         // Reconstruct WalletId from the backup's words and compare.
@@ -367,7 +371,7 @@ mod tests {
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
         // The chunk-header wallet_id should be compute_wallet_id(bytecode).truncate().
-        let bytecode = p.to_bytecode().expect("bytecode");
+        let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
         let expected_chunk_wid = compute_wallet_id(&bytecode).truncate();
         match header {
             ChunkHeader::Chunked { wallet_id, .. } => {

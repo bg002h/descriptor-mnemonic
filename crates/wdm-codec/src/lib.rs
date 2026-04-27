@@ -173,8 +173,12 @@ pub use wallet_id::{
 /// function-style API over a method call. The output is the canonical
 /// `[header][path-declaration][tree]` byte sequence consumed by the chunking
 /// + codex32 layers; see [`bytecode`] for the on-the-wire format.
+///
+/// Uses default [`EncodeOptions`] — no shared-path override and no other
+/// knobs. Callers needing options should call [`WalletPolicy::to_bytecode`]
+/// directly with a configured [`EncodeOptions`].
 pub fn encode_bytecode(policy: &WalletPolicy) -> Result<Vec<u8>> {
-    policy.to_bytecode()
+    policy.to_bytecode(&EncodeOptions::default())
 }
 
 /// Decode canonical WDM bytecode into a [`WalletPolicy`].
