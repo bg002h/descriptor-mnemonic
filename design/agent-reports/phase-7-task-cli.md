@@ -1,7 +1,7 @@
 # Phase 7 — CLI binary (Tasks 7.1-7.6, 7.8)
 
 **Status:** DONE_WITH_CONCERNS
-**Commit:** TBD (filled in after commit)
+**Commit:** b5c6fcb
 **File(s):**
 - `crates/wdm-codec/src/bin/wdm.rs` — full implementation (was a 5-line stub)
 - `crates/wdm-codec/Cargo.toml` — added `anyhow = { version = "1.0", optional = true }` to `[dependencies]` and to the `cli` feature
