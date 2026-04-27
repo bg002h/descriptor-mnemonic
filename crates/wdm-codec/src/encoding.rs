@@ -85,6 +85,55 @@ pub fn five_bit_to_bytes(values: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// The fixed human-readable part for WDM strings.
+pub const HRP: &str = "wdm";
+
+/// The bech32 separator character.
+pub const SEPARATOR: char = '1';
+
+/// Determine the BchCode variant from a total data-part length.
+///
+/// Returns `None` for invalid lengths (94 and 95 are reserved-invalid;
+/// lengths > 108 or < 14 are also rejected).
+pub fn bch_code_for_length(data_part_len: usize) -> Option<BchCode> {
+    match data_part_len {
+        14..=93 => Some(BchCode::Regular),
+        94..=95 => None,
+        96..=108 => Some(BchCode::Long),
+        _ => None,
+    }
+}
+
+/// Check whether a string is all-lowercase, all-uppercase, or mixed.
+pub fn case_check(s: &str) -> CaseStatus {
+    let mut has_lower = false;
+    let mut has_upper = false;
+    for c in s.chars() {
+        if c.is_ascii_lowercase() {
+            has_lower = true;
+        } else if c.is_ascii_uppercase() {
+            has_upper = true;
+        }
+    }
+    match (has_lower, has_upper) {
+        (true, true) => CaseStatus::Mixed,
+        (true, false) => CaseStatus::Lower,
+        (false, true) => CaseStatus::Upper,
+        (false, false) => CaseStatus::Lower, // empty / no letters; treat as lower
+    }
+}
+
+/// Result of a case check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaseStatus {
+    /// All-lowercase or no letters.
+    Lower,
+    /// All-uppercase.
+    Upper,
+    /// Both lowercase and uppercase letters present (invalid).
+    Mixed,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,5 +199,46 @@ mod tests {
     #[test]
     fn five_bit_to_bytes_rejects_value_out_of_range() {
         assert!(five_bit_to_bytes(&[32]).is_none());
+    }
+
+    #[test]
+    fn bch_code_for_length_regular() {
+        assert_eq!(bch_code_for_length(14), Some(BchCode::Regular));
+        assert_eq!(bch_code_for_length(93), Some(BchCode::Regular));
+    }
+
+    #[test]
+    fn bch_code_for_length_long() {
+        assert_eq!(bch_code_for_length(96), Some(BchCode::Long));
+        assert_eq!(bch_code_for_length(108), Some(BchCode::Long));
+    }
+
+    #[test]
+    fn bch_code_for_length_rejects_94_and_95() {
+        assert_eq!(bch_code_for_length(94), None);
+        assert_eq!(bch_code_for_length(95), None);
+    }
+
+    #[test]
+    fn bch_code_for_length_rejects_extremes() {
+        assert_eq!(bch_code_for_length(0), None);
+        assert_eq!(bch_code_for_length(13), None);
+        assert_eq!(bch_code_for_length(109), None);
+        assert_eq!(bch_code_for_length(1000), None);
+    }
+
+    #[test]
+    fn case_check_lowercase() {
+        assert_eq!(case_check("wdm1qq"), CaseStatus::Lower);
+    }
+
+    #[test]
+    fn case_check_uppercase() {
+        assert_eq!(case_check("WDM1QQ"), CaseStatus::Upper);
+    }
+
+    #[test]
+    fn case_check_mixed() {
+        assert_eq!(case_check("wDm1qq"), CaseStatus::Mixed);
     }
 }
