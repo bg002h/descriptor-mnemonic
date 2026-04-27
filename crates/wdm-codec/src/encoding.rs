@@ -212,6 +212,29 @@ pub const LONG_SHIFT: u32 = 70;
 /// Mask preserving the low 70 bits of a 75-bit long-code residue.
 pub const LONG_MASK: u128 = 0x3fffffffffffffffff;
 
+/// One step of the BCH polymod algorithm from BIP 93.
+///
+/// Updates the running `residue` to incorporate the next 5-bit input `value`
+/// using the polynomial defined by `gen`, shift width `shift`, and mask `mask`.
+/// The same function is used for both the regular and long codes; pass
+/// `(GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK)` for the regular code and
+/// `(GEN_LONG, LONG_SHIFT, LONG_MASK)` for the long code.
+///
+/// This is a direct port of BIP 93's `ms32_polymod` / `ms32_long_polymod` inner
+/// loop. See https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
+// Consumed by Task 1.6's checksum encode/verify; tests exercise it directly.
+#[allow(dead_code)]
+fn polymod_step(residue: u128, value: u128, r#gen: &[u128; 5], shift: u32, mask: u128) -> u128 {
+    let b = residue >> shift;
+    let mut new_residue = (residue & mask) << 5 ^ value;
+    for (i, &g) in r#gen.iter().enumerate() {
+        if (b >> i) & 1 != 0 {
+            new_residue ^= g;
+        }
+    }
+    new_residue
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +401,89 @@ mod tests {
         assert_eq!(LONG_MASK, (1u128 << LONG_SHIFT) - 1);
         assert_eq!(REGULAR_SHIFT, 60);
         assert_eq!(LONG_SHIFT, 70);
+    }
+
+    #[test]
+    fn polymod_step_zero_residue_zero_value() {
+        // Both residue and value zero, no GEN XORs since b = 0.
+        assert_eq!(
+            polymod_step(0, 0, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+            0
+        );
+    }
+
+    #[test]
+    fn polymod_step_value_only_xor_when_residue_zero() {
+        // Residue 0, value 7 → result is 7 (XORed into the shifted-zero residue).
+        assert_eq!(
+            polymod_step(0, 7, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+            7
+        );
+    }
+
+    #[test]
+    fn polymod_step_isolates_each_gen_entry() {
+        // Setting just bit `shift+i` in the residue → b = 1<<i → only GEN[i] is XORed.
+        for i in 0..5 {
+            let r = 1u128 << (REGULAR_SHIFT + i);
+            assert_eq!(
+                polymod_step(r, 0, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+                GEN_REGULAR[i as usize],
+                "bit {} of b should isolate GEN_REGULAR[{}]", i, i
+            );
+        }
+    }
+
+    #[test]
+    fn polymod_step_xors_multiple_gens_when_multiple_b_bits_set() {
+        // b = 0b00011 → XOR GEN[0] and GEN[1].
+        let r = 0b00011u128 << REGULAR_SHIFT;
+        assert_eq!(
+            polymod_step(r, 0, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+            GEN_REGULAR[0] ^ GEN_REGULAR[1]
+        );
+        // b = 0b11111 → XOR all 5.
+        let r = 0b11111u128 << REGULAR_SHIFT;
+        let expected = GEN_REGULAR[0]
+            ^ GEN_REGULAR[1]
+            ^ GEN_REGULAR[2]
+            ^ GEN_REGULAR[3]
+            ^ GEN_REGULAR[4];
+        assert_eq!(
+            polymod_step(r, 0, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+            expected
+        );
+    }
+
+    #[test]
+    fn polymod_step_works_for_long_code() {
+        // Same parameterization works for the long code (shift=70, mask=LONG_MASK).
+        let r = 1u128 << LONG_SHIFT;
+        assert_eq!(
+            polymod_step(r, 0, &GEN_LONG, LONG_SHIFT, LONG_MASK),
+            GEN_LONG[0]
+        );
+        // b = 0b11111 → XOR all 5 long GENs.
+        let r = 0b11111u128 << LONG_SHIFT;
+        let expected = GEN_LONG[0] ^ GEN_LONG[1] ^ GEN_LONG[2] ^ GEN_LONG[3] ^ GEN_LONG[4];
+        assert_eq!(
+            polymod_step(r, 0, &GEN_LONG, LONG_SHIFT, LONG_MASK),
+            expected
+        );
+    }
+
+    #[test]
+    fn polymod_step_init_residue_first_iteration() {
+        // POLYMOD_INIT < 2^60 so b = 0 in the first iteration; only the shift+xor happens.
+        // Verify: polymod_step(POLYMOD_INIT, 0) = POLYMOD_INIT << 5.
+        assert_eq!(
+            polymod_step(POLYMOD_INIT, 0, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+            POLYMOD_INIT << 5
+        );
+        // And with value=v: polymod_step(POLYMOD_INIT, v) = (POLYMOD_INIT << 5) ^ v.
+        assert_eq!(
+            polymod_step(POLYMOD_INIT, 31, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+            (POLYMOD_INIT << 5) ^ 31
+        );
     }
 }
