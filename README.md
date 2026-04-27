@@ -1,13 +1,14 @@
 # Wallet Descriptor Mnemonic (WDM)
 
-> **Status: Pre-Draft, AI only, not yet human reviewed.** This is an
-> early specification produced by an AI assistant in collaboration with
-> the author, but has not yet been reviewed end-to-end by a human or by
-> the broader bitcoin community. Tag values, header layout, HRP, and
-> structural decisions are subject to change. A reference implementation
-> exists at [`crates/wdm-codec/`](crates/wdm-codec/) and locks the v0.1
-> wire format with committed test vectors, but the spec text itself
-> remains pre-review. Treat as a working sketch, not a finalized spec.
+> **Status: Pre-Draft, AI + reference implementation, awaiting human review.**
+> This specification was produced by an AI assistant in collaboration with
+> the author, and is shipped alongside a working reference implementation
+> at [`crates/wdm-codec/`](crates/wdm-codec/) (Rust, CC0-1.0) that locks
+> the v0.1 wire format with committed test vectors. The spec and impl have
+> not yet been reviewed end-to-end by a human or by the broader bitcoin
+> community. Tag values, header layout, HRP, and structural decisions
+> remain subject to change pending that review. Treat as a working sketch
+> with concrete artifacts, not a finalized spec.
 
 A specification for backing up bitcoin wallet policies on durable media
 (paper, steel) in a form that is compact, hand-transcribable, and
@@ -71,7 +72,7 @@ Foreign xpubs (multi-party multisig where you don't hold all seeds) and per-plac
 
 ## Status
 
-This specification is in **Pre-Draft, AI only, not yet human reviewed** status. The structure of the spec is in place but has not been validated by independent review. Open decisions and unresolved questions are tracked in `design/POLICY_BACKUP.md` §8.
+This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/wdm-codec/`](crates/wdm-codec/) with 444+ tests passing and ~95% library line coverage. Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).
 
 The Rust reference implementation in [`crates/wdm-codec/`](crates/wdm-codec/) implements the v0.1 scope:
 

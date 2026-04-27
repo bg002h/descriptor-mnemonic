@@ -54,6 +54,24 @@ impl WalletId {
         Self(bytes)
     }
 
+    /// Borrow the underlying 16 bytes as a fixed-size array reference.
+    ///
+    /// Use this when you need a typed `&[u8; 16]` (for example, to copy into
+    /// another fixed-size array without a length-checked panic). The
+    /// [`AsRef<[u8]>`][AsRef] impl returns a length-erased slice; `as_bytes`
+    /// is the typed accessor.
+    ///
+    /// ```
+    /// use wdm_codec::WalletId;
+    /// let id = WalletId::from([0xAB; 16]);
+    /// let bytes: &[u8; 16] = id.as_bytes();
+    /// assert_eq!(bytes[0], 0xAB);
+    /// assert_eq!(bytes.len(), 16);
+    /// ```
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        &self.0
+    }
+
     /// Encode the wallet ID as a space-separated list of 12 BIP-39 words.
     ///
     /// The words are derived deterministically from the 128-bit value using

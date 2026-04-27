@@ -273,7 +273,13 @@ pub fn decode(
 
 pub fn encode_bytecode(policy: &WalletPolicy) -> Result<Vec<u8>, Error>;
 pub fn decode_bytecode(bytes: &[u8]) -> Result<WalletPolicy, Error>;
-pub fn compute_wallet_id(policy: &WalletPolicy) -> WalletId;
+
+// Wallet ID derivation — two functions because Rust does not support
+// function overloading. See PHASE_5_DECISIONS.md D-9. The bytes-level
+// primitive is in `wallet_id.rs`; the policy-level wrapper is also there
+// and calls `policy.to_bytecode()` internally.
+pub fn compute_wallet_id(canonical_bytecode: &[u8]) -> WalletId;
+pub fn compute_wallet_id_for_policy(policy: &WalletPolicy) -> Result<WalletId, Error>;
 ```
 
 ### Methods on `WalletPolicy`
@@ -286,7 +292,10 @@ impl std::str::FromStr for WalletPolicy {
 impl WalletPolicy {
     pub fn to_canonical_string(&self) -> String;
     pub fn key_count(&self) -> usize;
-    pub fn shared_path(&self) -> Option<&DerivationPath>;
+    // Owned (not borrowed) because the path is materialized via
+    // `into_descriptor()` and is not stored on `WalletPolicy` itself.
+    // See `PHASE_5_DECISIONS.md` D-4.
+    pub fn shared_path(&self) -> Option<DerivationPath>;
     pub fn to_bytecode(&self) -> Result<Vec<u8>, Error>;
     pub fn from_bytecode(bytes: &[u8]) -> Result<Self, Error>;
     #[doc(hidden)]
@@ -297,6 +306,13 @@ impl WalletPolicy {
 ### Error type
 
 ```rust
+// `Error` is `#[non_exhaustive]`. The base set listed below is the contract;
+// the implementation MAY carry additional `#[non_exhaustive]` variants for
+// finer-grained reporting (e.g., `InvalidChar`, `InvalidChunkCount`,
+// `ChunkHeaderTruncated`, `EmptyChunkList`, `MissingChunkIndex`,
+// `MixedChunkTypes`, `SingleStringWithMultipleChunks`, `PolicyTooLarge`,
+// `ReservedWalletIdBitsSet`, `InvalidChunkIndex`). See
+// `crates/wdm-codec/src/error.rs` for the authoritative complete list.
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -315,8 +331,13 @@ pub enum Error {
     CrossChunkHashMismatch,
     PolicyParse(String),
     Miniscript(String),  // wrapped, NOT #[from] miniscript::Error
+    // ... (additional `#[non_exhaustive]` variants per the note above)
 }
 
+// `BytecodeErrorKind` is `#[non_exhaustive]`. Same contract as `Error`: the
+// base set below is required; the implementation MAY add additional kinds
+// (e.g., `ReservedBitsSet`, `TypeCheckFailed`, `InvalidPathComponent`,
+// `UnexpectedTag`).
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum BytecodeErrorKind {
@@ -326,13 +347,24 @@ pub enum BytecodeErrorKind {
     MissingChildren { expected: usize, got: usize },
     UnexpectedEnd,
     TrailingBytes,
+    // ... (additional `#[non_exhaustive]` kinds per the note above)
 }
 
-impl From<miniscript::Error> for Error {
-    fn from(e: miniscript::Error) -> Self {
-        Error::Miniscript(e.to_string())
-    }
-}
+// NOTE: a previous draft of this section showed a blanket
+// `impl From<miniscript::Error> for Error` body. That impl was removed
+// per Phase 2 Issue 3 (see `design/PHASE_2_DECISIONS.md`). All call sites
+// that need to wrap a miniscript error now do so explicitly:
+//
+// ```rust
+// Error::Miniscript(ms_err.to_string())
+// ```
+//
+// or, inside the bytecode decoder, by mapping into
+// `BytecodeErrorKind::TypeCheckFailed(String)` for type-check failures
+// during `Wsh::new(...)` reconstruction. The `Miniscript(String)`
+// variant remains in the public surface for `WalletPolicy::from_str`
+// and similar sites where the explicit construction is the cleanest
+// shape.
 ```
 
 ### CLI commands
