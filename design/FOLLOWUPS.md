@@ -286,6 +286,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
+### `p10-cross-platform-ci-sanity` — confirm GitHub Actions green on Windows + macOS
+
+- **Surfaced:** Phase 10 Task 10.2; deferred at controller closure
+- **Where:** `.github/workflows/ci.yml` (added in Phase 5-F)
+- **What:** The workflow runs Linux jobs (test + clippy + fmt + doc) on every push. The implementation plan also asks for Windows + macOS sanity. Local `cargo test` passes on Linux; cross-platform behavior can only be verified after pushing to GitHub. Defer until the first push of `main` and the `wdm-codec-v0.1.0` tag.
+- **Why deferred:** can't run GitHub Actions locally; non-blocker for the local v0.1.0 tag.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
+### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
+
+- **Surfaced:** Phase 10 Task 10.7 closure
+- **Where:** `bip/bip-wallet-descriptor-mnemonic.mediawiki:8`
+- **What:** The BIP draft preamble's `Status:` field still reads `Pre-Draft, AI only, not yet human reviewed`. The root README and project memory now use `Pre-Draft, AI + reference implementation, awaiting human review`. The BIP draft is its own artifact and could legitimately stay on the older string (the spec text itself hasn't been ref-impl-validated by a human), but for consistency the next BIP touch should consider aligning.
+- **Why deferred:** stylistic; not a contract issue. The BIP draft predates the impl; the spec's status is independent.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
 ---
 
 ## Resolved items
