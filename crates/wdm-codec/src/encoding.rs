@@ -164,11 +164,23 @@ pub const GEN_REGULAR: [u128; 5] = [
     0x07729a039cfc75f5a,
 ];
 
-/// Expected residue after polymod over a valid regular-code data part.
+/// Expected residue after polymod over a valid regular-code WDM string
+/// (HRP-expanded + header + payload + checksum).
 ///
-/// BIP 93 names this `MS32_CONST` in the Python reference implementation;
-/// renamed here for symmetry with [`MS32_LONG_CONST`].
-pub const MS32_REGULAR_CONST: u128 = 0x10ce0795c2fd1e62a;
+/// Derived NUMS-style: the top 65 bits of `SHA-256(b"shibbolethnums")`
+/// interpreted as a big-endian 256-bit integer. This is unrelated to
+/// BIP 93's `MS32_CONST` — WDM uses BIP 93's polynomial but its own
+/// target residue, with HRP-mixing à la BIP 173 providing further
+/// domain separation from codex32. See the BIP draft §"Why new target
+/// constants?" for the design rationale.
+///
+/// Reproducible by:
+/// ```text
+/// import hashlib
+/// h = hashlib.sha256(b"shibbolethnums").digest()
+/// int.from_bytes(h, "big") >> (256 - 65)  # → 0x0815c07747a3392e7
+/// ```
+pub const WDM_REGULAR_CONST: u128 = 0x0815c07747a3392e7;
 
 /// Initial residue value for both the regular and long polymod algorithms (BIP 93).
 ///
@@ -200,8 +212,18 @@ pub const GEN_LONG: [u128; 5] = [
     0x1887f74f8dc71b10651,
 ];
 
-/// Expected residue after polymod over a valid long-code data part (BIP 93 `MS32_LONG_CONST`).
-pub const MS32_LONG_CONST: u128 = 0x43381e570bf4798ab26;
+/// Expected residue after polymod over a valid long-code WDM string.
+///
+/// Derived NUMS-style: the top 75 bits of `SHA-256(b"shibbolethnums")`.
+/// See [`WDM_REGULAR_CONST`] for the derivation method and design rationale.
+///
+/// Reproducible by:
+/// ```text
+/// import hashlib
+/// h = hashlib.sha256(b"shibbolethnums").digest()
+/// int.from_bytes(h, "big") >> (256 - 75)  # → 0x205701dd1e8ce4b9f47
+/// ```
+pub const WDM_LONG_CONST: u128 = 0x205701dd1e8ce4b9f47;
 
 /// Right-shift amount to extract the top 5 bits from a 75-bit long-code residue.
 ///
@@ -390,10 +412,27 @@ mod tests {
     }
 
     #[test]
-    fn ms32_constants_match_bip93() {
-        assert_eq!(MS32_REGULAR_CONST, 0x10ce0795c2fd1e62a);
-        assert_eq!(MS32_LONG_CONST, 0x43381e570bf4798ab26);
+    fn polymod_init_matches_bip93() {
+        // POLYMOD_INIT is unchanged from BIP 93; the GEN_REGULAR / GEN_LONG
+        // constants have their own value-equality tests.
         assert_eq!(POLYMOD_INIT, 0x23181b3);
+    }
+
+    #[test]
+    fn wdm_target_constants_match_nums_derivation() {
+        // Self-check: the constants must equal the top 65 / 75 bits of
+        // SHA-256(b"shibbolethnums") interpreted as a big-endian 256-bit
+        // integer. If anyone "fixes" the hex values without updating the
+        // derivation, this test fails.
+        use bitcoin::hashes::{sha256, Hash};
+        let h = sha256::Hash::hash(b"shibbolethnums");
+        let bytes = h.to_byte_array();
+        // First 16 bytes of the hash interpreted as a big-endian u128.
+        // The top 65 / 75 bits of this value equal the top 65 / 75 bits
+        // of the full 256-bit hash, since 75 < 128.
+        let top_128 = u128::from_be_bytes(bytes[..16].try_into().unwrap());
+        assert_eq!(top_128 >> (128 - 65), WDM_REGULAR_CONST);
+        assert_eq!(top_128 >> (128 - 75), WDM_LONG_CONST);
     }
 
     #[test]

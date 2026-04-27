@@ -125,10 +125,18 @@ Each byte of bytecode contributes 8 bits; the bech32 alphabet packs 5 bits per c
 
 ====Checksum====
 
-The checksum is computed over the HRP plus the data part (header + payload) using one of two BCH error-correcting codes:
+The checksum is computed using a BCH error-correcting code with HRP-mixing applied in the BIP 173 style. The polymod algorithm is BIP 93's <code>ms32_polymod</code> (regular code) or <code>ms32_long_polymod</code> (long code), applied to the concatenation of:
 
-* '''Regular code''' for total data lengths up to and including 93 characters. Checksum length: 13 characters. BCH polynomial as specified in BIP 93 §"Generator polynomial" for the standard string variant.
-* '''Long code''' for total data lengths from 96 through 108 characters. Checksum length: 15 characters. BCH polynomial as specified in BIP 93 for the long string variant.
+# The HRP-expansion of <code>"wdm"</code>, computed exactly as in BIP 173 §"Bech32": for each HRP character <code>c</code> emit <code>ord(c) >> 5</code>; emit a single zero; for each HRP character emit <code>ord(c) & 31</code>. For the lowercase HRP <code>"wdm"</code> this yields the seven 5-bit values <code>[3, 3, 3, 0, 23, 4, 13]</code>.
+# The data part: header + payload as a sequence of 5-bit values from the bech32 alphabet.
+# A pad of zero values during encoding (13 for regular, 15 for long) or the actual checksum during verification.
+
+A WDM string is valid when <code>polymod(input) == T_C</code>, where <code>T_C</code> is the target residue constant for the chosen code variant:
+
+* '''Regular code''' (BCH(93,80,8)): for total data lengths up to and including 93 characters; checksum length: 13 characters. <code>T_REGULAR = 0x0815c07747a3392e7</code> (65 bits).
+* '''Long code''' (BCH(108,93,8)): for total data lengths from 96 through 108 characters; checksum length: 15 characters. <code>T_LONG = 0x205701dd1e8ce4b9f47</code> (75 bits).
+
+The derivation of <code>T_REGULAR</code> and <code>T_LONG</code> is documented in §"Why new target constants?" below.
 
 A total data length of 94 or 95 characters is invalid. Encoders MUST NOT produce strings of these lengths. Decoders MUST reject them.
 
@@ -553,6 +561,23 @@ A new HRP (<code>wdm</code>) is required because:
 * Codex32's <code>ms</code> HRP cannot be reused without breaking codex32's seed-payload semantics.
 * The bech32 checksum is computed over the HRP, providing domain separation: a damaged WDM string cannot be misinterpreted as a bech32 address or codex32 seed share.
 * The HRP serves as format self-identification for human readers and parsers.
+
+===Why new target constants?===
+
+The target residue constants <code>T_REGULAR</code> and <code>T_LONG</code> are derived NUMS-style ("Nothing Up My Sleeve") as truncations of <code>SHA-256("shibbolethnums")</code> to 65 and 75 bits respectively, taking the most significant bits of the hash interpreted as a big-endian 256-bit integer.
+
+The string <code>shibbolethnums</code> combines this proposal's working name during early development with the conventional <code>nums</code> suffix used in cryptographic constructions to indicate that the value was chosen via a public hash and not through opaque selection. The string itself is the audit trail: any reader can recompute the SHA-256 and verify that the constants follow from it.
+
+We chose new constants rather than reusing BIP 93's <code>MS32_CONST</code> values for two reasons. First, although the HRP-mixing recipe (BIP 173 <code>hrp_expand</code>) produces residues that differ between any two HRPs sharing this polynomial, picking distinct target constants provides residue-level separation as well: damage that maps a WDM string toward codex32-style validity is statistically prevented by the combination. Second, signaling matters — reusing codex32's specific target constant verbatim would invite the misreading that WDM is "codex32 with a different HRP" rather than a distinct format that borrows codex32's polynomial.
+
+The constants are reproducible by any SHA-256 implementation:
+
+<source lang="python">
+import hashlib
+h = hashlib.sha256(b"shibbolethnums").digest()
+T_REGULAR = int.from_bytes(h, 'big') >> (256 - 65)  # = 0x0815c07747a3392e7
+T_LONG    = int.from_bytes(h, 'big') >> (256 - 75)  # = 0x205701dd1e8ce4b9f47
+</source>
 
 ===Why descriptor-codec for the bytecode?===
 
