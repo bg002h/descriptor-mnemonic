@@ -201,10 +201,6 @@ pub fn encode_declaration(path: &DerivationPath) -> Vec<u8> {
 ///
 /// This is `pub(crate)` because `Cursor` is `pub(crate)`. The Phase 5 framing
 /// layer operates on the same cursor and calls this function directly.
-// Phase 5 `decode_bytecode` will call this. Until that lands, suppress the
-// dead-code lint so clippy stays clean (decode_path is transitively unreachable
-// through this function, so both warnings are silenced by this one attribute).
-#[allow(dead_code)]
 pub(crate) fn decode_declaration(
     cur: &mut crate::bytecode::cursor::Cursor<'_>,
 ) -> Result<DerivationPath, crate::Error> {

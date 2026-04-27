@@ -150,6 +150,20 @@ pub fn compute_wallet_id(canonical_bytecode: &[u8]) -> WalletId {
     WalletId::from(bytes)
 }
 
+/// Compute a [`WalletId`] for a `WalletPolicy` by first encoding it to
+/// canonical WDM bytecode, then applying [`compute_wallet_id`].
+///
+/// This is the `WalletPolicy`-aware wrapper specified in Task 5-B.
+/// The name `compute_wallet_id_for_policy` is used (rather than an overload
+/// of `compute_wallet_id`) because Rust does not support function overloading.
+/// See PHASE_5_DECISIONS.md D-9.
+pub fn compute_wallet_id_for_policy(
+    policy: &crate::WalletPolicy,
+) -> Result<WalletId, crate::Error> {
+    let bytecode = policy.to_bytecode()?;
+    Ok(compute_wallet_id(&bytecode))
+}
+
 // ---------------------------------------------------------------------------
 // WalletIdWords
 // ---------------------------------------------------------------------------

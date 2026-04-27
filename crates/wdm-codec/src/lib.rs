@@ -19,4 +19,18 @@ pub use encoding::{
 };
 pub use error::{BytecodeErrorKind, Error, Result};
 pub use policy::WalletPolicy;
-pub use wallet_id::{ChunkWalletId, WalletId, WalletIdWords};
+pub use wallet_id::{ChunkWalletId, WalletId, WalletIdWords, compute_wallet_id_for_policy};
+
+/// Encode a `WalletPolicy` as canonical WDM bytecode.
+///
+/// Thin wrapper around [`WalletPolicy::to_bytecode`].
+pub fn encode_bytecode(policy: &WalletPolicy) -> Result<Vec<u8>> {
+    policy.to_bytecode()
+}
+
+/// Decode canonical WDM bytecode into a `WalletPolicy`.
+///
+/// Thin wrapper around [`WalletPolicy::from_bytecode`].
+pub fn decode_bytecode(bytes: &[u8]) -> Result<WalletPolicy> {
+    WalletPolicy::from_bytecode(bytes)
+}

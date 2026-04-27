@@ -122,6 +122,52 @@ Total diff: ~25 lines changed across 2 files. All 287 pre-existing tests continu
 
 ---
 
+### D-7 (Task 5-B approach): Approach B (dummy-key materialization) for bytecode encoding
+
+**Context**: Task 5-B must produce a `Descriptor<DescriptorPublicKey>` from a `WalletPolicy` to call `encode_template`. Two approaches were considered:
+- **Approach A (template AST)**: Walk the fork's `WalletPolicy::template` field directly. The field is private (`template: Descriptor<KeyExpression>`), and there is no public method exposing the template AST.
+- **Approach B (dummy keys)**: Set dummy `DescriptorPublicKey` values via `set_key_info()`, call `into_descriptor()`, and encode the resulting descriptor.
+
+**Decision**: Approach B. The fork does not expose the `template` field or any equivalent method. Approach A would require a fork modification.
+
+**Dummy key details**:
+- 8 hardcoded entries from the fork's own test fixtures (proven valid xpubs).
+- Each entry has `/<0;1>/*` derivation suffix (required because `from_descriptor()` calls `pk.wildcard()` when reconstructing the template; `/**` is not valid in `DescriptorPublicKey::from_str`).
+- Fingerprints and origin paths differ per entry so that `DescriptorPublicKey`'s `PartialEq` treats them as distinct (needed for `HashMap<DescriptorPublicKey, u8>` in `encode_template`).
+- 8 entries covers single-sig, 2-of-3, 3-of-5, 5-of-8 multisig. Extend the table if more are needed.
+
+**Verify in code**: `crates/wdm-codec/src/policy.rs` `DUMMY_KEYS` constant and `dummy_keys()` function.
+
+### D-8 (Task 5-B from_bytecode): two-pass scan to determine key_count before decode
+
+**Context**: `from_bytecode` needs to call `decode_template(tree_bytes, &keys)` but doesn't know `key_count` until it's parsed the bytecode. Options:
+1. Supply maximum dummy keys (8); let unused entries be ignored.
+2. Pre-scan the tree bytes for `Tag::Placeholder` (0x32) to find `max_index`, then decode with `max_index + 1` dummies.
+
+**Decision**: Option 2 (pre-scan). Supplying 8 dummy keys when a policy has only 1 key would cause `from_descriptor()` to produce a policy with 8 keys in `key_info`, all but the first unused. The resulting `WalletPolicy` would have mismatched key count. Option 2 gives an accurate count with minimal code (simple linear scan for `0x32` bytes — no full decode needed).
+
+**Verify in code**: `crates/wdm-codec/src/policy.rs` `count_placeholder_indices()` function.
+
+### D-9 (Task 5-B naming): `compute_wallet_id_for_policy` instead of overloaded `compute_wallet_id`
+
+**Context**: `IMPLEMENTATION_PLAN_v0.1.md` line 276 specifies the same `compute_wallet_id` name for both the bytes-level and the policy-level variants, written as if Rust supports overloading. Rust does not have function overloading.
+
+**Decision**: Name the policy-aware wrapper `compute_wallet_id_for_policy`. The existing `compute_wallet_id(&[u8])` is unchanged. Both are re-exported from `lib.rs`.
+
+**Verify in code**: `crates/wdm-codec/src/wallet_id.rs` `compute_wallet_id_for_policy`; `crates/wdm-codec/src/lib.rs` re-export.
+
+### D-10 (Task 5-B shared_path): materialization via into_descriptor()
+
+**Context**: 5-A deferred `shared_path()` to return `None` always (D-4). For 5-B, the encode path needs the shared path to write the path declaration. Two routes existed: (a) keep returning None and default to a hardcoded path; (b) materialize the descriptor by cloning and calling `into_descriptor()`, then extract origin from the first key.
+
+**Decision**: Route (b): `shared_path()` now clones the inner policy and calls `into_descriptor()`. If materialization fails (template-only policy with no key_info), returns `None`. For policies with real keys, returns the first key's origin derivation path. If None, `to_bytecode()` falls back to BIP 84 mainnet (`m/84'/0'/0'`) as the default path.
+
+**Test update**: 5-A's `shared_path_returns_none_for_template_only_policy` now uses `is_none()` (the tautological `matches!(result, None | Some(_))` from D-4 is fixed). New test `shared_path_returns_some_for_policy_with_keys` asserts `Some(m/84'/0'/0')` for a policy parsed from a full descriptor string.
+
+**Verify in code**: `crates/wdm-codec/src/policy.rs` `shared_path()` impl and tests.
+
+---
+
 (More decisions appended as Phase 5 progresses.)
 
 ---
@@ -130,4 +176,5 @@ Total diff: ~25 lines changed across 2 files. All 287 pre-existing tests continu
 
 | Task | Commit (feat / fix) | Status notes |
 |------|---------------------|--------------|
-| 5-A | (pending commit) | Step 1 + Step 2 both clean; 295 tests pass |
+| 5-A WalletPolicy core | `56124c3` (no fix needed; approve-with-followup x2) | Step 1: dep switch + 3 trivial v13 bridges (`WshInner` removal, `SortedMultiVec` → `Terminal::SortedMulti`, `Wsh::new_sortedmulti` signature). Step 2: `WalletPolicy` newtype, `FromStr` → `Error::PolicyParse`, `to_canonical_string` post-processes `/**` → `/<0;1>/*` (D-5), `key_count` scans template for `@N` (D-3), `shared_path` returns `None` (D-4 — defer to 5-D), `inner` is `#[doc(hidden)]`; 8 new tests (287 → 295). Code-review minor follow-ups (defer to 5-B/5-D opportunistic): (a) `from_inner` could be `pub(crate)` not `pub` (both consumers in-crate); (b) test #7 `matches!(.., None | Some(_))` is tautological — switch to `is_none()` once D-4 is known stable; (c) `(m + 1) as usize` cast cosmetic — prefer `m as usize + 1`; (d) `key_count` could use `usize` throughout; (e) add comment in `key_count` rustdoc that `inner.to_string()` writes only the template (no `@` outside `@N` placeholders). |
+| 5-B bytecode wrapping | (pending commit) | `WalletPolicy::to_bytecode` + `from_bytecode` + `encode_bytecode`/`decode_bytecode` free fns + `compute_wallet_id_for_policy`. Approach B (dummy keys). `decode_declaration` `#[allow(dead_code)]` removed. `shared_path()` now extracts real path (D-10). 12 new tests (295 → 307). |
