@@ -70,15 +70,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `p4-chunking-rs-split` — split `chunking.rs` into a `chunking/` directory
-
-- **Surfaced:** Phase 4-A and 4-D code reviews; Phase 4-E code review
-- **Where:** `crates/wdm-codec/src/chunking.rs` (currently ~1500 lines)
-- **What:** As of end of Phase 4, `chunking.rs` covers `ChunkHeader` (codec) + `ChunkCode`/`ChunkingPlan` + `chunking_decision` + `Chunk` (codec) + `chunk_bytes` + `reassemble_chunks` + `EncodedChunk` + `Correction`. One responsibility ("the chunking layer") but several distinct subsystems. Splitting into `chunking/header.rs`, `chunking/plan.rs`, `chunking/assembly.rs`, `chunking/types.rs` (for EncodedChunk + Correction) would reduce file size to ~300-500 lines per module. Tests stay inline in each.
-- **Why deferred:** every prior reviewer agreed "current section-banner organization is navigable"; no consumer was inconvenienced. Defer until either Phase 6 (corpus tests) or Phase 7 (CLI) finds the file unwieldy.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
 ### `p2-decoded-template-hybrid` — hybrid `DecodedTemplate` decoder shape
 
 - **Surfaced:** Phase 2 D-5 (`design/PHASE_2_DECISIONS.md`)
@@ -133,24 +124,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `6a-coldcard-corpus-shape` — Coldcard corpus entry uses representative shape (same as C2)
-
-- **Surfaced:** Phase 6 bucket A; Task 6.11
-- **Where:** `crates/wdm-codec/tests/corpus.rs::corpus_coldcard_bip388_export`
-- **What:** The Coldcard-specific corpus entry uses `wsh(sortedmulti(2,@0/**,@1/**,@2/**))` — a representative Coldcard Mk4 export shape per Coldcard docs — but is structurally identical to corpus C2. If a more distinct Coldcard-specific shape becomes important (e.g., a 2-of-3 with explicit BIP 48 origin metadata in the policy string), the format may need a small extension.
-- **Why deferred:** v0.1 corpus coverage is by *operator shape*, not by *export source*; C2's shape suffices.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
-### `6d-rand-gen-keyword` — `rng.r#gen()` raw-identifier workaround for Rust 2024 reserved keyword
-
-- **Surfaced:** Phase 6 bucket D; Task 6.20 (`many_substitutions_always_rejected`)
-- **Where:** `crates/wdm-codec/tests/ecc.rs`
-- **What:** Rust 2024 edition (which we're on, per `Cargo.toml`) reserved `gen` as a keyword for generators. `rand 0.8`'s `Rng::gen` method now requires `r#gen()` raw-identifier syntax to call. When `rand` migrates to a newer API (e.g., `rng.random::<u64>()` in `rand` 0.9+), this workaround can be removed.
-- **Why deferred:** rand 0.9 migration is a separate concern; `r#gen()` works correctly today.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
 ### `p2-fingerprints-block` — v0.2 fingerprints block support
 
 - **Surfaced:** Phase 5-B; documented at `crates/wdm-codec/src/policy.rs:316-317` and `:668`
@@ -178,14 +151,14 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `8-negative-fixture-placeholder-strings` — negative vector `input_strings` are placeholder-grade, not confirmed-correct WDM strings
+### `8-negative-fixture-dynamic-generation` — generate negative vectors dynamically by exercising actual error paths
 
-- **Surfaced:** Phase 8 implementation (Task 8.3); implementer's own follow-up
-- **Where:** `crates/wdm-codec/src/vectors.rs` `NEGATIVE_FIXTURES` array, vectors n02–n30
-- **What:** Most negative `input_strings` in the negative fixture array are representative placeholders (short all-`q` data-part strings, synthetic patterns) rather than confirmed-correct WDM strings that provably trigger the named error variant via `decode()`. The placeholders demonstrate the right error *class* (e.g., `MixedCase`, `InvalidStringLength`) but were not programmatically verified to map to exact variant names. Vectors n12 (`EmptyChunkList`) and n30 (`PolicyTooLarge`) have empty `input_strings` because those errors cannot be triggered via a WDM string at all (they require calling lower-level APIs directly). For cross-implementation interoperability, the negative vectors should either (a) be generated dynamically at vector-generation time by exercising the actual error paths, or (b) document precisely which API surface they target when `input_strings` is empty.
-- **Why deferred:** Generating confirmed-correct error-triggering strings programmatically requires significant per-variant fixture work (encoding valid policies, mutating them exactly, verifying the error variant). The schema is correct; the fixture quality is sufficient for the v0.1 schema lock-in purpose. The positive vectors are fully confirmed.
+- **Surfaced:** v0.2 carry-forward from `8-negative-fixture-placeholder-strings` closure
+- **Where:** `crates/wdm-codec/src/vectors.rs` `NEGATIVE_FIXTURES` array (replace static const with a runtime `build_negative_vectors()`)
+- **What:** v0.1 ships representative-placeholder `input_strings` with honest provenance docs. v0.2 should (if cross-implementation interop demands it) replace the placeholders with byte-for-byte exact strings produced by encoding a valid policy then mutating it precisely until the named `expected_error_variant` is returned. This is per-variant fixture work (~30 variants).
+- **Why deferred:** v0.1's schema lock-in purpose is met by representative fixtures + honest docs. Real conformance implementations can generate their own byte-for-byte fixtures locally using the same API surfaces.
 - **Status:** open
-- **Tier:** v0.1-nice-to-have
+- **Tier:** v0.2
 
 ### `7-serialize-derives` — manual JSON construction vs `#[derive(Serialize)]` on library types
 
@@ -363,6 +336,30 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 5 D-1 (`design/PHASE_5_DECISIONS.md`); Phase 7 carry-forward CF-1 documents adjacent context
 - **Status:** resolved at tag `wdm-codec-v0.1.0` (`fef8dcb`) via option (b): git-dep pin documented in `crates/wdm-codec/Cargo.toml`, the workspace `[patch]` rationale captured in the root `Cargo.toml`, the BIP draft's reference-implementation section names the apoelstra fork dep, and the root README status notes the dep. Tag annotation message also contains the dep rationale. Forward work (flipping the `[patch]` block off when upstream PR merges) is tracked separately as `external-pr-1-hash-terminals`.
 - **Tier:** v0.1-blocker (closed)
+
+### `p4-chunking-rs-split` — split `chunking.rs` into a `chunking/` directory
+
+- **Surfaced:** Phase 4-A and 4-D code reviews; Phase 4-E code review
+- **Status:** wont-fix — every reviewer through Phase 7 confirmed the section-banner organization is navigable; no Phase 6/7/8/9/10 consumer found it unwieldy. Splitting now is pure churn (touches every test in the file, breaks any external pin to module path) for no reader-experience win. Revisit only if a future caller is genuinely impeded.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `6a-coldcard-corpus-shape` — Coldcard corpus entry uses representative shape (same as C2)
+
+- **Surfaced:** Phase 6 bucket A; Task 6.11
+- **Status:** wont-fix — v0.1 corpus is operator-shape based by design; the Coldcard entry is an existence-proof that real-world export shapes round-trip, not a coverage gap. Revisit if a future signer's BIP 388 export is structurally distinct from existing corpus shapes.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `6d-rand-gen-keyword` — `rng.r#gen()` raw-identifier workaround for Rust 2024 reserved keyword
+
+- **Surfaced:** Phase 6 bucket D; Task 6.20 (`many_substitutions_always_rejected`)
+- **Status:** resolved `ff7d1ea` — `rand` dev-dep bumped 0.8 → 0.9; all `r#gen()` and `gen_range` callsites switched to `random()` and `random_range()`.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `8-negative-fixture-placeholder-strings` — negative vector `input_strings` are placeholder-grade, not confirmed-correct WDM strings
+
+- **Surfaced:** Phase 8 implementation (Task 8.3); implementer's own follow-up
+- **Status:** resolved `c46f2c0` via option (b) — `vectors.rs` `NEGATIVE_FIXTURES` rustdoc rewritten to honestly document fixture provenance: `expected_error_variant` is the authoritative contract; `input_strings` are representative placeholders demonstrating the error class; n12, n29, n30 explicitly flagged as targeting lower-level APIs (`reassemble_chunks`, `policy.parse`, `chunking_decision`). The original misleading "all placeholder inputs are confirmed to trigger the correct variant" claim was deleted. Dynamic generation (option a) deferred as `8-negative-fixture-dynamic-generation` (open, v0.2).
+- **Tier:** v0.1-nice-to-have (closed)
 
 ---
 
