@@ -220,6 +220,9 @@ pub const LONG_MASK: u128 = 0x3fffffffffffffffff;
 /// `(GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK)` for the regular code and
 /// `(GEN_LONG, LONG_SHIFT, LONG_MASK)` for the long code.
 ///
+/// Returns the updated residue after incorporating `value`. The top 5 bits of
+/// the returned residue feed the next iteration's `b` selector.
+///
 /// This is a direct port of BIP 93's `ms32_polymod` / `ms32_long_polymod` inner
 /// loop. See https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki .
 // Consumed by Task 1.6's checksum encode/verify; tests exercise it directly.
@@ -484,6 +487,19 @@ mod tests {
         assert_eq!(
             polymod_step(POLYMOD_INIT, 31, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
             (POLYMOD_INIT << 5) ^ 31
+        );
+    }
+
+    #[test]
+    fn polymod_step_value_and_gen_xor_combined() {
+        // Both effects active: b = 1 (bit 0 of b set) AND value = 5.
+        // Expected: ((residue & mask) << 5) ^ value ^ GEN[0]
+        //         = (0 << 5) ^ 5 ^ GEN[0]
+        //         = GEN_REGULAR[0] ^ 5
+        let r = 1u128 << REGULAR_SHIFT;
+        assert_eq!(
+            polymod_step(r, 5, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK),
+            GEN_REGULAR[0] ^ 5
         );
     }
 }
