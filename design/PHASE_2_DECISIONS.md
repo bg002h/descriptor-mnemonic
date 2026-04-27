@@ -205,5 +205,16 @@ Top-level reads `Tag::Wsh`, recursively parses Miniscript via tag dispatch, wrap
 | 2.9 Hash literals | `be13f6e` / `4af599f` | sha256/hash256/ripemd160/hash160; hash256 byte-order doc + asymmetric test pattern. |
 | 2.10 Wrappers + RawPkH | `68e0173` / `ed1db96` | Alt/Swap/Check/DupIf/Verify/NonZero/ZeroNotEqual + RawPkH; Terminal coverage now complete; canary deleted. |
 | 2.11 Taproot (Tr/TapTree) | _deferred_ | v0.2 scope; v0.1 rejects `Descriptor::Tr` at the top level (Task 2.4). |
+| **review fix bundle** | `36ac8f3` | D-7 single-byte k/n/index + Issue 3 `BytecodeErrorKind::TypeCheckFailed` + decision-log amendments (D-2/D-4/D-5 amended; D-6/D-7/D-8 added). |
+| 2.12 Decoder skeleton | `133e016` / `a0ad5aa` | `decode_template` + Cursor + top-level dispatch (D-5). |
+| 2.13 Decoder Wsh inner + leaves | `ee508d0` / `cb7e117` | True/False/PkK/PkH; `decode_placeholder` reads single-byte index per D-7. |
+| 2.14 Decoder multisig + thresh | `1d3e0a6` / `1c5e4cb` | SortedMulti/Multi/MultiA/Thresh; wires `decode_miniscript` recursion. |
+| 2.15 Decoder wrappers + RawPkH | `9cf9068` / `990ac54` | Alt/Swap/Check/DupIf/Verify/NonZero/ZeroNotEqual + RawPkH; first parser-driven `wsh(pk(K))` round-trip. |
+| 2.16 Decoder After/Older | `988f5d7` / `26edd17` | Timelocks via `read_varint_u64`; `from_consensus(0)` rejection coverage. |
+| 2.17 Decoder hash literals | `7362113` (no fix needed) | sha256/hash256/ripemd160/hash160; asymmetric-pattern wire-format pinning. |
+| 2.18 Decoder logical ops | `dd305b5` (no fix needed) | and_v/and_b/and_or/or_b/or_c/or_d/or_i; final Phase 2 task. Catch-all migrates from "(Task 2.X+)" deferred-stub form to structural-reason guard. |
+| 2.19–2.20 | _absorbed_ | The original plan had 2.18 cover encoder logical ops only and 2.19–2.20 cover decoder mirrors. The decoder mirror landed in Task 2.18 (this file's 2.18 = original plan's 2.18 + 2.19 + 2.20 combined for the logical-op group). All operator groups now have both encoder and decoder coverage. |
 
-**Phase 2 encoder is feature-complete as of `ed1db96`.** Next: decoder (Task 2.12 onwards).
+**Phase 2 is feature-complete as of `dd305b5`.** Both encoder and decoder cover every Segwitv0 Terminal variant in miniscript v12. 169 lib tests passing. Catch-all in `decode_terminal` is now a structural defensive guard (no more deferred-task references).
+
+Next: Phase 3 (framing layer — bytecode header + path declaration), Phase 4 (chunking + wallet ID), or P5 (high-level public API: `encode_bytecode` / `decode_bytecode` from design §3) — see `design/IMPLEMENTATION_PLAN_v0.1.md` for the phase outline.
