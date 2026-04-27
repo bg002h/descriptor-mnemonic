@@ -358,6 +358,100 @@ pub fn bch_verify_long(hrp: &str, data_with_checksum: &[u8]) -> bool {
     polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) == WDM_LONG_CONST
 }
 
+/// Result of a successful BCH decode + correct attempt.
+///
+/// Returned by [`bch_correct_regular`] / [`bch_correct_long`] when correction
+/// succeeds. `corrections_applied == 0` means the input was already valid;
+/// `> 0` means substitutions were applied at the indicated positions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrectionResult {
+    /// The corrected `data_with_checksum` slice (input may have been modified).
+    pub data: Vec<u8>,
+    /// Number of substitutions applied (0 = clean input).
+    pub corrections_applied: usize,
+    /// Indices into `data` of the substituted positions.
+    pub corrected_positions: Vec<usize>,
+}
+
+// TODO(v0.2): replace brute-force 1-error correction with proper syndrome-based
+// BCH decoding (Berlekamp-Massey / Forney) to reach the spec-promised 4-error
+// correction in O(n^2) time. v0.1's brute force is correct for 0 or 1 errors;
+// inputs with 2+ errors that happen to brute-force-correct are mathematically
+// undetectable as "wrong correction" and would mislead the user. The v0.1
+// decoder therefore deliberately returns BchUncorrectable rather than risk
+// silent miscorrection beyond its 1-error reach.
+
+/// Attempt to correct a regular-code BCH-checksummed string with up to one
+/// substitution. Spec promises up to 4-error correction; v0.1 ships only a
+/// 1-error baseline. See the TODO comment above this function for the v0.2
+/// upgrade path.
+///
+/// Returns `Ok(CorrectionResult)` if the input is clean or one substitution
+/// repairs it. Returns `Err(Error::BchUncorrectable)` otherwise.
+pub fn bch_correct_regular(
+    hrp: &str,
+    data_with_checksum: &[u8],
+) -> Result<CorrectionResult, crate::Error> {
+    if bch_verify_regular(hrp, data_with_checksum) {
+        return Ok(CorrectionResult {
+            data: data_with_checksum.to_vec(),
+            corrections_applied: 0,
+            corrected_positions: vec![],
+        });
+    }
+    if let Some(r) = brute_force_one_error(hrp, data_with_checksum, bch_verify_regular) {
+        return Ok(r);
+    }
+    Err(crate::Error::BchUncorrectable)
+}
+
+/// Long-code analog of [`bch_correct_regular`].
+pub fn bch_correct_long(
+    hrp: &str,
+    data_with_checksum: &[u8],
+) -> Result<CorrectionResult, crate::Error> {
+    if bch_verify_long(hrp, data_with_checksum) {
+        return Ok(CorrectionResult {
+            data: data_with_checksum.to_vec(),
+            corrections_applied: 0,
+            corrected_positions: vec![],
+        });
+    }
+    if let Some(r) = brute_force_one_error(hrp, data_with_checksum, bch_verify_long) {
+        return Ok(r);
+    }
+    Err(crate::Error::BchUncorrectable)
+}
+
+/// Try every (position, replacement) pair until verify succeeds. Returns the
+/// first match (deterministic, scanned left-to-right, lowest replacement first).
+fn brute_force_one_error<F>(
+    hrp: &str,
+    data_with_checksum: &[u8],
+    verify: F,
+) -> Option<CorrectionResult>
+where
+    F: Fn(&str, &[u8]) -> bool,
+{
+    for i in 0..data_with_checksum.len() {
+        for v in 0..32u8 {
+            if v == data_with_checksum[i] {
+                continue;
+            }
+            let mut trial = data_with_checksum.to_vec();
+            trial[i] = v;
+            if verify(hrp, &trial) {
+                return Some(CorrectionResult {
+                    data: trial,
+                    corrections_applied: 1,
+                    corrected_positions: vec![i],
+                });
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,5 +871,90 @@ mod tests {
         // Degenerate but valid: checksum covers only the HRP preamble.
         let checksum = bch_create_checksum_long("wdm", &[]);
         assert!(bch_verify_long("wdm", &checksum));
+    }
+
+    #[test]
+    fn bch_correct_regular_clean_input() {
+        // Clean input → 0 corrections, identity result.
+        let hrp = "wdm";
+        let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let checksum = bch_create_checksum_regular(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        let r = bch_correct_regular(hrp, &full).unwrap();
+        assert_eq!(r.corrections_applied, 0);
+        assert!(r.corrected_positions.is_empty());
+        assert_eq!(r.data, full);
+    }
+
+    #[test]
+    fn bch_correct_regular_one_error() {
+        // Single-symbol corruption is recoverable.
+        let hrp = "wdm";
+        let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let checksum = bch_create_checksum_regular(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        let original = full.clone();
+        full[3] = (full[3] + 1) & 0x1F;
+        let r = bch_correct_regular(hrp, &full).unwrap();
+        assert_eq!(r.corrections_applied, 1);
+        assert_eq!(r.corrected_positions, vec![3]);
+        assert_eq!(r.data, original);
+    }
+
+    #[test]
+    fn bch_correct_regular_two_errors_uncorrectable_v0_1() {
+        // v0.1 baseline cannot fix 2-error damage; spec promises this in v0.2.
+        let hrp = "wdm";
+        let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let checksum = bch_create_checksum_regular(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        full[3] = (full[3] + 1) & 0x1F;
+        full[7] = (full[7] + 1) & 0x1F;
+        let result = bch_correct_regular(hrp, &full);
+        assert!(matches!(result, Err(crate::Error::BchUncorrectable)));
+    }
+
+    #[test]
+    fn bch_correct_long_clean_input() {
+        let hrp = "wdm";
+        let data: Vec<u8> = (0..16).collect();
+        let checksum = bch_create_checksum_long(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        let r = bch_correct_long(hrp, &full).unwrap();
+        assert_eq!(r.corrections_applied, 0);
+    }
+
+    #[test]
+    fn bch_correct_long_one_error() {
+        let hrp = "wdm";
+        let data: Vec<u8> = (0..16).collect();
+        let checksum = bch_create_checksum_long(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        let original = full.clone();
+        full[5] = (full[5] + 1) & 0x1F;
+        let r = bch_correct_long(hrp, &full).unwrap();
+        assert_eq!(r.corrections_applied, 1);
+        assert_eq!(r.corrected_positions, vec![5]);
+        assert_eq!(r.data, original);
+    }
+
+    #[test]
+    fn bch_correct_returns_correction_result_with_position() {
+        // Verify the API contract: a successful 1-error correction reports
+        // exactly the position that was changed.
+        let hrp = "wdm";
+        let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let checksum = bch_create_checksum_regular(hrp, &data);
+        let mut full = data.clone();
+        full.extend_from_slice(&checksum);
+        // Damage the second checksum byte (position 9 from start).
+        full[9] = (full[9] + 7) & 0x1F;
+        let r = bch_correct_regular(hrp, &full).unwrap();
+        assert_eq!(r.corrected_positions, vec![9]);
     }
 }
