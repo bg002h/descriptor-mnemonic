@@ -171,6 +171,158 @@ impl ChunkHeader {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ChunkCode
+// ---------------------------------------------------------------------------
+
+/// Selects which BCH code size a chunk's encoding uses.
+///
+/// Codes from BIP 93 (codex32). Regular code has a 13-char checksum;
+/// long code has a 15-char checksum. Tradeoff: long code carries more
+/// payload per chunk but at higher transcription burden.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChunkCode {
+    /// Regular codex32 code: 13-character checksum, 48-byte single-string capacity.
+    Regular,
+    /// Long codex32 code: 15-character checksum, 56-byte single-string capacity.
+    Long,
+}
+
+impl ChunkCode {
+    /// Single-string maximum bytecode payload (no cross-chunk hash overhead).
+    pub const fn single_string_capacity(self) -> usize {
+        match self {
+            Self::Regular => 48,
+            Self::Long => 56,
+        }
+    }
+
+    /// Per-chunk fragment capacity (used when chunking).
+    pub const fn fragment_capacity(self) -> usize {
+        match self {
+            Self::Regular => 45,
+            Self::Long => 53,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ChunkingPlan
+// ---------------------------------------------------------------------------
+
+/// Result of the chunking decision: how the bytecode will be encoded.
+///
+/// Produced by [`chunking_decision`]. Tells the encoder whether to emit one
+/// codex32 string or split across multiple chunks.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChunkingPlan {
+    /// Encode as a single string. The bytecode plus the chunk header is
+    /// short enough to fit one codex32 string at the chosen code size.
+    SingleString {
+        /// The BCH code size to use.
+        code: ChunkCode,
+    },
+
+    /// Encode as `count` chunks of at most `fragment_size` bytes each at
+    /// the chosen code size. The cross-chunk SHA-256[0..4] hash is appended
+    /// to the bytecode before splitting.
+    ///
+    /// `fragment_size` is the **maximum** per-chunk fragment; the last chunk
+    /// may be shorter. The actual division is performed by `chunk_bytes`
+    /// (Task 4-E).
+    Chunked {
+        /// The BCH code size to use for every chunk.
+        code: ChunkCode,
+        /// Maximum bytes per chunk fragment (≤ `code.fragment_capacity()`).
+        fragment_size: usize,
+        /// Total number of chunks (1–32; in practice ≥ 2 unless `force_chunked`).
+        count: usize,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// chunking_decision
+// ---------------------------------------------------------------------------
+
+/// Decide how to encode `bytecode_len` bytes of canonical bytecode.
+///
+/// # Selection rules
+///
+/// 1. If `force_chunked` is `false` and `bytecode_len ≤ 48` (regular single-string
+///    capacity), return `SingleString { Regular }`.
+/// 2. Else if `force_chunked` is `false` and `bytecode_len ≤ 56` (long single-string
+///    capacity), return `SingleString { Long }`.
+/// 3. Otherwise (chunked path): the byte stream is `bytecode_len + 4` (the
+///    4-byte cross-chunk SHA-256 hash is appended before splitting).
+///    - Try **Regular** first: `count = ⌈(bytecode_len + 4) / 45⌉`.
+///      If `count ≤ 32`, return `Chunked { Regular, 45, count }`.
+///    - Else try **Long**: `count = ⌈(bytecode_len + 4) / 53⌉`.
+///      If `count ≤ 32`, return `Chunked { Long, 53, count }`.
+///    - Else return [`Error::PolicyTooLarge`] with `max_supported = 1692`
+///      (= 32 × 53 − 4).
+///
+/// The `force_chunked` flag (BIP line 438) lets encoders chunk even small
+/// bytecodes, e.g. to fit on physical media.  When forced, the single-string
+/// checks in steps 1–2 are skipped; selection within the chunked path is
+/// unchanged (Regular preferred, Long fallback).
+///
+/// # Errors
+///
+/// Returns [`Error::PolicyTooLarge`] when `bytecode_len` exceeds 1692.
+pub fn chunking_decision(bytecode_len: usize, force_chunked: bool) -> Result<ChunkingPlan> {
+    // Steps 1 & 2: single-string path (skipped when force_chunked).
+    if !force_chunked {
+        if bytecode_len <= ChunkCode::Regular.single_string_capacity() {
+            return Ok(ChunkingPlan::SingleString {
+                code: ChunkCode::Regular,
+            });
+        }
+        if bytecode_len <= ChunkCode::Long.single_string_capacity() {
+            return Ok(ChunkingPlan::SingleString {
+                code: ChunkCode::Long,
+            });
+        }
+    }
+
+    // Steps 3 & 4: chunked path.
+    // The cross-chunk hash adds 4 bytes to the byte stream before splitting.
+    let stream_len = bytecode_len + 4;
+
+    // Step 3: try Regular.
+    let regular_cap = ChunkCode::Regular.fragment_capacity(); // 45
+    let regular_count = stream_len.div_ceil(regular_cap);
+    if regular_count <= 32 {
+        return Ok(ChunkingPlan::Chunked {
+            code: ChunkCode::Regular,
+            fragment_size: regular_cap,
+            count: regular_count,
+        });
+    }
+
+    // Step 4: try Long.
+    let long_cap = ChunkCode::Long.fragment_capacity(); // 53
+    let long_count = stream_len.div_ceil(long_cap);
+    if long_count <= 32 {
+        return Ok(ChunkingPlan::Chunked {
+            code: ChunkCode::Long,
+            fragment_size: long_cap,
+            count: long_count,
+        });
+    }
+
+    // Step 5: too large.
+    Err(Error::PolicyTooLarge {
+        bytecode_len,
+        max_supported: 32 * 53 - 4, // 1692
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,6 +530,197 @@ mod tests {
         assert!(
             matches!(err, Error::ChunkHeaderTruncated),
             "expected ChunkHeaderTruncated, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // ChunkCode capacity constants
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn chunk_code_capacity_constants() {
+        assert_eq!(ChunkCode::Regular.single_string_capacity(), 48);
+        assert_eq!(ChunkCode::Long.single_string_capacity(), 56);
+        assert_eq!(ChunkCode::Regular.fragment_capacity(), 45);
+        assert_eq!(ChunkCode::Long.fragment_capacity(), 53);
+    }
+
+    // -----------------------------------------------------------------------
+    // chunking_decision tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn single_string_short_input() {
+        // Small bytecode → SingleString { Regular }.
+        let plan = chunking_decision(10, false).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::SingleString {
+                code: ChunkCode::Regular
+            }
+        );
+    }
+
+    #[test]
+    fn single_string_regular_at_boundary() {
+        // At the regular capacity boundary: 48 → Regular; 49 → falls through.
+        let at = chunking_decision(48, false).unwrap();
+        assert_eq!(
+            at,
+            ChunkingPlan::SingleString {
+                code: ChunkCode::Regular
+            }
+        );
+
+        // 49 bytes is over regular single-string but still fits long single-string.
+        let over = chunking_decision(49, false).unwrap();
+        assert_ne!(
+            over,
+            ChunkingPlan::SingleString {
+                code: ChunkCode::Regular
+            },
+            "49 bytes should NOT return SingleString {{ Regular }}"
+        );
+    }
+
+    #[test]
+    fn single_string_long_at_boundary() {
+        // At the long capacity boundary: 56 → Long; 57 → chunked path.
+        let at = chunking_decision(56, false).unwrap();
+        assert_eq!(
+            at,
+            ChunkingPlan::SingleString {
+                code: ChunkCode::Long
+            }
+        );
+
+        // 57 bytes exceeds both single-string capacities → must be a Chunked plan.
+        let over = chunking_decision(57, false).unwrap();
+        assert!(
+            matches!(over, ChunkingPlan::Chunked { .. }),
+            "57 bytes should return Chunked, got {over:?}"
+        );
+    }
+
+    #[test]
+    fn force_chunked_skips_single_string() {
+        // force_chunked=true with a short bytecode → Chunked, not SingleString.
+        // count = ceil((10 + 4) / 45) = ceil(14/45) = 1.
+        let plan = chunking_decision(10, true).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::Chunked {
+                code: ChunkCode::Regular,
+                fragment_size: 45,
+                count: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn chunked_regular_minimal() {
+        // 57 bytes is just over long single-string capacity.
+        // stream = 57 + 4 = 61; count = ceil(61/45) = 2.
+        let plan = chunking_decision(57, false).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::Chunked {
+                code: ChunkCode::Regular,
+                fragment_size: 45,
+                count: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn chunked_regular_at_max_chunks() {
+        // Exactly 32 regular chunks: stream = 32 * 45 = 1440, bytecode_len = 1436.
+        // count = ceil(1440/45) = 32.
+        let plan = chunking_decision(1436, false).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::Chunked {
+                code: ChunkCode::Regular,
+                fragment_size: 45,
+                count: 32,
+            }
+        );
+    }
+
+    #[test]
+    fn chunked_falls_through_to_long_at_regular_overflow() {
+        // 1437 + 4 = 1441 > 1440 (32*45), so regular needs 33 chunks → overflow.
+        // long: count = ceil(1441/53) = ceil(1441/53) = 28.
+        // 1441 / 53 = 27.188... → ceil = 28.
+        let plan = chunking_decision(1437, false).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::Chunked {
+                code: ChunkCode::Long,
+                fragment_size: 53,
+                count: 28,
+            }
+        );
+    }
+
+    #[test]
+    fn chunked_long_at_max_chunks() {
+        // Exactly 32 long chunks: stream = 32 * 53 = 1696, bytecode_len = 1692.
+        // count = ceil(1696/53) = 32.
+        let plan = chunking_decision(1692, false).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::Chunked {
+                code: ChunkCode::Long,
+                fragment_size: 53,
+                count: 32,
+            }
+        );
+    }
+
+    #[test]
+    fn reject_too_large() {
+        // 1693 bytes: stream = 1697 > 1696 (32*53). Must return PolicyTooLarge.
+        let err = chunking_decision(1693, false).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::PolicyTooLarge {
+                    bytecode_len: 1693,
+                    max_supported: 1692,
+                }
+            ),
+            "expected PolicyTooLarge {{ bytecode_len: 1693, max_supported: 1692 }}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn force_chunked_at_max() {
+        // force_chunked=true at bytecode_len=1692 → same long-32 plan.
+        let plan = chunking_decision(1692, true).unwrap();
+        assert_eq!(
+            plan,
+            ChunkingPlan::Chunked {
+                code: ChunkCode::Long,
+                fragment_size: 53,
+                count: 32,
+            }
+        );
+    }
+
+    #[test]
+    fn force_chunked_too_large() {
+        // force_chunked=true at bytecode_len=1693 → PolicyTooLarge.
+        let err = chunking_decision(1693, true).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::PolicyTooLarge {
+                    bytecode_len: 1693,
+                    max_supported: 1692,
+                }
+            ),
+            "expected PolicyTooLarge {{ bytecode_len: 1693, max_supported: 1692 }}, got {err:?}"
         );
     }
 }

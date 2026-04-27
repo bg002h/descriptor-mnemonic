@@ -10,7 +10,7 @@ pub mod policy;
 pub mod vectors;
 pub mod wallet_id;
 
-pub use chunking::ChunkHeader;
+pub use chunking::{ChunkCode, ChunkHeader, ChunkingPlan, chunking_decision};
 pub use encoding::{
     BchCode, DecodedString, bytes_to_5bit, decode_string, encode_string, five_bit_to_bytes,
 };

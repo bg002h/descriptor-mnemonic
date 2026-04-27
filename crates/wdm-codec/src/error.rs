@@ -116,6 +116,17 @@ pub enum Error {
     #[error("chunk header truncated: input too short")]
     ChunkHeaderTruncated,
 
+    /// Bytecode is too large for any v0 chunking plan.
+    #[error(
+        "policy too large: {bytecode_len} bytes exceeds maximum {max_supported} for v0 chunking"
+    )]
+    PolicyTooLarge {
+        /// The bytecode length that was rejected.
+        bytecode_len: usize,
+        /// The maximum supported bytecode length (= 32 * 53 − 4 = 1692).
+        max_supported: usize,
+    },
+
     /// Policy parse error from the BIP 388 string form.
     #[error("policy parse error: {0}")]
     PolicyParse(String),
