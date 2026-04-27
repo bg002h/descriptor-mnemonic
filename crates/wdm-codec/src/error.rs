@@ -91,6 +91,31 @@ pub enum Error {
     #[error("cross-chunk hash mismatch")]
     CrossChunkHashMismatch,
 
+    /// Chunk count field is invalid (must be 1–32).
+    #[error("invalid chunk count: {0} (must be 1–32)")]
+    InvalidChunkCount(u8),
+
+    /// Chunk index is out of range for the declared count (index must be < count).
+    #[error("invalid chunk index: {index} >= count {count}")]
+    InvalidChunkIndex {
+        /// The chunk index that was rejected.
+        index: u8,
+        /// The declared total chunk count.
+        count: u8,
+    },
+
+    /// The three wallet-id bytes in a chunk header had illegal high bits set.
+    ///
+    /// The wallet-id field is 20 bits wide; the top 4 bits of the three-byte
+    /// encoding must be zero.  Any non-zero high nibble in the first byte
+    /// triggers this error.
+    #[error("invalid wallet-id encoding: top 4 bits of wallet-id field must be zero")]
+    InvalidWalletIdEncoding,
+
+    /// The chunk header bytes were truncated (too short to contain a complete header).
+    #[error("chunk header truncated: input too short")]
+    ChunkHeaderTruncated,
+
     /// Policy parse error from the BIP 388 string form.
     #[error("policy parse error: {0}")]
     PolicyParse(String),
