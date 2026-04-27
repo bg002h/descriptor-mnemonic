@@ -793,34 +793,106 @@ mod tests {
         assert_eq!(p2.key_count(), 11, "round-trip must preserve key_count=11");
     }
 
-    /// Verify that a policy containing a `sha256()` hash terminal round-trips.
-    ///
-    /// Prior to the upstream `WalletPolicyTranslator` patch (apoelstra fork
-    /// branch `fix/wallet-policy-hash-terminals`, applied via the workspace
-    /// `[patch]` redirect in `Cargo.toml`), `WalletPolicy::into_descriptor()`
-    /// panicked on any descriptor with a hash terminal — the translator used
-    /// `translate_hash_fail!` in both directions. The fix replaced those macro
-    /// invocations with manual hex-String ↔ binary-Hash conversion methods.
-    ///
-    /// This test pins the round-trip for an HTLC-style template
-    /// `wsh(and_v(v:pk(@0/**),sha256(<32-byte hash>)))` — the v0.1 corpus
-    /// E13 shape. Includes a hash whose binary form contains `0x32` to also
-    /// guard against the (already-fixed) `count_placeholder_indices`
-    /// over-count bug, in case anyone reintroduces a byte-scan in the future.
-    #[test]
-    fn to_bytecode_round_trip_with_sha256_terminal() {
-        // SHA-256("hello world"). Bytes 1, 4, 7, … contain `0x32`-adjacent
-        // values; the actual binary has at least one `0x32` near offset 27,
-        // guarding the placeholder-count code path against payload-byte
-        // collisions.
-        let policy_str = "wsh(and_v(v:pk(@0/**),sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9)))";
-        let p: WalletPolicy = policy_str.parse().expect("HTLC-shape policy must parse");
-        assert_eq!(p.key_count(), 1, "single placeholder @0");
+    // Hash-terminal round-trip tests.
+    //
+    // Prior to the upstream `WalletPolicyTranslator` patch (apoelstra fork
+    // branch `fix/wallet-policy-hash-terminals`, applied via the workspace
+    // `[patch]` redirect in `Cargo.toml`), `WalletPolicy::into_descriptor()`
+    // panicked on any descriptor with a hash terminal — the translator used
+    // `translate_hash_fail!` in both directions. The fix replaced those macro
+    // invocations with manual hex-String ↔ binary-Hash conversion methods.
+    //
+    // The single-type tests below pin one of each hash type
+    // (sha256/hash256/ripemd160/hash160). The pair test exercises every
+    // ordered combination of two distinct hash types in a single policy.
+    //
+    // Lowercase-hex test vectors of the correct length per hash type:
+    // sha256/hash256 = 32 bytes (64 hex), ripemd160/hash160 = 20 bytes (40 hex).
+    // The sha256 vector is SHA-256("hello world") whose binary form contains
+    // `0x32` near offset 27, additionally guarding the (already-fixed)
+    // `count_placeholder_indices` byte-scan bug against re-introduction.
+    const HTLC_SHA256: &str = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    const HTLC_HASH256: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const HTLC_RIPEMD160: &str = "1234567890abcdef1234567890abcdef12345678";
+    const HTLC_HASH160: &str = "fedcba0987654321fedcba0987654321fedcba09";
+
+    /// Round-trip a policy through `to_bytecode` -> `from_bytecode` and
+    /// assert the key count is preserved.
+    fn assert_bytecode_round_trip(policy_str: &str, expected_key_count: usize) {
+        let p: WalletPolicy = policy_str
+            .parse()
+            .unwrap_or_else(|e| panic!("policy must parse ({policy_str:?}): {e}"));
+        assert_eq!(p.key_count(), expected_key_count, "input key_count");
         let bytes = p
             .to_bytecode()
-            .expect("to_bytecode must succeed for a hash-terminal-bearing policy");
+            .unwrap_or_else(|e| panic!("to_bytecode must succeed for {policy_str:?}: {e}"));
         let p2 = WalletPolicy::from_bytecode(&bytes)
-            .expect("from_bytecode must succeed for a hash-terminal-bearing policy");
-        assert_eq!(p2.key_count(), 1, "round-trip must preserve key_count=1");
+            .unwrap_or_else(|e| panic!("from_bytecode must succeed for {policy_str:?}: {e}"));
+        assert_eq!(
+            p2.key_count(),
+            expected_key_count,
+            "round-trip must preserve key_count"
+        );
+    }
+
+    #[test]
+    fn to_bytecode_round_trip_with_sha256_terminal() {
+        assert_bytecode_round_trip(&format!("wsh(and_v(v:pk(@0/**),sha256({HTLC_SHA256})))"), 1);
+    }
+
+    #[test]
+    fn to_bytecode_round_trip_with_hash256_terminal() {
+        assert_bytecode_round_trip(
+            &format!("wsh(and_v(v:pk(@0/**),hash256({HTLC_HASH256})))"),
+            1,
+        );
+    }
+
+    #[test]
+    fn to_bytecode_round_trip_with_ripemd160_terminal() {
+        assert_bytecode_round_trip(
+            &format!("wsh(and_v(v:pk(@0/**),ripemd160({HTLC_RIPEMD160})))"),
+            1,
+        );
+    }
+
+    #[test]
+    fn to_bytecode_round_trip_with_hash160_terminal() {
+        assert_bytecode_round_trip(
+            &format!("wsh(and_v(v:pk(@0/**),hash160({HTLC_HASH160})))"),
+            1,
+        );
+    }
+
+    /// Round-trip every ordered pair of distinct hash types in the same
+    /// policy, end-to-end through `to_bytecode` / `from_bytecode`.
+    /// 4 hash types × 3 = 12 ordered pairs.
+    ///
+    /// This is the WDM-side mirror of the fork's
+    /// `all_ordered_pairs_of_distinct_hash_types_round_trip` test; here we
+    /// additionally exercise the bytecode encoder/decoder over each pair,
+    /// confirming that policies with multiple hash types of any kind
+    /// round-trip cleanly through the canonical bytecode and back.
+    #[test]
+    fn to_bytecode_round_trip_with_all_pairs_of_hash_types() {
+        let kinds: &[(&str, &str)] = &[
+            ("sha256", HTLC_SHA256),
+            ("hash256", HTLC_HASH256),
+            ("ripemd160", HTLC_RIPEMD160),
+            ("hash160", HTLC_HASH160),
+        ];
+        let mut pair_count = 0;
+        for (a_idx, (a_kind, a_hex)) in kinds.iter().enumerate() {
+            for (b_idx, (b_kind, b_hex)) in kinds.iter().enumerate() {
+                if a_idx == b_idx {
+                    continue;
+                }
+                let policy_str =
+                    format!("wsh(and_v(v:and_v(v:pk(@0/**),{a_kind}({a_hex})),{b_kind}({b_hex})))");
+                assert_bytecode_round_trip(&policy_str, 1);
+                pair_count += 1;
+            }
+        }
+        assert_eq!(pair_count, 12, "expected 4·3 = 12 ordered pairs");
     }
 }
