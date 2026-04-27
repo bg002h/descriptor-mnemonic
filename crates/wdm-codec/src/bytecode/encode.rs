@@ -504,11 +504,15 @@ mod tests {
         // Three placeholder records of 2 bytes each (Tag::Placeholder + idx).
         // 4 + 3*2 = 10 bytes total.
         assert_eq!(bytes.len(), 10);
+        let mut indices: Vec<u8> = Vec::with_capacity(3);
         for i in 0..3 {
             assert_eq!(bytes[4 + 2 * i], Tag::Placeholder.as_byte()); // 0x32
-            // bytes[5 + 2*i] is the LEB128-encoded index (0, 1, or 2).
-            assert!(bytes[5 + 2 * i] <= 2);
+            indices.push(bytes[5 + 2 * i]);
         }
+        // The three emitted indices must be exactly {0, 1, 2} regardless of
+        // emission order — every original key found its placeholder.
+        indices.sort_unstable();
+        assert_eq!(indices, vec![0, 1, 2]);
     }
 
     #[test]
@@ -765,9 +769,12 @@ mod tests {
 
     #[test]
     fn encode_terminal_or_d_recurses_into_pk_k_children() {
-        // Confirms the Arc forwarding impl recurses through PkK children
-        // and that a placeholder lookup works inside a logical-operator
-        // subtree. or_d(pk_k(K0), pk_k(K1)) — neither pk_k branch is
+        // Exercises the Arc forwarding impl on the immediate children of a
+        // logical operator: each `Arc<Miniscript<...>>` child resolves
+        // through Arc → Miniscript → Terminal → PkK with placeholder lookup.
+        // (Arc forwarding is invoked once per child arc, not in a deeper
+        // recursive chain — that depth comes from the trait dispatch chain
+        // below it.) or_d(pk_k(K0), pk_k(K1)) — neither pk_k branch is
         // actually B-du-unit on its own (pk_k is K-type), so this would
         // not parse, but the encoder is type-blind.
         let k0 = DescriptorPublicKey::from_str(
