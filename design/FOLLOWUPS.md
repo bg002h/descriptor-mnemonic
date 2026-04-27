@@ -149,6 +149,60 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** external
 
+### `p2-fingerprints-block` — v0.2 fingerprints block support
+
+- **Surfaced:** Phase 5-B; documented at `crates/wdm-codec/src/policy.rs:316-317` and `:668`
+- **Where:** `crates/wdm-codec/src/bytecode/{header,decode}.rs`, `crates/wdm-codec/src/policy.rs::from_bytecode`
+- **What:** The bytecode header has a fingerprints flag (bit 2) and a reserved tag `Tag::Fingerprints = 0x35`, but v0.1 rejects any input with the flag set via `Error::PolicyScopeViolation`. v0.2 should implement the full fingerprints-block format (per BIP §"Fingerprints block"): a count byte followed by `count` 4-byte master-key fingerprints in placeholder index order, allowing recovery tools to verify which seed corresponds to which `@i` placeholder before deriving.
+- **Why deferred:** v0.1 spec scope. The recovery flow can match seeds to placeholders by trial derivation; the fingerprints block is an ergonomics + privacy improvement.
+- **Status:** open
+- **Tier:** v0.2
+
+### `5e-skip-silent` — tests with size-conditional assertions skip silently
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Where:** `crates/wdm-codec/src/decode.rs:270` (`if bytecode.len() <= 56 { return; }`) and `decode.rs:530` (same pattern)
+- **What:** Two tests gate their main assertion behind a size check; if the encoder ever shifts capacity (e.g., from a tag-table renumbering or LEB128 width change) the tests would silently pass without exercising the chunked path. Better: pass `EncodeOptions { force_chunking: true, ..Default() }` so the chunked path is exercised deterministically regardless of bytecode length.
+- **Why deferred:** caught at review; non-blocking since the tests still pass on actual v0.1 byte counts.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
+### `5e-dead-branch` — `decode_rejects_chunks_with_duplicate_indices` has unreachable fallback
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Where:** `crates/wdm-codec/src/decode.rs:418-450`
+- **What:** The early `if backup.chunks.len() < 2` branch re-encodes the SAME 9-key multisig policy with `force_chunking: true` and asserts the same outcome as the fallthrough. Since the 9-key multisig already chunks under the default plan, the early branch is unreachable. Either remove the branch (simplify to the always-multi-chunk path) or restructure to test a smaller policy with `force_chunking` deliberately.
+- **Why deferred:** caught at review; test still passes correctly.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
+### `5e-correction-position-doc` — rustdoc cross-reference for `Correction.char_position` coordinate system
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Where:** `crates/wdm-codec/src/decode.rs` (the `decode` rustdoc); `crates/wdm-codec/src/chunking.rs:447` already documents `Correction.char_position` semantics
+- **What:** `Correction.char_position` is a 0-indexed offset within the chunk's data part (after `wdm1` HRP+separator). The decode path consumes `corrected_positions` from `DecodedString`, which uses the same coordinate system. A one-line cross-reference in `decode`'s rustdoc reaffirming this would prevent confusion for callers building diagnostic UIs.
+- **Why deferred:** documentation polish, not algorithmic.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
+### `4a-from-bytes-shape` — reconsider `Chunk::from_bytes` shape (slice+usize vs `&mut Cursor`)
+
+- **Surfaced:** Phase 4-A code review of `aefdf3f` (deferred to "after 4-E"); 4-E used the slice+usize shape unchanged
+- **Where:** `crates/wdm-codec/src/chunking.rs::Chunk::from_bytes` (returns `Result<(Self, usize), Error>`)
+- **What:** Phase 2/3's bytecode parsers use `&mut Cursor<'_>` for stream consumption; `Chunk::from_bytes` returns a slice + consumed-byte-count tuple. The two shapes do equivalent work but diverge stylistically. Consolidating on Cursor would let callers chain chunk parses inside a longer buffer; consolidating on slice+usize would let bytecode parsers expose simpler APIs. v0.1 has no caller that needs to switch shapes. Defer until either Phase 7 (CLI parsing of multi-chunk inputs) or any non-test consumer surfaces a need.
+- **Why deferred:** premature; no consumer needs the conversion.
+- **Status:** open
+- **Tier:** v0.2
+
+### `5e-five-bit-truncated-mapping` — `five_bit_to_bytes` failure error-variant choice
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`
+- **Where:** `crates/wdm-codec/src/decode.rs:144-147`
+- **What:** When `five_bit_to_bytes` returns `None` (data part isn't a multiple of 8 bits), the decode maps to `Error::InvalidBytecode { offset: 0, kind: Truncated }`. After a successful BCH-validated decode, this branch should be unreachable in practice — `unreachable!()` with a justification comment, or a dedicated error variant like `Error::FiveBitConversionFailed`, would be more honest than reusing `Truncated`. The current mapping is plausible (it IS a sense of "truncated") but the offset:0 is meaningless for this particular failure mode.
+- **Why deferred:** caught at review; non-load-bearing diagnostic concern.
+- **Status:** open
+- **Tier:** v0.1-nice-to-have
+
 ---
 
 ## Resolved items
@@ -213,6 +267,30 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 - **Surfaced:** Phase 4-E review of `f0d9346` (the Opus reviewer noticed the helper was structurally identical to `from_bytes` because chunk fragments have no length-bound)
 - **Status:** resolved `e7a7a16` (Phase 4-E followup); rationale captured in `design/PHASE_7_DECISIONS.md` CF-1 (Phase 7 codex32 layer is the chunk byte-boundary source of truth).
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5a-test-7-tautology` — `shared_path_returns_none_for_template_only_policy` used `matches!(.., None | Some(_))`
+
+- **Surfaced:** Phase 5-A code review of `56124c3`
+- **Status:** resolved `22beba8` (Phase 5-B); test now uses `assert!(p.shared_path().is_none())` since the 5-B implementation correctly returns `None` for template-only policies.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5a-key-count-cast` — `(m + 1) as usize` cast in `key_count`
+
+- **Surfaced:** Phase 5-A code review of `56124c3`
+- **Status:** resolved `2ec1d41` (Phase 5-A followup); `key_count` now uses `usize` throughout its scan, eliminating the cast entirely.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5a-key-count-numeric-type` — `key_count` should use `usize` end-to-end (was `u32`-then-cast)
+
+- **Surfaced:** Phase 5-A code review of `56124c3`
+- **Status:** resolved `2ec1d41` (Phase 5-A followup); `Option<u32>` → `Option<usize>`, `parse::<u32>()` → `parse::<usize>()`.
+- **Tier:** v0.1-nice-to-have (closed)
+
+### `5a-key-count-rustdoc` — rustdoc clarification that `inner.to_string()` writes only the template
+
+- **Surfaced:** Phase 5-A code review of `56124c3`
+- **Status:** resolved `2ec1d41` (Phase 5-A followup); rustdoc explicitly notes BIP 388 template form (`@N`-only) and that origin xpubs appear only in full-descriptor display.
 - **Tier:** v0.1-nice-to-have (closed)
 
 ---
