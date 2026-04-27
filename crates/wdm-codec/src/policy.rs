@@ -110,12 +110,6 @@ impl FromStr for WalletPolicy {
 }
 
 impl WalletPolicy {
-    /// Construct from a parsed inner policy. Used for tests and bytecode
-    /// round-trip (Task 5-B).
-    pub fn from_inner(inner: InnerWalletPolicy) -> Self {
-        Self { inner }
-    }
-
     /// Convert to BIP 388 canonical string form.
     ///
     /// Canonical form requires (per BIP §"Round-trip canonical form"):
@@ -136,11 +130,13 @@ impl WalletPolicy {
     /// `max_index + 1`. For a well-formed BIP 388 template the indices are
     /// sequential starting at 0, so this equals the distinct key count.
     ///
-    /// Note: `inner.to_string()` writes only the template portion (no `@`
-    /// outside `@N` placeholder tokens), so this scan is unambiguous.
+    /// Note: this scans the BIP 388 template form (`@N`-only), which the
+    /// fork's `WalletPolicy::Display` always produces. Origin xpubs and other
+    /// `@`-bearing strings appear only in full-descriptor display, not here,
+    /// so the scan is unambiguous.
     pub fn key_count(&self) -> usize {
         let s = self.inner.to_string();
-        let mut max_index: Option<u32> = None;
+        let mut max_index: Option<usize> = None;
         let mut chars = s.chars().peekable();
         while let Some(ch) = chars.next() {
             if ch == '@' {
@@ -149,7 +145,7 @@ impl WalletPolicy {
                 while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
                     digits.push(chars.next().unwrap());
                 }
-                if let Ok(idx) = digits.parse::<u32>() {
+                if let Ok(idx) = digits.parse::<usize>() {
                     max_index = Some(match max_index {
                         Some(prev) => prev.max(idx),
                         None => idx,
@@ -157,7 +153,7 @@ impl WalletPolicy {
                 }
             }
         }
-        max_index.map_or(0, |m| m as usize + 1)
+        max_index.map_or(0, |m| m + 1)
     }
 
     /// The shared derivation path used by all `@i` placeholders, if any.
