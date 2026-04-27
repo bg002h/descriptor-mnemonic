@@ -7,12 +7,16 @@
 /// placeholder framing and shared-path declarations.
 ///
 /// Tag 0x35 (fingerprints block) is reserved for v0.2 and is not in the v0.1 enum.
+///
+/// Marked `#[non_exhaustive]` so adding new variants in v0.2+ (e.g. fingerprints
+/// at 0x35) does not break downstream `match` consumers. See PHASE_2_DECISIONS.md.
+#[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tag {
-    /// Boolean false / numeric zero.
+    /// `0` — miniscript terminal always-false fragment.
     False = 0x00,
-    /// Boolean true / numeric one.
+    /// `1` — miniscript terminal always-true fragment.
     True = 0x01,
     /// `pkh(K)` — pay-to-pubkey-hash top-level descriptor.
     Pkh = 0x02,

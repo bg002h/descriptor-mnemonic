@@ -27,6 +27,16 @@ Living document of decisions made during autonomous execution of Phase 2 (Byteco
 
 ---
 
+### D-3 (Task 2.1 review fix): `Tag` marked `#[non_exhaustive]`
+
+**Context**: Task 2.1's code review flagged that `Tag` lacks `#[non_exhaustive]` despite the module-level doc forecasting new tags (e.g., fingerprints 0x35 in v0.2). Without the attribute, downstream `match tag { ... }` consumers will get a hard compile error when v0.2 adds variants.
+
+**Decision**: Add `#[non_exhaustive]` to `Tag`. Same reasoning as D-2 for `WdmKey`. Zero runtime cost.
+
+**Verify in code**: `crates/wdm-codec/src/bytecode/tag.rs`, `pub enum Tag` declaration.
+
+---
+
 ### D-2 (Task 2.3): `WdmKey::Key(DescriptorPublicKey)` shipped in v0.1 but unconstructible
 
 **Context**: The plan file specifies `WdmKey::Key(DescriptorPublicKey)` as a forward-compat variant for v1+ foreign-xpub support. v0.1 only uses `Placeholder(u8)`.
