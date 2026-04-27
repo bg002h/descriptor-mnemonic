@@ -127,6 +127,22 @@ pub enum Error {
         max_supported: usize,
     },
 
+    /// `reassemble_chunks` was called with an empty chunk list.
+    #[error("reassemble_chunks called with an empty chunk list")]
+    EmptyChunkList,
+
+    /// An expected chunk index was absent from the chunk list during reassembly.
+    #[error("missing chunk index {0} during reassembly")]
+    MissingChunkIndex(u8),
+
+    /// The chunk list contained both SingleString and Chunked variants.
+    #[error("mixed chunk types: chunk list must be all SingleString or all Chunked")]
+    MixedChunkTypes,
+
+    /// A SingleString chunk appeared in a multi-chunk list (length > 1).
+    #[error("single-string chunk appeared in a multi-chunk list")]
+    SingleStringWithMultipleChunks,
+
     /// Policy parse error from the BIP 388 string form.
     #[error("policy parse error: {0}")]
     PolicyParse(String),
