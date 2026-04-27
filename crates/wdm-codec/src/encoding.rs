@@ -299,6 +299,7 @@ fn polymod_run(values: &[u8], r#gen: &[u128; 5], shift: u32, mask: u128) -> u128
 /// The algorithm runs polymod over `hrp_expand(hrp) || data || [0; 13]`,
 /// then XORs the result with [`WDM_REGULAR_CONST`] to extract the checksum.
 pub fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
+    // Regular code: 13-symbol checksum (0..=12), pad/array/extraction all use 13.
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 13));
@@ -331,6 +332,7 @@ pub fn bch_verify_regular(hrp: &str, data_with_checksum: &[u8]) -> bool {
 /// polymod parameters (`GEN_LONG`, `LONG_SHIFT`, `LONG_MASK`) and target
 /// constant ([`WDM_LONG_CONST`]). Produces a 15-element checksum array.
 pub fn bch_create_checksum_long(hrp: &str, data: &[u8]) -> [u8; 15] {
+    // Long code: 15-symbol checksum (0..=14), pad/array/extraction all use 15.
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 15));
@@ -703,6 +705,8 @@ mod tests {
     fn bch_zero_data_does_not_self_validate_regular() {
         // The all-zeros data + all-zeros checksum must NOT validate, because
         // WDM_REGULAR_CONST was chosen NUMS-style to avoid this trivial case.
+        // Data length 8 is arbitrary; any non-empty zero-fill exhibits the same
+        // negative result. 8 echoes the regular-code known-vector data length.
         let mut zero = vec![0u8; 8];
         zero.extend(std::iter::repeat_n(0, 13));
         assert!(!bch_verify_regular("wdm", &zero));
@@ -761,6 +765,8 @@ mod tests {
     #[test]
     fn bch_zero_data_does_not_self_validate_long() {
         // All-zeros must not validate, by NUMS construction of WDM_LONG_CONST.
+        // Data length 16 is arbitrary; any non-empty zero-fill exhibits the same
+        // negative result. 16 echoes the long-code known-vector data length.
         let mut zero = vec![0u8; 16];
         zero.extend(std::iter::repeat_n(0, 15));
         assert!(!bch_verify_long("wdm", &zero));
