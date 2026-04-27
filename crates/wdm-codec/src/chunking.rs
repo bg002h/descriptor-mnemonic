@@ -31,7 +31,7 @@ pub const MAX_BYTECODE_LEN: usize = 32 * 53 - 4; // 1692
 /// Maximum number of chunks supported by the v0 format.
 ///
 /// The chunk-count field is a 5-bit unsigned value, giving a maximum of 32.
-pub const MAX_CHUNK_COUNT: usize = 32;
+pub const MAX_CHUNK_COUNT: u8 = 32;
 
 /// Version byte for format version 0.
 const VERSION_0: u8 = 0x00;
@@ -39,8 +39,6 @@ const VERSION_0: u8 = 0x00;
 const TYPE_SINGLE: u8 = 0x00;
 /// Type byte for a chunked card.
 const TYPE_CHUNKED: u8 = 0x01;
-/// Maximum permitted chunk count (5-bit field, value 1–32), as a `u8` for header validation.
-const MAX_CHUNK_COUNT_U8: u8 = 32;
 /// Byte length of a SingleString header.
 const SINGLE_HEADER_LEN: usize = 2;
 /// Byte length of a Chunked header.
@@ -154,7 +152,7 @@ impl ChunkHeader {
                 let wallet_id = ChunkWalletId::new(w);
 
                 let count = bytes[5];
-                if count == 0 || count > MAX_CHUNK_COUNT_U8 {
+                if count == 0 || count > MAX_CHUNK_COUNT {
                     return Err(Error::InvalidChunkCount(count));
                 }
 
@@ -317,7 +315,7 @@ pub fn chunking_decision(bytecode_len: usize, force_chunked: bool) -> Result<Chu
     // Step 3: try Regular.
     let regular_cap = ChunkCode::Regular.fragment_capacity(); // 45
     let regular_count = stream_len.div_ceil(regular_cap);
-    if regular_count <= MAX_CHUNK_COUNT {
+    if regular_count <= MAX_CHUNK_COUNT as usize {
         return Ok(ChunkingPlan::Chunked {
             code: ChunkCode::Regular,
             fragment_size: regular_cap,
@@ -328,7 +326,7 @@ pub fn chunking_decision(bytecode_len: usize, force_chunked: bool) -> Result<Chu
     // Step 4: try Long.
     let long_cap = ChunkCode::Long.fragment_capacity(); // 53
     let long_count = stream_len.div_ceil(long_cap);
-    if long_count <= MAX_CHUNK_COUNT {
+    if long_count <= MAX_CHUNK_COUNT as usize {
         return Ok(ChunkingPlan::Chunked {
             code: ChunkCode::Long,
             fragment_size: long_cap,
@@ -373,6 +371,16 @@ impl Chunk {
         out
     }
 
+    /// Construct a `Chunk` from a header and fragment.
+    ///
+    /// No validation is performed on the header or fragment; the caller is
+    /// responsible for ensuring the header is well-formed (e.g. as produced by
+    /// [`ChunkHeader::from_bytes`]) and that the fragment length is consistent
+    /// with the intended encoding plan.
+    pub fn new(header: ChunkHeader, fragment: Vec<u8>) -> Self {
+        Self { header, fragment }
+    }
+
     /// Parse a `Chunk` from the start of `bytes`.
     ///
     /// Returns the parsed `Chunk` and the total number of bytes consumed
@@ -382,7 +390,9 @@ impl Chunk {
     /// appropriately).
     ///
     /// For standalone chunk buffers, callers should verify that the consumed
-    /// count equals `bytes.len()` to detect trailing garbage.
+    /// count equals `bytes.len()` to detect trailing garbage.  Use
+    /// [`Chunk::from_exact_bytes`] when the buffer is expected to contain
+    /// exactly one complete chunk with no trailing bytes.
     ///
     /// # Errors
     ///
@@ -393,6 +403,28 @@ impl Chunk {
         let fragment = bytes[header_len..].to_vec();
         let consumed = header_len + fragment.len();
         Ok((Chunk { header, fragment }, consumed))
+    }
+
+    /// Parse a complete chunk from a byte slice, requiring no trailing bytes.
+    ///
+    /// This is the right shape when the entire byte buffer represents a single
+    /// chunk (the typical receiver-side case). Use [`Chunk::from_bytes`] when
+    /// parsing chunks from a longer stream where trailing bytes are expected.
+    ///
+    /// # Errors
+    ///
+    /// Propagates all errors from [`Chunk::from_bytes`].  Additionally returns
+    /// [`Error::TrailingChunkBytes`] if the buffer contains bytes beyond the
+    /// end of the parsed chunk.
+    pub fn from_exact_bytes(bytes: &[u8]) -> Result<Self> {
+        let (chunk, consumed) = Self::from_bytes(bytes)?;
+        if consumed != bytes.len() {
+            return Err(Error::TrailingChunkBytes {
+                consumed,
+                total: bytes.len(),
+            });
+        }
+        Ok(chunk)
     }
 }
 
@@ -454,12 +486,15 @@ pub fn chunk_bytes(
             let mut stream = canonical_bytecode.to_vec();
             stream.extend_from_slice(hash_bytes);
 
-            // Defensive capacity check.
+            // Defensive capacity check: report plan-specific bytecode capacity.
+            // Plan total capacity is count * fragment_size bytes of stream,
+            // which holds bytecode + 4-byte hash, so max bytecode = capacity - 4.
             let total_capacity = count * fragment_size;
             if stream.len() > total_capacity {
+                let plan_bytecode_capacity = total_capacity - 4;
                 return Err(Error::PolicyTooLarge {
                     bytecode_len: canonical_bytecode.len(),
-                    max_supported: MAX_BYTECODE_LEN,
+                    max_supported: plan_bytecode_capacity,
                 });
             }
 
@@ -528,97 +563,99 @@ pub fn reassemble_chunks(chunks: Vec<Chunk>) -> Result<Vec<u8>> {
         return Err(Error::EmptyChunkList);
     }
 
-    match &chunks[0].header {
-        ChunkHeader::SingleString { .. } => {
-            // Validate that ALL chunks are SingleString.
-            if chunks
-                .iter()
-                .any(|c| !matches!(c.header, ChunkHeader::SingleString { .. }))
-            {
+    // Peek at the first header to determine the chunk type (without consuming).
+    let is_single = matches!(chunks[0].header, ChunkHeader::SingleString { .. });
+
+    if is_single {
+        // Validate that ALL chunks are SingleString.
+        if chunks
+            .iter()
+            .any(|c| !matches!(c.header, ChunkHeader::SingleString { .. }))
+        {
+            return Err(Error::MixedChunkTypes);
+        }
+        if chunks.len() > 1 {
+            return Err(Error::SingleStringWithMultipleChunks);
+        }
+        // The fragment IS the canonical bytecode — move it out.
+        return Ok(chunks.into_iter().next().unwrap().fragment);
+    }
+
+    // Chunked path: extract expected wallet_id and count from first chunk.
+    let (expected_wallet_id, expected_count) = match &chunks[0].header {
+        ChunkHeader::Chunked {
+            wallet_id, count, ..
+        } => (*wallet_id, *count),
+        ChunkHeader::SingleString { .. } => unreachable!("handled above"),
+    };
+
+    // Build an index-keyed map, validating and moving each chunk's fragment.
+    let mut by_index: HashMap<u8, Vec<u8>> = HashMap::new();
+    for chunk in chunks.into_iter() {
+        let Chunk { header, fragment } = chunk;
+        match header {
+            ChunkHeader::SingleString { .. } => {
                 return Err(Error::MixedChunkTypes);
             }
-            if chunks.len() > 1 {
-                return Err(Error::SingleStringWithMultipleChunks);
-            }
-            // The fragment IS the canonical bytecode.
-            Ok(chunks.into_iter().next().unwrap().fragment)
-        }
-        ChunkHeader::Chunked {
-            wallet_id: first_wallet_id,
-            count: first_count,
-            ..
-        } => {
-            let expected_wallet_id = *first_wallet_id;
-            let expected_count = *first_count;
-
-            // Build an index-keyed map, validating each chunk.
-            let mut by_index: HashMap<u8, Vec<u8>> = HashMap::new();
-            for chunk in &chunks {
-                match chunk.header {
-                    ChunkHeader::SingleString { .. } => {
-                        return Err(Error::MixedChunkTypes);
-                    }
-                    ChunkHeader::Chunked {
-                        wallet_id,
-                        count,
+            ChunkHeader::Chunked {
+                wallet_id,
+                count,
+                index,
+                ..
+            } => {
+                if wallet_id != expected_wallet_id {
+                    return Err(Error::WalletIdMismatch {
+                        expected: expected_wallet_id,
+                        got: wallet_id,
+                    });
+                }
+                if count != expected_count {
+                    return Err(Error::TotalChunksMismatch {
+                        expected: expected_count,
+                        got: count,
+                    });
+                }
+                if index >= expected_count {
+                    return Err(Error::ChunkIndexOutOfRange {
                         index,
-                        ..
-                    } => {
-                        if wallet_id != expected_wallet_id {
-                            return Err(Error::WalletIdMismatch {
-                                expected: expected_wallet_id,
-                                got: wallet_id,
-                            });
-                        }
-                        if count != expected_count {
-                            return Err(Error::TotalChunksMismatch {
-                                expected: expected_count,
-                                got: count,
-                            });
-                        }
-                        if index >= expected_count {
-                            return Err(Error::ChunkIndexOutOfRange {
-                                index,
-                                total: expected_count,
-                            });
-                        }
-                        if by_index.insert(index, chunk.fragment.clone()).is_some() {
-                            return Err(Error::DuplicateChunkIndex(index));
-                        }
-                    }
+                        total: expected_count,
+                    });
+                }
+                if by_index.insert(index, fragment).is_some() {
+                    return Err(Error::DuplicateChunkIndex(index));
                 }
             }
-
-            // Verify no indexes are missing.
-            for i in 0..expected_count {
-                if !by_index.contains_key(&i) {
-                    return Err(Error::MissingChunkIndex(i));
-                }
-            }
-
-            // Concatenate fragments in index order.
-            let mut stream = Vec::new();
-            for i in 0..expected_count {
-                stream.extend_from_slice(&by_index[&i]);
-            }
-
-            // Split off the trailing 4-byte cross-chunk hash.
-            if stream.len() < 4 {
-                return Err(Error::CrossChunkHashMismatch);
-            }
-            let split_at = stream.len() - 4;
-            let bytecode = stream[..split_at].to_vec();
-            let claimed_hash = &stream[split_at..];
-            let computed = sha256::Hash::hash(&bytecode);
-            let computed_hash = &computed.as_byte_array()[..4];
-
-            if claimed_hash != computed_hash {
-                return Err(Error::CrossChunkHashMismatch);
-            }
-
-            Ok(bytecode)
         }
     }
+
+    // Verify no indexes are missing (report the lowest missing index).
+    for i in 0..expected_count {
+        if !by_index.contains_key(&i) {
+            return Err(Error::MissingChunkIndex(i));
+        }
+    }
+
+    // Move fragments out in order into the stream (no clone — HashMap::remove moves).
+    let mut stream = Vec::new();
+    for i in 0..expected_count {
+        stream.append(&mut by_index.remove(&i).expect("checked above"));
+    }
+
+    // Split off the trailing 4-byte cross-chunk hash.
+    if stream.len() < 4 {
+        return Err(Error::CrossChunkHashMismatch);
+    }
+    let split_at = stream.len() - 4;
+    let bytecode = stream[..split_at].to_vec();
+    let claimed_hash = &stream[split_at..];
+    let computed = sha256::Hash::hash(&bytecode);
+    let computed_hash = &computed.as_byte_array()[..4];
+
+    if claimed_hash != computed_hash {
+        return Err(Error::CrossChunkHashMismatch);
+    }
+
+    Ok(bytecode)
 }
 
 // ---------------------------------------------------------------------------
@@ -1539,6 +1576,149 @@ mod tests {
         last.fragment[0] ^= 0xFF;
 
         let err = reassemble_chunks(chunks).unwrap_err();
+        assert!(
+            matches!(err, Error::CrossChunkHashMismatch),
+            "expected CrossChunkHashMismatch, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Chunk::new constructor tests (Item 3)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn chunk_new_constructor_matches_struct_literal() {
+        let header = ChunkHeader::SingleString { version: 0 };
+        let fragment = vec![0x05, 0x33];
+        let from_new = Chunk::new(header, fragment.clone());
+        let from_lit = Chunk {
+            header: ChunkHeader::SingleString { version: 0 },
+            fragment,
+        };
+        assert_eq!(from_new, from_lit);
+    }
+
+    // -----------------------------------------------------------------------
+    // Chunk::from_exact_bytes tests (Item 4)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn chunk_from_exact_bytes_round_trip() {
+        // SingleString variant.
+        let ss = Chunk {
+            header: ChunkHeader::SingleString { version: 0 },
+            fragment: vec![0xAA, 0xBB, 0xCC],
+        };
+        let bytes = ss.to_bytes();
+        let recovered = Chunk::from_exact_bytes(&bytes).unwrap();
+        assert_eq!(recovered, ss);
+
+        // Chunked variant.
+        let chunked = Chunk {
+            header: ChunkHeader::Chunked {
+                version: 0,
+                wallet_id: ChunkWalletId::new(0x12345),
+                count: 4,
+                index: 2,
+            },
+            fragment: vec![0x10, 0x20, 0x30],
+        };
+        let bytes2 = chunked.to_bytes();
+        let recovered2 = Chunk::from_exact_bytes(&bytes2).unwrap();
+        assert_eq!(recovered2, chunked);
+    }
+
+    #[test]
+    fn chunk_from_exact_bytes_agrees_with_from_bytes() {
+        // from_exact_bytes must return the same Chunk as from_bytes for any
+        // exact-length buffer (consumed == bytes.len() always holds because
+        // from_bytes takes all remaining bytes as the fragment).
+        let chunk = Chunk {
+            header: ChunkHeader::SingleString { version: 0 },
+            fragment: vec![0x01, 0x02],
+        };
+        let bytes = chunk.to_bytes();
+
+        let (from_bytes_chunk, consumed) = Chunk::from_bytes(&bytes).unwrap();
+        let exact_chunk = Chunk::from_exact_bytes(&bytes).unwrap();
+
+        assert_eq!(consumed, bytes.len());
+        assert_eq!(exact_chunk, from_bytes_chunk);
+        assert_eq!(exact_chunk, chunk);
+    }
+
+    // -----------------------------------------------------------------------
+    // chunk_bytes capacity error tests (Item 5)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn chunk_bytes_too_large_for_single_string_plan_reports_plan_capacity() {
+        // 60 bytes won't fit a SingleString { Regular } plan (capacity = 48).
+        let bytecode = vec![0u8; 60];
+        let plan = ChunkingPlan::SingleString {
+            code: ChunkCode::Regular,
+        };
+        let err = chunk_bytes(&bytecode, plan, test_wallet_id()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::PolicyTooLarge {
+                    bytecode_len: 60,
+                    max_supported: 48,
+                }
+            ),
+            "expected PolicyTooLarge {{ bytecode_len: 60, max_supported: 48 }}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn chunk_bytes_too_large_for_chunked_plan_reports_plan_capacity() {
+        // Chunked { Regular, fragment_size=45, count=2 } → stream capacity = 2*45 = 90 bytes,
+        // so max bytecode = 90 - 4 = 86 bytes. Pass 200 bytes → Err with max_supported: 86.
+        let bytecode = vec![0u8; 200];
+        let plan = ChunkingPlan::Chunked {
+            code: ChunkCode::Regular,
+            fragment_size: 45,
+            count: 2,
+        };
+        let err = chunk_bytes(&bytecode, plan, test_wallet_id()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::PolicyTooLarge {
+                    bytecode_len: 200,
+                    max_supported: 86,
+                }
+            ),
+            "expected PolicyTooLarge {{ bytecode_len: 200, max_supported: 86 }}, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Hash-byte corruption test (Item 6)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn reassemble_cross_chunk_hash_mismatch_with_corrupted_hash_byte() {
+        // Stream layout: bytecode (50 bytes) ++ hash (4 bytes) = 54 bytes.
+        // fragment[0] = stream[0..45] (45 bytes, all payload).
+        // fragment[1] = stream[45..54] (9 bytes: 5 payload + 4 hash).
+        // Corrupting fragment[1][last] = stream[53] corrupts the last hash byte.
+        let bytecode = vec![0xCCu8; 50];
+        let plan = ChunkingPlan::Chunked {
+            code: ChunkCode::Regular,
+            fragment_size: 45,
+            count: 2,
+        };
+        let wallet_id = ChunkWalletId::new(0xABC);
+        let mut chunks = chunk_bytes(&bytecode, plan, wallet_id).expect("encode");
+
+        // Corrupt the LAST byte of the last fragment (a hash byte).
+        let last = chunks.last_mut().unwrap();
+        let last_idx = last.fragment.len() - 1;
+        last.fragment[last_idx] ^= 0xFF;
+
+        let err = reassemble_chunks(chunks).expect_err("expected hash mismatch");
         assert!(
             matches!(err, Error::CrossChunkHashMismatch),
             "expected CrossChunkHashMismatch, got {err:?}"
