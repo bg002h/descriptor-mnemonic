@@ -383,12 +383,32 @@ fn decode_terminal(
             })?;
             Terminal::Older(lock)
         }
-        // Task 2.17+ inner-fragment tags will be added here progressively
-        // (hash literals, logical operators).
+        Tag::Sha256 => {
+            let bytes = cur.read_array::<32>()?;
+            Terminal::Sha256(bitcoin::hashes::sha256::Hash::from_byte_array(bytes))
+        }
+        Tag::Hash256 => {
+            // Uses miniscript::hash256::Hash (forward-display newtype around
+            // sha256d::Hash) — NOT sha256d::Hash directly. The encoder used the
+            // same type. Internal byte order is the same; the newtype only
+            // changes display behavior.
+            let bytes = cur.read_array::<32>()?;
+            Terminal::Hash256(miniscript::hash256::Hash::from_byte_array(bytes))
+        }
+        Tag::Ripemd160 => {
+            let bytes = cur.read_array::<20>()?;
+            Terminal::Ripemd160(bitcoin::hashes::ripemd160::Hash::from_byte_array(bytes))
+        }
+        Tag::Hash160 => {
+            let bytes = cur.read_array::<20>()?;
+            Terminal::Hash160(bitcoin::hashes::hash160::Hash::from_byte_array(bytes))
+        }
+        // Task 2.18+ inner-fragment tags will be added here progressively
+        // (logical operators).
         // For now, anything else is either out of v0.1 scope or deferred.
         _ => {
             return Err(Error::PolicyScopeViolation(format!(
-                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.17+)",
+                "Tag {tag:?} (0x{:02x}) not yet implemented as inner fragment (Task 2.18+)",
                 tag.as_byte()
             )));
         }
@@ -1113,6 +1133,126 @@ mod tests {
                 kind: BytecodeErrorKind::TypeCheckFailed(_), ..
             }),
             "expected TypeCheckFailed for older(0), got {err:?}"
+        );
+    }
+
+    // --- Hash-preimage round-trips and rejections (Task 2.17) --------------
+
+    #[test]
+    fn decode_wsh_sha256_round_trip_via_parser() {
+        // wsh(sha256(<32-byte hex>)) — full pipeline.
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let hex = "0000000000000000000000000000000000000000000000000000000000000001";
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(sha256({hex}))")
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_wsh_hash256_round_trip_via_parser() {
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(hash256({hex}))")
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_wsh_ripemd160_round_trip_via_parser() {
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        // 20-byte hex literal.
+        let hex = "1122334455667788990011223344556677889900";
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(ripemd160({hex}))")
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_wsh_hash160_round_trip_via_parser() {
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let hex = "aabbccddeeff00112233445566778899aabbccdd";
+        let descriptor = miniscript::descriptor::Descriptor::<DescriptorPublicKey>::from_str(
+            &format!("wsh(hash160({hex}))")
+        )
+        .unwrap();
+        let bytes = crate::bytecode::encode::encode_template(&descriptor, &HashMap::new()).unwrap();
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_sha256_known_vector_with_asymmetric_pattern() {
+        // Hand-crafted byte stream to pin the wire format. Asymmetric pattern
+        // would expose a byte-order reversal bug if it crept in (parallel to
+        // the encoder side test for hash256).
+        let hash_bytes: [u8; 32] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+        ];
+        let mut bytes = vec![0x05, 0x20]; // [Wsh, Sha256]
+        bytes.extend_from_slice(&hash_bytes);
+
+        let decoded = decode_template(&bytes, &[]).unwrap();
+        use std::collections::HashMap;
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &HashMap::new()).unwrap();
+        assert_eq!(reencoded, bytes);
+    }
+
+    #[test]
+    fn decode_sha256_rejects_truncated() {
+        // [Wsh, Sha256, <31 bytes>] — one byte short.
+        let mut bytes = vec![0x05, 0x20];
+        bytes.extend_from_slice(&[0xAA; 31]);
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::Truncated, ..
+            }),
+            "expected Truncated, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_ripemd160_rejects_truncated() {
+        // [Wsh, Ripemd160, <19 bytes>] — one byte short of the 20-byte hash.
+        let mut bytes = vec![0x05, 0x22];
+        bytes.extend_from_slice(&[0xBB; 19]);
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidBytecode {
+                kind: BytecodeErrorKind::Truncated, ..
+            }),
+            "expected Truncated for ripemd160, got {err:?}"
         );
     }
 }
