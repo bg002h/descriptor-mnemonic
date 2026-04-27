@@ -42,6 +42,12 @@ pub fn encode_template(
 /// to `out`. Mirrors `joshdoman/descriptor-codec`'s `EncodeTemplate` trait
 /// but emits only the template byte stream (no payload) and returns errors
 /// instead of panicking on out-of-scope inputs.
+///
+/// **`out` mutation contract**: implementations may have appended bytes to
+/// `out` before returning `Err(...)`. Callers must not assume `out` is
+/// unchanged on error. The public [`encode_template`] function shields
+/// callers by always allocating a fresh `Vec`, so the dirty-on-error state
+/// is only visible to internal recursive walkers.
 trait EncodeTemplate {
     fn encode_template(
         &self,
@@ -139,6 +145,32 @@ mod tests {
         assert!(
             matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("sh")),
             "expected PolicyScopeViolation mentioning sh"
+        );
+    }
+
+    #[test]
+    fn rejects_tr_top_level() {
+        // Key-path-only taproot descriptor (no script tree).
+        let d = parse_descriptor(
+            "tr(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)",
+        );
+        let err = encode_template(&d, &empty_map()).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("taproot") || msg.contains("tr()")),
+            "expected PolicyScopeViolation mentioning taproot/tr()"
+        );
+    }
+
+    #[test]
+    fn rejects_bare_top_level() {
+        // Bare miniscript at the top level (no top-level wrapper).
+        let d = parse_descriptor(
+            "pk(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)",
+        );
+        let err = encode_template(&d, &empty_map()).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("bare")),
+            "expected PolicyScopeViolation mentioning bare"
         );
     }
 
