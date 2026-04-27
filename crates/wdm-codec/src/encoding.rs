@@ -562,7 +562,10 @@ impl DecodedString {
     /// Panics if `char_position >= data_with_checksum.len()`. Callers are
     /// responsible for clamping the position to a valid range; in the decode
     /// pipeline this is guaranteed by the BCH layer (it never reports a
-    /// `corrected_position` outside the data part).
+    /// `corrected_position` outside `data_with_checksum`). Note that
+    /// `data_with_checksum` includes the checksum region; "outside the data
+    /// part" elsewhere in this crate excludes the checksum and is a tighter
+    /// bound than what this method requires.
     pub fn corrected_char_at(&self, char_position: usize) -> char {
         let v = self.data_with_checksum[char_position];
         ALPHABET[v as usize] as char

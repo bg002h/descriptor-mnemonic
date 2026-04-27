@@ -1205,6 +1205,15 @@ mod tests {
             "from_bytecode must populate decoded_shared_path with m/84'/0'/0'"
         );
 
+        // Baseline: re-encode with default options to confirm tier-1 is what
+        // produces the m/84'/0'/0' (0x03) byte. This makes the override-wins
+        // assertion below catch any future bug where bytes[2] happens to
+        // coincide with 0x05 for an unrelated reason.
+        let baseline = policy
+            .to_bytecode(&EncodeOptions::default())
+            .expect("baseline re-encode must succeed");
+        assert_eq!(baseline[2], 0x03, "baseline must round-trip to BIP 84");
+
         // Override (tier 0) selects m/48'/0'/0'/2' (indicator 0x05); it MUST win
         // over the populated decoded_shared_path (tier 1, indicator 0x03).
         let override_path = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
@@ -1220,6 +1229,10 @@ mod tests {
         assert_ne!(
             bytes[2], 0x03,
             "the override must NOT be silently ignored in favor of decoded_shared_path"
+        );
+        assert_ne!(
+            bytes, baseline,
+            "override-encoded bytes must differ from baseline (no-override) bytes"
         );
     }
 

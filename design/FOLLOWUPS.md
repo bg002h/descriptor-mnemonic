@@ -43,15 +43,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
-### `5e-checksum-correction-fallback` — `Correction.corrected = 'q'` for checksum-region corrections
-
-- **Surfaced:** Phase 5-E code review of `7b7400b`; `// TODO(post-v0.1)` added inline at `decode.rs:119` in `111f176`
-- **Where:** `crates/wdm-codec/src/decode.rs:115-127` (the BCH-correction → `Correction` translation). Real fix requires extending `crate::encoding::DecodedString` to expose the corrected `data+checksum` slice.
-- **What:** When BCH ECC corrects a substitution within the 13/15-char checksum region, our decoder reports `Correction.corrected = ALPHABET[0]` (= `'q'`) as a placeholder because `decoded.data` (which has the checksum stripped) doesn't contain the corrected char. The displayed `corrected` value is silently wrong for diagnostic purposes; the underlying decode is correct (no data loss). User-facing impact: a recovery tool's "we corrected your transcription error from X to Y" message shows wrong Y for checksum-position corrections.
-- **Why deferred:** the right fix touches Phase 1's encoding.rs API (`DecodedString` shape) — that's a wider refactor than 5-E's scope.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `p2-taproot-tr-taptree` — taproot `Tr` / `TapTree` operator support
 
 - **Surfaced:** Phase 2 (D-2, D-4, plan task 2.11 marked deferred)
@@ -94,15 +85,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/wdm-codec/src/bytecode/{header,decode}.rs`, `crates/wdm-codec/src/policy.rs::from_bytecode`
 - **What:** The bytecode header has a fingerprints flag (bit 2) and a reserved tag `Tag::Fingerprints = 0x35`, but v0.1 rejects any input with the flag set via `Error::PolicyScopeViolation`. v0.2 should implement the full fingerprints-block format (per BIP §"Fingerprints block"): a count byte followed by `count` 4-byte master-key fingerprints in placeholder index order, allowing recovery tools to verify which seed corresponds to which `@i` placeholder before deriving.
 - **Why deferred:** v0.1 spec scope. The recovery flow can match seeds to placeholders by trial derivation; the fingerprints block is an ergonomics + privacy improvement.
-- **Status:** open
-- **Tier:** v0.2
-
-### `7-encode-path-override` — `--path` override does not yet affect bytecode encoder
-
-- **Surfaced:** Phase 7 implementation
-- **Where:** `crates/wdm-codec/src/bin/wdm.rs` (`cmd_encode`), `crates/wdm-codec/src/options.rs` (`EncodeOptions`)
-- **What:** The `--path` flag is fully parsed and validated (name / hex indicator / literal derivation path all work), but `EncodeOptions` does not yet have a `shared_path` field, so the override cannot be applied to the bytecode encoder. A warning is printed to stderr when the user supplies `--path`. Fix requires adding `shared_path: Option<DerivationPath>` to `EncodeOptions` and threading it through `policy.to_bytecode()` → `encode_declaration`.
-- **Why deferred:** `EncodeOptions::shared_path` is a Phase 5 decision-D-10 item; adding it would also require updating `WalletPolicy::to_bytecode` to accept an override path, touching non-CLI source.
 - **Status:** open
 - **Tier:** v0.2
 
@@ -159,6 +141,26 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** MIGRATION.md is a Phase G deliverable; this entry is a tracker so the doc isn't missed at release prep.
 - **Status:** open
 - **Tier:** v0.2-nice-to-have
+
+### `phase-b-encode-signature-and-copy-migration-note` — document Phase B breaking changes in MIGRATION.md
+
+- **Surfaced:** Phase B bucket B reviewer (Opus 4.7) on commit `0993dc0`
+- **Where:** `MIGRATION.md` (to be created at Phase G)
+- **What:** Phase B introduces two breaking changes to `EncodeOptions` / `WalletPolicy::to_bytecode` that require migration guidance:
+  - **Signature change**: `WalletPolicy::to_bytecode(&self)` → `WalletPolicy::to_bytecode(&self, opts: &EncodeOptions)`. Migration: callers needing no override should pass `&EncodeOptions::default()`.
+  - **`Copy` removed from `EncodeOptions`**: `DerivationPath` (the new `shared_path` field's type) is not `Copy`, so `EncodeOptions` lost its derived `Copy` impl. It still derives `Clone + Default + PartialEq + Eq`. Migration: any callers that assumed `EncodeOptions: Copy` (e.g., taking `EncodeOptions` by value into a closure) need explicit `.clone()` calls.
+- **Why deferred:** MIGRATION.md is a Phase G deliverable; this entry is a tracker so neither item is missed.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
+
+### `decoded-string-data-memory-microopt` — drop `DecodedString.data`, replace with accessor backed by `data_with_checksum`
+
+- **Surfaced:** Phase B bucket A reviewer (Opus 4.7) on commit `5f13812`
+- **Where:** `crates/wdm-codec/src/encoding.rs::DecodedString`
+- **What:** With `data_with_checksum: Vec<u8>` added in Phase B (so `corrected_char_at` works for checksum-region positions), `data` and `data_with_checksum` redundantly store the same symbol array (data + a 13/15-char suffix). Memory cost is ~26 bytes for Regular / ~30 for Long per `DecodedString`, plus `Vec` overhead — negligible at v0.1 scale. An obvious micro-opt: drop the `data: Vec<u8>` field; replace with a `pub fn data(&self) -> &[u8]` accessor that returns `&self.data_with_checksum[..self.data_with_checksum.len() - checksum_len]`.
+- **Why deferred:** breaking API change (the `data` field is currently `pub`); v0.3 breaking-window candidate. Negligible at v0.1/v0.2 scale; not worth the breakage in v0.2.
+- **Status:** open
+- **Tier:** v0.3
 
 ---
 
@@ -369,6 +371,18 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 6 bucket A (corpus.rs idempotency test); Task 6.12 had to be reframed
 - **Status:** resolved `86ca5df` (v0.2 Phase A bucket B) — `WalletPolicy` newtype gains `decoded_shared_path: Option<DerivationPath>` field; `from_bytecode` populates it from `decode_declaration`'s return value; `to_bytecode` consults it under the Phase A precedence rule (`decoded_shared_path > shared_path() > BIP 84 fallback`). Public signatures of `from_bytecode` / `to_bytecode` unchanged. `tests/corpus.rs` idempotency test tightened to assert FIRST-pass raw-byte equality (was second-pass-onward only). New inline test in `policy.rs` proves the round-trip for `m/48'/0'/0'/2'` (distinguishes from both BIP 84 fallback and dummy-key origin). Wire format unchanged; vectors verify byte-identical. Reviewer `APPROVE_WITH_FOLLOWUPS`; the field rustdoc note about `PartialEq` semantics applied inline by controller; MIGRATION.md follow-up filed (`wallet-policy-eq-migration-note`).
 - **Tier:** v0.2 (closed; behavioral — see commit `86ca5df` body for full migration note)
+
+### `5e-checksum-correction-fallback` — `Correction.corrected = 'q'` for checksum-region corrections
+
+- **Surfaced:** Phase 5-E code review of `7b7400b`; `// TODO(post-v0.1)` added inline at `decode.rs:119` in `111f176`
+- **Status:** resolved `5f13812` (v0.2 Phase B bucket A) — `DecodedString` extended with `pub fn corrected_char_at(char_position: usize) -> char` backed by a new `pub data_with_checksum: Vec<u8>` field (`#[non_exhaustive]` so additive). `decode.rs` Correction translator now uses `corrected_char_at(pos)` instead of the `'q'` placeholder; the `// TODO(post-v0.1)` comment is removed. Two new tests cover both checksum-region and data-region correction reporting. Wire format unchanged; vectors verify byte-identical. Reviewer `APPROVE_WITH_FOLLOWUPS`; rustdoc disambiguation on `corrected_char_at` Panics section applied inline by controller; v0.3 memory micro-opt filed (`decoded-string-data-memory-microopt`).
+- **Tier:** v0.2 (closed)
+
+### `7-encode-path-override` — `--path` override does not yet affect bytecode encoder
+
+- **Surfaced:** Phase 7 implementation
+- **Status:** resolved `0993dc0` (v0.2 Phase B bucket B) — `EncodeOptions::shared_path: Option<DerivationPath>` field added (additive on `#[non_exhaustive]`) along with a `with_shared_path(path)` builder method. `WalletPolicy::to_bytecode(&self)` signature changed to `to_bytecode(&self, opts: &EncodeOptions)` (breaking) so the encoder can consult the override. The 4-tier shared-path precedence is now: `EncodeOptions::shared_path > WalletPolicy.decoded_shared_path > WalletPolicy.shared_path() > BIP 84 mainnet fallback`. CLI `cmd_encode` no longer prints "warning: --path is parsed but not applied" — it actually applies the override. 22 `to_bytecode` call sites updated (1 pipeline, 1 wrapper, 1 wallet-id helper, 1 vector builder, 1 CLI handler, 16 tests). 5 new tests including a CLI integration test. Side-effect: `EncodeOptions` lost its derived `Copy` impl because `DerivationPath` isn't `Copy`. Wire format unchanged for default-path case; vectors verify. Reviewer `APPROVE_WITH_FOLLOWUPS`; the override-wins test strengthening (assert bytes != baseline) applied inline by controller; MIGRATION.md follow-up filed (`phase-b-encode-signature-and-copy-migration-note`).
+- **Tier:** v0.2 (closed; breaking — see commit `0993dc0` body for full migration note)
 
 ---
 
