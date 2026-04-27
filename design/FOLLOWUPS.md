@@ -250,6 +250,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.1-nice-to-have
 
+### `7-cli-integration-tests` — CLI integration tests via `assert_cmd`
+
+- **Surfaced:** Phase 7 implementation (Task 7 prompt, §Tests)
+- **Where:** `crates/wdm-codec/tests/cli.rs` (does not yet exist)
+- **What:** Happy-path and error-path integration tests for all five CLI subcommands (`encode`, `decode`, `verify`, `inspect`, `bytecode`) using `assert_cmd`. The v0.1 ship target prioritizes CLI shipping over CLI test coverage; the binary was smoke-tested manually for correctness.
+- **Why deferred:** `assert_cmd` is not a dev-dependency; adding it was de-prioritized per the v0.1 decision in the Phase 7 spec (pick option b: skip CLI tests, backfill in v0.2).
+- **Status:** open
+- **Tier:** v0.2
+
+### `7-encode-path-override` — `--path` override does not yet affect bytecode encoder
+
+- **Surfaced:** Phase 7 implementation
+- **Where:** `crates/wdm-codec/src/bin/wdm.rs` (`cmd_encode`), `crates/wdm-codec/src/options.rs` (`EncodeOptions`)
+- **What:** The `--path` flag is fully parsed and validated (name / hex indicator / literal derivation path all work), but `EncodeOptions` does not yet have a `shared_path` field, so the override cannot be applied to the bytecode encoder. A warning is printed to stderr when the user supplies `--path`. Fix requires adding `shared_path: Option<DerivationPath>` to `EncodeOptions` and threading it through `policy.to_bytecode()` → `encode_declaration`.
+- **Why deferred:** `EncodeOptions::shared_path` is a Phase 5 decision-D-10 item; adding it would also require updating `WalletPolicy::to_bytecode` to accept an override path, touching non-CLI source.
+- **Status:** open
+- **Tier:** v0.2
+
+### `7-serialize-derives` — manual JSON construction vs `#[derive(Serialize)]` on library types
+
+- **Surfaced:** Phase 7 implementation
+- **Where:** `crates/wdm-codec/src/bin/wdm.rs` (all JSON output paths)
+- **What:** JSON output is hand-built via `serde_json::json!{}` rather than `#[derive(Serialize)]` on `WdmBackup`, `DecodeResult`, etc. This was option (b) per the Phase 7 spec, because library types contain a non-Serialize miniscript `WalletPolicy` inner field. If future versions add serde derives to those types (e.g., behind a `serde` feature flag), the JSON handlers in `bin/wdm.rs` should be updated to use the derived impls.
+- **Why deferred:** design decision to avoid forcing serde derives on library types in v0.1.
+- **Status:** open
+- **Tier:** v0.2
+
 ---
 
 ## Resolved items
