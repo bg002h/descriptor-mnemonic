@@ -1225,7 +1225,7 @@ mod tests {
     // --- MdBackup ---
 
     #[test]
-    fn wdm_backup_wallet_id_round_trips_via_words() {
+    fn md_backup_wallet_id_round_trips_via_words() {
         let original_id = WalletId::new([0xABu8; 16]);
         let words = original_id.to_words();
         let backup = MdBackup {
@@ -1431,7 +1431,7 @@ mod tests {
     }
 
     #[test]
-    fn wdm_backup_struct_construction() {
+    fn md_backup_struct_construction() {
         use crate::BchCode;
         use crate::chunking::EncodedChunk;
 

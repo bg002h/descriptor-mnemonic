@@ -41,7 +41,7 @@ fn encode_first_chunk() -> String {
 
 /// `wdm encode <policy>` — exits 0, stdout starts with `wdm1`, stderr empty.
 #[test]
-fn wdm_encode_default() {
+fn md_encode_default() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args(["encode", POLICY])
@@ -54,7 +54,7 @@ fn wdm_encode_default() {
 /// `wdm encode <policy> --json` — exits 0, stdout is a JSON object with a
 /// `chunks` array key.
 #[test]
-fn wdm_encode_json() {
+fn md_encode_json() {
     let output = Command::cargo_bin("wdm")
         .expect("binary built")
         .args(["encode", POLICY, "--json"])
@@ -81,7 +81,7 @@ fn wdm_encode_json() {
 /// must preserve the exact JSON contract the v0.1.1 hand-built
 /// `serde_json::json!{}` literal produced.
 #[test]
-fn wdm_encode_json_shape_is_stable() {
+fn md_encode_json_shape_is_stable() {
     let output = Command::cargo_bin("wdm")
         .expect("binary built")
         .args(["encode", POLICY, "--json"])
@@ -124,7 +124,7 @@ fn wdm_encode_json_shape_is_stable() {
 /// `outcome`, `confidence`, `corrections`, `verifications` (with all five
 /// flag fields).
 #[test]
-fn wdm_decode_json_shape_is_stable() {
+fn md_decode_json_shape_is_stable() {
     let chunk = encode_first_chunk();
 
     let output = Command::cargo_bin("wdm")
@@ -186,7 +186,7 @@ fn wdm_decode_json_shape_is_stable() {
 /// against the BIP 48 indicator. This proves the `--path` override flowed
 /// through `EncodeOptions::shared_path` to `WalletPolicy::to_bytecode`.
 #[test]
-fn wdm_encode_path_override_bip48_takes_effect() {
+fn md_encode_path_override_bip48_takes_effect() {
     use md_codec::{DecodeOptions, decode};
 
     let output = Command::cargo_bin("wdm")
@@ -243,7 +243,7 @@ fn wdm_encode_path_override_bip48_takes_effect() {
 /// different from the non-chunked output (i.e. it is a Chunked-type chunk,
 /// which the `inspect` sub-test confirms separately).
 #[test]
-fn wdm_encode_force_chunked() {
+fn md_encode_force_chunked() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args(["encode", POLICY, "--force-chunked"])
@@ -272,7 +272,7 @@ fn wdm_encode_force_chunked() {
 
 /// Round-trip: encode then decode, decoded policy matches original.
 #[test]
-fn wdm_decode_round_trip() {
+fn md_decode_round_trip() {
     let chunk = encode_first_chunk();
 
     let output = Command::cargo_bin("wdm")
@@ -294,7 +294,7 @@ fn wdm_decode_round_trip() {
 
 /// `wdm verify <chunk> --policy <same>` exits 0.
 #[test]
-fn wdm_verify_match() {
+fn md_verify_match() {
     let chunk = encode_first_chunk();
     Command::cargo_bin("wdm")
         .expect("binary built")
@@ -305,7 +305,7 @@ fn wdm_verify_match() {
 
 /// `wdm verify <chunk> --policy <different>` exits non-zero.
 #[test]
-fn wdm_verify_mismatch() {
+fn md_verify_mismatch() {
     let chunk = encode_first_chunk();
     Command::cargo_bin("wdm")
         .expect("binary built")
@@ -316,7 +316,7 @@ fn wdm_verify_mismatch() {
 
 /// `wdm inspect <chunk>` exits 0, stdout contains `Type:` and `Version:`.
 #[test]
-fn wdm_inspect_outputs_chunk_header() {
+fn md_inspect_outputs_chunk_header() {
     let chunk = encode_first_chunk();
     Command::cargo_bin("wdm")
         .expect("binary built")
@@ -329,7 +329,7 @@ fn wdm_inspect_outputs_chunk_header() {
 
 /// `wdm bytecode <policy>` exits 0, stdout is a lowercase hex string.
 #[test]
-fn wdm_bytecode_outputs_lowercase_hex() {
+fn md_bytecode_outputs_lowercase_hex() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args(["bytecode", POLICY])
@@ -344,7 +344,7 @@ fn wdm_bytecode_outputs_lowercase_hex() {
 
 /// `wdm encode "not-a-real-policy"` exits non-zero, stderr non-empty.
 #[test]
-fn wdm_encode_unparseable_policy_exits_nonzero() {
+fn md_encode_unparseable_policy_exits_nonzero() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args(["encode", "not-a-real-policy"])
@@ -355,7 +355,7 @@ fn wdm_encode_unparseable_policy_exits_nonzero() {
 
 /// `wdm decode "not-a-wdm-string"` exits non-zero, stderr mentions the HRP.
 #[test]
-fn wdm_decode_invalid_string_exits_nonzero() {
+fn md_decode_invalid_string_exits_nonzero() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args(["decode", "not-a-wdm-string"])
@@ -371,7 +371,7 @@ fn wdm_decode_invalid_string_exits_nonzero() {
 
 /// `wdm vectors` exits 0, stdout starts with `{` (top-level JSON object).
 #[test]
-fn wdm_vectors_returns_json_top_level_object() {
+fn md_vectors_returns_json_top_level_object() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .arg("vectors")
@@ -382,7 +382,7 @@ fn wdm_vectors_returns_json_top_level_object() {
 
 /// `wdm not-a-subcommand` exits non-zero, stderr mentions `wdm` usage.
 #[test]
-fn wdm_unknown_subcommand_exits_nonzero() {
+fn md_unknown_subcommand_exits_nonzero() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .arg("not-a-subcommand")
@@ -398,7 +398,7 @@ fn wdm_unknown_subcommand_exits_nonzero() {
 /// Two `--fingerprint @i=hex` args for a 2-key policy → encoder accepts;
 /// stderr carries the privacy warning; stdout has the encoded chunk.
 #[test]
-fn wdm_encode_fingerprint_flag_accepts_two_placeholders() {
+fn md_encode_fingerprint_flag_accepts_two_placeholders() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args([
@@ -419,7 +419,7 @@ fn wdm_encode_fingerprint_flag_accepts_two_placeholders() {
 
 /// Missing index in the `--fingerprint` set → exits nonzero with a clear error.
 #[test]
-fn wdm_encode_fingerprint_flag_rejects_index_gap() {
+fn md_encode_fingerprint_flag_rejects_index_gap() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args([
@@ -439,7 +439,7 @@ fn wdm_encode_fingerprint_flag_rejects_index_gap() {
 
 /// Wrong-length hex (4 chars, not 8) → exits nonzero with a parse error.
 #[test]
-fn wdm_encode_fingerprint_flag_rejects_short_hex() {
+fn md_encode_fingerprint_flag_rejects_short_hex() {
     Command::cargo_bin("wdm")
         .expect("binary built")
         .args([

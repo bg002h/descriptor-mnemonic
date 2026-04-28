@@ -851,7 +851,7 @@ mod tests {
     }
 
     #[test]
-    fn wdm_target_constants_match_nums_derivation() {
+    fn md_target_constants_match_nums_derivation() {
         // Self-check: the constants must equal the top 65 / 75 bits of
         // SHA-256(b"shibbolethnums") interpreted as a big-endian 256-bit
         // integer. If anyone "fixes" the hex values without updating the
