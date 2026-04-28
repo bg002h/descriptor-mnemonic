@@ -70,41 +70,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.1-nice-to-have
 
-### `p4-chunking-mode-stale-test-names` — sweep `force_chunked_*` test names + comments to new terminology
-
-- **Surfaced:** Phase A bucket A reviewer (Opus 4.7) on commit `fbbe6ec`
-- **Where:** `crates/wdm-codec/src/chunking.rs:1072,1164,1178` (test fn names + inline comments) and `crates/wdm-codec/src/decode.rs:231` (`force_chunking_opts` helper); `crates/wdm-codec/src/options.rs:34-36` (field rustdoc could cross-reference `ChunkingMode` directly); `crates/wdm-codec/src/policy.rs:461` (doc-link line ~120 chars vs surrounding ~80; reflow optional).
-- **What:** Cosmetic test-name + comment + rustdoc sweep to align terminology with the new `ChunkingMode { Auto, ForceChunked }` enum. All sites are functionally correct; only the names/comments are stale.
-- **Why deferred:** test-only churn; bundle into a single sweep before v0.2.0 release rather than spreading across phases.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
 ### `p4-with-chunking-mode-builder` — additive `EncodeOptions::with_chunking_mode(ChunkingMode)` builder
 
 - **Surfaced:** Phase A bucket A dispatch (deferred per controller); reaffirmed by reviewer
 - **Where:** `crates/wdm-codec/src/options.rs::EncodeOptions`
 - **What:** Today the only chunking-mode builder is `with_force_chunking(self, force: bool)`, kept as a `bool → enum` shim for v0.1.1 source-compat. When a third `ChunkingMode` variant is introduced (e.g., Phase D's `MaxChunkBytes(u8)` per BIP §"Chunking" line 438, if it lands), add `with_chunking_mode(ChunkingMode)` so callers can select the new variant explicitly.
 - **Why deferred:** purely additive; no existing or imminent caller needs it.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
-### `wallet-policy-eq-migration-note` — document `WalletPolicy` `PartialEq` semantics around `decoded_shared_path` in MIGRATION.md
-
-- **Surfaced:** Phase A bucket B reviewer (Opus 4.7) on commit `86ca5df`
-- **Where:** `MIGRATION.md` (to be created at Phase G); `crates/wdm-codec/src/policy.rs` field rustdoc (already added inline by controller fixup commit)
-- **What:** With the new `decoded_shared_path: Option<DerivationPath>` field and derived `PartialEq, Eq`, two logically-equivalent template-only policies — one from `parse()` (`None`) and one from `from_bytecode()` (`Some(...)`) — compare unequal. Field rustdoc now says so. MIGRATION.md needs a corresponding "Phase A breaking changes" bullet pointing at this so v0.1.x consumers upgrading to v0.2 understand the new equality semantics + the recommended `.to_canonical_string()` workaround for construction-path-agnostic equality.
-- **Why deferred:** MIGRATION.md is a Phase G deliverable; this entry is a tracker so the doc isn't missed at release prep.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
-### `phase-b-encode-signature-and-copy-migration-note` — document Phase B breaking changes in MIGRATION.md
-
-- **Surfaced:** Phase B bucket B reviewer (Opus 4.7) on commit `0993dc0`
-- **Where:** `MIGRATION.md` (to be created at Phase G)
-- **What:** Phase B introduces two breaking changes to `EncodeOptions` / `WalletPolicy::to_bytecode` that require migration guidance:
-  - **Signature change**: `WalletPolicy::to_bytecode(&self)` → `WalletPolicy::to_bytecode(&self, opts: &EncodeOptions)`. Migration: callers needing no override should pass `&EncodeOptions::default()`.
-  - **`Copy` removed from `EncodeOptions`**: `DerivationPath` (the new `shared_path` field's type) is not `Copy`, so `EncodeOptions` lost its derived `Copy` impl. It still derives `Clone + Default + PartialEq + Eq`. Migration: any callers that assumed `EncodeOptions: Copy` (e.g., taking `EncodeOptions` by value into a closure) need explicit `.clone()` calls.
-- **Why deferred:** MIGRATION.md is a Phase G deliverable; this entry is a tracker so neither item is missed.
 - **Status:** open
 - **Tier:** v0.2-nice-to-have
 
@@ -141,46 +112,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/wdm-codec/src/bin/wdm/main.rs::cmd_encode`
 - **What:** Phase E ships the library API (`EncodeOptions::fingerprints`) but does NOT add a CLI flag. To use fingerprints from the CLI today, callers would need a wrapper script. Add a repeatable `--fingerprint @i=<hex>` flag to `cmd_encode` that constructs the `Vec<Fingerprint>` and calls `with_fingerprints(...)`. Validate at parse time that `@i` indices are sequential 0..N-1 and N == placeholder_count.
 - **Why deferred:** library API is the Phase E deliverable; CLI exposure is a v0.2.1 / v0.3 ergonomics improvement.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
-### `phase-e-fingerprints-behavioral-break-migration-note` — document v0.1→v0.2 fingerprints rejection removal in MIGRATION.md
-
-- **Surfaced:** Phase E decision log E-9 (deferred at dispatch)
-- **Where:** `MIGRATION.md` (to be created at Phase G)
-- **What:** Phase E removes the v0.1 `PolicyScopeViolation` rejection at `policy.rs:416` for header bit 2 = 1. Any v0.1 caller pattern-matching on that specific `PolicyScopeViolation` message will no longer see it (header bit 2 = 1 is now valid and parses successfully). Add a "Phase E breaking changes" bullet to MIGRATION.md at Phase G: explain the behavioral break and recommend that callers checking for fingerprints support inspect `WdmBackup.fingerprints` / `DecodeResult.fingerprints` instead of intercepting the (no-longer-fired) error.
-- **Why deferred:** MIGRATION.md is a Phase G release-prep deliverable; this entry is a tracker so the doc isn't missed.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
-### `phase-e-encoder-count-cast-hardening` — replace `fps.len() as u8` with `u8::try_from` for defense-in-depth
-
-- **Surfaced:** Phase E reviewer (Opus 4.7) on commit `6559c17`
-- **Where:** `crates/wdm-codec/src/policy.rs:410` (encoder fingerprints-block emission)
-- **What:** The encoder casts `fps.len() as u8` gated only on `debug_assert!(count <= u8::MAX as usize)`. Currently safe via the validation funnel — `key_count()` is bounded by BIP 388's 32-key cap and the prior validation ensures `fps.len() == count`. But a future refactor that bypasses top-level validation could silently truncate. Replace with `u8::try_from(fps.len()).map_err(|_| Error::FingerprintsCountMismatch { ... })?` for release-mode safety. Trivial 1-line change.
-- **Why deferred:** defense-in-depth, not a current bug; the validation funnel makes the cast provably safe today. Bundle into any future Phase E touch.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
-### `phase-d-tap-decode-error-naming-parity` — encode/decode tap-leaf-subset rejection messages use different operator-name format
-
-- **Surfaced:** Phase D reviewer (Opus 4.7) on commit `6f6eae9`
-- **Where:** `crates/wdm-codec/src/bytecode/decode.rs::decode_tap_terminal` (line 603) vs `crates/wdm-codec/src/bytecode/encode.rs::tap_terminal_name`
-- **What:** When the same out-of-subset operator is rejected by encoder vs decoder, the user-facing error message differs in the operator-name format. Encoder uses BIP 388 lowercase (`"sha256"`, `"thresh"`); decoder uses Rust `format!("{:?}", tag)` which yields PascalCase (`"Sha256"`, `"Thresh"`). Cosmetic only — both rejections are correct — but inconsistent diagnostics for the same rejection condition. Fix: extract the encode-side `tap_terminal_name` lowercase mapping and reuse from decode-side.
-- **Why deferred:** cosmetic; doesn't affect correctness or the BIP's MUST clause.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
-### `phase-c-bch-decode-style-cleanups` — 4 stylistic / micro-opt nits in `encoding/bch_decode.rs`
-
-- **Surfaced:** Phase C reviewer (Opus 4.7) on commit `3aabcf6`
-- **Where:** `crates/wdm-codec/src/encoding/bch_decode.rs`
-- **What:** 4 cluster nits, all stylistic / micro-opt (no algorithmic concern):
-  - **N-1** (`:365`): `lam.last().unwrap()` reads cleaner as `lam.last().is_some_and(|x| x.is_zero())`.
-  - **N-2** (`:329`): `k.wrapping_sub(i)` + `s_idx < n` guard is correct but subtle; an explicit `if i > k { continue }` early-out would be clearer.
-  - **N-3** (`:692-707`): the test module re-implements `polymod_run` locally; a `pub(super) use super::polymod_run` would DRY the duplication.
-  - **N-4** (`:292`): `compute_syndromes` allocates a `Vec<u8>` of length 13 or 15 each call; a stack `[u8; 15]` would avoid the heap allocation entirely.
-- **Why deferred:** all four are stylistic / micro-opt — no algorithmic correctness concern. Bundle as a single sweep before v0.2.0 release if any future touch of `bch_decode.rs` happens; otherwise carry to v0.3.
 - **Status:** open
 - **Tier:** v0.2-nice-to-have
 
@@ -450,6 +381,48 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase D implementer (Opus 4.7) on commit `6f6eae9`
 - **Status:** resolved `5348b12` (absorbed into v0.2 Phase F) — 3 positive taproot entries (`tr_keypath`, `tr_pk`, `tr_multia_2of3`) + 2 negative (`n_tap_leaf_subset`, `n_taptree_multi_leaf`) added to schema-2's `CORPUS_FIXTURES` / `NEGATIVE_FIXTURES`. The `tr_multia_2of3` policy uses `tr(@0/**, multi_a(2,@1/**,@2/**,@3/**))` (4 distinct placeholders) instead of the decisions-doc original (3-key reusing `@0`) because the original fails BIP 388's disjoint-paths constraint — sound in-flight correction by the agent, verified against the `tests/taproot.rs::taproot_single_leaf_multi_a_round_trips` precedent.
 - **Tier:** v0.2 (closed)
+
+### `p4-chunking-mode-stale-test-names` — sweep `force_chunked_*` test names + comments to new terminology
+
+- **Surfaced:** Phase A bucket A reviewer (Opus 4.7) on commit `fbbe6ec`
+- **Status:** resolved `0ef70f9` (Phase G polish sweep) — renamed 4 test functions (`force_chunked_skips_single_string` → `chunking_mode_force_chunked_skips_single_string` etc.) plus the `force_chunking_opts` test helper (3 call sites) plus inline comments. All sites in `chunking.rs::tests` and `decode.rs::tests`. Functionally no-op; vocabulary aligned with the `ChunkingMode` enum.
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `phase-d-tap-decode-error-naming-parity` — encode/decode tap-leaf-subset rejection messages use different operator-name format
+
+- **Surfaced:** Phase D reviewer (Opus 4.7) on commit `6f6eae9`
+- **Status:** resolved `0ef70f9` (Phase G polish sweep) — added a new `tag_to_bip388_name(Tag) -> &'static str` helper in `bytecode/decode.rs` covering all 38 tag variants (operator tags + framing tags + reserved-for-v1+ inline-key tags get `<framing:0xNN>` / `<reserved:0xNN>` labels). Replaced `format!("{:?}", other)` (PascalCase: `"Sha256"`) with `tag_to_bip388_name(other).to_string()` (BIP 388 lowercase: `"sha256"`). Encode-side and decode-side rejections of the same out-of-subset operator now surface byte-identical user-facing diagnostics.
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `phase-e-encoder-count-cast-hardening` — replace `fps.len() as u8` with `u8::try_from` for defense-in-depth
+
+- **Surfaced:** Phase E reviewer (Opus 4.7) on commit `6559c17`
+- **Status:** resolved `0ef70f9` (Phase G polish sweep) — replaced `fps.len() as u8` (gated only on `debug_assert!`) with `u8::try_from(fps.len()).map_err(|_| Error::FingerprintsCountMismatch { ... })?`. Returns a structured error in release mode if the validation funnel is ever bypassed, instead of silently truncating. Currently safe via the validation funnel but defense-in-depth for future refactors.
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `phase-c-bch-decode-style-cleanups` — 4 stylistic / micro-opt nits in `encoding/bch_decode.rs`
+
+- **Surfaced:** Phase C reviewer (Opus 4.7) on commit `3aabcf6`
+- **Status:** resolved `0ef70f9` + `511e7a9` (Phase G polish sweep + N-3 follow-up) — all 4 nits applied. N-1: `lam.last().unwrap().is_zero()` → `lam.last().is_some_and(|x| x.is_zero())`. N-2: `k.wrapping_sub(i)` + `s_idx < n` guard → explicit `if i <= k && i < lam.len()` with direct `k - i` indexing. N-3 (initially skipped on cost/benefit, applied after user prompt): bumped `polymod_run` visibility in `encoding.rs` from private to `pub(in crate::encoding)`; replaced 15-line local copy in `bch_decode::tests` with `use super::super::polymod_run`; updated 4 call sites; dropped now-unused `POLYMOD_INIT` import. The dedup is **correctness coupling** not style — a future bug in `polymod_run` would be silently masked by a duplicate that agrees on the wrong answer. N-4: replaced `Vec<u8>` allocation in `compute_syndromes` with stack `[u8; 15]` + slice-the-active-prefix.
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `wallet-policy-eq-migration-note` — document `WalletPolicy` `PartialEq` semantics around `decoded_shared_path` in MIGRATION.md
+
+- **Surfaced:** Phase A bucket B reviewer (Opus 4.7) on commit `86ca5df`
+- **Status:** resolved `548dc10` (Phase G `MIGRATION.md` write) — Phase G's `MIGRATION.md` §2 documents the breaking change with before/after code examples and recommends `.to_canonical_string()` for construction-path-agnostic equality.
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `phase-b-encode-signature-and-copy-migration-note` — document Phase B breaking changes in MIGRATION.md
+
+- **Surfaced:** Phase B bucket B reviewer (Opus 4.7) on commit `0993dc0`
+- **Status:** resolved `548dc10` (Phase G `MIGRATION.md` write) — `MIGRATION.md` §1 documents both breaking changes (`to_bytecode` signature; `EncodeOptions: !Copy`) with before/after code examples and migration recipes (`&EncodeOptions::default()` for no-override callers; explicit `.clone()` for callers assuming `Copy`).
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `phase-e-fingerprints-behavioral-break-migration-note` — document v0.1→v0.2 fingerprints rejection removal in MIGRATION.md
+
+- **Surfaced:** Phase E decision log E-9 (deferred at dispatch)
+- **Status:** resolved `548dc10` (Phase G `MIGRATION.md` write) — `MIGRATION.md` §3 documents the behavioral break (header bit 2 = 1 no longer fires `PolicyScopeViolation`) and recommends inspecting `WdmBackup.fingerprints` / `DecodeResult.fingerprints` directly for fingerprints-aware caller code.
+- **Tier:** v0.2-nice-to-have (closed)
 
 ---
 
