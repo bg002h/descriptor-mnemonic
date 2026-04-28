@@ -128,6 +128,10 @@ Descriptor::Sh(sh) => {
         )),
     }
 }
+// Note: §2's restriction matrix lists "Sh -> Sh REJECTED" but miniscript v13's
+// ShInner enum has only 3 variants (Wpkh, Wsh, Ms); sh(sh(...)) is structurally
+// unreachable on the encoder side. The §2 matrix row applies to the DECODER only,
+// where hostile inputs CAN present arbitrary tag bytes. No encoder arm needed.
 Descriptor::Pkh(_) | Descriptor::Bare(_) => Err(Error::PolicyScopeViolation(
     "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)".to_string()
 )),
@@ -171,7 +175,10 @@ fn decode_sh_inner(cur: &mut Cursor, keys: &[DescriptorPublicKey])
         Some(other) => Err(Error::PolicyScopeViolation(format!(
             "v0.4 does not support sh({other:?}); only sh(wpkh(...)) and sh(wsh(...)) allowed"
         ))),
-        None => Err(...),
+        None => Err(Error::InvalidBytecode {
+            offset: cur.position(),
+            kind: BytecodeErrorKind::UnknownTag(inner_byte),
+        }),
     }
 }
 ```
@@ -187,34 +194,44 @@ match Tag::from_byte(top_byte) {
     Some(Tag::Pkh) | Some(Tag::Bare) => Err(Error::PolicyScopeViolation(
         "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)".to_string()
     )),
-    Some(other) => Err(...),
-    None => Err(...),
+    Some(other) => Err(Error::PolicyScopeViolation(format!(
+        "v0.4 does not support top-level tag {other:?}"
+    ))),
+    None => Err(Error::InvalidBytecode {
+        offset: 0,
+        kind: BytecodeErrorKind::UnknownTag(top_byte),
+    }),
 }
 ```
 
-### Default path-tier selection (`crates/md-codec/src/policy.rs`) — STRUCTURAL ADDITION
+### Default path-tier selection (`crates/md-codec/src/policy.rs`) — STRUCTURAL ADDITION (scoped)
 
-The existing tier-1 logic at `policy.rs:390-397` is NOT a per-top-level-type table. It falls through to `shared_path()` (extracts first key's origin) and only hardcodes `m/84'/0'/0'` as the FINAL fallback when no origin is present.
+The existing tier-1 logic at `policy.rs:390-397` falls through to `shared_path()` (extracts first key's origin) and hardcodes `m/84'/0'/0'` as the FINAL fallback when no origin is present. **This existing behavior is preserved unchanged for `wsh` and `tr` top-level types** to avoid wire-format-changing existing v0.3.x-shaped inputs (a wsh-no-origin policy that currently encodes with the BIP-84 fallback indicator MUST continue to do so, even though BIP 48/2' would arguably be the more natural default).
 
-v0.4 needs a NEW per-descriptor selector helper (~15 lines, structural addition):
+v0.4 adds a NEW per-descriptor selector helper that fires ONLY for the new top-level types (`wpkh`, `sh(wpkh)`, `sh(wsh)`):
 
 ```rust
-fn default_indicator_for_descriptor(d: &Descriptor<DescriptorPublicKey>) -> u8 {
+/// Returns the natural default-tier indicator for v0.4-introduced top-level
+/// types when no Tier 0 / Tier 1 path is available. Intentionally scoped:
+/// existing wsh/tr types preserve their pre-v0.4 fallback behavior to avoid
+/// changing the bytecode of v0.3.x-shaped no-origin inputs.
+fn default_indicator_for_v0_4_types(d: &Descriptor<DescriptorPublicKey>) -> Option<u8> {
     match d {
-        Descriptor::Wpkh(_) => 0x03,                        // BIP 84
-        Descriptor::Tr(_)   => 0x04,                        // BIP 86
-        Descriptor::Wsh(_)  => 0x05,                        // BIP 48/2'
+        Descriptor::Wpkh(_) => Some(0x03),                  // BIP 84
         Descriptor::Sh(sh) => match sh.as_inner() {
-            ShInner::Wpkh(_) => 0x02,                       // BIP 49
-            ShInner::Wsh(_)  => 0x06,                       // BIP 48/1'
-            _ => 0x03,                                      // unreachable in v0.4
+            ShInner::Wpkh(_) => Some(0x02),                 // BIP 49
+            ShInner::Wsh(_)  => Some(0x06),                 // BIP 48/1'
+            _ => None,                                       // unreachable in v0.4 (rejected upstream)
         },
-        _ => 0x03,                                          // unreachable in v0.4
+        Descriptor::Wsh(_) | Descriptor::Tr(_) => None,     // preserve pre-v0.4 behavior
+        _ => None,                                           // unreachable in v0.4
     }
 }
 ```
 
-Wire this into the existing fall-through chain at `policy.rs:390-397` — replaces the hard-coded BIP 84 final fallback with the descriptor-aware selector.
+Wire this into the existing fall-through chain at `policy.rs:390-397` BETWEEN Tier 1 (origin-extracted) and the final BIP 84 fallback: if `default_indicator_for_v0_4_types` returns `Some(indicator)`, use it; otherwise fall through to the existing BIP 84 hard-coded fallback (which fires for wsh/tr no-origin cases unchanged).
+
+**Regression test required**: `wsh_no_origin_default_unchanged_from_v0_3` — pin a wsh-no-origin policy's encoded bytecode at v0.3 and verify byte-identity at v0.4. Catches accidental scope creep of the new selector.
 
 ### CLI surface
 
@@ -311,11 +328,11 @@ Add a new column to the existing tag table at `bip/bip-mnemonic-descriptor.media
 
 | Tag | Name | … | Disposition |
 |---|---|---|---|
-| `0x02` | Pkh | … | Top-level: REJECTED. Nested: still legal in inherited descriptor-codec table positions but never reached in practice. |
+| `0x02` | Pkh | … | Top-level: REJECTED. Not used in any nested context in MD's accepted surface. |
 | `0x03` | Sh | … | Top-level: ACTIVE per §"Sh wrapper restriction matrix". |
 | `0x04` | Wpkh | … | Top-level: ACTIVE. As `sh(wpkh)` inner: ACTIVE. |
 | `0x05` | Wsh | … | Top-level: ACTIVE. As `sh(wsh)` inner: ACTIVE. |
-| `0x07` | Bare | … | Top-level: REJECTED. Nested: as above. |
+| `0x07` | Bare | … | Top-level: REJECTED. Not used in any nested context in MD's accepted surface. |
 | `0x08` | TapTree | … | RESERVED — admission deferred (multi-leaf taproot). |
 
 ### Edit 5 — Extend §"Default derivation paths" table
@@ -427,16 +444,17 @@ Pattern matches v0.2.2 `MalformedPayloadPadding` test (`tests/conformance.rs::re
 - `tests/vectors_schema.rs:41-57` — `build_test_vectors_has_expected_corpus_count` hardcoded counts (`10` positive + `>= 18` negatives) bumped to ~18 + ~30
 - `tests/vectors_schema.rs:300-334` — `schema_2_*_additions` tests verify schema-2-specific fields cover all new fixtures
 
-### Test corpus growth — count
+### Test corpus growth — count (precise arithmetic)
 
-- Decode-side restriction-matrix: 9
-- Encode-side restriction-matrix: 9
-- Hostile-input: 5
-- Default-tier-selection: 6
-- Positive round-trip: 8
-- Hash-pin / corpus-count infrastructure bumps: ~3
-- **Total new tests: ~40**
-- **Final test count target: ~605 passing** (was 565 at v0.3.0)
+- Decode-side restriction-matrix: 9 fixtures (n_sh_multi, n_sh_sortedmulti, n_sh_pkh, n_sh_tr, n_sh_bare, n_sh_inner_script, n_sh_key_slot, n_top_pkh, n_top_bare)
+- Encode-side restriction-matrix: 5 fixtures (enc_sh_multi, enc_sh_sortedmulti, enc_top_pkh, enc_top_bare, enc_sh_via_inner_ms — `sh_pkh`/`sh_tr`/`sh_bare`/`sh_inner` not added because `ShInner` only has 3 variants and these are structurally unreachable)
+- Hostile-input: 5 (rejects_sh_recursion_bomb, rejects_sh_recursion_minimal, rejects_wpkh_trailing_bytes, rejects_sh_wpkh_trailing_bytes, rejects_sh_wpkh_non_placeholder)
+- Default-tier-selection: 6 (3 named-default tests + 3 override tests)
+- Wsh/Tr regression preservation: 1 (`wsh_no_origin_default_unchanged_from_v0_3` — required per §3 default-tier scoping)
+- Positive round-trip property tests: 8 (one per S1, S2, S3, S4, M1, M2, M3, Cs)
+- Hash-pin / corpus-count infrastructure bumps: 3 (V0_2_SHA256, expected_corpus_count, schema_2_*_additions)
+- **Total new tests: 9 + 5 + 5 + 6 + 1 + 8 + 3 = 37**
+- **Final test count target: 565 + 37 = 602 passing** (was 565 at v0.3.0)
 
 ### Vectors file regeneration (Approach A — locked at brainstorming)
 
@@ -541,18 +559,19 @@ for the rejected-by-design types.
 - `legacy-sh-sortedmulti-permanent-exclusion` (wont-fix)
 ```
 
-### FOLLOWUPS housekeeping at release
+### FOLLOWUPS housekeeping at release (ORDER MATTERS — file new entries BEFORE closing old)
 
-- `v0-4-bip-388-surface-completion`: close as `resolved <SHA>` with closure note acknowledging:
-  - "Stated scope (wpkh + sh(wsh)) addressed; v0.4 also adds sh(wpkh) (BIP-388-required, omitted from original entry)."
-  - "Entry name imprecise — v0.4 is the modern post-segwit SUBSET of BIP 388, narrower than BIP 388 itself."
-  - "Multi-leaf TapTree remains deferred (v0-5-multi-leaf-taptree)."
-- File NEW: `v0-5-multi-leaf-taptree` (v0.5+ tier) — `tr(KEY, TREE)` multi-leaf taproot, BIP 388 §"Taproot tree" expansion
-- File NEW: `legacy-pkh-permanent-exclusion` (`wont-fix`) — with rationale cross-reference to BIP §FAQ
-- File NEW: `legacy-sh-multi-permanent-exclusion` (`wont-fix`) — with rationale cross-reference
-- File NEW: `legacy-sh-sortedmulti-permanent-exclusion` (`wont-fix`) — with rationale cross-reference
-- File NEW: `bip48-nested-name-table-entry-followup` (only if NAME_TABLE update is deferred; otherwise close in same release)
-- Existing open entries (slip-0173-register-md-hrp, bch-known-vector-repin-with-md-hrp, bip-preliminary-hrp-disclaimer-tension, etc.) untouched
+1. **File first** (so closure note can cite real existing IDs):
+   - NEW: `v0-5-multi-leaf-taptree` (v0.5+ tier) — `tr(KEY, TREE)` multi-leaf taproot, BIP 388 §"Taproot tree" expansion
+   - NEW: `legacy-pkh-permanent-exclusion` (`wont-fix`) — with rationale cross-reference to BIP §FAQ
+   - NEW: `legacy-sh-multi-permanent-exclusion` (`wont-fix`)
+   - NEW: `legacy-sh-sortedmulti-permanent-exclusion` (`wont-fix`)
+   - NEW: `bip48-nested-name-table-entry-followup` (only if NAME_TABLE update is deferred; otherwise close in same release)
+
+2. **Then close the umbrella entry**:
+   - `v0-4-bip-388-surface-completion`: close as `resolved <SHA>` with closure note: "Stated scope (wpkh + sh(wsh)) addressed; v0.4 also adds sh(wpkh) (BIP-388-required, omitted from original entry). Entry name imprecise — v0.4 is the modern post-segwit SUBSET of BIP 388, narrower than BIP 388 itself. Multi-leaf TapTree filed as new entry `v0-5-multi-leaf-taptree`. Legacy exclusions filed as `legacy-{pkh,sh-multi,sh-sortedmulti}-permanent-exclusion` (wont-fix)."
+
+3. Existing open entries (slip-0173-register-md-hrp, bch-known-vector-repin-with-md-hrp, bip-preliminary-hrp-disclaimer-tension, etc.) untouched.
 
 ### Release sequence (parallels v0.3.0)
 
@@ -601,7 +620,7 @@ MD's `@i` placeholder framing assumes named keys provided separately at recovery
 
 ### What about `tr(KEY)` single-sig taproot?
 
-Supported since v0.2 (single-leaf `tr(KEY)` and `tr(KEY, single-leaf)`). Multi-leaf is deferred (above).
+Single-leaf taproot is supported (`tr(KEY)` and `tr(KEY, single-leaf-script)`). Multi-leaf TapTree is deferred (see "Why is multi-leaf TapTree deferred (vs excluded)?" above).
 
 ### Why is the HRP `md` rather than something more descriptive?
 
@@ -628,18 +647,30 @@ Family-stability across patch versions: any v0.4.x build regenerating `v0.2.json
 
 ## Implementation handoff
 
-This spec is ready for `superpowers:writing-plans` to produce a per-phase implementation plan. Suggested plan structure:
+This spec is ready for `superpowers:writing-plans` to produce a per-phase implementation plan. Suggested 11-phase plan structure with explicit dependencies:
 
-- Phase 0: Pre-implementation refactor (`decode_wsh_inner` body/wrapper split per §2)
-- Phase 1: Encoder changes (per §3 encoder block)
-- Phase 2: Decoder changes (per §3 decoder block)
-- Phase 3: Default path-tier selector (per §3 policy.rs structural addition)
-- Phase 4: NAME_TABLE addition for `bip48-nested` (per §3 CLI surface)
-- Phase 5: BIP doc edits (per §4)
-- Phase 6: Test corpus expansion (per §5; both encode + decode sides; hostile-input + property tests)
-- Phase 7: Vectors regeneration + SHA pin update + family token bump (per §5)
-- Phase 8: Documentation (CHANGELOG, MIGRATION) (per §6)
-- Phase 9: FOLLOWUPS housekeeping (per §6)
-- Phase 10: Final review + release sequence (per §6)
+- **Phase 0**: Pre-implementation refactor (`decode_wsh_inner` body/wrapper split per §2). MUST complete before any encoder/decoder change because Phases 1+2 both depend on `decode_wsh_body` existing.
+- **Phase 1**: Encoder changes (per §3 encoder block). Independent of Phase 2 once Phase 0 lands.
+- **Phase 2**: Decoder changes (per §3 decoder block). Independent of Phase 1 once Phase 0 lands.
+- **Phase 3**: Default path-tier selector (per §3 policy.rs structural addition; SCOPED to wpkh/sh-wpkh/sh-wsh only). Depends on Phase 1 (encoder must accept new types before policy can encode them).
+- **Phase 4**: NAME_TABLE addition for `bip48-nested` (per §3 CLI surface). Independent.
+- **Phase 5**: BIP doc edits (per §4). Independent — can land before or after code phases.
+- **Phase 6**: Test corpus expansion (per §5; both encode + decode sides; hostile-input + property tests + regression test). Depends on Phases 1, 2, 3.
+- **Phase 7**: Vectors regeneration + SHA pin update + family token bump (per §5). Depends on Phases 1-4 being byte-stable.
+- **Phase 8**: Cargo bump 0.3.0 → 0.4.0 + Cargo.lock refresh. Trivial; lands as part of release-prep.
+- **Phase 9**: Documentation (CHANGELOG, MIGRATION) (per §6). Lands after Phase 8 so version numbers are concrete.
+- **Phase 10**: FOLLOWUPS housekeeping (per §6 ORDER: file new entries first, then close umbrella).
+- **Phase 11**: Final review + release sequence (per §6).
 
-Each phase passes 4 mandatory gates (build, test, clippy, fmt) per the v0.3 workflow precedent.
+**Dependency summary**:
+
+```
+Phase 0 (refactor)
+   ├──→ Phase 1 (encoder) ──┐
+   └──→ Phase 2 (decoder) ──┤
+                            ├──→ Phase 3 (selector) ──→ Phase 6 (tests) ──→ Phase 7 (regen) ──→ Phase 8 (bump) ──→ Phase 9 (docs) ──→ Phase 10 (FOLLOWUPS) ──→ Phase 11 (release)
+                            ├──→ Phase 4 (NAME_TABLE) ─┤
+                            └──→ Phase 5 (BIP doc) ────┘
+```
+
+Each phase passes 4 mandatory gates (build, test, clippy, fmt) per the v0.3 workflow precedent. Phase 7 also requires `gen_vectors --verify` PASS for both v0.1.json and v0.2.json.
