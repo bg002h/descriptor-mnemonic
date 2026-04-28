@@ -43,6 +43,20 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0-5-stale-v0-4-message-strings-sweep` — sweep remaining "v0.4 does not support" / "reserved for v1+" stale strings
+
+- **Surfaced:** Phase 3 review of v0.5 (commit `59797ef`). Phase 3 only updated the four `decode_descriptor` strings in scope; reviewer flagged additional stale "v0.4" / "v1+" strings in adjacent code that are now factually wrong at v0.5.
+- **Where:**
+  - `crates/md-codec/src/bytecode/encode.rs:116` — sh(legacy P2SH) error
+  - `crates/md-codec/src/bytecode/encode.rs:123,163` — top-level pkh/bare error (duplicate, encode-side)
+  - `crates/md-codec/src/bytecode/decode.rs:167` — `decode_sh_inner` catch-all "v0.4 does not support sh(...)"
+  - `crates/md-codec/src/bytecode/decode.rs:11-14` — file-level module doc still says "Tag::TapTree (0x08) is reserved for v1+ multi-leaf encoding"
+  - `crates/md-codec/src/bytecode/decode.rs:255-257` — `decode_tr_inner` doc comment still says "Multi-leaf TapTree is reserved for v1+"
+- **What:** Sweep all sites to version-agnostic / v0.5-correct text. The `decode.rs:11-14` and `:255-257` items are the most important — they actively contradict v0.5 behavior in module-level documentation. The encoder-side messages are cosmetic but parallel structure with the decode_descriptor messages already updated.
+- **Why deferred:** Phase 3 scope was only the top-level dispatcher; the implementer correctly kept scope tight. Reviewer recommended folding the encoder messages into Phase 4 (which already touches `encode.rs:126-158`).
+- **Status:** open
+- **Tier:** v0.5-nice-to-have (must close before v0.5.0 ship — module docs that contradict shipped behavior are a release blocker)
+
 ### `p2-inline-key-tags` — Reserved tags 0x24–0x31 (descriptor-codec inline-key forms)
 
 - **Surfaced:** Phase 2 D-2 (`design/PHASE_2_DECISIONS.md`)
