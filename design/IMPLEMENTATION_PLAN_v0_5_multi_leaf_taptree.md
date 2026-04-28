@@ -129,20 +129,38 @@ Expected: total ~609 tests passing + 0 ignored across the workspace. Record the 
 
 ---
 
+## Test budget (informational — sets gates for Phase 6 + Phase 11)
+
+The spec's §5 enumerates **29 NEW** test cases (6 positive fixtures + 9 negatives + 5 hostile + 4 round-trip + 3 leaf-index + 2 parser-roundtrip) plus **1 RENAMED** (T2, +0 tests). Floor is 609 baseline + 29 = **638**.
+
+This plan adds **structural type-wiring tests** beyond the spec's 29:
+- Phase 2 type-wiring (`tests/v0_5_type_wiring.rs`): ~7 tests (3 error-variant pins, 2 DecodeReport pins, 1 helper smoke, 1 multi-leaf round-trip)
+- Phase 3 dispatcher: 1 test (`taptree_at_top_level_produces_specific_diagnostic`)
+- Phase 5 tap_leaves population: 2 tests (KeyOnly + single-leaf cases)
+- Phase 8 CLI: 1 test (`cli_encode_decode_multi_leaf_taptree`)
+
+**Total expected**: 609 + 29 (spec) + ~11 (structural) = ~649 tests. Phase 6 + Phase 11 gates use **≥638 (spec floor)** as the hard threshold; the structural tests add buffer beyond that. If the structural tests are dropped during execution, the gate still trips.
+
+If `gen_vectors --output --schema 2` expansion produces additional encode/decode test variants for the 6 NEW positive fixtures (at v0.4 cadence: +1 round-trip test per positive fixture), expected total moves toward 655. The plan's gates are deliberately generous to allow for harness expansion variance.
+
+---
+
 ## Phase 1 — Spec ratification (no code change)
 
 **Why:** Confirm the worktree HEAD includes the spec at commit `7ef7cec` and that no drift has occurred between spec ratification and implementation start.
 
 ### Task 1.1: Confirm spec commit reachable
 
-- [ ] **Step 1: Verify spec commit in branch history**
+- [ ] **Step 1: Verify spec content reachable**
 
 ```bash
 cd /scratch/code/shibboleth/descriptor-mnemonic-v0.5
-git log --oneline | grep -E '7ef7cec|e6e8477|fcef2a7' | head -5
+grep -q "Status.*Approved by user" design/SPEC_v0_5_multi_leaf_taptree.md \
+    && echo "spec present" \
+    || echo "MISSING — pull main first"
 ```
 
-Expected: at least the 3 spec commits visible (`7ef7cec` final, `e6e8477` revisions, `fcef2a7` initial). If absent, the worktree was cut from a stale `origin/main` — `git pull origin main --rebase` to bring in the spec, then continue.
+Expected: `spec present`. If `MISSING`, the worktree was cut from a stale `origin/main` — `git pull origin main --rebase` to bring in the spec, then continue. Content-based check rather than commit-SHA-based so squash-merges don't break it.
 
 - [ ] **Step 2: Read the spec one more time**
 
@@ -577,13 +595,13 @@ pub struct TapLeafReport {
 
 - [ ] **Step 5: Re-export `TapLeafReport` from the crate root**
 
-Open `crates/md-codec/src/lib.rs`. Find the existing `pub use decode_report::*;` (or equivalent). If the current re-export does NOT include `TapLeafReport`, add it explicitly:
+Open `crates/md-codec/src/lib.rs`. Find the existing `pub use decode_report::{...};` line (verified at lib.rs:156 to currently re-export `{Confidence, DecodeOutcome, DecodeReport, DecodeResult, Verifications}`). Add `TapLeafReport` to the list:
 
 ```rust
-pub use decode_report::{DecodeReport, DecodeOutcome, Correction, Verifications, Confidence, TapLeafReport};
+pub use decode_report::{Confidence, DecodeOutcome, DecodeReport, DecodeResult, TapLeafReport, Verifications};
 ```
 
-Adjust to match the actual re-export style.
+Note: `Correction` is re-exported separately from `crate::chunking::Correction` — do NOT add it here. `decode_report.rs` only IMPORTS `Correction`; it doesn't define it.
 
 - [ ] **Step 6: Run test to confirm pass**
 
@@ -1056,7 +1074,7 @@ fn taptree_at_top_level_produces_specific_diagnostic() {
 }
 ```
 
-NOTE: the `decode_template` and `Cursor::new` paths may differ — adjust to match. If `decode_template` is private, route through the public `decode_string` API and feed it a malformed bytecode (chunk-encoded). The test's purpose is to pin the diagnostic message; adapt the harness as needed.
+NOTE: `decode_template` and `Cursor::new` are PRIVATE (`pub(crate)` at cursor.rs:23; `decode_descriptor` is private at decode.rs:61). An integration test in `tests/` cannot call them directly. Route the test through the public `md_codec::decode_string(...)` API by encoding a one-byte bytecode `[0x08]` into a chunk-encoded MD string via the same `encode_bytecode_to_md_string` helper used by H1-H5 (Phase 6 Task 6.3). The test's purpose is to pin the diagnostic message — adapt the harness accordingly. If the chunking encoder rejects a top-level-only-`0x08` bytecode at the encoding stage (which is plausible for malformed inputs), use a unit test in `crates/md-codec/src/bytecode/decode.rs` instead — the test then has crate-private access to `decode_descriptor`.
 
 - [ ] **Step 2: Run test to confirm failure**
 
@@ -1335,7 +1353,7 @@ Open `crates/md-codec/tests/v0_5_type_wiring.rs`. Remove the `#[ignore = "..."]`
 RUSTUP_TOOLCHAIN=stable cargo test --test v0_5_type_wiring multi_leaf_two_leaf_symmetric_round_trips 2>&1 | tail -20
 ```
 
-Expected: PARTIAL — encode + decode succeed (Phase 2+4 done), BUT `tap_leaves` is empty because Phase 5 hasn't populated it yet. Adjust the test: drop the `tap_leaves` assertions for now; re-add them in Phase 5 Task 5.4. Replace the assertion with a `// TODO Phase 5: assert tap_leaves contents` comment.
+Expected: PARTIAL — encode + decode succeed (Phase 2+4 done), BUT `tap_leaves` is empty because Phase 5 hasn't populated it yet. Adjust the test: drop the `tap_leaves` assertions for now; re-add them in Phase 5 Task 5.2. Replace the assertion with a `// TODO Phase 5 Task 5.2: assert tap_leaves contents` comment.
 
 ```rust
     // (Phase 5 will populate tap_leaves; current test only asserts round-trip.)
@@ -1697,49 +1715,95 @@ If hits exist, replace the existing entry's expected error from "PolicyScopeViol
 
 use md_codec::{decode_string, Error, BytecodeErrorKind};
 
-/// Helper: construct a left-spine of N TapTree framings + N+1 leaves at the bottom.
-/// Returns the raw bytecode template (NOT chunk-encoded).
-fn build_left_spine_taptree_bytecode(framings: usize, num_keys: u8) -> Vec<u8> {
+/// Helper: construct `[Tr][Placeholder][0]` followed by N `[TapTree]` framings
+/// in a LEFT-spine arrangement. Each framing decodes as `[TapTree][LEFT_RECURSE][RIGHT_LEAF]`.
+/// At the bottom of the spine, emit one bottom-left leaf. Then emit N right-children
+/// (one per framing) — the decoder reads them in DFS pre-order as it unwinds.
+///
+/// Result: a tree where the deepest leaf is at miniscript-depth N (after
+/// `TapTree::combine` post-increments depth on each unwind). For BIP 341 max
+/// (depth 128), call with `framings = 128`. For boundary rejection, call with `129`.
+///
+/// The keys 0..=N+1 are referenced by index. The test must supply at least
+/// N+2 fingerprints/keys to the encoded MD string (1 internal + 1 bottom-left
+/// + N right-children = N+2 placeholders).
+fn build_left_spine_taptree_bytecode(framings: usize) -> Vec<u8> {
     use md_codec::bytecode::tag::Tag;
-    let mut out = Vec::with_capacity(framings + (num_keys as usize) * 3);
+    let mut out = Vec::with_capacity(framings * 4 + (framings + 1) * 3 + 3);
+    // Outer tr framing
     out.push(Tag::Tr.as_byte());
     out.push(Tag::Placeholder.as_byte());
     out.push(0u8); // internal key index
+    // N TapTree framings on the left spine (each consumes one byte)
     for _ in 0..framings {
         out.push(Tag::TapTree.as_byte());
     }
-    // After N framings, we need N+1 leaves; for a left spine, place one leaf
-    // at each "left" branch level. (The recursion structure means N framings
-    // produces a left-spine where each framing has [LEFT, RIGHT_TAPTREE] until
-    // the bottom; here we approximate by emitting leaves repeatedly.)
+    // Bottom: one leaf at the deepest left position (miniscript-depth N)
+    out.push(Tag::PkK.as_byte());
+    out.push(Tag::Placeholder.as_byte());
+    out.push(1u8);
+    // N right-children, one per framing, encountered as recursion unwinds
+    for i in 0..framings {
+        out.push(Tag::PkK.as_byte());
+        out.push(Tag::Placeholder.as_byte());
+        out.push((i + 2) as u8);
+    }
+    out
+}
+
+/// Helper: wrap raw bytecode into a chunk-encoded MD string suitable for
+/// the public `decode_string` API. Reuses the chunking module's encoder.
+/// The implementer should provide enough fingerprints to match placeholder count.
+fn encode_bytecode_to_md_string(
+    bytecode: &[u8],
+    fingerprints: &[[u8; 4]],
+) -> Result<String, md_codec::Error> {
+    // Implementer: route through the canonical chunking encoder. This is a
+    // bytecode-level test harness; it bypasses the policy-encoder layer to
+    // exercise the decoder on hostile shapes that the encoder would refuse.
     //
-    // Implementer: tune this construction so the resulting bytecode encodes a
-    // well-formed left-spine tree at the desired depth. The exact byte sequence
-    // depends on TapTree::combine's internal depth counting. Use the encoder-side
-    // round-trip on a programmatically-constructed TapTree as a reference.
-    todo!("Implementer: construct left-spine bytecode programmatically; \
-           use encoder round-trip on a test TapTree as reference")
+    // Look at how `gen_vectors` constructs negative-fixture input strings —
+    // it uses an internal helper that wraps raw bytecode + fingerprints into
+    // the BCH-coded MD string. Re-use that helper (likely
+    // `md_codec::vectors::encode_negative_bytecode` or similar; verify name
+    // by inspecting `crates/md-codec/src/vectors.rs`).
+    md_codec::chunking::encode_to_string(bytecode, fingerprints, &Default::default())
 }
 
 #[test]
 fn accepts_taptree_with_leaves_at_miniscript_depth_128() {
     // H1: 128 framings + leaves => leaves at miniscript-depth 128 (BIP 341 max, legal).
-    // Implementer: see todo!() in build_left_spine_taptree_bytecode for construction.
-    //
-    // Once the helper is implemented:
-    //
-    // let bytecode = build_left_spine_taptree_bytecode(128, ...);
-    // let chunked = chunking::encode_to_string(&bytecode, &Default::default()).unwrap();
-    // let decoded = decode_string(&chunked).expect("BIP 341 max-depth must decode");
-    // assert_eq!(decoded.report.tap_leaves.iter().any(|l| l.depth == 128), true);
-    todo!("Implement after helper")
+    // The gate `depth > 128` in decode_tap_subtree fires at recursion-depth 129
+    // reading the 129th [TapTree] byte, so 128 framings is the legal boundary.
+    let bytecode = build_left_spine_taptree_bytecode(128);
+    // 130 fingerprints: 1 internal-key + 129 leaves (1 bottom + 128 right).
+    let fingerprints: Vec<[u8; 4]> = (0..130).map(|i| (i as u32).to_le_bytes()).collect();
+    let md_string = encode_bytecode_to_md_string(&bytecode, &fingerprints)
+        .expect("encode raw bytecode to MD string");
+    let decoded = decode_string(&md_string).expect("BIP 341 max-depth tree must decode");
+    // Verify deepest leaf is at miniscript-depth 128 (legal max).
+    let max_depth = decoded.report.tap_leaves.iter()
+        .map(|l| l.depth)
+        .max()
+        .expect("multi-leaf decode populates tap_leaves");
+    assert_eq!(max_depth, 128, "expected max depth 128 (BIP 341 boundary)");
+    assert_eq!(decoded.report.tap_leaves.len(), 129, "left-spine of 128 framings produces 129 leaves");
 }
 
 #[test]
 fn rejects_taptree_at_miniscript_depth_129() {
     // H2: 129 framings — gate fires at recursion-depth=129 reading the 129th
     // [TapTree] byte. Expected: PolicyScopeViolation with depth-128 message.
-    todo!("Implement after helper")
+    let bytecode = build_left_spine_taptree_bytecode(129);
+    let fingerprints: Vec<[u8; 4]> = (0..131).map(|i| (i as u32).to_le_bytes()).collect();
+    let md_string = encode_bytecode_to_md_string(&bytecode, &fingerprints)
+        .expect("encode raw bytecode to MD string");
+    let err = decode_string(&md_string).expect_err("129-deep tree must reject");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("TapTree depth exceeds BIP 341 consensus maximum"),
+        "expected depth-128 PolicyScopeViolation message, got: {msg}"
+    );
 }
 
 #[test]
@@ -1752,18 +1816,21 @@ fn rejects_taptree_with_truncated_subtree() {
         0u8,
         Tag::TapTree.as_byte(),
     ];
-    // Wrap in chunked form for decode_string entry point.
-    // Or call decode_template/decode_descriptor directly if accessible.
-    //
-    // Expected: Error::InvalidBytecode { kind: BytecodeErrorKind::UnexpectedEnd, .. }
-    // (cursor's peek_byte fails when there are no more bytes to peek for left subtree)
-    todo!("Implementer: route through decode_template + assert variant")
+    let fingerprints: Vec<[u8; 4]> = vec![[0x00, 0x00, 0x00, 0x00]];
+    let md_string = encode_bytecode_to_md_string(&bytecode, &fingerprints)
+        .expect("encode truncated bytecode");
+    let err = decode_string(&md_string).expect_err("truncated subtree must reject");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("UnexpectedEnd") || msg.contains("Truncated"),
+        "expected UnexpectedEnd-flavoured InvalidBytecode, got: {msg}"
+    );
 }
 
 #[test]
 fn rejects_deeply_nested_recursion_bomb() {
-    // H4: 10K [TapTree] bytes with no leaves — must reject at depth 129 cleanly,
-    // BEFORE stack overflow (rationale: peek-before-recurse + depth gate).
+    // H4: 10K [TapTree] bytes with no leaves — must reject at recursion-depth 129
+    // cleanly, BEFORE stack overflow (rationale: peek-before-recurse + depth gate).
     use md_codec::bytecode::tag::Tag;
     let mut bytecode = vec![
         Tag::Tr.as_byte(),
@@ -1773,16 +1840,22 @@ fn rejects_deeply_nested_recursion_bomb() {
     for _ in 0..10_000 {
         bytecode.push(Tag::TapTree.as_byte());
     }
-    // Expected: PolicyScopeViolation("TapTree depth exceeds BIP 341 consensus maximum (128)")
-    // Stack should NOT overflow; depth gate fires at recursion-depth 129.
-    todo!("Implementer: route through decode_template + assert depth-128 message")
+    let fingerprints: Vec<[u8; 4]> = vec![[0x00, 0x00, 0x00, 0x00]];
+    let md_string = encode_bytecode_to_md_string(&bytecode, &fingerprints)
+        .expect("encode recursion-bomb bytecode");
+    let err = decode_string(&md_string).expect_err("recursion bomb must reject");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("TapTree depth exceeds BIP 341 consensus maximum"),
+        "expected depth-128 violation, got: {msg}"
+    );
 }
 
 #[test]
 fn rejects_taptree_unrecognized_inner_at_depth() {
     // H5: [Tr][Placeholder][0][TapTree][TapTree][unallocated_byte] — at recursion-depth 3,
     // peek sees an unrecognised byte; helper returns InvalidBytecode { kind: UnknownTag }
-    // with offset pointing at the unrecognised byte (post-cursor-advance).
+    // with offset pointing at the unrecognised byte.
     use md_codec::bytecode::tag::Tag;
     let bytecode = vec![
         Tag::Tr.as_byte(),
@@ -1790,14 +1863,21 @@ fn rejects_taptree_unrecognized_inner_at_depth() {
         0u8,
         Tag::TapTree.as_byte(),
         Tag::TapTree.as_byte(),
-        0xff_u8, // unallocated
+        0xff_u8, // unallocated tag byte
     ];
-    // Expected: Error::InvalidBytecode { kind: BytecodeErrorKind::UnknownTag(0xff), .. }
-    todo!("Implementer: route through decode_template + assert UnknownTag(0xff)")
+    let fingerprints: Vec<[u8; 4]> = vec![[0x00, 0x00, 0x00, 0x00]];
+    let md_string = encode_bytecode_to_md_string(&bytecode, &fingerprints)
+        .expect("encode unknown-tag bytecode");
+    let err = decode_string(&md_string).expect_err("unknown-tag at depth must reject");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("UnknownTag"),
+        "expected UnknownTag in InvalidBytecode, got: {msg}"
+    );
 }
 ```
 
-NOTE: the `todo!()` macros are placeholders — the Phase 6 implementer must replace them with actual decoded calls once the test harness API is clear. Phase 6 task should END with all `todo!()` resolved.
+NOTE: H1, H2, H3, H4, H5 above all use the `build_left_spine_taptree_bytecode` + `encode_bytecode_to_md_string` helpers defined at the top of this file. The implementer's job is to verify the helpers work end-to-end (encode raw bytecode → chunked MD string → decode → assert on result/error); the bytecode construction itself is concrete in this plan.
 
 - [ ] **Step 2: Run cargo build to verify file compiles (todos! are runtime, not compile, errors)**
 
@@ -1879,13 +1959,38 @@ fn decode_report_populates_leaf_index_dfs_preorder() {
 
 #[test]
 fn tap_leaf_subset_violation_carries_leaf_index() {
-    // LI2: hand-construct a multi-leaf TapTree with wpkh leaf at index 0;
-    // expect TapLeafSubsetViolation { operator: "wpkh", leaf_index: Some(0) }.
-    //
-    // Implementer: this requires constructing bytecode that bypasses the
-    // encoder validation (since the encoder would also reject wpkh-as-tap-leaf).
-    // Use direct bytecode construction (similar to N3 fixture).
-    todo!("Implementer: construct hostile bytecode + assert error contents")
+    // LI2: hand-construct a multi-leaf TapTree with wpkh leaf at index 0
+    // (left leaf of a 2-leaf depth-1 tree); expect
+    // TapLeafSubsetViolation { operator: "wpkh", leaf_index: Some(0) }.
+    use md_codec::bytecode::tag::Tag;
+    use md_codec::Error;
+    let bytecode = vec![
+        Tag::Tr.as_byte(),
+        Tag::Placeholder.as_byte(),
+        0u8,                    // internal key
+        Tag::TapTree.as_byte(), // multi-leaf framing
+        // Left leaf: WPKH (out of subset for tap leaves)
+        Tag::Wpkh.as_byte(),
+        Tag::Placeholder.as_byte(),
+        1u8,
+        // Right leaf: pk (legal)
+        Tag::PkK.as_byte(),
+        Tag::Placeholder.as_byte(),
+        2u8,
+    ];
+    let fingerprints: Vec<[u8; 4]> = vec![
+        [0x00; 4], [0x11; 4], [0x22; 4],
+    ];
+    let md_string = encode_bytecode_to_md_string(&bytecode, &fingerprints)
+        .expect("encode hostile bytecode");
+    let err = decode_string(&md_string).expect_err("wpkh leaf must reject");
+    match err {
+        Error::TapLeafSubsetViolation { operator, leaf_index, .. } => {
+            assert_eq!(operator, "wpkh", "expected wpkh operator");
+            assert_eq!(leaf_index, Some(0), "expected leaf_index=Some(0) (left leaf)");
+        }
+        other => panic!("expected TapLeafSubsetViolation, got {other:?}"),
+    }
 }
 
 #[test]
@@ -2359,6 +2464,14 @@ Expected: all clean.
 sed -n '1,30p' /scratch/code/shibboleth/descriptor-mnemonic-v0.5/CHANGELOG.md
 ```
 
+- [ ] **Step 1.5: Capture the SHAs from Phase 6**
+
+```bash
+grep -E 'V0_[12]_SHA256' /scratch/code/shibboleth/descriptor-mnemonic-v0.5/crates/md-codec/tests/vectors_schema.rs
+```
+
+Record the two SHA values from `V0_1_SHA256` and `V0_2_SHA256`. These values were set in Phase 6 Task 6.5; substitute them into the `<NEW_SHA_FROM_PHASE_6>` placeholders in Step 2 below. NEVER ship CHANGELOG entries with the literal placeholder string.
+
 - [ ] **Step 2: Insert new `[0.5.0]` entry at the top**
 
 Insert AFTER the existing `# Changelog` heading (or wherever the topmost entry is):
@@ -2634,9 +2747,21 @@ Update memory entries (`project_followups_tracking`, etc.) if their content refe
 
 ## Cross-cutting concerns
 
-### Audit trail
+### Audit trail (NON-NEGOTIABLE per memory `feedback_subagent_workflow`)
 
-Per memory `feedback_subagent_workflow`: every Phase's implementer subagent must persist a final report to `design/agent-reports/v0-5-multi-leaf-phase-N-implementer.md`. Every deferred minor item gets a FOLLOWUPS.md entry. The final cumulative reviewer (Phase 9) persists to `design/agent-reports/v0-5-multi-leaf-final-reviewer.md`.
+**Every** Phase 2-8 + Phase 10 implementer subagent MUST, as the FINAL ACTION before returning, persist a report to:
+
+```
+design/agent-reports/v0-5-multi-leaf-phase-<N>-implementer.md
+```
+
+(where `<N>` is the phase number, e.g. `phase-2`, `phase-3`, ...). Format: brief frontmatter + the agent's final summary including any items deferred. Every deferred minor item must also be filed as a `design/FOLLOWUPS.md` entry.
+
+The final cumulative reviewer (Phase 9 Task 9.1) persists to `design/agent-reports/v0-5-multi-leaf-final-reviewer.md`.
+
+**Phase 11 cleanup verification**: confirm all 8 implementer reports exist (phases 2, 3, 4, 5, 6, 7, 8, 10) plus the final-reviewer report from Phase 9. If any are missing, the audit trail is incomplete — re-dispatch the implementer subagent with explicit instruction to produce the report.
+
+To avoid forgetting: the LAST step of each phase's `commit` task should end with: "Verify `design/agent-reports/v0-5-multi-leaf-phase-<N>-implementer.md` exists; if not, write it now."
 
 ### Worktree dispatch (per memory `feedback_worktree_dispatch`)
 
