@@ -180,7 +180,7 @@ pub const GEN_REGULAR: [u128; 5] = [
 /// h = hashlib.sha256(b"shibbolethnums").digest()
 /// int.from_bytes(h, "big") >> (256 - 65)  # → 0x0815c07747a3392e7
 /// ```
-pub const WDM_REGULAR_CONST: u128 = 0x0815c07747a3392e7;
+pub const MD_REGULAR_CONST: u128 = 0x0815c07747a3392e7;
 
 /// Initial residue value for both the regular and long polymod algorithms (BIP 93).
 ///
@@ -215,7 +215,7 @@ pub const GEN_LONG: [u128; 5] = [
 /// Expected residue after polymod over a valid long-code WDM string.
 ///
 /// Derived NUMS-style: the top 75 bits of `SHA-256(b"shibbolethnums")`.
-/// See [`WDM_REGULAR_CONST`] for the derivation method and design rationale.
+/// See [`MD_REGULAR_CONST`] for the derivation method and design rationale.
 ///
 /// Reproducible by:
 /// ```text
@@ -223,7 +223,7 @@ pub const GEN_LONG: [u128; 5] = [
 /// h = hashlib.sha256(b"shibbolethnums").digest()
 /// int.from_bytes(h, "big") >> (256 - 75)  # → 0x205701dd1e8ce4b9f47
 /// ```
-pub const WDM_LONG_CONST: u128 = 0x205701dd1e8ce4b9f47;
+pub const MD_LONG_CONST: u128 = 0x205701dd1e8ce4b9f47;
 
 /// Right-shift amount to extract the top 5 bits from a 75-bit long-code residue.
 ///
@@ -307,14 +307,14 @@ pub(in crate::encoding) fn polymod_run(
 /// to append to `data` to form the full data-part-plus-checksum.
 ///
 /// The algorithm runs polymod over `hrp_expand(hrp) || data || [0; 13]`,
-/// then XORs the result with [`WDM_REGULAR_CONST`] to extract the checksum.
+/// then XORs the result with [`MD_REGULAR_CONST`] to extract the checksum.
 pub fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
     // Regular code: 13-symbol checksum (0..=12), pad/array/extraction all use 13.
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 13));
     let polymod =
-        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ WDM_REGULAR_CONST;
+        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ MD_REGULAR_CONST;
     let mut out = [0u8; 13];
     for (i, slot) in out.iter_mut().enumerate() {
         *slot = ((polymod >> (5 * (12 - i))) & 0x1F) as u8;
@@ -326,27 +326,27 @@ pub fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
 ///
 /// `data_with_checksum` is the full data part including the trailing 13
 /// checksum characters. Returns `true` iff the polymod over
-/// `hrp_expand(hrp) || data_with_checksum` equals [`WDM_REGULAR_CONST`].
+/// `hrp_expand(hrp) || data_with_checksum` equals [`MD_REGULAR_CONST`].
 pub fn bch_verify_regular(hrp: &str, data_with_checksum: &[u8]) -> bool {
     if data_with_checksum.len() < 13 {
         return false;
     }
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data_with_checksum);
-    polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) == WDM_REGULAR_CONST
+    polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) == MD_REGULAR_CONST
 }
 
 /// Compute the 15-character BCH checksum for the long code.
 ///
 /// Same algorithm as [`bch_create_checksum_regular`] but uses the long-code
 /// polymod parameters (`GEN_LONG`, `LONG_SHIFT`, `LONG_MASK`) and target
-/// constant ([`WDM_LONG_CONST`]). Produces a 15-element checksum array.
+/// constant ([`MD_LONG_CONST`]). Produces a 15-element checksum array.
 pub fn bch_create_checksum_long(hrp: &str, data: &[u8]) -> [u8; 15] {
     // Long code: 15-symbol checksum (0..=14), pad/array/extraction all use 15.
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 15));
-    let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) ^ WDM_LONG_CONST;
+    let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) ^ MD_LONG_CONST;
     let mut out = [0u8; 15];
     for (i, slot) in out.iter_mut().enumerate() {
         *slot = ((polymod >> (5 * (14 - i))) & 0x1F) as u8;
@@ -364,7 +364,7 @@ pub fn bch_verify_long(hrp: &str, data_with_checksum: &[u8]) -> bool {
     }
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data_with_checksum);
-    polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) == WDM_LONG_CONST
+    polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) == MD_LONG_CONST
 }
 
 /// Result of a successful BCH decode + correct attempt.
@@ -424,7 +424,7 @@ pub fn bch_correct_regular(
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data_with_checksum);
     let residue =
-        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ WDM_REGULAR_CONST;
+        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ MD_REGULAR_CONST;
 
     if let Some((positions, magnitudes)) =
         bch_decode::decode_regular_errors(residue, data_with_checksum.len())
@@ -474,7 +474,7 @@ pub fn bch_correct_long(
     }
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data_with_checksum);
-    let residue = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) ^ WDM_LONG_CONST;
+    let residue = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) ^ MD_LONG_CONST;
 
     if let Some((positions, magnitudes)) =
         bch_decode::decode_long_errors(residue, data_with_checksum.len())
@@ -863,8 +863,8 @@ mod tests {
         // The top 65 / 75 bits of this value equal the top 65 / 75 bits
         // of the full 256-bit hash, since 75 < 128.
         let top_128 = u128::from_be_bytes(bytes[..16].try_into().unwrap());
-        assert_eq!(top_128 >> (128 - 65), WDM_REGULAR_CONST);
-        assert_eq!(top_128 >> (128 - 75), WDM_LONG_CONST);
+        assert_eq!(top_128 >> (128 - 65), MD_REGULAR_CONST);
+        assert_eq!(top_128 >> (128 - 75), MD_LONG_CONST);
     }
 
     #[test]
@@ -989,7 +989,7 @@ mod tests {
     #[test]
     fn bch_round_trip_regular() {
         // Encode then verify a small data part. The verify call sees the
-        // full data + checksum, so polymod returns WDM_REGULAR_CONST exactly.
+        // full data + checksum, so polymod returns MD_REGULAR_CONST exactly.
         let hrp = "wdm";
         let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let checksum = bch_create_checksum_regular(hrp, &data);
@@ -1037,7 +1037,7 @@ mod tests {
     #[test]
     fn bch_zero_data_does_not_self_validate_regular() {
         // The all-zeros data + all-zeros checksum must NOT validate, because
-        // WDM_REGULAR_CONST was chosen NUMS-style to avoid this trivial case.
+        // MD_REGULAR_CONST was chosen NUMS-style to avoid this trivial case.
         // Data length 8 is arbitrary; any non-empty zero-fill exhibits the same
         // negative result. 8 echoes the regular-code known-vector data length.
         let mut zero = vec![0u8; 8];
@@ -1097,7 +1097,7 @@ mod tests {
 
     #[test]
     fn bch_zero_data_does_not_self_validate_long() {
-        // All-zeros must not validate, by NUMS construction of WDM_LONG_CONST.
+        // All-zeros must not validate, by NUMS construction of MD_LONG_CONST.
         // Data length 16 is arbitrary; any non-empty zero-fill exhibits the same
         // negative result. 16 echoes the long-code known-vector data length.
         let mut zero = vec![0u8; 16];

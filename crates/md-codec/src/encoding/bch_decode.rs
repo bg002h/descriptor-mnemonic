@@ -493,7 +493,7 @@ fn forney(
 /// Decode a regular-code BCH error pattern. Inputs:
 ///
 /// - `residue_xor_const`: the value
-///   `polymod(hrp_expand(hrp) || data_with_checksum) ⊕ WDM_REGULAR_CONST`.
+///   `polymod(hrp_expand(hrp) || data_with_checksum) ⊕ MD_REGULAR_CONST`.
 ///   By the BCH syndrome property, this is congruent to the error
 ///   polynomial `E(x)` modulo `g_regular(x)`.
 /// - `data_with_checksum_len`: the total symbol count of
@@ -591,8 +591,8 @@ fn decode_errors(
 mod tests {
     use super::*;
     use crate::encoding::{
-        GEN_LONG, GEN_REGULAR, LONG_MASK, LONG_SHIFT, REGULAR_MASK, REGULAR_SHIFT, WDM_LONG_CONST,
-        WDM_REGULAR_CONST, bch_create_checksum_long, bch_create_checksum_regular, hrp_expand,
+        GEN_LONG, GEN_REGULAR, LONG_MASK, LONG_SHIFT, REGULAR_MASK, REGULAR_SHIFT, MD_LONG_CONST,
+        MD_REGULAR_CONST, bch_create_checksum_long, bch_create_checksum_regular, hrp_expand,
     };
 
     #[test]
@@ -713,7 +713,7 @@ mod tests {
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
         let polymod = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK);
-        let residue = polymod ^ WDM_REGULAR_CONST;
+        let residue = polymod ^ MD_REGULAR_CONST;
 
         let (positions, magnitudes) =
             decode_regular_errors(residue, codeword.len()).expect("1-error must decode");
@@ -745,7 +745,7 @@ mod tests {
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
         let polymod = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK);
-        let residue = polymod ^ WDM_REGULAR_CONST;
+        let residue = polymod ^ MD_REGULAR_CONST;
 
         let (positions, magnitudes) =
             decode_regular_errors(residue, codeword.len()).expect("2-error must decode");
@@ -777,7 +777,7 @@ mod tests {
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
         let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK);
-        let residue = polymod ^ WDM_LONG_CONST;
+        let residue = polymod ^ MD_LONG_CONST;
 
         let (positions, magnitudes) =
             decode_long_errors(residue, codeword.len()).expect("4-error must decode");
@@ -812,7 +812,7 @@ mod tests {
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
         let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK);
-        let residue = polymod ^ WDM_LONG_CONST;
+        let residue = polymod ^ MD_LONG_CONST;
 
         if let Some((positions, magnitudes)) = decode_long_errors(residue, codeword.len()) {
             let original = {
