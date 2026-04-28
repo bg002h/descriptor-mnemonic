@@ -61,15 +61,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** external
 
-### `8-negative-fixture-dynamic-generation` — generate negative vectors dynamically by exercising actual error paths
-
-- **Surfaced:** v0.2 carry-forward from `8-negative-fixture-placeholder-strings` closure
-- **Where:** `crates/wdm-codec/src/vectors.rs` `NEGATIVE_FIXTURES` array (replace static const with a runtime `build_negative_vectors()`)
-- **What:** v0.1 ships representative-placeholder `input_strings` with honest provenance docs. v0.2 should (if cross-implementation interop demands it) replace the placeholders with byte-for-byte exact strings produced by encoding a valid policy then mutating it precisely until the named `expected_error_variant` is returned. This is per-variant fixture work (~30 variants).
-- **Why deferred:** v0.1's schema lock-in purpose is met by representative fixtures + honest docs. Real conformance implementations can generate their own byte-for-byte fixtures locally using the same API surfaces.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
 
 - **Surfaced:** Phase 10 Task 10.7 closure
@@ -134,15 +125,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** v0.2 errs on the side of strict per the BIP MUST clause; widening requires evidence from real signers.
 - **Status:** open
 - **Tier:** v0.3
-
-### `phase-d-taproot-corpus-fixtures` — add tr() positive + negative vectors to CORPUS_FIXTURES
-
-- **Surfaced:** Phase D implementer (Opus 4.7) on commit `6f6eae9`
-- **Where:** `crates/wdm-codec/src/vectors.rs` `CORPUS_FIXTURES` and `NEGATIVE_FIXTURES` arrays
-- **What:** Phase D ships taproot Tr code paths but does not extend the corpus fixtures to cover them — that would have broken `gen_vectors --verify v0.1.json` (the v0.1 lock). Phase F is the dedicated test-vector phase and bumps the schema; the taproot positive vectors (key-path-only `tr(K)`, single-leaf `tr(K, pk(K2))`, `tr(K, multi_a(...))`) and the negative vectors (subset violation, multi-leaf TapTree byte sequence) should be added there.
-- **Why deferred:** v0.1.json is locked; bumping the schema is Phase F's scope.
-- **Status:** open
-- **Tier:** v0.2
 
 ### `phase-d-tap-miniscript-type-check-parity` — full Tap-context type-check rules beyond the named subset
 
@@ -456,6 +438,18 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 5-B; documented at `crates/wdm-codec/src/policy.rs:316-317` and `:668`
 - **Status:** resolved `6559c17` (v0.2 Phase E) — full fingerprints block end-to-end. `EncodeOptions::fingerprints: Option<Vec<bitcoin::bip32::Fingerprint>>` field (additive on `#[non_exhaustive]`) + `with_fingerprints(...)` builder. `Tag::Fingerprints = 0x35` added to the `#[non_exhaustive]` Tag enum + `from_byte` arm. Encoder default `None` → header `0x00` (preserves v0.1 wire output); `Some(fps)` → header `0x04` + emit block immediately after path declaration. Decoder validates count == `key_count()` per BIP MUST clause. New `Error::FingerprintsCountMismatch { expected, got }` variant (registered in conformance exhaustiveness gate). `from_bytecode_with_fingerprints` internal helper returns `(WalletPolicy, Option<Vec<Fingerprint>>)`; legacy `from_bytecode` preserved as thin wrapper. `DecodeResult.fingerprints: Option<Vec<Fingerprint>>` additive field surfaces the parsed block. v0.1 `PolicyScopeViolation` rejection at `policy.rs:416` REMOVED — header bit 2 = 1 is now valid (behavioral break tracked as `phase-e-fingerprints-behavioral-break-migration-note` for Phase G). New `tests/fingerprints.rs` (8 tests) + 1 conformance test + 1 unit test = 10 new. Wire format unchanged for no-fingerprints path; vectors verify byte-identical. BIP §"Fingerprints block" gains a normative Privacy paragraph + concrete byte-layout example (`0433033502deadbeefcafebabe0519020232003201` for `wsh(multi(2,@0/**,@1/**))` with two test fingerprints) pinned by `fingerprints_block_byte_layout_matches_bip_example` test. Phase E decision log committed + pushed at `0def1ec` resolved E-1..E-12 in advance. Reviewer (Opus 4.7) `APPROVE_WITH_FOLLOWUPS` with no spec deviations, no algorithmic findings — explicitly verified `key_count()` semantics match BIP MUST, encoder validation order, tag dispatch airtightness, and BIP byte-layout reproducibility.
 - **Tier:** v0.2 (closed; breaking — header bit 2 rejection removed; new `Tag::Fingerprints` variant; new `Error::FingerprintsCountMismatch` variant; additive `EncodeOptions::fingerprints` and `DecodeResult.fingerprints` fields)
+
+### `8-negative-fixture-dynamic-generation` — generate negative vectors dynamically by exercising actual error paths
+
+- **Surfaced:** v0.2 carry-forward from `8-negative-fixture-placeholder-strings` closure
+- **Status:** resolved `5348b12` (v0.2 Phase F) — schema bumped 1 → 2 (additive). `build_test_vectors_v2()` populates `input_strings` with byte-for-byte exact strings via ~30 per-variant generator functions; each asserts via `debug_assert!` that decode returns the expected variant. Variants that genuinely cannot be triggered via a WDM string (n12 `EmptyChunkList`, n17 `ChunkIndexOutOfRange`, n30 `PolicyTooLarge`, plus the 2 new encode-side rejections from Phase D/E) carry empty `input_strings` with honest `provenance` documenting the lower-level API or encode-side rejection that triggers them. `v0.1.json` LOCKED (SHA `1957b542...` byte-identical); `v0.2.json` NEW at SHA `92f0d5b2f365df38a6b22fcf24c3f0bc493883fd14f1db591f82418c001e0e42` (14 positive + 34 negative). Schema-2 additive fields: `Vector.expected_fingerprints_hex: Option<Vec<String>>` and `Vector.encode_options_fingerprints: Option<Vec<[u8; 4]>>` and `NegativeVector.provenance: Option<String>` — all `serde(default, skip_serializing_if = "Option::is_none")` so schema-1 readers parse v0.2.json cleanly. `gen_vectors` extended with `--schema <1|2>` (default 2 for output; inferred for verify). Reviewer (Opus 4.7) `APPROVE` (cleanest of any v0.2 phase; no FOLLOWUPS).
+- **Tier:** v0.2 (closed; breaking-tagged because schema bump but additive enough that schema-1 consumers can still parse v0.2.json)
+
+### `phase-d-taproot-corpus-fixtures` — add tr() positive + negative vectors to CORPUS_FIXTURES
+
+- **Surfaced:** Phase D implementer (Opus 4.7) on commit `6f6eae9`
+- **Status:** resolved `5348b12` (absorbed into v0.2 Phase F) — 3 positive taproot entries (`tr_keypath`, `tr_pk`, `tr_multia_2of3`) + 2 negative (`n_tap_leaf_subset`, `n_taptree_multi_leaf`) added to schema-2's `CORPUS_FIXTURES` / `NEGATIVE_FIXTURES`. The `tr_multia_2of3` policy uses `tr(@0/**, multi_a(2,@1/**,@2/**,@3/**))` (4 distinct placeholders) instead of the decisions-doc original (3-key reusing `@0`) because the original fails BIP 388's disjoint-paths constraint — sound in-flight correction by the agent, verified against the `tests/taproot.rs::taproot_single_leaf_multi_a_round_trips` precedent.
+- **Tier:** v0.2 (closed)
 
 ---
 
