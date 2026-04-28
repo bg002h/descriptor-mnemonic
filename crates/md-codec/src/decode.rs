@@ -28,9 +28,12 @@
 //! `DecodeOptions::erasures` is reserved for v0.3 erasure decoding and is
 //! silently ignored in v0.1.
 
+use miniscript::Descriptor;
+use miniscript::descriptor::DescriptorPublicKey;
+
 use crate::{
     BchCode, Chunk, ChunkHeader, Confidence, DecodeOptions, DecodeOutcome, DecodeReport,
-    DecodeResult, Error, Verifications, WalletPolicy,
+    DecodeResult, Error, TapLeafReport, Verifications, WalletPolicy,
     chunking::{Correction, reassemble_chunks},
     encoding::{decode_string, five_bit_to_bytes},
     error::BytecodeErrorKind,
@@ -180,14 +183,24 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
         (DecodeOutcome::AutoCorrected, Confidence::High)
     };
 
+    // Materialize the decoded descriptor (with dummy keys) so we can walk the
+    // TapTree and populate tap_leaves. `into_descriptor()` succeeds because
+    // `from_bytecode_with_fingerprints` calls `InnerWalletPolicy::from_descriptor`
+    // which stores the dummy-key materialization as `key_info`. For non-tr or
+    // KeyOnly tr, `build_tap_leaves` returns an empty vec.
+    let tap_leaves = policy
+        .inner()
+        .clone()
+        .into_descriptor()
+        .map(|desc| build_tap_leaves(&desc))
+        .unwrap_or_default();
+
     let report = DecodeReport {
         outcome,
         corrections: all_corrections,
         verifications,
         confidence,
-        // Phase 5 (v0.5) populates this for `tr(...)` decodes; for v0.4.x
-        // shapes (and KeyOnly tr) the vector remains empty.
-        tap_leaves: vec![],
+        tap_leaves,
     };
 
     Ok(DecodeResult {
@@ -195,6 +208,36 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
         report,
         fingerprints,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Build the `tap_leaves` vector from a decoded `Descriptor::Tr`.
+///
+/// Walks `tap_tree.leaves()` in DFS pre-order (the order rust-miniscript's
+/// `TapTree::leaves()` iterator produces) and constructs one [`TapLeafReport`]
+/// per leaf, assigning sequential 0-based `leaf_index` values.
+///
+/// Returns an empty vector for:
+/// - Non-`tr` top-level descriptors (e.g. `wsh`, `wpkh`).
+/// - KeyOnly `tr(KEY)` with no script path.
+fn build_tap_leaves(desc: &Descriptor<DescriptorPublicKey>) -> Vec<TapLeafReport> {
+    if let Descriptor::Tr(tr) = desc {
+        if let Some(tap_tree) = tr.tap_tree() {
+            return tap_tree
+                .leaves()
+                .enumerate()
+                .map(|(idx, item)| TapLeafReport {
+                    leaf_index: idx,
+                    miniscript: item.miniscript().clone(),
+                    depth: item.depth(),
+                })
+                .collect();
+        }
+    }
+    Vec::new()
 }
 
 // ---------------------------------------------------------------------------

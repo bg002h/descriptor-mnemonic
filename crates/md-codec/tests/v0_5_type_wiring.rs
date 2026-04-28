@@ -130,9 +130,35 @@ pk([22222222/86'/0'/0']xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwS
     let strings: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
     let decoded = md_codec::decode(&strings, &DecodeOptions::new()).expect("decode succeeds");
 
-    // TODO Phase 5 Task 5.2: assert tap_leaves contents (length 2, DFS pre-order,
-    // depths [1, 1], leaf_index [0, 1]). For now the field is reachable but empty.
-    let _ = decoded.report.tap_leaves;
+    assert_eq!(decoded.report.tap_leaves.len(), 2);
+    assert_eq!(decoded.report.tap_leaves[0].leaf_index, 0);
+    assert_eq!(decoded.report.tap_leaves[0].depth, 1);
+    assert_eq!(decoded.report.tap_leaves[1].leaf_index, 1);
+    assert_eq!(decoded.report.tap_leaves[1].depth, 1);
+}
+
+#[test]
+fn keyonly_tr_produces_empty_tap_leaves() {
+    use md_codec::{DecodeOptions, EncodeOptions, WalletPolicy, encode};
+    let policy_str = "tr([00000000/86'/0'/0']xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz/<0;1>/*)";
+    let policy: WalletPolicy = policy_str.parse().expect("valid policy");
+    let backup = encode(&policy, &EncodeOptions::default()).expect("encode succeeds");
+    let strings: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
+    let decoded = md_codec::decode(&strings, &DecodeOptions::new()).expect("decode succeeds");
+    assert_eq!(decoded.report.tap_leaves.len(), 0);
+}
+
+#[test]
+fn single_leaf_tr_produces_one_tap_leaf_at_depth_zero() {
+    use md_codec::{DecodeOptions, EncodeOptions, WalletPolicy, encode};
+    let policy_str = "tr([00000000/86'/0'/0']xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz/<0;1>/*,pk([11111111/86'/0'/0']xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz/<0;1>/*))";
+    let policy: WalletPolicy = policy_str.parse().expect("valid policy");
+    let backup = encode(&policy, &EncodeOptions::default()).expect("encode succeeds");
+    let strings: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
+    let decoded = md_codec::decode(&strings, &DecodeOptions::new()).expect("decode succeeds");
+    assert_eq!(decoded.report.tap_leaves.len(), 1);
+    assert_eq!(decoded.report.tap_leaves[0].leaf_index, 0);
+    assert_eq!(decoded.report.tap_leaves[0].depth, 0);
 }
 
 #[test]
