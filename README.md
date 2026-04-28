@@ -1,9 +1,11 @@
-# Wallet Descriptor Mnemonic (WDM)
+# Mnemonic Descriptor (MD)
+
+> **Note**: This crate was renamed from `wdm-codec` (HRP `wdm`) to `md-codec` (HRP `md`) in v0.3.0. See [`MIGRATION.md`](./MIGRATION.md#v02x--v030) for upgrade guidance and [`CHANGELOG.md`](./CHANGELOG.md) for the v0.3.0 entry. The repository URL is unchanged.
 
 > **Status: Pre-Draft, AI + reference implementation, awaiting human review.**
 > This specification was produced by an AI assistant in collaboration with
 > the author, and is shipped alongside a working reference implementation
-> at [`crates/wdm-codec/`](crates/wdm-codec/) (Rust, CC0-1.0) that locks
+> at [`crates/md-codec/`](crates/md-codec/) (Rust, CC0-1.0) that locks
 > the v0.1 wire format with committed test vectors. The spec and impl have
 > not yet been reviewed end-to-end by a human or by the broader bitcoin
 > community. Tag values, header layout, HRP, and structural decisions
@@ -14,9 +16,9 @@ A specification for backing up bitcoin wallet policies on durable media
 (paper, steel) in a form that is compact, hand-transcribable, and
 strongly error-correcting.
 
-WDM is to **wallet structure** what BIP 39 is to **seed entropy**: a
+MD is to **wallet structure** what BIP 39 is to **seed entropy**: a
 canonical engravable backup format. Where a 24-word BIP 39 phrase
-restores a wallet's keys, a WDM string restores a wallet's spending
+restores a wallet's keys, an MD string restores a wallet's spending
 policy — the miniscript template, derivation paths, and (in future
 versions) cosigners' extended public keys.
 
@@ -26,9 +28,9 @@ versions) cosigners' extended public keys.
 .
 ├── bip/
 │   ├── README.md                                  ← BIP draft index
-│   └── bip-wallet-descriptor-mnemonic.mediawiki   ← the formal BIP draft
+│   └── bip-mnemonic-descriptor.mediawiki          ← the formal BIP draft
 ├── crates/
-│   └── wdm-codec/                                 ← Rust reference implementation
+│   └── md-codec/                                  ← Rust reference implementation
 ├── design/
 │   ├── POLICY_BACKUP.md   ← design rationale, decisions log, open items
 │   ├── PRIOR_ART.md       ← survey of related encoding schemes
@@ -39,19 +41,19 @@ versions) cosigners' extended public keys.
 
 ## Where to start reading
 
-- **For format users / implementers:** `bip/bip-wallet-descriptor-mnemonic.mediawiki` is the canonical spec.
-- **For the reference implementation:** [`crates/wdm-codec/README.md`](crates/wdm-codec/README.md) — quickstart, CLI, library API.
+- **For format users / implementers:** `bip/bip-mnemonic-descriptor.mediawiki` is the canonical spec.
+- **For the reference implementation:** [`crates/md-codec/README.md`](crates/md-codec/README.md) — quickstart, CLI, library API.
 - **For why the spec is the way it is:** `design/POLICY_BACKUP.md` documents the design decisions and tradeoffs in detail.
 - **For comparison with existing formats:** `design/PRIOR_ART.md`.
-- **For what real miniscripts look like under WDM encoding:** `design/CORPUS.md` and the locked test vectors at `crates/wdm-codec/tests/vectors/v0.1.json`.
+- **For what real miniscripts look like under MD encoding:** `design/CORPUS.md` and the locked test vectors at `crates/md-codec/tests/vectors/v0.1.json`.
 
-## What WDM is for
+## What MD is for
 
 Bitcoin wallets that use arbitrary miniscript spending policies — multisig, timelocks, decaying conditions, inheritance schemes — must back up the policy structure separately from the seed. The seed alone is insufficient to recover funds because the wallet doesn't know what spending conditions to enforce.
 
 Existing approaches (JSON exports, Liana `.bed` files, Coldcard multisig configs, Bytewords/UR) all have shortcomings for the durable-storage case: they're too verbose for engraving, lack strong error correction, depend on digital infrastructure, or don't cover arbitrary miniscript.
 
-WDM addresses this with:
+MD addresses this with:
 
 - **Codex32-derived encoding** (BIP 93 BCH error correction; bech32 alphabet)
 - **Compact bytecode** for BIP 380 descriptors and BIP 388 wallet policies (extending `descriptor-codec`)
@@ -72,21 +74,21 @@ Foreign xpubs (multi-party multisig where you don't hold all seeds) and per-plac
 
 ## Status
 
-This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/wdm-codec/`](crates/wdm-codec/) with 444+ tests passing and ~95% library line coverage. Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).
+This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/md-codec/`](crates/md-codec/) with 565 tests passing and ~95% library line coverage. Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).
 
-The Rust reference implementation in [`crates/wdm-codec/`](crates/wdm-codec/) implements the v0.1 scope:
+The Rust reference implementation in [`crates/md-codec/`](crates/md-codec/) implements the v0.1 scope:
 
 - Full encode → bytecode → chunking → codex32 → BCH-checksummed string round-trip.
 - Decode pipeline with per-stage diagnostics (`DecodeReport` + `Confidence`).
-- 438 unit + integration tests, including 12 corpus round-trips, 30 negative conformance vectors, and BCH known-vectors cross-checked against an independent Python implementation.
-- v0.1 test vectors locked in `crates/wdm-codec/tests/vectors/v0.1.json` (schema in `src/vectors.rs`).
-- A `wdm` CLI for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations.
+- 565 unit + integration tests, including 12 corpus round-trips, 30+ negative conformance vectors, and BCH known-vectors cross-checked against an independent Python implementation.
+- v0.1 test vectors locked in `crates/md-codec/tests/vectors/v0.1.json` (schema in `src/vectors.rs`).
+- An `md` CLI for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations.
 
 The `Draft` status (the first formal BIP 2 status) will be claimed only after the spec has been reviewed by at least one human contributor end-to-end.
 
 The next development steps are tracked in `design/POLICY_BACKUP.md` §10:
 
-1. ~~Reference implementation (Rust)~~ — done; see `crates/wdm-codec/`.
+1. ~~Reference implementation (Rust)~~ — done; see `crates/md-codec/`.
 2. ~~Concrete test vectors for the corpus~~ — done; locked in `tests/vectors/v0.1.json`.
 3. Implementation experience to refine the spec
 4. Submission to bitcoin-dev for community review
@@ -96,7 +98,7 @@ The next development steps are tracked in `design/POLICY_BACKUP.md` §10:
 
 The specification text in this repository is dedicated to the public
 domain under [CC0-1.0](LICENSE). The reference implementation in
-`crates/wdm-codec/` is released under the same CC0-1.0 license.
+`crates/md-codec/` is released under the same CC0-1.0 license.
 
 ## Contact
 

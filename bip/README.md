@@ -1,9 +1,9 @@
 # BIP draft
 
-This directory contains the formal specification for the Wallet Descriptor
-Mnemonic (WDM) format in BIP MediaWiki format.
+This directory contains the formal specification for the Mnemonic Descriptor
+(MD) format in BIP MediaWiki format.
 
-- [`bip-wallet-descriptor-mnemonic.mediawiki`](bip-wallet-descriptor-mnemonic.mediawiki) — the spec.
+- [`bip-mnemonic-descriptor.mediawiki`](bip-mnemonic-descriptor.mediawiki) — the spec.
 
 ## Status
 
@@ -16,19 +16,19 @@ end-to-end human review.
 ## Reference implementation
 
 A Rust reference implementation lives in
-[`../crates/wdm-codec/`](../crates/wdm-codec/) and locks the v0.1 wire
+[`../crates/md-codec/`](../crates/md-codec/) and locks the v0.1 wire
 format. It includes:
 
 - Encode and decode pipelines with per-stage diagnostics.
-- 438 unit + integration tests, including 12 corpus round-trips and 30
+- 565 unit + integration tests, including 12 corpus round-trips and 30+
   negative conformance vectors.
 - BCH known-vectors verified against an independent Python implementation.
 - A locked test-vector file at
-  [`../crates/wdm-codec/tests/vectors/v0.1.json`](../crates/wdm-codec/tests/vectors/v0.1.json)
+  [`../crates/md-codec/tests/vectors/v0.1.json`](../crates/md-codec/tests/vectors/v0.1.json)
   that cross-implementations can consume directly. The schema is documented
-  in [`../crates/wdm-codec/src/vectors.rs`](../crates/wdm-codec/src/vectors.rs).
+  in [`../crates/md-codec/src/vectors.rs`](../crates/md-codec/src/vectors.rs).
 
-See the crate's [`README.md`](../crates/wdm-codec/README.md) for a
+See the crate's [`README.md`](../crates/md-codec/README.md) for a
 quickstart and CLI reference.
 
 ## See also

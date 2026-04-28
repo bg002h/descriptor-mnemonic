@@ -1,14 +1,14 @@
-# wdm-codec
+# md-codec
 
-Reference implementation of the **Wallet Descriptor Mnemonic (WDM)** format —
+Reference implementation of the **Mnemonic Descriptor (MD)** format —
 an engravable backup format for [BIP 388 wallet policies][bip388].
 
-WDM is to *wallet structure* what BIP 39 is to *seed entropy*: a canonical
-engravable backup format. A 24-word BIP 39 phrase restores a wallet's keys; a
-WDM string restores a wallet's spending policy — the miniscript template, the
+MD is to *wallet structure* what BIP 39 is to *seed entropy*: a canonical
+engravable backup format. A 24-word BIP 39 phrase restores a wallet's keys; an
+MD string restores a wallet's spending policy — the miniscript template, the
 shared derivation path, and (in future versions) cosigner xpubs.
 
-See the [BIP draft](../../bip/bip-wallet-descriptor-mnemonic.mediawiki) for
+See the [BIP draft](../../bip/bip-mnemonic-descriptor.mediawiki) for
 the format specification and the
 [design notes](../../design/POLICY_BACKUP.md) for the rationale.
 
@@ -20,7 +20,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-wdm-codec = "0.1"
+md-codec = "0.3"
 ```
 
 Encode a wallet policy and decode it back:
@@ -48,7 +48,7 @@ assert_eq!(result.policy.to_canonical_string(), policy.to_canonical_string());
 For the full module-level overview (pipeline diagram, type-state graph,
 two-WalletId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 
-[rustdoc-crate]: https://docs.rs/wdm-codec
+[rustdoc-crate]: https://docs.rs/md-codec
 
 ## Library-only consumers
 
@@ -57,34 +57,34 @@ The `cli` Cargo feature is enabled by default; disable it to avoid pulling
 
 ```toml
 [dependencies]
-wdm-codec = { version = "0.1", default-features = false }
+md-codec = { version = "0.3", default-features = false }
 ```
 
 ## CLI
 
-This crate ships a `wdm` binary for ad-hoc encoding, decoding, and
+This crate ships an `md` binary for ad-hoc encoding, decoding, and
 inspection:
 
 | Command | Purpose |
 |---|---|
-| `wdm encode <policy>` | Encode a BIP 388 wallet policy to one or more WDM strings |
-| `wdm decode <string>...` | Decode WDM strings back to a wallet policy + report |
-| `wdm verify <string>... --policy <policy>` | Verify decode matches expected policy |
-| `wdm inspect <string>` | Show parsed chunk header (no full decode) |
-| `wdm bytecode <policy>` | Hex-dump canonical bytecode for a policy |
-| `wdm vectors` | Print the test-vector JSON to stdout |
+| `md encode <policy>` | Encode a BIP 388 wallet policy to one or more MD strings |
+| `md decode <string>...` | Decode MD strings back to a wallet policy + report |
+| `md verify <string>... --policy <policy>` | Verify decode matches expected policy |
+| `md inspect <string>` | Show parsed chunk header (no full decode) |
+| `md bytecode <policy>` | Hex-dump canonical bytecode for a policy |
+| `md vectors` | Print the test-vector JSON to stdout |
 
 Run as a one-shot from the workspace root:
 
 ```bash
-cargo run -p wdm-codec --bin wdm -- encode 'wsh(pk(@0/**))'
+cargo run -p md-codec --bin md -- encode 'wsh(pk(@0/**))'
 ```
 
 …or install:
 
 ```bash
-cargo install --path crates/wdm-codec
-wdm encode 'wsh(pk(@0/**))'
+cargo install --path crates/md-codec
+md encode 'wsh(pk(@0/**))'
 ```
 
 ## Test vectors
@@ -98,31 +98,31 @@ file directly; the schema lives in [`src/vectors.rs`](src/vectors.rs).
 Regenerate the file with:
 
 ```bash
-cargo run -p wdm-codec --bin gen_vectors -- --output crates/wdm-codec/tests/vectors/v0.1.json
+cargo run -p md-codec --bin gen_vectors -- --output crates/md-codec/tests/vectors/v0.1.json
 ```
 
 Verify a candidate file structurally with:
 
 ```bash
-cargo run -p wdm-codec --bin gen_vectors -- --verify crates/wdm-codec/tests/vectors/v0.1.json
+cargo run -p md-codec --bin gen_vectors -- --verify crates/md-codec/tests/vectors/v0.1.json
 ```
 
 ## Status
 
-`v0.1.0-dev`. Tracks BIP 388 segwit-v0 wallet policies. The current scope:
+`v0.3.0`. Tracks BIP 388 segwit-v0 and taproot wallet policies. The current scope:
 
 - Single user holding all seeds (no foreign xpubs)
 - All `@i` placeholders share one derivation path
-- `wsh()` segwit-v0 top-level only
+- `wsh()` segwit-v0 and `tr()` taproot top-level
 
-Taproot, MuSig2, foreign xpubs, per-placeholder paths, and BIP 393 recovery
-annotations are deferred to v0.2+. See
+MuSig2, foreign xpubs, per-placeholder paths, and BIP 393 recovery
+annotations are deferred to v1+. See
 [`design/FOLLOWUPS.md`](../../design/FOLLOWUPS.md) for the full deferral
 catalog.
 
-438 unit + integration tests, BCH known-vectors verified against an
-independent Python implementation, 12 corpus round-trips and 30 negative
-conformance vectors locked in `tests/vectors/v0.1.json`.
+565 unit + integration tests, BCH known-vectors verified against an
+independent Python implementation, corpus round-trips and negative
+conformance vectors locked in `tests/vectors/v0.1.json` and `tests/vectors/v0.2.json`.
 
 ## License
 
