@@ -1,4 +1,4 @@
-//! Bytecode encoding and decoding for canonical WDM bytecode.
+//! Bytecode encoding and decoding for canonical MD bytecode.
 
 pub mod cursor;
 pub mod decode;

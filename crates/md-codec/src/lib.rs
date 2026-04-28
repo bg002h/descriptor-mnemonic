@@ -1,6 +1,6 @@
-//! # `wdm-codec`
+//! # `md-codec`
 //!
-//! Reference implementation of the **Wallet Descriptor Mnemonic (WDM)** format
+//! Reference implementation of the **Mnemonic Descriptor (MD)** format
 //! — an engravable backup format for [BIP 388 wallet policies][bip388].
 //!
 //! [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
@@ -8,14 +8,14 @@
 //! ## What this crate does
 //!
 //! Given a parsed BIP 388 wallet policy, [`encode()`] produces one or more
-//! short codex32-derived strings (the "WDM strings") that round-trip back to
+//! short codex32-derived strings (the "MD strings") that round-trip back to
 //! the original policy via [`decode()`]. The format is designed for
 //! hand-transcription onto durable physical media (engraved metal, paper) and
 //! survives transcription errors via BCH error correction (BIP 93 codex32).
 //!
-//! WDM is to *wallet structure* what BIP 39 is to *seed entropy*: a canonical
+//! MD is to *wallet structure* what BIP 39 is to *seed entropy*: a canonical
 //! engravable backup format. A 24-word BIP 39 phrase restores a wallet's keys;
-//! a WDM string restores a wallet's spending policy — the miniscript template,
+//! an MD string restores a wallet's spending policy — the miniscript template,
 //! shared derivation path, and (in future versions) cosigner xpubs.
 //!
 //! ## Quick example
@@ -44,14 +44,14 @@
 //! 1. **Parse** — `WalletPolicy::from_str` (via [`std::str::FromStr`]) accepts
 //!    a BIP 388 template (e.g., `wsh(pk(@0/**))`) or a full descriptor with
 //!    concrete xpubs.
-//! 2. **Bytecode** — [`WalletPolicy::to_bytecode`] emits canonical WDM bytecode:
+//! 2. **Bytecode** — [`WalletPolicy::to_bytecode`] emits canonical MD bytecode:
 //!    a one-byte format header, a path declaration, and the operator tree (see
 //!    [`bytecode`]).
 //! 3. **Chunking decision** — [`chunking::chunking_decision`] selects a
 //!    [`ChunkingPlan`]: single-string when the bytecode fits; otherwise
 //!    1–32 chunks with a 4-byte cross-chunk integrity hash.
 //! 4. **Codex32 wrap** — each chunk's bytes are wrapped in a codex32-derived
-//!    string with HRP `wdm` and a BCH-encoded checksum (regular: 13 chars,
+//!    string with HRP `md` and a BCH-encoded checksum (regular: 13 chars,
 //!    long: 15 chars). See [`encoding`].
 //! 5. **Tier-3 Wallet ID derivation** — `SHA-256(canonical_bytecode)[0..16]`,
 //!    rendered as 12 BIP-39 words for human verification (see [`wallet_id`]).
@@ -83,7 +83,7 @@
 //!
 //! ## Wallet identifiers
 //!
-//! WDM uses **two distinct wallet identifiers** with different override
+//! MD uses **two distinct wallet identifiers** with different override
 //! semantics. The two-WalletId story is load-bearing for the format's
 //! verification story; see [`WalletId`], [`ChunkWalletId`], and
 //! [`WalletIdSeed`] for the full semantics. Short version:
@@ -131,7 +131,7 @@
 //! - [BIP draft][bip-draft] — authoritative format specification.
 //! - [`design/POLICY_BACKUP.md`][design] — design rationale and decisions.
 //!
-//! [bip-draft]: https://github.com/bg002h/descriptor-mnemonic/blob/main/bip/bip-wallet-descriptor-mnemonic.mediawiki
+//! [bip-draft]: https://github.com/bg002h/descriptor-mnemonic/blob/main/bip/bip-mnemonic-descriptor.mediawiki
 //! [design]: https://github.com/bg002h/descriptor-mnemonic/blob/main/design/POLICY_BACKUP.md
 
 #![cfg_attr(not(test), deny(missing_docs))]
@@ -160,13 +160,13 @@ pub use encoding::{
 };
 pub use error::{BytecodeErrorKind, Error, Result};
 pub use options::{DecodeOptions, EncodeOptions};
-pub use policy::{WalletPolicy, MdBackup};
+pub use policy::{MdBackup, WalletPolicy};
 pub use vectors::{NegativeVector, TestVectorFile, Vector};
 pub use wallet_id::{
     ChunkWalletId, WalletId, WalletIdSeed, WalletIdWords, compute_wallet_id_for_policy,
 };
 
-/// Encode a [`WalletPolicy`] as canonical WDM bytecode.
+/// Encode a [`WalletPolicy`] as canonical MD bytecode.
 ///
 /// Thin free-function wrapper around [`WalletPolicy::to_bytecode`]. Provided
 /// for symmetry with [`decode_bytecode`] and for callers who prefer a
@@ -181,7 +181,7 @@ pub fn encode_bytecode(policy: &WalletPolicy) -> Result<Vec<u8>> {
     policy.to_bytecode(&EncodeOptions::default())
 }
 
-/// Decode canonical WDM bytecode into a [`WalletPolicy`].
+/// Decode canonical MD bytecode into a [`WalletPolicy`].
 ///
 /// Thin free-function wrapper around [`WalletPolicy::from_bytecode`]. The
 /// input is the same `[header][path-declaration][tree]` byte sequence

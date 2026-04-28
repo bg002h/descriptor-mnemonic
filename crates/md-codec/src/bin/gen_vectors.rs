@@ -24,7 +24,7 @@ use std::process;
 
 use clap::Parser;
 
-/// WDM test vector generator.
+/// MD test vector generator.
 ///
 /// Generate a deterministic JSON file of positive and negative test vectors
 /// from the canonical corpus, or verify a committed file matches a

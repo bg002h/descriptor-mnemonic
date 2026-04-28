@@ -1,7 +1,7 @@
 //! MdKey — the v0.1 representation of a key reference inside the canonical
 //! bytecode.
 //!
-//! In v0.1 every key in a WDM-encoded BIP 388 wallet policy is a
+//! In v0.1 every key in a MD-encoded BIP 388 wallet policy is a
 //! [`MdKey::Placeholder`] referencing the policy's key information vector
 //! at that index. The [`MdKey::Key`] variant is reserved for v1+ inline-key
 //! support; v0.1 encoders MUST NOT emit it and v0.1 decoders MUST reject any
@@ -10,7 +10,7 @@
 
 use miniscript::descriptor::DescriptorPublicKey;
 
-/// A key reference appearing in the canonical bytecode of a WDM wallet policy.
+/// A key reference appearing in the canonical bytecode of a MD wallet policy.
 ///
 /// Marked `#[non_exhaustive]` so v1+ variants (e.g. inline-key extensions
 /// or origin/fingerprint metadata) can be added without breaking downstream

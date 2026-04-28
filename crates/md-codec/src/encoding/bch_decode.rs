@@ -591,8 +591,9 @@ fn decode_errors(
 mod tests {
     use super::*;
     use crate::encoding::{
-        GEN_LONG, GEN_REGULAR, LONG_MASK, LONG_SHIFT, REGULAR_MASK, REGULAR_SHIFT, MD_LONG_CONST,
-        MD_REGULAR_CONST, bch_create_checksum_long, bch_create_checksum_regular, hrp_expand,
+        GEN_LONG, GEN_REGULAR, LONG_MASK, LONG_SHIFT, MD_LONG_CONST, MD_REGULAR_CONST,
+        REGULAR_MASK, REGULAR_SHIFT, bch_create_checksum_long, bch_create_checksum_regular,
+        hrp_expand,
     };
 
     #[test]

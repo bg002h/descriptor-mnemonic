@@ -6,7 +6,7 @@
 //! on failure so that all decode errors carry a precise stream offset.
 //!
 //! The type is `pub(crate)`: it is an internal codec primitive and is not part
-//! of the public wdm-codec API surface. It lives here rather than in
+//! of the public md-codec API surface. It lives here rather than in
 //! `decode.rs` because multiple modules need it (path decoding, template
 //! decoding, and the path-declaration framing layer in Task 3.5').
 

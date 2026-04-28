@@ -4,7 +4,7 @@
 //! wallet-ID derivation, chunk assembly, and codex32 string encoding.
 
 use crate::{
-    BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, Result, WalletPolicy, MdBackup,
+    BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, MdBackup, Result, WalletPolicy,
     chunking::{ChunkHeader, chunk_bytes, chunking_decision},
     encoding::encode_string,
     wallet_id::{ChunkWalletId, compute_wallet_id},
@@ -15,7 +15,7 @@ use crate::{
 ///
 /// # Pipeline
 ///
-/// 1. **Bytecode** — `policy.to_bytecode()` produces canonical WDM bytecode.
+/// 1. **Bytecode** — `policy.to_bytecode()` produces canonical MD bytecode.
 /// 2. **Chunking plan** — [`chunking_decision`] selects single-string or
 ///    chunked encoding. `force_long_code` can upgrade Regular → Long after
 ///    the fact. `chunking_mode = ChunkingMode::ForceChunked` causes chunked
@@ -253,7 +253,7 @@ mod tests {
         // Decode the raw string to check the header bytes.
         let decoded = crate::decode_string(&chunk.raw).expect("should decode");
         // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder-produced MD string that we constructed two lines up; the
         // encoder always pads to the byte boundary with zero bits so the
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured
@@ -334,7 +334,7 @@ mod tests {
         let raw = &backup.chunks[0].raw;
         let decoded = crate::decode_string(raw).expect("decode_string");
         // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder-produced MD string that we constructed two lines up; the
         // encoder always pads to the byte boundary with zero bits so the
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured
@@ -376,7 +376,7 @@ mod tests {
         let raw = &backup.chunks[0].raw;
         let decoded = crate::decode_string(raw).expect("decode_string");
         // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder-produced MD string that we constructed two lines up; the
         // encoder always pads to the byte boundary with zero bits so the
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured
@@ -472,7 +472,7 @@ mod tests {
         let raw = &backup.chunks[0].raw;
         let decoded = crate::decode_string(raw).expect("decode_string");
         // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder-produced MD string that we constructed two lines up; the
         // encoder always pads to the byte boundary with zero bits so the
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured

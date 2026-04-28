@@ -80,7 +80,7 @@ const INVALID_BYTECODE_PREFIX: &str = "rejects_invalid_bytecode_";
 #[test]
 fn every_error_variant_has_a_rejects_test_in_conformance() {
     // Locate conformance.rs relative to this test file's directory.
-    // CARGO_MANIFEST_DIR points to `crates/wdm-codec/`.
+    // CARGO_MANIFEST_DIR points to `crates/md-codec/`.
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let conformance_path = std::path::Path::new(manifest_dir)
         .join("tests")

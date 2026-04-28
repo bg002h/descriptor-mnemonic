@@ -1,4 +1,4 @@
-//! Error types for wdm-codec.
+//! Error types for md-codec.
 //!
 //! [`enum@Error`] is the single error type returned by every fallible operation in
 //! the public API. The variants are organized by which pipeline stage
@@ -13,7 +13,7 @@ use thiserror::Error;
 // `Error` variants can reference it without a cross-module path.
 pub use crate::wallet_id::ChunkWalletId;
 
-/// Every error wdm-codec can return.
+/// Every error md-codec can return.
 ///
 /// Marked `#[non_exhaustive]` so v0.2+ can add variants (e.g. for taproot,
 /// foreign xpubs, BIP 393 recovery annotations) without breaking exhaustive
@@ -49,8 +49,8 @@ pub enum Error {
     /// HRP did not match the expected `"wdm"`.
     ///
     /// Returned by [`crate::decode_string`] / [`crate::decode()`]. The user
-    /// transcribed a non-WDM bech32 string (e.g. a Bitcoin address). Caller
-    /// should reject the input and ask the user for a `wdm1…` string.
+    /// transcribed a non-MD bech32 string (e.g. a Bitcoin address). Caller
+    /// should reject the input and ask the user for an `md1…` string.
     #[error("invalid HRP: expected 'wdm', got '{0}'")]
     InvalidHrp(String),
 
@@ -81,7 +81,7 @@ pub enum Error {
     InvalidChar {
         /// The invalid character encountered.
         ch: char,
-        /// Zero-based character index within the data part (after the `"wdm1"` separator).
+        /// Zero-based character index within the data part (after the `"md1"` separator).
         position: usize,
     },
 
@@ -113,7 +113,7 @@ pub enum Error {
     /// Format version nibble is not supported by this implementation.
     ///
     /// v0.1 accepts only version `0`. A non-zero version means the card
-    /// was engraved by a later WDM version (v0.2+) that this implementation
+    /// was engraved by a later MD version (v0.2+) that this implementation
     /// does not yet understand. Caller should ask the user to use a newer
     /// decoder.
     #[error("unsupported format version: {0}")]
@@ -301,7 +301,7 @@ pub enum Error {
     /// Wraps an upstream miniscript error as a string.
     ///
     /// Used for errors that originate from the `miniscript` crate but don't
-    /// fit any of the more specific WDM variants. The string form insulates
+    /// fit any of the more specific MD variants. The string form insulates
     /// our public API from upstream `miniscript::Error` churn.
     #[error("miniscript: {0}")]
     Miniscript(String),
@@ -444,7 +444,7 @@ pub enum BytecodeErrorKind {
     MalformedPayloadPadding,
 }
 
-/// Result type used throughout wdm-codec.
+/// Result type used throughout md-codec.
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]

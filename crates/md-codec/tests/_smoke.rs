@@ -11,8 +11,8 @@ fn round_trip_assert_works_on_simplest_policy() {
 
 #[test]
 fn assert_structural_eq_passes_for_equal_policies() {
-    use std::str::FromStr;
     use md_codec::WalletPolicy;
+    use std::str::FromStr;
     let p1 = WalletPolicy::from_str("wsh(pk(@0/**))").unwrap();
     let p2 = WalletPolicy::from_str("wsh(pk(@0/**))").unwrap();
     common::assert_structural_eq(&p1, &p2);

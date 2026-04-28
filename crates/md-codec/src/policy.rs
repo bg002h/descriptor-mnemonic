@@ -1,4 +1,4 @@
-//! WDM wallet policy newtype wrapping `miniscript::descriptor::WalletPolicy`.
+//! MD wallet policy newtype wrapping `miniscript::descriptor::WalletPolicy`.
 //!
 //! # Design decisions (Phase 5)
 //!
@@ -130,7 +130,7 @@ fn all_dummy_keys() -> Vec<DescriptorPublicKey> {
 // WalletPolicy newtype
 // ---------------------------------------------------------------------------
 
-/// A BIP 388 wallet policy with WDM-specific canonical-form output and
+/// A BIP 388 wallet policy with MD-specific canonical-form output and
 /// shared-path extraction.
 ///
 /// Thin newtype around `miniscript::descriptor::WalletPolicy`; constructed
@@ -158,7 +158,7 @@ fn all_dummy_keys() -> Vec<DescriptorPublicKey> {
 ///
 /// # Bytecode encoding
 ///
-/// [`Self::to_bytecode`] emits the WDM canonical bytecode: a 1-byte format
+/// [`Self::to_bytecode`] emits the MD canonical bytecode: a 1-byte format
 /// header, a path declaration, and the operator tree. [`Self::from_bytecode`]
 /// is its inverse. See the [`crate::bytecode`] module for the on-the-wire
 /// format and the BIP draft §"Canonical bytecode".
@@ -293,7 +293,7 @@ impl WalletPolicy {
     // Bytecode encoding / decoding (Task 5-B)
     // -----------------------------------------------------------------------
 
-    /// Encode this policy as canonical WDM bytecode.
+    /// Encode this policy as canonical MD bytecode.
     ///
     /// Format: `[BytecodeHeader] [PathDeclaration] [TreeBytes]`
     ///
@@ -424,7 +424,7 @@ impl WalletPolicy {
         Ok(out)
     }
 
-    /// Decode canonical WDM bytecode into a `WalletPolicy`.
+    /// Decode canonical MD bytecode into a `WalletPolicy`.
     ///
     /// The resulting policy is constructed from the decoded descriptor using
     /// dummy keys as placeholders; key_info contains the dummy keys, not real
@@ -449,7 +449,7 @@ impl WalletPolicy {
         Self::from_bytecode_with_fingerprints(bytes).map(|(p, _)| p)
     }
 
-    /// Decode canonical WDM bytecode into a `WalletPolicy` and the optional
+    /// Decode canonical MD bytecode into a `WalletPolicy` and the optional
     /// parsed fingerprints block.
     ///
     /// Same parsing semantics and error conditions as
@@ -1048,7 +1048,7 @@ mod tests {
             0x00,                       // [8]  index 0
         ];
 
-        // Assemble full WDM bytecode: header(0x00) + SharedPath(0x33, BIP84=0x03) + tree
+        // Assemble full MD bytecode: header(0x00) + SharedPath(0x33, BIP84=0x03) + tree
         let mut bytecode: Vec<u8> = vec![0x00, Tag::SharedPath.as_byte(), 0x03];
         bytecode.extend_from_slice(&tree_bytes);
 
@@ -1194,7 +1194,7 @@ mod tests {
     /// policy, end-to-end through `to_bytecode` / `from_bytecode`.
     /// 4 hash types × 3 = 12 ordered pairs.
     ///
-    /// This is the WDM-side mirror of the fork's
+    /// This is the MD-side mirror of the fork's
     /// `all_ordered_pairs_of_distinct_hash_types_round_trip` test; here we
     /// additionally exercise the bytecode encoder/decoder over each pair,
     /// confirming that policies with multiple hash types of any kind

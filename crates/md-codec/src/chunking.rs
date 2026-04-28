@@ -1,4 +1,4 @@
-//! Chunk header types, byte codec, and assembly/reassembly for WDM multi-string chunking.
+//! Chunk header types, byte codec, and assembly/reassembly for MD multi-string chunking.
 //!
 //! The `ChunkHeader` enum represents the two possible header shapes that prefix
 //! each chunk's fragment bytes.  It is serialised to/from a **byte-aligned
@@ -335,7 +335,7 @@ pub enum ChunkingPlan {
 ///
 /// Note: when `EncodeOptions::force_long_code` is set, the top-level
 /// `encode()` function post-processes the returned plan to swap Regular
-/// → Long. See `crates/wdm-codec/src/encode.rs::encode` Stage 3.
+/// → Long. See `crates/md-codec/src/encode.rs::encode` Stage 3.
 ///
 /// # Errors
 ///

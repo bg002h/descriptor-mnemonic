@@ -1,4 +1,4 @@
-//! Bytecode header byte for canonical WDM bytecode.
+//! Bytecode header byte for canonical MD bytecode.
 //!
 //! The header is the first byte of the bytecode stream.
 //! Bit layout (per BIP §"Bytecode header"):
@@ -23,7 +23,7 @@ const RESERVED_MASK: u8 = 0x0B;
 /// Mask for the fingerprints flag (bit 2).
 const FINGERPRINTS_BIT: u8 = 0x04;
 
-/// The first byte of canonical WDM bytecode, encoding the format version and
+/// The first byte of canonical MD bytecode, encoding the format version and
 /// the fingerprints-block presence flag.
 ///
 /// Marked `#[non_exhaustive]` so that v1+ fields can be added without a

@@ -1,4 +1,4 @@
-//! Top-level decode pipeline: one or more codex32-derived WDM strings → [`WalletPolicy`].
+//! Top-level decode pipeline: one or more codex32-derived MD strings → [`WalletPolicy`].
 //!
 //! # Pipeline overview
 //!
@@ -40,7 +40,7 @@ use crate::{
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Decode a list of codex32-derived WDM backup strings into a wallet policy.
+/// Decode a list of codex32-derived MD backup strings into a wallet policy.
 ///
 /// `strings` must be either:
 /// - A single-element slice containing a single-string backup, or
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn decode_rejects_invalid_hrp() {
         // A valid bech32 string with HRP "bc" instead of "wdm".
-        // We encode a valid WDM string and replace "wdm1" with "bc1q" prefix.
+        // We encode a valid MD string and replace "wdm1" with "bc1q" prefix.
         // Instead, just construct a well-known Bitcoin bech32 address.
         let segwit = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
         let err = decode(&[segwit], &default_opts()).expect_err("should reject invalid HRP");

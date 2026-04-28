@@ -3,7 +3,7 @@
 /// Single-byte tag identifying an operator in the canonical bytecode.
 ///
 /// Values 0x00–0x31 are vendored verbatim from the descriptor-codec project
-/// (joshdoman, CC0). Values 0x32–0x33 are WDM-specific extensions for BIP 388
+/// (joshdoman, CC0). Values 0x32–0x33 are MD-specific extensions for BIP 388
 /// placeholder framing and shared-path declarations.
 ///
 /// Tag 0x35 (fingerprints block) is implemented in v0.2 (Phase E); the
@@ -116,11 +116,11 @@ pub enum Tag {
     ReservedUnhardenedWildcard = 0x30,
     /// Reserved (descriptor-codec): hardened wildcard `/*'`. Unused in v0.1.
     ReservedHardenedWildcard = 0x31,
-    /// WDM extension: BIP 388 key placeholder (`@i/<a;b>/*`).
+    /// MD extension: BIP 388 key placeholder (`@i/<a;b>/*`).
     Placeholder = 0x32,
-    /// WDM extension: shared-path declaration for placeholder framing.
+    /// MD extension: shared-path declaration for placeholder framing.
     SharedPath = 0x33,
-    /// WDM extension: fingerprints block (Phase E, v0.2).
+    /// MD extension: fingerprints block (Phase E, v0.2).
     ///
     /// When the bytecode header's fingerprints flag (bit 2) is set, a
     /// fingerprints block of the form `[Tag::Fingerprints][count][4*count

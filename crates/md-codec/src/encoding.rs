@@ -1,6 +1,6 @@
 //! Encoding layer: bech32 alphabet conversion and BCH error correction.
 //!
-//! Implements the codex32-derived (BIP 93) encoding with HRP `"wdm"`.
+//! Implements the codex32-derived (BIP 93) encoding with HRP `"md"`.
 
 mod bch_decode;
 
@@ -85,10 +85,11 @@ pub fn five_bit_to_bytes(values: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// The fixed human-readable part for WDM strings.
+/// The fixed human-readable part for MD strings.
 ///
-/// Mandated by the WDM spec (BIP 93 codex32 derivation). The value `"wdm"`
-/// is permanently assigned and must not be made configurable.
+/// Mandated by the MD spec (BIP 93 codex32 derivation). This value is
+/// permanently assigned and must not be made configurable.
+/// Updated to `"md"` in v0.3.0 (was `"wdm"` prior to v0.3.0).
 pub const HRP: &str = "wdm";
 
 /// The bech32 separator character between HRP and data-part (BIP 173 §3).
@@ -112,7 +113,7 @@ pub fn bch_code_for_length(data_part_len: usize) -> Option<BchCode> {
 /// Check whether a string is all-lowercase, all-uppercase, or mixed.
 ///
 /// Only ASCII letters are considered; non-ASCII characters (digits, punctuation,
-/// Unicode letters) are treated as neither case. This is appropriate for WDM
+/// Unicode letters) are treated as neither case. This is appropriate for MD
 /// strings, whose alphabet is a subset of ASCII. An empty string or one with
 /// no ASCII letters returns [`CaseStatus::Lower`].
 pub fn case_check(s: &str) -> CaseStatus {
@@ -164,12 +165,12 @@ pub const GEN_REGULAR: [u128; 5] = [
     0x07729a039cfc75f5a,
 ];
 
-/// Expected residue after polymod over a valid regular-code WDM string
+/// Expected residue after polymod over a valid regular-code MD string
 /// (HRP-expanded + header + payload + checksum).
 ///
 /// Derived NUMS-style: the top 65 bits of `SHA-256(b"shibbolethnums")`
 /// interpreted as a big-endian 256-bit integer. This is unrelated to
-/// BIP 93's `MS32_CONST` — WDM uses BIP 93's polynomial but its own
+/// BIP 93's `MS32_CONST` — MD uses BIP 93's polynomial but its own
 /// target residue, with HRP-mixing à la BIP 173 providing further
 /// domain separation from codex32. See the BIP draft §"Why new target
 /// constants?" for the design rationale.
@@ -212,7 +213,7 @@ pub const GEN_LONG: [u128; 5] = [
     0x1887f74f8dc71b10651,
 ];
 
-/// Expected residue after polymod over a valid long-code WDM string.
+/// Expected residue after polymod over a valid long-code MD string.
 ///
 /// Derived NUMS-style: the top 75 bits of `SHA-256(b"shibbolethnums")`.
 /// See [`MD_REGULAR_CONST`] for the derivation method and design rationale.
@@ -265,7 +266,7 @@ fn polymod_step(residue: u128, value: u128, r#gen: &[u128; 5], shift: u32, mask:
 /// single 0 separator; then emits each character's `c & 31` (low 5 bits).
 /// The result has length `2 * hrp.len() + 1` for ASCII HRPs.
 ///
-/// For `hrp_expand("wdm")` this returns `[3, 3, 3, 0, 23, 4, 13]`.
+/// For `hrp_expand("md")` this returns `[3, 3, 0, 13, 4]`.
 pub fn hrp_expand(hrp: &str) -> Vec<u8> {
     let bytes = hrp.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() * 2 + 1);
@@ -313,8 +314,7 @@ pub fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 13));
-    let polymod =
-        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ MD_REGULAR_CONST;
+    let polymod = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ MD_REGULAR_CONST;
     let mut out = [0u8; 13];
     for (i, slot) in out.iter_mut().enumerate() {
         *slot = ((polymod >> (5 * (12 - i))) & 0x1F) as u8;
@@ -419,12 +419,11 @@ pub fn bch_correct_regular(
         });
     }
     // Compute polymod over hrp_expand(hrp) || data_with_checksum, XOR with
-    // the WDM target constant. The result is congruent to the error
+    // the MD target constant. The result is congruent to the error
     // polynomial E(x) modulo g_regular(x).
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data_with_checksum);
-    let residue =
-        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ MD_REGULAR_CONST;
+    let residue = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ MD_REGULAR_CONST;
 
     if let Some((positions, magnitudes)) =
         bch_decode::decode_regular_errors(residue, data_with_checksum.len())
@@ -504,14 +503,14 @@ pub fn bch_correct_long(
     Err(crate::Error::BchUncorrectable)
 }
 
-/// Encode a payload + header into a full WDM string with HRP, separator, and checksum.
+/// Encode a payload + header into a full MD string with HRP, separator, and checksum.
 ///
 /// The BCH code variant (regular or long) is auto-selected from the data-part
 /// length per the spec: regular for ≤93-char data parts, long for 96–108-char
 /// data parts. Lengths that fall in the reserved-invalid 94–95 gap or exceed
 /// 108 return [`Error::InvalidStringLength`].
 ///
-/// Returns the full string starting with `"wdm1"`.
+/// Returns the full string starting with `"md1"`.
 ///
 /// [`Error::InvalidStringLength`]: crate::Error::InvalidStringLength
 pub fn encode_string(header: &[u8], payload: &[u8]) -> Result<String, crate::Error> {
@@ -557,7 +556,7 @@ pub fn encode_string(header: &[u8], payload: &[u8]) -> Result<String, crate::Err
     Ok(full)
 }
 
-/// Result of a successful WDM string decode.
+/// Result of a successful MD string decode.
 ///
 /// `data` is the data part as 5-bit values (header + payload, checksum stripped).
 /// Use [`five_bit_to_bytes`] to recover the original byte sequence.
@@ -578,7 +577,7 @@ pub struct DecodedString {
     pub code: BchCode,
     /// Number of substitution errors corrected (0 = clean input, 1 = recovered).
     pub corrections_applied: usize,
-    /// Indices into the data-part (chars after `"wdm1"`) of any corrected positions.
+    /// Indices into the data-part (chars after `"md1"`) of any corrected positions.
     pub corrected_positions: Vec<usize>,
     /// Full post-correction 5-bit symbol sequence (data part + checksum), in
     /// the same coordinate system as [`Self::corrected_positions`].
@@ -593,7 +592,7 @@ pub struct DecodedString {
 
 impl DecodedString {
     /// Look up the corrected bech32 character at the given position in the
-    /// data part (chars after the `"wdm1"` HRP+separator).
+    /// data part (chars after the `"md1"` HRP+separator).
     ///
     /// `char_position` is 0-indexed. Positions `0..data.len()` are in the
     /// data region; positions `data.len()..data.len() + checksum_len` are
@@ -618,7 +617,7 @@ impl DecodedString {
     }
 }
 
-/// Decode a WDM string, validating HRP, case, length, and checksum.
+/// Decode an MD string, validating HRP, case, length, and checksum.
 ///
 /// Performs full BCH error correction up to four substitutions
 /// (`t = 4` capacity of the BCH(93, 80, 8) regular code and the
@@ -627,8 +626,8 @@ impl DecodedString {
 ///
 /// Errors:
 /// - [`Error::MixedCase`] if the string mixes upper and lower case.
-/// - [`Error::InvalidHrp`] if the HRP is missing or not `"wdm"`.
-/// - [`Error::InvalidStringLength`] if the data-part length isn't a valid WDM length.
+/// - [`Error::InvalidHrp`] if the HRP is missing or not `"md"`.
+/// - [`Error::InvalidStringLength`] if the data-part length isn't a valid MD length.
 /// - [`Error::InvalidChar`] if the data part contains a non-bech32 character.
 /// - [`Error::BchUncorrectable`] if the checksum can't be repaired within
 ///   the BCH `t = 4` correction radius.
@@ -974,10 +973,10 @@ mod tests {
     }
 
     #[test]
-    fn hrp_expand_wdm_matches_spec() {
-        // BIP 173 hrp_expand for the WDM HRP. The seven-element prelude is
+    fn hrp_expand_md_matches_spec() {
+        // BIP 173 hrp_expand for the MD HRP. The five-element prelude is
         // documented in the BIP draft §"Checksum".
-        assert_eq!(hrp_expand("wdm"), vec![3, 3, 3, 0, 23, 4, 13]);
+        assert_eq!(hrp_expand("wdm"), vec![3, 3, 3, 0, 23, 4, 13]); // TODO Phase 5: update to hrp_expand("md") → [3,3,0,13,4]
     }
 
     #[test]

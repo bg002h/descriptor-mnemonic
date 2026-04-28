@@ -25,8 +25,8 @@
 use serde::{Deserialize, Serialize};
 
 use md_codec::{
-    BchCode, Confidence, DecodeOutcome, DecodeReport, DecodeResult, EncodedChunk, Verifications,
-    MdBackup, chunking::Correction,
+    BchCode, Confidence, DecodeOutcome, DecodeReport, DecodeResult, EncodedChunk, MdBackup,
+    Verifications, chunking::Correction,
 };
 
 // ---------------------------------------------------------------------------

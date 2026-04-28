@@ -84,10 +84,10 @@ fn bch_single_substitution_at_every_position_corrects() {
 /// produce an uncorrectable syndrome in the overwhelming majority of cases.)
 #[test]
 fn many_substitutions_always_rejected() {
+    use md_codec::{DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
     use rand::Rng;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use md_codec::{DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
 
     let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
     let backup = encode(&p, &EncodeOptions::default()).unwrap();

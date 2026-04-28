@@ -1,7 +1,7 @@
-//! Bytecode template decoder for WDM wallet policies.
+//! Bytecode template decoder for MD wallet policies.
 //!
 //! Inverse of [`crate::bytecode::encode::encode_template`]. Reads a canonical
-//! WDM bytecode stream and reconstructs a `Descriptor<DescriptorPublicKey>`,
+//! MD bytecode stream and reconstructs a `Descriptor<DescriptorPublicKey>`,
 //! substituting `Tag::Placeholder` references against a caller-supplied key
 //! information vector.
 //!
@@ -27,7 +27,7 @@ use crate::bytecode::Tag;
 use crate::bytecode::cursor::Cursor;
 use crate::error::BytecodeErrorKind;
 
-/// Decode a canonical WDM bytecode stream into a wallet-policy descriptor.
+/// Decode a canonical MD bytecode stream into a wallet-policy descriptor.
 ///
 /// `keys` is the wallet policy's key information vector; the decoder
 /// substitutes each `Tag::Placeholder` + LEB128 index with `keys[index]`.

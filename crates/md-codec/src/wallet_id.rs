@@ -1,4 +1,4 @@
-//! Wallet-identity types used across WDM chunking.
+//! Wallet-identity types used across MD chunking.
 //!
 //! This module provides four types:
 //! - [`WalletId`] — 16-byte Tier-3 Wallet ID (first 16 bytes of SHA-256 of
@@ -18,7 +18,7 @@ use std::fmt;
 // ---------------------------------------------------------------------------
 
 /// A 16-byte Wallet ID formed by taking the first 16 bytes of the SHA-256
-/// hash of the wallet's canonical WDM bytecode (the "Tier-3" Wallet ID).
+/// hash of the wallet's canonical MD bytecode (the "Tier-3" Wallet ID).
 ///
 /// The full 128 bits serve as a collision-resistant identifier for the wallet;
 /// the BIP-39 encoding ([`WalletIdWords`]) gives a human-friendly 12-word
@@ -27,7 +27,7 @@ use std::fmt;
 ///
 /// # Two-WalletId story
 ///
-/// WDM uses **two distinct wallet identifiers** with different override
+/// MD uses **two distinct wallet identifiers** with different override
 /// semantics. This `WalletId` is the **content-derived** Tier-3 identifier,
 /// always equal to `SHA-256(canonical_bytecode)[0..16]`. It is **never**
 /// affected by [`WalletIdSeed`] or [`crate::EncodeOptions::wallet_id_seed`].
@@ -159,7 +159,7 @@ impl From<[u8; 16]> for WalletId {
 /// ```
 ///
 /// The first 16 bytes of the 32-byte SHA-256 digest are used directly as the
-/// `WalletId` (128 bits).  This is the Tier-3 Wallet ID defined in the WDM
+/// `WalletId` (128 bits).  This is the Tier-3 Wallet ID defined in the MD
 /// spec (IMPLEMENTATION_PLAN §3, line 106).
 ///
 /// The relationship to the chunk-header 20-bit field is:
@@ -192,7 +192,7 @@ pub fn compute_wallet_id(canonical_bytecode: &[u8]) -> WalletId {
 }
 
 /// Compute a [`WalletId`] for a `WalletPolicy` by first encoding it to
-/// canonical WDM bytecode, then applying [`compute_wallet_id`].
+/// canonical MD bytecode, then applying [`compute_wallet_id`].
 ///
 /// This is the `WalletPolicy`-aware wrapper specified in Task 5-B.
 /// The name `compute_wallet_id_for_policy` is used (rather than an overload
@@ -254,7 +254,7 @@ impl IntoIterator for WalletIdWords {
 // ChunkWalletId
 // ---------------------------------------------------------------------------
 
-/// A 20-bit wallet-identity field carried in each WDM chunk header.
+/// A 20-bit wallet-identity field carried in each MD chunk header.
 ///
 /// Derived from a [`WalletId`] via [`WalletId::truncate`], which extracts the
 /// first 20 bits (MSB-first) of the underlying 16-byte SHA-256 prefix.
@@ -264,7 +264,7 @@ impl IntoIterator for WalletIdWords {
 ///
 /// # Why 20 bits, and how it relates to [`WalletId`]
 ///
-/// Each chunk in a chunked WDM backup carries this 20-bit field in its
+/// Each chunk in a chunked MD backup carries this 20-bit field in its
 /// 7-byte header so that a decoder can verify that all chunks belong to
 /// the same wallet **before** any BCH-corrected fragment bytes are
 /// concatenated. 20 bits gives ~1-in-1M cross-wallet collision resistance,
@@ -274,7 +274,7 @@ impl IntoIterator for WalletIdWords {
 /// By default, `ChunkWalletId == WalletId::truncate()`, so a user who knows
 /// the 12-word [`WalletIdWords`] of their Tier-3 [`WalletId`] can predict
 /// what the chunk-header field SHOULD be and confirm it matches at decode
-/// time. This binding is the crux of WDM's "verify the recovery without
+/// time. This binding is the crux of MD's "verify the recovery without
 /// access to the original media" property.
 ///
 /// The binding can be broken on purpose by passing a [`WalletIdSeed`] in

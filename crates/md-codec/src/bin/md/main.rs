@@ -1,15 +1,15 @@
-//! WDM CLI binary — encode, decode, verify, inspect, and bytecode subcommands.
+//! MD CLI binary — encode, decode, verify, inspect, and bytecode subcommands.
 //!
 //! # Tasks covered
 //!
 //! - 7.1: binary skeleton (clap derive, subcommand dispatch)
-//! - 7.2: `wdm encode`
-//! - 7.3: `wdm decode`
-//! - 7.4: `wdm verify`
-//! - 7.5: `wdm inspect`
-//! - 7.6: `wdm bytecode`
-//! - 7.7: `wdm vectors` — implemented in Phase 8 (shares `build_test_vectors` with `gen_vectors`)
-//! - 7.8: `--path` argument parser for `wdm encode`
+//! - 7.2: `md encode`
+//! - 7.3: `md decode`
+//! - 7.4: `md verify`
+//! - 7.5: `md inspect`
+//! - 7.6: `md bytecode`
+//! - 7.7: `md vectors` — implemented in Phase 8 (shares `build_test_vectors` with `gen_vectors`)
+//! - 7.8: `--path` argument parser for `md encode`
 
 use std::process;
 use std::str::FromStr;
@@ -28,7 +28,7 @@ use json::{DecodeJson, EncodeJson};
 // CLI structure
 // ---------------------------------------------------------------------------
 
-/// Wallet Descriptor Mnemonic (WDM) — engravable BIP 388 wallet policy backups.
+/// Mnemonic Descriptor (MD) — engravable BIP 388 wallet policy backups.
 #[derive(Debug, Parser)]
 #[command(name = "wdm", version, about, long_about = None)]
 struct Cli {
@@ -38,7 +38,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Encode a wallet policy into WDM backup strings.
+    /// Encode a wallet policy into MD backup strings.
     Encode {
         /// The wallet policy (BIP 388 template string).
         policy: String,
@@ -77,9 +77,9 @@ enum Command {
         json: bool,
     },
 
-    /// Decode one or more WDM backup strings into a wallet policy.
+    /// Decode one or more MD backup strings into a wallet policy.
     Decode {
-        /// One or more WDM backup strings (all chunks of one backup, any order).
+        /// One or more MD backup strings (all chunks of one backup, any order).
         #[arg(required = true, num_args = 1..)]
         strings: Vec<String>,
 
@@ -90,7 +90,7 @@ enum Command {
 
     /// Decode and verify backup strings match an expected policy.
     Verify {
-        /// One or more WDM backup strings.
+        /// One or more MD backup strings.
         #[arg(required = true, num_args = 1..)]
         strings: Vec<String>,
 
@@ -99,13 +99,13 @@ enum Command {
         policy: String,
     },
 
-    /// Inspect a single WDM backup string (chunk header only, no full decode).
+    /// Inspect a single MD backup string (chunk header only, no full decode).
     Inspect {
-        /// A single WDM backup string.
+        /// A single MD backup string.
         string: String,
     },
 
-    /// Hex-dump the canonical WDM bytecode for a wallet policy.
+    /// Hex-dump the canonical MD bytecode for a wallet policy.
     Bytecode {
         /// The wallet policy (BIP 388 template string).
         policy: String,
@@ -114,7 +114,7 @@ enum Command {
     /// Generate test vectors as JSON and print to stdout.
     ///
     /// Outputs the same content as `gen_vectors --output -` (write mode prints to stderr).
-    /// Use `wdm vectors > vectors.json` to capture the output.
+    /// Use `md vectors > vectors.json` to capture the output.
     Vectors,
 }
 

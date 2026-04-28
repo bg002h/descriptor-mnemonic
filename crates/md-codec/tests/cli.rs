@@ -1,7 +1,7 @@
-//! CLI integration tests for the `wdm` binary.
+//! CLI integration tests for the `md` binary.
 //!
 //! Exercises all six subcommands (encode, decode, verify, inspect, bytecode,
-//! vectors) via `assert_cmd::Command::cargo_bin("wdm")`.  The `wdm` binary is
+//! vectors) via `assert_cmd::Command::cargo_bin("md")`.  The `md` binary is
 //! gated behind the `cli` feature, which is included in `default`.
 
 use assert_cmd::Command;
@@ -20,7 +20,7 @@ const OTHER_POLICY: &str = "wsh(multi(2,@0/**,@1/**))";
 
 /// Encode `POLICY` and return the first output line (the WDM chunk string).
 fn encode_first_chunk() -> String {
-    let output = Command::cargo_bin("wdm")
+    let output = Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", POLICY])
         .output()
@@ -42,7 +42,7 @@ fn encode_first_chunk() -> String {
 /// `wdm encode <policy>` — exits 0, stdout starts with `wdm1`, stderr empty.
 #[test]
 fn md_encode_default() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", POLICY])
         .assert()
@@ -55,7 +55,7 @@ fn md_encode_default() {
 /// `chunks` array key.
 #[test]
 fn md_encode_json() {
-    let output = Command::cargo_bin("wdm")
+    let output = Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", POLICY, "--json"])
         .output()
@@ -82,7 +82,7 @@ fn md_encode_json() {
 /// `serde_json::json!{}` literal produced.
 #[test]
 fn md_encode_json_shape_is_stable() {
-    let output = Command::cargo_bin("wdm")
+    let output = Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", POLICY, "--json"])
         .output()
@@ -127,7 +127,7 @@ fn md_encode_json_shape_is_stable() {
 fn md_decode_json_shape_is_stable() {
     let chunk = encode_first_chunk();
 
-    let output = Command::cargo_bin("wdm")
+    let output = Command::cargo_bin("md")
         .expect("binary built")
         .args(["decode", &chunk, "--json"])
         .output()
@@ -189,7 +189,7 @@ fn md_decode_json_shape_is_stable() {
 fn md_encode_path_override_bip48_takes_effect() {
     use md_codec::{DecodeOptions, decode};
 
-    let output = Command::cargo_bin("wdm")
+    let output = Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", "--path", "bip48", POLICY])
         .output()
@@ -244,7 +244,7 @@ fn md_encode_path_override_bip48_takes_effect() {
 /// which the `inspect` sub-test confirms separately).
 #[test]
 fn md_encode_force_chunked() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", POLICY, "--force-chunked"])
         .assert()
@@ -253,7 +253,7 @@ fn md_encode_force_chunked() {
 
     // Sanity: the force-chunked output differs from the plain output.
     let plain = encode_first_chunk();
-    let output = Command::cargo_bin("wdm")
+    let output = Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", POLICY, "--force-chunked"])
         .output()
@@ -275,7 +275,7 @@ fn md_encode_force_chunked() {
 fn md_decode_round_trip() {
     let chunk = encode_first_chunk();
 
-    let output = Command::cargo_bin("wdm")
+    let output = Command::cargo_bin("md")
         .expect("binary built")
         .args(["decode", &chunk])
         .output()
@@ -296,7 +296,7 @@ fn md_decode_round_trip() {
 #[test]
 fn md_verify_match() {
     let chunk = encode_first_chunk();
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["verify", &chunk, "--policy", POLICY])
         .assert()
@@ -307,7 +307,7 @@ fn md_verify_match() {
 #[test]
 fn md_verify_mismatch() {
     let chunk = encode_first_chunk();
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["verify", &chunk, "--policy", OTHER_POLICY])
         .assert()
@@ -318,7 +318,7 @@ fn md_verify_mismatch() {
 #[test]
 fn md_inspect_outputs_chunk_header() {
     let chunk = encode_first_chunk();
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["inspect", &chunk])
         .assert()
@@ -330,7 +330,7 @@ fn md_inspect_outputs_chunk_header() {
 /// `wdm bytecode <policy>` exits 0, stdout is a lowercase hex string.
 #[test]
 fn md_bytecode_outputs_lowercase_hex() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["bytecode", POLICY])
         .assert()
@@ -345,7 +345,7 @@ fn md_bytecode_outputs_lowercase_hex() {
 /// `wdm encode "not-a-real-policy"` exits non-zero, stderr non-empty.
 #[test]
 fn md_encode_unparseable_policy_exits_nonzero() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["encode", "not-a-real-policy"])
         .assert()
@@ -356,7 +356,7 @@ fn md_encode_unparseable_policy_exits_nonzero() {
 /// `wdm decode "not-a-wdm-string"` exits non-zero, stderr mentions the HRP.
 #[test]
 fn md_decode_invalid_string_exits_nonzero() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args(["decode", "not-a-wdm-string"])
         .assert()
@@ -372,7 +372,7 @@ fn md_decode_invalid_string_exits_nonzero() {
 /// `wdm vectors` exits 0, stdout starts with `{` (top-level JSON object).
 #[test]
 fn md_vectors_returns_json_top_level_object() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .arg("vectors")
         .assert()
@@ -383,7 +383,7 @@ fn md_vectors_returns_json_top_level_object() {
 /// `wdm not-a-subcommand` exits non-zero, stderr mentions `wdm` usage.
 #[test]
 fn md_unknown_subcommand_exits_nonzero() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .arg("not-a-subcommand")
         .assert()
@@ -399,7 +399,7 @@ fn md_unknown_subcommand_exits_nonzero() {
 /// stderr carries the privacy warning; stdout has the encoded chunk.
 #[test]
 fn md_encode_fingerprint_flag_accepts_two_placeholders() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args([
             "encode",
@@ -420,7 +420,7 @@ fn md_encode_fingerprint_flag_accepts_two_placeholders() {
 /// Missing index in the `--fingerprint` set → exits nonzero with a clear error.
 #[test]
 fn md_encode_fingerprint_flag_rejects_index_gap() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args([
             "encode",
@@ -440,7 +440,7 @@ fn md_encode_fingerprint_flag_rejects_index_gap() {
 /// Wrong-length hex (4 chars, not 8) → exits nonzero with a parse error.
 #[test]
 fn md_encode_fingerprint_flag_rejects_short_hex() {
-    Command::cargo_bin("wdm")
+    Command::cargo_bin("md")
         .expect("binary built")
         .args([
             "encode",

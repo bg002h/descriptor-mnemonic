@@ -1,4 +1,4 @@
-//! Bytecode template encoder for WDM wallet policies.
+//! Bytecode template encoder for MD wallet policies.
 //!
 //! Walks a `Descriptor<DescriptorPublicKey>` and emits the canonical bytecode
 //! used by Template Cards. Key positions are replaced by `Tag::Placeholder`
