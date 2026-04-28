@@ -51,7 +51,7 @@ fn md_encode_default() {
         .stderr("");
 }
 
-/// `wdm encode <policy> --json` — exits 0, stdout is a JSON object with a
+/// `md encode <policy> --json` — exits 0, stdout is a JSON object with a
 /// `chunks` array key.
 #[test]
 fn md_encode_json() {
@@ -71,7 +71,7 @@ fn md_encode_json() {
     );
 }
 
-/// `wdm encode --json` output is stable and consumable: per-chunk objects
+/// `md encode --json` output is stable and consumable: per-chunk objects
 /// expose the v0.1.1-contract field set (`raw`, `chunk_index`,
 /// `total_chunks`, `code`) with `code` rendered as a lowercase string
 /// (`"regular"` or `"long"`), and a top-level `wallet_id_words` string.
@@ -119,7 +119,7 @@ fn md_encode_json_shape_is_stable() {
     );
 }
 
-/// `wdm decode --json` output exposes the v0.1.1-contract field set:
+/// `md decode --json` output exposes the v0.1.1-contract field set:
 /// top-level `policy` (canonical-string form) plus a `report` object with
 /// `outcome`, `confidence`, `corrections`, `verifications` (with all five
 /// flag fields).
@@ -176,11 +176,11 @@ fn md_decode_json_shape_is_stable() {
     }
 }
 
-/// `wdm encode --path bip48 <policy>` — exits 0, and the encoded bytecode's
+/// `md encode --path bip48 <policy>` — exits 0, and the encoded bytecode's
 /// shared-path declaration reflects BIP 48 (named indicator 0x05) rather
 /// than the default-tier BIP 84 fallback (indicator 0x03).
 ///
-/// We verify the path via the parallel `wdm bytecode` invocation, which is
+/// We verify the path via the parallel `md bytecode` invocation, which is
 /// not yet path-aware (it always emits the default-tier path) — so we
 /// instead decode the encoded chunk and compare its bytecode's path byte
 /// against the BIP 48 indicator. This proves the `--path` override flowed
@@ -283,7 +283,7 @@ fn md_decode_round_trip() {
 
     assert!(output.status.success(), "decode must succeed");
     let stdout = String::from_utf8(output.stdout).expect("utf-8");
-    // The first line of `wdm decode` output is the canonical policy string.
+    // The first line of `md decode` output is the canonical policy string.
     let decoded_policy = stdout.lines().next().expect("at least one line").trim();
     // The encoder normalises `@0/**` → `@0/<0;1>/*`; accept either form.
     assert!(
@@ -292,7 +292,7 @@ fn md_decode_round_trip() {
     );
 }
 
-/// `wdm verify <chunk> --policy <same>` exits 0.
+/// `md verify <chunk> --policy <same>` exits 0.
 #[test]
 fn md_verify_match() {
     let chunk = encode_first_chunk();
@@ -303,7 +303,7 @@ fn md_verify_match() {
         .success();
 }
 
-/// `wdm verify <chunk> --policy <different>` exits non-zero.
+/// `md verify <chunk> --policy <different>` exits non-zero.
 #[test]
 fn md_verify_mismatch() {
     let chunk = encode_first_chunk();
@@ -314,7 +314,7 @@ fn md_verify_mismatch() {
         .failure();
 }
 
-/// `wdm inspect <chunk>` exits 0, stdout contains `Type:` and `Version:`.
+/// `md inspect <chunk>` exits 0, stdout contains `Type:` and `Version:`.
 #[test]
 fn md_inspect_outputs_chunk_header() {
     let chunk = encode_first_chunk();
@@ -327,7 +327,7 @@ fn md_inspect_outputs_chunk_header() {
         .stdout(predicate::str::contains("Version:"));
 }
 
-/// `wdm bytecode <policy>` exits 0, stdout is a lowercase hex string.
+/// `md bytecode <policy>` exits 0, stdout is a lowercase hex string.
 #[test]
 fn md_bytecode_outputs_lowercase_hex() {
     Command::cargo_bin("md")
@@ -342,7 +342,7 @@ fn md_bytecode_outputs_lowercase_hex() {
 // Error-path tests
 // ---------------------------------------------------------------------------
 
-/// `wdm encode "not-a-real-policy"` exits non-zero, stderr non-empty.
+/// `md encode "not-a-real-policy"` exits non-zero, stderr non-empty.
 #[test]
 fn md_encode_unparseable_policy_exits_nonzero() {
     Command::cargo_bin("md")
@@ -353,12 +353,12 @@ fn md_encode_unparseable_policy_exits_nonzero() {
         .stderr(predicate::str::is_empty().not());
 }
 
-/// `wdm decode "not-a-wdm-string"` exits non-zero, stderr mentions the HRP.
+/// `md decode "not-an-md-string"` exits non-zero, stderr mentions the HRP.
 #[test]
 fn md_decode_invalid_string_exits_nonzero() {
     Command::cargo_bin("md")
         .expect("binary built")
-        .args(["decode", "not-a-wdm-string"])
+        .args(["decode", "not-an-md-string"])
         .assert()
         .failure()
         .stderr(
@@ -369,7 +369,7 @@ fn md_decode_invalid_string_exits_nonzero() {
         );
 }
 
-/// `wdm vectors` exits 0, stdout starts with `{` (top-level JSON object).
+/// `md vectors` exits 0, stdout starts with `{` (top-level JSON object).
 #[test]
 fn md_vectors_returns_json_top_level_object() {
     Command::cargo_bin("md")

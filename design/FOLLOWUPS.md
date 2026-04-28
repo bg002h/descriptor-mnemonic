@@ -153,6 +153,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v1+ (process improvement, not version-gating)
 
+### `bch-known-vector-repin-with-md-hrp` — repin BCH known-vector tests with Python-computed checksums for HRP "md"
+
+- **Surfaced:** Phase 5 (string literal sweep) spec compliance reviewer, judgment-call adjudication
+- **Where:** `crates/md-codec/src/encoding.rs` — `bch_known_vector_regular` and `bch_known_vector_long` test functions
+- **What:** Phase 5 implementer converted these from hardcoded-expected-checksum tests to round-trip tests (`bch_create_checksum_*` then `bch_verify_*`). The original form caught regressions where the BCH polynomial implementation drifted; the round-trip form only catches drift if `create` and `verify` drift APART. Both could go wrong together (e.g., wrong polynomial constant) and the test would still pass. Recommended fix: compute Python-reference checksums for HRP `"md"` and data `[0..7]` / `[0..15]`, add `assert_eq!(actual, &[…])` lines to pin the exact byte sequences. Original commit comment claims "Expected checksum computed by Python reference" but the literal byte values were dropped during Phase 5.
+- **Why deferred:** Repinning requires computing the new BCH-over-md-HRP checksums via an external Python reference. Doable in a v0.3.x patch with a Python helper script; not blocking v0.3.0 release because round-trip tests still validate end-to-end correctness.
+- **Status:** open
+- **Tier:** v0.3-nice-to-have (repinning is a defensive measure, not a wire-format requirement)
+
 ---
 
 ## Resolved items
