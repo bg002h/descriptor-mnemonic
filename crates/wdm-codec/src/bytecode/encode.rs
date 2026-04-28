@@ -6,8 +6,14 @@
 //! information vector (caller supplies the index map).
 //!
 //! v0.1 scope: only `wsh(...)` top-level descriptors are accepted. Sh, Pkh,
-//! Wpkh, Tr, and Bare descriptors are rejected with `PolicyScopeViolation`.
+//! Wpkh, and Bare descriptors are rejected with `PolicyScopeViolation`.
 //! Inline keys (any key not present in `placeholder_map`) are also rejected.
+//!
+//! v0.2 (Phase D): single-leaf taproot `tr()` top-level descriptors are also
+//! accepted, with the per-leaf miniscript subset enforced per BIP §"Taproot
+//! tree" (Coldcard subset: `pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`,
+//! `older` plus the `c:` / `v:` wrappers required to spell them through the
+//! BIP 388 string form). Multi-leaf TapTree is reserved for v1+.
 //!
 //! Architecture mirrors `joshdoman/descriptor-codec` (CC0) — see
 //! `design/PHASE_2_DECISIONS.md` D-4 for rationale.
@@ -17,7 +23,7 @@ use std::sync::Arc;
 
 use bitcoin::hashes::Hash;
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
-use miniscript::{Miniscript, Segwitv0, Terminal, Threshold};
+use miniscript::{Miniscript, Segwitv0, Tap, Terminal, Threshold};
 
 use crate::Error;
 use crate::bytecode::Tag;
@@ -98,9 +104,39 @@ impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
             Descriptor::Wpkh(_) => Err(Error::PolicyScopeViolation(
                 "v0.1 does not support wpkh() — use wsh(pk_h(...))".to_string(),
             )),
-            Descriptor::Tr(_) => Err(Error::PolicyScopeViolation(
-                "v0.1 does not support taproot tr() — deferred to v0.2".to_string(),
-            )),
+            Descriptor::Tr(tr) => {
+                // BIP §"Taproot tree" + Phase D D-1: emit Tag::Tr (0x06)
+                // followed by the internal-key placeholder reference and an
+                // optional single-leaf miniscript. Multi-leaf TapTree
+                // encoding is reserved for v1+ (D-1).
+                out.push(Tag::Tr.as_byte());
+                tr.internal_key().encode_template(out, placeholder_map)?;
+                if let Some(tap_tree) = tr.tap_tree() {
+                    // Walk the leaves; require exactly one leaf at depth 0.
+                    let mut leaves = tap_tree.leaves();
+                    let first = leaves.next().ok_or_else(|| {
+                        Error::PolicyScopeViolation(
+                            "tap_tree present but contains no leaves".to_string(),
+                        )
+                    })?;
+                    if leaves.next().is_some() {
+                        return Err(Error::PolicyScopeViolation(
+                            "multi-leaf TapTree reserved for v1+".to_string(),
+                        ));
+                    }
+                    if first.depth() != 0 {
+                        return Err(Error::PolicyScopeViolation(
+                            "single-leaf TapTree must have depth 0 in v0.2; multi-leaf reserved for v1+"
+                                .to_string(),
+                        ));
+                    }
+                    let leaf_ms = first.miniscript();
+                    // D-2: enforce the Coldcard per-leaf miniscript subset.
+                    validate_tap_leaf_subset(leaf_ms)?;
+                    leaf_ms.encode_template(out, placeholder_map)?;
+                }
+                Ok(())
+            }
             Descriptor::Bare(_) => Err(Error::PolicyScopeViolation(
                 "v0.1 does not support bare() descriptors".to_string(),
             )),
@@ -175,10 +211,11 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
                 Ok(())
             }
             Terminal::MultiA(thresh) => {
-                // Taproot multi-A. v0.1 doesn't support taproot, but the encoding
-                // shape is the same as Multi; ship the arm in case Tr is enabled
-                // later. For v0.1 it can never trigger because Descriptor::Tr is
-                // rejected at the top level, so this is effectively dead code today.
+                // Taproot multi-A. Unreachable through the Segwitv0 context
+                // (miniscript's typing rules forbid `multi_a` inside `wsh()`)
+                // but kept here so the Segwitv0 dispatch stays exhaustive.
+                // The Tap-context dispatch below has its own MultiA arm
+                // that is the live path for Phase D.
                 out.push(Tag::MultiA.as_byte());
                 thresh.encode_template(out, placeholder_map)
             }
@@ -309,6 +346,173 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tap-context encoder (Phase D)
+// ---------------------------------------------------------------------------
+//
+// Forwarding impls so `Miniscript<DescriptorPublicKey, Tap>` and its inner
+// `Terminal<DescriptorPublicKey, Tap>` flow through the same encoding shape
+// the Segwitv0 path uses. The wire format for shared operators (e.g. `pk_k`,
+// `multi_a`, `or_d`, `and_v`, `older`, the `c:` / `v:` wrappers) is identical
+// across contexts: the per-leaf subset validator (`validate_tap_leaf_subset`)
+// is what prevents the encoder from emitting any tap-illegal terminal.
+
+impl EncodeTemplate for Miniscript<DescriptorPublicKey, Tap> {
+    fn encode_template(
+        &self,
+        out: &mut Vec<u8>,
+        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+    ) -> Result<(), Error> {
+        self.node.encode_template(out, placeholder_map)
+    }
+}
+
+impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
+    fn encode_template(
+        &self,
+        out: &mut Vec<u8>,
+        placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+    ) -> Result<(), Error> {
+        match self {
+            Terminal::PkK(key) => {
+                out.push(Tag::PkK.as_byte());
+                key.encode_template(out, placeholder_map)
+            }
+            Terminal::PkH(key) => {
+                out.push(Tag::PkH.as_byte());
+                key.encode_template(out, placeholder_map)
+            }
+            Terminal::MultiA(thresh) => {
+                out.push(Tag::MultiA.as_byte());
+                thresh.encode_template(out, placeholder_map)
+            }
+            Terminal::AndV(left, right) => {
+                out.push(Tag::AndV.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::OrD(left, right) => {
+                out.push(Tag::OrD.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::Older(older) => {
+                out.push(Tag::Older.as_byte());
+                crate::bytecode::varint::encode_u64(u64::from(older.to_consensus_u32()), out);
+                Ok(())
+            }
+            Terminal::Check(child) => {
+                // `c:` wrapper. Emitted by the BIP 388 parser when the user
+                // writes `pk(K)` (a tap-illegal bare K-type fragment is
+                // wrapped as `c:pk_k(K)` to lift it to B-type).
+                out.push(Tag::Check.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::Verify(child) => {
+                // `v:` wrapper. Required to drive `and_v(v:..., ...)`, the
+                // canonical way to write `and(...)` with timelocks under
+                // tapscript per BIP §"Taproot tree" (Coldcard subset).
+                out.push(Tag::Verify.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            // Anything else is outside the Phase D Coldcard subset.
+            // `validate_tap_leaf_subset` is the gate that catches these
+            // before the encoder is invoked; if a caller bypasses validation
+            // and emits an out-of-subset terminal we still surface a precise
+            // error rather than silently writing it.
+            other => Err(Error::TapLeafSubsetViolation {
+                operator: tap_terminal_name(other).to_string(),
+            }),
+        }
+    }
+}
+
+/// Validate that a tap-leaf miniscript fragment uses only operators in the
+/// BIP §"Taproot tree" Coldcard subset (`pk_k`, `pk_h`, `multi_a`, `or_d`,
+/// `and_v`, `older`, plus the `c:` and `v:` wrappers needed to spell them
+/// through the BIP 388 parser).
+///
+/// Walks the AST recursively. On the first violation, returns
+/// [`Error::TapLeafSubsetViolation`] with the offending operator name. See
+/// `design/PHASE_v0_2_D_DECISIONS.md` D-2.
+///
+/// **Wrapper-terminal handling** (D-2 narrowing): `Terminal::Check` (`c:`)
+/// and `Terminal::Verify` (`v:`) are allowed because the BIP 388 parser
+/// emits them implicitly when the user writes `pk(K)` (= `c:pk_k`) or
+/// `and_v(v:..., ...)`, both of which are explicitly named in the
+/// Coldcard subset. Every other miniscript wrapper (`a:` / `s:` / `d:` /
+/// `j:` / `n:`) is rejected: none appear in the Coldcard tap-leaf
+/// vocabulary documented as of edge firmware. v0.3 may relax this if a
+/// signer documents a wider safe wrapper set; tracked as
+/// `phase-d-tap-leaf-wrapper-subset-clarification` in `FOLLOWUPS.md`.
+pub fn validate_tap_leaf_subset(ms: &Miniscript<DescriptorPublicKey, Tap>) -> Result<(), Error> {
+    validate_tap_leaf_terminal(&ms.node)
+}
+
+fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Result<(), Error> {
+    match term {
+        // Allowed leaves (per BIP §"Taproot tree" / Coldcard subset).
+        Terminal::PkK(_) | Terminal::PkH(_) => Ok(()),
+        Terminal::MultiA(_) => Ok(()),
+        Terminal::Older(_) => Ok(()),
+        // Allowed compositions — recurse into children.
+        Terminal::AndV(a, b) | Terminal::OrD(a, b) => {
+            validate_tap_leaf_terminal(&a.node)?;
+            validate_tap_leaf_terminal(&b.node)
+        }
+        // Allowed safe wrappers (used by the BIP 388 parser when spelling
+        // `pk(...)` and `and_v(v:..., ...)`).
+        Terminal::Check(child) | Terminal::Verify(child) => validate_tap_leaf_terminal(&child.node),
+        // Everything else is out-of-subset for v0.2.
+        other => Err(Error::TapLeafSubsetViolation {
+            operator: tap_terminal_name(other).to_string(),
+        }),
+    }
+}
+
+/// Human-readable name for a tap-context Terminal variant, used in error
+/// messages. Mirrors the operator names that appear in BIP 388 / miniscript
+/// source form so caller-facing diagnostics are precise.
+fn tap_terminal_name(term: &Terminal<DescriptorPublicKey, Tap>) -> &'static str {
+    match term {
+        Terminal::True => "1",
+        Terminal::False => "0",
+        Terminal::PkK(_) => "pk_k",
+        Terminal::PkH(_) => "pk_h",
+        Terminal::RawPkH(_) => "raw_pk_h",
+        Terminal::Multi(_) => "multi",
+        Terminal::SortedMulti(_) => "sortedmulti",
+        Terminal::MultiA(_) => "multi_a",
+        Terminal::SortedMultiA(_) => "sortedmulti_a",
+        Terminal::After(_) => "after",
+        Terminal::Older(_) => "older",
+        Terminal::Sha256(_) => "sha256",
+        Terminal::Hash256(_) => "hash256",
+        Terminal::Ripemd160(_) => "ripemd160",
+        Terminal::Hash160(_) => "hash160",
+        Terminal::AndV(..) => "and_v",
+        Terminal::AndB(..) => "and_b",
+        Terminal::AndOr(..) => "andor",
+        Terminal::OrB(..) => "or_b",
+        Terminal::OrC(..) => "or_c",
+        Terminal::OrD(..) => "or_d",
+        Terminal::OrI(..) => "or_i",
+        Terminal::Thresh(_) => "thresh",
+        Terminal::Alt(_) => "a:",
+        Terminal::Swap(_) => "s:",
+        Terminal::Check(_) => "c:",
+        Terminal::DupIf(_) => "d:",
+        Terminal::Verify(_) => "v:",
+        Terminal::NonZero(_) => "j:",
+        Terminal::ZeroNotEqual(_) => "n:",
+        // Defensive catch-all — Terminal isn't `#[non_exhaustive]` in the
+        // pinned miniscript v13, so this is unreachable today; kept against
+        // a future upgrade adding new variants.
+        #[allow(unreachable_patterns)]
+        _ => "<unknown-terminal>",
+    }
+}
+
 /// Emit a `DescriptorPublicKey` as a placeholder reference.
 ///
 /// Looks up `self` in `placeholder_map` and writes `Tag::Placeholder`
@@ -419,15 +623,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_tr_top_level() {
-        // Key-path-only taproot descriptor (no script tree).
+    fn rejects_tr_inline_internal_key() {
+        // Key-path-only taproot descriptor parsed with a raw key. v0.2
+        // accepts top-level `tr()`, but rejects the internal key as an
+        // inline key (no placeholder_map entry) — the same rule that
+        // forbids inline keys inside `wsh()`.
         let d = parse_descriptor(
             "tr(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)",
         );
         let err = encode_template(&d, &empty_map()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("taproot")),
-            "expected PolicyScopeViolation mentioning taproot"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("inline key")),
+            "expected PolicyScopeViolation about inline key, got: {err:?}"
         );
     }
 

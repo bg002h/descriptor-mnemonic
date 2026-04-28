@@ -99,4 +99,22 @@ impl<'a> Cursor<'a> {
     pub(crate) fn offset(&self) -> usize {
         self.offset
     }
+
+    /// `true` iff the cursor has consumed every byte in the underlying slice.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.offset >= self.bytes.len()
+    }
+
+    /// Read the next byte without advancing the cursor. Returns
+    /// `Err(InvalidBytecode { kind: UnexpectedEnd })` at EOF, mirroring
+    /// `read_byte`'s contract.
+    pub(crate) fn peek_byte(&self) -> Result<u8, Error> {
+        if self.offset >= self.bytes.len() {
+            return Err(Error::InvalidBytecode {
+                offset: self.offset,
+                kind: BytecodeErrorKind::UnexpectedEnd,
+            });
+        }
+        Ok(self.bytes[self.offset])
+    }
 }

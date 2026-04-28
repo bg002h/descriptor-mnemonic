@@ -60,6 +60,7 @@ enum ErrorVariantName {
     MissingChunkIndex,
     MixedChunkTypes,
     SingleStringWithMultipleChunks,
+    TapLeafSubsetViolation,
 }
 
 /// For `InvalidBytecode` the expected substring is `rejects_invalid_bytecode_`

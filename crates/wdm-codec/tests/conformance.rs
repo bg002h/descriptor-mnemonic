@@ -859,3 +859,36 @@ fn rejects_policy_too_large() {
         err
     );
 }
+
+// ---------------------------------------------------------------------------
+// Layer 7: Taproot per-leaf subset rejection (Phase D)
+// ---------------------------------------------------------------------------
+
+// 32. Tap-leaf miniscript using an out-of-subset operator → `Error::TapLeafSubsetViolation`
+//
+// The Coldcard subset (BIP §"Taproot tree") allows `pk_k`, `pk_h`,
+// `multi_a`, `or_d`, `and_v`, `older` and the safe `c:` / `v:` wrappers.
+// `sha256(...)` is NOT in the subset — emitting
+// `tr(@0/**, and_v(v:sha256(...), pk(@1/**)))` must be rejected at encode
+// time with a precise per-operator diagnostic. (We wrap sha256 inside an
+// and_v(v:..., pk()) so miniscript's "all spend paths must require a
+// signature" constraint is satisfied at parse time; the rejection then
+// comes from the WDM subset check, not from the upstream miniscript
+// parser.)
+#[test]
+fn rejects_tap_leaf_subset_violation() {
+    let policy: WalletPolicy =
+        "tr(@0/**,and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),pk(@1/**)))"
+            .parse()
+            .expect("tap-leaf with sha256 inside and_v should parse syntactically");
+    let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
+    match err {
+        Error::TapLeafSubsetViolation { ref operator } => {
+            assert!(
+                operator.contains("sha256"),
+                "expected operator name to contain 'sha256', got {operator:?}"
+            );
+        }
+        other => panic!("expected TapLeafSubsetViolation, got {other:?}"),
+    }
+}

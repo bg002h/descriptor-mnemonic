@@ -38,7 +38,7 @@ pub use crate::wallet_id::ChunkWalletId;
 /// [`Error::MissingChunkIndex`], [`Error::CrossChunkHashMismatch`].
 ///
 /// Stage 5 (bytecode parse): [`Error::InvalidBytecode`],
-/// [`Error::PolicyScopeViolation`].
+/// [`Error::PolicyScopeViolation`], [`Error::TapLeafSubsetViolation`].
 ///
 /// Encode-side: [`Error::PolicyTooLarge`], [`Error::PolicyParse`],
 /// [`Error::Miniscript`].
@@ -304,6 +304,23 @@ pub enum Error {
     /// our public API from upstream `miniscript::Error` churn.
     #[error("miniscript: {0}")]
     Miniscript(String),
+
+    /// A taproot leaf miniscript used an operator outside the BIP §"Taproot
+    /// tree" per-leaf subset (`pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`,
+    /// `older` plus the safe `c:` / `v:` wrappers required to express them).
+    ///
+    /// Returned by both the encoder (when emitting a `Descriptor::Tr` whose
+    /// leaf miniscript contains a forbidden operator) and the decoder (when
+    /// parsing a tap-leaf bytecode stream that decodes to a forbidden
+    /// operator). The `operator` field names the rejected fragment so the
+    /// caller can show the user a precise diagnostic. See
+    /// `design/PHASE_v0_2_D_DECISIONS.md` D-2.
+    #[error("tap-leaf subset violation: operator '{operator}' not in Coldcard subset")]
+    TapLeafSubsetViolation {
+        /// The miniscript operator name (e.g. `"sha256"`, `"thresh"`,
+        /// `"or_b"`) that violated the subset.
+        operator: String,
+    },
 }
 
 /// Kind of bytecode parse error, used inside [`Error::InvalidBytecode`].

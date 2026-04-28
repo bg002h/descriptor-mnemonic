@@ -311,7 +311,7 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 |-
 | <code>0x07</code> || <code>bare()</code> || — || 1
 |-
-| <code>0x08</code> || <code>TapTree</code> || — || tree structure (see "Taproot tree", below)
+| <code>0x08</code> || <code>TapTree</code> (reserved for v1+) || — || multi-leaf tree structure; v0 single-leaf form encodes the leaf miniscript directly without a <code>TapTree</code> node (see "Taproot tree", below)
 |-
 | <code>0x09</code> || <code>sortedmulti()</code> || threshold (1 byte), count (1 byte) || count keys
 |-
@@ -418,11 +418,68 @@ Unsigned integer fields marked LEB128 (timelock values, threshold and count fiel
 
 Note: The <code>multi</code>, <code>thresh</code>, etc. threshold and count fields described above use single-byte encoding, not LEB128, because they are bounded by the BIP 388 wallet-policy size limits (≤ 20 keys for segwit v0; ≤ 32 keys for taproot). Implementations MUST reject threshold or count values that exceed the maximum permitted by the surrounding script type.
 
-====Taproot tree (forward-defined)====
+====Taproot tree====
 
-The <code>TapTree</code> operator (<code>0x08</code>) encodes a taproot script tree. Within <code>tr()</code>, a single internal-key sub-tree (a key reference) is followed by an optional <code>TapTree</code> sub-tree. The taproot tree encoding is left as a future refinement: in v0, taproot wallet policies are supported with the constraint that the tree contains at most one leaf, encoded directly as a sub-tree without intermediate <code>TapTree</code> nodes.
+The <code>tr()</code> operator (<code>0x06</code>) encodes a top-level taproot wallet policy. The internal-key sub-tree (a key reference) immediately follows the <code>tr()</code> tag. If the wallet policy includes a script tree, exactly one tap-leaf miniscript follows the internal-key reference; in v0 the tap-leaf is encoded directly without an intermediate <code>TapTree</code> (<code>0x08</code>) node. The <code>TapTree</code> tag is reserved for v1+ multi-leaf encodings.
 
-Implementations supporting taproot MUST also enforce the per-leaf miniscript subset constraints required by deployed hardware signers (notably Coldcard, which restricts to <code>pk</code>, <code>pk_h</code>, <code>multi_a</code>, <code>or_d</code>, <code>and_v</code>, <code>older</code> as of edge firmware). Producing a tap-miniscript wallet policy beyond this subset risks the wallet being unspendable on hardware signers.
+A v0 decoder receiving <code>0x08</code> in the tap-leaf position MUST reject the input.
+
+Implementations supporting taproot MUST enforce the per-leaf miniscript subset constraints required by deployed hardware signers (notably Coldcard, which restricts to <code>pk</code>, <code>pk_h</code>, <code>multi_a</code>, <code>or_d</code>, <code>and_v</code>, <code>older</code> — plus the <code>c:</code> and <code>v:</code> wrappers required to spell those operators in canonical BIP 388 form — as of edge firmware). Producing a tap-miniscript wallet policy beyond this subset risks the wallet being unspendable on hardware signers.
+
+=====Byte-layout examples=====
+
+The byte sequences below are the operator-tree portion (everything after the format header byte and the shared-path declaration) for representative v0 taproot policies. The actual encoded policy is <code>[header byte] [shared-path declaration] [operator tree]</code>; the policies shown all use the default header (<code>0x00</code>) and a 2-byte explicit-path declaration <code>33 03</code> (<code>SharedPath</code> tag + length-zero declaration body).
+
+Key-path-only <code>tr(@0/**)</code> — full bytecode <code>00 33 03 06 32 00</code>:
+
+<pre>
+  06 32 00
+  ^  ^  ^
+  |  |  +-- placeholder index 0
+  |  +----- Tag::Placeholder (0x32)
+  +-------- Tag::Tr (0x06)
+</pre>
+
+Single-leaf <code>tr(@0/**, pk(@1/**))</code> — full bytecode <code>00 33 03 06 32 00 0c 1b 32 01</code>:
+
+<pre>
+  06 32 00       0c 1b 32 01
+  -- internal key   -- leaf miniscript --
+                 ^  ^  ^  ^
+                 |  |  |  +-- placeholder index 1
+                 |  |  +----- Tag::Placeholder (0x32)
+                 |  +-------- Tag::PkK (0x1B)
+                 +----------- Tag::Check (0x0C)   ; the c: wrapper that BIP 388
+                                                   ; emits when expanding pk(K)
+                                                   ; under wsh()/tr()
+</pre>
+
+Single-leaf <code>tr(@0/**, multi_a(2, @1/**, @2/**, @3/**))</code> — full bytecode <code>00 33 03 06 32 00 1a 02 03 32 01 32 02 32 03</code>:
+
+<pre>
+  06 32 00     1a 02 03 32 01 32 02 32 03
+  -- internal     -- multi_a(2, @1, @2, @3) --
+                  ^  ^  ^  ^^^^^ ^^^^^ ^^^^^
+                  |  |  |  |     |     +-- @3 placeholder
+                  |  |  |  |     +-------- @2 placeholder
+                  |  |  |  +-------------- @1 placeholder
+                  |  |  +-- count n=3 (single byte)
+                  |  +----- threshold k=2 (single byte)
+                  +-------- Tag::MultiA (0x1A)
+</pre>
+
+A nested-allowed-operator example combining <code>or_d</code>, <code>and_v</code>, <code>v:</code>, and <code>older</code> — <code>tr(@0/**, or_d(pk(@1/**), and_v(v:older(144), pk(@2/**))))</code> — encodes to full bytecode <code>00 33 03 06 32 00 16 0c 1b 32 01 11 0e 1f 90 01 0c 1b 32 02</code>; the script-tree portion alone is <code>16 0c 1b 32 01 11 0e 1f 90 01 0c 1b 32 02</code>:
+
+<pre>
+  16 0c 1b 32 01            11 0e 1f 90 01 0c 1b 32 02
+  -- or_d ----              -- and_v -----------------
+  ^  -- pk(@1) ---          ^  -- v:older(144) -- -- pk(@2) ---
+  |                         |  ^  ^  ^^^^^
+  |                         |  |  |  +-- LEB128(144) = 0x90 0x01
+  |                         |  |  +----- Tag::Older (0x1F)
+  |                         |  +-------- Tag::Verify (0x0E) ; v: wrapper
+  +-- Tag::OrD (0x16)       +-- Tag::AndV (0x11)
+</pre>
 
 ====Round-trip canonical form====
 
