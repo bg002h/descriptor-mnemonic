@@ -43,21 +43,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
-### `v0-5-stale-v0-4-message-strings-sweep` — sweep remaining "v0.4 does not support" / "reserved for v1+" stale strings
-
-- **Surfaced:** Phase 3 review of v0.5 (commit `59797ef`). Phase 3 only updated the four `decode_descriptor` strings in scope; reviewer flagged additional stale "v0.4" / "v1+" strings in adjacent code that are now factually wrong at v0.5.
-- **Where (all closed in Phase 4):**
-  - `crates/md-codec/src/bytecode/encode.rs:116` — sh(legacy P2SH) error → "permanently rejected (legacy non-segwit out of scope per design)"
-  - `crates/md-codec/src/bytecode/encode.rs:123,163` — top-level pkh/bare → split into separate Pkh and Bare messages, both with "permanently rejected" framing
-  - `crates/md-codec/src/bytecode/encode.rs:13-17` — module doc rewritten: replaced "Multi-leaf TapTree is reserved for v1+" with v0.5 admission paragraph
-  - `crates/md-codec/src/bytecode/decode.rs:167` — `decode_sh_inner` catch-all → "permanently rejected"
-  - `crates/md-codec/src/bytecode/decode.rs:11-14` — module doc: replaced v1+ Tag::TapTree reservation with v0.5 admission paragraph + depth-128 mention
-  - `crates/md-codec/src/bytecode/decode.rs:255-257` — `decode_tr_inner` doc: replaced "reserved for v1+" with v0.5 multi-leaf admission note
-- **What:** Sweep all sites to version-agnostic / v0.5-correct text. Done in Phase 4 (commit lands together with encoder rewrite); verified zero remaining "v0.4 does not support" / "reserved for v1+" strings in `encode.rs` and `decode.rs`.
-- **Why deferred:** Phase 3 scope was only the top-level dispatcher; the implementer correctly kept scope tight. Reviewer recommended folding the encoder messages into Phase 4 (which already touches `encode.rs:126-158`).
-- **Status:** closed (Phase 4 — folded into encoder rewrite commit)
-- **Tier:** v0.5-nice-to-have (closed before v0.5.0 ship)
-
 ### `p2-inline-key-tags` — Reserved tags 0x24–0x31 (descriptor-codec inline-key forms)
 
 - **Surfaced:** Phase 2 D-2 (`design/PHASE_2_DECISIONS.md`)
@@ -190,6 +175,21 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 ## Resolved items
 
 (Closure log. Items move here from "Open items" when their `Status:` changes to `resolved <COMMIT>`. Useful for spec/audit reasons; not deleted to preserve provenance.)
+
+### `v0-5-stale-v0-4-message-strings-sweep` — sweep remaining "v0.4 does not support" / "reserved for v1+" stale strings
+
+- **Surfaced:** Phase 3 review of v0.5 (commit `59797ef`). Phase 3 only updated the four `decode_descriptor` strings in scope; reviewer flagged additional stale "v0.4" / "v1+" strings in adjacent code that are now factually wrong at v0.5.
+- **Where (all closed in Phase 4):**
+  - `crates/md-codec/src/bytecode/encode.rs:116` — sh(legacy P2SH) error → "permanently rejected (legacy non-segwit out of scope per design)"
+  - `crates/md-codec/src/bytecode/encode.rs:123,163` — top-level pkh/bare → split into separate Pkh and Bare messages, both with "permanently rejected" framing
+  - `crates/md-codec/src/bytecode/encode.rs:13-17` — module doc rewritten: replaced "Multi-leaf TapTree is reserved for v1+" with v0.5 admission paragraph
+  - `crates/md-codec/src/bytecode/decode.rs:167` — `decode_sh_inner` catch-all → "permanently rejected"
+  - `crates/md-codec/src/bytecode/decode.rs:11-14` — module doc: replaced v1+ Tag::TapTree reservation with v0.5 admission paragraph + depth-128 mention
+  - `crates/md-codec/src/bytecode/decode.rs:255-257` — `decode_tr_inner` doc: replaced "reserved for v1+" with v0.5 multi-leaf admission note
+- **What:** Sweep all sites to version-agnostic / v0.5-correct text. Folded into Phase 4 encoder-rewrite commit; verified zero remaining "v0.4 does not support" / "reserved for v1+" strings in `encode.rs` and `decode.rs` post-commit.
+- **Why deferred:** Phase 3 scope was only the top-level dispatcher; the implementer correctly kept scope tight. Reviewer recommended folding the encoder messages into Phase 4 (which already touches `encode.rs:126-158`).
+- **Status:** resolved bca2804
+- **Tier:** v0.5-nice-to-have (closed before v0.5.0 ship)
 
 ### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
 
