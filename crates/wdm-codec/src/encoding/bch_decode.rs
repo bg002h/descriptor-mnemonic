@@ -591,9 +591,8 @@ fn decode_errors(
 mod tests {
     use super::*;
     use crate::encoding::{
-        GEN_LONG, GEN_REGULAR, LONG_MASK, LONG_SHIFT, POLYMOD_INIT, REGULAR_MASK, REGULAR_SHIFT,
-        WDM_LONG_CONST, WDM_REGULAR_CONST, bch_create_checksum_long, bch_create_checksum_regular,
-        hrp_expand,
+        GEN_LONG, GEN_REGULAR, LONG_MASK, LONG_SHIFT, REGULAR_MASK, REGULAR_SHIFT, WDM_LONG_CONST,
+        WDM_REGULAR_CONST, bch_create_checksum_long, bch_create_checksum_regular, hrp_expand,
     };
 
     #[test]
@@ -692,22 +691,11 @@ mod tests {
         }
     }
 
-    /// Local copy of `polymod_run` so tests don't depend on the parent
-    /// module's private helper.
-    fn polymod_run_local(values: &[u8], r#gen: &[u128; 5], shift: u32, mask: u128) -> u128 {
-        let mut residue = POLYMOD_INIT;
-        for &v in values {
-            let b = residue >> shift;
-            let mut new_residue = ((residue & mask) << 5) ^ (v as u128);
-            for (i, &g) in r#gen.iter().enumerate() {
-                if (b >> i) & 1 != 0 {
-                    new_residue ^= g;
-                }
-            }
-            residue = new_residue;
-        }
-        residue
-    }
+    // Re-export the production polymod_run so tests validate field arithmetic
+    // against the same code path the codec actually runs. A local duplicate
+    // (which used to live here) would let polymod_run bugs go undetected if
+    // both copies agreed on the wrong answer.
+    use super::super::polymod_run;
 
     #[test]
     fn one_error_decodes_correctly_regular() {
@@ -724,7 +712,7 @@ mod tests {
 
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
-        let polymod = polymod_run_local(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK);
+        let polymod = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK);
         let residue = polymod ^ WDM_REGULAR_CONST;
 
         let (positions, magnitudes) =
@@ -756,7 +744,7 @@ mod tests {
 
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
-        let polymod = polymod_run_local(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK);
+        let polymod = polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK);
         let residue = polymod ^ WDM_REGULAR_CONST;
 
         let (positions, magnitudes) =
@@ -788,7 +776,7 @@ mod tests {
 
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
-        let polymod = polymod_run_local(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK);
+        let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK);
         let residue = polymod ^ WDM_LONG_CONST;
 
         let (positions, magnitudes) =
@@ -823,7 +811,7 @@ mod tests {
 
         let mut input = hrp_expand(hrp);
         input.extend_from_slice(&codeword);
-        let polymod = polymod_run_local(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK);
+        let polymod = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK);
         let residue = polymod ^ WDM_LONG_CONST;
 
         if let Some((positions, magnitudes)) = decode_long_errors(residue, codeword.len()) {

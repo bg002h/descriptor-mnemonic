@@ -281,7 +281,17 @@ pub fn hrp_expand(hrp: &str) -> Vec<u8> {
 
 /// Run polymod over a sequence of 5-bit values using the parameters for
 /// either the regular or long BCH code, starting from POLYMOD_INIT.
-fn polymod_run(values: &[u8], r#gen: &[u128; 5], shift: u32, mask: u128) -> u128 {
+///
+/// `pub(in crate::encoding)` so child module `bch_decode`'s test mod can
+/// validate field arithmetic against the production primitive without
+/// duplicating it (test-helper drift would otherwise mask real
+/// regressions when both copies agree on a bug).
+pub(in crate::encoding) fn polymod_run(
+    values: &[u8],
+    r#gen: &[u128; 5],
+    shift: u32,
+    mask: u128,
+) -> u128 {
     let mut residue = POLYMOD_INIT;
     for &v in values {
         residue = polymod_step(residue, v as u128, r#gen, shift, mask);
