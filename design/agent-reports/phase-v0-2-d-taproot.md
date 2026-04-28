@@ -2,7 +2,7 @@
 
 **Status:** DONE
 
-**Commit SHA:** _to be filled by controller after squash_
+**Commit SHA:** `267036f` (worktree commit; controller may rebase/squash on merge)
 
 **Branch:** `worktree-agent-a9faad48b7b3d2fc7`
 
