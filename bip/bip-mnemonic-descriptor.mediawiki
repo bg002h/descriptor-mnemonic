@@ -537,7 +537,7 @@ Note: The <code>multi</code>, <code>thresh</code>, etc. threshold and count fiel
 The <code>tr()</code> operator (<code>0x06</code>) encodes a top-level taproot wallet policy. The internal-key sub-tree (a key reference) immediately follows the <code>tr()</code> tag. The optional script-tree position that follows is one of:
 
 * Absent — keypath-only <code>tr(KEY)</code>; no further bytes in the operator payload.
-* A single tap-leaf miniscript — encoded directly as a leaf-script tag sequence (any operator from the per-leaf miniscript subset; see §"Tapscript miniscript subset"). This is the <code>tr(KEY, leaf)</code> form.
+* A single tap-leaf miniscript — encoded directly as a leaf-script tag sequence (any operator from the per-leaf miniscript subset detailed below in this section). This is the <code>tr(KEY, leaf)</code> form.
 * A <code>TapTree</code> inner-node framing — a recursive <code>[TapTree=0x08][LEFT_SUBTREE][RIGHT_SUBTREE]</code> sequence where each <code>SUBTREE</code> is recursively defined as another tap-leaf or another inner-node framing. This is the <code>tr(KEY, TREE)</code> multi-leaf form (v0.5+).
 
 Multi-leaf taproot trees are encoded recursively using the <code>TapTree (0x08)</code> tag as inner-node framing. BIP 388's curly-brace source form <code>{LEFT, RIGHT}</code> is the human-readable counterpart of this bytecode; the MD bytecode is the wire encoding of that grammar.
