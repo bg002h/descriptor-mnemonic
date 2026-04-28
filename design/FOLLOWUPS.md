@@ -43,15 +43,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
-### `p2-taproot-tr-taptree` — taproot `Tr` / `TapTree` operator support
-
-- **Surfaced:** Phase 2 (D-2, D-4, plan task 2.11 marked deferred)
-- **Where:** `crates/wdm-codec/src/bytecode/{encode,decode}.rs` — Tr/TapTree match arms currently reject with `Error::PolicyScopeViolation`
-- **What:** v0.1 rejects `Descriptor::Tr` at the top level; v0.2 should support taproot single-leaf (per BIP §"Taproot tree (forward-defined)") with the per-leaf miniscript subset constraints required by deployed signers (Coldcard subset: `pk`/`pk_h`/`multi_a`/`or_d`/`and_v`/`older`).
-- **Why deferred:** explicitly out of scope for v0.1.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `p2-inline-key-tags` — Reserved tags 0x24–0x31 (descriptor-codec inline-key forms)
 
 - **Surfaced:** Phase 2 D-2 (`design/PHASE_2_DECISIONS.md`)
@@ -143,6 +134,42 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** breaking API change (the `data` field is currently `pub`); v0.3 breaking-window candidate. Negligible at v0.1/v0.2 scale; not worth the breakage in v0.2.
 - **Status:** open
 - **Tier:** v0.3
+
+### `phase-d-tap-leaf-wrapper-subset-clarification` — widen the tap-leaf wrapper subset if signers document broader safe support
+
+- **Surfaced:** Phase D implementer (Opus 4.7) on commit `6f6eae9`
+- **Where:** `crates/wdm-codec/src/bytecode/encode.rs::validate_tap_leaf_subset`
+- **What:** Phase D allows only `c:` and `v:` wrapper terminals in tap leaves (BIP 388 parser emits both implicitly when expanding `pk(K)` and `and_v(v:..., ...)`). All other wrappers (`a:`/`s:`/`d:`/`j:`/`n:`/`u:`/`l:`/`t:`) are rejected. If hardware signers (Coldcard, others) document broader safe support for additional wrappers, widen the subset and update both encode-side and decode-side validators.
+- **Why deferred:** v0.2 errs on the side of strict per the BIP MUST clause; widening requires evidence from real signers.
+- **Status:** open
+- **Tier:** v0.3
+
+### `phase-d-taproot-corpus-fixtures` — add tr() positive + negative vectors to CORPUS_FIXTURES
+
+- **Surfaced:** Phase D implementer (Opus 4.7) on commit `6f6eae9`
+- **Where:** `crates/wdm-codec/src/vectors.rs` `CORPUS_FIXTURES` and `NEGATIVE_FIXTURES` arrays
+- **What:** Phase D ships taproot Tr code paths but does not extend the corpus fixtures to cover them — that would have broken `gen_vectors --verify v0.1.json` (the v0.1 lock). Phase F is the dedicated test-vector phase and bumps the schema; the taproot positive vectors (key-path-only `tr(K)`, single-leaf `tr(K, pk(K2))`, `tr(K, multi_a(...))`) and the negative vectors (subset violation, multi-leaf TapTree byte sequence) should be added there.
+- **Why deferred:** v0.1.json is locked; bumping the schema is Phase F's scope.
+- **Status:** open
+- **Tier:** v0.2
+
+### `phase-d-tap-miniscript-type-check-parity` — full Tap-context type-check rules beyond the named subset
+
+- **Surfaced:** Phase D implementer (Opus 4.7) on commit `6f6eae9`
+- **Where:** `crates/wdm-codec/src/bytecode/encode.rs::validate_tap_leaf_subset` (and downstream — full type-check parity may need its own module)
+- **What:** Phase D's subset filter accepts any `Terminal` from the named operator set (`PkK`/`PkH`/`MultiA`/`OrD`/`AndV`/`Older` plus `c:`/`v:` wrappers) without re-running miniscript's full Tap-context type-check. Coldcard and other signers may enforce more than just the operator-name set (e.g., satisfaction-cost bounds, dust-amount minimums). Full type-check parity with deployed signers is out of v0.2 scope; consider adding a `validate_tap_leaf_full()` wrapper that re-runs miniscript's Tap-context type-check + any signer-specific extras.
+- **Why deferred:** the operator-name subset matches the BIP MUST clause and is sufficient for the v0.2 ship target; full parity is a tighter contract than the BIP requires.
+- **Status:** open
+- **Tier:** v0.3
+
+### `phase-d-tap-decode-error-naming-parity` — encode/decode tap-leaf-subset rejection messages use different operator-name format
+
+- **Surfaced:** Phase D reviewer (Opus 4.7) on commit `6f6eae9`
+- **Where:** `crates/wdm-codec/src/bytecode/decode.rs::decode_tap_terminal` (line 603) vs `crates/wdm-codec/src/bytecode/encode.rs::tap_terminal_name`
+- **What:** When the same out-of-subset operator is rejected by encoder vs decoder, the user-facing error message differs in the operator-name format. Encoder uses BIP 388 lowercase (`"sha256"`, `"thresh"`); decoder uses Rust `format!("{:?}", tag)` which yields PascalCase (`"Sha256"`, `"Thresh"`). Cosmetic only — both rejections are correct — but inconsistent diagnostics for the same rejection condition. Fix: extract the encode-side `tap_terminal_name` lowercase mapping and reuse from decode-side.
+- **Why deferred:** cosmetic; doesn't affect correctness or the BIP's MUST clause.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
 
 ### `phase-c-bch-decode-style-cleanups` — 4 stylistic / micro-opt nits in `encoding/bch_decode.rs`
 
@@ -399,6 +426,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** inline `// TODO(v0.2)` at `crates/wdm-codec/src/encoding.rs:379` (since Phase 1)
 - **Status:** resolved `3aabcf6` (v0.2 Phase C) — replaces brute-force 1-error correction with full syndrome-based BCH decoder: Berlekamp-Massey for the error-locator polynomial Λ(x), Chien search for the error positions, shifted Forney for the error magnitudes. Field representation `GF(1024) = GF(32)[ζ]/(ζ²-ζ-1)` per BIP 93. Primitive elements β = G·ζ (regular, order 93) and γ = E + X·ζ (long, order 1023). 8-consecutive-roots windows `{β^77..β^84}` and `{γ^1019..γ^1026}`. Defensive `bch_verify_*` re-check after applying corrections guards the >4-error edge case. Public API surface unchanged — only behavioral difference is that 2/3/4-error inputs now succeed instead of returning `BchUncorrectable`. Wire format unchanged; `gen_vectors --verify` PASS. New `crates/wdm-codec/src/encoding/bch_decode.rs` (~620 LOC) plus `crates/wdm-codec/tests/bch_correction.rs` (42 integration tests + 11 lib tests = 53 new tests, including 3,200 randomized round-trips at the t=4 capacity boundary). BIP §"Error-correction guarantees" gains a SHOULD-clause naming the canonical algorithm + field representation so cross-implementations report byte-identical `Correction.corrected` values. Reviewer (Opus 4.7) `APPROVE_WITH_FOLLOWUPS` with no algorithmic findings — explicitly cross-checked field, primitive orders, generator roots, BM, Chien, Forney, defensive verify ("no bugs found", "an unusually clean port"). 4 stylistic nits filed as cluster `phase-c-bch-decode-style-cleanups`.
 - **Tier:** v0.2 (closed)
+
+### `p2-taproot-tr-taptree` — taproot `Tr` / `TapTree` operator support
+
+- **Surfaced:** Phase 2 (D-2, D-4, plan task 2.11 marked deferred)
+- **Status:** resolved `6f6eae9` (v0.2 Phase D, cherry-picked from worktree commit `267036f`) — top-level `tr()` taproot descriptors now encode and decode end-to-end with the Coldcard per-leaf miniscript subset enforced at BOTH encode and decode time. Single-leaf only at depth 0 per BIP §"Taproot tree" v0 constraint; multi-leaf `Tag::TapTree` (`0x08`) reserved for v1+ and rejected with `PolicyScopeViolation("multi-leaf TapTree reserved for v1+")`. New `Error::TapLeafSubsetViolation { operator: String }` variant for the subset-violation case (registered in the conformance exhaustiveness gate). `Cursor::is_empty()` and `peek_byte()` helpers added for the optional-leaf delimiter detection. Wrapper terminals: only `c:` and `v:` allowed (BIP 388 parser emits implicitly); all others rejected. Phase 2's pre-shipped `multi_a` arms (`encode.rs:178`, `decode.rs:222`) now exercised in Tap context. New `tests/taproot.rs` (8 tests) + 1 conformance test for the exhaustiveness mirror. Wire format unchanged for the v0.1 corpus (`gen_vectors --verify v0.1.json` byte-stable); taproot corpus fixtures deferred to Phase F (filed as `phase-d-taproot-corpus-fixtures`). BIP draft updated: heading "Taproot tree (forward-defined)" → "Taproot tree", tag `0x08` clarified as v1+, concrete byte-layout examples added (regenerated from live encoder). Phase D decision log committed at `24a7a4b` resolved D-1..D-5 in advance. Reviewer (Opus 4.7) `APPROVE_WITH_FOLLOWUPS` with no spec deviations, no algorithmic findings; 3 nits + 4 v0.2/v0.3 follow-ups filed.
+- **Tier:** v0.2 (closed; breaking — `Tr` rejection removed; new `Error::TapLeafSubsetViolation` variant)
 
 ---
 

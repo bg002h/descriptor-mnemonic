@@ -2,9 +2,9 @@
 
 **Status:** DONE
 
-**Commit SHA:** `267036f` (worktree commit; controller may rebase/squash on merge)
+**Commit SHA:** `6f6eae9` (cherry-picked onto main from worktree commit `267036f` because the worktree branch was cut from origin/main and didn't include the local-only Phase D decision-log commit `24a7a4b`)
 
-**Branch:** `worktree-agent-a9faad48b7b3d2fc7`
+**Branch:** `worktree-agent-a9faad48b7b3d2fc7` (worktree, now merged); upstream commit `6f6eae9` on `main`
 
 ## Summary
 
