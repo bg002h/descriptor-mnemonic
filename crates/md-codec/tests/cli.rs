@@ -237,6 +237,53 @@ fn md_encode_path_override_bip48_takes_effect() {
     );
 }
 
+/// `md encode --path bip48-nested <policy>` — the encoded bytecode's
+/// shared-path indicator byte is 0x06 (BIP 48/1' nested-segwit multisig,
+/// path m/48'/0'/0'/1').
+///
+/// Wire format is unchanged (0x06 already in DICT since v0.1); this test
+/// exercises only the CLI name-to-indicator resolution added in Phase 4.
+#[test]
+fn md_encode_path_bip48_nested_resolves_to_indicator_0x06() {
+    use md_codec::{DecodeOptions, decode};
+
+    let output = Command::cargo_bin("md")
+        .expect("binary built")
+        .args(["encode", "--path", "bip48-nested", POLICY])
+        .output()
+        .expect("encode --path bip48-nested ran");
+    assert!(
+        output.status.success(),
+        "encode --path bip48-nested must succeed; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Take the first MD chunk string from stdout.
+    let stdout = String::from_utf8(output.stdout).expect("utf-8");
+    let chunk = stdout
+        .lines()
+        .find(|l| l.starts_with("md1"))
+        .expect("at least one md1 chunk on stdout");
+
+    // Decode and inspect the underlying bytecode's path declaration.
+    let result = decode(&[chunk], &DecodeOptions::new()).expect("decode");
+    let bytecode = result
+        .policy
+        .to_bytecode(&md_codec::EncodeOptions::default())
+        .expect("re-encode bytecode");
+    // bytecode = [header=0x00, Tag::SharedPath=0x33, indicator, ...]
+    assert_eq!(
+        bytecode[1], 0x33,
+        "bytecode byte[1] must be Tag::SharedPath; got {:02x}",
+        bytecode[1]
+    );
+    assert_eq!(
+        bytecode[2], 0x06,
+        "with --path bip48-nested the shared-path indicator must be 0x06 (m/48'/0'/0'/1'). got {:02x}",
+        bytecode[2]
+    );
+}
+
 /// `md encode <policy> --force-chunked` — exits 0, the chunk string is
 /// longer than the single-string variant because the chunked header adds
 /// bytes.  We verify the output starts with the bech32 HRP prefix and is structurally

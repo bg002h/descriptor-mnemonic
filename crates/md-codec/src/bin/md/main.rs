@@ -130,6 +130,7 @@ const NAME_TABLE: &[(&str, u8)] = &[
     ("bip84", 0x03),
     ("bip86", 0x04),
     ("bip48", 0x05),
+    ("bip48-nested", 0x06),
     ("bip87", 0x07),
     // Testnet variants
     ("bip44t", 0x11),
@@ -137,6 +138,7 @@ const NAME_TABLE: &[(&str, u8)] = &[
     ("bip84t", 0x13),
     ("bip86t", 0x14),
     ("bip48t", 0x15),
+    ("bip48-nestedt", 0x16),
     ("bip87t", 0x17),
 ];
 
