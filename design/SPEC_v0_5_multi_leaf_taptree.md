@@ -100,7 +100,7 @@ fn decode_tap_subtree(
     let inner_byte = cur.peek_byte()?;          // peek, don't consume
     match Tag::from_byte(inner_byte) {
         Some(Tag::TapTree) => {
-            cur.read_byte()?;                   // commit consume only after the depth gate path
+            cur.read_byte()?;                   // consume the TapTree byte, then gate; cursor offset on rejection points past the violation byte (matches v0.4 Sh diagnostic precedent)
             if depth > 128 {
                 return Err(Error::PolicyScopeViolation(
                     "TapTree depth exceeds BIP 341 consensus maximum (128)".to_string()
@@ -139,7 +139,7 @@ fn decode_tap_subtree(
   - If end-of-bytecode → `tr(KEY)` KeyOnly form (preserved verbatim)
   - If unknown tag → `InvalidBytecode { kind: UnknownTag }`
 
-**Depth semantics.** The `depth` argument represents "the framing-level this call is about to read". Initial value = 1 (caller `decode_tr_inner` invokes the helper to read the FIRST `[TapTree]` framing at the root of the script-tree subtree). After a TapTree byte is consumed at depth=N, the recursion re-enters at depth=N+1 to read children. Each TapTree framing consumed at depth=N produces leaves under it at miniscript-depth N. BIP 341's `TAPROOT_CONTROL_MAX_NODE_COUNT = 128` therefore caps the helper at consuming framings up to depth=128 inclusive — leaves discovered at depth=129 (no framing read there) end up at miniscript-depth 128, the legal maximum. The gate `if depth > 128` fires at depth=129 when the next byte is `Tag::TapTree`, rejecting only the case that would push leaves past depth 128. RT and H1 fixtures (§5) cover the legal-128 boundary; H2 covers the 129 rejection.
+**Depth semantics.** The `depth` argument represents "the framing-level this call is about to read". Initial value = 1 (caller `decode_tr_inner` invokes the helper to read the FIRST `[TapTree]` framing at the root of the script-tree subtree). After a TapTree byte is consumed at depth=N, the recursion re-enters at depth=N+1 to read children. Each TapTree framing consumed at depth=N produces leaves under it at miniscript-depth N. BIP 341's `TAPROOT_CONTROL_MAX_NODE_COUNT = 128` therefore caps the helper at consuming framings up to depth=128 inclusive — leaves discovered at depth=129 (no framing read there) end up at miniscript-depth 128, the legal maximum. The gate `if depth > 128` fires at depth=129 when the next byte is `Tag::TapTree`, rejecting only the case that would push leaves past depth 128. H1 fixture (§5) covers the legal-128 boundary; H2 covers the 129 rejection.
 
 **Hostile-input invariants** (peek-before-recurse rationale):
 
