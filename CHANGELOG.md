@@ -4,6 +4,50 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.5.0] — 2026-04-28
+
+The v0.5 release admits multi-leaf `tr(KEY, TREE)` descriptors per BIP 388
+§"Taproot tree". `Tag::TapTree (0x08)` transitions from reserved/rejected to
+fully active. Wire format is additive: v0.4.x-shaped inputs (`tr(KEY)` and
+single-leaf `tr(KEY, leaf)`) decode byte-identical under v0.5.
+
+See [`MIGRATION.md`](./MIGRATION.md#v04x--v050) for upgrade steps.
+
+### Added
+- `tr(KEY, TREE)` multi-leaf TapTree admittance per BIP 388 §"Taproot tree"
+- `Tag::TapTree (0x08)` now active (was reserved/rejected since v0.2 Phase D)
+- BIP 341 control-block depth-128 enforcement during decode (peek-before-recurse)
+- `DecodeReport.tap_leaves: Vec<TapLeafReport>` field (NEW field on existing struct — non-breaking via `#[non_exhaustive]`)
+- `TapLeafReport` public struct (`leaf_index`, `miniscript`, `depth`)
+
+### Changed
+- `Error::TapLeafSubsetViolation` extended with `leaf_index: Option<usize>` field; variant now `#[non_exhaustive]` so destructure patterns must use `..` (additive — non-breaking for wildcard `match` arms; breaking for field-exhaustive destructures, but no known external consumers)
+- `validate_tap_leaf_subset(ms)` → `validate_tap_leaf_subset(ms, leaf_index: Option<usize>)` — public API additive but technically breaking (no known external callers)
+- Top-level dispatcher message for `0x08`-at-top-level updated to "TapTree (0x08) is not a valid top-level descriptor; it appears only inside `tr(KEY, TREE)`..."
+- `v0.1.json` SHA `bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26` UNCHANGED — v0.4.x family token still `"md-codec 0.4"` at this commit; Phase 11 will re-bump after version bump
+- `v0.2.json` SHA `7d801228ab3529f2df786c50ff269142fae2d8e896a7766fb8eb9fcf080e328d` (was `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770` at v0.4.1; Phase 6 regeneration added multi-leaf fixtures; family generator token still `"md-codec 0.4"` — Phase 11 will re-bump after version bump)
+
+### Removed
+- v0.4 single-leaf-with-non-zero-depth `PolicyScopeViolation` rejection (subsumed by multi-leaf path; theoretical-only, no producer emits this shape)
+
+### Wire format
+- v0.4.x-shaped inputs (KeyOnly `tr(KEY)` and single-leaf `tr(KEY, leaf)`) byte-identical
+- New: multi-leaf trees emit `[Tr=0x06][Placeholder][key_index][TapTree=0x08][LEFT][RIGHT]` recursive framing
+
+### Notes
+- MSRV: 1.85 (unchanged)
+- Test count: 634 passing + 0 ignored (was 609 at v0.4.1; +25 net)
+- Workspace `[patch]` block unchanged (apoelstra/rust-miniscript#1 still open)
+
+### Closes FOLLOWUPS
+- `v0-5-multi-leaf-taptree` — this release.
+
+### Files NEW FOLLOWUPS
+- `v0-5-t7-chunking-boundary-misnomer` (v0.5-nice-to-have: rename or tune T7 fixture)
+- `v0-5-multi_a-curly-parser-quirk` (deferred: `multi_a` in curly-brace contexts)
+
+---
+
 ## [0.4.1] — 2026-04-27
 
 Patch release. Three FOLLOWUPS items closed.
@@ -269,6 +313,7 @@ Patch release. 17 tests + bug fixes + cross-platform CI work after v0.1.0. See g
 
 Initial release. BIP 388 wsh-only wallet-policy backup format reference implementation. 445 tests, 95% library line coverage, 10 positive + 30 negative test vectors locked in `v0.1.json`. See `design/IMPLEMENTATION_PLAN_v0.1.md` and `design/agent-reports/phase-10-task-controller-closure.md` for the v0.1.0 phase-by-phase summary.
 
+[0.5.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.5.0
 [0.4.1]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.4.1
 [0.4.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.4.0
 [0.3.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.3.0
