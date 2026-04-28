@@ -372,7 +372,7 @@ impl WalletPolicy {
         // --- Step 4: select shared path per the Phase B precedence rule ---
         //
         // Precedence: opts.shared_path > decoded_shared_path > shared_path() >
-        // BIP 84 mainnet.
+        // default_path_for_v0_4_types > BIP 84 mainnet.
         //
         // Tier 0 (`opts.shared_path`) is the explicit caller override — for
         // example from `md encode --path bip48`. It wins unconditionally.
@@ -386,12 +386,23 @@ impl WalletPolicy {
         // Tier 2 (`shared_path()`) handles the real-keys case (policy parsed
         // from a full descriptor with origin info). One extra descriptor
         // materialization is acceptable here; the hot template-only case
-        // avoids it via the fallback chain ending at the BIP 84 default.
+        // avoids it via the fallback chain.
+        //
+        // Tier 3 (`default_path_for_v0_4_types`) fires ONLY for the new v0.4
+        // top-level types (wpkh, sh(wpkh), sh(wsh)). wsh and tr return None
+        // from this helper, falling through to the BIP 84 mainnet default
+        // below — preserving wire-format identity with v0.3.x-shaped inputs.
+        //
+        // Tier 4 (BIP 84 mainnet fallback) fires for wsh/tr template-only
+        // policies with no origin info — the pre-v0.4 behavior, preserved
+        // unchanged to avoid changing the bytecode of existing v0.3.x inputs.
         let shared_path = opts.shared_path.clone().unwrap_or_else(|| {
             self.decoded_shared_path.clone().unwrap_or_else(|| {
                 self.shared_path().unwrap_or_else(|| {
-                    DerivationPath::from_str("m/84'/0'/0'")
-                        .expect("hardcoded BIP 84 path is always valid")
+                    default_path_for_v0_4_types(&descriptor).unwrap_or_else(|| {
+                        DerivationPath::from_str("m/84'/0'/0'")
+                            .expect("hardcoded BIP 84 path is always valid")
+                    })
                 })
             })
         });
@@ -602,6 +613,44 @@ impl WalletPolicy {
 
         Ok((policy, fingerprints))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Default path-tier selector (Phase 3 — scoped to v0.4 top-level types)
+// ---------------------------------------------------------------------------
+
+/// Returns the natural default `DerivationPath` for v0.4-introduced top-level
+/// types when no Tier 0 / Tier 1 path is available. Intentionally scoped:
+/// existing `wsh` and `tr` types preserve their pre-v0.4 BIP 84 fallback
+/// behavior to avoid changing the bytecode of v0.3.x-shaped no-origin inputs.
+///
+/// The caller (`to_bytecode`) inserts this as a new fall-through step between
+/// Tier 1 (origin-extracted) and the existing BIP 84 final fallback. The
+/// `wsh` and `tr` arms return `None`, so they continue to fall through to the
+/// BIP 84 default unchanged.
+///
+/// The returned `DerivationPath` is later translated to a 1-byte indicator by
+/// `bytecode/path.rs`'s `encode_path` → `path_to_indicator` dict-lookup; this
+/// function does not deal in raw indicator bytes.
+fn default_path_for_v0_4_types(
+    d: &miniscript::Descriptor<DescriptorPublicKey>,
+) -> Option<DerivationPath> {
+    use miniscript::Descriptor;
+    use miniscript::descriptor::ShInner;
+    let path_str = match d {
+        Descriptor::Wpkh(_) => "m/84'/0'/0'",
+        Descriptor::Sh(sh) => match sh.as_inner() {
+            ShInner::Wpkh(_) => "m/49'/0'/0'",
+            ShInner::Wsh(_) => "m/48'/0'/0'/1'",
+            _ => return None,
+        },
+        // wsh and tr preserve the pre-v0.4 BIP 84 fallback (wired in
+        // to_bytecode's final unwrap_or_else arm). Explicitly returning None
+        // here ensures they fall through to that arm unchanged.
+        Descriptor::Wsh(_) | Descriptor::Tr(_) => return None,
+        _ => return None,
+    };
+    Some(DerivationPath::from_str(path_str).expect("static path string is always valid"))
 }
 
 // ---------------------------------------------------------------------------
@@ -1451,5 +1500,169 @@ mod tests {
         assert_eq!(backup.chunks.len(), 1);
         assert_eq!(backup.chunks[0].chunk_index, 0);
         assert!(backup.fingerprints.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 — Default path-tier selector (scoped to v0.4 types)
+    //
+    // Three default-tier tests verify that wpkh/sh-wpkh/sh-wsh pick the
+    // right BIP-standard indicator when no Tier 0 or Tier 1 path is present.
+    // Three override tests confirm --path flows through Tier 0 unchanged.
+    // One regression test pins wsh-no-origin behavior to preserve v0.3.x
+    // wire format (wsh must continue to emit BIP 84 indicator 0x03, not a
+    // newly-scoped default, because wsh is explicitly excluded from the
+    // v0.4 selector).
+    // -----------------------------------------------------------------------
+
+    /// `wpkh(@0/**)` with no path override or key origin must use BIP 84
+    /// (`m/84'/0'/0'`, indicator `0x03`) as its default shared-path.
+    ///
+    /// byte[0] = 0x00 (header), byte[1] = 0x33 (SharedPath tag),
+    /// byte[2] = indicator.
+    #[test]
+    fn wpkh_default_tier_is_bip84() {
+        let p: WalletPolicy = "wpkh(@0/**)".parse().expect("wpkh must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode must succeed for wpkh");
+        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[2], 0x03,
+            "wpkh default path must be BIP 84 indicator 0x03 (m/84'/0'/0'); got 0x{:02x}",
+            bytes[2]
+        );
+    }
+
+    /// `sh(wpkh(@0/**))` with no path override or key origin must use BIP 49
+    /// (`m/49'/0'/0'`, indicator `0x02`) as its default shared-path.
+    #[test]
+    fn sh_wpkh_default_tier_is_bip49() {
+        let p: WalletPolicy = "sh(wpkh(@0/**))".parse().expect("sh(wpkh) must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode must succeed for sh(wpkh)");
+        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[2], 0x02,
+            "sh(wpkh) default path must be BIP 49 indicator 0x02 (m/49'/0'/0'); got 0x{:02x}",
+            bytes[2]
+        );
+    }
+
+    /// `sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))` with no path override or
+    /// key origin must use BIP 48/1' nested (`m/48'/0'/0'/1'`, indicator
+    /// `0x06`) as its default shared-path.
+    #[test]
+    fn sh_wsh_default_tier_is_bip48_nested() {
+        let p: WalletPolicy = "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))"
+            .parse()
+            .expect("sh(wsh(sortedmulti)) must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode must succeed for sh(wsh(sortedmulti))");
+        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[2], 0x06,
+            "sh(wsh) default path must be BIP 48/1' indicator 0x06 (m/48'/0'/0'/1'); got 0x{:02x}",
+            bytes[2]
+        );
+    }
+
+    /// Tier 0 (`EncodeOptions::shared_path`) must override the v0.4 default
+    /// for `wpkh`. Supplying `m/48'/0'/0'/2'` (indicator 0x05) must beat
+    /// the natural BIP 84 default (indicator 0x03).
+    #[test]
+    fn wpkh_path_override_wins() {
+        let p: WalletPolicy = "wpkh(@0/**)".parse().expect("wpkh must parse");
+        let custom = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
+        let opts = EncodeOptions::default().with_shared_path(custom);
+        let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
+        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[2], 0x05,
+            "tier-0 override must win over wpkh default; expected 0x05 (m/48'/0'/0'/2'), \
+             got 0x{:02x}",
+            bytes[2]
+        );
+    }
+
+    /// Tier 0 must override the v0.4 default for `sh(wpkh)`. Supplying
+    /// `m/84'/0'/0'` (indicator 0x03) must beat the natural BIP 49 default
+    /// (indicator 0x02).
+    #[test]
+    fn sh_wpkh_path_override_wins() {
+        let p: WalletPolicy = "sh(wpkh(@0/**))".parse().expect("sh(wpkh) must parse");
+        let custom = DerivationPath::from_str("m/84'/0'/0'").unwrap();
+        let opts = EncodeOptions::default().with_shared_path(custom);
+        let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
+        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[2], 0x03,
+            "tier-0 override must win over sh(wpkh) default; expected 0x03 (m/84'/0'/0'), \
+             got 0x{:02x}",
+            bytes[2]
+        );
+    }
+
+    /// Tier 0 must override the v0.4 default for `sh(wsh)`. Supplying
+    /// `m/84'/0'/0'` (indicator 0x03) must beat the natural BIP 48/1'
+    /// nested default (indicator 0x06).
+    #[test]
+    fn sh_wsh_path_override_wins() {
+        let p: WalletPolicy = "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))"
+            .parse()
+            .expect("sh(wsh(sortedmulti)) must parse");
+        let custom = DerivationPath::from_str("m/84'/0'/0'").unwrap();
+        let opts = EncodeOptions::default().with_shared_path(custom);
+        let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
+        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[2], 0x03,
+            "tier-0 override must win over sh(wsh) default; expected 0x03 (m/84'/0'/0'), \
+             got 0x{:02x}",
+            bytes[2]
+        );
+    }
+
+    /// Regression: a template-only `wsh(pk(@0/**))` policy (no origin info,
+    /// no Tier 0 override) MUST continue to emit the BIP 84 fallback
+    /// indicator `0x03` — identical to v0.3.x behavior.
+    ///
+    /// The v0.4 default-tier selector is intentionally SCOPED to exclude
+    /// `wsh` and `tr` top-level types. This test pins the preserved
+    /// no-origin wsh bytecode so any accidental scope creep of the new
+    /// selector is caught immediately.
+    ///
+    /// Expected bytecode:
+    ///   [0x00, 0x33, 0x03, 0x05, 0x0C, 0x1B, 0x32, 0x00]
+    ///    hdr   SP    BIP84  Wsh  Chk   PkK   Plhd  idx=0
+    #[test]
+    fn wsh_no_origin_default_unchanged_from_v0_3() {
+        use crate::bytecode::Tag;
+
+        let p: WalletPolicy = "wsh(pk(@0/**))".parse().expect("wsh must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode must succeed");
+
+        // Pin the full bytecode — any change breaks v0.3.x wire compatibility.
+        let expected: Vec<u8> = vec![
+            0x00,                       // header v0, no fingerprints
+            Tag::SharedPath.as_byte(),  // 0x33
+            0x03,                       // BIP 84 fallback indicator (preserved from v0.3.x)
+            Tag::Wsh.as_byte(),         // 0x05
+            Tag::Check.as_byte(),       // 0x0C
+            Tag::PkK.as_byte(),         // 0x1B
+            Tag::Placeholder.as_byte(), // 0x32
+            0x00,                       // placeholder index 0
+        ];
+
+        assert_eq!(
+            bytes, expected,
+            "wsh-no-origin bytecode must be byte-identical to v0.3.x baseline; \
+             the v0.4 selector must NOT fire for wsh top-level type.\n\
+             expected: {expected:?}\n\
+             got:      {bytes:?}"
+        );
     }
 }
