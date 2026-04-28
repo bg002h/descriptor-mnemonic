@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "wdm-codec 0.2",
+  "generator": "md-codec 0.3",
   "vectors": [
     {
       "id": "c1",
@@ -8,7 +8,7 @@
       "policy": "wsh(pk(@0/**))",
       "expected_bytecode_hex": "003303050c1b3200",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5xpkvsqtkqefq4vkzef2"
+        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7"
       ],
       "expected_wallet_id_words": [
         "secret",
@@ -31,7 +31,7 @@
       "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
       "expected_bytecode_hex": "00330305090203320032013202",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5ysyqejqqeqzvszzcplt4tanh2xq"
+        "md1qqqqqvcrq5ysyqejqqeqzvszz258fczketjg6"
       ],
       "expected_wallet_id_words": [
         "payment",
@@ -54,7 +54,7 @@
       "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
       "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqsk8hhvcwxhesv6"
+        "md1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqssxxvfplwl3dfq"
       ],
       "expected_wallet_id_words": [
         "hire",
@@ -77,7 +77,7 @@
       "policy": "wsh(andor(pk(@0/**),after(1200000),or_i(and_v(v:pkh(@1/**),and_v(v:pkh(@2/**),and_v(v:pkh(@3/**),older(4032)))),and_v(v:pkh(@4/**),and_v(v:pkh(@5/**),older(32768))))))",
       "expected_bytecode_hex": "00330305130c1b32001e809f4917110e0c1c3201110e0c1c3202110e0c1c32031fc01f110e0c1c3204110e0c1c32051f808002",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5fscxejqq0gp86fzugsurquxgq3zrsvrseqyygwpswryqclcq03zrsvrseqgygwpswrypglszqqy9f08e2lpzcsxctt"
+        "md1qqqqqvcrq5fscxejqq0gp86fzugsurquxgq3zrsvrseqyygwpswryqclcq03zrsvrseqgygwpswrypglszqqyc7r07jpm647hrcg"
       ],
       "expected_wallet_id_words": [
         "magnet",
@@ -100,8 +100,8 @@
       "policy": "wsh(or_d(thresh(5,pk(@0/**),s:pk(@1/**),s:pk(@2/**),s:pk(@3/**),s:pk(@4/**),s:pk(@5/**),s:pk(@6/**),s:pk(@7/**),s:pk(@8/**)),and_v(v:older(105120),multi(2,@9/**,@10/**))))",
       "expected_bytecode_hex": "00330305161805090c1b32000b0c1b32010b0c1b32020b0c1b32030b0c1b32040b0c1b32050b0c1b32060b0c1b32070b0c1b3208110e1fa0b5061902023209320a",
       "expected_chunks": [
-        "wdm1qqqsp3nvqgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsds8n0ck7eup6j080v",
-        "wdm1qqqsp3nvqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6y45znnqse9xdy7"
+        "md1qqqsp3nvqgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdsm7lmunwsppdmpt5",
+        "md1qqqsp3nvqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6ylpjjcclupncmz"
       ],
       "expected_wallet_id_words": [
         "arrest",
@@ -124,7 +124,7 @@
       "policy": "wsh(or_d(pk(@0/**),and_v(v:pk(@1/**),older(52560))))",
       "expected_bytecode_hex": "00330305160c1b3200110e0c1b32011fd09a03",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5tqcxejqqgsurqmxgq3l5y6qv5h973dj8tvrrf"
+        "md1qqqqqvcrq5tqcxejqqgsurqmxgq3l5y6qvpw2q0t3k6rn26"
       ],
       "expected_wallet_id_words": [
         "retire",
@@ -147,7 +147,7 @@
       "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
       "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqsk8hhvcwxhesv6"
+        "md1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqssxxvfplwl3dfq"
       ],
       "expected_wallet_id_words": [
         "hire",
@@ -170,7 +170,7 @@
       "policy": "wsh(andor(pk(@0/**),sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),and_v(v:pk(@1/**),older(144))))",
       "expected_bytecode_hex": "00330305130c1b320020b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9110e0c1b32011f9001",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5fscxejqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6g3pcxpkvspr7gqzkgawu5s5xhu4gjm"
+        "md1qqqqqvcrq5fscxejqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6g3pcxpkvspr7gqztl3xmvww76jynpc"
       ],
       "expected_wallet_id_words": [
         "rotate",
@@ -193,7 +193,7 @@
       "policy": "wsh(or_d(multi(3,@0/**,@1/**,@2/**),and_v(v:older(52560),multi(2,@3/**,@4/**,@5/**))))",
       "expected_bytecode_hex": "0033030516190303320032013202110e1fd09a03190203320332043205",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5tpjqcrxgqryqfjqggsu87sngp3jqsrxgpnyppjq56kj8a9phdjesg"
+        "md1qqqqqvcrq5tpjqcrxgqryqfjqggsu87sngp3jqsrxgpnyppjq5srzxkawjf8v05"
       ],
       "expected_wallet_id_words": [
         "gate",
@@ -216,7 +216,7 @@
       "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
       "expected_bytecode_hex": "00330305090203320032013202",
       "expected_chunks": [
-        "wdm1qqqqqvcrq5ysyqejqqeqzvszzcplt4tanh2xq"
+        "md1qqqqqvcrq5ysyqejqqeqzvszz258fczketjg6"
       ],
       "expected_wallet_id_words": [
         "payment",
@@ -239,7 +239,7 @@
       "policy": "tr(@0/**)",
       "expected_bytecode_hex": "003303063200",
       "expected_chunks": [
-        "wdm1qqqqqvcrqceqquj7zwk8mmqdt4"
+        "md1qqqqqvcrqceqqpt6suwf3my5qq"
       ],
       "expected_wallet_id_words": [
         "above",
@@ -262,7 +262,7 @@
       "policy": "tr(@0/**,pk(@1/**))",
       "expected_bytecode_hex": "0033030632000c1b3201",
       "expected_chunks": [
-        "wdm1qqqqqvcrqceqqrqmxgqsjrezncmqwh8l8"
+        "md1qqqqqvcrqceqqrqmxgqs24lq4z7pd7948"
       ],
       "expected_wallet_id_words": [
         "away",
@@ -285,7 +285,7 @@
       "policy": "tr(@0/**,multi_a(2,@1/**,@2/**,@3/**))",
       "expected_bytecode_hex": "0033030632001a0203320132023203",
       "expected_chunks": [
-        "wdm1qqqqqvcrqceqqxszqveqzvszxgpskwqjnq9k6h096"
+        "md1qqqqqvcrqceqqxszqveqzvszxgps5el5tn99asmn3"
       ],
       "expected_wallet_id_words": [
         "forest",
@@ -308,7 +308,7 @@
       "policy": "wsh(multi(2,@0/**,@1/**))",
       "expected_bytecode_hex": "0433033502deadbeefcafebabe0519020232003201",
       "expected_chunks": [
-        "wdm1qqqqgvcrx5pdatd7al90aw47q5vsyq3jqqeqzzccmf4zsr343c"
+        "md1qqqqgvcrx5pdatd7al90aw47q5vsyq3jqqeqzwqf8fr0xah3nd"
       ],
       "expected_wallet_id_words": [
         "goddess",
@@ -347,7 +347,7 @@
   "negative_vectors": [
     {
       "id": "n01",
-      "description": "HRP that is not 'wdm' → InvalidHrp",
+      "description": "HRP that is not 'md' → InvalidHrp",
       "input_strings": [
         "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
       ],
@@ -356,9 +356,9 @@
     },
     {
       "id": "n02",
-      "description": "Mixed-case characters in a WDM string → MixedCase",
+      "description": "Mixed-case characters in an MD string → MixedCase",
       "input_strings": [
-        "wdm1qQqqqvcrq5xpkvsqtkqefq4vkzef2"
+        "md1qqQqqvcrq5xpkvsqssytlfyyyy5m7"
       ],
       "expected_error_variant": "MixedCase",
       "provenance": "encoded `wsh(pk(@0/**))`, then uppercased the data character at position 5"
@@ -367,16 +367,16 @@
       "id": "n03",
       "description": "String length in reserved 94–95 char range → InvalidStringLength",
       "input_strings": [
-        "wdm1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+        "md1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
       ],
       "expected_error_variant": "InvalidStringLength",
-      "provenance": "constructed `wdm1` + 94 `q` chars; the 94..=95 data-part length range is reserved-invalid in WDM"
+      "provenance": "constructed `md1` + 94 `q` chars; the 94..=95 data-part length range is reserved-invalid in MD"
     },
     {
       "id": "n04",
       "description": "Non-bech32 character 'b' in data part → InvalidChar",
       "input_strings": [
-        "wdm1qbqqqvcrq5xpkvsqtkqefq4vkzef2"
+        "md1qqbqqvcrq5xpkvsqssytlfyyyy5m7"
       ],
       "expected_error_variant": "InvalidChar",
       "provenance": "encoded `wsh(pk(@0/**))`, then replaced the data character at position 5 with `b` (not in the bech32 alphabet)"
@@ -385,7 +385,7 @@
       "id": "n05",
       "description": "Two character substitutions (BCH uncorrectable) → BchUncorrectable",
       "input_strings": [
-        "wdm1pppppvcrq5xpkvsqtkqefq4vkzef2"
+        "md1qppppqcrq5xpkvsqssytlfyyyy5m7"
       ],
       "expected_error_variant": "BchUncorrectable",
       "provenance": "encoded `wsh(pk(@0/**))`, then flipped 5 data characters (positions 4..=8); exceeds the v0.2 BCH t=4 correction radius"
@@ -394,7 +394,7 @@
       "id": "n06",
       "description": "Unsupported version byte in chunk header → UnsupportedVersion",
       "input_strings": [
-        "wdm1qyqq7t86fgeatp0ep"
+        "md1qyqqtrp8cauaexscd"
       ],
       "expected_error_variant": "UnsupportedVersion",
       "provenance": "encoded a 2-byte chunk-header buffer `[0x01, 0x00]` (version=1, type=SingleString) via `encoding::encode_string`; chunk-header parse rejects the unsupported version"
@@ -403,7 +403,7 @@
       "id": "n07",
       "description": "Unsupported card-type byte in chunk header → UnsupportedCardType",
       "input_strings": [
-        "wdm1qqpqt5mazpg2easvc"
+        "md1qqpq7uaqn5d2t60d5"
       ],
       "expected_error_variant": "UnsupportedCardType",
       "provenance": "encoded a 2-byte chunk-header buffer `[0x00, 0x02]` (version=0, type=2 unknown) via `encoding::encode_string`; chunk-header parse rejects the unsupported card type"
@@ -412,7 +412,7 @@
       "id": "n08",
       "description": "Reserved wallet-id bits set → ReservedWalletIdBitsSet",
       "input_strings": [
-        "wdm1qqq3qqqqqyqqz4umxu66cuu0e"
+        "md1qqq3qqqqqyqql7qh2w5zykaa8"
       ],
       "expected_error_variant": "ReservedWalletIdBitsSet",
       "provenance": "encoded chunked-header bytes with the wallet-id high nibble set (0x10 in the wid first byte); chunk-header parse rejects the reserved bits"
@@ -421,7 +421,7 @@
       "id": "n09",
       "description": "Chunk count = 0 → InvalidChunkCount",
       "input_strings": [
-        "wdm1qqqsqqqqqqqqlmrk4mzgczn3w"
+        "md1qqqsqqqqqqqqzsl6efvsygjrs"
       ],
       "expected_error_variant": "InvalidChunkCount",
       "provenance": "encoded chunked-header bytes with count byte = 0 (must be 1..=32); chunk-header parse rejects"
@@ -430,7 +430,7 @@
       "id": "n10",
       "description": "Chunk index ≥ count → InvalidChunkIndex",
       "input_strings": [
-        "wdm1qqqsqqqqqvpsrmp4nwk674v6c"
+        "md1qqqsqqqqqvps7saeluczzldgx"
       ],
       "expected_error_variant": "InvalidChunkIndex",
       "provenance": "encoded chunked-header bytes with index=3 and count=3 (index must be < count); chunk-header parse rejects"
@@ -439,7 +439,7 @@
       "id": "n11",
       "description": "Chunk header bytes truncated → ChunkHeaderTruncated",
       "input_strings": [
-        "wdm1qqrzyg6gck7p0mn"
+        "md1qqttzyun7qcmczt"
       ],
       "expected_error_variant": "ChunkHeaderTruncated",
       "provenance": "encoded a 1-byte chunk-header buffer `[0x00]` via `encoding::encode_string`; chunk-header parse needs at least 2 bytes (SingleString) or 7 (Chunked)"
@@ -455,8 +455,8 @@
       "id": "n13",
       "description": "Single-string chunk appearing more than once → SingleStringWithMultipleChunks",
       "input_strings": [
-        "wdm1qqqqqvcrq5xpkvsqtkqefq4vkzef2",
-        "wdm1qqqqqvcrq5xpkvsqtkqefq4vkzef2"
+        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7",
+        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7"
       ],
       "expected_error_variant": "SingleStringWithMultipleChunks",
       "provenance": "encoded `wsh(pk(@0/**))` to a single SingleString chunk, then submitted the same string twice; reassembly rejects"
@@ -465,8 +465,8 @@
       "id": "n14",
       "description": "Mixed SingleString + Chunked in one decode list → MixedChunkTypes",
       "input_strings": [
-        "wdm1qqqqqvcrq5xpkvsqtkqefq4vkzef2",
-        "wdm1qqqsc2vzqyqqqvcrq5xpkvsqc2vz0fgl7qkuehyen6wx"
+        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7",
+        "md1qqqsc2vzqyqqqvcrq5xpkvsqc2vz0fg4zdlu6c3gjnut"
       ],
       "expected_error_variant": "MixedChunkTypes",
       "provenance": "encoded `wsh(pk(@0/**))` once with default options (SingleString) and once with `ChunkingMode::ForceChunked`, then submitted both chunks together; reassembly rejects mixed types"
@@ -475,8 +475,8 @@
       "id": "n15",
       "description": "Wallet-id mismatch across chunks → WalletIdMismatch",
       "input_strings": [
-        "wdm1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdsvgy482w6zp6xtxa",
-        "wdm1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yrxkkfgxekgm8e"
+        "md1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdss95kd8ekz69jdz9",
+        "md1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yfnxhzsfujawc9"
       ],
       "expected_error_variant": "WalletIdMismatch",
       "provenance": "encoded the C5 corpus policy twice with distinct `wallet_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
@@ -485,8 +485,8 @@
       "id": "n16",
       "description": "Total-chunks mismatch across chunks → TotalChunksMismatch",
       "input_strings": [
-        "wdm1qqqszg69qgqqzl9plkkynnkfc4",
-        "wdm1qqqszg69qvqsyfdp5g5x0mkn8w"
+        "md1qqqszg69qgqqzzu9dyw2enjsnq",
+        "md1qqqszg69qvqsy559x6vg9mj2vm"
       ],
       "expected_error_variant": "TotalChunksMismatch",
       "provenance": "synthesised two Chunked chunks with the same wallet-id but different `count` headers (2 vs 3); reassembly rejects"
@@ -496,14 +496,14 @@
       "description": "Chunk index out of range → ChunkIndexOutOfRange",
       "input_strings": [],
       "expected_error_variant": "ChunkIndexOutOfRange",
-      "provenance": "requires lower-level API: `Chunk::new` (bypass) + `reassemble_chunks` triggers `ChunkIndexOutOfRange`; via a WDM string, `ChunkHeader::from_bytes` rejects index>=count earlier with `InvalidChunkIndex` instead"
+      "provenance": "requires lower-level API: `Chunk::new` (bypass) + `reassemble_chunks` triggers `ChunkIndexOutOfRange`; via an MD string, `ChunkHeader::from_bytes` rejects index>=count earlier with `InvalidChunkIndex` instead"
     },
     {
       "id": "n18",
       "description": "Duplicate chunk index in a multi-chunk set → DuplicateChunkIndex",
       "input_strings": [
-        "wdm1qqqsqqqpqgqqzdlnlzd5x8rhpf",
-        "wdm1qqqsqqqpqgqqyfhwxzfszht46j"
+        "md1qqqsqqqpqgqqzsxhds46v88w2u",
+        "md1qqqsqqqpqgqqy5w25s37gh0v38"
       ],
       "expected_error_variant": "DuplicateChunkIndex",
       "provenance": "synthesised two Chunked chunks with identical wallet-id, count=2, and index=0 (different fragments); reassembly rejects the duplicate index"
@@ -512,8 +512,8 @@
       "id": "n19",
       "description": "Missing chunk index in a multi-chunk set → MissingChunkIndex",
       "input_strings": [
-        "wdm1qqqsqqqsqvqqz0vhsy3gmvmqzz",
-        "wdm1qqqsqqqsqvpqx0uha5zaw2azyr"
+        "md1qqqsqqqsqvqqzj4nzkfx3vlefh",
+        "md1qqqsqqqsqvpqxj9n0x6ny2em0k"
       ],
       "expected_error_variant": "MissingChunkIndex",
       "provenance": "synthesised two Chunked chunks claiming count=3 with indices [0, 2] (index 1 absent); reassembly rejects"
@@ -522,8 +522,8 @@
       "id": "n20",
       "description": "Cross-chunk integrity hash mismatch → CrossChunkHashMismatch",
       "input_strings": [
-        "wdm1qqqs40x7qgqqqqgzqvzq2ps8pqys5zcvp58q7yq3zgf3g9gkzuvpjxsmrsw3u8eqyy3zxfp9ycnjs2f29vkq90v88fzxy3ykj8z",
-        "wdm1qqqs40x7qgqayt30xqc6vghp8qmf2pg62m4y2zy"
+        "md1qqqs40x7qgqqqqgzqvzq2ps8pqys5zcvp58q7yq3zgf3g9gkzuvpjxsmrsw3u8eqyy3zxfp9ycnjs2f29vkqezuydy42y2mz5r6",
+        "md1qqqs40x7qgqayt30xqc6vghp8qjqf3pdumxm73h"
       ],
       "expected_error_variant": "CrossChunkHashMismatch",
       "provenance": "chunked a 50-byte synthetic bytecode into a 2-chunk plan, flipped one bit in the last fragment, then re-encoded each chunk; reassembly rejects on the cross-chunk SHA-256 mismatch"
@@ -532,7 +532,7 @@
       "id": "n21",
       "description": "Unknown tag byte 0xC0 in bytecode → InvalidBytecode(UnknownTag)",
       "input_strings": [
-        "wdm1qqqqpsqrq5eqqljusv9fd8d2cq"
+        "md1qqqqpsqrq5eqqztcz7a888fnn4"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode `[0x00, 0xC0, ...]` (unknown tag 0xC0 at the path-declaration slot), wrapped in a SingleString chunk; bytecode parse rejects"
@@ -541,7 +541,7 @@
       "id": "n22",
       "description": "Bytecode truncated (only header byte) → InvalidBytecode(UnexpectedEnd)",
       "input_strings": [
-        "wdm1qqqqqrdxecew0sx89d"
+        "md1qqqqq2fkyda0unmj34"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised a 1-byte bytecode payload `[0x00]` (header only, no path declaration), wrapped in a SingleString chunk; bytecode parse rejects with UnexpectedEnd"
@@ -550,7 +550,7 @@
       "id": "n23",
       "description": "LEB128 varint overflow in bytecode path component → InvalidBytecode(VarintOverflow)",
       "input_strings": [
-        "wdm1qqqqqvl7qxqgpqyqszqgpqyqszqqueye3ktlj9c08"
+        "md1qqqqqvl7qxqgpqyqszqgpqyqszqq7wmlf9tv4zvev"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised an explicit-path declaration with 11 LEB128 continuation bytes (`[0x80;11]`) that never terminates, wrapped in a SingleString chunk; bytecode parse rejects with VarintOverflow"
@@ -559,7 +559,7 @@
       "id": "n24",
       "description": "Trailing bytes after template tree → InvalidBytecode(TrailingBytes)",
       "input_strings": [
-        "wdm1qqqqqvcrq5xpkvsqluu3rlvdks0ekev"
+        "md1qqqqqvcrq5xpkvsqlud0wj00w55mqly"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "encoded `wsh(pk(@0/**))` to bytecode, appended a trailing `0xFF` byte, wrapped in a SingleString chunk; bytecode parse rejects with TrailingBytes"
@@ -568,7 +568,7 @@
       "id": "n25",
       "description": "Reserved bits set in bytecode header byte → InvalidBytecode(ReservedBitsSet)",
       "input_strings": [
-        "wdm1qqqqzvcrq5eqqzas5ww3k3y9v6"
+        "md1qqqqzvcrq5eqqly5xuklu3qu80"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode header `0x01` (reserved bit 0 set), wrapped in a SingleString chunk; bytecode parse rejects with ReservedBitsSet before reading the path declaration"
@@ -577,7 +577,7 @@
       "id": "n26",
       "description": "Wrong tag at path-declaration slot → InvalidBytecode(UnexpectedTag)",
       "input_strings": [
-        "wdm1qqqqqpgrq5eqqs4z70etqz9gxj"
+        "md1qqqqqpgrq5eqqdvxvap92zp3d8"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode where the path-declaration slot carries Tag::Wsh (0x05) instead of Tag::SharedPath (0x33), wrapped in a SingleString chunk; bytecode parse rejects with UnexpectedTag"
@@ -586,7 +586,7 @@
       "id": "n27",
       "description": "k > n in multi threshold (type-check failure) → InvalidBytecode(TypeCheckFailed)",
       "input_strings": [
-        "wdm1qqqqqvcrq5vs2q3jqqeqzdqtfqthz9feyj"
+        "md1qqqqqvcrq5vs2q3jqqeqzt0xs67x37zmn9"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode for `wsh(multi(k=5, n=2, @0, @1))` (k > n), wrapped in a SingleString chunk; bytecode parse rejects with TypeCheckFailed"
@@ -595,7 +595,7 @@
       "id": "n28",
       "description": "Non-Wsh top-level descriptor → PolicyScopeViolation",
       "input_strings": [
-        "wdm1qqqqqvcrq5rryqqlfca5lwlyt9f2"
+        "md1qqqqqvcrq5rryqq58axvfjmelq6v"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "encoded `wsh(pk(@0/**))`, replaced the inner Wsh content with `[Tag::Tr, Tag::Placeholder, 0x00]` (a Tr nested inside Wsh, which v0.2 still rejects), wrapped in a SingleString chunk; decode emits PolicyScopeViolation"
@@ -607,27 +607,27 @@
         "not_a_valid_policy!!!"
       ],
       "expected_error_variant": "PolicyParse",
-      "provenance": "passed the literal string `not_a_valid_policy!!!` to `WalletPolicy::from_str`; the BIP 388 parser rejects (this fixture exercises the policy-parse layer, not the WDM-string decode pipeline)"
+      "provenance": "passed the literal string `not_a_valid_policy!!!` to `WalletPolicy::from_str`; the BIP 388 parser rejects (this fixture exercises the policy-parse layer, not the MD-string decode pipeline)"
     },
     {
       "id": "n30",
       "description": "Bytecode larger than 1692 bytes → PolicyTooLarge",
       "input_strings": [],
       "expected_error_variant": "PolicyTooLarge",
-      "provenance": "requires lower-level API: `chunking::chunking_decision(1693, ChunkingMode::Auto)` rejects bytecode lengths above the 1692-byte v0.1 cap; no WDM string encodes the oversized condition"
+      "provenance": "requires lower-level API: `chunking::chunking_decision(1693, ChunkingMode::Auto)` rejects bytecode lengths above the 1692-byte v0.1 cap; no MD string encodes the oversized condition"
     },
     {
       "id": "n_tap_leaf_subset",
       "description": "Taproot leaf miniscript uses `sha256` (not in the Coldcard subset) → TapLeafSubsetViolation",
       "input_strings": [],
       "expected_error_variant": "TapLeafSubsetViolation",
-      "provenance": "encode-side rejection; `input_strings` is empty because the policy never produces a WDM string. Construct via `\"tr(@0/**,and_v(v:sha256(<32B>),pk(@1/**)))\".parse::<WalletPolicy>()` followed by `to_bytecode(&EncodeOptions::default())`; the encoder rejects the leaf operator `sha256`."
+      "provenance": "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. Construct via `\"tr(@0/**,and_v(v:sha256(<32B>),pk(@1/**)))\".parse::<WalletPolicy>()` followed by `to_bytecode(&EncodeOptions::default())`; the encoder rejects the leaf operator `sha256`."
     },
     {
       "id": "n_taptree_multi_leaf",
       "description": "Bytecode embedding `Tag::TapTree=0x08` in leaf position → PolicyScopeViolation (multi-leaf reserved for v1+)",
       "input_strings": [
-        "wdm1qqqqqvcrqceqqzqza6djw0ncyp4y"
+        "md1qqqqqvcrqceqqzqfnlk2cnh9syxz"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "encoded `tr(@0/**)` to bytecode, appended `Tag::TapTree=0x08`, wrapped in a SingleString chunk via `encoding::encode_string`; decode rejects multi-leaf TapTree as reserved for v1+"
@@ -637,13 +637,13 @@
       "description": "Fingerprints count differs from placeholder count (2 placeholders, 1 fingerprint supplied) → FingerprintsCountMismatch",
       "input_strings": [],
       "expected_error_variant": "FingerprintsCountMismatch",
-      "provenance": "encode-side rejection; `input_strings` is empty because the policy never produces a WDM string. Construct via `wsh(multi(2,@0/**,@1/**)).parse::<WalletPolicy>()` and `EncodeOptions::default().with_fingerprints(vec![Fingerprint::from([0xde,0xad,0xbe,0xef])])` (one fingerprint for two placeholders); the encoder rejects with expected=2, got=1."
+      "provenance": "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. Construct via `wsh(multi(2,@0/**,@1/**)).parse::<WalletPolicy>()` and `EncodeOptions::default().with_fingerprints(vec![Fingerprint::from([0xde,0xad,0xbe,0xef])])` (one fingerprint for two placeholders); the encoder rejects with expected=2, got=1."
     },
     {
       "id": "n_fingerprints_missing_tag",
       "description": "Bytecode header advertises fingerprints (bit 2 set) but the fingerprints block is missing `Tag::Fingerprints=0x35` (got Tag::Wsh=0x05) → InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }",
       "input_strings": [
-        "wdm1qqqqgvcrq5qqfw76f2ny8jqrn"
+        "md1qqqqgvcrq5qq59zk9caumcp3d"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode `[0x04, Tag::SharedPath, 0x03, Tag::Wsh, 0x00]`: header bit 2 (fingerprints) is set, but the byte where Tag::Fingerprints (0x35) is expected carries Tag::Wsh (0x05); decode emits InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }"
