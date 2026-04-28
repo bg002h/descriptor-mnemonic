@@ -5,8 +5,9 @@
 //! followed by an LEB128-encoded index into the wallet policy's key
 //! information vector (caller supplies the index map).
 //!
-//! v0.1 scope: only `wsh(...)` top-level descriptors are accepted. Sh, Pkh,
-//! Wpkh, and Bare descriptors are rejected with `PolicyScopeViolation`.
+//! v0.4 scope: `wsh(...)`, `tr(...)` (single-leaf), `wpkh(...)`, `sh(wpkh(...))`,
+//! and `sh(wsh(...))` top-level descriptors are accepted. Pkh and Bare are rejected
+//! with `PolicyScopeViolation`. Sh-inner restricted to Wpkh/Wsh per BIP §"Sh wrapper restriction matrix" (Ms rejected — legacy P2SH out of scope).
 //! Inline keys (any key not present in `placeholder_map`) are also rejected.
 //!
 //! v0.2 (Phase D): single-leaf taproot `tr()` top-level descriptors are also
