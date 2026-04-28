@@ -906,14 +906,13 @@ For `n_sh_inner_script` and `n_sh_key_slot`: use empty `input_strings` field + p
 
 ### Task 6.4: Add hostile-input tests
 
-- [ ] **Step 1: Add 5 tests** in `tests/conformance.rs`:
-  - `rejects_sh_recursion_bomb` (×100 Sh tags with valid BCH polymod)
-  - `rejects_sh_recursion_minimal` (depth-1 `[Sh][Sh][Wpkh][Placeholder][0]`)
+- [ ] **Step 1: Add 6 tests** in `tests/conformance.rs`:
+  - `rejects_sh_recursion_bomb` — 100 Sh tags fed to the bytecode-buffer entry point. **Use `WalletPolicy::from_bytecode(&bytes)` directly** (per `tests/conformance.rs:527` for an existing example), NOT the BCH-checksummed `decode(&[s], ...)` path — that would require constructing a valid polymod over hostile bytes. Assert decoder rejects at depth 1 with `PolicyScopeViolation`, NOT panic, NOT stack-overflow.
+  - `rejects_sh_recursion_minimal` — depth-1 `[Sh][Sh][Wpkh][Placeholder][0]` via the same `from_bytecode` path
   - `rejects_wpkh_trailing_bytes`
   - `rejects_sh_wpkh_trailing_bytes`
   - `rejects_sh_wpkh_non_placeholder` (distinct diagnostic test)
-
-Pattern matches existing `tests/conformance.rs::rejects_malformed_payload_padding` (~line 481-540).
+  - `rejects_sh_inside_wsh_andv` — layering-invariant defense: `[Wsh][AndV][Sh][...]` (Sh appearing as child of AndV inside Wsh, NOT in BIP 388 surface). Decoder must reject with `PolicyScopeViolation`.
 
 ### Task 6.5: Add round-trip property tests
 
