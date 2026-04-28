@@ -61,15 +61,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** external
 
-### `p2-fingerprints-block` — v0.2 fingerprints block support
-
-- **Surfaced:** Phase 5-B; documented at `crates/wdm-codec/src/policy.rs:316-317` and `:668`
-- **Where:** `crates/wdm-codec/src/bytecode/{header,decode}.rs`, `crates/wdm-codec/src/policy.rs::from_bytecode`
-- **What:** The bytecode header has a fingerprints flag (bit 2) and a reserved tag `Tag::Fingerprints = 0x35`, but v0.1 rejects any input with the flag set via `Error::PolicyScopeViolation`. v0.2 should implement the full fingerprints-block format (per BIP §"Fingerprints block"): a count byte followed by `count` 4-byte master-key fingerprints in placeholder index order, allowing recovery tools to verify which seed corresponds to which `@i` placeholder before deriving.
-- **Why deferred:** v0.1 spec scope. The recovery flow can match seeds to placeholders by trial derivation; the fingerprints block is an ergonomics + privacy improvement.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `8-negative-fixture-dynamic-generation` — generate negative vectors dynamically by exercising actual error paths
 
 - **Surfaced:** v0.2 carry-forward from `8-negative-fixture-placeholder-strings` closure
@@ -161,6 +152,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** the operator-name subset matches the BIP MUST clause and is sufficient for the v0.2 ship target; full parity is a tighter contract than the BIP requires.
 - **Status:** open
 - **Tier:** v0.3
+
+### `phase-e-cli-fingerprint-flag` — `wdm encode --fingerprint @i=<hex>` CLI flag
+
+- **Surfaced:** Phase E decision log E-10 (deferred at dispatch)
+- **Where:** `crates/wdm-codec/src/bin/wdm/main.rs::cmd_encode`
+- **What:** Phase E ships the library API (`EncodeOptions::fingerprints`) but does NOT add a CLI flag. To use fingerprints from the CLI today, callers would need a wrapper script. Add a repeatable `--fingerprint @i=<hex>` flag to `cmd_encode` that constructs the `Vec<Fingerprint>` and calls `with_fingerprints(...)`. Validate at parse time that `@i` indices are sequential 0..N-1 and N == placeholder_count.
+- **Why deferred:** library API is the Phase E deliverable; CLI exposure is a v0.2.1 / v0.3 ergonomics improvement.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
+
+### `phase-e-fingerprints-behavioral-break-migration-note` — document v0.1→v0.2 fingerprints rejection removal in MIGRATION.md
+
+- **Surfaced:** Phase E decision log E-9 (deferred at dispatch)
+- **Where:** `MIGRATION.md` (to be created at Phase G)
+- **What:** Phase E removes the v0.1 `PolicyScopeViolation` rejection at `policy.rs:416` for header bit 2 = 1. Any v0.1 caller pattern-matching on that specific `PolicyScopeViolation` message will no longer see it (header bit 2 = 1 is now valid and parses successfully). Add a "Phase E breaking changes" bullet to MIGRATION.md at Phase G: explain the behavioral break and recommend that callers checking for fingerprints support inspect `WdmBackup.fingerprints` / `DecodeResult.fingerprints` instead of intercepting the (no-longer-fired) error.
+- **Why deferred:** MIGRATION.md is a Phase G release-prep deliverable; this entry is a tracker so the doc isn't missed.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
+
+### `phase-e-encoder-count-cast-hardening` — replace `fps.len() as u8` with `u8::try_from` for defense-in-depth
+
+- **Surfaced:** Phase E reviewer (Opus 4.7) on commit `6559c17`
+- **Where:** `crates/wdm-codec/src/policy.rs:410` (encoder fingerprints-block emission)
+- **What:** The encoder casts `fps.len() as u8` gated only on `debug_assert!(count <= u8::MAX as usize)`. Currently safe via the validation funnel — `key_count()` is bounded by BIP 388's 32-key cap and the prior validation ensures `fps.len() == count`. But a future refactor that bypasses top-level validation could silently truncate. Replace with `u8::try_from(fps.len()).map_err(|_| Error::FingerprintsCountMismatch { ... })?` for release-mode safety. Trivial 1-line change.
+- **Why deferred:** defense-in-depth, not a current bug; the validation funnel makes the cast provably safe today. Bundle into any future Phase E touch.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
 
 ### `phase-d-tap-decode-error-naming-parity` — encode/decode tap-leaf-subset rejection messages use different operator-name format
 
@@ -432,6 +450,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 2 (D-2, D-4, plan task 2.11 marked deferred)
 - **Status:** resolved `6f6eae9` (v0.2 Phase D, cherry-picked from worktree commit `267036f`) — top-level `tr()` taproot descriptors now encode and decode end-to-end with the Coldcard per-leaf miniscript subset enforced at BOTH encode and decode time. Single-leaf only at depth 0 per BIP §"Taproot tree" v0 constraint; multi-leaf `Tag::TapTree` (`0x08`) reserved for v1+ and rejected with `PolicyScopeViolation("multi-leaf TapTree reserved for v1+")`. New `Error::TapLeafSubsetViolation { operator: String }` variant for the subset-violation case (registered in the conformance exhaustiveness gate). `Cursor::is_empty()` and `peek_byte()` helpers added for the optional-leaf delimiter detection. Wrapper terminals: only `c:` and `v:` allowed (BIP 388 parser emits implicitly); all others rejected. Phase 2's pre-shipped `multi_a` arms (`encode.rs:178`, `decode.rs:222`) now exercised in Tap context. New `tests/taproot.rs` (8 tests) + 1 conformance test for the exhaustiveness mirror. Wire format unchanged for the v0.1 corpus (`gen_vectors --verify v0.1.json` byte-stable); taproot corpus fixtures deferred to Phase F (filed as `phase-d-taproot-corpus-fixtures`). BIP draft updated: heading "Taproot tree (forward-defined)" → "Taproot tree", tag `0x08` clarified as v1+, concrete byte-layout examples added (regenerated from live encoder). Phase D decision log committed at `24a7a4b` resolved D-1..D-5 in advance. Reviewer (Opus 4.7) `APPROVE_WITH_FOLLOWUPS` with no spec deviations, no algorithmic findings; 3 nits + 4 v0.2/v0.3 follow-ups filed.
 - **Tier:** v0.2 (closed; breaking — `Tr` rejection removed; new `Error::TapLeafSubsetViolation` variant)
+
+### `p2-fingerprints-block` — v0.2 fingerprints block support
+
+- **Surfaced:** Phase 5-B; documented at `crates/wdm-codec/src/policy.rs:316-317` and `:668`
+- **Status:** resolved `6559c17` (v0.2 Phase E) — full fingerprints block end-to-end. `EncodeOptions::fingerprints: Option<Vec<bitcoin::bip32::Fingerprint>>` field (additive on `#[non_exhaustive]`) + `with_fingerprints(...)` builder. `Tag::Fingerprints = 0x35` added to the `#[non_exhaustive]` Tag enum + `from_byte` arm. Encoder default `None` → header `0x00` (preserves v0.1 wire output); `Some(fps)` → header `0x04` + emit block immediately after path declaration. Decoder validates count == `key_count()` per BIP MUST clause. New `Error::FingerprintsCountMismatch { expected, got }` variant (registered in conformance exhaustiveness gate). `from_bytecode_with_fingerprints` internal helper returns `(WalletPolicy, Option<Vec<Fingerprint>>)`; legacy `from_bytecode` preserved as thin wrapper. `DecodeResult.fingerprints: Option<Vec<Fingerprint>>` additive field surfaces the parsed block. v0.1 `PolicyScopeViolation` rejection at `policy.rs:416` REMOVED — header bit 2 = 1 is now valid (behavioral break tracked as `phase-e-fingerprints-behavioral-break-migration-note` for Phase G). New `tests/fingerprints.rs` (8 tests) + 1 conformance test + 1 unit test = 10 new. Wire format unchanged for no-fingerprints path; vectors verify byte-identical. BIP §"Fingerprints block" gains a normative Privacy paragraph + concrete byte-layout example (`0433033502deadbeefcafebabe0519020232003201` for `wsh(multi(2,@0/**,@1/**))` with two test fingerprints) pinned by `fingerprints_block_byte_layout_matches_bip_example` test. Phase E decision log committed + pushed at `0def1ec` resolved E-1..E-12 in advance. Reviewer (Opus 4.7) `APPROVE_WITH_FOLLOWUPS` with no spec deviations, no algorithmic findings — explicitly verified `key_count()` semantics match BIP MUST, encoder validation order, tag dispatch airtightness, and BIP byte-layout reproducibility.
+- **Tier:** v0.2 (closed; breaking — header bit 2 rejection removed; new `Tag::Fingerprints` variant; new `Error::FingerprintsCountMismatch` variant; additive `EncodeOptions::fingerprints` and `DecodeResult.fingerprints` fields)
 
 ---
 
