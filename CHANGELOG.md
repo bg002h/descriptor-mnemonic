@@ -199,6 +199,8 @@ Patch release. 17 tests + bug fixes + cross-platform CI work after v0.1.0. See g
 
 Initial release. BIP 388 wsh-only wallet-policy backup format reference implementation. 445 tests, 95% library line coverage, 10 positive + 30 negative test vectors locked in `v0.1.json`. See `design/IMPLEMENTATION_PLAN_v0.1.md` and `design/agent-reports/phase-10-task-controller-closure.md` for the v0.1.0 phase-by-phase summary.
 
+[0.3.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.3.0
+[0.2.3]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.3
 [0.2.2]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.2
 [0.2.1]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.1
 [0.2.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.0

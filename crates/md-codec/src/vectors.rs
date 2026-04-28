@@ -530,9 +530,10 @@ struct NegativeFixture {
 /// call site.
 ///
 /// Output is byte-frozen against `tests/vectors/v0.1.json` (SHA-256
-/// `1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c`). Any
-/// change here is a release-engineering incident; new test material goes
-/// into [`build_test_vectors_v2`].
+/// `aac3677fd84f06915c7bb5148a25ed80c399daa4f9bf56c8052ed84f83c9b71b` post-v0.3.0
+/// rename; was `1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c`
+/// pre-v0.3.0). Any change here is a release-engineering incident; new test
+/// material goes into [`build_test_vectors_v2`].
 ///
 /// Both `gen_vectors --output --schema 1` and `md vectors` call this
 /// function; there is no code duplication. Output is deterministic: calling
@@ -593,10 +594,12 @@ pub fn build_test_vectors_v2() -> TestVectorFile {
 /// by `gen_vectors --output` for traceability when needed.
 ///
 /// Closes the v0.2.1 design fix flagged by
-/// `vectors-generator-string-patch-version-churn`. Prior v0.1.0 / v0.2.0
-/// files committed with the full-version form (e.g. `"wdm-codec 0.1.0-dev"`)
-/// keep their original strings on disk; `gen_vectors --verify` ignores this
-/// field so the historical files continue to verify cleanly.
+/// `vectors-generator-string-patch-version-churn`. Pre-v0.2.1 files committed
+/// with the full-version form (e.g. `"wdm-codec 0.1.0-dev"`) used to keep
+/// their original strings on disk under the v0.2.x family; `gen_vectors --verify`
+/// ignored this field so the historical files continued to verify cleanly.
+/// Post-v0.3.0 rename, the family token resets to `"md-codec 0.3"` and the
+/// vector files were regenerated.
 pub const GENERATOR_FAMILY: &str = concat!(
     "md-codec ",
     env!("CARGO_PKG_VERSION_MAJOR"),

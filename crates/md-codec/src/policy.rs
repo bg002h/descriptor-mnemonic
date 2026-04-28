@@ -375,7 +375,7 @@ impl WalletPolicy {
         // BIP 84 mainnet.
         //
         // Tier 0 (`opts.shared_path`) is the explicit caller override — for
-        // example from `wdm encode --path bip48`. It wins unconditionally.
+        // example from `md encode --path bip48`. It wins unconditionally.
         //
         // Tier 1 (`decoded_shared_path`) is populated by `from_bytecode` so a
         // decode→encode cycle is byte-stable on the first pass. Without it the

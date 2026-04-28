@@ -110,7 +110,7 @@ fn cmd_output(path: &PathBuf, schema: u32) -> Result<(), anyhow::Error> {
         path.display()
     );
     // The JSON's `generator` field embeds only the family version
-    // (`"wdm-codec 0.X"`) so the file SHA stays stable across patch bumps.
+    // (`"md-codec 0.X"`) so the file SHA stays stable across patch bumps.
     // The full crate version is logged here for traceability — useful when
     // a contributor regenerates a file and wants to know which exact build
     // produced it, without touching the on-disk SHA.

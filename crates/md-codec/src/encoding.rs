@@ -1292,7 +1292,7 @@ mod tests {
     #[test]
     fn decode_rejects_missing_separator() {
         // No '1' at all in the string.
-        let bad = "wdmnoseparatorhere";
+        let bad = "mdnoseparatorhere";
         // Could be matched as InvalidHrp because rfind('1') returns None — actually
         // we need to walk the function: rfind('1') returns None → returns
         // InvalidHrp(s_lower). So a missing separator is reported as InvalidHrp.
