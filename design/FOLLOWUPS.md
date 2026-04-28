@@ -117,6 +117,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.4 (post-rename)
 
+### `bip-preliminary-hrp-disclaimer-tension` — reconcile "preliminary HRP" disclaimer with collision-vet claim
+
+- **Surfaced:** Phase 2 (BIP rename) spec-compliance + code-quality reviewers, both flagged independently
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — line 93 (preliminary disclaimer) vs line 662 (collision-vet claim)
+- **What:** Line 93 says the HRP "is preliminary and subject to change before this BIP is finalized." Line 662 says it "was verified clean against [six registries] prior to adoption." Not contradictory but reads awkwardly side-by-side: a reader of line 93 expects an uncertain choice, then reaches line 662 and finds it was already vetted.
+- **Why deferred:** Both reviewers explicitly classified this as "not a Phase 2 defect; flag for finalization." Reconciliation requires either softening the collision-vet claim ("was checked but not formally registered") or upgrading the disclaimer ("subject to formal SLIP-0173 registration"). Best handled when SLIP-0173 PR (`slip-0173-register-md-hrp`) lands — at that point one of the two claims becomes obsolete.
+- **Status:** open
+- **Tier:** v0.3-finalization (pre-1.0 BIP cleanup)
+
 ---
 
 ## Resolved items
