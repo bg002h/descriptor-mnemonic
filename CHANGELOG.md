@@ -4,6 +4,52 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.4.0] — 2026-04-27
+
+The v0.4 release adds the three remaining post-segwit BIP 388 surface
+descriptor types (`wpkh`, `sh(wpkh)`, `sh(wsh(...))`) per design at
+`design/SPEC_v0_4_bip388_modern_segwit_surface.md`. MD remains narrower
+than BIP 388 by design — see BIP §FAQ "Why is MD narrower than BIP 388?"
+for the rejected-by-design types.
+
+### Added — top-level descriptor types
+- `wpkh(@0/**)` — BIP 84 native-segwit single-sig
+- `sh(wpkh(@0/**))` — BIP 49 nested-segwit single-sig
+- `sh(wsh(SCRIPT))` — BIP 48/1' nested-segwit multisig
+
+### Wire format
+- ADDITIVE expansion. v0.3.x-produced strings continue to validate identically.
+- v0.4.0-produced strings using new types are rejected by v0.3.x decoders
+  with `PolicyScopeViolation`.
+- Restriction matrix on `sh(...)` admits only `sh(wpkh)` and `sh(wsh)`;
+  legacy `sh(multi/sortedmulti)` permanently EXCLUDED (see BIP §FAQ).
+- HRP `md`, header bits, tag space ALL unchanged from v0.3.
+
+### Test vectors
+- `crates/md-codec/tests/vectors/v0.1.json` regenerated; new SHA-256: `bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26`
+  (changed only because family token bumps; no fixture content changes)
+- `crates/md-codec/tests/vectors/v0.2.json` regenerated with v0.4 fixtures + new family token; new SHA-256: `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770`
+- Family-stable promise resets at v0.4.0: `"md-codec 0.4"` is the new family token. v0.4.x patches will produce byte-identical SHAs.
+
+### CLI
+- `md encode <policy>` now accepts `wpkh`, `sh(wpkh)`, `sh(wsh)` policies.
+- `--path bip48-nested` (NEW) maps to indicator `0x06`.
+
+### Notes
+- MSRV: 1.85 (unchanged)
+- Test count: 609 passing + 0 ignored (was 565 at v0.3.0 baseline)
+- Repository URL: unchanged
+- Workspace `[patch]` block: unchanged (still waiting on apoelstra/rust-miniscript#1)
+
+### Closes FOLLOWUPS
+- `v0-4-bip-388-surface-completion` — this release.
+
+### Files NEW FOLLOWUPS
+- `v0-5-multi-leaf-taptree` (deferred BIP 388 surface item)
+- `legacy-pkh-permanent-exclusion` (wont-fix)
+- `legacy-sh-multi-permanent-exclusion` (wont-fix)
+- `legacy-sh-sortedmulti-permanent-exclusion` (wont-fix)
+
 ## [0.3.0] — 2026-04-27
 
 The v0.3 release renames the project from "Wallet Descriptor Mnemonic" (WDM) to "Mnemonic Descriptor" (MD). The shorter name better matches Bitcoin spec naming conventions (compare BIP 93's `ms` HRP for codex32). This is a wire-format-breaking change because the HRP enters the polymod via HRP-expansion.
@@ -199,6 +245,7 @@ Patch release. 17 tests + bug fixes + cross-platform CI work after v0.1.0. See g
 
 Initial release. BIP 388 wsh-only wallet-policy backup format reference implementation. 445 tests, 95% library line coverage, 10 positive + 30 negative test vectors locked in `v0.1.json`. See `design/IMPLEMENTATION_PLAN_v0.1.md` and `design/agent-reports/phase-10-task-controller-closure.md` for the v0.1.0 phase-by-phase summary.
 
+[0.4.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.4.0
 [0.3.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.3.0
 [0.2.3]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.3
 [0.2.2]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.2

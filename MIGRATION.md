@@ -2,6 +2,35 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.3.x → v0.4.0
+
+v0.4.0 is wire-format-additive over v0.3.x. Three previously-rejected
+top-level descriptor types are now accepted: `wpkh(@0/**)`, `sh(wpkh(@0/**))`,
+and `sh(wsh(...))`. v0.3.x-produced strings continue to validate identically
+in v0.4.0; v0.4.0-produced strings using the new types will be rejected by
+v0.3.x decoders with `PolicyScopeViolation`.
+
+1. **Cargo dependency**: bump `md-codec = "0.3"` → `md-codec = "0.4"`. No
+   API changes; no library `use` statement updates needed.
+2. **CLI**: `md encode <policy>` now accepts the three new top-level types.
+   Existing `wsh(...)`, `tr(...)` invocations unchanged.
+3. **Test vector SHAs**: BOTH `v0.1.json` and `v0.2.json` SHA pins changed:
+   - `v0.1.json` SHA: `bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26` (was `aac3677fd84f06915c7bb5148a25ed80c399daa4f9bf56c8052ed84f83c9b71b`)
+   - `v0.2.json` SHA: `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770` (was `18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909`)
+   - Conformance suites pinning v0.3.x SHAs need a one-time update.
+4. **No public API changes**: `MdBackup`, `EncodeOptions`, `WalletPolicy`,
+   `Error::PolicyScopeViolation` all unchanged. `PolicyScopeViolation` simply
+   fires for fewer inputs.
+5. **CLI `--path` ergonomics**: new optional name `bip48-nested` maps to
+   indicator `0x06` (BIP 48/1' nested-segwit multisig). Hex (`--path 0x06`)
+   and literal-path (`--path "m/48'/0'/0'/1'"`) forms also work.
+6. **Restriction matrix is normative**: hardware wallets and other implementers
+   producing `sh(...)` strings MUST adhere to the §"Sh wrapper restriction
+   matrix" in the BIP — `sh(multi(...))`, `sh(sortedmulti(...))`,
+   `sh(pkh(...))`, etc. are permanently REJECTED.
+
+---
+
 ## v0.2.x → v0.3.0
 
 v0.3.0 renames the project from "Wallet Descriptor Mnemonic" (WDM) to "Mnemonic Descriptor" (MD). This is a **wire-format-breaking change** because the HRP enters the polymod via HRP-expansion. Strings starting with `wdm1...` are invalid v0.3.0 inputs.
