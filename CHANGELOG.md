@@ -4,6 +4,30 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.4.1] — 2026-04-27
+
+Patch release. Three FOLLOWUPS items closed.
+
+### Spec
+- BIP §"Status" line aligned with ref-impl-aware string ("Pre-Draft, AI + reference implementation, awaiting human review"). Closes `p10-bip-header-status-string`.
+- BIP §"Why a new HRP?" disclaimer reconciled with collision-vet claim (HRP "subject to formal SLIP-0173 registration" rather than the prior ambiguous "subject to change"). Closes `bip-preliminary-hrp-disclaimer-tension`.
+
+### Test code
+- `bch_known_vector_regular` and `bch_known_vector_long` in `crates/md-codec/src/encoding.rs` repinned with hardcoded expected-checksum byte arrays computed via independent Python BIP 93 `ms32_polymod` reference (per `/tmp/compute_bch_md_pins.py` script). Round-trip assertions preserved as defense in depth. Closes `bch-known-vector-repin-with-md-hrp` (v0.3-nice-to-have, deferred from v0.3.0 release).
+
+### Notes
+- MSRV: 1.85 (unchanged)
+- Test count: 609 passing + 0 ignored (unchanged from v0.4.0; no new tests, just stronger assertions in 2 existing tests)
+- Wire format unchanged from v0.4.0; v0.4.x backups round-trip across patches
+- v0.2.json SHA `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770` UNCHANGED — first v0.4.x patch; family-stable promise validated
+- v0.1.json SHA `bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26` UNCHANGED
+- Workspace `[patch]` block unchanged (apoelstra/rust-miniscript#1 still open)
+
+### Closes FOLLOWUPS
+- `p10-bip-header-status-string`
+- `bip-preliminary-hrp-disclaimer-tension`
+- `bch-known-vector-repin-with-md-hrp`
+
 ## [0.4.0] — 2026-04-27
 
 The v0.4 release adds the three remaining post-segwit BIP 388 surface
@@ -245,6 +269,7 @@ Patch release. 17 tests + bug fixes + cross-platform CI work after v0.1.0. See g
 
 Initial release. BIP 388 wsh-only wallet-policy backup format reference implementation. 445 tests, 95% library line coverage, 10 positive + 30 negative test vectors locked in `v0.1.json`. See `design/IMPLEMENTATION_PLAN_v0.1.md` and `design/agent-reports/phase-10-task-controller-closure.md` for the v0.1.0 phase-by-phase summary.
 
+[0.4.1]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.4.1
 [0.4.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.4.0
 [0.3.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/md-codec-v0.3.0
 [0.2.3]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.3

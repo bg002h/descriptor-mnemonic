@@ -5,7 +5,7 @@
   Author: bg002h <bcg@pm.me>
   Comments-Summary: No comments yet.
   Comments-URI:
-  Status: Pre-Draft, AI only, not yet human reviewed
+  Status: Pre-Draft, AI + reference implementation, awaiting human review
   Type: Standards Track
   Created: 2026-04-26
   License: CC0-1.0
@@ -165,7 +165,7 @@ Each component is described below.
 
 The HRP is the two-character string <code>md</code> (lowercase) or <code>MD</code> (uppercase). HRP case MUST match the case of the data part. Mixed case within a single string is invalid and MUST be rejected.
 
-Note: The chosen HRP is preliminary and subject to change before this BIP is finalized. Any registered final value will be assigned during the BIP process. Implementations of the Draft form MUST use <code>md</code> until otherwise specified.
+Note: The chosen HRP is subject to formal SLIP-0173 registration (see FOLLOWUPS entry <code>slip-0173-register-md-hrp</code>). It was collision-vetted prior to adoption (see §"Why a new HRP?"). Implementations MUST use <code>md</code> until otherwise specified.
 
 ====Separator====
 

@@ -61,15 +61,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** external
 
-### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
-
-- **Surfaced:** Phase 10 Task 10.7 closure
-- **Where:** `bip/bip-wallet-descriptor-mnemonic.mediawiki:8`
-- **What:** The BIP draft preamble's `Status:` field still reads `Pre-Draft, AI only, not yet human reviewed`. The root README and project memory now use `Pre-Draft, AI + reference implementation, awaiting human review`. The BIP draft is its own artifact and could legitimately stay on the older string (the spec text itself hasn't been ref-impl-validated by a human), but for consistency the next BIP touch should consider aligning.
-- **Why deferred:** stylistic; not a contract issue. The BIP draft predates the impl; the spec's status is independent.
-- **Status:** open
-- **Tier:** v0.1-nice-to-have
-
 ### `decoded-string-data-memory-microopt` — drop `DecodedString.data`, replace with accessor backed by `data_with_checksum`
 
 - **Surfaced:** Phase B bucket A reviewer (Opus 4.7) on commit `5f13812`
@@ -144,15 +135,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Tier:** wont-fix
 
 
-### `bip-preliminary-hrp-disclaimer-tension` — reconcile "preliminary HRP" disclaimer with collision-vet claim
-
-- **Surfaced:** Phase 2 (BIP rename) spec-compliance + code-quality reviewers, both flagged independently
-- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — line 93 (preliminary disclaimer) vs line 662 (collision-vet claim)
-- **What:** Line 93 says the HRP "is preliminary and subject to change before this BIP is finalized." Line 662 says it "was verified clean against [six registries] prior to adoption." Not contradictory but reads awkwardly side-by-side: a reader of line 93 expects an uncertain choice, then reaches line 662 and finds it was already vetted.
-- **Why deferred:** Both reviewers explicitly classified this as "not a Phase 2 defect; flag for finalization." Reconciliation requires either softening the collision-vet claim ("was checked but not formally registered") or upgrading the disclaimer ("subject to formal SLIP-0173 registration"). Best handled when SLIP-0173 PR (`slip-0173-register-md-hrp`) lands — at that point one of the two claims becomes obsolete.
-- **Status:** open
-- **Tier:** v0.3-finalization (pre-1.0 BIP cleanup)
-
 ### `cargo-toml-crates-io-metadata-fields` — add `keywords`, `categories`, `documentation`, `homepage` to crate manifest
 
 - **Surfaced:** Phase 3 (Cargo rename) code-quality reviewer
@@ -189,20 +171,39 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.3-followup (post-release, no version-gating)
 
-### `bch-known-vector-repin-with-md-hrp` — repin BCH known-vector tests with Python-computed checksums for HRP "md"
-
-- **Surfaced:** Phase 5 (string literal sweep) spec compliance reviewer, judgment-call adjudication
-- **Where:** `crates/md-codec/src/encoding.rs` — `bch_known_vector_regular` and `bch_known_vector_long` test functions
-- **What:** Phase 5 implementer converted these from hardcoded-expected-checksum tests to round-trip tests (`bch_create_checksum_*` then `bch_verify_*`). The original form caught regressions where the BCH polynomial implementation drifted; the round-trip form only catches drift if `create` and `verify` drift APART. Both could go wrong together (e.g., wrong polynomial constant) and the test would still pass. Recommended fix: compute Python-reference checksums for HRP `"md"` and data `[0..7]` / `[0..15]`, add `assert_eq!(actual, &[…])` lines to pin the exact byte sequences. Original commit comment claims "Expected checksum computed by Python reference" but the literal byte values were dropped during Phase 5.
-- **Why deferred:** Repinning requires computing the new BCH-over-md-HRP checksums via an external Python reference.
-- **Status:** open
-- **Tier:** v0.3-nice-to-have — DOWNGRADED back from v0.3-blocker (controller decision 2026-04-27 with user agreement). Rationale: the Phase 6 vector-file SHA pin (`V0_2_SHA256` in `tests/vectors_schema.rs:225` locking the regenerated `v0.2.json` SHA `18804929…`) already provides equivalent independent-verification coverage at the FILE level for the polymod-drift failure mode the Phase 5 reviewer was concerned about. If polymod constants ever drift, `gen_vectors` produces vectors with wrong checksums → file SHA changes → `V0_2_SHA256` lock test fails → drift caught. The bch_known_vector unit-level pinning would add defense-in-depth but is REDUNDANT with the SHA-pin for the same failure mode. The proper Python-reference repin remains valuable for unit-level isolation (catching drift before the file-SHA layer notices) and is scheduled for a v0.3.x patch.
-
 ---
 
 ## Resolved items
 
 (Closure log. Items move here from "Open items" when their `Status:` changes to `resolved <COMMIT>`. Useful for spec/audit reasons; not deleted to preserve provenance.)
+
+### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
+
+- **Surfaced:** Phase 10 Task 10.7 closure
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki:8`
+- **What:** The BIP draft preamble's `Status:` field still reads `Pre-Draft, AI only, not yet human reviewed`. The root README and project memory now use `Pre-Draft, AI + reference implementation, awaiting human review`. The BIP draft is its own artifact and could legitimately stay on the older string (the spec text itself hasn't been ref-impl-validated by a human), but for consistency the next BIP touch should consider aligning.
+- **Why deferred:** stylistic; not a contract issue. The BIP draft predates the impl; the spec's status is independent.
+- **Status:** resolved <release-commit-SHA>
+- **Tier:** v0.1-nice-to-have
+
+### `bip-preliminary-hrp-disclaimer-tension` — reconcile "preliminary HRP" disclaimer with collision-vet claim
+
+- **Surfaced:** Phase 2 (BIP rename) spec-compliance + code-quality reviewers, both flagged independently
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — HRP §disclaimer vs §"Why a new HRP?" collision-vet claim
+- **What:** Line saying the HRP "is preliminary and subject to change before this BIP is finalized" reads awkwardly alongside the collision-vet claim. Both reviewers classified this as "not a Phase 2 defect; flag for finalization."
+- **Why deferred:** Reconciliation was deferred until SLIP-0173 PR (`slip-0173-register-md-hrp`) status was clearer. Fixed in v0.4.1 by upgrading the disclaimer to "subject to formal SLIP-0173 registration" which is consistent with the collision-vet claim.
+- **Status:** resolved <release-commit-SHA>
+- **Tier:** v0.3-finalization (pre-1.0 BIP cleanup)
+
+### `bch-known-vector-repin-with-md-hrp` — repin BCH known-vector tests with Python-computed checksums for HRP "md"
+
+- **Surfaced:** Phase 5 (string literal sweep) spec compliance reviewer, judgment-call adjudication
+- **Where:** `crates/md-codec/src/encoding.rs` — `bch_known_vector_regular` and `bch_known_vector_long` test functions
+- **What:** Phase 5 implementer converted these from hardcoded-expected-checksum tests to round-trip tests. Both could go wrong together (wrong polynomial constant) and the test would still pass. Fix: compute Python-reference checksums for HRP `"md"` and add `assert_eq!(actual, &[…])` pin lines.
+- **Why deferred:** Repinning required computing the new BCH-over-md-HRP checksums via an external Python reference.
+- **Status:** resolved <release-commit-SHA>
+- **Tier:** v0.3-nice-to-have (downgraded from v0.3-blocker; redundant with SHA-pin layer but adds unit-level isolation)
+- **Pins (v0.4.1):** regular `[25, 14, 21, 4, 26, 20, 18, 15, 5, 15, 23, 30, 15]`; long `[23, 8, 11, 10, 1, 2, 13, 8, 29, 0, 17, 11, 14, 25, 11]`. Script: `/tmp/compute_bch_md_pins.py`.
 
 ### `bip48-nested-name-table-entry` — CLI affordance for indicator 0x06
 

@@ -1026,11 +1026,17 @@ mod tests {
         // ever drift, this test catches it.
         //
         // Input: HRP "md", data = [0, 1, 2, 3, 4, 5, 6, 7]
-        // Expected checksum computed by Python reference for HRP "md" (was "wdm" pre-v0.3.0).
-        // The round-trip verify below confirms the checksum is self-consistent.
+        //
+        // Pinned checksum computed by BIP 93 ms32_polymod Python reference at
+        // /tmp/compute_bch_md_pins.py (v0.4.1 patch, 2026-04-27).
+        // hrp_expand("md") = [3, 3, 0, 13, 4]; polymod over
+        // hrp_expand || data || [0;13] XOR MD_REGULAR_CONST → 13 symbols.
+        // Round-trip assert preserved as defense in depth.
         let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7];
         let actual = bch_create_checksum_regular("md", &data);
         assert_eq!(actual.len(), 13);
+        // Pinned expected-checksum bytes (Python BIP 93 reference, v0.4.1):
+        assert_eq!(actual, [25u8, 14, 21, 4, 26, 20, 18, 15, 5, 15, 23, 30, 15]);
         // Verify round-trip: the checksum must pass bch_verify_regular.
         let mut full = data.clone();
         full.extend_from_slice(&actual);
@@ -1091,10 +1097,20 @@ mod tests {
     fn bch_known_vector_long() {
         // Independently computed (Python reference) ground truth.
         // Input: HRP "md", data = [0, 1, 2, ..., 15]
-        // The round-trip verify confirms the checksum is self-consistent (was "wdm" pre-v0.3.0).
+        //
+        // Pinned checksum computed by BIP 93 ms32_polymod Python reference at
+        // /tmp/compute_bch_md_pins.py (v0.4.1 patch, 2026-04-27).
+        // hrp_expand("md") = [3, 3, 0, 13, 4]; polymod over
+        // hrp_expand || data || [0;15] XOR MD_LONG_CONST → 15 symbols.
+        // Round-trip assert preserved as defense in depth.
         let data: Vec<u8> = (0..16).collect();
         let actual = bch_create_checksum_long("md", &data);
         assert_eq!(actual.len(), 15);
+        // Pinned expected-checksum bytes (Python BIP 93 reference, v0.4.1):
+        assert_eq!(
+            actual,
+            [23u8, 8, 11, 10, 1, 2, 13, 8, 29, 0, 17, 11, 14, 25, 11]
+        );
         let mut full = data.clone();
         full.extend_from_slice(&actual);
         assert!(
