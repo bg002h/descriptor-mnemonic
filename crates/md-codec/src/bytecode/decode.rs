@@ -92,12 +92,16 @@ fn decode_descriptor(
     }
 }
 
-/// Decode a `Wsh<DescriptorPublicKey>` inner: either a SortedMulti or a
-/// regular miniscript fragment. Wraps the result in `Descriptor::Wsh`.
-fn decode_wsh_inner(
+/// Decode the body of a `wsh(...)` descriptor: either a SortedMulti or a
+/// regular miniscript fragment. Returns `Wsh<DescriptorPublicKey>` (not
+/// `Descriptor`) so that callers such as `sh(wsh(...))` can reuse this
+/// helper without re-wrapping in `Descriptor::Wsh` prematurely.
+///
+/// Phase 0 refactor: extracted from the former monolithic `decode_wsh_inner`.
+pub(crate) fn decode_wsh_body(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
-) -> Result<Descriptor<DescriptorPublicKey>, Error> {
+) -> Result<Wsh<DescriptorPublicKey>, Error> {
     let inner_tag_byte = cur.read_byte()?;
     let inner_tag_offset = cur.offset() - 1;
     let inner_tag = Tag::from_byte(inner_tag_byte).ok_or(Error::InvalidBytecode {
@@ -138,7 +142,7 @@ fn decode_wsh_inner(
                 offset: inner_tag_offset,
                 kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
             })?;
-            Ok(Descriptor::Wsh(wsh))
+            Ok(wsh)
         }
         // Anything else — must be a miniscript inner-fragment tag. Pass
         // the tag we already consumed back to decode_terminal so it can
@@ -151,9 +155,17 @@ fn decode_wsh_inner(
                 offset: inner_tag_offset,
                 kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
             })?;
-            Ok(Descriptor::Wsh(wsh))
+            Ok(wsh)
         }
     }
+}
+
+/// Thin top-level wrapper: reads a wsh body and wraps it in `Descriptor::Wsh`.
+fn decode_wsh_inner(
+    cur: &mut Cursor<'_>,
+    keys: &[DescriptorPublicKey],
+) -> Result<Descriptor<DescriptorPublicKey>, Error> {
+    Ok(Descriptor::Wsh(decode_wsh_body(cur, keys)?))
 }
 
 /// Decode a `Tag::Tr` body. Reads the internal-key placeholder reference,
@@ -1755,5 +1767,33 @@ mod tests {
             ),
             "expected UnexpectedEnd, got {err:?}"
         );
+    }
+
+    #[test]
+    fn decode_wsh_body_returns_inner_wsh_not_descriptor() {
+        use std::str::FromStr;
+
+        let inner_bytes = vec![
+            0x09, 0x02, 0x03, // SortedMulti tag, k=2, n=3
+            0x32, 0x00, 0x32, 0x01, 0x32, 0x02, // 3 placeholders at indices 0, 1, 2
+        ];
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+        let keys = vec![k0, k1, k2];
+
+        let mut cur = Cursor::new(&inner_bytes);
+        let wsh: miniscript::descriptor::Wsh<DescriptorPublicKey> =
+            decode_wsh_body(&mut cur, &keys).expect("decode_wsh_body succeeds");
+        let _ = wsh; // type ascription above proves return type
     }
 }
