@@ -10,8 +10,12 @@
 //!
 //! v0.2 (Phase D) scope: `Tag::Tr` is also accepted at the top level and
 //! decodes to `Descriptor::Tr` with at most a single tap-leaf miniscript
-//! attached. `Tag::TapTree` (0x08) is reserved for v1+ multi-leaf encoding;
-//! its appearance in v0.2 input is rejected as a `PolicyScopeViolation`.
+//! attached.
+//!
+//! v0.5: multi-leaf TapTree decoding is admitted via `Tag::TapTree` (0x08)
+//! inner-node framing inside a `Tag::Tr` body. The decoder enforces a
+//! depth-128 ceiling to defend against pathological inputs (rust-miniscript's
+//! `TapTree::combine` enforces the same ceiling on reassembly).
 //!
 //! v0.4 scope: `Tag::Wpkh` and `Tag::Sh` are now accepted at the top level.
 //! `Wpkh` decodes to `Descriptor::Wpkh` (native segwit P2WPKH).
@@ -164,7 +168,8 @@ fn decode_sh_inner(
             Ok(Descriptor::new_sh_with_wsh(wsh)) // takes Wsh<Pk>, infallible
         }
         Some(other) => Err(Error::PolicyScopeViolation(format!(
-            "v0.4 does not support sh({other:?}); only sh(wpkh(...)) and sh(wsh(...)) allowed"
+            "sh({other:?}) is permanently rejected (legacy non-segwit out of scope per design); \
+             only sh(wpkh(...)) and sh(wsh(...)) allowed"
         ))),
         None => Err(Error::InvalidBytecode {
             offset: cur.offset(),
@@ -252,9 +257,10 @@ fn decode_wsh_inner(
 /// Decode a `Tag::Tr` body. Reads the internal-key placeholder reference,
 /// then optionally a single tap-leaf miniscript fragment.
 ///
-/// Per Phase D D-1 / D-3:
-/// - Multi-leaf TapTree is reserved for v1+ — `Tag::TapTree` (0x08) is not
-///   a valid first byte of the leaf payload in v0.2.
+/// Per Phase D D-1 / D-3 and v0.5 multi-leaf admission:
+/// - v0.5: multi-leaf TapTree is admitted via `Tag::TapTree` (0x08) inner-node
+///   framings dispatched through `decode_tap_subtree`. KeyOnly and single-leaf
+///   payloads are decoded directly inline (byte-identical to v0.2/v0.4).
 /// - Anything but a top-level `Tag::Tr` is rejected (no nested taproot
 ///   inside `wsh()` or another `tr()`); this is enforced by the caller
 ///   chain (`decode_wsh_inner` does not dispatch through here, and a
