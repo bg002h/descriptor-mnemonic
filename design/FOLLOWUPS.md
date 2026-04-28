@@ -167,9 +167,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Pre-flight Gate 1 of the wdm→md rename (HRP collision vet)
 - **Where:** External — `satoshilabs/slips` repo, `slip-0173.md` registry table
 - **What:** Defensive registration of HRP `md` for the Mnemonic Descriptor format. The pre-flight collision vet (2026-04-27) confirmed `md` was clean across SLIP-0173 + Lightning HRPs + Liquid + codex32 + Nostr + Cosmos + web search. Filing the SLIP-0173 PR closes off future independent-project collision risk.
-- **Why deferred:** Post-release activity (Phase 11). Open PR after `md-codec-v0.3.0` ships so the registration cites a published reference implementation.
-- **Status:** open
-- **Tier:** v0.3-followup (post-release, no version-gating)
+- **Status:** resolved (PR filed). PR: https://github.com/satoshilabs/slips/pull/2011 — open and awaiting maintainer review at SatoshiLabs cadence. Merge state tracked separately; the requested action (FILE the PR) is complete.
+- **Tier:** v0.3-followup → external (now tracking maintainer review cadence)
 
 ---
 
