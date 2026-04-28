@@ -43,6 +43,17 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0-5-spec-plan-encode-tap-subtree-entry-depth-bug` — spec + plan say `target_depth=1` at outer entry; should be `0`
+
+- **Surfaced:** Phase 4 implementer (commit `bca2804`) caught this when the post-condition `debug_assert_eq!(cursor, leaves.len())` failed on a 2-leaf tree compiled per the literal spec text. Phase 4 reviewer (combined pass) confirmed independently with depth-trace analysis.
+- **Where:**
+  - `design/SPEC_v0_5_multi_leaf_taptree.md` §4 line 220: `encode_tap_subtree(&leaves, &mut cursor, 1, out, &placeholder_map)?;`
+  - `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md` Phase 4 Task 4.3 line 1325: same literal `1`
+- **What:** The outer call to `encode_tap_subtree` must pass `target_depth=0` (the tree-root depth) so that for any `leaves[0].0 >= 1` the helper emits a `Tag::TapTree` framing before recursing into children with `target_depth=1`. Calling with `target_depth=1` short-circuits emission for symmetric depth-1 trees (matches the first leaf inline, drops the `0x08` framing, fails post-condition). Implementer's actual code at `encode.rs:166` correctly uses `0`; spec + plan text disagree with the working code.
+- **Why deferred:** Documentation-only fix; working code is already correct. Spec + plan live on `main` (separate from the feature branch).
+- **Status:** open
+- **Tier:** v0.5-must-close-before-ship (fix at Phase 11 — patch on `main` as part of release PR or follow-up commit)
+
 ### `p2-inline-key-tags` — Reserved tags 0x24–0x31 (descriptor-codec inline-key forms)
 
 - **Surfaced:** Phase 2 D-2 (`design/PHASE_2_DECISIONS.md`)
