@@ -4,7 +4,7 @@
 **Status**: Approved by user; ready for writing-plans handoff
 **Per-section agent reviews**: Sections 1-5 reviewed by Opus 4.7 peer agents (revisions folded inline)
 **Closes FOLLOWUPS at v0.5.0 ship**: `v0-5-multi-leaf-taptree`
-**Carry-forward (NOT closing)**: `phase-d-tap-leaf-wrapper-subset-clarification`, `phase-d-tap-miniscript-type-check-parity`, `apoelstra/rust-miniscript#1`, BIP header, SLIP-0173 PR (filed; awaiting registry merge), 4 v0.3-deferred items, 5 wont-fix entries
+**Carry-forward (NOT closing)**: 9 other open items (verified count post-close from `design/FOLLOWUPS.md`) including `phase-d-tap-leaf-wrapper-subset-clarification`, `phase-d-tap-miniscript-type-check-parity`, `external-pr-1-hash-terminals` (apoelstra/rust-miniscript#1), `slip-0173-register-md-hrp` (PR filed; awaiting registry merge), v0.3-deferred carried items; plus 3 `wont-fix` legacy-exclusion entries (`legacy-pkh-permanent-exclusion`, `legacy-sh-multi-permanent-exclusion`, `legacy-sh-sortedmulti-permanent-exclusion`)
 
 **Wire-format-additive release.** v0.4.x-produced strings continue to validate identically in v0.5.0; only v0.5.0-produced strings using non-trivial TapTrees are rejected by older v0.4.x decoders. This is the same framing as v0.3.x → v0.4.0 (NOT the v0.2.x → v0.3.0 rename pattern).
 
@@ -92,7 +92,7 @@ Generator token bumps `"md-codec 0.4"` → `"md-codec 0.5"`. Both `v0.1.json` an
 
 ```rust
 fn decode_tap_subtree(
-    cur: &mut Cursor,
+    cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
     depth: usize,
     leaf_counter: &mut usize,
@@ -101,7 +101,7 @@ fn decode_tap_subtree(
     match Tag::from_byte(inner_byte) {
         Some(Tag::TapTree) => {
             cur.read_byte()?;                   // commit consume only after the depth gate path
-            if depth >= 128 {
+            if depth > 128 {
                 return Err(Error::PolicyScopeViolation(
                     "TapTree depth exceeds BIP 341 consensus maximum (128)".to_string()
                 ));
@@ -113,6 +113,10 @@ fn decode_tap_subtree(
             ))
         }
         Some(_other_leaf_tag) => {
+            // `TapTree::leaf(leaf)` returns a depth-0 seed; each enclosing
+            // `TapTree::combine` post-increments depth as the recursion unwinds,
+            // so a leaf encountered at recursion-depth N ends up at miniscript-depth N
+            // in the final tree (see `taptree.rs:40-50` upstream).
             let index = *leaf_counter;
             *leaf_counter += 1;
             let leaf = decode_tap_miniscript(cur, keys, Some(index))?;
@@ -135,6 +139,8 @@ fn decode_tap_subtree(
   - If end-of-bytecode → `tr(KEY)` KeyOnly form (preserved verbatim)
   - If unknown tag → `InvalidBytecode { kind: UnknownTag }`
 
+**Depth semantics.** The `depth` argument represents "the framing-level this call is about to read". Initial value = 1 (caller `decode_tr_inner` invokes the helper to read the FIRST `[TapTree]` framing at the root of the script-tree subtree). After a TapTree byte is consumed at depth=N, the recursion re-enters at depth=N+1 to read children. Each TapTree framing consumed at depth=N produces leaves under it at miniscript-depth N. BIP 341's `TAPROOT_CONTROL_MAX_NODE_COUNT = 128` therefore caps the helper at consuming framings up to depth=128 inclusive — leaves discovered at depth=129 (no framing read there) end up at miniscript-depth 128, the legal maximum. The gate `if depth > 128` fires at depth=129 when the next byte is `Tag::TapTree`, rejecting only the case that would push leaves past depth 128. RT and H1 fixtures (§5) cover the legal-128 boundary; H2 covers the 129 rejection.
+
 **Hostile-input invariants** (peek-before-recurse rationale):
 
 - `peek_byte()` does NOT advance the cursor. If the depth gate fails BEFORE consume, cursor state is fully recoverable for diagnostics (`offset()` reports the byte that triggered).
@@ -142,11 +148,19 @@ fn decode_tap_subtree(
 
 ### Leaf-index propagation
 
-The `leaf_counter` argument provides **DFS pre-order leaf indexing** — left-subtree leaves are numbered before right-subtree leaves at any given inner node. This index is plumbed through to `decode_tap_miniscript`'s `Some(index)` argument, which already exists on the v0.4.x signature for single-leaf (always `Some(0)`).
+The `leaf_counter` argument provides **DFS pre-order leaf indexing** — left-subtree leaves are numbered before right-subtree leaves at any given inner node.
+
+**Signature changes (NEW at v0.5; not present at v0.4.x):**
+
+- `decode_tap_miniscript(cur, keys)` → `decode_tap_miniscript(cur, keys, leaf_index: Option<usize>)` (private)
+- `decode_tap_terminal(cur, keys, ...)` → adds `leaf_index: Option<usize>` parameter (private)
+- `validate_tap_leaf_subset(ms)` → `validate_tap_leaf_subset(ms, leaf_index: Option<usize>)` (**public**, additive but technically breaking — no known external callers)
+
+The single-leaf decode path in `decode_tr_inner` passes `Some(0)`; the recursive helper threads the running counter as `Some(index)`. The leaf-index value is plumbed through to `validate_tap_leaf_subset` so violation diagnostics can name the offending leaf.
 
 Leaf index propagates into:
-- `Error::TapLeafSubsetViolation { operator, leaf_index }` (added field; see §4)
-- `decode_report.tap_leaves[]` (populated for multi-leaf decode results; see §4)
+- `Error::TapLeafSubsetViolation { operator, leaf_index }` (NEW field on existing variant; see §4)
+- `decode_report.tap_leaves[]` (NEW field on `DecodeReport`, populated for all `tr` decodes — single-leaf and multi-leaf alike; see §4)
 - BIP 388 §"Taproot tree" key derivation paths (out-of-band; v0.5 records the index, callers may use it)
 
 ### Single-leaf path preserved
@@ -199,11 +213,11 @@ match desc.tap_tree() {
             // single-leaf tr(KEY, leaf) — bytecode unchanged from v0.4.x
             let leaf_index = 0;
             validate_tap_leaf_subset(leaves[0].1, Some(leaf_index))?;
-            leaves[0].1.encode_template(out, &placeholder_map)?;
+            leaves[0].1.encode_template(out, placeholder_map)?;
         } else {
             // multi-leaf — new 0x08 framing
             let mut cursor = 0;
-            encode_tap_subtree(&leaves, &mut cursor, 1, out, &placeholder_map)?;
+            encode_tap_subtree(&leaves, &mut cursor, 1, out, placeholder_map)?;
             // post: cursor == leaves.len()
         }
     }
@@ -211,6 +225,10 @@ match desc.tap_tree() {
 ```
 
 Single-leaf detection: `leaves.len() == 1 && leaves[0].0 == 0`. (The depth-0 check matters: rust-miniscript `TapTree::leaf(ms)` produces depth 0; deeper single-leaf trees are not produced by upstream's API but the `== 0` guard makes the carve-out tight.)
+
+**Encoder depth invariant.** The encoder does NOT add a depth-128 check of its own. Justification: any `Descriptor::Tr` reaching `encode_tr` was constructed via rust-miniscript's `TapTree::combine`, which already enforces depth ≤ 128 at construction time (verified at `rust-miniscript-fork/src/descriptor/tr/taptree.rs:40-50`). A defensive over-deep check in the encoder would be unreachable code. The decoder's depth gate is the actual ceiling; encoder relies on the upstream invariant. (If a future rust-miniscript change relaxes `combine`'s rejection, this assumption breaks and a defensive check should be added at that time.)
+
+**v0.4 single-leaf-with-non-zero-depth subsumption.** v0.4 explicitly rejected single-leaf `TapTree`s with `depth != 0` via `PolicyScopeViolation`. Under v0.5 such inputs (which rust-miniscript doesn't normally produce, but aren't structurally impossible) flow through the multi-leaf path and emit `0x08` framing. No known producer emits this shape; the v0.4 rejection was theoretical defense. Any v0.4 test asserting that rejection must be removed or re-classified — see §5 infrastructure-modifications.
 
 ### Error type extension (additive on `#[non_exhaustive]` enum)
 
@@ -222,23 +240,26 @@ TapLeafSubsetViolation { operator: String },
 TapLeafSubsetViolation { operator: String, leaf_index: Option<usize> },
 ```
 
-`leaf_index` is `Option<usize>` to remain ergonomic for paths that don't yet plumb the index. All 4 construction sites in the codebase (encoder validate, decoder validate, plus 2 in error-rendering helpers per Section 3 review) get explicit `leaf_index: Some(idx)` or `None`.
+`leaf_index` is `Option<usize>` to remain ergonomic for paths that don't yet plumb the index. The 3 construction sites in the codebase (`encode.rs:443` Terminal encoder catch-all; `encode.rs:487` `validate_tap_leaf_terminal` catch-all; `decode.rs:691` `decode_tap_terminal` catch-all) all get explicit `leaf_index: Some(idx)` or `None`. Separately, the 2 call sites of `validate_tap_leaf_subset` (`encode.rs:154`, `decode.rs:276`) get the new `Some(leaf_index)` argument plumbed.
 
-**Backwards compatibility**: `Error` is `#[non_exhaustive]`. Adding a field to a struct variant on a `#[non_exhaustive]` enum is non-breaking for downstream consumers using exhaustive `match` arms (they already need a wildcard) and for downstream consumers constructing the variant (they would need to update — but no external crate constructs MD's error variants).
+**Backwards compatibility**: `Error` is `#[non_exhaustive]`. Adding a field to an existing struct variant is non-breaking for **constructors outside this crate** (covered by `#[non_exhaustive]`) and **wildcard `match` arms** (`_` or `..`). It IS breaking for **field-exhaustive destructure patterns** like `Error::TapLeafSubsetViolation { operator } => ...`, which become "missing field `leaf_index`" errors. To avoid this, also annotate the variant itself as `#[non_exhaustive]` (rust 1.84+; project MSRV 1.85). Downstream destructure patterns will then need to add `..` (a future-proof idiom anyway). No known external destructure sites exist today.
 
-### `decode_report.tap_leaves[]`
+### `decode_report.tap_leaves[]` (NEW field; NEW struct)
 
-Existing `decode_report.tap_leaves` was already a `Vec<TapLeafReport>` (populated with one entry for v0.4.x single-leaf case). v0.5 populates it for all leaves in DFS pre-order:
+v0.5 introduces a NEW `tap_leaves: Vec<TapLeafReport>` field on `DecodeReport` (verified absent at v0.4.x: `crates/md-codec/src/decode_report.rs` defines `DecodeReport` with `outcome`, `corrections`, `verifications`, `confidence` only). Addition is non-breaking because `DecodeReport` is `#[non_exhaustive]`.
+
+NEW public type `TapLeafReport`:
 
 ```rust
-struct TapLeafReport {
-    leaf_index: usize,
-    miniscript: Arc<Miniscript<DescriptorPublicKey, Tap>>,
-    depth: u8,
+#[non_exhaustive]
+pub struct TapLeafReport {
+    pub leaf_index: usize,
+    pub miniscript: Arc<Miniscript<DescriptorPublicKey, Tap>>,
+    pub depth: u8,
 }
 ```
 
-`leaf_index` field aligns with the leaf-index propagation through decoder + encoder, completing the round-trip.
+Populated for all `tr(...)` decodes in DFS pre-order — single-leaf decodes get a 1-element vec (`{ leaf_index: 0, miniscript, depth: 0 }`); KeyOnly `tr(KEY)` gets an empty vec; multi-leaf decodes get N elements with `leaf_index: 0..N` and depths matching the tree shape. `leaf_index` aligns with the leaf-index propagation through decoder + encoder, completing the round-trip.
 
 ### BIP draft updates (line-level inventory)
 
@@ -269,7 +290,7 @@ Checked against `bip/bip-mnemonic-descriptor.mediawiki` at HEAD (v0.4.1 ship sta
 - Leaf-index inline tests NEW: 3 (LI1-LI3)
 - Parser-roundtrip inline tests NEW: 2 (PR1-PR2)
 
-**Sum**: 29 NEW + 1 RENAMED listed in tables. Final passing count target **≥639 tests + 0 ignored** (609 baseline at v0.4.1 + at least 30; likely 640+ once `gen_vectors` expansion produces encode/decode variants per fixture).
+**Sum**: 29 NEW + 1 RENAMED listed in tables. RENAMED adds 0 to the count (existing v0.4.x test under new filename). Floor: 609 baseline + 29 = **≥638 tests + 0 ignored**. Realistic target: ≥640 once `gen_vectors` expansion produces encode/decode variants for the 6 NEW positive fixtures (at v0.4 cadence, +1 round-trip pair per positive fixture).
 
 ### T1-T7: Positive corpora
 
@@ -289,19 +310,21 @@ Also: at least one **Coldcard-shape parity fixture** if such a multi-leaf shape 
 
 ### N1-N9: Negative decode-side fixtures (`v0.2.json`)
 
+All N3-N7 fixtures use the offending operator as the LEFT leaf of a 2-leaf depth-1 tree (`{<offender>, pk(@1)}`), so the offending leaf is at `leaf_index = 0`.
+
 | ID | Fixture | Hostile shape | Expected error |
 |---|---|---|---|
-| N1 | `n_taptree_single_inner_under_tr` | `[Tr][Placeholder][0][TapTree][LEFT_LEAF]` (only 1 child) | `InvalidBytecode { kind: TruncatedBytecode }` (cursor runs out reading right child) |
+| N1 | `n_taptree_single_inner_under_tr` | `[Tr][Placeholder][0][TapTree][LEFT_LEAF]` (only 1 child) | `InvalidBytecode { kind: UnexpectedEnd }` (cursor runs out reading right child) |
 | N2 | `n_taptree_three_inners_under_tr` | `[TapTree][LEAF][LEAF][LEAF]` (3 children) | Excess byte after right child → `InvalidBytecode { kind: TrailingBytes }` |
-| N3 | `n_taptree_inner_wpkh` | `[TapTree]` containing `Wpkh` as a leaf | `TapLeafSubsetViolation { operator: "wpkh", leaf_index: Some(_) }` |
-| N4 | `n_taptree_inner_sh` | `[TapTree]` containing `Sh` as a leaf | `TapLeafSubsetViolation { operator: "sh", leaf_index: Some(_) }` |
-| N5 | `n_taptree_inner_wsh` | `[TapTree]` containing `Wsh` as a leaf | `TapLeafSubsetViolation { operator: "wsh", leaf_index: Some(_) }` |
-| N6 | `n_taptree_inner_tr` | `[TapTree]` containing `Tr` as a leaf | `TapLeafSubsetViolation { operator: "tr", leaf_index: Some(_) }` |
-| N7 | `n_taptree_inner_pkh` | `[TapTree]` containing `Pkh` as a leaf | `TapLeafSubsetViolation { operator: "pkh", leaf_index: Some(_) }` |
+| N3 | `n_taptree_inner_wpkh` | `{wpkh-leaf, pk(@1)}` | `TapLeafSubsetViolation { operator: "wpkh", leaf_index: Some(0) }` |
+| N4 | `n_taptree_inner_sh` | `{sh-leaf, pk(@1)}` | `TapLeafSubsetViolation { operator: "sh", leaf_index: Some(0) }` |
+| N5 | `n_taptree_inner_wsh` | `{wsh-leaf, pk(@1)}` | `TapLeafSubsetViolation { operator: "wsh", leaf_index: Some(0) }` |
+| N6 | `n_taptree_inner_tr` | `{tr-leaf, pk(@1)}` | `TapLeafSubsetViolation { operator: "tr", leaf_index: Some(0) }` |
+| N7 | `n_taptree_inner_pkh` | `{pkh-leaf, pk(@1)}` | `TapLeafSubsetViolation { operator: "pkh", leaf_index: Some(0) }` |
 | N8 | `n_taptree_unknown_tag_inner` | `[TapTree]` containing an unallocated tag byte | `InvalidBytecode { kind: UnknownTag }` |
-| N9 | `n_taptree_at_top_level` | `[TapTree]` as top-level descriptor (no `Tr` outer) | `InvalidBytecode { kind: UnknownTag }` (`0x08` unknown at top-level dispatch) |
+| N9 | `n_taptree_at_top_level` | `[TapTree]` as top-level descriptor (no `Tr` outer) | `PolicyScopeViolation` from top-level dispatcher (existing dispatcher message at `decode.rs:98-100` says "v0.4 does not support top-level tag TapTree" — v0.5 must update the message text since `0x08` is now active inside `tr`; suggested replacement: "TapTree (0x08) is not a valid top-level descriptor; it appears only inside `tr(KEY, TREE)`") |
 
-**Critical correction folded inline (Section 5 review):** N3-N7 produce `TapLeafSubsetViolation { operator, leaf_index }`, NOT `InvalidBytecode` or `PolicyScopeViolation`. The decoder routes these through `decode_tap_terminal`, which calls `validate_tap_leaf_subset` and produces the operator-named subset-violation diagnostic.
+**Critical corrections folded inline (Section 5 review + holistic review):** (1) N3-N7 produce `TapLeafSubsetViolation { operator, leaf_index }`, NOT `InvalidBytecode` or `PolicyScopeViolation`. The decoder routes these through `decode_tap_terminal`, which calls `validate_tap_leaf_subset` and produces the operator-named subset-violation diagnostic. (2) N3-N7 leaf-index pinned to `Some(0)` for deterministic test assertions. (3) N9 produces `PolicyScopeViolation` from the top-level dispatcher (NOT `UnknownTag` — `Tag::from_byte(0x08)` returns `Some(Tag::TapTree)` so the "unknown tag" path is not hit; only the "valid tag in wrong scope" path applies). (4) N1 uses `UnexpectedEnd` (real variant) not `TruncatedBytecode` (does not exist).
 
 ### H1-H5: Hostile-input fixtures
 
@@ -309,13 +332,13 @@ Inline Rust tests (NOT fixture-driven; depth construction via direct bytecode em
 
 | ID | Test name | Construction | Expected behavior |
 |---|---|---|---|
-| H1 | `accepts_taptree_leaves_at_max_depth_128` | Build a 128-deep nested left-spine: 127 `[TapTree]` framings + 1 leaf at depth 128 + 127 trailing leaves | Decode succeeds, returns valid `TapTree` with all 128 leaves at depth 128 |
-| H2 | `rejects_taptree_with_129_nested_branches` | 128 `[TapTree]` framings + 1 leaf | `PolicyScopeViolation("TapTree depth exceeds BIP 341 consensus maximum (128)")` |
-| H3 | `rejects_taptree_with_truncated_subtree` | `[TapTree]` then EOF | `InvalidBytecode { kind: TruncatedBytecode }` |
-| H4 | `rejects_deeply_nested_recursion_bomb` | Pathological construction: 10K `[TapTree]` bytes with no leaves | Rejection at depth 128 BEFORE stack overflow (rationale: peek-before-recurse + depth gate) |
+| H1 | `accepts_taptree_with_leaves_at_miniscript_depth_128` | Build a left-spine of 128 `[TapTree]` framings + leaves at the bottom (final tree has at least one leaf at miniscript-depth 128) | Decode succeeds; helper consumes its 128th framing at recursion-depth=128 (gate `> 128` does NOT fire); leaves at miniscript-depth 128 |
+| H2 | `rejects_taptree_at_miniscript_depth_129` | 129 `[TapTree]` framings + leaves at the bottom | `PolicyScopeViolation("TapTree depth exceeds BIP 341 consensus maximum (128)")`; gate fires at recursion-depth=129 reading the 129th `[TapTree]` byte |
+| H3 | `rejects_taptree_with_truncated_subtree` | `[TapTree]` then EOF | `InvalidBytecode { kind: UnexpectedEnd }` |
+| H4 | `rejects_deeply_nested_recursion_bomb` | Pathological construction: 10K `[TapTree]` bytes with no leaves | Rejection at recursion-depth 129 BEFORE stack overflow (rationale: peek-before-recurse + depth gate fires at the BIP 341 boundary, well below stack-overflow risk) |
 | H5 | `rejects_taptree_unrecognized_inner_at_depth` | `[TapTree][TapTree][unallocated_byte]` | `InvalidBytecode { kind: UnknownTag }` (depth-aware error reporting at the violation site) |
 
-**Critical correction folded inline (Section 5 review):** Test names disambiguated. H1 admits a tree with 128 leaves at depth 128 (peek + depth gate succeeds at depth 128); H2 rejects a 129-deep nesting (depth gate fires at depth 128 before recursing to 129).
+**Hostile-input rationale:** H1 is the legal-128 boundary; H2 is the first illegal step beyond. The gate fires when `depth > 128` — at recursion-depth 129 reading a `[TapTree]` byte. This is the smallest 1-byte difference between a legal and rejected input. H3-H5 cover orthogonal hostile shapes (truncation, recursion bomb, depth-deep unknown tag).
 
 ### Round-trip + index propagation tests
 
@@ -324,7 +347,7 @@ Inline Rust tests (NOT fixture-driven; depth construction via direct bytecode em
 | RT1 | `roundtrip_two_leaf_symmetric` | `decode(encode(T3)) == T3` |
 | RT2 | `roundtrip_three_leaf_asymmetric` | `decode(encode(T4)) == T4` |
 | RT3 | `roundtrip_multi_leaf_with_multi` | `decode(encode(T6)) == T6` |
-| RT4 | `t4_t5_bytecodes_differ_explicit` | `encode(T4) != encode(T5)` (defense against accidental sym-bug — mirrors v0.4 Sh inner-shape coverage) |
+| RT4 | `t4_left_heavy_and_t5_right_heavy_emit_distinct_bytecodes` | `encode(T4) != encode(T5)` (defense against accidental sym-bug — mirrors v0.4 Sh inner-shape coverage) |
 | LI1 | `decode_report_populates_leaf_index_dfs_preorder` | `decode_report.tap_leaves` is `[(0, depth_1), (1, depth_2), ...]` for T4 |
 | LI2 | `tap_leaf_subset_violation_carries_leaf_index` | N3-N7 errors expose `leaf_index: Some(<expected index>)` |
 | LI3 | `single_leaf_tr_uses_leaf_index_zero` | T2 produces `leaf_index = 0`, byte-identical to v0.4.x |
@@ -343,6 +366,8 @@ These are **modifications to existing tests**, not separate test cases:
 - `gen_vectors --verify` regenerates v0.1.json + v0.2.json with bumped generator token `"md-codec 0.5"`; existing test that asserts vector SHA pinning is updated to the new SHAs.
 - Existing v0.4.x single-leaf round-trip test is preserved verbatim (regression anchor).
 - Renamed fixture (T2): the v0.4.x single-leaf fixture renamed to follow v0.5 naming convention; bytecode unchanged.
+- Any v0.4 test asserting `PolicyScopeViolation` for "single-leaf TapTree with depth ≠ 0" (subsumed by §4 encoder change) must be removed or re-classified as a positive test. Implementer to enumerate during Phase 4; no known producer emits this shape so the test (if it exists) is theoretical-defense.
+- Any v0.4 test asserting the old top-level dispatcher message "v0.4 does not support top-level tag TapTree" must be updated to the new message text per §6 CHANGELOG (or have its assertion loosened).
 
 ### Coverage gap closures (folded from Section 5 review)
 
@@ -381,8 +406,12 @@ Minor bump (0.4.x → 0.5.0). Same rationale as v0.3.x → v0.4.0:
 - Added: `tr(KEY, TREE)` multi-leaf TapTree admittance
 - Added: `Tag::TapTree (0x08)` now active (was reserved/rejected since v0.2 Phase D)
 - Added: BIP 341 control-block depth-128 enforcement during decode (peek-before-recurse)
-- Added: `decode_report.tap_leaves[]` populated for multi-leaf trees with leaf indices
-- Changed: `Error::TapLeafSubsetViolation` extended with `leaf_index: Option<usize>` field (additive on `#[non_exhaustive]` enum — non-breaking)
+- Added: `DecodeReport.tap_leaves: Vec<TapLeafReport>` field (NEW field on existing struct — non-breaking via `#[non_exhaustive]`)
+- Added: `TapLeafReport` public struct (`leaf_index`, `miniscript`, `depth`)
+- Changed: `Error::TapLeafSubsetViolation` extended with `leaf_index: Option<usize>` field; variant now `#[non_exhaustive]` so destructure patterns must use `..` (additive — non-breaking for wildcard `match` arms; breaking for field-exhaustive destructures, but no known external consumers)
+- Changed: `validate_tap_leaf_subset(ms)` → `validate_tap_leaf_subset(ms, leaf_index: Option<usize>)` — public API additive but technically breaking (no known external callers)
+- Changed: top-level dispatcher message for `0x08`-at-top-level updated from "v0.4 does not support top-level tag TapTree" to "TapTree (0x08) is not a valid top-level descriptor; it appears only inside `tr(KEY, TREE)`"
+- Removed: v0.4 single-leaf-with-non-zero-depth `PolicyScopeViolation` rejection (subsumed by multi-leaf path; theoretical-only, no producer emits this shape)
 - Changed: `v0.1.json` SHA `<new>`, `v0.2.json` SHA `<new>` (new fixtures; family generator token `"md-codec 0.5"`)
 - Wire format: v0.4.x-shaped inputs byte-identical
 
@@ -397,17 +426,17 @@ Minor bump (0.4.x → 0.5.0). Same rationale as v0.3.x → v0.4.0:
 - `apoelstra/rust-miniscript#1` — external, unchanged
 - BIP header / SLIP-0173 / 4 v0.3-deferred items / 5 wont-fix entries — all unchanged
 
-**Net FOLLOWUPS state at v0.5.0 ship**: 6 open + 5 wont-fix (was 7 open + 5 wont-fix at v0.4.1; close 1 = `v0-5-multi-leaf-taptree`, no new opens unless something is discovered during implementation).
+**Net FOLLOWUPS state at v0.5.0 ship**: 9 open + 3 wont-fix (was 10 open + 3 wont-fix at v0.4.1; close 1 = `v0-5-multi-leaf-taptree`, no new opens unless something is discovered during implementation). Counts verified against `design/FOLLOWUPS.md` HEAD by status-line tally.
 
 ### Release sequencing
 
 **11-phase plan template** (mirrors v0.4 cadence):
 
 1. Spec ratification + plan draft (THIS document is the spec; plan comes from `writing-plans` skill next)
-2. Type wiring — extend `Error::TapLeafSubsetViolation` with `leaf_index`, update construction sites
-3. Decoder — add `decode_tap_subtree` recursive helper, peek-before-recurse with depth check, route `Tag::TapTree` → recurse
-4. Encoder — add `encode_tap_subtree` walking depth-annotated `TapTree::leaves()`, dispatch from `encode_tr` based on multi-leaf detection
-5. Roundtrip glue — `decode_report.tap_leaves[]` population; parser-roundtrip equivalence; tap_tree comparator helper
+2. Type wiring + decoder — extend `Error::TapLeafSubsetViolation` with `leaf_index` field (variant `#[non_exhaustive]`); add `validate_tap_leaf_subset(_, leaf_index)` parameter; add `DecodeReport.tap_leaves` field + `TapLeafReport` struct; add `decode_tap_subtree` recursive helper (peek-before-recurse + `depth > 128` gate); route `Tag::TapTree` in `decode_tr_inner` → recurse. Land call-site updates in the same phase to keep tree green.
+3. Top-level dispatcher message update — replace "v0.4 does not support top-level tag TapTree" string per §6 CHANGELOG.
+4. Encoder — add `encode_tap_subtree` walking depth-annotated `TapTree::leaves()`, dispatch from `encode_tr` based on multi-leaf detection; remove v0.4 single-leaf-non-zero-depth rejection (subsumed); enumerate any tests that assert it.
+5. Roundtrip glue — `decode_report.tap_leaves[]` population for single + multi + KeyOnly tr; parser-roundtrip equivalence; tap_tree comparator helper
 6. Test corpus — add 29 NEW + 1 RENAMED fixtures and inline tests per §5; regenerate `v0.1.json` + `v0.2.json`
 7. BIP doc updates — line edits per §4 inventory
 8. CLI surface — `md encode "tr(@0/**, {pk(@1/**), pk(@2/**)})"` works automatically (no new flags); add at least one CLI integration test
@@ -423,7 +452,7 @@ Minor bump (0.4.x → 0.5.0). Same rationale as v0.3.x → v0.4.0:
 
 ### Quality gates (target at tag)
 
-- **≥639 tests passing + 0 ignored** (609 baseline + at least 30 new per §5; likely 640+ after `gen_vectors` expansion)
+- **≥638 tests passing + 0 ignored** (609 baseline + 29 new per §5; ≥640 once `gen_vectors` expansion adds round-trip pairs for new positives)
 - **3-OS CI green**
 - **MSRV 1.85** (unchanged)
 - **`gen_vectors --verify` PASS** for both `v0.1.json` and `v0.2.json` post-regeneration
