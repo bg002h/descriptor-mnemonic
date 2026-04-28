@@ -70,7 +70,14 @@ fn decode_descriptor(
         Some(Tag::Wpkh) => decode_wpkh_inner(cur, keys), // v0.4: native P2WPKH
         Some(Tag::Sh) => decode_sh_inner(cur, keys),     // v0.4: P2SH-P2WPKH / P2SH-P2WSH
         Some(Tag::Pkh) | Some(Tag::Bare) => Err(Error::PolicyScopeViolation(
-            "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)"
+            "top-level pkh()/bare() is permanently rejected (legacy non-segwit out of scope per design)"
+                .to_string(),
+        )),
+        // TapTree (0x08) is valid INSIDE tr(KEY, TREE) as a multi-leaf
+        // inner-node framing byte, but it is NOT a valid top-level descriptor.
+        Some(Tag::TapTree) => Err(Error::PolicyScopeViolation(
+            "TapTree (0x08) is not a valid top-level descriptor; \
+             it appears only inside `tr(KEY, TREE)` as multi-leaf inner-node framing"
                 .to_string(),
         )),
         // Reserved key tags (descriptor-codec inline-key forms, deferred to v1+).
@@ -90,13 +97,13 @@ fn decode_descriptor(
             | Tag::ReservedUnhardenedWildcard
             | Tag::ReservedHardenedWildcard,
         ) => Err(Error::PolicyScopeViolation(format!(
-            "v0.4 rejects inline-key tag 0x{tag_byte:02x} (deferred to v1+)"
+            "inline-key tag 0x{tag_byte:02x} is reserved (deferred to v1+ per descriptor-codec scope)"
         ))),
         // A known fragment tag (e.g. AndV, PkK, True) appearing at the top
         // level — malformed input. Use PolicyScopeViolation rather than
         // UnknownTag because the byte was recognised; only its position is wrong.
         Some(other) => Err(Error::PolicyScopeViolation(format!(
-            "v0.4 does not support top-level tag {other:?}"
+            "tag {other:?} is not a valid top-level descriptor (recognised but out of scope)"
         ))),
         None => Err(Error::InvalidBytecode {
             offset: tag_offset,
@@ -2223,6 +2230,33 @@ mod tests {
         assert!(
             matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("bare")),
             "expected PolicyScopeViolation about top-level bare, got {err:?}"
+        );
+    }
+
+    /// Phase 3 — TapTree at top level produces TapTree-specific diagnostic.
+    ///
+    /// `Tag::TapTree` (0x08) is NOT a valid top-level descriptor; it is the
+    /// multi-leaf inner-node framing used INSIDE `tr(KEY, TREE)`. Presenting
+    /// it at the top level should produce a `PolicyScopeViolation` with a
+    /// message that:
+    ///   1. mentions "TapTree" and "0x08" — identifies the byte, and
+    ///   2. mentions "only inside" or "tr(KEY" — explains the correct context.
+    ///
+    /// This is distinct from the generic catch-all for unrecognised-but-known
+    /// tags, which we also verify below is now version-agnostic.
+    #[test]
+    fn taptree_at_top_level_produces_specific_diagnostic() {
+        // Bytecode: Tag::TapTree (0x08) as a top-level descriptor — INVALID.
+        let bytes = vec![Tag::TapTree.as_byte()]; // 0x08
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("TapTree") && msg.contains("0x08"),
+            "expected TapTree-specific diagnostic mentioning both 'TapTree' and '0x08', got: {msg}"
+        );
+        assert!(
+            msg.contains("only inside") || msg.contains("tr(KEY"),
+            "expected diagnostic to mention `tr(KEY, TREE)` context, got: {msg}"
         );
     }
 }
