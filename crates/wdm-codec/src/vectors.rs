@@ -528,7 +528,7 @@ pub fn build_test_vectors() -> TestVectorFile {
 pub fn build_test_vectors_v1() -> TestVectorFile {
     TestVectorFile {
         schema_version: 1,
-        generator: format!("wdm-codec {}", env!("CARGO_PKG_VERSION")),
+        generator: GENERATOR_FAMILY.to_string(),
         vectors: build_positive_vectors_v1(),
         negative_vectors: build_negative_vectors_v1(),
     }
@@ -557,11 +557,30 @@ pub fn build_test_vectors_v1() -> TestVectorFile {
 pub fn build_test_vectors_v2() -> TestVectorFile {
     TestVectorFile {
         schema_version: 2,
-        generator: format!("wdm-codec {}", env!("CARGO_PKG_VERSION")),
+        generator: GENERATOR_FAMILY.to_string(),
         vectors: build_positive_vectors_v2(),
         negative_vectors: build_negative_vectors_v2(),
     }
 }
+
+/// Family-stable generator string for this `0.X` line.
+///
+/// Embeds only the major+minor version (`"wdm-codec 0.2"` for the entire
+/// `0.2.x` line). Patch component is omitted so vector files don't churn
+/// SHA-256 on patch bumps. The full `CARGO_PKG_VERSION` is logged to stderr
+/// by `gen_vectors --output` for traceability when needed.
+///
+/// Closes the v0.2.1 design fix flagged by
+/// `vectors-generator-string-patch-version-churn`. Prior v0.1.0 / v0.2.0
+/// files committed with the full-version form (e.g. `"wdm-codec 0.1.0-dev"`)
+/// keep their original strings on disk; `gen_vectors --verify` ignores this
+/// field so the historical files continue to verify cleanly.
+pub const GENERATOR_FAMILY: &str = concat!(
+    "wdm-codec ",
+    env!("CARGO_PKG_VERSION_MAJOR"),
+    ".",
+    env!("CARGO_PKG_VERSION_MINOR"),
+);
 
 // ---------------------------------------------------------------------------
 // Schema-1 builders (preserved verbatim from v0.1.0 lock)

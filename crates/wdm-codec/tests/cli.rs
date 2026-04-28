@@ -390,3 +390,65 @@ fn wdm_unknown_subcommand_exits_nonzero() {
         .failure()
         .stderr(predicate::str::contains("wdm").or(predicate::str::contains("unrecognized")));
 }
+
+// ---------------------------------------------------------------------------
+// v0.2.1 — `--fingerprint` flag (phase-e-cli-fingerprint-flag)
+// ---------------------------------------------------------------------------
+
+/// Two `--fingerprint @i=hex` args for a 2-key policy → encoder accepts;
+/// stderr carries the privacy warning; stdout has the encoded chunk.
+#[test]
+fn wdm_encode_fingerprint_flag_accepts_two_placeholders() {
+    Command::cargo_bin("wdm")
+        .expect("binary built")
+        .args([
+            "encode",
+            "--fingerprint",
+            "@0=deadbeef",
+            "--fingerprint",
+            "@1=cafebabe",
+            "wsh(multi(2,@0/**,@1/**))",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("wdm1"))
+        .stderr(predicate::str::contains(
+            "--fingerprint embeds master-key fingerprints",
+        ));
+}
+
+/// Missing index in the `--fingerprint` set → exits nonzero with a clear error.
+#[test]
+fn wdm_encode_fingerprint_flag_rejects_index_gap() {
+    Command::cargo_bin("wdm")
+        .expect("binary built")
+        .args([
+            "encode",
+            "--fingerprint",
+            "@0=deadbeef",
+            // Missing @1 for a 2-key policy.
+            "wsh(multi(2,@0/**,@1/**))",
+        ])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("fingerprints count mismatch")
+                .or(predicate::str::contains("missing")),
+        );
+}
+
+/// Wrong-length hex (4 chars, not 8) → exits nonzero with a parse error.
+#[test]
+fn wdm_encode_fingerprint_flag_rejects_short_hex() {
+    Command::cargo_bin("wdm")
+        .expect("binary built")
+        .args([
+            "encode",
+            "--fingerprint",
+            "@0=dead", // 4 chars, not 8
+            "wsh(pk(@0/**))",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("8 hex chars"));
+}

@@ -14,7 +14,7 @@
 use std::process;
 use std::str::FromStr;
 
-use bitcoin::bip32::DerivationPath;
+use bitcoin::bip32::{DerivationPath, Fingerprint};
 use clap::{Parser, Subcommand};
 use wdm_codec::{
     BchCode, ChunkHeader, DecodeOptions, EncodeOptions, WalletPolicy, decode, decode_string,
@@ -61,6 +61,16 @@ enum Command {
         /// Override the chunk-header wallet ID seed (4-byte hex, e.g. 0xdeadbeef).
         #[arg(long, value_name = "0xHEX")]
         seed: Option<String>,
+
+        /// Embed a master-key fingerprint for placeholder `@INDEX`, repeatable
+        /// for each placeholder. Format: `@0=deadbeef` (8 hex chars; 0x prefix
+        /// optional). All placeholders must be supplied (BIP §"Fingerprints
+        /// block" MUST clause). Indices must cover 0..N-1 with no gaps.
+        ///
+        /// Privacy: fingerprints leak which seeds match which @i placeholders.
+        /// The CLI prints a stderr warning when this flag is used.
+        #[arg(long = "fingerprint", value_name = "@INDEX=HEX")]
+        fingerprints: Vec<String>,
 
         /// Emit JSON output.
         #[arg(long)]
@@ -178,6 +188,77 @@ fn indicator_to_derivation_path(indicator: u8) -> Option<DerivationPath> {
 }
 
 // ---------------------------------------------------------------------------
+// Fingerprint argument parser (v0.2.1 — `phase-e-cli-fingerprint-flag`)
+// ---------------------------------------------------------------------------
+
+/// Parse one `--fingerprint @INDEX=HEX` argument. Returns `(index, fp)`.
+///
+/// Accepted forms:
+/// - `@0=deadbeef` (canonical)
+/// - `0=deadbeef` (`@` optional)
+/// - `@1=0xcafebabe` (0x prefix optional)
+///
+/// `INDEX` must be a non-negative integer. `HEX` must be exactly 8 lowercase
+/// hex characters representing a 4-byte master-key fingerprint.
+fn parse_fingerprint_arg(arg: &str) -> Result<(usize, Fingerprint), anyhow::Error> {
+    let (idx_part, hex_part) = arg.split_once('=').ok_or_else(|| {
+        anyhow::anyhow!("--fingerprint: expected '@INDEX=HEX' (e.g. '@0=deadbeef'), got {arg:?}")
+    })?;
+    let idx_str = idx_part.strip_prefix('@').unwrap_or(idx_part);
+    let index: usize = idx_str.parse().map_err(|_| {
+        anyhow::anyhow!(
+            "--fingerprint: index {idx_str:?} must be a non-negative integer (e.g. '@0=...')"
+        )
+    })?;
+    let hex_clean = hex_part.to_ascii_lowercase();
+    let hex_clean = hex_clean.strip_prefix("0x").unwrap_or(&hex_clean);
+    if hex_clean.len() != 8 {
+        anyhow::bail!(
+            "--fingerprint: hex {hex_part:?} must be exactly 8 hex chars (4 bytes); got {} chars",
+            hex_clean.len()
+        );
+    }
+    let mut bytes = [0u8; 4];
+    for i in 0..4 {
+        let byte_str = &hex_clean[i * 2..i * 2 + 2];
+        bytes[i] = u8::from_str_radix(byte_str, 16).map_err(|_| {
+            anyhow::anyhow!("--fingerprint: invalid hex byte {byte_str:?} in {hex_part:?}")
+        })?;
+    }
+    Ok((index, Fingerprint::from(bytes)))
+}
+
+/// Parse a `Vec<String>` of `--fingerprint` arguments into the
+/// `Vec<Fingerprint>` shape `EncodeOptions::fingerprints` expects.
+///
+/// Validates that the supplied indices cover `0..N` with no gaps, no
+/// duplicates, and starting at `0`. Returns the fingerprints in placeholder
+/// index order.
+fn parse_fingerprints_args(args: &[String]) -> Result<Vec<Fingerprint>, anyhow::Error> {
+    let mut by_index: Vec<Option<Fingerprint>> = Vec::new();
+    for arg in args {
+        let (index, fp) = parse_fingerprint_arg(arg)?;
+        if index >= by_index.len() {
+            by_index.resize(index + 1, None);
+        }
+        if by_index[index].is_some() {
+            anyhow::bail!("--fingerprint: duplicate entry for index {index}");
+        }
+        by_index[index] = Some(fp);
+    }
+    let mut out = Vec::with_capacity(by_index.len());
+    for (i, slot) in by_index.into_iter().enumerate() {
+        match slot {
+            Some(fp) => out.push(fp),
+            None => anyhow::bail!(
+                "--fingerprint: missing entry for index {i} (indices must cover 0..N with no gaps)"
+            ),
+        }
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Subcommand handlers
 // ---------------------------------------------------------------------------
 
@@ -187,6 +268,7 @@ fn cmd_encode(
     force_chunked: bool,
     force_long_code: bool,
     seed_arg: Option<&str>,
+    fingerprint_args: &[String],
     json: bool,
 ) -> Result<(), anyhow::Error> {
     // Parse the policy.
@@ -219,11 +301,29 @@ fn cmd_encode(
         }
     };
 
+    // Parse --fingerprint arguments. v0.2.1 (`phase-e-cli-fingerprint-flag`).
+    // Empty Vec → no fingerprints block (header byte 0x00, v0.1 wire output);
+    // non-empty → header bit 2 = 1, validated against the policy's placeholder
+    // count by the encoder per BIP §"Fingerprints block".
+    let fingerprints: Option<Vec<Fingerprint>> = if fingerprint_args.is_empty() {
+        None
+    } else {
+        // BIP MUST clause: privacy-warn before encoding. The CLI is a
+        // recovery tool per the BIP; the warning is mandatory.
+        eprintln!(
+            "warning: --fingerprint embeds master-key fingerprints into the backup. \
+             This leaks which seeds match which @i placeholders. \
+             Only use if recovery requires the disclosure."
+        );
+        Some(parse_fingerprints_args(fingerprint_args)?)
+    };
+
     let mut opts = EncodeOptions::default();
     opts = opts.with_force_chunking(force_chunked);
     opts.force_long_code = force_long_code;
     opts.wallet_id_seed = wallet_id_seed;
     opts.shared_path = shared_path_override;
+    opts.fingerprints = fingerprints;
 
     let backup = encode(&policy, &opts).map_err(|e| anyhow::anyhow!("encode failed: {e}"))?;
 
@@ -400,6 +500,7 @@ fn main() {
             force_chunked,
             force_long_code,
             seed,
+            fingerprints,
             json,
         } => cmd_encode(
             &policy,
@@ -407,6 +508,7 @@ fn main() {
             force_chunked,
             force_long_code,
             seed.as_deref(),
+            &fingerprints,
             json,
         ),
 

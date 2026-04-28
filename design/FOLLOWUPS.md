@@ -70,15 +70,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.1-nice-to-have
 
-### `p4-with-chunking-mode-builder` — additive `EncodeOptions::with_chunking_mode(ChunkingMode)` builder
-
-- **Surfaced:** Phase A bucket A dispatch (deferred per controller); reaffirmed by reviewer
-- **Where:** `crates/wdm-codec/src/options.rs::EncodeOptions`
-- **What:** Today the only chunking-mode builder is `with_force_chunking(self, force: bool)`, kept as a `bool → enum` shim for v0.1.1 source-compat. When a third `ChunkingMode` variant is introduced (e.g., Phase D's `MaxChunkBytes(u8)` per BIP §"Chunking" line 438, if it lands), add `with_chunking_mode(ChunkingMode)` so callers can select the new variant explicitly.
-- **Why deferred:** purely additive; no existing or imminent caller needs it.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
-
 ### `decoded-string-data-memory-microopt` — drop `DecodedString.data`, replace with accessor backed by `data_with_checksum`
 
 - **Surfaced:** Phase B bucket A reviewer (Opus 4.7) on commit `5f13812`
@@ -106,14 +97,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.3
 
-### `phase-e-cli-fingerprint-flag` — `wdm encode --fingerprint @i=<hex>` CLI flag
-
-- **Surfaced:** Phase E decision log E-10 (deferred at dispatch)
-- **Where:** `crates/wdm-codec/src/bin/wdm/main.rs::cmd_encode`
-- **What:** Phase E ships the library API (`EncodeOptions::fingerprints`) but does NOT add a CLI flag. To use fingerprints from the CLI today, callers would need a wrapper script. Add a repeatable `--fingerprint @i=<hex>` flag to `cmd_encode` that constructs the `Vec<Fingerprint>` and calls `with_fingerprints(...)`. Validate at parse time that `@i` indices are sequential 0..N-1 and N == placeholder_count.
-- **Why deferred:** library API is the Phase E deliverable; CLI exposure is a v0.2.1 / v0.3 ergonomics improvement.
-- **Status:** open
-- **Tier:** v0.2-nice-to-have
 
 ### `cli-json-debug-formatted-enum-strings` — replace `format!("{:?}", enum_value)` with serde-typed enum mirrors in CLI JSON output
 
@@ -423,6 +406,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase E decision log E-9 (deferred at dispatch)
 - **Status:** resolved `548dc10` (Phase G `MIGRATION.md` write) — `MIGRATION.md` §3 documents the behavioral break (header bit 2 = 1 no longer fires `PolicyScopeViolation`) and recommends inspecting `WdmBackup.fingerprints` / `DecodeResult.fingerprints` directly for fingerprints-aware caller code.
 - **Tier:** v0.2-nice-to-have (closed)
+
+### `p4-with-chunking-mode-builder` — additive `EncodeOptions::with_chunking_mode(ChunkingMode)` builder
+
+- **Surfaced:** Phase A bucket A dispatch (deferred per controller); reaffirmed by reviewer
+- **Status:** resolved in v0.2.1 — `pub fn with_chunking_mode(mut self, mode: ChunkingMode) -> Self` added to `EncodeOptions` alongside the preserved `with_force_chunking(bool)` shim. Rustdoc cross-references both forms; new code prefers the typed enum, the bool shim stays for v0.1.1 source-compat.
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `phase-e-cli-fingerprint-flag` — `wdm encode --fingerprint @i=<hex>` CLI flag
+
+- **Surfaced:** Phase E decision log E-10 (deferred at dispatch)
+- **Status:** resolved in v0.2.1 — `wdm encode --fingerprint @INDEX=HEX` repeatable flag added to `bin/wdm/main.rs::cmd_encode`. New `parse_fingerprint_arg` + `parse_fingerprints_args` helpers validate hex format (8 chars, optional `0x` prefix), index format (`@N` or `N`), and that supplied indices cover `0..N` with no gaps + no duplicates. CLI prints a stderr privacy warning whenever the flag is used per BIP §"Fingerprints block" Privacy paragraph (recovery tools MUST warn). 3 new CLI integration tests in `tests/cli.rs` (happy path + index-gap rejection + short-hex rejection).
+- **Tier:** v0.2-nice-to-have (closed)
+
+### `vectors-generator-string-patch-version-churn` — vector file SHA churns on every patch bump because `generator` field embeds full version
+
+- **Surfaced:** v0.2.1 release prep (2026-04-28); v0.2.json regen produced a different SHA only because `generator: "wdm-codec 0.2.0"` → `"wdm-codec 0.2.1"`, despite byte-identical wire format and corpus.
+- **Status:** resolved in v0.2.1 — `pub const GENERATOR_FAMILY: &str = "wdm-codec <major>.<minor>"` added to `vectors.rs` via `concat!` of `CARGO_PKG_VERSION_MAJOR` / `_MINOR`. Both v1 and v2 builders use this. `gen_vectors --output` logs the full crate version to stderr for traceability. v0.2.json regen now produces SHA `b403073b8a925bdda37adb92daa8521d527476aa7937450bd27fcbe0efdfd072` — stable across the entire 0.2.x patch line. (v0.2.0 SHA `3c208300...` remains correct for the v0.2.0 tag; consumers pinning it experience a one-time migration at v0.2.1 then no further churn.)
+- **Tier:** v0.2-nice-to-have (closed; was originally filed as v0.3 but applied during v0.2.1 prep per user direction)
 
 ---
 

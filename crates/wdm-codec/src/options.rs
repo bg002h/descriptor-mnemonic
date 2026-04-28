@@ -98,13 +98,25 @@ impl EncodeOptions {
     /// `bool` shim retained for source-compatibility with v0.1.1 callers:
     /// `true` selects [`ChunkingMode::ForceChunked`], `false` selects
     /// [`ChunkingMode::Auto`]. See [`EncodeOptions::chunking_mode`] for full
-    /// semantics.
+    /// semantics. For new code, prefer [`EncodeOptions::with_chunking_mode`]
+    /// which takes the typed enum directly.
     pub fn with_force_chunking(mut self, force: bool) -> Self {
         self.chunking_mode = if force {
             ChunkingMode::ForceChunked
         } else {
             ChunkingMode::Auto
         };
+        self
+    }
+
+    /// Set [`EncodeOptions::chunking_mode`] explicitly with a typed enum
+    /// rather than the [`EncodeOptions::with_force_chunking`] `bool` shim.
+    /// Recommended for new code; once a third [`ChunkingMode`] variant lands
+    /// (e.g., a future `MaxChunkBytes(u8)` per BIP §"Chunking" line 438),
+    /// the `bool` shim becomes ambiguous and this method is the only way to
+    /// select the new variant.
+    pub fn with_chunking_mode(mut self, mode: ChunkingMode) -> Self {
+        self.chunking_mode = mode;
         self
     }
 

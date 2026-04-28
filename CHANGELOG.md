@@ -4,6 +4,30 @@ All notable changes to `wdm-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.2.1] — 2026-04-28
+
+Patch release. Two post-release ergonomics items from `design/FOLLOWUPS.md`. Wire format identical to v0.2.0; `MIGRATION.md` from v0.2.0 still applies for v0.1.x → v0.2.x upgrades.
+
+### Added
+
+- **`EncodeOptions::with_chunking_mode(ChunkingMode)`** builder method. Closes `p4-with-chunking-mode-builder`. The existing `with_force_chunking(bool)` shim is preserved; new code should prefer the typed enum form, which becomes the only way to select a future 3rd `ChunkingMode` variant (e.g., a `MaxChunkBytes(u8)` variant per BIP §"Chunking" line 438) without ambiguity.
+- **`wdm encode --fingerprint @INDEX=HEX`** CLI flag (repeatable). Closes `phase-e-cli-fingerprint-flag`. Library API for fingerprints (Phase E in v0.2.0) is now exposed at the CLI. The flag accepts `@0=deadbeef` (canonical) or `0=deadbeef` (no `@`) or `@1=0xcafebabe` (with `0x` prefix). All `@i` indices must cover `0..N-1` with no gaps; the encoder validates `N == placeholder_count(policy)` per BIP §"Fingerprints block" MUST clause.
+- **CLI privacy warning** when `--fingerprint` is used: stderr message reminds the user that fingerprints leak which seeds match which `@i` placeholders. Per BIP §"Fingerprints block" Privacy paragraph (recovery tools MUST warn before encoding).
+- **3 new CLI integration tests** covering `--fingerprint` happy path, index-gap rejection, and short-hex rejection.
+
+### Changed
+
+- **`v0.2.json` regenerated** with a family-stable `generator` field (`"wdm-codec 0.2"`, was `"wdm-codec 0.2.0"` at v0.2.0). New SHA: `b403073b8a925bdda37adb92daa8521d527476aa7937450bd27fcbe0efdfd072` (was `3c208300…` at v0.2.0). **The new SHA is stable across the entire v0.2.x patch line** — future v0.2.2 / v0.2.3 etc. will produce the same SHA on regen. Patch-version traceability is preserved in `gen_vectors --output`'s stderr log. Wire format unchanged. The v0.2.0 SHA `3c208300…` remains correct for the v0.2.0 tag; if your conformance suite pins it, expect a one-time SHA migration at v0.2.1 then no churn afterward. Closes the design defect filed during v0.2.1 prep as `vectors-generator-string-patch-version-churn`.
+
+- **`gen_vectors --output`** now logs the full crate version to stderr (`family generator = "wdm-codec 0.2"; full crate version = "0.2.1"`) so contributors can identify which exact build produced a regen without touching the on-disk SHA.
+
+### Notes
+
+- **MSRV: 1.85** (unchanged from v0.1.x)
+- **Wire format unchanged** from v0.2.0; v0.2.0 backups remain valid v0.2.1 inputs and vice versa
+- **Workspace `[patch]` block** still ships unchanged (waiting on `apoelstra/rust-miniscript#1`); same downstream UX as v0.2.0
+- **Test count**: 564 passing on main (was 561 at v0.2.0; +3 new CLI tests)
+
 ## [0.2.0] — 2026-04-28
 
 The v0.2 release expands the WDM codec from v0.1's BIP 388 wsh-only baseline to ship taproot single-leaf, the BIP 93 BCH 4-error correction promise, and the BIP §"Fingerprints block" privacy-controlled feature. Test vectors are bumped to schema 2 with byte-for-byte exact negative fixtures generated programmatically.
@@ -69,6 +93,7 @@ Patch release. 17 tests + bug fixes + cross-platform CI work after v0.1.0. See g
 
 Initial release. BIP 388 wsh-only wallet-policy backup format reference implementation. 445 tests, 95% library line coverage, 10 positive + 30 negative test vectors locked in `v0.1.json`. See `design/IMPLEMENTATION_PLAN_v0.1.md` and `design/agent-reports/phase-10-task-controller-closure.md` for the v0.1.0 phase-by-phase summary.
 
+[0.2.1]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.1
 [0.2.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.0
 [0.1.1]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.1.1
 [0.1.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.1.0
