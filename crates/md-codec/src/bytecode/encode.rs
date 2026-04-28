@@ -151,7 +151,10 @@ impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
                     }
                     let leaf_ms = first.miniscript();
                     // D-2: enforce the Coldcard per-leaf miniscript subset.
-                    validate_tap_leaf_subset(leaf_ms)?;
+                    // Single-leaf path: leaf_index is always 0.
+                    // (Phase 4 will replace this entire arm with multi-leaf dispatch;
+                    //  for now, preserve v0.4.x single-leaf behavior with index plumbing.)
+                    validate_tap_leaf_subset(leaf_ms, Some(0))?;
                     leaf_ms.encode_template(out, placeholder_map)?;
                 }
                 Ok(())
@@ -442,6 +445,8 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
             // error rather than silently writing it.
             other => Err(Error::TapLeafSubsetViolation {
                 operator: tap_terminal_name(other).to_string(),
+                leaf_index: None, // Terminal-encoder catch-all has no leaf-index context;
+                                  // the outer validate_tap_leaf_subset call site supplies index.
             }),
         }
     }
@@ -465,8 +470,26 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
 /// vocabulary documented as of edge firmware. v0.3 may relax this if a
 /// signer documents a wider safe wrapper set; tracked as
 /// `phase-d-tap-leaf-wrapper-subset-clarification` in `FOLLOWUPS.md`.
-pub fn validate_tap_leaf_subset(ms: &Miniscript<DescriptorPublicKey, Tap>) -> Result<(), Error> {
-    validate_tap_leaf_terminal(&ms.node)
+/// Validate that every fragment in `ms` is in the Phase D Coldcard tap-leaf
+/// subset. `leaf_index` is the DFS pre-order index of this leaf within the
+/// containing tap tree; it is propagated into `Error::TapLeafSubsetViolation`
+/// to enrich diagnostics for multi-leaf decode/encode paths.
+///
+/// Pass `Some(0)` for single-leaf `tr(KEY, leaf)`, `Some(n)` for the n-th
+/// leaf in DFS pre-order traversal of a multi-leaf tree, or `None` for paths
+/// that do not have leaf-index context (currently no in-tree caller passes
+/// `None`; reserved for external callers).
+pub fn validate_tap_leaf_subset(
+    ms: &Miniscript<DescriptorPublicKey, Tap>,
+    leaf_index: Option<usize>,
+) -> Result<(), Error> {
+    validate_tap_leaf_terminal(&ms.node).map_err(|e| match e {
+        Error::TapLeafSubsetViolation { operator, .. } => Error::TapLeafSubsetViolation {
+            operator,
+            leaf_index,
+        },
+        other => other,
+    })
 }
 
 fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Result<(), Error> {
@@ -486,6 +509,9 @@ fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Resu
         // Everything else is out-of-subset for v0.2.
         other => Err(Error::TapLeafSubsetViolation {
             operator: tap_terminal_name(other).to_string(),
+            leaf_index: None, // Sub-helper of validate_tap_leaf_subset; outer caller
+                              // re-wraps the error with the correct leaf_index via
+                              // map_err in Task 2.3.
         }),
     }
 }

@@ -185,6 +185,9 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
         corrections: all_corrections,
         verifications,
         confidence,
+        // Phase 5 (v0.5) populates this for `tr(...)` decodes; for v0.4.x
+        // shapes (and KeyOnly tr) the vector remains empty.
+        tap_leaves: vec![],
     };
 
     Ok(DecodeResult {

@@ -856,12 +856,12 @@
     },
     {
       "id": "n_taptree_multi_leaf",
-      "description": "Bytecode embedding `Tag::TapTree=0x08` in leaf position → PolicyScopeViolation (multi-leaf reserved for v1+)",
+      "description": "Bytecode embedding `Tag::TapTree=0x08` framing with no children → InvalidBytecode/UnexpectedEnd (truncated multi-leaf subtree)",
       "input_strings": [
         "md1qqqqqvcrqceqqzqfnlk2cnh9syxz"
       ],
-      "expected_error_variant": "PolicyScopeViolation",
-      "provenance": "encoded `tr(@0/**)` to bytecode, appended `Tag::TapTree=0x08`, wrapped in a SingleString chunk via `encoding::encode_string`; decode rejects multi-leaf TapTree as reserved for v1+"
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)` to bytecode, appended `Tag::TapTree=0x08`, wrapped in a SingleString chunk via `encoding::encode_string`; v0.5 decode enters `decode_tap_subtree` and reports UnexpectedEnd when reading the missing left child"
     },
     {
       "id": "n_fingerprints_count_mismatch",

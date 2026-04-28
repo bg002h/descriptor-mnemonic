@@ -262,19 +262,26 @@ fn decode_tr_inner(
         // Key-path-only `tr(K)`.
         None
     } else {
-        // Peek at the next tag without consuming so we can reject 0x08
-        // (multi-leaf TapTree) with a precise message.
+        // Peek at the next tag without consuming so we can choose between
+        // single-leaf (any leaf-script tag) and multi-leaf (Tag::TapTree
+        // = 0x08 framing) without trial-and-error.
         let next_tag_byte = cur.peek_byte()?;
         if next_tag_byte == Tag::TapTree.as_byte() {
-            return Err(Error::PolicyScopeViolation(
-                "multi-leaf TapTree (Tag::TapTree=0x08) reserved for v1+; v0.2 supports single-leaf only"
-                    .to_string(),
-            ));
+            // v0.5 multi-leaf path: recurse via decode_tap_subtree starting
+            // at depth=1. The helper threads the DFS pre-order leaf_counter
+            // through into validate_tap_leaf_subset so per-leaf subset
+            // violations name the offending leaf.
+            let mut leaf_counter: usize = 0;
+            let tap_tree = decode_tap_subtree(cur, keys, 1, &mut leaf_counter)?;
+            Some(tap_tree)
+        } else {
+            // Single-leaf path (preserved verbatim from v0.4.x): dispatch
+            // to decode_tap_miniscript with leaf_index = Some(0).
+            let leaf = decode_tap_miniscript(cur, keys, Some(0))?;
+            // D-2: enforce per-leaf subset before constructing the TapTree.
+            crate::bytecode::encode::validate_tap_leaf_subset(&leaf, Some(0))?;
+            Some(TapTree::leaf(leaf))
         }
-        let leaf = decode_tap_miniscript(cur, keys)?;
-        // D-2: enforce per-leaf subset before constructing the TapTree.
-        crate::bytecode::encode::validate_tap_leaf_subset(&leaf)?;
-        Some(TapTree::leaf(leaf))
     };
     let tr = Tr::new(internal_key, tap_tree).map_err(|e| Error::InvalidBytecode {
         offset: cur.offset(),
@@ -578,9 +585,17 @@ fn decode_terminal(
 // constructor from accepting tap-illegal terminals.
 
 /// Decode a `Miniscript<DescriptorPublicKey, Tap>` from the next bytes.
+///
+/// `leaf_index` is the DFS pre-order index of this leaf within the
+/// containing tap tree. It is plumbed through to `decode_tap_terminal` so
+/// that a `TapLeafSubsetViolation` raised during decode names the offending
+/// leaf. Pass `Some(0)` for single-leaf `tr(KEY, leaf)`, `Some(n)` for the
+/// n-th leaf in DFS pre-order traversal of a multi-leaf tree, or `None`
+/// for callers that do not have leaf-index context.
 fn decode_tap_miniscript(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
+    leaf_index: Option<usize>,
 ) -> Result<Miniscript<DescriptorPublicKey, Tap>, Error> {
     let tag_byte = cur.read_byte()?;
     let tag_offset = cur.offset() - 1;
@@ -588,7 +603,7 @@ fn decode_tap_miniscript(
         offset: tag_offset,
         kind: BytecodeErrorKind::UnknownTag(tag_byte),
     })?;
-    decode_tap_terminal(cur, keys, tag, tag_offset)
+    decode_tap_terminal(cur, keys, tag, tag_offset, leaf_index)
 }
 
 /// Decode a single tap-context Terminal given its already-consumed tag.
@@ -605,6 +620,7 @@ fn decode_tap_terminal(
     keys: &[DescriptorPublicKey],
     tag: Tag,
     tag_offset: usize,
+    leaf_index: Option<usize>,
 ) -> Result<Miniscript<DescriptorPublicKey, Tap>, Error> {
     let term: Terminal<DescriptorPublicKey, Tap> = match tag {
         Tag::PkK => {
@@ -658,28 +674,33 @@ fn decode_tap_terminal(
             Terminal::Older(lock)
         }
         Tag::AndV => {
-            let left = decode_tap_miniscript(cur, keys)?;
-            let right = decode_tap_miniscript(cur, keys)?;
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
             Terminal::AndV(std::sync::Arc::new(left), std::sync::Arc::new(right))
         }
         Tag::OrD => {
-            let left = decode_tap_miniscript(cur, keys)?;
-            let right = decode_tap_miniscript(cur, keys)?;
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
             Terminal::OrD(std::sync::Arc::new(left), std::sync::Arc::new(right))
         }
         Tag::Check => {
-            let child = decode_tap_miniscript(cur, keys)?;
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
             Terminal::Check(std::sync::Arc::new(child))
         }
         Tag::Verify => {
-            let child = decode_tap_miniscript(cur, keys)?;
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
             Terminal::Verify(std::sync::Arc::new(child))
         }
-        // Reject Tag::TapTree (0x08) explicitly with a v0.2-specific
-        // message (Phase D D-1).
+        // Defense-in-depth: in v0.5 `decode_tr_inner` routes Tag::TapTree
+        // (0x08) directly to `decode_tap_subtree`, and within that helper
+        // a Tag::TapTree byte at recursion-position is handled in the
+        // `Some(Tag::TapTree)` arm — never reaching `decode_tap_terminal`
+        // on the happy path. This arm catches direct callers that bypass
+        // the helper (none today, but keep the guard so a future caller
+        // surfaces a precise diagnostic instead of silently misparsing).
         Tag::TapTree => {
             return Err(Error::PolicyScopeViolation(
-                "multi-leaf TapTree (Tag::TapTree=0x08) reserved for v1+; v0.2 supports single-leaf only"
+                "Tag::TapTree (0x08) appeared in leaf position; this byte is the multi-leaf inner-node framing and must be routed via decode_tap_subtree, not decode_tap_terminal"
                     .to_string(),
             ));
         }
@@ -690,6 +711,8 @@ fn decode_tap_terminal(
         other => {
             return Err(Error::TapLeafSubsetViolation {
                 operator: tag_to_bip388_name(other).to_string(),
+                leaf_index, // Threaded from decode_tap_subtree / decode_tap_miniscript;
+                            // see Task 2.6+2.8 for the parameter wiring.
             });
         }
     };
@@ -697,6 +720,80 @@ fn decode_tap_terminal(
         offset: tag_offset,
         kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
     })
+}
+
+/// Recursive helper for v0.5 multi-leaf TapTree decoding.
+///
+/// Peeks the next byte (without consuming) to decide whether to recurse into
+/// another inner `Tag::TapTree (0x08)` framing or to dispatch to a leaf-script
+/// terminal. Gates depth at BIP 341's `TAPROOT_CONTROL_MAX_NODE_COUNT = 128`.
+///
+/// **Depth semantics**: `depth` represents "the framing-level this call is
+/// about to read". The initial caller (`decode_tr_inner`) passes `depth = 1`
+/// to read the first `[TapTree]` framing at the root of the script-tree
+/// subtree. Each TapTree framing consumed at depth=N produces leaves under
+/// it at miniscript-depth N. The gate `depth > 128` fires at depth=129 when
+/// the next byte is `Tag::TapTree`, rejecting only the case that would push
+/// leaves past miniscript-depth 128.
+///
+/// **Hostile-input invariants**: peek-before-recurse means a too-deep tree
+/// is rejected without consuming the offending byte's children, preventing
+/// recursion-bomb stack-overflow. The cursor IS advanced past the violating
+/// `0x08` byte before the depth gate fires (intentional — matches v0.4 Sh
+/// restriction matrix diagnostic offset convention).
+///
+/// **Leaf-index propagation**: `leaf_counter` is incremented in DFS pre-order
+/// (left-subtree leaves numbered before right-subtree leaves at any inner
+/// node). This index is plumbed through to `validate_tap_leaf_subset` so
+/// `Error::TapLeafSubsetViolation` diagnostics name the offending leaf.
+fn decode_tap_subtree(
+    cur: &mut Cursor<'_>,
+    keys: &[DescriptorPublicKey],
+    depth: usize,
+    leaf_counter: &mut usize,
+) -> Result<TapTree<DescriptorPublicKey>, Error> {
+    let inner_byte = cur.peek_byte()?;
+    let tag_offset = cur.offset();
+    match Tag::from_byte(inner_byte) {
+        Some(Tag::TapTree) => {
+            // Consume the framing byte, then gate. Cursor offset on rejection
+            // points past the violating byte (matches v0.4 Sh diagnostic
+            // precedent).
+            cur.read_byte()?;
+            if depth > 128 {
+                return Err(Error::PolicyScopeViolation(
+                    "TapTree depth exceeds BIP 341 consensus maximum (128)".to_string(),
+                ));
+            }
+            let left = decode_tap_subtree(cur, keys, depth + 1, leaf_counter)?;
+            let right = decode_tap_subtree(cur, keys, depth + 1, leaf_counter)?;
+            TapTree::combine(left, right).map_err(|_| {
+                Error::PolicyScopeViolation(
+                    "TapTree::combine rejected (depth limit at upstream miniscript layer)"
+                        .to_string(),
+                )
+            })
+        }
+        Some(_other_leaf_tag) => {
+            // `TapTree::leaf(leaf)` returns a depth-0 seed; each enclosing
+            // `TapTree::combine` post-increments depth as the recursion
+            // unwinds, so a leaf encountered at recursion-depth N ends up
+            // at miniscript-depth N in the final tree (see
+            // rust-miniscript-fork taptree.rs:40-50).
+            let index = *leaf_counter;
+            *leaf_counter += 1;
+            let leaf = decode_tap_miniscript(cur, keys, Some(index))?;
+            // D-2: enforce per-leaf subset before returning.
+            // Mirrors the single-leaf path in `decode_tr_inner` so multi-leaf
+            // decode applies the same Coldcard subset gate per leaf.
+            crate::bytecode::encode::validate_tap_leaf_subset(&leaf, Some(index))?;
+            Ok(TapTree::leaf(leaf))
+        }
+        None => Err(Error::InvalidBytecode {
+            offset: tag_offset,
+            kind: BytecodeErrorKind::UnknownTag(inner_byte),
+        }),
+    }
 }
 
 /// Map a `Tag` to its BIP 388 lowercase operator name for user-facing

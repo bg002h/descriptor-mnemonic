@@ -3,7 +3,11 @@
 //! Pure data — no algorithms here. The decoder in `decode.rs` (Task 5-E)
 //! populates these types.
 
+use std::sync::Arc;
+
 use bitcoin::bip32::Fingerprint;
+use miniscript::descriptor::DescriptorPublicKey;
+use miniscript::{Miniscript, Tap};
 
 use crate::WalletPolicy;
 use crate::chunking::Correction;
@@ -83,6 +87,32 @@ pub struct Verifications {
 }
 
 // ---------------------------------------------------------------------------
+// TapLeafReport
+// ---------------------------------------------------------------------------
+
+/// Per-leaf decode report for taproot script trees.
+///
+/// One entry per leaf in DFS pre-order traversal of the tap tree. Empty for
+/// keypath-only `tr(KEY)`. The miniscript is wrapped in `Arc` to mirror
+/// rust-miniscript's `TapTree` internal representation (zero-copy borrow
+/// from the source `Descriptor`).
+///
+/// Marked `#[non_exhaustive]` so v0.5+ can add fields (e.g. leaf-script
+/// hash, control block, derivation hint) without breaking pattern
+/// matching.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TapLeafReport {
+    /// DFS pre-order index of this leaf within the tap tree (0-based).
+    pub leaf_index: usize,
+    /// The miniscript fragment at this leaf.
+    pub miniscript: Arc<Miniscript<DescriptorPublicKey, Tap>>,
+    /// Miniscript-depth of this leaf in the final tree (0 for a single-leaf
+    /// `TapTree::leaf(ms)` wrapper; >=1 for multi-leaf trees).
+    pub depth: u8,
+}
+
+// ---------------------------------------------------------------------------
 // DecodeReport
 // ---------------------------------------------------------------------------
 
@@ -117,6 +147,11 @@ pub struct DecodeReport {
     pub verifications: Verifications,
     /// Confidence level of the recovered policy.
     pub confidence: Confidence,
+    /// Per-leaf decode report for `tr(...)` descriptors. Empty for KeyOnly
+    /// `tr(KEY)`; one entry for single-leaf `tr(KEY, leaf)`; N entries in DFS
+    /// pre-order for multi-leaf `tr(KEY, TREE)`. Always empty for non-`tr`
+    /// top-level descriptors.
+    pub tap_leaves: Vec<TapLeafReport>,
 }
 
 // ---------------------------------------------------------------------------
@@ -206,10 +241,12 @@ mod tests {
                 version_supported: true,
             },
             confidence: Confidence::Confirmed,
+            tap_leaves: vec![],
         };
         assert_eq!(report.outcome, DecodeOutcome::Clean);
         assert!(report.corrections.is_empty());
         assert_eq!(report.confidence, Confidence::Confirmed);
+        assert!(report.tap_leaves.is_empty());
     }
 
     #[test]
@@ -226,6 +263,7 @@ mod tests {
                 version_supported: true,
             },
             confidence: Confidence::Confirmed,
+            tap_leaves: vec![],
         };
         let result = DecodeResult {
             policy,

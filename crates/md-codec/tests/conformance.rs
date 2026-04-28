@@ -930,7 +930,7 @@ fn rejects_tap_leaf_subset_violation() {
             .expect("tap-leaf with sha256 inside and_v should parse syntactically");
     let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
     match err {
-        Error::TapLeafSubsetViolation { ref operator } => {
+        Error::TapLeafSubsetViolation { ref operator, .. } => {
             assert!(
                 operator.contains("sha256"),
                 "expected operator name to contain 'sha256', got {operator:?}"

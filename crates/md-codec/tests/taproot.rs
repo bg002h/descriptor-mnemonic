@@ -120,7 +120,7 @@ fn taproot_rejects_out_of_subset_sha256() {
             .expect("policy should parse");
     let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
     match err {
-        Error::TapLeafSubsetViolation { ref operator } => {
+        Error::TapLeafSubsetViolation { ref operator, .. } => {
             assert!(
                 operator.contains("sha256"),
                 "expected operator='sha256', got {operator:?}"
@@ -141,7 +141,7 @@ fn taproot_rejects_wrapper_alt_outside_subset() {
         .expect("policy should parse");
     let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
     match err {
-        Error::TapLeafSubsetViolation { ref operator } => {
+        Error::TapLeafSubsetViolation { ref operator, .. } => {
             // The outer operator (`thresh`) is what the validator hits
             // first when walking the AST. We don't prescribe which is
             // reported, but we do prescribe that *some* out-of-subset
@@ -160,25 +160,27 @@ fn taproot_rejects_wrapper_alt_outside_subset() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn taproot_rejects_decode_tag_taptree() {
-    // A bytecode stream that places `Tag::TapTree=0x08` immediately after
-    // the internal-key placeholder reference must be rejected with a
-    // PolicyScopeViolation naming the v1+ deferral. We synthesise the
-    // bytecode directly: encode `tr(@0/**)` to get a valid prefix, then
-    // append `0x08` so the cursor sees the reserved tag while looking for
-    // the leaf miniscript.
+fn taproot_decodes_tag_taptree_routes_into_subtree_helper() {
+    // v0.5 admits Tag::TapTree (0x08) as the multi-leaf inner-node
+    // framing. Appending a bare 0x08 byte to a `tr(@0/**)` bytecode
+    // therefore enters `decode_tap_subtree` — which immediately needs
+    // the left child and surfaces `UnexpectedEnd` when the byte stream
+    // terminates instead.
+    //
+    // (v0.4 used to reject Tag::TapTree with a v1+-deferred
+    // PolicyScopeViolation; that rejection was removed in v0.5 Phase 2.
+    // See `design/SPEC_v0_5_multi_leaf_taptree.md` §3 for the routing
+    // semantics; Phase 6 adds the canonical N1-N9 negative fixtures.)
     let policy: WalletPolicy = "tr(@0/**)".parse().unwrap();
     let mut bytes = policy.to_bytecode(&EncodeOptions::default()).unwrap();
-    bytes.push(0x08); // Tag::TapTree — reserved for v1+
+    bytes.push(0x08); // Tag::TapTree — multi-leaf inner-node framing
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
     match err {
-        Error::PolicyScopeViolation(ref msg) => {
-            assert!(
-                msg.contains("TapTree") || msg.contains("multi-leaf") || msg.contains("v1+"),
-                "expected v1+ TapTree rejection, got {msg:?}"
-            );
-        }
-        other => panic!("expected PolicyScopeViolation, got {other:?}"),
+        Error::InvalidBytecode {
+            kind: md_codec::BytecodeErrorKind::UnexpectedEnd,
+            ..
+        } => {}
+        other => panic!("expected InvalidBytecode/UnexpectedEnd, got {other:?}"),
     }
 }
 

@@ -1527,23 +1527,29 @@ fn build_negative_n_tap_leaf_subset() -> NegativeVector {
 
 fn build_negative_n_taptree_multi_leaf() -> NegativeVector {
     use crate::bytecode::Tag;
-    // Encode `tr(@0/**)` to obtain a valid prefix, then append `Tag::TapTree`
-    // (0x08) at the leaf position. The decoder rejects multi-leaf TapTree as
-    // reserved for v1+.
+    // v0.5 admits Tag::TapTree (0x08) as the multi-leaf inner-node framing.
+    // Appending a bare 0x08 with no children therefore enters the multi-leaf
+    // decode helper which immediately needs the left subtree and surfaces
+    // `InvalidBytecode/UnexpectedEnd` when the byte stream terminates.
+    //
+    // (v0.4 used to reject this with PolicyScopeViolation. The Phase 6 test
+    // corpus rework replaces this fixture with the canonical N1-N9 negative
+    // set per `design/SPEC_v0_5_multi_leaf_taptree.md` §5; for Phase 2 we
+    // update the fixture's expectation to match the v0.5 routing semantics.)
     let policy: WalletPolicy = "tr(@0/**)".parse().unwrap();
     let mut bytecode = policy.to_bytecode(&EncodeOptions::default()).unwrap();
     bytecode.push(Tag::TapTree.as_byte());
     let s = encode_singlestring_around(&bytecode);
-    debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
     NegativeVector {
         id: "n_taptree_multi_leaf".to_string(),
         description:
-            "Bytecode embedding `Tag::TapTree=0x08` in leaf position → PolicyScopeViolation (multi-leaf reserved for v1+)"
+            "Bytecode embedding `Tag::TapTree=0x08` framing with no children → InvalidBytecode/UnexpectedEnd (truncated multi-leaf subtree)"
                 .to_string(),
         input_strings: vec![s],
-        expected_error_variant: "PolicyScopeViolation".to_string(),
+        expected_error_variant: "InvalidBytecode".to_string(),
         provenance: Some(
-            "encoded `tr(@0/**)` to bytecode, appended `Tag::TapTree=0x08`, wrapped in a SingleString chunk via `encoding::encode_string`; decode rejects multi-leaf TapTree as reserved for v1+"
+            "encoded `tr(@0/**)` to bytecode, appended `Tag::TapTree=0x08`, wrapped in a SingleString chunk via `encoding::encode_string`; v0.5 decode enters `decode_tap_subtree` and reports UnexpectedEnd when reading the missing left child"
                 .to_string(),
         ),
     }
