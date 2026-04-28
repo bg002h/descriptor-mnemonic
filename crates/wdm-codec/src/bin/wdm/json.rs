@@ -72,8 +72,8 @@ pub(crate) enum BchCodeJson {
     Long,
 }
 
-impl From<BchCode> for BchCodeJson {
-    fn from(c: BchCode) -> Self {
+impl From<&BchCode> for BchCodeJson {
+    fn from(c: &BchCode) -> Self {
         match c {
             BchCode::Regular => BchCodeJson::Regular,
             BchCode::Long => BchCodeJson::Long,
@@ -85,7 +85,7 @@ impl From<&EncodedChunk> for EncodedChunkJson {
     fn from(c: &EncodedChunk) -> Self {
         EncodedChunkJson {
             chunk_index: c.chunk_index,
-            code: c.code.into(),
+            code: (&c.code).into(),
             raw: c.raw.clone(),
             total_chunks: c.total_chunks,
         }

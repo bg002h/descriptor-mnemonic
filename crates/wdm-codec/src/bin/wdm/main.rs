@@ -21,8 +21,8 @@ use wdm_codec::{
     encode, five_bit_to_bytes, wallet_id::WalletIdSeed,
 };
 
-mod wdm_json;
-use wdm_json::{DecodeJson, EncodeJson};
+mod json;
+use json::{DecodeJson, EncodeJson};
 
 // ---------------------------------------------------------------------------
 // CLI structure
@@ -228,7 +228,7 @@ fn cmd_encode(
     let backup = encode(&policy, &opts).map_err(|e| anyhow::anyhow!("encode failed: {e}"))?;
 
     if json {
-        // v0.2: derive-based wrappers (see `wdm_json` module). Output is
+        // v0.2: derive-based wrappers (see `json` module). Output is
         // byte-identical to v0.1.1's hand-built `serde_json::json!{}`
         // literal — wrapper field order is alphabetical so
         // `serde_json::to_string_pretty` reproduces the same key order
@@ -253,7 +253,7 @@ fn cmd_decode(strings: &[String], json: bool) -> Result<(), anyhow::Error> {
         decode(&refs, &DecodeOptions::new()).map_err(|e| anyhow::anyhow!("decode failed: {e}"))?;
 
     if json {
-        // v0.2: derive-based wrappers (see `wdm_json` module). Output is
+        // v0.2: derive-based wrappers (see `json` module). Output is
         // byte-identical to v0.1.1's hand-built `serde_json::json!{}`
         // literal.
         let out = DecodeJson::from(&result);

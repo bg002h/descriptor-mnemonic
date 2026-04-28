@@ -97,15 +97,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.2
 
-### `7-serialize-derives` — manual JSON construction vs `#[derive(Serialize)]` on library types
-
-- **Surfaced:** Phase 7 implementation
-- **Where:** `crates/wdm-codec/src/bin/wdm.rs` (all JSON output paths)
-- **What:** JSON output is hand-built via `serde_json::json!{}` rather than `#[derive(Serialize)]` on `WdmBackup`, `DecodeResult`, etc. This was option (b) per the Phase 7 spec, because library types contain a non-Serialize miniscript `WalletPolicy` inner field. If future versions add serde derives to those types (e.g., behind a `serde` feature flag), the JSON handlers in `bin/wdm.rs` should be updated to use the derived impls.
-- **Why deferred:** design decision to avoid forcing serde derives on library types in v0.1.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
 
 - **Surfaced:** Phase 10 Task 10.7 closure
@@ -161,6 +152,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** breaking API change (the `data` field is currently `pub`); v0.3 breaking-window candidate. Negligible at v0.1/v0.2 scale; not worth the breakage in v0.2.
 - **Status:** open
 - **Tier:** v0.3
+
+### `cli-json-debug-formatted-enum-strings` — replace `format!("{:?}", enum_value)` with serde-typed enum mirrors in CLI JSON output
+
+- **Surfaced:** Phase B bucket C reviewer (Opus 4.7) on commit `231574d`
+- **Where:** `crates/wdm-codec/src/bin/wdm/json.rs` `confidence_debug` and `outcome_debug` helpers
+- **What:** The CLI's `--json` output preserves v0.1.1 enum strings (`"Confirmed"`, `"AutoCorrected"`, etc.) by stringifying via `format!("{:?}", e)`. This works but couples the JSON contract to the library's `Debug` impl — if anyone ever changes a `Debug` derive (e.g., to add a field), the JSON output silently changes. Replacement: define bin-private serde-able enum mirrors with `#[serde(rename_all = "PascalCase")]` (or explicit `#[serde(rename = "...")]` per variant) so the JSON contract is anchored in the wrapper, not in `Debug`.
+- **Why deferred:** v0.2's JSON contract is "byte-identical to v0.1.1" — the `Debug` shortcut achieves that. Decoupling the JSON contract from `Debug` is a v1.0 stabilization concern (v1.0 will pin the JSON shape as a contract, at which point the indirection through `Debug` becomes a real liability).
+- **Status:** open
+- **Tier:** v1+
 
 ---
 
@@ -383,6 +383,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** Phase 7 implementation
 - **Status:** resolved `0993dc0` (v0.2 Phase B bucket B) — `EncodeOptions::shared_path: Option<DerivationPath>` field added (additive on `#[non_exhaustive]`) along with a `with_shared_path(path)` builder method. `WalletPolicy::to_bytecode(&self)` signature changed to `to_bytecode(&self, opts: &EncodeOptions)` (breaking) so the encoder can consult the override. The 4-tier shared-path precedence is now: `EncodeOptions::shared_path > WalletPolicy.decoded_shared_path > WalletPolicy.shared_path() > BIP 84 mainnet fallback`. CLI `cmd_encode` no longer prints "warning: --path is parsed but not applied" — it actually applies the override. 22 `to_bytecode` call sites updated (1 pipeline, 1 wrapper, 1 wallet-id helper, 1 vector builder, 1 CLI handler, 16 tests). 5 new tests including a CLI integration test. Side-effect: `EncodeOptions` lost its derived `Copy` impl because `DerivationPath` isn't `Copy`. Wire format unchanged for default-path case; vectors verify. Reviewer `APPROVE_WITH_FOLLOWUPS`; the override-wins test strengthening (assert bytes != baseline) applied inline by controller; MIGRATION.md follow-up filed (`phase-b-encode-signature-and-copy-migration-note`).
 - **Tier:** v0.2 (closed; breaking — see commit `0993dc0` body for full migration note)
+
+### `7-serialize-derives` — manual JSON construction vs `#[derive(Serialize)]` on library types
+
+- **Surfaced:** Phase 7 implementation
+- **Status:** resolved `231574d` (v0.2 Phase B bucket C) — chosen strategy was option (A): bin-private serde-able wrapper types in a new `crates/wdm-codec/src/bin/wdm/json.rs` module. Library types unchanged (no serde derives sneaked into `WalletPolicy`, `WdmBackup`, etc.). Seven wrappers added (`EncodeJson`, `EncodedChunkJson`, `BchCodeJson`, `DecodeJson`, `DecodeReportJson`, `CorrectionJson`, `VerificationsJson`) with `From<&LibraryType>` impls and full `Serialize + Deserialize` round-trip. JSON output is byte-identical to v0.1.1's `serde_json::json!{}` literals — alphabetical wrapper-field ordering preserves `BTreeMap`-backed key order from `serde_json::Map`. File layout: `bin/wdm.rs` → `bin/wdm/main.rs` (Cargo bin-with-submodule convention) + new `bin/wdm/json.rs` (module rename from initial `wdm_json` per reviewer N-2). 10 new tests. Reviewer `APPROVE_WITH_FOLLOWUPS`; signature consistency (N-1) + module rename (N-2) applied inline by controller; v1.0 entry filed for the `Debug`-formatted enum strings (`cli-json-debug-formatted-enum-strings`).
+- **Tier:** v0.2 (closed)
 
 ---
 
