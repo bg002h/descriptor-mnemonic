@@ -126,6 +126,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.3-finalization (pre-1.0 BIP cleanup)
 
+### `cargo-toml-crates-io-metadata-fields` — add `keywords`, `categories`, `documentation`, `homepage` to crate manifest
+
+- **Surfaced:** Phase 3 (Cargo rename) code-quality reviewer
+- **Where:** `crates/md-codec/Cargo.toml`
+- **What:** The crate manifest has no `keywords = [...]`, `categories = [...]`, `documentation = "..."`, or `homepage = "..."` fields. Not a regression introduced by Phase 3 (these were absent in `wdm-codec` pre-rename too). The `repository` field is workspace-inherited and correct.
+- **Why deferred:** These fields are crates.io discoverability metadata. They're nice-to-have but not required for `cargo publish` to succeed. Adding them touches no code and can ship in any v0.3.x patch. Best done as part of a "publish to crates.io" prep pass, possibly in v1.0 stabilization.
+- **Status:** open
+- **Tier:** v1+ (crates.io publish prep)
+
 ---
 
 ## Resolved items
