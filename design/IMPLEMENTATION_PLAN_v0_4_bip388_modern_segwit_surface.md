@@ -36,6 +36,71 @@
 
 ---
 
+## Pre-Phase-0 — Worktree + dependency snapshot
+
+**Why first:** all subsequent phases assume a clean worktree branch and a verified miniscript v13 API surface. Without these gates landed up-front, Phases 1+ subagents will either work on the wrong branch or hit compile errors from miniscript-API drift.
+
+### Pre-0.1: Create worktree
+
+- [ ] **Step 1: Push current main + create worktree**
+
+```bash
+cd /scratch/code/shibboleth/descriptor-mnemonic
+git fetch origin && git status  # confirm clean, on main, up to date
+git worktree add /scratch/code/shibboleth/descriptor-mnemonic-v0.4 \
+    -b feature/v0.4-bip388-modern-surface origin/main
+```
+
+Expected: worktree at sibling depth (preserves workspace `[patch]` block — no symlink workaround needed per memory `feedback_worktree_dispatch.md`).
+
+- [ ] **Step 2: Verify worktree usable**
+
+```bash
+cd /scratch/code/shibboleth/descriptor-mnemonic-v0.4
+git branch --show-current  # should print: feature/v0.4-bip388-modern-surface
+RUSTUP_TOOLCHAIN=stable cargo build --workspace --all-targets 2>&1 | tail -3
+```
+
+Expected: branch correct; build clean.
+
+### Pre-0.2: Verify miniscript v13 API surface (ShInner variants + Sh constructors + Cursor)
+
+- [ ] **Step 1: Verify ShInner variants exist**
+
+```bash
+find ~/.cargo/git/checkouts/rust-miniscript-* -name 'sh.rs' | head -1 | xargs grep -A10 'pub enum ShInner'
+```
+
+Expected: 3 variants — `Wsh(Wsh<Pk>)`, `Wpkh(Wpkh<Pk>)`, `Ms(Miniscript<Pk, Legacy>)`. If different (e.g., the apoelstra fork has rebased), STOP and update spec §3 + plan Task 1.4 accordingly.
+
+- [ ] **Step 2: Verify Sh constructors used in Task 1.6 encoder negative tests**
+
+```bash
+find ~/.cargo/git/checkouts/rust-miniscript-* -name 'sh.rs' | head -1 | xargs grep -E 'pub fn new_(p2sh_)?(sortedmulti|multi|wsh|wpkh|with_wsh)'
+```
+
+Expected at minimum: `new_p2sh_multi`, `new_p2sh_sortedmulti`, `new_with_wsh`, `new_wpkh`. If names differ, update Task 1.6 with actual names BEFORE Phase 1 dispatch.
+
+- [ ] **Step 3: Verify Cursor API**
+
+```bash
+grep -E 'pub fn (read_byte|peek_byte|offset)' /scratch/code/shibboleth/descriptor-mnemonic-v0.4/crates/md-codec/src/bytecode/cursor.rs
+```
+
+Expected: all three present. If `read_byte` is named differently, update plan's Phase 2 snippets accordingly.
+
+### Pre-0.3: Pin miniscript dependency SHA (defensive)
+
+- [ ] **Step 1: Capture current pinned SHA**
+
+```bash
+grep 'rev = ' /scratch/code/shibboleth/descriptor-mnemonic-v0.4/crates/md-codec/Cargo.toml
+```
+
+Record the SHA. If `apoelstra/rust-miniscript#1` rebases mid-implementation, this is your rollback point. Do NOT bump the SHA during v0.4 implementation; that's a separate concern (FOLLOWUPS `external-pr-1-hash-terminals`).
+
+---
+
 ## Phase 0 — Pre-implementation refactor: split `decode_wsh_inner` into body + wrapper
 
 **Why first:** Phases 1 and 2 both depend on a `decode_wsh_body(cur, keys) -> Wsh<DescriptorPublicKey>` helper existing. Without this refactor, `Sh→Wsh` cannot reuse the wsh subtree handling and would force code duplication.
@@ -883,25 +948,24 @@ git push origin feature/v0.4-bip388-modern-surface
 
 ---
 
-## Phase 7 — Vectors regeneration + SHA pin update + family token bump
+## Phase 7 — Cargo version bump + Vectors regeneration + SHA pin update
 
 **Files:**
-- Modify: `crates/md-codec/tests/vectors/v0.2.json` (regenerated)
+- Modify: `crates/md-codec/Cargo.toml` (version 0.3.0 → 0.4.0)
+- Modify: `crates/md-codec/tests/vectors/v0.1.json` (regenerated — family token bump only)
+- Modify: `crates/md-codec/tests/vectors/v0.2.json` (regenerated — family token + new fixtures)
 - Modify: `crates/md-codec/tests/vectors_schema.rs:225` (V0_2_SHA256 update)
 - Modify: `bip/bip-mnemonic-descriptor.mediawiki` (TODO Phase 7 markers resolved)
-- Modify: `crates/md-codec/src/vectors.rs:578-583` (GENERATOR_FAMILY constant — implicitly bumps to "md-codec 0.4" via crate version, or update if hardcoded)
 
-### Task 7.1: Verify GENERATOR_FAMILY auto-bumps to "md-codec 0.4"
+**Why bump in Phase 7 (not Phase 8):** `GENERATOR_FAMILY` in `vectors.rs:603` is `concat!("md-codec ", env!("CARGO_PKG_VERSION_MAJOR"), ".", env!("CARGO_PKG_VERSION_MINOR"))` — the family token is computed at compile time from Cargo.toml. To produce vectors stamped `"md-codec 0.4"`, Cargo.toml must say 0.4.0 BEFORE the regen recompile. Phase 8 (next) handles the Cargo.lock refresh that follows the bump.
 
-- [ ] **Step 1: Inspect `vectors.rs:578-583`** — confirm the `concat!("md-codec ", env!("CARGO_PKG_VERSION_MAJOR"), ".", env!("CARGO_PKG_VERSION_MINOR"))` form. If so, the family token will auto-bump to `"md-codec 0.4"` once Phase 8 lands the Cargo bump. If hardcoded, edit to the env! form OR plan to update at Phase 8.
+### Task 7.1: Bump Cargo.toml version FIRST so regen produces correct family token
 
-### Task 7.2: Bump Cargo version FIRST so regen produces correct family token
+- [ ] **Step 1: Edit `crates/md-codec/Cargo.toml`** — change `version = "0.3.0"` → `version = "0.4.0"`
 
-- [ ] **Step 1: Edit `crates/md-codec/Cargo.toml`** version `0.3.0` → `0.4.0`
+(GENERATOR_FAMILY auto-bumps via the env! macro — verified in Pre-Phase-0.2.)
 
-(Phase 8 will formally land the bump + Cargo.lock; doing it here in Phase 7 is acceptable since the regen needs the correct family token; commit them together.)
-
-### Task 7.3: Regenerate v0.1.json (verify family token unchanged for v0.1 schema)
+### Task 7.2: Regenerate v0.1.json (family token bumps to "md-codec 0.4")
 
 - [ ] **Step 1: Run regen**
 
@@ -1008,12 +1072,12 @@ git push origin feature/v0.4-bip388-modern-surface
 
 ---
 
-## Phase 8 — Cargo bump + lock refresh
+## Phase 8 — Cargo.lock refresh (only)
 
 **Files:**
 - Modify: `Cargo.lock` (workspace lock refresh)
 
-(Cargo.toml bump already happened in Task 7.2 to drive Phase 7 regen.)
+**Note**: Cargo.toml version bump already landed in Phase 7 Task 7.1 (necessary for regen family token). Phase 8 just refreshes Cargo.lock to reflect the local-crate version change.
 
 ### Task 8.1: Refresh Cargo.lock
 
