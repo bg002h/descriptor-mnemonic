@@ -740,8 +740,8 @@ A complete reference test vector suite is provided alongside the reference imple
 * '''v0.1.0 lock — schema 1''' — [https://github.com/bg002h/descriptor-mnemonic/blob/e2e8368e51618ad82073c46faa7799fddb86e082/crates/md-codec/tests/vectors/v0.1.json crates/md-codec/tests/vectors/v0.1.json] (commit <code>e2e8368e51618ad82073c46faa7799fddb86e082</code>)
 ** SHA-256 content hash: <code>1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c</code>
 * '''v0.2.0 lock — schema 2''' — <code>crates/md-codec/tests/vectors/v0.2.json</code>
-** SHA-256 content hash: <code>b403073b8a925bdda37adb92daa8521d527476aa7937450bd27fcbe0efdfd072</code><!-- TODO Phase 6: update to new v0.2.json SHA after vector regen -->
-** This SHA is **family-stable across the v0.2.x line**: the JSON's <code>generator</code> field embeds only the family version (<code>"wdm-codec 0.2"</code>), so any v0.2.x build that regenerates this file produces the same SHA. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log. (Starting with v0.3.0 the family token changes to <code>"md-codec 0.3"</code> and vectors are regenerated; the v0.3.0 SHA is inserted in Phase 6.)
+** SHA-256 content hash: <code>18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909</code>
+** This SHA is **family-stable across the v0.3.x line**: the JSON's <code>generator</code> field embeds only the family version (<code>"md-codec 0.3"</code>), so any v0.3.x build that regenerates this file produces the same SHA. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log.
 
 See <code>crates/md-codec/src/vectors.rs</code> for the typed schema; <code>TestVectorFile</code>, <code>Vector</code>, and <code>NegativeVector</code> are all <code>#[non_exhaustive]</code> so future versions may add fields without breaking deserializers.
 

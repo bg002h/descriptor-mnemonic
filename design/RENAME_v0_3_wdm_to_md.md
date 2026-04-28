@@ -138,11 +138,11 @@ New section `v0.2.x → v0.3.0`:
 
 ## Open items at decision-log freeze
 
-To be filled during execution:
-- `<TODO: new v0.1.json SHA after Phase 6 regen>`
-- `<TODO: new v0.2.json SHA after Phase 6 regen>`
-- `<TODO: discovery agent's "surprises" callout — anything not in this decision log that the rename will break>`
-- `<TODO: final touch-point count from discovery vs. plan estimate>`
+Filled during Phase 6 execution (2026-04-27):
+- v0.1.json SHA (new, HRP md): `aac3677fd84f06915c7bb5148a25ed80c399daa4f9bf56c8052ed84f83c9b71b`
+- v0.2.json SHA (new, HRP md): `18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909`
+- Discovery surfaced 5 surprises: (1) GENERATOR_FAMILY constant flip drives Phase 6 regen, (2) HRP-expansion bytes change 7→5, (3) BIP filename rename embedded in OLD/NEW table column, (4) 18 CLI test fn renames (was claimed 19), (5) auto-memory files need Phase 9. All addressed in plan.
+- Final count: 571 inventoried; 545 actionable (after excluding 26 HISTORICAL); all addressed across phases 2-6 plus 2 oversight-fix passes in Phase 4 and 1 critical-fix pass in Phase 5.
 
 ---
 
@@ -151,9 +151,17 @@ To be filled during execution:
 - [x] Pre-flight Gate 1 (HRP vet) — complete 2026-04-27
 - [x] Pre-flight Gate 2 (decision matrix) — complete 2026-04-27
 - [x] Pre-flight Gate 3 (deprecation banner drafted) — complete 2026-04-27
-- [ ] Phase 0 (Discovery agent dispatch) — pending
-- [ ] Phase 1 (Plan agent dispatch) — pending
-- [ ] Phases 2–10 (subagent-driven-development execution) — pending
+- [x] Phase 0 (Discovery agent dispatch) — complete 2026-04-27
+- [x] Phase 1 (Plan agent dispatch) — complete 2026-04-27
+- [x] Phase 2 (BIP / Spec rename) — complete 2026-04-27
+- [x] Phase 3 (Cargo + lib/bin renames) — complete 2026-04-27
+- [x] Phase 4 (Identifier mass-rename) — complete 2026-04-27
+- [x] Phase 5 (String literal sweep) — complete 2026-04-27
+- [x] Phase 6 (Test vector regeneration — WIRE STEP) — complete 2026-04-27
+- [ ] Phase 7 (CI / release infra audit) — pending
+- [ ] Phase 8 (Documentation sweep) — pending
+- [ ] Phase 9 (Memory updates) — pending
+- [ ] Phase 10 (Past-release deprecation) — pending
 - [ ] Phase 11 (SLIP-0173 PR — post-release) — pending
 
 This file is the canonical reference for all rename-related decisions. If discovery or execution surfaces a question not answered here, STOP and update this file before proceeding.
