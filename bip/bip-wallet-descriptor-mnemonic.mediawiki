@@ -731,20 +731,62 @@ WDM v0 readers MUST reject WDM strings with newer format-version bytes (loud fai
 
 ==Test Vectors==
 
-A complete reference test vector suite is provided alongside the reference implementation (see "Reference Implementation", below). The v0.1 vector file is committed at:
+A complete reference test vector suite is provided alongside the reference implementation (see "Reference Implementation", below). Two authoritative vector files coexist; implementations targeting v0.1.0 verify against the schema-1 file, while implementations targeting v0.2.0 verify against the schema-2 file.
 
-* '''Permalink:''' [https://github.com/bg002h/descriptor-mnemonic/blob/e2e8368e51618ad82073c46faa7799fddb86e082/crates/wdm-codec/tests/vectors/v0.1.json crates/wdm-codec/tests/vectors/v0.1.json] (commit <code>e2e8368e51618ad82073c46faa7799fddb86e082</code>)
-* '''SHA-256 content hash:''' <code>1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c</code>
-* '''Schema version:''' 1 (see <code>crates/wdm-codec/src/vectors.rs</code> for the typed schema; <code>TestVectorFile</code> is <code>#[non_exhaustive]</code> so v1+ may add fields without breaking v0 deserializers)
+* '''v0.1.0 lock — schema 1''' — [https://github.com/bg002h/descriptor-mnemonic/blob/e2e8368e51618ad82073c46faa7799fddb86e082/crates/wdm-codec/tests/vectors/v0.1.json crates/wdm-codec/tests/vectors/v0.1.json] (commit <code>e2e8368e51618ad82073c46faa7799fddb86e082</code>)
+** SHA-256 content hash: <code>1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c</code>
+* '''v0.2.0 lock — schema 2''' — <code>crates/wdm-codec/tests/vectors/v0.2.json</code>
+** SHA-256 content hash: <code>92f0d5b2f365df38a6b22fcf24c3f0bc493883fd14f1db591f82418c001e0e42</code>
 
-The committed JSON contains:
+See <code>crates/wdm-codec/src/vectors.rs</code> for the typed schema; <code>TestVectorFile</code>, <code>Vector</code>, and <code>NegativeVector</code> are all <code>#[non_exhaustive]</code> so future versions may add fields without breaking deserializers.
+
+===Schema versioning===
+
+The vector schema follows '''additive evolution'''. <code>schema_version: 2</code> is a strict superset of <code>schema_version: 1</code>; readers MAY ignore unknown fields. The two authoritative files coexist: implementations targeting v0.1.0 SHOULD verify against <code>v0.1.json</code>, while implementations targeting v0.2.0 SHOULD verify against <code>v0.2.json</code>. The schema-1 file is byte-frozen at the v0.1.0 release; future schema versions land in new files (<code>v0.3.json</code> for schema 3, etc.) and never modify earlier locks.
+
+Schema-2 adds three optional fields:
+
+* On <code>Vector</code>: <code>expected_fingerprints_hex</code> — present (as a list of 8-char lowercase-hex strings) for vectors encoded with a fingerprints block, absent otherwise.
+* On <code>Vector</code>: <code>encode_options_fingerprints</code> — the raw <code>[u8; 4]</code> values that were passed to <code>EncodeOptions::with_fingerprints</code> when generating the vector, so independent regenerators reproduce the same bytecode.
+* On <code>NegativeVector</code>: <code>provenance</code> — a one-sentence note describing how <code>input_strings</code> were generated (e.g., "encoded <code>wsh(pk(@0/**))</code>, then uppercased the data character at position 5"). Implementers MAY consult this field to understand the precise mutation that triggers the named error variant.
+
+===Schema 1 (v0.1.0) contents===
 
 * '''10 positive vectors''' — encode/decode round-trips for the canonical example corpus: single-key (C1), 2-of-3 sortedmulti (C2), 2-of-3 with timelock recovery (C3), 6-key inheritance (C4), 5-of-9 with 2-key recovery (C5), Liana Simple Inheritance (E10), Liana Expanding Multisig (E12), HTLC with sha256 inline hash (E13), Decaying multisig with 6 distinct keys (E14), and a Coldcard-shape representative entry. Each vector pins the input policy, expected canonical bytecode (hex), expected encoded chunk strings, and expected 12-word Tier-3 Wallet ID.
-* '''30 negative vectors''' — input strings or scenarios that must be rejected, one per <code>Error</code> variant in the reference implementation. Each vector pins the input plus the canonical name of the expected error variant for cross-implementation matching. (Two of the 30 are placeholder entries for variants whose triggers don't fit the WDM-string input shape — <code>EmptyChunkList</code> requires an empty Vec; <code>PolicyTooLarge</code> requires bytecode > 1692 B; both are reachable through the library API but not through a single-string CLI input.)
+* '''30 negative vectors''' — input strings or scenarios that must be rejected, one per <code>Error</code> variant in the reference implementation. Each vector pins the input plus the canonical name of the expected error variant for cross-implementation matching. (Two of the 30 are placeholder entries for variants whose triggers don't fit the WDM-string input shape — <code>EmptyChunkList</code> requires an empty Vec; <code>PolicyTooLarge</code> requires bytecode > 1692 B; both are reachable through the library API but not through a single-string CLI input.) Schema-1 negative <code>input_strings</code> are representative placeholders, not byte-for-byte regenerable from the named error path; the <code>expected_error_variant</code> field is the authoritative cross-implementation contract.
 
-The vector file is regenerated by <code>cargo run -p wdm-codec --bin gen_vectors -- --output crates/wdm-codec/tests/vectors/v0.1.json</code> and verified by <code>cargo run -p wdm-codec --bin gen_vectors -- --verify crates/wdm-codec/tests/vectors/v0.1.json</code>. The <code>--verify</code> mode does a typed structural compare (not a byte-equal compare), so JSON-formatting drift in <code>serde_json</code> releases doesn't cause spurious mismatches. Both modes are deterministic given the same source code.
+===Schema 2 (v0.2.0) contents===
 
-Independent implementations SHOULD verify against this committed JSON. A future v0.2 may add additional vector categories (BCH stress, guided-recovery, adversarial) — the schema's <code>#[non_exhaustive]</code> annotation accommodates this without breaking v0.1 consumers.
+Schema 2 is a strict superset of schema 1 with the following additions:
+
+* '''14 positive vectors''' — all 10 schema-1 vectors plus 4 new entries:
+** <code>tr_keypath</code>, <code>tr_pk</code>, <code>tr_multia_2of3</code> — taproot top-level descriptors exercising the v0.2 <code>tr()</code> + per-leaf subset (BIP §"Taproot tree").
+** <code>multi_2of2_with_fingerprints</code> — <code>wsh(multi(2,@0/**,@1/**))</code> encoded with a two-fingerprint block (<code>deadbeef</code>, <code>cafebabe</code>); populates <code>expected_fingerprints_hex</code> and <code>encode_options_fingerprints</code>.
+* '''34 negative vectors''' — all 30 schema-1 variants (with <code>input_strings</code> regenerated by per-variant generators that exercise the named error path through the reference decoder; each carries a <code>provenance</code> string) plus 4 new v0.2 entries:
+** <code>n_tap_leaf_subset</code> — <code>tr(@0/**, and_v(v:sha256(...), pk(@1/**)))</code>; encoder rejects with <code>TapLeafSubsetViolation { operator: "sha256" }</code> (encode-side; <code>input_strings</code> is empty).
+** <code>n_taptree_multi_leaf</code> — bytecode containing <code>Tag::TapTree=0x08</code> in leaf position; decoder rejects with <code>PolicyScopeViolation</code> ("multi-leaf TapTree reserved for v1+").
+** <code>n_fingerprints_count_mismatch</code> — encoder rejection when <code>EncodeOptions::with_fingerprints</code> is called with a count that doesn't match the placeholder count; <code>FingerprintsCountMismatch { expected: 2, got: 1 }</code> (encode-side; <code>input_strings</code> is empty).
+** <code>n_fingerprints_missing_tag</code> — bytecode header advertises a fingerprints block (bit 2 set) but the byte where <code>Tag::Fingerprints=0x35</code> is expected carries a different tag; decoder rejects with <code>InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }</code>.
+
+===Generation and verification===
+
+The vector files are regenerated by:
+
+<source lang="bash">
+cargo run -p wdm-codec --bin gen_vectors -- --output crates/wdm-codec/tests/vectors/v0.2.json              # schema 2 (default)
+cargo run -p wdm-codec --bin gen_vectors -- --output crates/wdm-codec/tests/vectors/v0.1.json --schema 1  # schema 1
+</source>
+
+…and verified by:
+
+<source lang="bash">
+cargo run -p wdm-codec --bin gen_vectors -- --verify crates/wdm-codec/tests/vectors/v0.1.json   # schema inferred from file
+cargo run -p wdm-codec --bin gen_vectors -- --verify crates/wdm-codec/tests/vectors/v0.2.json
+</source>
+
+<code>--verify</code> reads the file's <code>schema_version</code> field and dispatches to the matching builder; callers do not pass <code>--schema</code>. The <code>--verify</code> mode does a typed structural compare (not a byte-equal compare), so JSON-formatting drift in <code>serde_json</code> releases doesn't cause spurious mismatches. Both modes are deterministic given the same source code.
+
+Independent implementations SHOULD verify against the committed JSON for the WDM version they target. Future schema additions (e.g., property-test vectors, cross-version regression suites) land in new <code>schema_version</code> files; existing locks remain frozen at their release SHA-256.
 
 ==Reference Implementation==
 

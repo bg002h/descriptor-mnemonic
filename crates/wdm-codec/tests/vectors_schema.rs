@@ -149,7 +149,7 @@ fn committed_json_matches_regenerated_if_present() {
     let contents = std::fs::read_to_string(&path).expect("failed to read committed vectors file");
     let committed: TestVectorFile =
         serde_json::from_str(&contents).expect("failed to parse committed vectors JSON");
-    let regenerated = wdm_codec::vectors::build_test_vectors();
+    let regenerated = wdm_codec::vectors::build_test_vectors_v1();
 
     // Compare field-by-field; skip generator (version string may differ between runs).
     assert_eq!(
@@ -158,10 +158,229 @@ fn committed_json_matches_regenerated_if_present() {
     );
     assert_eq!(
         committed.vectors, regenerated.vectors,
-        "positive vectors mismatch in committed file; re-run gen_vectors --output to update"
+        "positive vectors mismatch in committed file; re-run gen_vectors --output --schema 1 to update"
     );
     assert_eq!(
         committed.negative_vectors, regenerated.negative_vectors,
-        "negative vectors mismatch in committed file; re-run gen_vectors --output to update"
+        "negative vectors mismatch in committed file; re-run gen_vectors --output --schema 1 to update"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Schema-2 tests (Phase F — F-6, F-11)
+// ---------------------------------------------------------------------------
+
+/// Phase F — schema-2 file (`tests/vectors/v0.2.json`) round-trips through
+/// `build_test_vectors_v2()` byte-identical for the typed comparison
+/// (skipping `generator`).
+///
+/// Mirrors `committed_json_matches_regenerated_if_present` but for the
+/// schema-2 lock. The file lives at `tests/vectors/v0.2.json`.
+#[test]
+fn committed_v0_2_json_matches_regenerated_if_present() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
+
+    if !path.exists() {
+        // File not yet committed; controller generates it in Phase F.
+        return;
+    }
+
+    let contents = std::fs::read_to_string(&path).expect("failed to read committed v0.2.json");
+    let committed: TestVectorFile =
+        serde_json::from_str(&contents).expect("failed to parse committed v0.2.json");
+    let regenerated = wdm_codec::vectors::build_test_vectors_v2();
+
+    assert_eq!(
+        committed.schema_version, regenerated.schema_version,
+        "schema_version mismatch in committed v0.2.json"
+    );
+    assert_eq!(
+        committed.schema_version, 2,
+        "v0.2.json must carry schema_version = 2"
+    );
+    assert_eq!(
+        committed.vectors, regenerated.vectors,
+        "positive vectors mismatch in committed v0.2.json; re-run gen_vectors --output --schema 2 to update"
+    );
+    assert_eq!(
+        committed.negative_vectors, regenerated.negative_vectors,
+        "negative vectors mismatch in committed v0.2.json; re-run gen_vectors --output --schema 2 to update"
+    );
+}
+
+/// Phase F (F-6) — pin the SHA-256 of `tests/vectors/v0.2.json` so accidental
+/// edits surface as a test failure.
+///
+/// If you regenerate v0.2.json, update the constant below to match the new
+/// hash. The intent of this test is to prevent silent drift between
+/// `build_test_vectors_v2()` and the committed file (especially across
+/// `serde_json` formatting changes); not to prevent intentional
+/// regenerations.
+#[test]
+fn v0_2_sha256_lock_matches_committed_file() {
+    use bitcoin::hashes::{Hash, sha256};
+
+    /// Lockfile SHA-256 (lowercase hex). Update when v0.2.json is
+    /// intentionally regenerated.
+    const V0_2_SHA256: &str = "92f0d5b2f365df38a6b22fcf24c3f0bc493883fd14f1db591f82418c001e0e42";
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
+    if !path.exists() {
+        // Not yet committed; skip rather than fail.
+        return;
+    }
+
+    let bytes = std::fs::read(&path).expect("failed to read v0.2.json");
+    let hash = sha256::Hash::hash(&bytes);
+    let actual: String =
+        hash.as_byte_array()
+            .iter()
+            .fold(String::with_capacity(64), |mut acc, b| {
+                use std::fmt::Write;
+                write!(acc, "{b:02x}").unwrap();
+                acc
+            });
+
+    assert_eq!(
+        actual, V0_2_SHA256,
+        "v0.2.json SHA-256 drifted; if this is an intentional regeneration, update the V0_2_SHA256 constant in tests/vectors_schema.rs"
+    );
+}
+
+/// Phase F — `build_test_vectors_v2()` returns a strict superset of
+/// `build_test_vectors_v1()`'s schema-1 vectors.
+///
+/// Each schema-1 positive vector (matched by `id`) must appear at the head
+/// of the schema-2 vectors list with byte-identical fields.
+#[test]
+fn schema_2_is_a_superset_of_schema_1_positive_vectors() {
+    let v1 = wdm_codec::vectors::build_test_vectors_v1();
+    let v2 = wdm_codec::vectors::build_test_vectors_v2();
+
+    assert_eq!(v1.schema_version, 1);
+    assert_eq!(v2.schema_version, 2);
+
+    assert!(
+        v2.vectors.len() > v1.vectors.len(),
+        "schema-2 must add at least one positive vector"
+    );
+
+    for (i, v1_vec) in v1.vectors.iter().enumerate() {
+        let v2_vec = &v2.vectors[i];
+        assert_eq!(
+            v2_vec.id, v1_vec.id,
+            "schema-2 positive vector at index {i} must match schema-1 id"
+        );
+        assert_eq!(
+            v2_vec.policy, v1_vec.policy,
+            "schema-2 vector {:?} policy must equal schema-1",
+            v1_vec.id
+        );
+        assert_eq!(
+            v2_vec.expected_bytecode_hex, v1_vec.expected_bytecode_hex,
+            "schema-2 vector {:?} expected_bytecode_hex must equal schema-1",
+            v1_vec.id
+        );
+        assert_eq!(
+            v2_vec.expected_chunks, v1_vec.expected_chunks,
+            "schema-2 vector {:?} expected_chunks must equal schema-1",
+            v1_vec.id
+        );
+        assert_eq!(
+            v2_vec.expected_wallet_id_words, v1_vec.expected_wallet_id_words,
+            "schema-2 vector {:?} expected_wallet_id_words must equal schema-1",
+            v1_vec.id
+        );
+        // Schema-1 vectors carry no fingerprints fields.
+        assert!(v2_vec.expected_fingerprints_hex.is_none());
+        assert!(v2_vec.encode_options_fingerprints.is_none());
+    }
+}
+
+/// Phase F — schema-2 must contain the v0.2 corpus additions.
+#[test]
+fn schema_2_contains_v0_2_corpus_additions() {
+    let v2 = wdm_codec::vectors::build_test_vectors_v2();
+
+    let positive_ids: Vec<&str> = v2.vectors.iter().map(|v| v.id.as_str()).collect();
+    for required in [
+        "tr_keypath",
+        "tr_pk",
+        "tr_multia_2of3",
+        "multi_2of2_with_fingerprints",
+    ] {
+        assert!(
+            positive_ids.contains(&required),
+            "schema-2 must include positive vector {required:?}; got {positive_ids:?}"
+        );
+    }
+
+    let negative_ids: Vec<&str> = v2
+        .negative_vectors
+        .iter()
+        .map(|nv| nv.id.as_str())
+        .collect();
+    for required in [
+        "n_tap_leaf_subset",
+        "n_taptree_multi_leaf",
+        "n_fingerprints_count_mismatch",
+        "n_fingerprints_missing_tag",
+    ] {
+        assert!(
+            negative_ids.contains(&required),
+            "schema-2 must include negative vector {required:?}; got {negative_ids:?}"
+        );
+    }
+}
+
+/// Phase F — every schema-2 negative vector carries a non-empty
+/// `provenance` field.
+#[test]
+fn schema_2_negative_vectors_all_have_provenance() {
+    let v2 = wdm_codec::vectors::build_test_vectors_v2();
+    for nv in &v2.negative_vectors {
+        let prov = nv.provenance.as_ref().unwrap_or_else(|| {
+            panic!(
+                "schema-2 negative vector {:?} must carry a provenance",
+                nv.id
+            )
+        });
+        assert!(
+            !prov.trim().is_empty(),
+            "schema-2 negative vector {:?} provenance must be non-empty",
+            nv.id
+        );
+    }
+}
+
+/// Phase F — the fingerprints positive vector populates both
+/// `expected_fingerprints_hex` and `encode_options_fingerprints`.
+#[test]
+fn schema_2_fingerprints_vector_carries_metadata() {
+    let v2 = wdm_codec::vectors::build_test_vectors_v2();
+    let fp_vec = v2
+        .vectors
+        .iter()
+        .find(|v| v.id == "multi_2of2_with_fingerprints")
+        .expect("schema-2 must include multi_2of2_with_fingerprints");
+
+    let hex = fp_vec
+        .expected_fingerprints_hex
+        .as_ref()
+        .expect("fingerprints vector must carry expected_fingerprints_hex");
+    assert_eq!(
+        hex,
+        &vec!["deadbeef".to_string(), "cafebabe".to_string()],
+        "fingerprints hex must match the BIP §\"Fingerprints block\" example"
+    );
+
+    let raw = fp_vec
+        .encode_options_fingerprints
+        .as_ref()
+        .expect("fingerprints vector must carry encode_options_fingerprints");
+    assert_eq!(
+        raw,
+        &vec![[0xdeu8, 0xad, 0xbe, 0xef], [0xca, 0xfe, 0xba, 0xbe]],
+        "encode_options_fingerprints must mirror expected_fingerprints_hex"
     );
 }
