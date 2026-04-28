@@ -470,15 +470,16 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
 /// vocabulary documented as of edge firmware. v0.3 may relax this if a
 /// signer documents a wider safe wrapper set; tracked as
 /// `phase-d-tap-leaf-wrapper-subset-clarification` in `FOLLOWUPS.md`.
-/// Validate that every fragment in `ms` is in the Phase D Coldcard tap-leaf
-/// subset. `leaf_index` is the DFS pre-order index of this leaf within the
-/// containing tap tree; it is propagated into `Error::TapLeafSubsetViolation`
-/// to enrich diagnostics for multi-leaf decode/encode paths.
 ///
-/// Pass `Some(0)` for single-leaf `tr(KEY, leaf)`, `Some(n)` for the n-th
-/// leaf in DFS pre-order traversal of a multi-leaf tree, or `None` for paths
-/// that do not have leaf-index context (currently no in-tree caller passes
-/// `None`; reserved for external callers).
+/// # Parameters
+///
+/// `leaf_index` is the DFS pre-order index of this leaf within the
+/// containing tap tree. The value is propagated into
+/// [`Error::TapLeafSubsetViolation`] to enrich diagnostics for multi-leaf
+/// decode/encode paths. Pass `Some(0)` for single-leaf `tr(KEY, leaf)`,
+/// `Some(n)` for the n-th leaf in DFS pre-order traversal of a multi-leaf
+/// tree, or `None` for callers without leaf-index context (currently no
+/// in-tree caller passes `None`; reserved for external callers).
 pub fn validate_tap_leaf_subset(
     ms: &Miniscript<DescriptorPublicKey, Tap>,
     leaf_index: Option<usize>,
