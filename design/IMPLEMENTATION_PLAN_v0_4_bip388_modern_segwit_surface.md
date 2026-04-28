@@ -236,7 +236,13 @@ fn encode_wpkh_single_placeholder() {
     let d = Descriptor::<DescriptorPublicKey>::from_str(policy)
         .expect("policy parses");
     let mut placeholder_map = HashMap::new();
-    placeholder_map.insert(/* @0 mapping */, 0u8);
+    // Construct placeholder_map matching the @0 placeholder. Existing pattern
+    // in encode.rs::tests uses parse_descriptor + a HashMap<DescriptorPublicKey, u8>
+    // built from the parsed policy's keys. Reference: encode.rs:655-720 for shape.
+    // Concrete inline: the @0 in the parsed Descriptor maps to a synthetic xpub;
+    // extract via the descriptor's first-key accessor or build via the
+    // placeholder_keys() helper used by other tests in the same module.
+    placeholder_map.insert(extract_first_key(&d), 0u8);
 
     let mut out = Vec::new();
     encode_template(&d, &placeholder_map, &mut out)
@@ -287,7 +293,13 @@ fn encode_sh_wpkh_single_placeholder() {
     let d = Descriptor::<DescriptorPublicKey>::from_str(policy)
         .expect("policy parses");
     let mut placeholder_map = HashMap::new();
-    placeholder_map.insert(/* @0 mapping */, 0u8);
+    // Construct placeholder_map matching the @0 placeholder. Existing pattern
+    // in encode.rs::tests uses parse_descriptor + a HashMap<DescriptorPublicKey, u8>
+    // built from the parsed policy's keys. Reference: encode.rs:655-720 for shape.
+    // Concrete inline: the @0 in the parsed Descriptor maps to a synthetic xpub;
+    // extract via the descriptor's first-key accessor or build via the
+    // placeholder_keys() helper used by other tests in the same module.
+    placeholder_map.insert(extract_first_key(&d), 0u8);
 
     let mut out = Vec::new();
     encode_template(&d, &placeholder_map, &mut out)
@@ -351,7 +363,10 @@ Descriptor::Pkh(_) | Descriptor::Bare(_) => Err(Error::PolicyScopeViolation(
 ```rust
 #[test]
 fn encode_sh_wsh_sortedmulti_2of3() {
-    // <similar setup; expected output: [Sh, Wsh, SortedMulti, 2, 3, Placeholder, 0, ...]>
+    // Setup: parse policy via parse_descriptor helper (encode.rs::tests pattern);
+    // build placeholder_map via extract_first_key style as in Task 1.1.
+    // Expected encoded bytes: [Tag::Sh, Tag::Wsh, Tag::SortedMulti, k=2, n=3,
+    // Tag::Placeholder, 0, Tag::Placeholder, 1, Tag::Placeholder, 2]
 }
 ```
 
@@ -984,7 +999,7 @@ sha256sum crates/md-codec/tests/vectors/v0.1.json
 
 Record verbatim — goes into CHANGELOG.
 
-### Task 7.4: Regenerate v0.2.json with new fixtures embedded
+### Task 7.3: Regenerate v0.2.json with new fixtures embedded
 
 - [ ] **Step 1: Run regen**
 
@@ -1002,15 +1017,15 @@ sha256sum crates/md-codec/tests/vectors/v0.2.json
 
 Record verbatim — goes into V0_2_SHA256 constant + CHANGELOG.
 
-### Task 7.5: Update V0_2_SHA256 constant
+### Task 7.4: Update V0_2_SHA256 constant
 
-- [ ] **Step 1: Edit `tests/vectors_schema.rs:225`** with the new SHA from Task 7.4
+- [ ] **Step 1: Edit `tests/vectors_schema.rs:225`** with the new SHA from Task 7.3
 
-### Task 7.6: Re-enable the SHA-lock test
+### Task 7.5: Re-enable the SHA-lock test
 
 - [ ] **Step 1: Remove `#[ignore]` and TODO comment** from `v0_2_sha256_lock_matches_committed_file`
 
-### Task 7.7: Verify gen_vectors --verify PASS for both files
+### Task 7.6: Verify gen_vectors --verify PASS for both files
 
 - [ ] **Step 1: Run verifier**
 
@@ -1021,11 +1036,11 @@ RUSTUP_TOOLCHAIN=stable cargo run --quiet -p md-codec --bin gen_vectors -- --ver
 
 Expected: both PASS.
 
-### Task 7.8: Update BIP TODO Phase 7 markers
+### Task 7.7: Update BIP TODO Phase 7 markers
 
 - [ ] **Step 1: Edit `bip/bip-mnemonic-descriptor.mediawiki`** — replace TODO Phase 7 markers with actual SHA + family token references
 
-### Task 7.9: Run full gates
+### Task 7.8: Run full gates
 
 - [ ] **Step 1: All 4 gates green**
 
@@ -1038,7 +1053,7 @@ RUSTUP_TOOLCHAIN=stable cargo fmt --check
 
 Expected: build PASS; **602 tests passing + 0 ignored** (the SHA-lock test is now active and green); clippy clean; fmt clean.
 
-### Task 7.10: Commit Phase 7
+### Task 7.9: Commit Phase 7
 
 - [ ] **Step 1: Commit + push**
 
@@ -1288,7 +1303,7 @@ git push origin feature/v0.4-bip388-modern-surface
 
 ### Task 11.1: Dispatch final cumulative-diff reviewer
 
-- [ ] **Step 1: Use `superpowers:code-reviewer` agent** with cumulative diff `git diff main...HEAD` from rename branch root to current HEAD
+- [ ] **Step 1: Use `superpowers:code-reviewer` agent** with cumulative diff `git diff main...HEAD` from the Pre-Phase-0 merge-base to current HEAD
 
 Reviewer checks:
 - Any `wpkh`/`sh-wpkh`/`sh-wsh` token still in a REJECTED context anywhere
@@ -1366,7 +1381,7 @@ Expected: green across Linux/macOS/Windows.
 
 - [ ] **Step 1: Create release notes file** at `/tmp/v0.4.0-release-notes.md` modeled on `/tmp/v0.3.0-release-notes.md` from v0.3 release sequence
 
-Cover: rename framing (additive, not breaking like v0.3), three new types, new SHAs, restriction matrix as normative, FAQ on narrower-than-BIP-388, FOLLOWUPS state, dependency notes, links.
+Cover: v0.4 additive-not-breaking framing (additive, not breaking like v0.3), three new types, new SHAs, restriction matrix as normative, FAQ on narrower-than-BIP-388, FOLLOWUPS state, dependency notes, links.
 
 - [ ] **Step 2: Publish release**
 
