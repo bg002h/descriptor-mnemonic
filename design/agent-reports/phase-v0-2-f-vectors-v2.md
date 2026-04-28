@@ -4,7 +4,7 @@
 
 **Closes**: `8-negative-fixture-dynamic-generation`, `phase-d-taproot-corpus-fixtures`
 
-**Commit SHA**: pending (controller fast-forwards; see commit message in this report's appendix)
+**Commit SHA**: `5348b12` (controller fast-forwards; see commit message in this report's appendix)
 
 **Worktree**: `agent-a3d0b14652269204a` on `worktree-agent-a3d0b14652269204a`
 
