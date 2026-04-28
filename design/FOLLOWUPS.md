@@ -43,6 +43,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0-5-t7-chunking-boundary-misnomer` — T7 fixture doesn't actually cross chunking boundary
+
+- **Surfaced:** Phase 6 reviewer (commit `7d6e278`). T7's 6-leaf right-spine fixture `tr_multi_leaf_chunking_boundary_md_v0_5` has a 35-byte bytecode that lands well under the 48-byte `ChunkCode::Regular` single-string capacity. The fixture does NOT exercise the chunked-plan path despite its name suggesting otherwise.
+- **Where:** `crates/md-codec/src/vectors.rs` T7 entry; `crates/md-codec/tests/vectors/v0.2.json` `tr_multi_leaf_chunking_boundary_md_v0_5` fixture
+- **What:** Either (a) rename to a shape-descriptive identifier (e.g., `tr_multi_leaf_right_spine_md_v0_5`) — T7 still adds value as a 6-leaf right-spine asymmetric regression anchor distinct from T3-T5 — or (b) tune the tree shape to 49+ bytes (need explicit derivation paths or a 32-leaf max-fan tree) so it actually crosses the Regular capacity boundary AND the 56-byte Long capacity, forcing chunking. (b) is the "true to original spec intent" path; (a) is the pragmatic ship-now path. T7 still increases coverage in either case.
+- **Why deferred:** Not blocking. The fixture passes round-trip; the misnomer is documentation-only.
+- **Status:** open
+- **Tier:** v0.5-nice-to-have (resolve before v0.5.0 ship via rename, OR resolve in v0.5.x patch by tuning)
+
+### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
+
+- **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
+- **Where:** rust-miniscript's wallet-policy parser; not a direct md-codec issue
+- **What:** Concrete-key form `tr(<concrete>, {pk(<concrete>), multi_a(2, <concrete>, <concrete>)})` fails; `@N`-template form `tr(@0/**, {pk(@1/**), multi_a(2, @2/**, @3/**)})` works. Possibly an upstream parser bug or a documented limitation.
+- **Why deferred:** Workaround is sound (use template form, which matches the rest of the corpus). Not blocking md-codec v0.5.
+- **Status:** open
+- **Tier:** v1+ (file as upstream issue if desired; not on md-codec critical path)
+
 ### `v0-5-spec-plan-encode-tap-subtree-entry-depth-bug` — spec + plan say `target_depth=1` at outer entry; should be `0`
 
 - **Surfaced:** Phase 4 implementer (commit `bca2804`) caught this when the post-condition `debug_assert_eq!(cursor, leaves.len())` failed on a 2-leaf tree compiled per the literal spec text. Phase 4 reviewer (combined pass) confirmed independently with depth-trace analysis.
