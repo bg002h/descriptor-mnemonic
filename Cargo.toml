@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/wdm-codec"]
+members = ["crates/md-codec"]
 
 [workspace.package]
 edition = "2024"
@@ -14,13 +14,13 @@ missing_docs = "warn"
 [workspace.lints.clippy]
 all = "warn"
 
-# Temporary patch redirect: wdm-codec pins miniscript to a SHA on
+# Temporary patch redirect: md-codec pins miniscript to a SHA on
 # apoelstra's `2026-04/followup-895` branch (see Phase 5 D-1). That SHA
 # panics in WalletPolicy::into_descriptor when a hash terminal is present
 # (sha256/hash256/ripemd160/hash160). We've fixed it locally in the
 # `rust-miniscript-fork` sibling clone on branch
 # `fix/wallet-policy-hash-terminals` and submitted a PR upstream. Once the
-# fix lands and we bump the SHA pin in wdm-codec/Cargo.toml, this patch
+# fix lands and we bump the SHA pin in md-codec/Cargo.toml, this patch
 # section can be removed.
 [patch."https://github.com/apoelstra/rust-miniscript"]
 miniscript = { path = "../rust-miniscript-fork" }
