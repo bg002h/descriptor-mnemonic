@@ -983,13 +983,17 @@ mod tests {
                     crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
                 assert_eq!(reencoded, bytes);
             }
-            Err(Error::InvalidBytecode {
-                kind: BytecodeErrorKind::TypeCheckFailed(_),
-                ..
-            }) => {
-                // Acceptable — miniscript rejected the reconstruction.
-            }
-            Err(other) => panic!("unexpected error: {other:?}"),
+            // miniscript may reject the reconstruction — acceptable; anything else is a bug.
+            Err(e) => assert!(
+                matches!(
+                    e,
+                    Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::TypeCheckFailed(_),
+                        ..
+                    }
+                ),
+                "unexpected error: {e:?}"
+            ),
         }
     }
 
@@ -1177,13 +1181,17 @@ mod tests {
                     crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
                 assert_eq!(reencoded, alt_bytes);
             }
-            Err(Error::InvalidBytecode {
-                kind: BytecodeErrorKind::TypeCheckFailed(_),
-                ..
-            }) => {
-                // miniscript rejected the reconstruction — acceptable.
-            }
-            Err(other) => panic!("unexpected error decoding alt: {other:?}"),
+            // miniscript may reject the reconstruction — acceptable; anything else is a bug.
+            Err(e) => assert!(
+                matches!(
+                    e,
+                    Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::TypeCheckFailed(_),
+                        ..
+                    }
+                ),
+                "unexpected error decoding alt: {e:?}"
+            ),
         }
 
         let swap_bytes = vec![0x05, 0x0B, 0x01]; // [Wsh, Swap, True]
@@ -1195,11 +1203,17 @@ mod tests {
                     crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
                 assert_eq!(reencoded, swap_bytes);
             }
-            Err(Error::InvalidBytecode {
-                kind: BytecodeErrorKind::TypeCheckFailed(_),
-                ..
-            }) => {}
-            Err(other) => panic!("unexpected error decoding swap: {other:?}"),
+            // miniscript may reject the reconstruction — acceptable; anything else is a bug.
+            Err(e) => assert!(
+                matches!(
+                    e,
+                    Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::TypeCheckFailed(_),
+                        ..
+                    }
+                ),
+                "unexpected error decoding swap: {e:?}"
+            ),
         }
     }
 
@@ -1223,15 +1237,19 @@ mod tests {
                     crate::bytecode::encode::encode_template(&d, &HashMap::new()).unwrap();
                 assert_eq!(reencoded, bytes);
             }
-            Err(Error::InvalidBytecode {
-                kind: BytecodeErrorKind::TypeCheckFailed(_),
-                ..
-            }) => {
-                // Wsh::new(...) on a bare RawPkH may reject if RawPkH isn't
-                // B-typed. Acceptable. Test verifies the decoder consumed
-                // the right number of bytes (no panic / no dangling).
-            }
-            Err(other) => panic!("unexpected error decoding raw_pk_h: {other:?}"),
+            // Wsh::new(...) on a bare RawPkH may reject if RawPkH isn't B-typed. Acceptable —
+            // the test's job is to verify the decoder consumed the right number of bytes
+            // (no panic / no dangling). Anything other than TypeCheckFailed is a bug.
+            Err(e) => assert!(
+                matches!(
+                    e,
+                    Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::TypeCheckFailed(_),
+                        ..
+                    }
+                ),
+                "unexpected error decoding raw_pk_h: {e:?}"
+            ),
         }
     }
 

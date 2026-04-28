@@ -123,6 +123,8 @@ The canonical bytecode of a chunked Template Card consists of the encoded wallet
 
 Each byte of bytecode contributes 8 bits; the bech32 alphabet packs 5 bits per character. Bytecode is converted to bech32 characters by the standard convert-bits algorithm (BIP 173 procedure with <code>frombits=8</code>, <code>tobits=5</code>, padding enabled on the encode side; reversed on decode).
 
+Decoders MUST reject any WDM string whose 5-bit payload symbols, after successful BCH checksum verification, do not byte-align — i.e., where the trailing pad bits of the final 5-bit symbol are non-zero. Such inputs are well-formed at the BCH layer but cannot have been produced by a conforming encoder, and accepting them would admit hostile inputs that bypass the encode-side padding invariant. The reference implementation surfaces this rejection as <code>Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::MalformedPayloadPadding }</code>; cross-implementations MUST surface a semantically equivalent rejection — distinguishable from generic checksum failure and from generic bytecode-parse failure — so that conformance tests can pin the error path.
+
 ====Checksum====
 
 The checksum is computed using a BCH error-correcting code with HRP-mixing applied in the BIP 173 style. The polymod algorithm is BIP 93's <code>ms32_polymod</code> (regular code) or <code>ms32_long_polymod</code> (long code), applied to the concatenation of:

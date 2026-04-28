@@ -4,6 +4,33 @@ All notable changes to `wdm-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.2.3] — 2026-04-27
+
+Audit-of-audit closure. Patches the two findings caught during the v0.2.2 retrospective on whether the v0.2.1 audit itself generated items that should have been filed in `design/FOLLOWUPS.md`. Wire format unchanged from v0.2.0/v0.2.1/v0.2.2; v0.2.x backups round-trip across all four patch releases. **No `MIGRATION.md` changes required.**
+
+### Spec
+
+- **BIP §"Payload" gains an explicit normative MUST clause** for the malformed-payload-padding rejection. v0.2.2 fixed the decoder panic and pinned the structured-error path in `tests/conformance.rs`, but the BIP only said "padding enabled on the encode side; reversed on decode" — a phrasing that admitted the v0.2.1 panic interpretation. The new paragraph names the rejection (`Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::MalformedPayloadPadding }` in the reference impl) and requires cross-implementations to surface a semantically equivalent rejection that is distinguishable from generic checksum failure and from generic bytecode-parse failure. This is what a second-implementer needs to find by skim-reading the spec rather than by reading the reference impl's source.
+
+### Changed
+
+- **4 panic-style test sites in `crates/wdm-codec/src/bytecode/decode.rs` brought into style-consistency** with the rest of the file's `assert!(matches!(...))` pattern. The previous `match { Ok => round_trip; Err(SpecificKind) => {} Err(other) => panic!(...) }` shape collapsed each Err arm pair into a single `Err(e) => assert!(matches!(e, ...))`, preserving the inline rationale comments. Test behavior unchanged. Sites: `decode.rs:992/1186/1202/1234` (now consolidated).
+
+### Notes
+
+- **MSRV: 1.85** (unchanged)
+- **`v0.2.json` SHA `b403073b…` UNCHANGED** — second consecutive v0.2.x patch with no SHA migration. The family-stable generator design from v0.2.1 continues to deliver byte-identical regen across patches.
+- **Test count**: 565 passing (unchanged from v0.2.2; the 4 decode.rs sweeps preserved test semantics)
+- **Workspace `[patch]` block** still ships unchanged (waiting on `apoelstra/rust-miniscript#1`)
+
+### Audit-of-audit closure
+
+After v0.2.2 shipped, the user asked whether the v0.2.1 full code audit had itself generated items that should have been added to FOLLOWUPS but were silently acknowledged. Two slipped items were caught:
+- `bip-payload-padding-must-clause` (v0.2-nice-to-have): BIP needed an explicit MUST clause to match the structured rejection added in v0.2.2 — closed by the §"Payload" paragraph above.
+- `audit-decode-rs-panic-style-consistency` (v0.3-nit, pulled forward): 4 verbose panic-match sites in `decode.rs` tests — closed by the `assert!(matches!(...))` consolidation above.
+
+The audit-of-audit pattern (residual-nits sweep after audit closure) has now caught two real cases where audits generated dropped items, validating it as part of the post-audit workflow.
+
 ## [0.2.2] — 2026-04-28
 
 Security + audit-followup patch. Closes the one BLOCKER from the v0.2.1 full code audit (`design/agent-reports/v0-2-1-full-code-audit.md`) plus the audit's IMPORTANT and NIT findings. Wire format unchanged from v0.2.0/v0.2.1; v0.2.x backups remain valid v0.2.2 inputs and vice versa. **No `MIGRATION.md` changes required.**
