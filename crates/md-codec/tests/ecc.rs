@@ -32,12 +32,12 @@ fn bch_single_substitution_at_every_position_corrects() {
     let original = backup.chunks[0].raw.clone();
     let code = backup.chunks[0].code;
 
-    // Data part: after "wdm1" (4 chars), before checksum (13 or 15 chars).
+    // Data part: after "md1" (3 chars), before checksum (13 or 15 chars).
     let checksum_len: usize = match code {
         BchCode::Regular => 13,
         BchCode::Long => 15,
     };
-    let data_start = 4;
+    let data_start = 3;
     let data_end = original.len() - checksum_len;
 
     // bech32 alphabet — any character in this set is a valid substitution.

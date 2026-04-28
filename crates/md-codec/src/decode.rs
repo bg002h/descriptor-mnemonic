@@ -73,7 +73,7 @@ use crate::{
 /// Note on [`Correction.char_position`][crate::Correction::char_position]:
 /// when this function reports BCH corrections in the [`DecodeReport`], each
 /// `Correction.char_position` is a 0-indexed offset into the chunk's
-/// data part (the chars after the `wdm1` HRP+separator). This matches the
+/// data part (the chars after the `md1` HRP+separator). This matches the
 /// coordinate system used by the encoding layer's `decode_string`.
 pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult, Error> {
     // Stage 1 + 2: per-string parse and BCH validate/correct.
@@ -90,18 +90,18 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
 
         // Translate any BCH corrections from DecodedString's internal positions
         // to the public Correction type. corrected_positions are 0-indexed into
-        // the data_with_checksum slice (i.e. after "wdm1"); we map them to
+        // the data_with_checksum slice (i.e. after "md1"); we map them to
         // char_position within the data part. original/corrected chars are read
         // from the alphabet.
         if decoded.corrections_applied > 0 {
-            // The original string (lowercased) data part starts after "wdm1" (len=4).
+            // The original string (lowercased) data part starts after "md1" (len=3).
             let s_lower = s.to_lowercase();
             let data_part_start = s_lower.rfind('1').map(|p| p + 1).unwrap_or(4);
             let data_chars: Vec<char> = s_lower[data_part_start..].chars().collect();
 
             for &pos in &decoded.corrected_positions {
                 // `pos` is an index into the data-part 5-bit values, in the
-                // same coordinate system as `data_chars` (chars after `"wdm1"`).
+                // same coordinate system as `data_chars` (chars after `"md1"`).
                 // It may land in the data region (`pos < decoded.data.len()`)
                 // OR in the checksum region — both cases are answered uniformly
                 // by `DecodedString::corrected_char_at`, which retains the full
@@ -345,8 +345,8 @@ mod tests {
 
     #[test]
     fn decode_rejects_invalid_hrp() {
-        // A valid bech32 string with HRP "bc" instead of "wdm".
-        // We encode a valid MD string and replace "wdm1" with "bc1q" prefix.
+        // A valid bech32 string with HRP "bc" instead of "md".
+        // We encode a valid MD string and replace "md1" with "bc1q" prefix.
         // Instead, just construct a well-known Bitcoin bech32 address.
         let segwit = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
         let err = decode(&[segwit], &default_opts()).expect_err("should reject invalid HRP");
@@ -366,9 +366,9 @@ mod tests {
         let backup = encode(&p, &encode_opts()).expect("encode");
         let raw = &backup.chunks[0].raw;
 
-        // Uppercase one character in the data part (after "wdm1").
+        // Uppercase one character in the data part (after "md1").
         let mut chars: Vec<char> = raw.chars().collect();
-        // Position 5 is in the data part (index 0..3 = "wdm1").
+        // Position 5 is in the data part (index 0..2 = "md1").
         chars[5] = chars[5].to_ascii_uppercase();
         let bad: String = chars.into_iter().collect();
 
@@ -545,11 +545,11 @@ mod tests {
         let backup = encode(&p, &encode_opts()).expect("encode");
         let raw = backup.chunks[0].raw.clone();
 
-        // Compute the data-region boundary: chars 0..3 are "wdm", char 3 is
-        // the '1' separator, chars 4.. are the data part. The data part is
+        // Compute the data-region boundary: chars 0..2 are "md", char 2 is
+        // the '1' separator, chars 3.. are the data part. The data part is
         // [data_5bit_symbols][13-char checksum] for the regular code.
         let total_chars = raw.chars().count();
-        let data_part_len = total_chars - 4; // strip "wdm1"
+        let data_part_len = total_chars - 3; // strip "md1"
         let checksum_len = 13; // regular code
         let data_region_len = data_part_len - checksum_len;
         assert!(
@@ -561,7 +561,7 @@ mod tests {
         // part, well clear of the checksum boundary).
         let data_part_pos = 2;
         assert!(data_part_pos < data_region_len);
-        let abs_pos = 4 + data_part_pos; // position in the full string
+        let abs_pos = 3 + data_part_pos; // position in the full string (HRP "md" + "1" = 3 chars)
 
         let mut chars: Vec<char> = raw.chars().collect();
         let original_char = chars[abs_pos];
@@ -610,14 +610,14 @@ mod tests {
         let raw = backup.chunks[0].raw.clone();
 
         let total_chars = raw.chars().count();
-        let data_part_len = total_chars - 4;
+        let data_part_len = total_chars - 3; // strip "md1" (HRP "md" + "1" = 3 chars)
         let checksum_len = 13;
         let data_region_len = data_part_len - checksum_len;
 
         // Pick a position inside the checksum region. Use the middle of the
         // 13-char checksum so we're clear of any boundary effects.
         let data_part_pos = data_region_len + (checksum_len / 2);
-        let abs_pos = 4 + data_part_pos;
+        let abs_pos = 3 + data_part_pos; // HRP "md" + "1" = 3 chars
 
         let mut chars: Vec<char> = raw.chars().collect();
         let original_char = chars[abs_pos];

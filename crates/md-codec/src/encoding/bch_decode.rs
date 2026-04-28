@@ -700,7 +700,7 @@ mod tests {
 
     #[test]
     fn one_error_decodes_correctly_regular() {
-        let hrp = "wdm";
+        let hrp = "md";
         let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let checksum = bch_create_checksum_regular(hrp, &data);
         let mut codeword = data.clone();
@@ -730,7 +730,7 @@ mod tests {
 
     #[test]
     fn two_errors_decode_correctly_regular() {
-        let hrp = "wdm";
+        let hrp = "md";
         let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         let checksum = bch_create_checksum_regular(hrp, &data);
         let mut codeword = data.clone();
@@ -762,7 +762,7 @@ mod tests {
 
     #[test]
     fn four_errors_decode_correctly_long() {
-        let hrp = "wdm";
+        let hrp = "md";
         let data: Vec<u8> = (0..16).collect();
         let checksum = bch_create_checksum_long(hrp, &data);
         let mut codeword = data.clone();
@@ -798,7 +798,7 @@ mod tests {
         // None or return Some() with bogus positions/magnitudes that
         // fail to reproduce the original. The caller's responsibility
         // is to re-verify via `bch_verify_*`.
-        let hrp = "wdm";
+        let hrp = "md";
         let data: Vec<u8> = (0..16).collect();
         let checksum = bch_create_checksum_long(hrp, &data);
         let mut codeword = data.clone();

@@ -97,7 +97,7 @@ const BECH32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 /// to exercise BCH error correction.
 ///
 /// The substitutions:
-/// - Are uniformly distributed over the data part (after the `wdm1` prefix
+/// - Are uniformly distributed over the data part (after the `md1` prefix
 ///   and before the checksum).
 /// - Replace each chosen character with another bech32-alphabet character
 ///   (never the same character as the original; never an out-of-alphabet
@@ -112,16 +112,16 @@ const BECH32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 /// # Panics
 ///
 /// Panics if `n` exceeds the data-part length (there are not enough distinct
-/// positions to corrupt), or if `s` does not start with `"wdm1"`.
+/// positions to corrupt), or if `s` does not start with `"md1"`.
 pub fn corrupt_n(s: &str, n: usize, seed: u64, code: BchCode) -> String {
     assert!(
-        s.starts_with("wdm1"),
-        "corrupt_n: string does not start with 'wdm1': {:?}",
+        s.starts_with("md1"),
+        "corrupt_n: string does not start with 'md1': {:?}",
         s
     );
 
-    // HRP "wdm" (3 chars) + separator "1" (1 char) = 4-char prefix.
-    const PREFIX_LEN: usize = 4;
+    // HRP "md" (2 chars) + separator "1" (1 char) = 3-char prefix.
+    const PREFIX_LEN: usize = 3;
     let checksum_len = match code {
         BchCode::Regular => 13usize,
         BchCode::Long => 15usize,

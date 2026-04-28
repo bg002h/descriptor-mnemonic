@@ -285,24 +285,24 @@ const TAPROOT_FIXTURES: &[(&str, &str, &str)] = &[
 const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
     NegativeFixture {
         id: "n01",
-        description: "HRP that is not 'wdm' → InvalidHrp",
-        // A valid bech32 string with a non-wdm HRP.
+        description: "HRP that is not 'md' → InvalidHrp",
+        // A valid bech32 string with a non-md HRP.
         input_strings: &["bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"],
         expected_error_variant: "InvalidHrp",
     },
     NegativeFixture {
         id: "n02",
-        description: "Mixed-case characters in a WDM string → MixedCase",
-        // wdm1 prefix with a mixed-case data character (position 5 uppercased).
+        description: "Mixed-case characters in an MD string → MixedCase",
+        // md1 prefix with a mixed-case data character (position 5 uppercased).
         // This is representative; a real implementation generates this by encoding
         // a valid policy then uppercasing one data character.
-        input_strings: &["wdm1Qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"],
+        input_strings: &["md1Qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"],
         expected_error_variant: "MixedCase",
     },
     NegativeFixture {
         id: "n03",
         description: "String length in reserved 94–95 char range → InvalidStringLength",
-        // data-part length 94: 4 (wdm1) + 94 = 98 chars total; InvalidStringLength fires before BCH.
+        // data-part length 94: 3 (md1) + 94 = 97 chars total; InvalidStringLength fires before BCH.
         input_strings: &[
             "wdm1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
         ],
@@ -512,7 +512,7 @@ struct NegativeFixture {
 /// change here is a release-engineering incident; new test material goes
 /// into [`build_test_vectors_v2`].
 ///
-/// Both `gen_vectors --output --schema 1` and `wdm vectors` call this
+/// Both `gen_vectors --output --schema 1` and `md vectors` call this
 /// function; there is no code duplication. Output is deterministic: calling
 /// this function twice returns structurally equal values.
 pub fn build_test_vectors() -> TestVectorFile {
@@ -565,8 +565,8 @@ pub fn build_test_vectors_v2() -> TestVectorFile {
 
 /// Family-stable generator string for this `0.X` line.
 ///
-/// Embeds only the major+minor version (`"wdm-codec 0.2"` for the entire
-/// `0.2.x` line). Patch component is omitted so vector files don't churn
+/// Embeds only the major+minor version (`"md-codec 0.3"` for the entire
+/// `0.3.x` line). Patch component is omitted so vector files don't churn
 /// SHA-256 on patch bumps. The full `CARGO_PKG_VERSION` is logged to stderr
 /// by `gen_vectors --output` for traceability when needed.
 ///
@@ -576,7 +576,7 @@ pub fn build_test_vectors_v2() -> TestVectorFile {
 /// keep their original strings on disk; `gen_vectors --verify` ignores this
 /// field so the historical files continue to verify cleanly.
 pub const GENERATOR_FAMILY: &str = concat!(
-    "wdm-codec ",
+    "md-codec ",
     env!("CARGO_PKG_VERSION_MAJOR"),
     ".",
     env!("CARGO_PKG_VERSION_MINOR"),
@@ -799,11 +799,11 @@ fn generate_n02_mixed_case() -> (Vec<String>, String) {
 
 fn generate_n03_invalid_string_length() -> (Vec<String>, String) {
     let data: String = "q".repeat(94);
-    let s = format!("wdm1{data}");
+    let s = format!("md1{data}");
     debug_assert_decode_matches(&[s.as_str()], "InvalidStringLength");
     (
         vec![s],
-        "constructed `wdm1` + 94 `q` chars; the 94..=95 data-part length range is reserved-invalid in WDM"
+        "constructed `md1` + 94 `q` chars; the 94..=95 data-part length range is reserved-invalid in MD"
             .to_string(),
     )
 }
@@ -827,7 +827,7 @@ fn generate_n05_bch_uncorrectable() -> (Vec<String>, String) {
     let raw = encode_simple_pk_chunk();
     let mut chars: Vec<char> = raw.chars().collect();
     // Pick 5 positions well inside the data part (first valid data position
-    // is 4, just after the `wdm1` separator). Avoid the checksum tail by
+    // is 3, just after the `md1` separator). Avoid the checksum tail by
     // staying within the first 12 data chars (the encoded chunk is short
     // but stable: we only mutate chars in positions 4..=8 + 10).
     for pos in [4, 5, 6, 7, 8] {
@@ -1065,7 +1065,7 @@ fn generate_n17_chunk_index_out_of_range() -> (Vec<String>, String) {
     // implementations test this variant via the named lower-level API.
     (
         Vec::new(),
-        "requires lower-level API: `Chunk::new` (bypass) + `reassemble_chunks` triggers `ChunkIndexOutOfRange`; via a WDM string, `ChunkHeader::from_bytes` rejects index>=count earlier with `InvalidChunkIndex` instead"
+        "requires lower-level API: `Chunk::new` (bypass) + `reassemble_chunks` triggers `ChunkIndexOutOfRange`; via an MD string, `ChunkHeader::from_bytes` rejects index>=count earlier with `InvalidChunkIndex` instead"
             .to_string(),
     )
 }
@@ -1321,7 +1321,7 @@ fn generate_n29_policy_parse() -> (Vec<String>, String) {
     );
     (
         vec![s],
-        "passed the literal string `not_a_valid_policy!!!` to `WalletPolicy::from_str`; the BIP 388 parser rejects (this fixture exercises the policy-parse layer, not the WDM-string decode pipeline)"
+        "passed the literal string `not_a_valid_policy!!!` to `WalletPolicy::from_str`; the BIP 388 parser rejects (this fixture exercises the policy-parse layer, not the MD-string decode pipeline)"
             .to_string(),
     )
 }
@@ -1337,7 +1337,7 @@ fn generate_n30_policy_too_large() -> (Vec<String>, String) {
     );
     (
         Vec::new(),
-        "requires lower-level API: `chunking::chunking_decision(1693, ChunkingMode::Auto)` rejects bytecode lengths above the 1692-byte v0.1 cap; no WDM string encodes the oversized condition"
+        "requires lower-level API: `chunking::chunking_decision(1693, ChunkingMode::Auto)` rejects bytecode lengths above the 1692-byte v0.1 cap; no MD string encodes the oversized condition"
             .to_string(),
     )
 }
@@ -1363,7 +1363,7 @@ fn build_negative_n_tap_leaf_subset() -> NegativeVector {
         input_strings: Vec::new(),
         expected_error_variant: "TapLeafSubsetViolation".to_string(),
         provenance: Some(
-            "encode-side rejection; `input_strings` is empty because the policy never produces a WDM string. \
+            "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. \
              Construct via `\"tr(@0/**,and_v(v:sha256(<32B>),pk(@1/**)))\".parse::<WalletPolicy>()` followed by \
              `to_bytecode(&EncodeOptions::default())`; the encoder rejects the leaf operator `sha256`."
                 .to_string(),
@@ -1411,7 +1411,7 @@ fn build_negative_n_fingerprints_count_mismatch() -> NegativeVector {
         input_strings: Vec::new(),
         expected_error_variant: "FingerprintsCountMismatch".to_string(),
         provenance: Some(
-            "encode-side rejection; `input_strings` is empty because the policy never produces a WDM string. \
+            "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. \
              Construct via `wsh(multi(2,@0/**,@1/**)).parse::<WalletPolicy>()` and \
              `EncodeOptions::default().with_fingerprints(vec![Fingerprint::from([0xde,0xad,0xbe,0xef])])` (one fingerprint for two placeholders); \
              the encoder rejects with expected=2, got=1."

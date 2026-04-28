@@ -47,7 +47,7 @@ macro_rules! assert_decode_rejects {
 // Layer 1: codex32 / string-level rejections (errors from `decode_string`)
 // ---------------------------------------------------------------------------
 
-// 1. HRP that is not "wdm" → `Error::InvalidHrp`
+// 1. HRP that is not "md" → `Error::InvalidHrp`
 assert_decode_rejects!(
     rejects_invalid_hrp,
     "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
@@ -63,7 +63,7 @@ fn rejects_mixed_case() {
     let raw = &backup.chunks[0].raw;
 
     let mut chars: Vec<char> = raw.chars().collect();
-    // Position 5 is in the data part (after "wdm1").
+    // Position 5 is in the data part (after "md1").
     chars[5] = chars[5].to_ascii_uppercase();
     let mixed: String = chars.into_iter().collect();
 
@@ -79,11 +79,11 @@ fn rejects_mixed_case() {
 #[test]
 fn rejects_invalid_string_length() {
     // Construct a string with data-part length of 94 (reserved-invalid).
-    // "wdm1" prefix = 4 chars; total = 4 + 94 = 98 chars.
+    // "md1" prefix = 3 chars; total = 3 + 94 = 97 chars.
     // Fill data part with all-'q' (value 0); BCH will be wrong, but
     // InvalidStringLength fires before BCH checking.
     let data_part: String = "q".repeat(94);
-    let s = format!("wdm1{data_part}");
+    let s = format!("md1{data_part}");
     let result = decode(&[s.as_str()], &DecodeOptions::new());
     match result {
         Err(Error::InvalidStringLength(_)) => {}
@@ -101,7 +101,7 @@ fn rejects_invalid_char() {
     let raw = &backup.chunks[0].raw;
 
     let mut chars: Vec<char> = raw.chars().collect();
-    // Position 5 is in the data part (well past "wdm1").
+    // Position 5 is in the data part (well past "md1").
     chars[5] = 'b';
     let bad: String = chars.into_iter().collect();
 
@@ -123,7 +123,7 @@ fn rejects_bch_uncorrectable() {
     let raw = &backup.chunks[0].raw;
 
     let mut chars: Vec<char> = raw.chars().collect();
-    // Corrupt positions 5 and 7 (both in the data part, after "wdm1").
+    // Corrupt positions 5 and 7 (both in the data part, after "md1").
     // Replace with a character that is NOT the same as the original.
     for pos in [5, 7] {
         chars[pos] = if chars[pos] == 'q' { 'p' } else { 'q' };
@@ -495,11 +495,11 @@ fn rejects_malformed_payload_padding() {
     let mut data_5bit = vec![0u8; 93];
     data_5bit[92] = 0x01;
 
-    // Compute the legitimate Long-code BCH checksum for HRP "wdm".
-    let checksum = bch_create_checksum_long("wdm", &data_5bit);
+    // Compute the legitimate Long-code BCH checksum for HRP "md".
+    let checksum = bch_create_checksum_long("md", &data_5bit);
 
-    // Assemble the MD string: "wdm1" + ALPHABET[symbol] for each data + each checksum char.
-    let mut s = String::from("wdm1");
+    // Assemble the MD string: "md1" + ALPHABET[symbol] for each data + each checksum char.
+    let mut s = String::from("md1");
     for &v in &data_5bit {
         s.push(ALPHABET[v as usize] as char);
     }

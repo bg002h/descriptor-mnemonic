@@ -459,7 +459,7 @@ impl Chunk {
 
 /// One chunk of a chunked Template Card backup, ready to engrave.
 ///
-/// `raw` is the codex32-derived string (e.g. `wdm10x...`) including HRP,
+/// `raw` is the codex32-derived string (e.g. `md10x...`) including HRP,
 /// type byte, header fields, fragment, and BCH checksum. `chunk_index`
 /// and `total_chunks` are extracted from the parsed header for caller
 /// convenience. `code` indicates whether the BCH checksum is regular
@@ -1757,12 +1757,12 @@ mod tests {
     #[test]
     fn encoded_chunk_round_trip_via_struct_construction() {
         let chunk = EncodedChunk {
-            raw: "wdm10xtest".to_string(),
+            raw: "md10xtest".to_string(),
             chunk_index: 0,
             total_chunks: 1,
             code: crate::BchCode::Regular,
         };
-        assert_eq!(chunk.raw, "wdm10xtest");
+        assert_eq!(chunk.raw, "md10xtest");
         assert_eq!(chunk.chunk_index, 0);
         assert_eq!(chunk.total_chunks, 1);
         assert_eq!(chunk.code, crate::BchCode::Regular);

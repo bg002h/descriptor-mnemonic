@@ -51,7 +51,7 @@ pub enum Error {
     /// Returned by [`crate::decode_string`] / [`crate::decode()`]. The user
     /// transcribed a non-MD bech32 string (e.g. a Bitcoin address). Caller
     /// should reject the input and ask the user for an `md1…` string.
-    #[error("invalid HRP: expected 'wdm', got '{0}'")]
+    #[error("invalid HRP: expected 'md', got '{0}'")]
     InvalidHrp(String),
 
     /// Bech32 string contained mixed-case characters.
@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn error_display_matches_thiserror_format() {
         let e = Error::InvalidHrp("btc".to_string());
-        assert_eq!(e.to_string(), "invalid HRP: expected 'wdm', got 'btc'");
+        assert_eq!(e.to_string(), "invalid HRP: expected 'md', got 'btc'");
     }
 
     #[test]

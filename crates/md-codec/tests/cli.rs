@@ -47,7 +47,7 @@ fn md_encode_default() {
         .args(["encode", POLICY])
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("wdm1"))
+        .stdout(predicate::str::starts_with("md1"))
         .stderr("");
 }
 
@@ -109,7 +109,7 @@ fn md_encode_json_shape_is_stable() {
     assert!(!chunks.is_empty());
     let first = &chunks[0];
     let raw = first.get("raw").and_then(|r| r.as_str()).expect("raw");
-    assert!(raw.starts_with("wdm1"));
+    assert!(raw.starts_with("md1"));
     assert!(first.get("chunk_index").and_then(|c| c.as_u64()).is_some());
     assert!(first.get("total_chunks").and_then(|c| c.as_u64()).is_some());
     let code = first.get("code").and_then(|c| c.as_str()).expect("code");
@@ -212,8 +212,8 @@ fn md_encode_path_override_bip48_takes_effect() {
     let stdout = String::from_utf8(output.stdout).expect("utf-8");
     let chunk = stdout
         .lines()
-        .find(|l| l.starts_with("wdm1"))
-        .expect("at least one wdm1 chunk on stdout");
+        .find(|l| l.starts_with("md1"))
+        .expect("at least one md1 chunk on stdout");
 
     // Decode and inspect the underlying bytecode's path declaration.
     // The Phase A precedence rule populates `decoded_shared_path` from the
@@ -249,7 +249,7 @@ fn md_encode_force_chunked() {
         .args(["encode", POLICY, "--force-chunked"])
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("wdm1"));
+        .stdout(predicate::str::starts_with("md1"));
 
     // Sanity: the force-chunked output differs from the plain output.
     let plain = encode_first_chunk();
@@ -380,7 +380,7 @@ fn md_vectors_returns_json_top_level_object() {
         .stdout(predicate::str::starts_with("{").or(predicate::str::starts_with("[")));
 }
 
-/// `wdm not-a-subcommand` exits non-zero, stderr mentions `wdm` usage.
+/// `md not-a-subcommand` exits non-zero, stderr mentions `md` usage.
 #[test]
 fn md_unknown_subcommand_exits_nonzero() {
     Command::cargo_bin("md")
@@ -388,7 +388,7 @@ fn md_unknown_subcommand_exits_nonzero() {
         .arg("not-a-subcommand")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("wdm").or(predicate::str::contains("unrecognized")));
+        .stderr(predicate::str::contains("md").or(predicate::str::contains("unrecognized")));
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +411,7 @@ fn md_encode_fingerprint_flag_accepts_two_placeholders() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("wdm1"))
+        .stdout(predicate::str::starts_with("md1"))
         .stderr(predicate::str::contains(
             "--fingerprint embeds master-key fingerprints",
         ));

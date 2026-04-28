@@ -623,7 +623,7 @@ impl WalletPolicy {
 /// # What to do with this
 ///
 /// The `raw: String` field of each [`crate::EncodedChunk`] is the
-/// codex32-derived string starting with `wdm1…`. Engrave or print these
+/// codex32-derived string starting with `md1…`. Engrave or print these
 /// strings on durable media. The 12-word [`crate::WalletIdWords`] is the
 /// human-friendly Tier-3 [`crate::WalletId`]; users can write this down
 /// alongside the engraved cards as a verifier — at decode time, comparing
@@ -1438,7 +1438,7 @@ mod tests {
         let id = WalletId::new([0x01u8; 16]);
         let words = id.to_words();
         let chunk = EncodedChunk {
-            raw: "wdm10xsmoke".to_string(),
+            raw: "md10xsmoke".to_string(),
             chunk_index: 0,
             total_chunks: 1,
             code: BchCode::Regular,

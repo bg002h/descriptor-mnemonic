@@ -242,7 +242,7 @@ mod tests {
         let chunk = EncodedChunkJson {
             chunk_index: 0,
             code: BchCodeJson::Regular,
-            raw: "wdm1qqqq".to_string(),
+            raw: "md1qqqq".to_string(),
             total_chunks: 1,
         };
         let s = serde_json::to_string(&chunk).unwrap();

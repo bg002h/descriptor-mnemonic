@@ -149,8 +149,8 @@ mod tests {
         assert_eq!(chunk.total_chunks, 1);
         assert_eq!(chunk.code, BchCode::Regular);
         assert!(
-            chunk.raw.starts_with("wdm1"),
-            "raw string should start with wdm1, got {}",
+            chunk.raw.starts_with("md1"),
+            "raw string should start with md1, got {}",
             chunk.raw
         );
     }
@@ -169,7 +169,7 @@ mod tests {
         let backup = encode(&p, &opts).expect("encode should succeed");
         assert_eq!(backup.chunks.len(), 1);
         assert_eq!(backup.chunks[0].code, BchCode::Long);
-        assert!(backup.chunks[0].raw.starts_with("wdm1"));
+        assert!(backup.chunks[0].raw.starts_with("md1"));
     }
 
     // -----------------------------------------------------------------------

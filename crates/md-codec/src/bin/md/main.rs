@@ -30,7 +30,7 @@ use json::{DecodeJson, EncodeJson};
 
 /// Mnemonic Descriptor (MD) — engravable BIP 388 wallet policy backups.
 #[derive(Debug, Parser)]
-#[command(name = "wdm", version, about, long_about = None)]
+#[command(name = "md", version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -170,7 +170,7 @@ fn parse_path_arg(s: &str) -> Result<DerivationPath, anyhow::Error> {
 
         return indicator_to_derivation_path(indicator).ok_or_else(|| {
             anyhow::anyhow!(
-                "indicator 0x{indicator:02x} is not in the WDM path dictionary; \
+                "indicator 0x{indicator:02x} is not in the MD path dictionary; \
                  known indicators: 0x01-0x07, 0x11-0x15, 0x17. \
                  Use a literal path like \"m/48'/0'/0'/2'\" instead."
             )
