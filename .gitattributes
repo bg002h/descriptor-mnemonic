@@ -1,0 +1,5 @@
+# Force LF line endings on test-vector JSON files so SHA-256 lock tests
+# (e.g. tests/vectors_schema.rs::v0_2_sha256_lock_matches_committed_file)
+# match across platforms. Without this rule, Windows checkout converts
+# LF → CRLF and the on-disk byte sequence diverges from the locked SHA.
+crates/wdm-codec/tests/vectors/*.json text eol=lf
