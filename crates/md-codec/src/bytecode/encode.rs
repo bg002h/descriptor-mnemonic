@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use bitcoin::hashes::Hash;
-use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wsh};
+use miniscript::descriptor::{Descriptor, DescriptorPublicKey, ShInner, Wsh};
 use miniscript::{Miniscript, Segwitv0, Tap, Terminal, Threshold};
 
 use crate::Error;
@@ -95,14 +95,32 @@ impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
                 out.push(Tag::Wsh.as_byte());
                 wsh.encode_template(out, placeholder_map)
             }
-            Descriptor::Sh(_) => Err(Error::PolicyScopeViolation(
-                "v0.1 does not support sh() — use wsh()".to_string(),
-            )),
+            Descriptor::Wpkh(wpkh) => {
+                out.push(Tag::Wpkh.as_byte());
+                wpkh.as_inner().encode_template(out, placeholder_map)
+            }
+            Descriptor::Sh(sh) => {
+                out.push(Tag::Sh.as_byte());
+                match sh.as_inner() {
+                    ShInner::Wpkh(wpkh) => {
+                        out.push(Tag::Wpkh.as_byte());
+                        wpkh.as_inner().encode_template(out, placeholder_map)
+                    }
+                    ShInner::Wsh(wsh) => {
+                        out.push(Tag::Wsh.as_byte());
+                        // Reuse Wsh::encode_template which only emits the inner script.
+                        wsh.encode_template(out, placeholder_map)
+                    }
+                    ShInner::Ms(_) => Err(Error::PolicyScopeViolation(
+                        "v0.4 does not support sh(<legacy P2SH>) including sh(multi/sortedmulti); \
+                         use sh(wsh(sortedmulti(...))) for modern nested-segwit multisig"
+                            .to_string(),
+                    )),
+                }
+            }
             Descriptor::Pkh(_) => Err(Error::PolicyScopeViolation(
-                "v0.1 does not support pkh() — use wsh(pk_h(...))".to_string(),
-            )),
-            Descriptor::Wpkh(_) => Err(Error::PolicyScopeViolation(
-                "v0.1 does not support wpkh() — use wsh(pk_h(...))".to_string(),
+                "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)"
+                    .to_string(),
             )),
             Descriptor::Tr(tr) => {
                 // BIP §"Taproot tree" + Phase D D-1: emit Tag::Tr (0x06)
@@ -138,7 +156,8 @@ impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
                 Ok(())
             }
             Descriptor::Bare(_) => Err(Error::PolicyScopeViolation(
-                "v0.1 does not support bare() descriptors".to_string(),
+                "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)"
+                    .to_string(),
             )),
         }
     }
@@ -599,26 +618,30 @@ mod tests {
     }
 
     #[test]
-    fn rejects_wpkh_top_level() {
+    fn rejects_wpkh_inline_key() {
+        // v0.4 accepts wpkh() at the top level, but inline keys (not in
+        // placeholder_map) are still rejected with PolicyScopeViolation.
         let d = parse_descriptor(
             "wpkh(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)",
         );
         let err = encode_template(&d, &empty_map()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("wpkh")),
-            "expected PolicyScopeViolation mentioning wpkh"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("inline key")),
+            "expected PolicyScopeViolation about inline key, got: {err:?}"
         );
     }
 
     #[test]
-    fn rejects_sh_top_level() {
+    fn rejects_sh_wpkh_inline_key() {
+        // v0.4 accepts sh(wpkh()) at the top level, but inline keys are
+        // still rejected with PolicyScopeViolation.
         let d = parse_descriptor(
             "sh(wpkh(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5))",
         );
         let err = encode_template(&d, &empty_map()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(msg) if msg.contains("sh")),
-            "expected PolicyScopeViolation mentioning sh"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("inline key")),
+            "expected PolicyScopeViolation about inline key, got: {err:?}"
         );
     }
 
@@ -732,6 +755,95 @@ mod tests {
         // pushed Tag::PkK before encode_template on the key returned Err,
         // so out is non-empty.
         assert_eq!(out, vec![Tag::PkK.as_byte()]);
+    }
+
+    // ---- v0.4 positive encode tests (Tasks 1.1-1.5) ----------------------
+
+    #[test]
+    fn encode_wpkh_single_key() {
+        // wpkh(@0) encodes as: Tag::Wpkh (0x04), Tag::Placeholder (0x32), varint(0) (0x00).
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 0u8);
+
+        let d = parse_descriptor(&format!("wpkh({key})"));
+        let bytes = encode_template(&d, &map).unwrap();
+
+        // Expected: [0x04, 0x32, 0x00]
+        assert_eq!(
+            bytes,
+            vec![Tag::Wpkh.as_byte(), Tag::Placeholder.as_byte(), 0x00]
+        );
+    }
+
+    #[test]
+    fn encode_sh_wpkh_single_key() {
+        // sh(wpkh(@0)) encodes as: Tag::Sh (0x03), Tag::Wpkh (0x04), Tag::Placeholder (0x32), varint(0) (0x00).
+        let key = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(key.clone(), 0u8);
+
+        let d = parse_descriptor(&format!("sh(wpkh({key}))"));
+        let bytes = encode_template(&d, &map).unwrap();
+
+        // Expected: [0x03, 0x04, 0x32, 0x00]
+        assert_eq!(
+            bytes,
+            vec![
+                Tag::Sh.as_byte(),
+                Tag::Wpkh.as_byte(),
+                Tag::Placeholder.as_byte(),
+                0x00,
+            ]
+        );
+    }
+
+    #[test]
+    fn encode_sh_wsh_sortedmulti_2_of_3() {
+        // sh(wsh(sortedmulti(2, @0, @1, @2))) encodes as:
+        //   Tag::Sh (0x03), Tag::Wsh (0x05), Tag::SortedMulti (0x09),
+        //   varint(2), varint(3), then 3 placeholder records.
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+        map.insert(k2.clone(), 2u8);
+
+        let d = parse_descriptor(&format!("sh(wsh(sortedmulti(2,{k0},{k1},{k2})))"));
+        let bytes = encode_template(&d, &map).unwrap();
+
+        // Structure: Sh + Wsh + SortedMulti + k + n + 3*(Placeholder + idx) = 11 bytes
+        assert_eq!(bytes[0], Tag::Sh.as_byte()); // 0x03
+        assert_eq!(bytes[1], Tag::Wsh.as_byte()); // 0x05
+        assert_eq!(bytes[2], Tag::SortedMulti.as_byte()); // 0x09
+        assert_eq!(bytes[3], 0x02); // k=2
+        assert_eq!(bytes[4], 0x03); // n=3
+        assert_eq!(bytes.len(), 11);
+        let mut indices: Vec<u8> = Vec::with_capacity(3);
+        for i in 0..3 {
+            assert_eq!(bytes[5 + 2 * i], Tag::Placeholder.as_byte());
+            indices.push(bytes[6 + 2 * i]);
+        }
+        indices.sort_unstable();
+        assert_eq!(indices, vec![0, 1, 2]);
     }
 
     #[test]
@@ -1453,6 +1565,118 @@ mod tests {
             out.len(),
             3,
             "single-byte placeholder index must be exactly 1 byte"
+        );
+    }
+
+    // ---- Task 1.6: Encode-side restriction-matrix tests -------------------
+
+    #[test]
+    fn encode_rejects_sh_multi_legacy_p2sh() {
+        // sh(multi(...)) uses ShInner::Ms — must be rejected with a message
+        // mentioning "legacy P2SH".
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+        map.insert(k2.clone(), 2u8);
+
+        let d = parse_descriptor(&format!("sh(multi(2,{k0},{k1},{k2}))"));
+        let err = encode_template(&d, &map).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("legacy P2SH")),
+            "expected PolicyScopeViolation mentioning legacy P2SH, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn encode_rejects_sh_sortedmulti_legacy_p2sh() {
+        // sh(sortedmulti(...)) also uses ShInner::Ms — must be rejected with
+        // a message mentioning "legacy P2SH".
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+        map.insert(k2.clone(), 2u8);
+
+        let d = parse_descriptor(&format!("sh(sortedmulti(2,{k0},{k1},{k2}))"));
+        let err = encode_template(&d, &map).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("legacy P2SH")),
+            "expected PolicyScopeViolation mentioning legacy P2SH, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn encode_rejects_top_level_pkh() {
+        // pkh() at the top level must be rejected with a message mentioning
+        // "top-level pkh()".
+        let d = parse_descriptor(
+            "pkh(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)",
+        );
+        let err = encode_template(&d, &empty_map()).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("top-level pkh()")),
+            "expected PolicyScopeViolation mentioning top-level pkh(), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn encode_rejects_top_level_bare() {
+        // bare() at the top level must be rejected with a message mentioning
+        // "bare()". Note: `pk(K)` parses as a Bare descriptor.
+        let d = parse_descriptor(
+            "pk(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)",
+        );
+        let err = encode_template(&d, &empty_map()).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("bare()")),
+            "expected PolicyScopeViolation mentioning bare(), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn encode_rejects_sh_via_inner_ms_arbitrary_miniscript() {
+        // sh(and_v(...)) — arbitrary non-multi sh-wrapped miniscript — uses
+        // ShInner::Ms and must be rejected with a message mentioning "legacy P2SH".
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+
+        let d = parse_descriptor(&format!("sh(and_v(v:pk({k0}),pk({k1})))"));
+        let err = encode_template(&d, &map).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("legacy P2SH")),
+            "expected PolicyScopeViolation mentioning legacy P2SH, got: {err:?}"
         );
     }
 }
