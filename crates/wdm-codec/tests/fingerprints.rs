@@ -299,7 +299,13 @@ fn fingerprints_block_byte_layout_matches_bip_example() {
         Fingerprint::from([0xca, 0xfe, 0xba, 0xbe]),
     ]);
     let bytes = policy.to_bytecode(&opts).expect("to_bytecode must succeed");
-    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    let hex: String = bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut acc, b| {
+            use std::fmt::Write;
+            write!(acc, "{b:02x}").unwrap();
+            acc
+        });
     // Byte-by-byte breakdown (matches the BIP example's annotation):
     //   04        | header (v0, fingerprints bit set)
     //   33 03     | path declaration: SharedPath, BIP 84 mainnet indicator
