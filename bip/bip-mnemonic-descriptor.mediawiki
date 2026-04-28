@@ -81,11 +81,12 @@ templates as input:
 * '''<code>sh(wpkh(KEY))</code>''' — BIP 49 nested-segwit single-sig.
 * '''<code>sh(wsh(SCRIPT))</code>''' — BIP 48/1' nested-segwit multisig. The
   inner SCRIPT is subject to the same constraints as a top-level <code>wsh</code>.
-* '''<code>tr(KEY)</code>''' or '''<code>tr(KEY, SCRIPT)</code>''' — BIP 86
-  single-key taproot, optionally with a single tap-leaf script. RESERVED —
-  admission deferred for: multi-leaf TapTree (bytecode tag <code>0x08</code>);
-  decoders MUST reject inputs containing tag <code>0x08</code> with
-  <code>Error::PolicyScopeViolation</code>.
+* '''<code>tr(KEY)</code>''' or '''<code>tr(KEY, TREE)</code>''' — BIP 86
+  taproot: keypath-only, single-leaf, or multi-leaf script tree. <code>TREE</code>
+  may be a single tap-leaf script or a recursively nested script tree using the
+  <code>TapTree (0x08)</code> inner-node tag, subject to BIP 341's
+  <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> depth ceiling. See
+  §"Taproot tree" for the bytecode form. Active (v0.5).
 
 Conformant MD encoders MUST reject the following BIP-388-permitted top-level
 forms; MD's accepted scope is narrower than BIP 388:
@@ -388,7 +389,7 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 |-
 | <code>0x07</code> || <code>bare()</code> || — || 1 || Top-level: REJECTED. Not used in any nested context in MD's accepted surface.
 |-
-| <code>0x08</code> || <code>TapTree</code> (reserved for v1+) || — || multi-leaf tree structure; v0 single-leaf form encodes the leaf miniscript directly without a <code>TapTree</code> node (see "Taproot tree", below) || RESERVED — admission deferred (multi-leaf taproot).
+| <code>0x08</code> || <code>TapTree</code> || — || Multi-leaf TapTree inner-node framing (taproot script-tree subtree); recursive <code>[TapTree=0x08][LEFT_SUBTREE][RIGHT_SUBTREE]</code> (see §"Taproot tree") || Active (v0.5)
 |-
 | <code>0x09</code> || <code>sortedmulti()</code> || threshold (1 byte), count (1 byte) || count keys ||
 |-
@@ -533,9 +534,15 @@ Note: The <code>multi</code>, <code>thresh</code>, etc. threshold and count fiel
 
 ====Taproot tree====
 
-The <code>tr()</code> operator (<code>0x06</code>) encodes a top-level taproot wallet policy. The internal-key sub-tree (a key reference) immediately follows the <code>tr()</code> tag. If the wallet policy includes a script tree, exactly one tap-leaf miniscript follows the internal-key reference; in v0 the tap-leaf is encoded directly without an intermediate <code>TapTree</code> (<code>0x08</code>) node. The <code>TapTree</code> tag is reserved for v1+ multi-leaf encodings.
+The <code>tr()</code> operator (<code>0x06</code>) encodes a top-level taproot wallet policy. The internal-key sub-tree (a key reference) immediately follows the <code>tr()</code> tag. The optional script-tree position that follows is one of:
 
-A v0 decoder receiving <code>0x08</code> in the tap-leaf position MUST reject the input.
+* Absent — keypath-only <code>tr(KEY)</code>; no further bytes in the operator payload.
+* A single tap-leaf miniscript — encoded directly as a leaf-script tag sequence (any operator from the per-leaf miniscript subset; see §"Tapscript miniscript subset"). This is the <code>tr(KEY, leaf)</code> form.
+* A <code>TapTree</code> inner-node framing — a recursive <code>[TapTree=0x08][LEFT_SUBTREE][RIGHT_SUBTREE]</code> sequence where each <code>SUBTREE</code> is recursively defined as another tap-leaf or another inner-node framing. This is the <code>tr(KEY, TREE)</code> multi-leaf form (v0.5+).
+
+Multi-leaf taproot trees are encoded recursively using the <code>TapTree (0x08)</code> tag as inner-node framing. BIP 388's curly-brace source form <code>{LEFT, RIGHT}</code> is the human-readable counterpart of this bytecode; the MD bytecode is the wire encoding of that grammar.
+
+The decoder enforces BIP 341's <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> ceiling on tree depth via a peek-before-recurse pattern: a <code>0x08</code> byte is consumed only after the depth gate passes, so a hostile producer cannot blow the parser's stack via deeply nested framings. Decoders MUST reject trees that would exceed depth 128 with <code>Error::PolicyScopeViolation</code> identifying the depth overflow.
 
 Implementations supporting taproot MUST enforce the per-leaf miniscript subset constraints required by deployed hardware signers (notably Coldcard, which restricts to <code>pk</code>, <code>pk_h</code>, <code>multi_a</code>, <code>or_d</code>, <code>and_v</code>, <code>older</code> — plus the <code>c:</code> and <code>v:</code> wrappers required to spell those operators in canonical BIP 388 form — as of edge firmware). Producing a tap-miniscript wallet policy beyond this subset risks the wallet being unspendable on hardware signers.
 
@@ -593,6 +600,18 @@ A nested-allowed-operator example combining <code>or_d</code>, <code>and_v</code
   |                         |  +-------- Tag::Verify (0x0E) ; v: wrapper
   +-- Tag::OrD (0x16)       +-- Tag::AndV (0x11)
 </pre>
+
+Two-leaf multi-leaf (v0.5) <code>tr(@0/**, {pk(@1/**), pk(@2/**)})</code> — operator-tree portion <code>06 32 00 08 0c 1b 32 01 0c 1b 32 02</code>:
+
+<pre>
+  06 32 00  08  0c 1b 32 01   0c 1b 32 02
+  -- int.   ^   -- left leaf   -- right leaf
+  key       |
+            +-- Tag::TapTree (0x08) — inner-node framing;
+                LEFT_SUBTREE and RIGHT_SUBTREE follow immediately
+</pre>
+
+The <code>TapTree (0x08)</code> tag introduces an inner node. Its two subtrees (left then right) follow immediately in bytecode order, each being either a leaf-script tag sequence or another <code>0x08</code>-prefixed inner node. Deeper trees nest additional <code>0x08</code> frames recursively, up to the BIP 341 depth-128 ceiling.
 
 ====Round-trip canonical form====
 
@@ -814,7 +833,18 @@ The three reasons combine: a category with high footgun risk, low marginal recov
 
 ===Why is multi-leaf TapTree deferred (vs excluded)?===
 
-<code>tr(KEY, TREE)</code> with multi-leaf TapTree (BIP 388 §"Taproot tree") is a substantive feature requiring its own design pass: TapTree depth/balancing rules, leaf-wrapper subset re-evaluation (Coldcard tap-leaf subset is currently restrictive), per-leaf miniscript context validation. Deferring to a future MD revision (v0.5+) keeps the v0.4 release focused. Unlike the legacy exclusions above, multi-leaf TapTree IS planned admission.
+(Historical context — v0.4 deferral rationale.) <code>tr(KEY, TREE)</code> with multi-leaf TapTree (BIP 388 §"Taproot tree") is a substantive feature requiring its own design pass: TapTree depth/balancing rules, leaf-wrapper subset re-evaluation (Coldcard tap-leaf subset is currently restrictive), per-leaf miniscript context validation. Deferring to a future MD revision (v0.5+) keeps the v0.4 release focused. Unlike the legacy exclusions above, multi-leaf TapTree IS planned admission.
+
+===Why does v0.5 admit multi-leaf TapTree?===
+
+The v0.4 deferral was scope-driven, not design-driven. Multi-leaf TapTree was always a planned admission target; v0.5 ships it because:
+
+# The BIP 388 modern-segwit surface (closed at v0.4 with <code>wpkh</code>, <code>sh(wpkh)</code>, <code>sh(wsh)</code>) is now stable, freeing engineering bandwidth for the taproot tree work.
+# The peek-before-recurse + depth-gate hardening pattern from v0.4's <code>sh(...)</code> restriction matrix transfers directly to <code>TapTree</code>'s recursive framing — the security review surface is small.
+# BIP 341's <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> provides an upstream-defined ceiling that requires no MD-specific tightening, simplifying the spec.
+# rust-miniscript's <code>TapTree::leaves()</code> + <code>TapTree::combine</code> APIs make the encoder/decoder a thin shim over upstream's depth-aware tree representation.
+
+v0.5 does NOT broaden the per-leaf miniscript subset — each leaf is admissible on the same terms as v0.4.x's single-leaf <code>tr(KEY, leaf)</code> admits. The <code>validate_tap_leaf_subset</code> gate is unchanged.
 
 ===Why is <code>bare(SCRIPT)</code> rejected?===
 
@@ -826,7 +856,7 @@ MD's <code>@i</code> placeholder framing assumes named keys provided separately 
 
 ===What about <code>tr(KEY)</code> single-sig taproot?===
 
-Single-leaf taproot is supported (<code>tr(KEY)</code> and <code>tr(KEY, single-leaf-script)</code>). Multi-leaf TapTree is deferred (see "Why is multi-leaf TapTree deferred (vs excluded)?" above).
+Single-key taproot (<code>tr(KEY)</code>) and single-leaf taproot (<code>tr(KEY, single-leaf-script)</code>) are both supported and have been since v0.2. As of v0.5, these are degenerate cases of the full multi-leaf admission: single-leaf is simply a tree of depth zero (no <code>TapTree=0x08</code> inner node), and keypath-only is an absent script-tree position. The bytecode encoding for both forms is UNCHANGED from v0.4.x — v0.5 is wire-additive, not wire-breaking, for these cases.
 
 ===Why is the HRP <code>md</code> rather than something more descriptive?===
 
@@ -851,20 +881,20 @@ MD v0 readers MUST reject MD strings with newer format-version bytes (loud failu
 
 ==Test Vectors==
 
-A complete reference test vector suite is provided alongside the reference implementation (see "Reference Implementation", below). Two authoritative vector files coexist; implementations targeting v0.1.0 verify against the schema-1 file, while implementations targeting v0.2.0 verify against the schema-2 file.
+A complete reference test vector suite is provided alongside the reference implementation (see "Reference Implementation", below). Two authoritative vector files coexist; implementations targeting v0.1.0 verify against the schema-1 file, while implementations targeting v0.2.0 and later (including v0.5.0) verify against the schema-2 file.
 
 * '''v0.1.0 lock — schema 1''' — current path: <code>crates/md-codec/tests/vectors/v0.1.json</code>; historical permalink at v0.1.0 release: [https://github.com/bg002h/descriptor-mnemonic/blob/e2e8368e51618ad82073c46faa7799fddb86e082/crates/wdm-codec/tests/vectors/v0.1.json crates/wdm-codec/tests/vectors/v0.1.json] (commit <code>e2e8368e51618ad82073c46faa7799fddb86e082</code>, pre-v0.3.0 rename)
 ** SHA-256 content hash (post-v0.3.0): <code>aac3677fd84f06915c7bb5148a25ed80c399daa4f9bf56c8052ed84f83c9b71b</code>
 ** SHA-256 content hash (v0.1.0 — v0.2.3, pre-rename): <code>1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c</code>
 * '''v0.2.0 lock — schema 2''' — <code>crates/md-codec/tests/vectors/v0.2.json</code>
 ** SHA-256 content hash: <code>caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770</code>
-** This SHA is **family-stable across the v0.4.x line**: the JSON's <code>generator</code> field embeds only the family version (<code>"md-codec 0.4"</code>), so any v0.4.x build that regenerates this file produces the same SHA. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log.
+** Note: this SHA corresponds to the v0.4.x family-stable content. As of v0.5.0, the schema-2 file has been extended with multi-leaf TapTree vectors (T3–T7) and v0.5 negatives (N1–N9); the v0.5.0 SHA will differ from the v0.4.x SHA above. The v0.4.x-era SHA above is preserved as a historical pin for implementations targeting v0.4.x. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log.
 
 See <code>crates/md-codec/src/vectors.rs</code> for the typed schema; <code>TestVectorFile</code>, <code>Vector</code>, and <code>NegativeVector</code> are all <code>#[non_exhaustive]</code> so future versions may add fields without breaking deserializers.
 
 ===Schema versioning===
 
-The vector schema follows '''additive evolution'''. <code>schema_version: 2</code> is a strict superset of <code>schema_version: 1</code>; readers MAY ignore unknown fields. The two authoritative files coexist: implementations targeting v0.1.0 SHOULD verify against <code>v0.1.json</code>, while implementations targeting v0.2.0 SHOULD verify against <code>v0.2.json</code>. The schema-1 file is byte-frozen at the v0.1.0 release; future schema versions land in new files (<code>v0.3.json</code> for schema 3, etc.) and never modify earlier locks.
+The vector schema follows '''additive evolution'''. <code>schema_version: 2</code> is a strict superset of <code>schema_version: 1</code>; readers MAY ignore unknown fields. The two authoritative files coexist: implementations targeting v0.1.0 SHOULD verify against <code>v0.1.json</code>, while implementations targeting v0.2.0 through v0.5.0 SHOULD verify against <code>v0.2.json</code>. The schema-1 file is byte-frozen at the v0.1.0 release; future schema versions land in new files (<code>v0.3.json</code> for schema 3, etc.) and never modify earlier locks.
 
 Schema-2 adds three optional fields:
 
@@ -877,18 +907,20 @@ Schema-2 adds three optional fields:
 * '''10 positive vectors''' — encode/decode round-trips for the canonical example corpus: single-key (C1), 2-of-3 sortedmulti (C2), 2-of-3 with timelock recovery (C3), 6-key inheritance (C4), 5-of-9 with 2-key recovery (C5), Liana Simple Inheritance (E10), Liana Expanding Multisig (E12), HTLC with sha256 inline hash (E13), Decaying multisig with 6 distinct keys (E14), and a Coldcard-shape representative entry. Each vector pins the input policy, expected canonical bytecode (hex), expected encoded chunk strings, and expected 12-word Tier-3 Wallet ID.
 * '''30 negative vectors''' — input strings or scenarios that must be rejected, one per <code>Error</code> variant in the reference implementation. Each vector pins the input plus the canonical name of the expected error variant for cross-implementation matching. (Two of the 30 are placeholder entries for variants whose triggers don't fit the MD-string input shape — <code>EmptyChunkList</code> requires an empty Vec; <code>PolicyTooLarge</code> requires bytecode > 1692 B; both are reachable through the library API but not through a single-string CLI input.) Schema-1 negative <code>input_strings</code> are representative placeholders, not byte-for-byte regenerable from the named error path; the <code>expected_error_variant</code> field is the authoritative cross-implementation contract.
 
-===Schema 2 (v0.2.0) contents===
+===Schema 2 (v0.2.0 / extended through v0.5.0) contents===
 
-Schema 2 is a strict superset of schema 1 with the following additions:
+Schema 2 is a strict superset of schema 1. The following additions were made across v0.2.0 through v0.5.0:
 
-* '''14 positive vectors''' — all 10 schema-1 vectors plus 4 new entries:
-** <code>tr_keypath</code>, <code>tr_pk</code>, <code>tr_multia_2of3</code> — taproot top-level descriptors exercising the v0.2 <code>tr()</code> + per-leaf subset (BIP §"Taproot tree").
+* '''27 positive vectors''' — all 10 schema-1 vectors plus:
+** Taproot anchors (T1–T2, <code>tr_multia_2of3</code>): <code>tr_keypath_only_md_v0_5</code> (T1, formerly <code>tr_keypath</code>), <code>tr_single_leaf_pk_md_v0_5</code> (T2, RENAMED from <code>tr_pk</code> at v0.5 — bytecode unchanged), <code>tr_multia_2of3</code> — taproot top-level descriptors exercising the <code>tr()</code> operator + per-leaf subset (BIP §"Taproot tree").
+** Multi-leaf TapTree (T3–T7, v0.5 new): <code>tr_two_leaf_symmetric_md_v0_5</code> (T3), <code>tr_three_leaf_left_heavy_md_v0_5</code> (T4), <code>tr_three_leaf_right_heavy_md_v0_5</code> (T5), <code>tr_multi_leaf_with_multi_md_v0_5</code> (T6), <code>tr_multi_leaf_chunking_boundary_md_v0_5</code> (T7) — multi-leaf <code>tr(KEY, TREE)</code> shapes exercising recursive <code>TapTree (0x08)</code> framing at various tree depths and leaf counts.
 ** <code>multi_2of2_with_fingerprints</code> — <code>wsh(multi(2,@0/**,@1/**))</code> encoded with a two-fingerprint block (<code>deadbeef</code>, <code>cafebabe</code>); populates <code>expected_fingerprints_hex</code> and <code>encode_options_fingerprints</code>.
-* '''34 negative vectors''' — all 30 schema-1 variants (with <code>input_strings</code> regenerated by per-variant generators that exercise the named error path through the reference decoder; each carries a <code>provenance</code> string) plus 4 new v0.2 entries:
+** v0.4 corpus additions: <code>s1_wpkh</code>, <code>s2_wpkh_fingerprint</code>, <code>s3_sh_wpkh</code>, <code>s4_sh_wpkh_fingerprint</code>, <code>m1_sh_wsh_sortedmulti_1of2</code>, <code>m2_sh_wsh_sortedmulti_2of3</code>, <code>m3_sh_wsh_sortedmulti_2of3_fingerprints</code>, and a Coldcard-shape variant.
+* '''>=47 negative vectors''' — all 30 schema-1 variants (with <code>input_strings</code> regenerated by per-variant generators; each carries a <code>provenance</code> string) plus v0.2–v0.4 additions and v0.5 additions:
 ** <code>n_tap_leaf_subset</code> — <code>tr(@0/**, and_v(v:sha256(...), pk(@1/**)))</code>; encoder rejects with <code>TapLeafSubsetViolation { operator: "sha256" }</code> (encode-side; <code>input_strings</code> is empty).
-** <code>n_taptree_multi_leaf</code> — bytecode containing <code>Tag::TapTree=0x08</code> in leaf position; decoder rejects with <code>PolicyScopeViolation</code> ("multi-leaf TapTree reserved for v1+").
 ** <code>n_fingerprints_count_mismatch</code> — encoder rejection when <code>EncodeOptions::with_fingerprints</code> is called with a count that doesn't match the placeholder count; <code>FingerprintsCountMismatch { expected: 2, got: 1 }</code> (encode-side; <code>input_strings</code> is empty).
 ** <code>n_fingerprints_missing_tag</code> — bytecode header advertises a fingerprints block (bit 2 set) but the byte where <code>Tag::Fingerprints=0x35</code> is expected carries a different tag; decoder rejects with <code>InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }</code>.
+** v0.5 TapTree negatives (N1–N9): <code>n_taptree_single_inner_under_tr</code> (N1; replaces the legacy <code>n_taptree_multi_leaf</code> v0.4 reservation rejection), <code>n_taptree_three_inners_under_tr</code> (N2), structural violations <code>n_taptree_inner_wpkh</code>, <code>n_taptree_inner_sh</code>, <code>n_taptree_inner_wsh</code>, <code>n_taptree_inner_tr</code>, <code>n_taptree_inner_pkh</code> (N3–N7), <code>n_taptree_unknown_tag_inner</code> (N8), and depth-overflow (N9) — decoder rejects each with a descriptive <code>PolicyScopeViolation</code> or <code>InvalidBytecode</code> variant.
 
 ===Generation and verification===
 
