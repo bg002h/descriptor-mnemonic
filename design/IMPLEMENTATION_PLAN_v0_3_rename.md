@@ -78,8 +78,9 @@ Step 2 — crate `Cargo.toml` (edit BEFORE the directory move so paths resolve):
 - Line 2: `name = "wdm-codec"` → `name = "md-codec"`
 - Line 8 (description, EXTERNAL — visible on crates.io): `description = "Reference implementation of the Wallet Descriptor Mnemonic (WDM) format..."` → `description = "Reference implementation of the Mnemonic Descriptor (MD) format..."` (preserve any trailing text about scope)
 - Line 15: `name = "wdm_codec"` → `name = "md_codec"` (lib name, snake_case)
-- Line 18: `name = "wdm"` → `name = "md"` (binary name)
-- Update `[[bin]] path` if it references `src/bin/wdm/main.rs` → `src/bin/md/main.rs`
+- Line 18 (`[[bin]] name = "wdm"` block): `name = "wdm"` → `name = "md"` (the user-facing CLI command)
+- Update `[[bin]] path` for the `wdm`/`md` binary if it references `src/bin/wdm/main.rs` → `src/bin/md/main.rs`
+- **DO NOT rename** the second `[[bin]]` block at lines 22-25 (`name = "gen_vectors"`, `path = "src/bin/gen_vectors.rs"`). The `gen_vectors` binary is intentionally generic — it's a developer-facing test-vector generator, not the format-named CLI. Leave it as `gen_vectors` after the rename.
 
 Step 3 — directory moves:
 - `git mv crates/wdm-codec crates/md-codec`
@@ -104,8 +105,10 @@ Step 4 — refresh `Cargo.lock`:
 **Edits** (from discovery Category 1: 47 MECHANICAL + 4 CONTEXTUAL; plus Category 2: 8 doc-comment MECHANICAL + 3 CONTEXTUAL):
 
 PRE-STEP — temporarily disable SHA-lock tests so Phase 4 gates can pass without Phase 6 regen:
-- In `crates/md-codec/tests/vectors_schema.rs` (or wherever `V0_1_SHA256` and `V0_2_SHA256` constants lock vectors): mark the lock-assertion tests with `#[ignore]` and a `// TODO Phase 6: re-enable after vector regen` comment. Do NOT change the constants themselves.
+- In `crates/md-codec/tests/vectors_schema.rs`: mark `v0_2_sha256_lock_matches_committed_file` (currently the only SHA-lock test, at line 220) with `#[ignore]` and a `// TODO Phase 6: re-enable after vector regen` comment. Do NOT change the `V0_2_SHA256` constant itself.
+- **NOTE**: there is NO `V0_1_SHA256` constant pre-rename — verify by `grep -n V0_1_SHA256 crates/wdm-codec/tests/vectors_schema.rs` returning no results. Do NOT invent one. If v0.1 SHA pinning is wanted later, file as a v0.4 follow-up.
 - Also grep for any test that asserts on the literal `"wdm-codec "` string (likely related to GENERATOR_FAMILY) and `#[ignore]` those too — they'd break in Phase 5 when the constant changes.
+- Snapshot the pre-rename `#[ignore]` set so Phase 6 step 5 only re-enables what THIS phase ignored: `grep -B1 'fn ' crates/wdm-codec/tests/*.rs crates/wdm-codec/src/**/*.rs | grep -B1 '#\[ignore\]' > /tmp/pre-rename-ignored.txt`.
 
 Sub-batch 4a — `use` path imports (most surface; do first):
 - Replace `use wdm_codec::` → `use md_codec::` across ALL files. Use Edit `replace_all=true` per file.
@@ -130,8 +133,8 @@ Sub-batch 4c — constant renames (24 references total per discovery):
 - All 24 references span `encoding.rs`, `encoding/bch_decode.rs` (note `:496` doc-comment reference), and tests. Use `Edit` with `replace_all=true` per file — these are unambiguous tokens.
 - Run `cargo build` after this sub-batch.
 
-Sub-batch 4d — test function name renames (22 functions total):
-- `crates/md-codec/tests/cli.rs`: 19 functions `fn wdm_*()` → `fn md_*()` at lines 44, 57, 84, 127, 189, 246, 275, 297, 308, 319, 332, 347, 358, 374, 385, 401, 422, 442. (Use `replace_all=true` after a careful regex check that no body text contains `wdm_` — discovery suggests test bodies use `wdm` only in CLI assertion strings, handled in Phase 5.)
+Sub-batch 4d — test function name renames (21 functions total: 18 in cli.rs + 3 in src):
+- `crates/md-codec/tests/cli.rs`: **18** functions `fn wdm_*()` → `fn md_*()` at lines 44, 57, 84, 127, 189, 246, 275, 297, 308, 319, 332, 347, 358, 374, 385, 401, 422, 442. **Verification step:** before editing, run `grep -c '^fn wdm_' crates/wdm-codec/tests/cli.rs` and confirm it returns `18`. If a different number, STOP and re-inventory. (Use `replace_all=true` after a careful regex check that no body text contains `wdm_` — discovery suggests test bodies use `wdm` only in CLI assertion strings, handled in Phase 5.)
 - `crates/md-codec/src/policy.rs:1228`: `fn wdm_backup_wallet_id_round_trips_via_words()` → `fn md_backup_wallet_id_round_trips_via_words()`
 - `crates/md-codec/src/policy.rs:1434`: `fn wdm_backup_struct_construction()` → `fn md_backup_struct_construction()`
 - `crates/md-codec/src/encoding.rs:854`: `fn wdm_target_constants_match_nums_derivation()` → `fn md_target_constants_match_nums_derivation()`
@@ -171,11 +174,11 @@ CONTEXTUAL group (8 items — implementer reads context):
 - Other test assertion strings checking CLI `--help` output, error messages embedding the format/binary name. Implementer must grep `wdm` and `WDM` across test files and read surrounding 5-10 lines to determine each replacement.
 - Format-string args in `format!()`, `println!()`, `eprintln!()` that embed the format name in user-visible output.
 
-WIRE group (2 items — handle here, NOT in Phase 6):
+WIRE group (1 item — handle here, NOT in Phase 6):
 - `crates/md-codec/src/vectors.rs:578-583`: `pub const GENERATOR_FAMILY: &str = concat!("wdm-codec ", env!("CARGO_PKG_VERSION_MAJOR"), ".", env!("CARGO_PKG_VERSION_MINOR"));` — change literal `"wdm-codec "` to `"md-codec "`.
   - Note: at v0.3.0 the value resolves to `"md-codec 0.3"`. This is the family-stable token for the v0.3.x series.
   - The string itself is a code edit (Phase 5 territory). The CONSEQUENCE — that vectors regen with this new string baked in — is Phase 6 territory.
-- Verify by grepping `"wdm"` in code paths that flow into the polymod input. Likely candidate: a test fixture string that's `wdm1...` literal embedded in a Rust source file (NOT in JSON vectors). If found, this becomes invalid after Phase 6 regen and must be replaced in lockstep.
+- **Discovery flagged exactly 1 WIRE-tagged string literal** (the GENERATOR_FAMILY constant above). If implementer's grep surfaces additional `wdm1...` literals in Rust source (not in JSON vector files), STOP and report — it would mean discovery missed an item and the plan needs an addendum.
 
 EXTERNAL group (3 items):
 - `crates/md-codec/README.md:51`: `[rustdoc-crate]: https://docs.rs/wdm-codec` → `https://docs.rs/md-codec` (docs.rs badge URL; the page won't exist until v0.3.0 publishes, but the link target is correct)
