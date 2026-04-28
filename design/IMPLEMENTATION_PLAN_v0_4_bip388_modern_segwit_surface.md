@@ -32,7 +32,7 @@
 | `CHANGELOG.md` | New `[0.4.0]` entry at top | 9 |
 | `MIGRATION.md` | New `## v0.3.x → v0.4.0` section | 9 |
 | `design/FOLLOWUPS.md` | File 5 new entries; close `v0-4-bip-388-surface-completion` | 10 |
-| `design/agent-reports/v0-4-rename-phase-N-reports.md` | Per-phase audit trail | every phase |
+| `design/agent-reports/v0-4-bip388-phase-N-reports.md` | Per-phase audit trail | every phase |
 
 ---
 
@@ -434,12 +434,12 @@ fn decode_sh_inner(
     let inner_byte = cur.peek_byte()?;  // peek_byte at cursor.rs:111-119
     match Tag::from_byte(inner_byte) {
         Some(Tag::Wpkh) => {
-            cur.consume_byte();
+            cur.read_byte()?;
             let key = decode_placeholder(cur, keys)?;
             Ok(Descriptor::new_sh_wpkh(key)?)
         }
         Some(Tag::Wsh) => {
-            cur.consume_byte();
+            cur.read_byte()?;
             let wsh = decode_wsh_body(cur, keys)?;
             Ok(Descriptor::new_sh_with_wsh(wsh))  // takes Wsh<Pk>, infallible
         }
@@ -447,7 +447,7 @@ fn decode_sh_inner(
             "v0.4 does not support sh({other:?}); only sh(wpkh(...)) and sh(wsh(...)) allowed"
         ))),
         None => Err(Error::InvalidBytecode {
-            offset: cur.position(),
+            offset: cur.offset(),
             kind: BytecodeErrorKind::UnknownTag(inner_byte),
         }),
     }
@@ -1324,11 +1324,11 @@ Expected: release URL printed.
 
 ### Task 11.9: Final commit closing the release
 
-- [ ] **Step 1: Save Phase 11 reports** to `design/agent-reports/v0-4-rename-phase-11-reports.md` per the durable-audit-trail workflow rule
+- [ ] **Step 1: Save Phase 11 reports** to `design/agent-reports/v0-4-bip388-phase-11-reports.md` per the durable-audit-trail workflow rule
 - [ ] **Step 2: Commit + push**
 
 ```bash
-git add design/agent-reports/v0-4-rename-phase-11-reports.md
+git add design/agent-reports/v0-4-bip388-phase-11-reports.md
 git commit -m "release(v0.4.0): close out — final review + tag + GitHub Release
 
 Final cumulative-diff reviewer (Opus 4.7) approved with N findings
