@@ -61,15 +61,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v1+
 
-### `p1-bch-4-error-correction` — proper Berlekamp-Massey/Forney decoder for full 4-error correction
-
-- **Surfaced:** inline `// TODO(v0.2)` at `crates/wdm-codec/src/encoding.rs:379` (since Phase 1)
-- **Where:** `crates/wdm-codec/src/encoding.rs` `bch_correct_*` functions (~line 379)
-- **What:** v0.1 ships brute-force 1-error correction. BIP-93 supports up to 4-error correction; we'd need a proper syndrome-based decoder (Berlekamp-Massey + Forney) to reach the full ECC capacity.
-- **Why deferred:** documented v0.2 scope per the implementation plan's risk register.
-- **Status:** open
-- **Tier:** v0.2
-
 ### `external-pr-1-hash-terminals` — apoelstra/rust-miniscript PR #1
 
 - **Surfaced:** Phase 5-B; submitted 2026-04-27
@@ -152,6 +143,19 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** breaking API change (the `data` field is currently `pub`); v0.3 breaking-window candidate. Negligible at v0.1/v0.2 scale; not worth the breakage in v0.2.
 - **Status:** open
 - **Tier:** v0.3
+
+### `phase-c-bch-decode-style-cleanups` — 4 stylistic / micro-opt nits in `encoding/bch_decode.rs`
+
+- **Surfaced:** Phase C reviewer (Opus 4.7) on commit `3aabcf6`
+- **Where:** `crates/wdm-codec/src/encoding/bch_decode.rs`
+- **What:** 4 cluster nits, all stylistic / micro-opt (no algorithmic concern):
+  - **N-1** (`:365`): `lam.last().unwrap()` reads cleaner as `lam.last().is_some_and(|x| x.is_zero())`.
+  - **N-2** (`:329`): `k.wrapping_sub(i)` + `s_idx < n` guard is correct but subtle; an explicit `if i > k { continue }` early-out would be clearer.
+  - **N-3** (`:692-707`): the test module re-implements `polymod_run` locally; a `pub(super) use super::polymod_run` would DRY the duplication.
+  - **N-4** (`:292`): `compute_syndromes` allocates a `Vec<u8>` of length 13 or 15 each call; a stack `[u8; 15]` would avoid the heap allocation entirely.
+- **Why deferred:** all four are stylistic / micro-opt — no algorithmic correctness concern. Bundle as a single sweep before v0.2.0 release if any future touch of `bch_decode.rs` happens; otherwise carry to v0.3.
+- **Status:** open
+- **Tier:** v0.2-nice-to-have
 
 ### `cli-json-debug-formatted-enum-strings` — replace `format!("{:?}", enum_value)` with serde-typed enum mirrors in CLI JSON output
 
@@ -388,6 +392,12 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 - **Surfaced:** Phase 7 implementation
 - **Status:** resolved `231574d` (v0.2 Phase B bucket C) — chosen strategy was option (A): bin-private serde-able wrapper types in a new `crates/wdm-codec/src/bin/wdm/json.rs` module. Library types unchanged (no serde derives sneaked into `WalletPolicy`, `WdmBackup`, etc.). Seven wrappers added (`EncodeJson`, `EncodedChunkJson`, `BchCodeJson`, `DecodeJson`, `DecodeReportJson`, `CorrectionJson`, `VerificationsJson`) with `From<&LibraryType>` impls and full `Serialize + Deserialize` round-trip. JSON output is byte-identical to v0.1.1's `serde_json::json!{}` literals — alphabetical wrapper-field ordering preserves `BTreeMap`-backed key order from `serde_json::Map`. File layout: `bin/wdm.rs` → `bin/wdm/main.rs` (Cargo bin-with-submodule convention) + new `bin/wdm/json.rs` (module rename from initial `wdm_json` per reviewer N-2). 10 new tests. Reviewer `APPROVE_WITH_FOLLOWUPS`; signature consistency (N-1) + module rename (N-2) applied inline by controller; v1.0 entry filed for the `Debug`-formatted enum strings (`cli-json-debug-formatted-enum-strings`).
+- **Tier:** v0.2 (closed)
+
+### `p1-bch-4-error-correction` — proper Berlekamp-Massey/Forney decoder for full 4-error correction
+
+- **Surfaced:** inline `// TODO(v0.2)` at `crates/wdm-codec/src/encoding.rs:379` (since Phase 1)
+- **Status:** resolved `3aabcf6` (v0.2 Phase C) — replaces brute-force 1-error correction with full syndrome-based BCH decoder: Berlekamp-Massey for the error-locator polynomial Λ(x), Chien search for the error positions, shifted Forney for the error magnitudes. Field representation `GF(1024) = GF(32)[ζ]/(ζ²-ζ-1)` per BIP 93. Primitive elements β = G·ζ (regular, order 93) and γ = E + X·ζ (long, order 1023). 8-consecutive-roots windows `{β^77..β^84}` and `{γ^1019..γ^1026}`. Defensive `bch_verify_*` re-check after applying corrections guards the >4-error edge case. Public API surface unchanged — only behavioral difference is that 2/3/4-error inputs now succeed instead of returning `BchUncorrectable`. Wire format unchanged; `gen_vectors --verify` PASS. New `crates/wdm-codec/src/encoding/bch_decode.rs` (~620 LOC) plus `crates/wdm-codec/tests/bch_correction.rs` (42 integration tests + 11 lib tests = 53 new tests, including 3,200 randomized round-trips at the t=4 capacity boundary). BIP §"Error-correction guarantees" gains a SHOULD-clause naming the canonical algorithm + field representation so cross-implementations report byte-identical `Correction.corrected` values. Reviewer (Opus 4.7) `APPROVE_WITH_FOLLOWUPS` with no algorithmic findings — explicitly cross-checked field, primitive orders, generator roots, BM, Chien, Forney, defensive verify ("no bugs found", "an unusually clean port"). 4 stylistic nits filed as cluster `phase-c-bch-decode-style-cleanups`.
 - **Tier:** v0.2 (closed)
 
 ---
