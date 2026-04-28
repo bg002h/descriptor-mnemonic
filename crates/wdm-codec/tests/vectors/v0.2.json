@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "wdm-codec 0.2.0-dev",
+  "generator": "wdm-codec 0.2.0",
   "vectors": [
     {
       "id": "c1",

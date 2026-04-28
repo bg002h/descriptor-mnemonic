@@ -167,7 +167,7 @@ let in_checksum_region = correction.char_position >= data_part_len;
 
 ### §6 — Test vector schema bumped 1 → 2
 
-`crates/wdm-codec/tests/vectors/v0.1.json` is locked at SHA `1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c` — the v0.1.0 contract. v0.2.0 ships an additional `crates/wdm-codec/tests/vectors/v0.2.json` at SHA `92f0d5b2f365df38a6b22fcf24c3f0bc493883fd14f1db591f82418c001e0e42`.
+`crates/wdm-codec/tests/vectors/v0.1.json` is locked at SHA `1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c` — the v0.1.0 contract. v0.2.0 ships an additional `crates/wdm-codec/tests/vectors/v0.2.json` at SHA `3c208300f57f1d42447f052499bab4bdce726081ecee139e8689f6dedb5f81cb`.
 
 Schema 2 is **additive** over schema 1; readers that ignore unknown fields parse v0.2.json cleanly. New fields:
 
