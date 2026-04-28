@@ -363,6 +363,11 @@ fn cmd_bytecode(policy_str: &str) -> Result<(), anyhow::Error> {
         .parse()
         .map_err(|e| anyhow::anyhow!("invalid policy: {e}"))?;
 
+    // Intentionally hardcoded `EncodeOptions::default()` — `bytecode` is a
+    // debug-aid subcommand that prints the canonical default-options encoding
+    // for spec/BIP cross-reference. Unlike `cmd_encode`, it deliberately does
+    // not expose `--path` / `--fingerprint` / etc. so the printed bytes always
+    // reflect the BIP 84 mainnet fallback path with no fingerprints block.
     let bytecode = policy
         .to_bytecode(&EncodeOptions::default())
         .map_err(|e| anyhow::anyhow!("bytecode encode failed: {e}"))?;

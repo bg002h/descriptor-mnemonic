@@ -503,6 +503,10 @@ struct NegativeFixture {
 
 /// Build the schema-1 [`TestVectorFile`] (v0.1.0 lock).
 ///
+/// Backward-compat alias: forwards to [`build_test_vectors_v1`]. Prefer the
+/// explicit `_v1` form in new code so the schema bump is visible at the
+/// call site.
+///
 /// Output is byte-frozen against `tests/vectors/v0.1.json` (SHA-256
 /// `1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c`). Any
 /// change here is a release-engineering incident; new test material goes

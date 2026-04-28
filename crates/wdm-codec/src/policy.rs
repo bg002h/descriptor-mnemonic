@@ -617,7 +617,8 @@ impl WalletPolicy {
 /// with `chunk_index == 0, total_chunks == 1`. A chunked backup has
 /// `chunks.len() in 1..=32` and every chunk's `total_chunks` equals
 /// `chunks.len()`. (A 1-chunk Chunked backup is possible when the user
-/// passes [`crate::EncodeOptions::chunking_mode`] = [`crate::ChunkingMode::ForceChunked`] on a small input.)
+/// passes [`crate::EncodeOptions::chunking_mode`] =
+/// [`crate::ChunkingMode::ForceChunked`] on a small input.)
 ///
 /// # What to do with this
 ///
@@ -641,10 +642,14 @@ pub struct WdmBackup {
     /// The 12-word BIP-39 representation of the Tier-3 Wallet ID, for
     /// user verification.
     pub wallet_id_words: WalletIdWords,
-    /// The master-key fingerprints recovered from a fingerprints block, if
-    /// present. `None` iff the bytecode header bit 2 was 0 (no block);
-    /// `Some(fps)` iff the block was present and parsed successfully, with
-    /// `fps[i]` corresponding to placeholder `@i`.
+    /// Master-key fingerprints associated with this backup, if any.
+    ///
+    /// Encode-side: mirrors [`crate::EncodeOptions::fingerprints`] supplied
+    /// by the caller (so an `encode → user-side state` round-trip is
+    /// observable without re-decoding). Decode-side: see
+    /// [`crate::DecodeResult::fingerprints`] for the parsed-from-wire
+    /// counterpart. `None` iff no fingerprints block was emitted/parsed;
+    /// `Some(fps)` with `fps[i]` corresponding to placeholder `@i`.
     ///
     /// Phase E (v0.2). Recovery tools that surface this field to users MUST
     /// flag it as privacy-sensitive — fingerprints leak which seeds match
@@ -657,7 +662,7 @@ impl WdmBackup {
     ///
     /// The 12-word form is the storage format; this method converts back to
     /// the binary representation that is the derivation source for
-    /// `truncate -> ChunkWalletId`.
+    /// `truncate → ChunkWalletId`.
     ///
     /// # Panics
     ///
@@ -1137,7 +1142,7 @@ mod tests {
     const HTLC_RIPEMD160: &str = "1234567890abcdef1234567890abcdef12345678";
     const HTLC_HASH160: &str = "fedcba0987654321fedcba0987654321fedcba09";
 
-    /// Round-trip a policy through `to_bytecode` -> `from_bytecode` and
+    /// Round-trip a policy through `to_bytecode` → `from_bytecode` and
     /// assert the key count is preserved.
     fn assert_bytecode_round_trip(policy_str: &str, expected_key_count: usize) {
         let p: WalletPolicy = policy_str
