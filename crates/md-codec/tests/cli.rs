@@ -39,7 +39,7 @@ fn encode_first_chunk() -> String {
 // Happy-path tests
 // ---------------------------------------------------------------------------
 
-/// `wdm encode <policy>` — exits 0, stdout starts with `wdm1`, stderr empty.
+/// `md encode <policy>` — exits 0, stdout starts with the bech32 HRP prefix, stderr empty.
 #[test]
 fn md_encode_default() {
     Command::cargo_bin("md")
@@ -237,9 +237,9 @@ fn md_encode_path_override_bip48_takes_effect() {
     );
 }
 
-/// `wdm encode <policy> --force-chunked` — exits 0, the chunk string is
+/// `md encode <policy> --force-chunked` — exits 0, the chunk string is
 /// longer than the single-string variant because the chunked header adds
-/// bytes.  We verify the output starts with `wdm1` and is structurally
+/// bytes.  We verify the output starts with the bech32 HRP prefix and is structurally
 /// different from the non-chunked output (i.e. it is a Chunked-type chunk,
 /// which the `inspect` sub-test confirms separately).
 #[test]

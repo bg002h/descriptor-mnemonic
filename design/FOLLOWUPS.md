@@ -135,6 +135,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v1+ (crates.io publish prep)
 
+### `phase-5-cli-wdm1-assertion-sweep` — sweep `"wdm1"` string literals in tests/cli.rs
+
+- **Surfaced:** Phase 4 (identifier mass-rename) code-quality reviewer (Important #1)
+- **Where:** `crates/md-codec/tests/cli.rs` lines 50, 113, 216-217, 253, 415 (currently `predicate::str::starts_with("wdm1")` and similar `.starts_with("wdm1")` assertions)
+- **What:** 6 test assertions still check the OLD bech32 HRP prefix `"wdm1"`. They pass today because the HRP constant in `encoding.rs:93` is still `"wdm"`. When Phase 5 flips the HRP to `"md"`, these assertions silently start failing — the failure cascade is obvious but the link back to Phase 4's deferred work is not. Phase 5 implementer must grep `tests/cli.rs` for `wdm1` and replace with `md1` AS PART OF the HRP flip.
+- **Why deferred:** These are wire-format string literals (Phase 5 territory per the plan), not doc comments (Phase 4). Adding inline `// TODO Phase 5` markers on every line was considered but rejected as noisy maintenance burden — this single FOLLOWUPS entry is sufficient since Phase 5 will grep for `wdm` across the whole crate anyway.
+- **Status:** open (will be resolved in Phase 5 of the rename)
+- **Tier:** v0.3-blocker (Phase 5 must address before final gate run)
+
+### `rename-workflow-broad-sed-enumeration-lesson` — workflow doc should explicitly enumerate src/+tests/+bin/ for sed sweeps
+
+- **Surfaced:** Phase 4 (identifier mass-rename) code-quality reviewer (Minor); learnable lesson from 2 oversight-fix commits
+- **Where:** `design/RENAME_WORKFLOW.md` Phase 4 section
+- **What:** Phase 4 implementer's broad sed sweep ran on `src/` only and missed `tests/`, `src/bin/`, and module-specific subdirectories. Required two follow-up commits (`6c303c0`, `2c9d720`) covering 12 additional files. Lesson: when documenting a future rename, the workflow doc's Phase 4 sub-batch instructions should explicitly enumerate `src/**/*.rs`, `tests/**/*.rs`, and `src/bin/**/*.rs` as separate targets — don't rely on a single glob.
+- **Why deferred:** This is a meta-improvement to the workflow doc, not a current rename defect. Best applied next time `RENAME_WORKFLOW.md` is updated (e.g., during the next rename, or as a pre-emptive cleanup pass).
+- **Status:** open
+- **Tier:** v1+ (process improvement, not version-gating)
+
 ---
 
 ## Resolved items
