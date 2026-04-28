@@ -64,15 +64,90 @@ An MD backup of a wallet consists of one or more cards, where each card is a str
 # '''Xpub Card''' (deferred to v1+): encodes one foreign xpub with origin information. One per foreign xpub. Not specified in v0.
 # '''Wallet ID''' (optional): a short identifier derived from the canonical bytecode, used for cross-verifying digital copies of the policy against the engraved Template Card. May be stamped separately.
 
-The v0 specification scope (this document) covers wallets where:
+The v0 specification scope (this document) covers wallets where the user holds every seed referenced by the policy (no foreign xpubs) and all <code>@i</code> placeholders use a single shared derivation path. Wallets meeting these criteria require only a Template Card. Foreign xpubs and per-placeholder paths are deferred to a future version of this specification.
 
-* The user holds every seed referenced by the policy (no foreign xpubs);
-* All <code>@i</code> placeholders use a single shared derivation path;
-* The script type is <code>wsh()</code> (segwit v0 P2WSH) or <code>tr()</code> (taproot, with limitations described below).
-
-Wallets meeting these criteria require only a Template Card. Foreign xpubs and per-placeholder paths are deferred to a future version of this specification.
+''See §"Top-level descriptor scope" for the normative allow-list and §"Frequently Asked Questions" for design choices.''
 
 Forward compatibility is preserved: MD v0 readers MUST reject backups marked with newer version bytes (loud failure), and MD v1+ readers MUST accept v0 Template Cards (graceful upgrade).
+
+==Top-level descriptor scope==
+
+Conformant encoders MUST accept exactly the following top-level descriptor
+templates as input:
+
+* '''<code>wpkh(KEY)</code>''' — BIP 84 native-segwit single-sig.
+* '''<code>wsh(SCRIPT)</code>''' — native-segwit script (multisig and miniscript
+  script trees per BIP 388 wallet-policy grammar).
+* '''<code>sh(wpkh(KEY))</code>''' — BIP 49 nested-segwit single-sig.
+* '''<code>sh(wsh(SCRIPT))</code>''' — BIP 48/1' nested-segwit multisig. The
+  inner SCRIPT is subject to the same constraints as a top-level <code>wsh</code>.
+* '''<code>tr(KEY)</code>''' or '''<code>tr(KEY, SCRIPT)</code>''' — BIP 86
+  single-key taproot, optionally with a single tap-leaf script. RESERVED —
+  admission deferred for: multi-leaf TapTree (bytecode tag <code>0x08</code>);
+  decoders MUST reject inputs containing tag <code>0x08</code> with
+  <code>Error::PolicyScopeViolation</code>.
+
+Conformant MD encoders MUST reject the following BIP-388-permitted top-level
+forms; MD's accepted scope is narrower than BIP 388:
+
+* '''<code>pkh(KEY)</code>''' — legacy P2PKH single-sig (BIP 388 admits; MD rejects)
+* '''<code>sh(multi(K, ...))</code>''', '''<code>sh(sortedmulti(K, ...))</code>''',
+  '''<code>sh(KEY)</code>''' — legacy P2SH (BIP 388 admits; MD rejects)
+* '''<code>bare(SCRIPT)</code>''' — pre-2014 raw script (BIP 388 also excludes;
+  MD inherits)
+
+See §"Frequently Asked Questions: Why is MD narrower than BIP 388?" for the rationale.
+
+Decoders MUST reject these forms with a structured error distinguishable from
+generic checksum failure and from generic bytecode-parse failure. The reference
+implementation surfaces all such rejections via
+<code>Error::PolicyScopeViolation(String)</code>; cross-implementations MUST
+provide a semantically equivalent variant. The diagnostic string SHOULD name
+the offending top-level type (or <code>sh(...)</code> inner type) so consumers
+can disambiguate "top-level rejection" from "sh-inner rejection" from
+"reserved-tag rejection".
+
+All accepted forms follow the existing canonical form rules (no whitespace,
+<code>/**</code> expansion, ascending placeholder order, <code>'</code> for
+hardened). No type-specific canonicalization.
+
+===Sh wrapper restriction matrix===
+
+When a decoder consumes a top-level <code>sh</code> bytecode tag
+(<code>0x03</code>), the next bytecode tag determines admission:
+
+{| class="wikitable"
+! Inner tag !! Inner type !! Action
+|-
+| <code>0x04</code> || <code>wpkh</code> || Decoder MUST recurse — admit as BIP 49 single-sig
+|-
+| <code>0x05</code> || <code>wsh</code> || Decoder MUST recurse — admit as BIP 48/1' multisig
+|-
+| Any other || any other || Decoder MUST reject with <code>Error::PolicyScopeViolation</code>
+|}
+
+Decoders MUST peek the inner tag BEFORE recursive descent into the sh subtree.
+This prevents recursion-bomb hostile inputs (e.g., <code>sh(sh(sh(...)))</code>
+of arbitrary depth) — same hostile-input class as the malformed-payload-padding
+defense in §"Payload".
+
+===Default derivation paths===
+
+When neither a caller-supplied path (Tier 0) nor a key-origin-extracted path (Tier 1) is available, encoders pick a per-top-level-type default path indicator:
+
+{| class="wikitable"
+! Top-level !! Default tier-1 indicator !! Default path
+|-
+| <code>wsh</code> || <code>0x05</code> || <code>m/48'/0'/0'/2'</code>
+|-
+| <code>tr</code> || <code>0x04</code> || <code>m/86'/0'/0'</code>
+|-
+| <code>wpkh</code> || <code>0x03</code> || <code>m/84'/0'/0'</code>
+|-
+| <code>sh(wpkh)</code> || <code>0x02</code> || <code>m/49'/0'/0'</code>
+|-
+| <code>sh(wsh)</code> || <code>0x06</code> || <code>m/48'/0'/0'/1'</code>
+|}
 
 ==Specification==
 
@@ -295,85 +370,85 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 =====Tag table=====
 
 {| class="wikitable"
-! Tag !! Operator !! Operator data !! Children
+! Tag !! Operator !! Operator data !! Children !! Disposition
 |-
-| <code>0x00</code> || <code>FALSE</code> || — || 0
+| <code>0x00</code> || <code>FALSE</code> || — || 0 ||
 |-
-| <code>0x01</code> || <code>TRUE</code> || — || 0
+| <code>0x01</code> || <code>TRUE</code> || — || 0 ||
 |-
-| <code>0x02</code> || <code>pkh()</code> || — || 1 key
+| <code>0x02</code> || <code>pkh()</code> || — || 1 key || Top-level: REJECTED. Not used in any nested context in MD's accepted surface.
 |-
-| <code>0x03</code> || <code>sh()</code> || — || 1
+| <code>0x03</code> || <code>sh()</code> || — || 1 || Top-level: ACTIVE per §"Sh wrapper restriction matrix".
 |-
-| <code>0x04</code> || <code>wpkh()</code> || — || 1 key
+| <code>0x04</code> || <code>wpkh()</code> || — || 1 key || Top-level: ACTIVE. As <code>sh(wpkh)</code> inner: ACTIVE.
 |-
-| <code>0x05</code> || <code>wsh()</code> || — || 1
+| <code>0x05</code> || <code>wsh()</code> || — || 1 || Top-level: ACTIVE. As <code>sh(wsh)</code> inner: ACTIVE.
 |-
-| <code>0x06</code> || <code>tr()</code> || — || 1 internal key, optional tree
+| <code>0x06</code> || <code>tr()</code> || — || 1 internal key, optional tree ||
 |-
-| <code>0x07</code> || <code>bare()</code> || — || 1
+| <code>0x07</code> || <code>bare()</code> || — || 1 || Top-level: REJECTED. Not used in any nested context in MD's accepted surface.
 |-
-| <code>0x08</code> || <code>TapTree</code> (reserved for v1+) || — || multi-leaf tree structure; v0 single-leaf form encodes the leaf miniscript directly without a <code>TapTree</code> node (see "Taproot tree", below)
+| <code>0x08</code> || <code>TapTree</code> (reserved for v1+) || — || multi-leaf tree structure; v0 single-leaf form encodes the leaf miniscript directly without a <code>TapTree</code> node (see "Taproot tree", below) || RESERVED — admission deferred (multi-leaf taproot).
 |-
-| <code>0x09</code> || <code>sortedmulti()</code> || threshold (1 byte), count (1 byte) || count keys
+| <code>0x09</code> || <code>sortedmulti()</code> || threshold (1 byte), count (1 byte) || count keys ||
 |-
-| <code>0x0A</code> || <code>a:</code> wrapper (Alt) || — || 1
+| <code>0x0A</code> || <code>a:</code> wrapper (Alt) || — || 1 ||
 |-
-| <code>0x0B</code> || <code>s:</code> wrapper (Swap) || — || 1
+| <code>0x0B</code> || <code>s:</code> wrapper (Swap) || — || 1 ||
 |-
-| <code>0x0C</code> || <code>c:</code> wrapper (Check) || — || 1
+| <code>0x0C</code> || <code>c:</code> wrapper (Check) || — || 1 ||
 |-
-| <code>0x0D</code> || <code>d:</code> wrapper (DupIf) || — || 1
+| <code>0x0D</code> || <code>d:</code> wrapper (DupIf) || — || 1 ||
 |-
-| <code>0x0E</code> || <code>v:</code> wrapper (Verify) || — || 1
+| <code>0x0E</code> || <code>v:</code> wrapper (Verify) || — || 1 ||
 |-
-| <code>0x0F</code> || <code>j:</code> wrapper (NonZero) || — || 1
+| <code>0x0F</code> || <code>j:</code> wrapper (NonZero) || — || 1 ||
 |-
-| <code>0x10</code> || <code>n:</code> wrapper (ZeroNotEqual) || — || 1
+| <code>0x10</code> || <code>n:</code> wrapper (ZeroNotEqual) || — || 1 ||
 |-
-| <code>0x11</code> || <code>and_v</code> || — || 2
+| <code>0x11</code> || <code>and_v</code> || — || 2 ||
 |-
-| <code>0x12</code> || <code>and_b</code> || — || 2
+| <code>0x12</code> || <code>and_b</code> || — || 2 ||
 |-
-| <code>0x13</code> || <code>andor</code> || — || 3
+| <code>0x13</code> || <code>andor</code> || — || 3 ||
 |-
-| <code>0x14</code> || <code>or_b</code> || — || 2
+| <code>0x14</code> || <code>or_b</code> || — || 2 ||
 |-
-| <code>0x15</code> || <code>or_c</code> || — || 2
+| <code>0x15</code> || <code>or_c</code> || — || 2 ||
 |-
-| <code>0x16</code> || <code>or_d</code> || — || 2
+| <code>0x16</code> || <code>or_d</code> || — || 2 ||
 |-
-| <code>0x17</code> || <code>or_i</code> || — || 2
+| <code>0x17</code> || <code>or_i</code> || — || 2 ||
 |-
-| <code>0x18</code> || <code>thresh()</code> || threshold (1 byte), count (1 byte) || count
+| <code>0x18</code> || <code>thresh()</code> || threshold (1 byte), count (1 byte) || count ||
 |-
-| <code>0x19</code> || <code>multi()</code> || threshold (1 byte), count (1 byte) || count keys
+| <code>0x19</code> || <code>multi()</code> || threshold (1 byte), count (1 byte) || count keys ||
 |-
-| <code>0x1A</code> || <code>multi_a()</code> || threshold (1 byte), count (1 byte) || count keys (taproot)
+| <code>0x1A</code> || <code>multi_a()</code> || threshold (1 byte), count (1 byte) || count keys (taproot) ||
 |-
-| <code>0x1B</code> || <code>pk_k()</code> || — || 1 key
+| <code>0x1B</code> || <code>pk_k()</code> || — || 1 key ||
 |-
-| <code>0x1C</code> || <code>pk_h()</code> || — || 1 key
+| <code>0x1C</code> || <code>pk_h()</code> || — || 1 key ||
 |-
-| <code>0x1D</code> || raw <code>pk_h</code> hash || 20-byte hash || 0
+| <code>0x1D</code> || raw <code>pk_h</code> hash || 20-byte hash || 0 ||
 |-
-| <code>0x1E</code> || <code>after()</code> || LEB128 || 0
+| <code>0x1E</code> || <code>after()</code> || LEB128 || 0 ||
 |-
-| <code>0x1F</code> || <code>older()</code> || LEB128 || 0
+| <code>0x1F</code> || <code>older()</code> || LEB128 || 0 ||
 |-
-| <code>0x20</code> || <code>sha256()</code> || 32-byte hash || 0
+| <code>0x20</code> || <code>sha256()</code> || 32-byte hash || 0 ||
 |-
-| <code>0x21</code> || <code>hash256()</code> || 32-byte hash || 0
+| <code>0x21</code> || <code>hash256()</code> || 32-byte hash || 0 ||
 |-
-| <code>0x22</code> || <code>ripemd160()</code> || 20-byte hash || 0
+| <code>0x22</code> || <code>ripemd160()</code> || 20-byte hash || 0 ||
 |-
-| <code>0x23</code> || <code>hash160()</code> || 20-byte hash || 0
+| <code>0x23</code> || <code>hash160()</code> || 20-byte hash || 0 ||
 |-
-| <code>0x32</code> || <code>@i</code> placeholder || 1-byte placeholder index (0–255) || 0 (a key reference, leaf)
+| <code>0x32</code> || <code>@i</code> placeholder || 1-byte placeholder index (0–255) || 0 (a key reference, leaf) ||
 |-
-| <code>0x33</code> || Shared-path declaration || See "Path declaration", above || 0
+| <code>0x33</code> || Shared-path declaration || See "Path declaration", above || 0 ||
 |-
-| <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0
+| <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0 ||
 |}
 
 Tags <code>0x24</code>–<code>0x31</code> are reserved for future descriptor-codec compatibility (these tags are defined in <code>descriptor-codec</code> for inline keys, key origins, and wildcards, which MD v0 does not use because it relies on the BIP 388 placeholder framing for keys; v1+ may expose them for foreign-xpub support).
@@ -720,6 +795,47 @@ Without per-wallet identifiers, a user with multiple wallets risks mixing chunks
 
 For single-string Template Cards, no wallet identifier is needed because there are no chunks to confuse.
 
+==Frequently Asked Questions==
+
+===Why is MD narrower than BIP 388?===
+
+BIP 388 admits six top-level wallet-policy shapes: <code>pkh(KEY)</code>, <code>wpkh(KEY)</code>, <code>sh(wpkh(KEY))</code>, <code>wsh(SCRIPT)</code>, <code>sh(wsh(SCRIPT))</code>, and <code>tr(KEY[, TREE])</code>. It also admits <code>sh(multi(...))</code> and <code>sh(sortedmulti(...))</code> as legacy P2SH multisig forms. MD accepts a strict subset, rejecting:
+
+* <code>pkh(KEY)</code> — legacy P2PKH single-sig
+* <code>sh(KEY)</code>, <code>sh(multi(...))</code>, <code>sh(sortedmulti(...))</code> — legacy P2SH
+
+Rationale (three reasons, weighted):
+
+# '''Address-prefix ambiguity creates a recovery footgun.''' Both <code>sh(multi(K, ...))</code> (legacy P2SH multisig, 2014–2017 era) and <code>sh(wsh(...))</code> (BIP 48/1' modern nested-segwit multisig) produce addresses with the <code>3...</code> prefix. A user looking at a <code>3...</code> address from cold storage often cannot disambiguate which descriptor type produced it. Engraving the wrong type would derive the wrong addresses on recovery — silent fund loss. MD eliminates this footgun by rejecting <code>sh(multi)</code> at the spec level.
+# '''Engravable steel backup is overkill for legacy single-sig.''' BIP 39 seed words alone are sufficient backup for <code>pkh(KEY)</code> wallets; the policy template adds no recovery information. MD's value proposition (engravable backup of policies hard to reconstruct) doesn't apply.
+# '''No deployment of new pre-segwit wallets.''' Modern hardware wallets (Coldcard, Trezor, Ledger) emit modern post-segwit forms by default. Realistic users wanting to engrave 2015-era cold storage are vanishingly few; most pre-segwit wallets have either been swept to native segwit or sit dormant.
+
+The three reasons combine: a category with high footgun risk, low marginal recovery value, and negligible new deployment is permanently excluded by design. This is a deliberate narrowing of BIP 388, not a future deferral.
+
+===Why is multi-leaf TapTree deferred (vs excluded)?===
+
+<code>tr(KEY, TREE)</code> with multi-leaf TapTree (BIP 388 §"Taproot tree") is a substantive feature requiring its own design pass: TapTree depth/balancing rules, leaf-wrapper subset re-evaluation (Coldcard tap-leaf subset is currently restrictive), per-leaf miniscript context validation. Deferring to a future MD revision (v0.5+) keeps the v0.4 release focused. Unlike the legacy exclusions above, multi-leaf TapTree IS planned admission.
+
+===Why is <code>bare(SCRIPT)</code> rejected?===
+
+BIP 388 itself excludes <code>bare(SCRIPT)</code> (pre-2014 raw script output type, no address). MD inherits this exclusion.
+
+===Why no inline xpubs (foreign keys)?===
+
+MD's <code>@i</code> placeholder framing assumes named keys provided separately at recovery time (BIP 388 wallet-policy structure). Inline xpubs (descriptor-codec reserved tags <code>0x24</code>–<code>0x31</code>) would change the recovery model: the engraved card would carry key material, defeating the steel-engravable backup form factor's value (key material is in the seeds, not the engraved card).
+
+===What about <code>tr(KEY)</code> single-sig taproot?===
+
+Single-leaf taproot is supported (<code>tr(KEY)</code> and <code>tr(KEY, single-leaf-script)</code>). Multi-leaf TapTree is deferred (see "Why is multi-leaf TapTree deferred (vs excluded)?" above).
+
+===Why is the HRP <code>md</code> rather than something more descriptive?===
+
+Matches the 2-character convention of BIP 93's <code>ms</code> HRP for codex32. Shorter HRPs leave more capacity in the BCH-bounded data part for policy bytecode. The earlier <code>wdm</code> HRP was renamed to <code>md</code> at v0.3.0 — see CHANGELOG.
+
+===Why is the family-stable generator string <code>"md-codec X.Y"</code> rather than the full crate version?===
+
+Family-stability across patch versions: any v0.4.x build regenerating <code>v0.2.json</code> produces a byte-identical SHA, so downstream conformance suites pinning the SHA see no churn within a v0.4.x line. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log. Family token bumps at minor version boundaries (v0.3 → v0.4 shifts <code>"md-codec 0.3"</code> to <code>"md-codec 0.4"</code>).
+
 ==Backwards Compatibility==
 
 MD is a new format; there is no prior version to be compatible with.
@@ -741,8 +857,8 @@ A complete reference test vector suite is provided alongside the reference imple
 ** SHA-256 content hash (post-v0.3.0): <code>aac3677fd84f06915c7bb5148a25ed80c399daa4f9bf56c8052ed84f83c9b71b</code>
 ** SHA-256 content hash (v0.1.0 — v0.2.3, pre-rename): <code>1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c</code>
 * '''v0.2.0 lock — schema 2''' — <code>crates/md-codec/tests/vectors/v0.2.json</code>
-** SHA-256 content hash: <code>18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909</code>
-** This SHA is **family-stable across the v0.3.x line**: the JSON's <code>generator</code> field embeds only the family version (<code>"md-codec 0.3"</code>), so any v0.3.x build that regenerates this file produces the same SHA. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log.
+** SHA-256 content hash: <code>18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909</code> <!-- TODO Phase 7: update v0.2.json SHA after vector regen -->
+** This SHA is **family-stable across the v0.3.x line**: the JSON's <code>generator</code> field embeds only the family version (<code>"md-codec 0.3"</code>), so any v0.3.x build that regenerates this file produces the same SHA. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log. <!-- TODO Phase 7: update family-stable note from "md-codec 0.3" to "md-codec 0.4" -->
 
 See <code>crates/md-codec/src/vectors.rs</code> for the typed schema; <code>TestVectorFile</code>, <code>Vector</code>, and <code>NegativeVector</code> are all <code>#[non_exhaustive]</code> so future versions may add fields without breaking deserializers.
 
