@@ -1,7 +1,7 @@
 <pre>
   BIP: ? (3993 or 3939 suggested)
   Layer: Applications
-  Title: Wallet Descriptor Mnemonic
+  Title: Mnemonic Descriptor
   Author: bg002h <bcg@pm.me>
   Comments-Summary: No comments yet.
   Comments-URI:
@@ -13,7 +13,7 @@
 
 ==Abstract==
 
-This BIP defines the '''Wallet Descriptor Mnemonic''' (WDM) format: an encoding for bitcoin wallet policies that is compact, error-correcting, and designed for hand-transcription onto durable media (paper, steel). Where BIP 39 standardizes the mnemonic encoding of HD seed entropy, WDM standardizes the analogous encoding for the ''wallet structure'' — the BIP 388 wallet policy template, derivation paths, and (when needed) foreign extended public keys — such that the structural information necessary to reconstruct a wallet can survive independently of any digital archive.
+This BIP defines the '''Mnemonic Descriptor''' (MD) format: an encoding for bitcoin wallet policies that is compact, error-correcting, and designed for hand-transcription onto durable media (paper, steel). Where BIP 39 standardizes the mnemonic encoding of HD seed entropy, MD standardizes the analogous encoding for the ''wallet structure'' — the BIP 388 wallet policy template, derivation paths, and (when needed) foreign extended public keys — such that the structural information necessary to reconstruct a wallet can survive independently of any digital archive.
 
 The format consists of three layers: (a) a compact bytecode for BIP 380 output descriptors and BIP 388 wallet policies, extending the tag-based encoding pioneered by the public-domain <code>descriptor-codec</code> project; (b) a codex32-derived (BIP 93) encoding layer that reuses the bech32 alphabet and BCH error-correction polynomials but introduces a new human-readable part, header structure, and multi-string chunking for arbitrary-length payloads; and (c) a mandatory guided-recovery flow combining BCH ECC with structural knowledge to recover heavily damaged backups beyond the BCH limit.
 
@@ -33,7 +33,7 @@ Existing approaches to policy backup are inadequate for the durable, engravable,
 
 What is missing is a format with the same robustness profile as BIP 39 — engravable, hand-transcribable, error-correcting, easily verified — but for ''wallet structure'' rather than seed entropy. This BIP defines that format.
 
-WDM is intentionally not a key-backup format. Seed phrases (BIP 39, SLIP 39) and codex32 (BIP 93) handle key material. WDM handles the complementary problem: the policy template that connects keys into a wallet.
+MD is intentionally not a key-backup format. Seed phrases (BIP 39, SLIP 39) and codex32 (BIP 93) handle key material. MD handles the complementary problem: the policy template that connects keys into a wallet.
 
 ==Definitions and notation==
 
@@ -47,18 +47,18 @@ The following terms are used throughout this document:
 * '''Key information''' — a serialized BIP 32 extended public key (xpub) prefixed with origin information of the form <code>[fingerprint/path]xpub</code>, as defined in BIP 388.
 * '''Foreign xpub''' — an xpub belonging to the policy that is ''not'' derivable from any seed the user holds (typically a cosigner's key).
 * '''Owned seed''' — a BIP 39, SLIP 39, codex32, or other seed for which the user has the recovery material.
-* '''Template Card''' — a WDM-encoded backup of a wallet's template, derivation paths, and (optionally) master fingerprints. Always required.
-* '''Xpub Card''' — a WDM-encoded backup of one foreign xpub with its origin information. Required only when the policy contains foreign xpubs (deferred to v1+; see "Versioning" below).
-* '''Codex32''' — the BIP 93 encoding for hand-transcribed bitcoin secrets. WDM reuses codex32's bech32 alphabet and BCH polynomials.
+* '''Template Card''' — an MD-encoded backup of a wallet's template, derivation paths, and (optionally) master fingerprints. Always required.
+* '''Xpub Card''' — an MD-encoded backup of one foreign xpub with its origin information. Required only when the policy contains foreign xpubs (deferred to v1+; see "Versioning" below).
+* '''Codex32''' — the BIP 93 encoding for hand-transcribed bitcoin secrets. MD reuses codex32's bech32 alphabet and BCH polynomials.
 * '''bech32 alphabet''' — the 32-character set defined in BIP 173: <code>qpzry9x8gf2tvdw0s3jn54khce6mua7l</code>.
-* '''Canonical bytecode''' — the unique, deterministic byte sequence produced by encoding a given wallet policy under the WDM bytecode rules. Round-trip identity: <code>decode(encode(policy)) == policy</code> in canonical form.
+* '''Canonical bytecode''' — the unique, deterministic byte sequence produced by encoding a given wallet policy under the MD bytecode rules. Round-trip identity: <code>decode(encode(policy)) == policy</code> in canonical form.
 * '''Chunk''' — one of one or more codex32-derived strings that together encode a single Template Card.
 
 Bytes are written in hexadecimal as <code>0xNN</code>. Byte sequences are concatenated left-to-right in the order written. Multi-byte integer fields use the byte order specified at each occurrence; LEB128 is little-endian by definition. All character positions in encoded strings are 0-indexed.
 
 ==Format overview==
 
-A WDM backup of a wallet consists of one or more cards, where each card is a string of bech32 characters that can be engraved, transcribed, or otherwise stored on durable media. There are three card types:
+An MD backup of a wallet consists of one or more cards, where each card is a string of bech32 characters that can be engraved, transcribed, or otherwise stored on durable media. There are three card types:
 
 # '''Template Card''' (this BIP, v0): encodes the wallet's template, derivation paths, and optional master fingerprints. Always required. May span one or more chunks.
 # '''Xpub Card''' (deferred to v1+): encodes one foreign xpub with origin information. One per foreign xpub. Not specified in v0.
@@ -72,13 +72,13 @@ The v0 specification scope (this document) covers wallets where:
 
 Wallets meeting these criteria require only a Template Card. Foreign xpubs and per-placeholder paths are deferred to a future version of this specification.
 
-Forward compatibility is preserved: WDM v0 readers MUST reject backups marked with newer version bytes (loud failure), and WDM v1+ readers MUST accept v0 Template Cards (graceful upgrade).
+Forward compatibility is preserved: MD v0 readers MUST reject backups marked with newer version bytes (loud failure), and MD v1+ readers MUST accept v0 Template Cards (graceful upgrade).
 
 ==Specification==
 
 ===Encoding layer===
 
-A single WDM string is structured as:
+A single MD string is structured as:
 
 <pre>
   <HRP> <separator> <header> <payload> <checksum>
@@ -88,9 +88,9 @@ Each component is described below.
 
 ====Human-readable part====
 
-The HRP is the three-character string <code>wdm</code> (lowercase) or <code>WDM</code> (uppercase). HRP case MUST match the case of the data part. Mixed case within a single string is invalid and MUST be rejected.
+The HRP is the two-character string <code>md</code> (lowercase) or <code>MD</code> (uppercase). HRP case MUST match the case of the data part. Mixed case within a single string is invalid and MUST be rejected.
 
-Note: The chosen HRP is preliminary and subject to change before this BIP is finalized. Any registered final value will be assigned during the BIP process. Implementations of the Draft form MUST use <code>wdm</code> until otherwise specified.
+Note: The chosen HRP is preliminary and subject to change before this BIP is finalized. Any registered final value will be assigned during the BIP process. Implementations of the Draft form MUST use <code>md</code> until otherwise specified.
 
 ====Separator====
 
@@ -102,7 +102,7 @@ The header is the first portion of the data part and identifies the card type, v
 
 For '''single-string Template Cards''' (the common case for small wallets), the header is two bech32 characters:
 
-* '''Version''' (1 char, 5 bits): WDM format version. Currently <code>0</code> (the bech32 character with value 0, namely <code>q</code>). Decoders MUST reject unknown versions.
+* '''Version''' (1 char, 5 bits): MD format version. Currently <code>0</code> (the bech32 character with value 0, namely <code>q</code>). Decoders MUST reject unknown versions.
 * '''Type''' (1 char, 5 bits): card type. Value <code>0</code> = single-string Template Card. Value <code>1</code> = chunked Template Card. Other values reserved for future use; decoders MUST reject unknown types.
 
 For '''chunked Template Cards''', the header is eight bech32 characters:
@@ -123,17 +123,17 @@ The canonical bytecode of a chunked Template Card consists of the encoded wallet
 
 Each byte of bytecode contributes 8 bits; the bech32 alphabet packs 5 bits per character. Bytecode is converted to bech32 characters by the standard convert-bits algorithm (BIP 173 procedure with <code>frombits=8</code>, <code>tobits=5</code>, padding enabled on the encode side; reversed on decode).
 
-Decoders MUST reject any WDM string whose 5-bit payload symbols, after successful BCH checksum verification, do not byte-align — i.e., where the trailing pad bits of the final 5-bit symbol are non-zero. Such inputs are well-formed at the BCH layer but cannot have been produced by a conforming encoder, and accepting them would admit hostile inputs that bypass the encode-side padding invariant. The reference implementation surfaces this rejection as <code>Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::MalformedPayloadPadding }</code>; cross-implementations MUST surface a semantically equivalent rejection — distinguishable from generic checksum failure and from generic bytecode-parse failure — so that conformance tests can pin the error path.
+Decoders MUST reject any MD string whose 5-bit payload symbols, after successful BCH checksum verification, do not byte-align — i.e., where the trailing pad bits of the final 5-bit symbol are non-zero. Such inputs are well-formed at the BCH layer but cannot have been produced by a conforming encoder, and accepting them would admit hostile inputs that bypass the encode-side padding invariant. The reference implementation surfaces this rejection as <code>Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::MalformedPayloadPadding }</code>; cross-implementations MUST surface a semantically equivalent rejection — distinguishable from generic checksum failure and from generic bytecode-parse failure — so that conformance tests can pin the error path.
 
 ====Checksum====
 
 The checksum is computed using a BCH error-correcting code with HRP-mixing applied in the BIP 173 style. The polymod algorithm is BIP 93's <code>ms32_polymod</code> (regular code) or <code>ms32_long_polymod</code> (long code), applied to the concatenation of:
 
-# The HRP-expansion of <code>"wdm"</code>, computed exactly as in BIP 173 §"Bech32": for each HRP character <code>c</code> emit <code>ord(c) >> 5</code>; emit a single zero; for each HRP character emit <code>ord(c) & 31</code>. For the lowercase HRP <code>"wdm"</code> this yields the seven 5-bit values <code>[3, 3, 3, 0, 23, 4, 13]</code>.
+# The HRP-expansion of <code>"md"</code>, computed exactly as in BIP 173 §"Bech32": for each HRP character <code>c</code> emit <code>ord(c) >> 5</code>; emit a single zero; for each HRP character emit <code>ord(c) & 31</code>. For the lowercase HRP <code>"md"</code> this yields the five 5-bit values <code>[3, 3, 0, 13, 4]</code> (length = 2 × len(HRP) + 1 = 5). Derivation: <code>ord('m') = 109 = 0x6d; 109 >> 5 = 3; 109 & 31 = 13</code>. <code>ord('d') = 100 = 0x64; 100 >> 5 = 3; 100 & 31 = 4</code>. The separator zero falls between the high-half list <code>[3, 3]</code> and the low-half list <code>[13, 4]</code>.
 # The data part: header + payload as a sequence of 5-bit values from the bech32 alphabet.
 # A pad of zero values during encoding (13 for regular, 15 for long) or the actual checksum during verification.
 
-A WDM string is valid when <code>polymod(input) == T_C</code>, where <code>T_C</code> is the target residue constant for the chosen code variant:
+An MD string is valid when <code>polymod(input) == T_C</code>, where <code>T_C</code> is the target residue constant for the chosen code variant:
 
 * '''Regular code''' (BCH(93,80,8)): for total data lengths up to and including 93 characters; checksum length: 13 characters. <code>T_REGULAR = 0x0815c07747a3392e7</code> (65 bits).
 * '''Long code''' (BCH(108,93,8)): for total data lengths from 96 through 108 characters; checksum length: 15 characters. <code>T_LONG = 0x205701dd1e8ce4b9f47</code> (75 bits).
@@ -172,7 +172,7 @@ This is the same 32-character set used by BIP 173 segwit addresses, BIP 350 bech
 ====Length envelope====
 
 For a single-string Template Card with the 2-character header:
-* HRP + separator: 4 characters
+* HRP + separator: 3 characters
 * Header: 2 characters
 * Payload: variable
 * Checksum: 13 (regular) or 15 (long) characters
@@ -182,7 +182,7 @@ Maximum payload bytes:
 * Long: ⌊(108 − 2 − 15) × 5 / 8⌋ = 56 bytes
 
 For a chunked Template Card with the 8-character header:
-* HRP + separator: 4 characters
+* HRP + separator: 3 characters
 * Header: 8 characters
 * Fragment: variable
 * Checksum: 13 (regular) or 15 (long) characters
@@ -290,7 +290,7 @@ This convention follows the path encoding used by <code>descriptor-codec</code>.
 
 ====Tree operators====
 
-The wallet's script is encoded as a tree of operators rooted at the top-level descriptor wrapper. Each operator is identified by a single tag byte. The tag table below adopts the assignments used by <code>descriptor-codec</code> (CC0-1.0) for full miniscript compatibility, with WDM-specific extensions for BIP 388 wallet-policy semantics.
+The wallet's script is encoded as a tree of operators rooted at the top-level descriptor wrapper. Each operator is identified by a single tag byte. The tag table below adopts the assignments used by <code>descriptor-codec</code> (CC0-1.0) for full miniscript compatibility, with MD-specific extensions for BIP 388 wallet-policy semantics.
 
 =====Tag table=====
 
@@ -376,7 +376,7 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 | <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0
 |}
 
-Tags <code>0x24</code>–<code>0x31</code> are reserved for future descriptor-codec compatibility (these tags are defined in <code>descriptor-codec</code> for inline keys, key origins, and wildcards, which WDM v0 does not use because it relies on the BIP 388 placeholder framing for keys; v1+ may expose them for foreign-xpub support).
+Tags <code>0x24</code>–<code>0x31</code> are reserved for future descriptor-codec compatibility (these tags are defined in <code>descriptor-codec</code> for inline keys, key origins, and wildcards, which MD v0 does not use because it relies on the BIP 388 placeholder framing for keys; v1+ may expose them for foreign-xpub support).
 
 Tag <code>0x34</code> is reserved.
 
@@ -388,7 +388,7 @@ For operators with a fixed number of children, child sub-trees follow the operat
 
 =====Key references=====
 
-In WDM v0, every key position in the bytecode (i.e., a child slot of <code>pk_k</code>, <code>pk_h</code>, <code>pkh</code>, <code>wpkh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>tr</code>) MUST be a placeholder reference of the form:
+In MD v0, every key position in the bytecode (i.e., a child slot of <code>pk_k</code>, <code>pk_h</code>, <code>pkh</code>, <code>wpkh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>tr</code>) MUST be a placeholder reference of the form:
 
 <pre>
   0x32 <index>
@@ -521,7 +521,7 @@ A nested-allowed-operator example combining <code>or_d</code>, <code>and_v</code
 
 ====Round-trip canonical form====
 
-A WDM-encoded Template Card MUST round-trip losslessly with the BIP 388 wallet policy string in canonical form. Canonical form requires:
+An MD-encoded Template Card MUST round-trip losslessly with the BIP 388 wallet policy string in canonical form. Canonical form requires:
 
 * No optional whitespace anywhere in the policy string.
 * Multipath shorthand <code>/**</code> is expanded to <code>/&lt;0;1&gt;/*</code> in canonical form.
@@ -579,9 +579,9 @@ A Wallet ID is OPTIONAL and never required for recovery from the Template Card a
 
 ===Decoder requirements===
 
-Conformant WDM decoders MUST:
+Conformant MD decoders MUST:
 
-# Recognize the WDM HRP and reject any other HRP.
+# Recognize the MD HRP and reject any other HRP.
 # Reject mixed-case strings.
 # Reject unknown format-version or card-type values.
 # Implement BCH error correction for both regular and long codes per the polynomials specified above.
@@ -625,7 +625,7 @@ Lower confidence levels MUST be reported with specific qualifiers identifying wh
 
 ===Guided recovery===
 
-A guided recovery flow is REQUIRED in any WDM-conformant tool. The flow combines BCH ECC, erasure decoding, user-supplied structural knowledge, and seed-derived xpub verification to recover damaged backups.
+A guided recovery flow is REQUIRED in any MD-conformant tool. The flow combines BCH ECC, erasure decoding, user-supplied structural knowledge, and seed-derived xpub verification to recover damaged backups.
 
 The flow MUST proceed through these stages, in order:
 
@@ -633,7 +633,7 @@ The flow MUST proceed through these stages, in order:
 # '''Standard decode.''' Attempt BCH decoding with no user input. If successful, report and stop.
 # '''Erasure-aware decode.''' If standard decode fails and erasures are marked, attempt erasure decoding (up to 8 erasures per string). If successful, report and stop.
 # '''Structure elicitation.''' If decoding still fails, prompt the user for structural information they remember about the policy: wallet kind, key count, threshold, derivation path, timelock values, wallet identifier (if separately stamped).
-# '''Constrained candidate search.''' Encode the user's structural assertions as a partial bytecode template. Enumerate candidate codewords within an extended Hamming radius (up to ~12) that decode to valid WDM bytecode AND match the user's assertions.
+# '''Constrained candidate search.''' Encode the user's structural assertions as a partial bytecode template. Enumerate candidate codewords within an extended Hamming radius (up to ~12) that decode to valid MD bytecode AND match the user's assertions.
 # '''Candidate verification.''' For each surviving candidate, derive xpubs from available seeds at the candidate's declared paths, verify they map to the expected placeholders, verify cross-chunk hash if multi-chunk, and reject candidates failing any check.
 # '''Optional blockchain verification.''' With explicit user consent, derive the candidate's first N receive addresses and check on-chain history. Disclose privacy implications before this step.
 # '''Result presentation.''' Display the recovered wallet policy in BIP 388 form, the Wallet ID, derived xpubs, and the confidence level per "Decoder reporting".
@@ -644,20 +644,22 @@ Tools MUST disclose privacy implications before any blockchain query and SHOULD 
 
 ===Why a new format?===
 
-Existing engravable formats (BIP 39, codex32) target seeds (uniformly random fixed-length entropy). Neither has framing for arbitrary structured data, and neither encodes wallet structure. Bytewords / UR encodes descriptors but with weak (CRC32) error correction and verbose output. <code>descriptor-codec</code> compactly encodes descriptors but produces raw bytes designed for QR/NFC, not engraving. No existing format combines a compact descriptor encoding with strong BCH error correction in a hand-transcribable form. WDM fills this gap.
+Existing engravable formats (BIP 39, codex32) target seeds (uniformly random fixed-length entropy). Neither has framing for arbitrary structured data, and neither encodes wallet structure. Bytewords / UR encodes descriptors but with weak (CRC32) error correction and verbose output. <code>descriptor-codec</code> compactly encodes descriptors but produces raw bytes designed for QR/NFC, not engraving. No existing format combines a compact descriptor encoding with strong BCH error correction in a hand-transcribable form. MD fills this gap.
 
 ===Why codex32-derived encoding?===
 
 Codex32 (BIP 93) is purpose-built for hand-transcribed bitcoin secrets. Its bech32 alphabet excludes visually confusable characters; its BCH polynomials provide strong error correction with mathematically guaranteed bounds; reference implementations exist; the encoding scheme is well-reviewed.
 
-However, codex32's HRP is fixed to <code>ms</code> and its header structure is hard-coded for BIP 32 master seeds (Shamir threshold and identifier fields). Codex32 has no extensibility mechanism for non-seed payloads. WDM therefore reuses codex32's '''cryptographic primitives''' (alphabet, BCH polynomials) but defines its own HRP and header structure, treating codex32 as a building block rather than a host format. This is consistent with how BIP 350 (bech32m) reused BIP 173's primitives with a different generator constant.
+However, codex32's HRP is fixed to <code>ms</code> and its header structure is hard-coded for BIP 32 master seeds (Shamir threshold and identifier fields). Codex32 has no extensibility mechanism for non-seed payloads. MD therefore reuses codex32's '''cryptographic primitives''' (alphabet, BCH polynomials) but defines its own HRP and header structure, treating codex32 as a building block rather than a host format. This is consistent with how BIP 350 (bech32m) reused BIP 173's primitives with a different generator constant.
 
 ===Why a new HRP?===
 
-A new HRP (<code>wdm</code>) is required because:
+A new HRP (<code>md</code>) is required because:
 * Codex32's <code>ms</code> HRP cannot be reused without breaking codex32's seed-payload semantics.
-* The bech32 checksum is computed over the HRP, providing domain separation: a damaged WDM string cannot be misinterpreted as a bech32 address or codex32 seed share.
+* The bech32 checksum is computed over the HRP, providing domain separation: a damaged MD string cannot be misinterpreted as a bech32 address or codex32 seed share.
 * The HRP serves as format self-identification for human readers and parsers.
+
+The two-character HRP <code>md</code> was chosen as a compact, readable abbreviation of "Mnemonic Descriptor". It was verified clean against the SLIP-0173 registry, Lightning HRPs, Liquid sidechain HRPs, Codex32 (<code>ms</code>), Nostr NIP-19 HRPs, and Cosmos chain HRPs prior to adoption.
 
 ===Why new target constants?===
 
@@ -665,7 +667,7 @@ The target residue constants <code>T_REGULAR</code> and <code>T_LONG</code> are 
 
 The string <code>shibbolethnums</code> combines this proposal's working name during early development with the conventional <code>nums</code> suffix used in cryptographic constructions to indicate that the value was chosen via a public hash and not through opaque selection. The string itself is the audit trail: any reader can recompute the SHA-256 and verify that the constants follow from it.
 
-We chose new constants rather than reusing BIP 93's <code>MS32_CONST</code> values for two reasons. First, although the HRP-mixing recipe (BIP 173 <code>hrp_expand</code>) produces residues that differ between any two HRPs sharing this polynomial, picking distinct target constants provides residue-level separation as well: damage that maps a WDM string toward codex32-style validity is statistically prevented by the combination. Second, signaling matters — reusing codex32's specific target constant verbatim would invite the misreading that WDM is "codex32 with a different HRP" rather than a distinct format that borrows codex32's polynomial.
+We chose new constants rather than reusing BIP 93's <code>MS32_CONST</code> values for two reasons. First, although the HRP-mixing recipe (BIP 173 <code>hrp_expand</code>) produces residues that differ between any two HRPs sharing this polynomial, picking distinct target constants provides residue-level separation as well: damage that maps an MD string toward codex32-style validity is statistically prevented by the combination. Second, signaling matters — reusing codex32's specific target constant verbatim would invite the misreading that MD is "codex32 with a different HRP" rather than a distinct format that borrows codex32's polynomial.
 
 The constants are reproducible by any SHA-256 implementation:
 
@@ -678,9 +680,9 @@ T_LONG    = int.from_bytes(h, 'big') >> (256 - 75)  # = 0x205701dd1e8ce4b9f47
 
 ===Why descriptor-codec for the bytecode?===
 
-<code>descriptor-codec</code> is a public-domain (CC0-1.0) Rust library that encodes BIP 380 output descriptors using a compact tag-based format with claimed 30–40% size reduction relative to plaintext. Its tag table covers all miniscript fragments and produces deterministic round-tripping bytecode. WDM extends this with BIP 388 wallet-policy framing (<code>@i</code> placeholders), shared-path declarations, and a path dictionary, but reuses the underlying tag values for compatibility.
+<code>descriptor-codec</code> is a public-domain (CC0-1.0) Rust library that encodes BIP 380 output descriptors using a compact tag-based format with claimed 30–40% size reduction relative to plaintext. Its tag table covers all miniscript fragments and produces deterministic round-tripping bytecode. MD extends this with BIP 388 wallet-policy framing (<code>@i</code> placeholders), shared-path declarations, and a path dictionary, but reuses the underlying tag values for compatibility.
 
-This design choice means: (a) WDM does not invent a new bytecode for descriptors that are already correctly handled by an existing public-domain implementation; (b) implementations of WDM that wish to also handle inline-key descriptors (a v1+ extension) can do so by adopting the existing reserved tags; (c) the WDM extensions MAY be upstreamed into <code>descriptor-codec</code> if the maintainer accepts.
+This design choice means: (a) MD does not invent a new bytecode for descriptors that are already correctly handled by an existing public-domain implementation; (b) implementations of MD that wish to also handle inline-key descriptors (a v1+ extension) can do so by adopting the existing reserved tags; (c) the MD extensions MAY be upstreamed into <code>descriptor-codec</code> if the maintainer accepts.
 
 ===Why the BIP 388 placeholder framing instead of inline keys?===
 
@@ -688,19 +690,19 @@ The placeholder framing has three advantages over inline keys:
 
 # '''Compactness.''' Each <code>@i</code> reference encodes as 2 bytes vs 78 bytes for an inline xpub. For a 6-key policy, this saves ~456 bytes of bytecode — making the difference between fitting one engraved plate and fitting many.
 # '''Separation of structure from key material.''' The Template Card contains zero key material in v0; it can be backed up independently of seeds and xpub cards. Loss or compromise of a Template Card does not compromise key secrecy.
-# '''Standard alignment.''' BIP 388 already defines the placeholder framing for hardware-signer wallet-policy registration. Aligning WDM's bytecode with BIP 388's framing minimizes work for wallets that already produce BIP 388 wallet policies.
+# '''Standard alignment.''' BIP 388 already defines the placeholder framing for hardware-signer wallet-policy registration. Aligning MD's bytecode with BIP 388's framing minimizes work for wallets that already produce BIP 388 wallet policies.
 
 ===Why mandate guided recovery in the spec?===
 
-The format's robustness story has two layers: BCH error correction (always present) and structure-aware recovery (when structural knowledge is available). The latter substantially extends the correction envelope but requires implementations to expose it. If guided recovery were optional, different WDM tools would offer different recovery success rates for the same damaged input, undermining the format's reliability promise.
+The format's robustness story has two layers: BCH error correction (always present) and structure-aware recovery (when structural knowledge is available). The latter substantially extends the correction envelope but requires implementations to expose it. If guided recovery were optional, different MD tools would offer different recovery success rates for the same damaged input, undermining the format's reliability promise.
 
-By specifying guided recovery as a conformance requirement, all WDM tools provide consistent recovery semantics. Users with damaged backups are not at the mercy of which tool they happen to be using.
+By specifying guided recovery as a conformance requirement, all MD tools provide consistent recovery semantics. Users with damaged backups are not at the mercy of which tool they happen to be using.
 
 ===Why no compression?===
 
 The format already provides large implicit compression via the placeholder mechanism and tag-based encoding (~40× compression on key material vs inline xpubs; ~10× on operator names vs plaintext). For payload sizes typical of bitcoin wallet policies (≤ 60 bytes), generic compression (LZ-family) yields 5–20% additional savings — offset by dictionary overhead, decompressor complexity, and increased attack surface.
 
-Hardware signers parsing WDM-encoded policies (Coldcard, BitBox, Jade, Ledger) have memory and code-size constraints that favor direct opcode interpretation over compressed input. The chunking scheme handles arbitrary lengths, so compression's primary benefit (avoiding chunk boundaries) is moot.
+Hardware signers parsing MD-encoded policies (Coldcard, BitBox, Jade, Ledger) have memory and code-size constraints that favor direct opcode interpretation over compressed input. The chunking scheme handles arbitrary lengths, so compression's primary benefit (avoiding chunk boundaries) is moot.
 
 If a future revision identifies compression as worth adding, it should be: (a) a dictionary of common timelock values; (b) an n-of-n implicit-thresh opcode for long <code>and_v</code> chains. Generic LZ on bytecode is not recommended.
 
@@ -720,28 +722,28 @@ For single-string Template Cards, no wallet identifier is needed because there a
 
 ==Backwards Compatibility==
 
-WDM is a new format; there is no prior version to be compatible with.
+MD is a new format; there is no prior version to be compatible with.
 
-WDM does not conflict with existing standards:
+MD does not conflict with existing standards:
 
-* '''BIP 39 / SLIP 39 / BIP 93 (codex32):''' WDM uses a different HRP (<code>wdm</code> vs <code>ms</code>), so a WDM string is never confused with a codex32 seed share. The bech32 checksums are computed over the HRP plus data, providing cryptographic domain separation.
-* '''BIP 173 / BIP 350 (bech32 / bech32m addresses):''' WDM uses neither <code>bc</code>/<code>tb</code>/<code>bcrt</code> HRPs nor the bech32m generator constant; addresses cannot be confused with WDM strings.
-* '''BIP 380 (output descriptors):''' BIP 380 descriptors do not contain the <code>@</code> character, so a BIP 380 descriptor cannot be confused with a BIP 388 wallet policy, and neither can be confused with WDM-encoded bytecode (which is binary, not a descriptor string).
-* '''BIP 388 (wallet policies):''' WDM ''encodes'' BIP 388 wallet policies. Round-trip with BIP 388 canonical form is a stated invariant.
+* '''BIP 39 / SLIP 39 / BIP 93 (codex32):''' MD uses a different HRP (<code>md</code> vs <code>ms</code>), so an MD string is never confused with a codex32 seed share. The bech32 checksums are computed over the HRP plus data, providing cryptographic domain separation.
+* '''BIP 173 / BIP 350 (bech32 / bech32m addresses):''' MD uses neither <code>bc</code>/<code>tb</code>/<code>bcrt</code> HRPs nor the bech32m generator constant; addresses cannot be confused with MD strings.
+* '''BIP 380 (output descriptors):''' BIP 380 descriptors do not contain the <code>@</code> character, so a BIP 380 descriptor cannot be confused with a BIP 388 wallet policy, and neither can be confused with MD-encoded bytecode (which is binary, not a descriptor string).
+* '''BIP 388 (wallet policies):''' MD ''encodes'' BIP 388 wallet policies. Round-trip with BIP 388 canonical form is a stated invariant.
 
-WDM v0 readers MUST reject WDM strings with newer format-version bytes (loud failure; recommend the user obtain a newer WDM tool). v1+ readers MUST accept v0 strings (graceful upgrade).
+MD v0 readers MUST reject MD strings with newer format-version bytes (loud failure; recommend the user obtain a newer MD tool). v1+ readers MUST accept v0 strings (graceful upgrade).
 
 ==Test Vectors==
 
 A complete reference test vector suite is provided alongside the reference implementation (see "Reference Implementation", below). Two authoritative vector files coexist; implementations targeting v0.1.0 verify against the schema-1 file, while implementations targeting v0.2.0 verify against the schema-2 file.
 
-* '''v0.1.0 lock — schema 1''' — [https://github.com/bg002h/descriptor-mnemonic/blob/e2e8368e51618ad82073c46faa7799fddb86e082/crates/wdm-codec/tests/vectors/v0.1.json crates/wdm-codec/tests/vectors/v0.1.json] (commit <code>e2e8368e51618ad82073c46faa7799fddb86e082</code>)
+* '''v0.1.0 lock — schema 1''' — [https://github.com/bg002h/descriptor-mnemonic/blob/e2e8368e51618ad82073c46faa7799fddb86e082/crates/md-codec/tests/vectors/v0.1.json crates/md-codec/tests/vectors/v0.1.json] (commit <code>e2e8368e51618ad82073c46faa7799fddb86e082</code>)
 ** SHA-256 content hash: <code>1957b542ed0388b51f01a7b467c8e802942dc6d6507abffaefaf777c90f3cd2c</code>
-* '''v0.2.0 lock — schema 2''' — <code>crates/wdm-codec/tests/vectors/v0.2.json</code>
-** SHA-256 content hash: <code>b403073b8a925bdda37adb92daa8521d527476aa7937450bd27fcbe0efdfd072</code>
-** This SHA is **family-stable across the v0.2.x line**: the JSON's <code>generator</code> field embeds only the family version (<code>"wdm-codec 0.2"</code>), so any v0.2.x build that regenerates this file produces the same SHA. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log.
+* '''v0.2.0 lock — schema 2''' — <code>crates/md-codec/tests/vectors/v0.2.json</code>
+** SHA-256 content hash: <code>b403073b8a925bdda37adb92daa8521d527476aa7937450bd27fcbe0efdfd072</code><!-- TODO Phase 6: update to new v0.2.json SHA after vector regen -->
+** This SHA is **family-stable across the v0.2.x line**: the JSON's <code>generator</code> field embeds only the family version (<code>"wdm-codec 0.2"</code>), so any v0.2.x build that regenerates this file produces the same SHA. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log. (Starting with v0.3.0 the family token changes to <code>"md-codec 0.3"</code> and vectors are regenerated; the v0.3.0 SHA is inserted in Phase 6.)
 
-See <code>crates/wdm-codec/src/vectors.rs</code> for the typed schema; <code>TestVectorFile</code>, <code>Vector</code>, and <code>NegativeVector</code> are all <code>#[non_exhaustive]</code> so future versions may add fields without breaking deserializers.
+See <code>crates/md-codec/src/vectors.rs</code> for the typed schema; <code>TestVectorFile</code>, <code>Vector</code>, and <code>NegativeVector</code> are all <code>#[non_exhaustive]</code> so future versions may add fields without breaking deserializers.
 
 ===Schema versioning===
 
@@ -756,7 +758,7 @@ Schema-2 adds three optional fields:
 ===Schema 1 (v0.1.0) contents===
 
 * '''10 positive vectors''' — encode/decode round-trips for the canonical example corpus: single-key (C1), 2-of-3 sortedmulti (C2), 2-of-3 with timelock recovery (C3), 6-key inheritance (C4), 5-of-9 with 2-key recovery (C5), Liana Simple Inheritance (E10), Liana Expanding Multisig (E12), HTLC with sha256 inline hash (E13), Decaying multisig with 6 distinct keys (E14), and a Coldcard-shape representative entry. Each vector pins the input policy, expected canonical bytecode (hex), expected encoded chunk strings, and expected 12-word Tier-3 Wallet ID.
-* '''30 negative vectors''' — input strings or scenarios that must be rejected, one per <code>Error</code> variant in the reference implementation. Each vector pins the input plus the canonical name of the expected error variant for cross-implementation matching. (Two of the 30 are placeholder entries for variants whose triggers don't fit the WDM-string input shape — <code>EmptyChunkList</code> requires an empty Vec; <code>PolicyTooLarge</code> requires bytecode > 1692 B; both are reachable through the library API but not through a single-string CLI input.) Schema-1 negative <code>input_strings</code> are representative placeholders, not byte-for-byte regenerable from the named error path; the <code>expected_error_variant</code> field is the authoritative cross-implementation contract.
+* '''30 negative vectors''' — input strings or scenarios that must be rejected, one per <code>Error</code> variant in the reference implementation. Each vector pins the input plus the canonical name of the expected error variant for cross-implementation matching. (Two of the 30 are placeholder entries for variants whose triggers don't fit the MD-string input shape — <code>EmptyChunkList</code> requires an empty Vec; <code>PolicyTooLarge</code> requires bytecode > 1692 B; both are reachable through the library API but not through a single-string CLI input.) Schema-1 negative <code>input_strings</code> are representative placeholders, not byte-for-byte regenerable from the named error path; the <code>expected_error_variant</code> field is the authoritative cross-implementation contract.
 
 ===Schema 2 (v0.2.0) contents===
 
@@ -776,20 +778,20 @@ Schema 2 is a strict superset of schema 1 with the following additions:
 The vector files are regenerated by:
 
 <source lang="bash">
-cargo run -p wdm-codec --bin gen_vectors -- --output crates/wdm-codec/tests/vectors/v0.2.json              # schema 2 (default)
-cargo run -p wdm-codec --bin gen_vectors -- --output crates/wdm-codec/tests/vectors/v0.1.json --schema 1  # schema 1
+cargo run -p md-codec --bin gen_vectors -- --output crates/md-codec/tests/vectors/v0.2.json              # schema 2 (default)
+cargo run -p md-codec --bin gen_vectors -- --output crates/md-codec/tests/vectors/v0.1.json --schema 1  # schema 1
 </source>
 
 …and verified by:
 
 <source lang="bash">
-cargo run -p wdm-codec --bin gen_vectors -- --verify crates/wdm-codec/tests/vectors/v0.1.json   # schema inferred from file
-cargo run -p wdm-codec --bin gen_vectors -- --verify crates/wdm-codec/tests/vectors/v0.2.json
+cargo run -p md-codec --bin gen_vectors -- --verify crates/md-codec/tests/vectors/v0.1.json   # schema inferred from file
+cargo run -p md-codec --bin gen_vectors -- --verify crates/md-codec/tests/vectors/v0.2.json
 </source>
 
 <code>--verify</code> reads the file's <code>schema_version</code> field and dispatches to the matching builder; callers do not pass <code>--schema</code>. The <code>--verify</code> mode does a typed structural compare (not a byte-equal compare), so JSON-formatting drift in <code>serde_json</code> releases doesn't cause spurious mismatches. Both modes are deterministic given the same source code.
 
-Independent implementations SHOULD verify against the committed JSON for the WDM version they target. Future schema additions (e.g., property-test vectors, cross-version regression suites) land in new <code>schema_version</code> files; existing locks remain frozen at their release SHA-256.
+Independent implementations SHOULD verify against the committed JSON for the MD version they target. Future schema additions (e.g., property-test vectors, cross-version regression suites) land in new <code>schema_version</code> files; existing locks remain frozen at their release SHA-256.
 
 ==Reference Implementation==
 
@@ -798,13 +800,13 @@ The reference implementation is published at [https://github.com/bg002h/descript
 * Written in Rust, building on <code>rust-miniscript</code> (with one upstream patch in flight at [https://github.com/apoelstra/rust-miniscript/pull/1 apoelstra/rust-miniscript#1] for hash-terminal support in <code>WalletPolicy</code>) and the <code>descriptor-codec</code> tag table for compatibility
 * Licensed CC0-1.0 to match this specification
 * Accompanied by the test vector suite linked above
-* Released with the <code>wdm</code> CLI binary (<code>wdm encode</code>, <code>wdm decode</code>, <code>wdm verify</code>, <code>wdm inspect</code>, <code>wdm bytecode</code>, <code>wdm vectors</code>)
+* Released with the <code>md</code> CLI binary (<code>md encode</code>, <code>md decode</code>, <code>md verify</code>, <code>md inspect</code>, <code>md bytecode</code>, <code>md vectors</code>)
 
 Bindings for Python and TypeScript via standard FFI tooling are planned for v0.2.
 
 ==Acknowledgments==
 
-WDM builds directly on the work of:
+MD builds directly on the work of:
 
 * '''Pieter Wuille''' for miniscript
 * '''Salvatore Ingala''' for BIP 388 wallet policies
