@@ -2,6 +2,8 @@
 //!
 //! Implements the codex32-derived (BIP 93) encoding with HRP `"wdm"`.
 
+mod bch_decode;
+
 /// Which BCH code variant a string uses.
 ///
 /// Determined by the total data-part length: regular for ≤93 chars,
@@ -376,21 +378,25 @@ pub struct CorrectionResult {
     pub corrected_positions: Vec<usize>,
 }
 
-// TODO(v0.2): replace brute-force 1-error correction with proper syndrome-based
-// BCH decoding (Berlekamp-Massey / Forney) to reach the spec-promised 4-error
-// correction in O(n^2) time. v0.1's brute force is correct for 0 or 1 errors;
-// inputs with 2+ errors that happen to brute-force-correct are mathematically
-// undetectable as "wrong correction" and would mislead the user. The v0.1
-// decoder therefore deliberately returns BchUncorrectable rather than risk
-// silent miscorrection beyond its 1-error reach.
-
-/// Attempt to correct a regular-code BCH-checksummed string with up to one
-/// substitution. Spec promises up to 4-error correction; v0.1 ships only a
-/// 1-error baseline. See the TODO comment above this function for the v0.2
-/// upgrade path.
+/// Attempt to correct a regular-code BCH-checksummed string with up to four
+/// substitutions, the full t = 4 capacity of the BCH(93, 80, 8) code.
 ///
-/// Returns `Ok(CorrectionResult)` if the input is clean or one substitution
-/// repairs it. Returns `Err(Error::BchUncorrectable)` otherwise.
+/// Implements the standard syndrome-based BCH decoder pipeline: syndrome
+/// computation in `GF(1024) = GF(32²)`, Berlekamp–Massey for the
+/// error-locator polynomial, Chien search for error positions, Forney's
+/// algorithm for error magnitudes. After applying the proposed corrections,
+/// the result is re-verified via [`bch_verify_regular`]; the decoder rejects
+/// any output that does not produce a valid codeword (defensive guard
+/// against pathological 5+-error inputs whose syndromes happen to factor as
+/// a degree-≤ 4 locator).
+///
+/// Returns `Ok(CorrectionResult)` if the input is clean or up to four
+/// substitutions repair it. Returns `Err(Error::BchUncorrectable)` otherwise.
+///
+/// # Algorithm details
+///
+/// See the private `bch_decode` submodule for the algorithm and the
+/// `GF(1024)` field representation.
 pub fn bch_correct_regular(
     hrp: &str,
     data_with_checksum: &[u8],
@@ -402,13 +408,49 @@ pub fn bch_correct_regular(
             corrected_positions: vec![],
         });
     }
-    if let Some(r) = brute_force_one_error(hrp, data_with_checksum, bch_verify_regular) {
-        return Ok(r);
+    // Compute polymod over hrp_expand(hrp) || data_with_checksum, XOR with
+    // the WDM target constant. The result is congruent to the error
+    // polynomial E(x) modulo g_regular(x).
+    let mut input = hrp_expand(hrp);
+    input.extend_from_slice(data_with_checksum);
+    let residue =
+        polymod_run(&input, &GEN_REGULAR, REGULAR_SHIFT, REGULAR_MASK) ^ WDM_REGULAR_CONST;
+
+    if let Some((positions, magnitudes)) =
+        bch_decode::decode_regular_errors(residue, data_with_checksum.len())
+    {
+        if positions.is_empty() {
+            // Should be unreachable (caller already verified); guard anyway.
+            return Ok(CorrectionResult {
+                data: data_with_checksum.to_vec(),
+                corrections_applied: 0,
+                corrected_positions: vec![],
+            });
+        }
+        let mut corrected = data_with_checksum.to_vec();
+        for (&p, &m) in positions.iter().zip(&magnitudes) {
+            if p >= corrected.len() {
+                return Err(crate::Error::BchUncorrectable);
+            }
+            corrected[p] ^= m;
+        }
+        // Defensive: re-verify. Catches the 5+-error edge case.
+        if bch_verify_regular(hrp, &corrected) {
+            return Ok(CorrectionResult {
+                corrections_applied: positions.len(),
+                corrected_positions: positions,
+                data: corrected,
+            });
+        }
     }
     Err(crate::Error::BchUncorrectable)
 }
 
 /// Long-code analog of [`bch_correct_regular`].
+///
+/// Implements the same BM/Chien/Forney pipeline against the long-code
+/// generator polynomial, reaching the full t = 4 capacity of
+/// `BCH(108, 93, 8)`.
 pub fn bch_correct_long(
     hrp: &str,
     data_with_checksum: &[u8],
@@ -420,42 +462,36 @@ pub fn bch_correct_long(
             corrected_positions: vec![],
         });
     }
-    if let Some(r) = brute_force_one_error(hrp, data_with_checksum, bch_verify_long) {
-        return Ok(r);
+    let mut input = hrp_expand(hrp);
+    input.extend_from_slice(data_with_checksum);
+    let residue = polymod_run(&input, &GEN_LONG, LONG_SHIFT, LONG_MASK) ^ WDM_LONG_CONST;
+
+    if let Some((positions, magnitudes)) =
+        bch_decode::decode_long_errors(residue, data_with_checksum.len())
+    {
+        if positions.is_empty() {
+            return Ok(CorrectionResult {
+                data: data_with_checksum.to_vec(),
+                corrections_applied: 0,
+                corrected_positions: vec![],
+            });
+        }
+        let mut corrected = data_with_checksum.to_vec();
+        for (&p, &m) in positions.iter().zip(&magnitudes) {
+            if p >= corrected.len() {
+                return Err(crate::Error::BchUncorrectable);
+            }
+            corrected[p] ^= m;
+        }
+        if bch_verify_long(hrp, &corrected) {
+            return Ok(CorrectionResult {
+                corrections_applied: positions.len(),
+                corrected_positions: positions,
+                data: corrected,
+            });
+        }
     }
     Err(crate::Error::BchUncorrectable)
-}
-
-/// Try every (position, replacement) pair until verify succeeds. Returns the
-/// first match (deterministic, scanned left-to-right, lowest replacement first).
-fn brute_force_one_error<F>(
-    hrp: &str,
-    data_with_checksum: &[u8],
-    verify: F,
-) -> Option<CorrectionResult>
-where
-    F: Fn(&str, &[u8]) -> bool,
-{
-    // Single allocation; mutate in place and restore between positions.
-    let mut trial = data_with_checksum.to_vec();
-    for i in 0..trial.len() {
-        let orig = trial[i];
-        for v in 0..32u8 {
-            if v == orig {
-                continue;
-            }
-            trial[i] = v;
-            if verify(hrp, &trial) {
-                return Some(CorrectionResult {
-                    data: trial,
-                    corrections_applied: 1,
-                    corrected_positions: vec![i],
-                });
-            }
-        }
-        trial[i] = orig;
-    }
-    None
 }
 
 /// Encode a payload + header into a full WDM string with HRP, separator, and checksum.
@@ -574,15 +610,18 @@ impl DecodedString {
 
 /// Decode a WDM string, validating HRP, case, length, and checksum.
 ///
-/// Performs error correction up to one substitution (v0.1 brute-force baseline;
-/// v0.2 will add full 4-error syndrome decoding).
+/// Performs full BCH error correction up to four substitutions
+/// (`t = 4` capacity of the BCH(93, 80, 8) regular code and the
+/// BCH(108, 93, 8) long code), via syndrome-based Berlekamp–Massey +
+/// Forney decoding (implemented in the private `bch_decode` submodule).
 ///
 /// Errors:
 /// - [`Error::MixedCase`] if the string mixes upper and lower case.
 /// - [`Error::InvalidHrp`] if the HRP is missing or not `"wdm"`.
 /// - [`Error::InvalidStringLength`] if the data-part length isn't a valid WDM length.
 /// - [`Error::InvalidChar`] if the data part contains a non-bech32 character.
-/// - [`Error::BchUncorrectable`] if the checksum can't be repaired with one substitution.
+/// - [`Error::BchUncorrectable`] if the checksum can't be repaired within
+///   the BCH `t = 4` correction radius.
 ///
 /// [`Error::MixedCase`]: crate::Error::MixedCase
 /// [`Error::InvalidHrp`]: crate::Error::InvalidHrp
@@ -1094,22 +1133,23 @@ mod tests {
     }
 
     #[test]
-    fn bch_correct_regular_two_errors_uncorrectable_v0_1() {
-        // v0.1 baseline cannot fix 2-error damage; spec promises this in v0.2.
-        // Choice of positions 3 and 7 with delta +1: the BCH code's minimum
-        // distance ≥ 9 means no 2-error pattern is reachable as a 1-substitution
-        // from any other valid codeword. This specific pair was verified
-        // empirically not to alias to a different 1-correctable string under
-        // the v0.1 brute-force decoder.
+    fn bch_correct_regular_two_errors_recovered_v0_2() {
+        // v0.2 BM/Forney decoder reaches the BCH(93,80,8) full t = 4
+        // capacity. A 2-error pattern is now recoverable. This test was
+        // `..._uncorrectable_v0_1` in v0.1; flipped sign in v0.2.
         let hrp = "wdm";
         let data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let checksum = bch_create_checksum_regular(hrp, &data);
         let mut full = data.clone();
         full.extend_from_slice(&checksum);
+        let original = full.clone();
         full[3] = (full[3] + 1) & 0x1F;
         full[7] = (full[7] + 1) & 0x1F;
-        let result = bch_correct_regular(hrp, &full);
-        assert!(matches!(result, Err(crate::Error::BchUncorrectable)));
+        let r = bch_correct_regular(hrp, &full).unwrap();
+        assert_eq!(r.corrections_applied, 2);
+        assert!(r.corrected_positions.contains(&3));
+        assert!(r.corrected_positions.contains(&7));
+        assert_eq!(r.data, original);
     }
 
     #[test]

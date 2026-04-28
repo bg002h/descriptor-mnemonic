@@ -155,6 +155,8 @@ Detection of error patterns affecting more than 8 characters is probabilistic. T
 
 Conformant decoders MUST report which correction was applied (clean / N substitutions corrected / N erasures corrected / structure-aided / failed) per "Decoder reporting", below.
 
+Implementations claiming v0.2-or-later support SHOULD use Berlekamp–Massey to derive the error-locator polynomial and Forney's algorithm to derive error magnitudes, working in the field <code>GF(1024) = GF(32)[ζ] / (ζ² − ζ − P)</code> with primitive elements <code>β = G·ζ</code> (regular code, order 93) and <code>γ = E + X·ζ</code> (long code, order 1023). The eight syndromes are computed at <code>{β<sup>77</sup>, …, β<sup>84</sup>}</code> for the regular code and <code>{γ<sup>1019</sup>, …, γ<sup>1026</sup>}</code> for the long code, matching the 8-consecutive-roots windows of the generator polynomial as specified in BIP 93 §"Generation of valid checksum". This canonical decoder makes the <code>Correction.corrected</code> values byte-identical across implementations on the same input. Alternative algorithms (e.g., brute-force enumeration up to <code>t = 4</code>) are permitted but MAY produce different but equally-valid corrections when multiple weight-≤ 4 codewords are equidistant from the received word; the canonical decoder breaks ties by ascending position index.
+
 ====Alphabet====
 
 The data part (header + payload + checksum) uses the bech32 alphabet:
