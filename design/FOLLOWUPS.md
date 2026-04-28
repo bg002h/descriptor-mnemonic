@@ -107,15 +107,42 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v1+
 
-### `v0-4-bip-388-surface-completion` — extend top-level descriptor support to `wpkh` and `sh(wsh(...))`
+### `v0-5-multi-leaf-taptree` — multi-leaf TapTree (`tr(KEY, TREE)`) admission
 
-- **Surfaced:** Design discussion 2026-04-27 prompted by user noticing the `PolicyScopeViolation` rejection of `wpkh()` at top level
-- **Where:** `crates/md-codec/src/bytecode/encode.rs` (currently rejects `Descriptor::Wpkh`, `Descriptor::Sh`, `Descriptor::Pkh`, `Descriptor::Bare`); `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope"; bytecode tag.rs (Wpkh tag 0x04 already reserved; Sh would need a new tag)
-- **What:** v0.1 scoped to `wsh(...)` only; v0.2 added `tr(...)`. BIP 388 itself covers four top-level shapes: `wpkh`, `wsh`, `sh(wsh(...))`, `tr`. Expanding to the full BIP 388 surface lets BIP 84 single-sig wallets and BIP 48 P2SH-P2WSH multisig wallets (still emitted by Coldcard / Trezor / Ledger for backwards-compat) round-trip through MD without the awkward `wsh(pk(@0/**))` workaround. Scope: add `wpkh(@0/**)` and `sh(wsh(...))` encode/decode/round-trip + conformance vectors. Skip legacy `pkh(...)` and bare `sh(multi(...))` permanently — pre-segwit, no new wallets.
-- **Why deferred:** v0.3 is the rename release (wdm→md); compounding it with new encode paths would muddy the wire-break audit. v0.4 is the natural home: "BIP 388 surface completion." Wire format additive: tags are allocated, wpkh likely reuses existing `Wpkh = 0x04` tag (already reserved per `bytecode/tag.rs:28`); `sh(wsh(...))` needs a new top-level tag in the unallocated range. Schema bump from 2 → 3 with `v0.3.json` carried forward unchanged + new `v0.4.json` adding wpkh + sh-wsh corpora.
-- **Estimated effort:** 1 phase (~3 days). Encode path mechanical (single-key wpkh + composition for sh-wsh); decode path needs new tag dispatch + minor BIP §"Top-level descriptor scope" rewrite. Conformance vectors expand; family-stable promise carries to v0.4.x.
+- **Surfaced:** v0.4 spec brainstorming 2026-04-27; named in BIP §FAQ "Why is multi-leaf TapTree deferred (vs excluded)?"
+- **Where:** `crates/md-codec/src/bytecode/decode.rs` Tr handler; `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope" + §"Taproot tree"
+- **What:** Admit `tr(KEY, TREE)` with non-trivial multi-leaf TapTree (BIP 388 §"Taproot tree"). Requires TapTree depth/balancing rules, leaf-wrapper subset re-evaluation (current Coldcard tap-leaf subset is restrictive), per-leaf miniscript context validation. Deferred from v0.4 to keep that release focused.
+- **Why deferred:** Substantive feature requiring its own design pass.
 - **Status:** open
-- **Tier:** v0.4 (post-rename)
+- **Tier:** v0.5+ (planned admission, not exclusion)
+
+### `legacy-pkh-permanent-exclusion` — `pkh(KEY)` is permanently excluded
+
+- **Surfaced:** v0.4 spec brainstorming 2026-04-27 (user decision: "modern post-segwit only")
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope" reject-list + §FAQ "Why is MD narrower than BIP 388?"
+- **What:** Top-level `pkh(KEY)` legacy P2PKH single-sig is permanently excluded from MD's accepted surface, even though BIP 388 admits it. Rationale: engravable steel backup is overkill for legacy single-sig (BIP 39 seed alone suffices); negligible new deployment.
+- **Why deferred:** Permanent design exclusion, not a deferral.
+- **Status:** wont-fix — modern post-segwit only per design.
+- **Tier:** wont-fix
+
+### `legacy-sh-multi-permanent-exclusion` — `sh(multi(K, ...))` is permanently excluded
+
+- **Surfaced:** v0.4 spec brainstorming 2026-04-27 (user decision: address-prefix-ambiguity rationale)
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope" reject-list + §FAQ "Why is MD narrower than BIP 388?"
+- **What:** Top-level `sh(multi(K, ...))` legacy P2SH unsorted multisig is permanently excluded from MD's accepted surface, even though BIP 388 admits it. Rationale: address-prefix-ambiguity with `sh(wsh(...))` (both produce 3... addresses) creates recovery footgun; negligible new deployment of pre-segwit multisig wallets.
+- **Why deferred:** Permanent design exclusion, not a deferral.
+- **Status:** wont-fix — modern post-segwit only per design.
+- **Tier:** wont-fix
+
+### `legacy-sh-sortedmulti-permanent-exclusion` — `sh(sortedmulti(K, ...))` is permanently excluded
+
+- **Surfaced:** v0.4 spec brainstorming 2026-04-27 (user decision: address-prefix-ambiguity rationale)
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope" reject-list + §FAQ "Why is MD narrower than BIP 388?"
+- **What:** Top-level `sh(sortedmulti(K, ...))` legacy P2SH sorted multisig is permanently excluded from MD's accepted surface, even though BIP 388 admits it. Rationale: address-prefix-ambiguity with `sh(wsh(...))` (both produce 3... addresses) creates recovery footgun; negligible new deployment of pre-segwit multisig wallets.
+- **Why deferred:** Permanent design exclusion, not a deferral.
+- **Status:** wont-fix — modern post-segwit only per design.
+- **Tier:** wont-fix
+
 
 ### `bip-preliminary-hrp-disclaimer-tension` — reconcile "preliminary HRP" disclaimer with collision-vet claim
 
@@ -176,6 +203,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 ## Resolved items
 
 (Closure log. Items move here from "Open items" when their `Status:` changes to `resolved <COMMIT>`. Useful for spec/audit reasons; not deleted to preserve provenance.)
+
+### `bip48-nested-name-table-entry` — CLI affordance for indicator 0x06
+
+- **Surfaced:** v0.4 spec §3 / Phase 4 plan
+- **Where:** `crates/md-codec/src/bin/md/main.rs` NAME_TABLE
+- **What:** Add `("bip48-nested", 0x06)` and testnet variant to NAME_TABLE so users can write `--path bip48-nested` rather than `--path 0x06` or literal-path form.
+- **Status:** resolved 45f6736 (Phase 4 of v0.4)
+- **Tier:** v0.4-task
+
+### `v0-4-bip-388-surface-completion` — extend top-level descriptor support to `wpkh` and `sh(wsh(...))`
+
+- **Surfaced:** Design discussion 2026-04-27 prompted by user noticing the `PolicyScopeViolation` rejection of `wpkh()` at top level
+- **Where:** `crates/md-codec/src/bytecode/encode.rs` (currently rejects `Descriptor::Wpkh`, `Descriptor::Sh`, `Descriptor::Pkh`, `Descriptor::Bare`); `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope"; bytecode tag.rs (Wpkh tag 0x04 already reserved; Sh would need a new tag)
+- **What:** v0.1 scoped to `wsh(...)` only; v0.2 added `tr(...)`. BIP 388 itself covers four top-level shapes: `wpkh`, `wsh`, `sh(wsh(...))`, `tr`. Expanding to the full BIP 388 surface lets BIP 84 single-sig wallets and BIP 48 P2SH-P2WSH multisig wallets (still emitted by Coldcard / Trezor / Ledger for backwards-compat) round-trip through MD without the awkward `wsh(pk(@0/**))` workaround. Scope: add `wpkh(@0/**)` and `sh(wsh(...))` encode/decode/round-trip + conformance vectors. Skip legacy `pkh(...)` and bare `sh(multi(...))` permanently — pre-segwit, no new wallets.
+- **Why deferred:** v0.3 is the rename release (wdm→md); compounding it with new encode paths would muddy the wire-break audit. v0.4 is the natural home: "BIP 388 surface completion." Wire format additive: tags are allocated, wpkh likely reuses existing `Wpkh = 0x04` tag (already reserved per `bytecode/tag.rs:28`); `sh(wsh(...))` needs a new top-level tag in the unallocated range. Schema bump from 2 → 3 with `v0.3.json` carried forward unchanged + new `v0.4.json` adding wpkh + sh-wsh corpora.
+- **Estimated effort:** 1 phase (~3 days). Encode path mechanical (single-key wpkh + composition for sh-wsh); decode path needs new tag dispatch + minor BIP §"Top-level descriptor scope" rewrite. Conformance vectors expand; family-stable promise carries to v0.4.x.
+- **Status:** resolved <release-commit-SHA>
+
+**Closure note**: Stated scope (wpkh + sh(wsh)) addressed; v0.4 also adds
+sh(wpkh) (BIP-388-required, omitted from original entry). Entry name
+imprecise — v0.4 is the modern post-segwit SUBSET of BIP 388, narrower
+than BIP 388 itself. Multi-leaf TapTree filed as new entry
+`v0-5-multi-leaf-taptree`. Legacy exclusions filed as
+`legacy-{pkh,sh-multi,sh-sortedmulti}-permanent-exclusion` (wont-fix).
+See BIP §FAQ for rationale.
+
+- **Tier:** v0.4 (post-rename, closed)
 
 ### `5a-from-inner-visibility` — `WalletPolicy::from_inner` should be `pub(crate)` not `pub`
 
