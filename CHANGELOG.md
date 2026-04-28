@@ -1,8 +1,53 @@
 # Changelog
 
-All notable changes to `wdm-codec` are documented in this file.
+All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
+
+## [0.3.0] — 2026-04-27
+
+The v0.3 release renames the project from "Wallet Descriptor Mnemonic" (WDM) to "Mnemonic Descriptor" (MD). The shorter name better matches Bitcoin spec naming conventions (compare BIP 93's `ms` HRP for codex32). This is a wire-format-breaking change because the HRP enters the polymod via HRP-expansion.
+
+See [`MIGRATION.md`](./MIGRATION.md#v02x--v030) for upgrade steps.
+
+### Breaking — wire format
+
+- **HRP**: `wdm` → `md`. Strings starting with `wdm1...` are no longer valid v0.3.0 inputs. HRP-expansion bytes change from `[3, 3, 3, 0, 23, 4, 13]` (length 7) to `[3, 3, 0, 13, 4]` (length 5).
+- **Test vectors regenerated**:
+  - `crates/md-codec/tests/vectors/v0.1.json` — new SHA-256: `aac3677fd84f06915c7bb5148a25ed80c399daa4f9bf56c8052ed84f83c9b71b`
+  - `crates/md-codec/tests/vectors/v0.2.json` — new SHA-256: `18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909`
+  - Family-stable promise resets at v0.3.0: `"md-codec 0.3"` is the new family token. Future v0.3.x patches will produce byte-identical SHAs (per the design from v0.2.1).
+
+### Breaking — crate identifiers
+
+- **Crate package**: `wdm-codec` → `md-codec`. Update `Cargo.toml` dependency.
+- **Library**: `wdm_codec` → `md_codec`. Update `use` statements.
+- **CLI binary**: `wdm` → `md`. Update CLI invocations.
+- **Format name**: "Wallet Descriptor Mnemonic" (WDM) → "Mnemonic Descriptor" (MD).
+- **Type renames**: `WdmBackup` → `MdBackup`; `WdmKey` → `MdKey`.
+- **Constant renames**: `WDM_REGULAR_CONST` → `MD_REGULAR_CONST`; `WDM_LONG_CONST` → `MD_LONG_CONST`.
+
+### BIP rename
+
+- BIP filename: `bip/bip-wallet-descriptor-mnemonic.mediawiki` → `bip/bip-mnemonic-descriptor.mediawiki`.
+- BIP title: "Wallet Descriptor Mnemonic" → "Mnemonic Descriptor".
+- §"Payload" gains an explicit normative MUST clause for malformed-payload-padding rejection (carried from v0.2.3).
+- §"Checksum" HRP-expansion bytes recomputed for HRP `md`.
+
+### Notes
+
+- **MSRV: 1.85** (unchanged)
+- **Test count**: 565 passing (unchanged from v0.2.3 baseline; identifier renames preserved test count)
+- **Repository URL**: unchanged at `https://github.com/bg002h/descriptor-mnemonic`
+- **Past releases** `wdm-codec-v0.2.0` through `v0.2.3` remain published with deprecation banners on their GitHub Release notes (see Phase 10 of the rename); tags untouched
+
+### HRP collision vet
+
+Pre-flight vet against SLIP-0173 + Lightning + Liquid + codex32 + Nostr + Cosmos + general web search confirmed `md` is unregistered and unused as a bech32 HRP. Defensive SLIP-0173 PR planned post-release (`slip-0173-register-md-hrp` follow-up).
+
+### Workspace `[patch]` block
+
+Still ships unchanged (waiting on `apoelstra/rust-miniscript#1`); same downstream UX as v0.2.x.
 
 ## [0.2.3] — 2026-04-27
 
