@@ -3,11 +3,11 @@
 //! The descriptor-codec project (CC0) exercises a corpus of 9 policy "shapes"
 //! that cover its operator table. This file re-encodes those shapes in BIP 388
 //! `@i` placeholder form and verifies each one round-trips cleanly through the
-//! WDM encoder: `parse → encode → decode → structural-equality check`.
+//! MD encoder: `parse → encode → decode → structural-equality check`.
 //!
 //! # Top-level scope restriction (Phase 2 D-4)
 //!
-//! WDM v0.1 only supports `wsh(...)` at the top level. Bare, Sh, Pkh, Wpkh,
+//! MD v0.1 only supports `wsh(...)` at the top level. Bare, Sh, Pkh, Wpkh,
 //! and Tr descriptors are rejected by the encoder. Accordingly, every shape
 //! here is wrapped in `wsh(...)`.
 //!
@@ -34,7 +34,7 @@ mod common;
 /// `wsh(pk(@0/**))` — single-key segwit-v0 P2WSH script using `pk`.
 ///
 /// In miniscript, `pk(K)` desugars to `c:pk_k(K)`: the `Check` wrapper (0x0C)
-/// applied to `PkK` (0x1B). This is the simplest meaningful WDM template.
+/// applied to `PkK` (0x1B). This is the simplest meaningful MD template.
 #[test]
 fn shape_pk() {
     common::round_trip_assert("wsh(pk(@0/**))");
@@ -47,7 +47,7 @@ fn shape_pk() {
 /// `wsh(c:pk_h(@0/**))` — key-hash inside P2WSH using the explicit `c:pk_h`
 /// miniscript form.
 ///
-/// Top-level `pkh(...)` is rejected by WDM v0.1 (D-4 scope restriction), so
+/// Top-level `pkh(...)` is rejected by MD v0.1 (D-4 scope restriction), so
 /// we use the equivalent inner-tree form `c:pk_h(K)` which type-checks as a
 /// segwit-v0 miniscript B-type fragment. The `Check` (0x0C) + `PkH` (0x1C)
 /// bytecode sequence is exercised here.
@@ -63,7 +63,7 @@ fn shape_pkh() {
 /// `wsh(multi(2,@0/**,@1/**,@2/**))` — 2-of-3 multisig.
 ///
 /// Exercises the `Multi` (0x19) tag, the threshold varint, and the multi-key
-/// placeholder sequence. This is the most common real-world WDM use case.
+/// placeholder sequence. This is the most common real-world MD use case.
 #[test]
 fn shape_multi() {
     common::round_trip_assert("wsh(multi(2,@0/**,@1/**,@2/**))");
@@ -76,7 +76,7 @@ fn shape_multi() {
 /// `wsh(sortedmulti(2,@0/**,@1/**,@2/**))` — 2-of-3 BIP 67 sorted multisig.
 ///
 /// Exercises the `SortedMulti` (0x09) tag. BIP 67 key ordering is transparent
-/// to the WDM bytecode (keys are always identified by placeholder index); the
+/// to the MD bytecode (keys are always identified by placeholder index); the
 /// tag signals to the decoder that keys must be sorted before script assembly.
 #[test]
 fn shape_sortedmulti() {

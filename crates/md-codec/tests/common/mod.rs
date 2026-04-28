@@ -1,4 +1,4 @@
-//! Shared test helpers for the WDM codec integration-test suite.
+//! Shared test helpers for the MD codec integration-test suite.
 //!
 //! Used by all Phase 6 bucket files via `mod common;` at the top of each
 //! test file.  Every helper in this module is `pub` so bucket files can
@@ -10,7 +10,7 @@
 //! - [`assert_structural_eq`] — compare two [`WalletPolicy`] values by
 //!   canonical string form.
 //! - [`corrupt_n`] — introduce exactly `n` deterministic substitution errors
-//!   into a WDM codex32 string.
+//!   into a MD codex32 string.
 //! - [`load_vector`] — stub for Phase 8 test-vector loading (always panics
 //!   in v0.1).
 
@@ -92,7 +92,7 @@ pub fn assert_structural_eq(a: &WalletPolicy, b: &WalletPolicy) {
 /// The bech32 alphabet in 5-bit-value order (matches [`md_codec::encoding::ALPHABET`]).
 const BECH32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
-/// Introduce exactly `n` substitution errors into a codex32-derived WDM
+/// Introduce exactly `n` substitution errors into a codex32-derived MD
 /// string `s`, deterministically driven by `seed`. Used by ECC stress tests
 /// to exercise BCH error correction.
 ///

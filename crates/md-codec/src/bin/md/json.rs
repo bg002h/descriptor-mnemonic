@@ -1,4 +1,4 @@
-//! Local serde-able wrapper types for `wdm` CLI `--json` output.
+//! Local serde-able wrapper types for `md` CLI `--json` output.
 //!
 //! # Why wrapper types?
 //!
@@ -33,7 +33,7 @@ use md_codec::{
 // Encode JSON shape
 // ---------------------------------------------------------------------------
 
-/// Top-level `wdm encode --json` output.
+/// Top-level `md encode --json` output.
 ///
 /// Mirrors `MdBackup` for serialization. Fields appear in alphabetical
 /// order to preserve the byte-identical output of the v0.1.1 hand-built
@@ -105,7 +105,7 @@ impl From<&MdBackup> for EncodeJson {
 // Decode JSON shape
 // ---------------------------------------------------------------------------
 
-/// Top-level `wdm decode --json` output.
+/// Top-level `md decode --json` output.
 ///
 /// Mirrors `DecodeResult` but renders `policy` as the canonical string
 /// (since the library `WalletPolicy` is not `Serialize`).
