@@ -37,7 +37,7 @@
 //!
 //! ## Pipeline overview
 //!
-//! The encode pipeline is `WalletPolicy + EncodeOptions → WdmBackup`; the
+//! The encode pipeline is `WalletPolicy + EncodeOptions → MdBackup`; the
 //! decode pipeline is `&[&str] + DecodeOptions → DecodeResult`. Each stage has
 //! a counterpart on the decode side.
 //!
@@ -55,7 +55,7 @@
 //!    long: 15 chars). See [`encoding`].
 //! 5. **Tier-3 Wallet ID derivation** — `SHA-256(canonical_bytecode)[0..16]`,
 //!    rendered as 12 BIP-39 words for human verification (see [`wallet_id`]).
-//! 6. **Output** — a [`WdmBackup`] holds the encoded chunks + words; on the
+//! 6. **Output** — a [`MdBackup`] holds the encoded chunks + words; on the
 //!    decode side, a [`DecodeResult`] holds the recovered [`WalletPolicy`]
 //!    plus a [`DecodeReport`] summarizing BCH corrections and verifications.
 //!
@@ -65,7 +65,7 @@
 //!                 EncodeOptions                    DecodeOptions
 //!                       │                                │
 //!                       ▼                                ▼
-//!  WalletPolicy ──── encode() ──→ WdmBackup ─[serialize chunks]
+//!  WalletPolicy ──── encode() ──→ MdBackup ─[serialize chunks]
 //!                                                        │
 //!  WalletPolicy ←── decode() ──── DecodeResult ←── &[&str]
 //!                       (also yields DecodeReport)
@@ -73,7 +73,7 @@
 //!
 //! - Construct a [`WalletPolicy`] from a BIP 388 string with `FromStr`.
 //! - Configure encoding with [`EncodeOptions`] (defaults are usually correct).
-//! - Encode to a [`WdmBackup`], whose `chunks: Vec<EncodedChunk>` is the
+//! - Encode to a [`MdBackup`], whose `chunks: Vec<EncodedChunk>` is the
 //!   engrave-ready output and `wallet_id_words: WalletIdWords` is the Tier-3
 //!   12-word verifier.
 //! - Decode by passing the raw strings as `&[&str]` to [`decode()`]; receive a
@@ -119,7 +119,7 @@
 //! - [`encoding`] — codex32-derived BCH layer (BIP 93 polymod, HRP, checksum).
 //! - [`chunking`] — multi-string chunk header, plan selection, assembly,
 //!   reassembly.
-//! - [`policy`] — [`WalletPolicy`] newtype + [`WdmBackup`] struct.
+//! - [`policy`] — [`WalletPolicy`] newtype + [`MdBackup`] struct.
 //! - [`wallet_id`] — Tier-3 [`WalletId`] / [`ChunkWalletId`] / [`WalletIdSeed`].
 //! - [`options`] — [`EncodeOptions`] / [`DecodeOptions`] knobs.
 //! - [`decode_report`] — [`DecodeResult`] / [`DecodeReport`] / [`Confidence`].
@@ -160,7 +160,7 @@ pub use encoding::{
 };
 pub use error::{BytecodeErrorKind, Error, Result};
 pub use options::{DecodeOptions, EncodeOptions};
-pub use policy::{WalletPolicy, WdmBackup};
+pub use policy::{WalletPolicy, MdBackup};
 pub use vectors::{NegativeVector, TestVectorFile, Vector};
 pub use wallet_id::{
     ChunkWalletId, WalletId, WalletIdSeed, WalletIdWords, compute_wallet_id_for_policy,

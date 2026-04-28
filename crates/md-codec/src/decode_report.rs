@@ -126,9 +126,9 @@ pub struct DecodeReport {
 /// The result of a successful [`crate::decode()`]: the recovered
 /// [`WalletPolicy`] plus a [`DecodeReport`].
 ///
-/// Pair this with [`crate::WdmBackup`] from the encode side to see the
-/// type-state graph: encode produces `WdmBackup`, decode produces
-/// `DecodeResult`. The `WdmBackup` is the engraving-side artifact; the
+/// Pair this with [`crate::MdBackup`] from the encode side to see the
+/// type-state graph: encode produces `MdBackup`, decode produces
+/// `DecodeResult`. The `MdBackup` is the engraving-side artifact; the
 /// `DecodeResult` is the recovery-side artifact.
 ///
 /// Marked `#[non_exhaustive]` so v0.2+ can add fields (e.g. recovered

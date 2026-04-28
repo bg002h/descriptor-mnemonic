@@ -1,9 +1,9 @@
-//! WdmKey — the v0.1 representation of a key reference inside the canonical
+//! MdKey — the v0.1 representation of a key reference inside the canonical
 //! bytecode.
 //!
 //! In v0.1 every key in a WDM-encoded BIP 388 wallet policy is a
-//! [`WdmKey::Placeholder`] referencing the policy's key information vector
-//! at that index. The [`WdmKey::Key`] variant is reserved for v1+ inline-key
+//! [`MdKey::Placeholder`] referencing the policy's key information vector
+//! at that index. The [`MdKey::Key`] variant is reserved for v1+ inline-key
 //! support; v0.1 encoders MUST NOT emit it and v0.1 decoders MUST reject any
 //! bytecode that would deserialize to it (those tags 0x24..=0x31 are the
 //! `Reserved*` set in [`crate::bytecode::Tag`]).
@@ -17,7 +17,7 @@ use miniscript::descriptor::DescriptorPublicKey;
 /// `match` consumers. See decision D-2 in `design/PHASE_2_DECISIONS.md`.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum WdmKey {
+pub enum MdKey {
     /// BIP 388 placeholder reference (`@i`) into the wallet policy's key
     /// information vector at index `i`.
     Placeholder(u8),
@@ -32,15 +32,15 @@ mod tests {
 
     #[test]
     fn placeholder_equality_and_inequality() {
-        let k = WdmKey::Placeholder(0);
-        assert_eq!(k, WdmKey::Placeholder(0));
-        assert_ne!(k, WdmKey::Placeholder(1));
+        let k = MdKey::Placeholder(0);
+        assert_eq!(k, MdKey::Placeholder(0));
+        assert_ne!(k, MdKey::Placeholder(1));
     }
 
     #[test]
     fn placeholder_clone_round_trip() {
         // Sanity check that the Clone derive does the right thing.
-        let k = WdmKey::Placeholder(42);
+        let k = MdKey::Placeholder(42);
         let copy = k.clone();
         assert_eq!(k, copy);
     }

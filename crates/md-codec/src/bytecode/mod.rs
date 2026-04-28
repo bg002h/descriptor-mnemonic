@@ -10,5 +10,5 @@ pub mod tag;
 pub mod varint;
 
 pub use header::BytecodeHeader;
-pub use key::WdmKey;
+pub use key::MdKey;
 pub use tag::Tag;

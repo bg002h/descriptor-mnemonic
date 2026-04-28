@@ -2,7 +2,7 @@
 //!
 //! # Why wrapper types?
 //!
-//! The library types involved in `--json` output (`WdmBackup`, `EncodedChunk`,
+//! The library types involved in `--json` output (`MdBackup`, `EncodedChunk`,
 //! `DecodeResult`, `DecodeReport`, `Correction`, `Verifications`,
 //! `Confidence`, `DecodeOutcome`) are **deliberately not** `Serialize`:
 //!
@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use md_codec::{
     BchCode, Confidence, DecodeOutcome, DecodeReport, DecodeResult, EncodedChunk, Verifications,
-    WdmBackup, chunking::Correction,
+    MdBackup, chunking::Correction,
 };
 
 // ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ use md_codec::{
 
 /// Top-level `wdm encode --json` output.
 ///
-/// Mirrors `WdmBackup` for serialization. Fields appear in alphabetical
+/// Mirrors `MdBackup` for serialization. Fields appear in alphabetical
 /// order to preserve the byte-identical output of the v0.1.1 hand-built
 /// `serde_json::json!{}` literal.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -92,8 +92,8 @@ impl From<&EncodedChunk> for EncodedChunkJson {
     }
 }
 
-impl From<&WdmBackup> for EncodeJson {
-    fn from(b: &WdmBackup) -> Self {
+impl From<&MdBackup> for EncodeJson {
+    fn from(b: &MdBackup) -> Self {
         EncodeJson {
             chunks: b.chunks.iter().map(EncodedChunkJson::from).collect(),
             wallet_id_words: b.wallet_id_words.to_string(),
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn encode_json_round_trip_via_serde() {
-        // Build a real `WdmBackup`, convert via `From`, serialize, then
+        // Build a real `MdBackup`, convert via `From`, serialize, then
         // deserialize back into `EncodeJson`. The wrapper must be symmetric.
         let policy: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
         let backup = encode(&policy, &EncodeOptions::default()).unwrap();

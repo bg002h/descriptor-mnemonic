@@ -605,7 +605,7 @@ impl WalletPolicy {
 }
 
 // ---------------------------------------------------------------------------
-// WdmBackup
+// MdBackup
 // ---------------------------------------------------------------------------
 
 /// The output of [`crate::encode()`]: chunks ready to engrave, plus the
@@ -636,7 +636,7 @@ impl WalletPolicy {
 /// metadata) without breaking pattern-matching consumers.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WdmBackup {
+pub struct MdBackup {
     /// The encoded chunks ready to engrave.
     pub chunks: Vec<EncodedChunk>,
     /// The 12-word BIP-39 representation of the Tier-3 Wallet ID, for
@@ -657,7 +657,7 @@ pub struct WdmBackup {
     pub fingerprints: Option<Vec<Fingerprint>>,
 }
 
-impl WdmBackup {
+impl MdBackup {
     /// Reconstruct the 16-byte [`WalletId`] from `wallet_id_words`.
     ///
     /// The 12-word form is the storage format; this method converts back to
@@ -668,7 +668,7 @@ impl WdmBackup {
     ///
     /// Panics if the stored `wallet_id_words` do not form a valid BIP-39
     /// mnemonic — this should never happen for correctly constructed
-    /// `WdmBackup` values.
+    /// `MdBackup` values.
     pub fn wallet_id(&self) -> WalletId {
         let mnemonic = bip39::Mnemonic::parse(self.wallet_id_words.to_string())
             .expect("WalletIdWords must always form a valid BIP-39 mnemonic");
@@ -1222,13 +1222,13 @@ mod tests {
         assert_eq!(pair_count, 12, "expected 4·3 = 12 ordered pairs");
     }
 
-    // --- WdmBackup ---
+    // --- MdBackup ---
 
     #[test]
     fn wdm_backup_wallet_id_round_trips_via_words() {
         let original_id = WalletId::new([0xABu8; 16]);
         let words = original_id.to_words();
-        let backup = WdmBackup {
+        let backup = MdBackup {
             chunks: vec![],
             wallet_id_words: words,
             fingerprints: None,
@@ -1443,7 +1443,7 @@ mod tests {
             total_chunks: 1,
             code: BchCode::Regular,
         };
-        let backup = WdmBackup {
+        let backup = MdBackup {
             chunks: vec![chunk],
             wallet_id_words: words,
             fingerprints: None,

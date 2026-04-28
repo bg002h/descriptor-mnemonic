@@ -25,7 +25,7 @@ use md_codec::{
 
 /// Round-trip positive: encode a 2-key wsh-multisig with two fingerprints,
 /// decode through the full pipeline, and assert both the encoded
-/// `WdmBackup.fingerprints` and the decoded `DecodeResult.fingerprints` carry
+/// `MdBackup.fingerprints` and the decoded `DecodeResult.fingerprints` carry
 /// the same two values.
 #[test]
 fn round_trip_with_fingerprints_two_keys() {
@@ -37,13 +37,13 @@ fn round_trip_with_fingerprints_two_keys() {
         Fingerprint::from([0xca, 0xfe, 0xba, 0xbe]),
     ];
 
-    // Encode: WdmBackup.fingerprints carries the supplied fingerprints.
+    // Encode: MdBackup.fingerprints carries the supplied fingerprints.
     let opts = EncodeOptions::default().with_fingerprints(fps.clone());
     let backup = encode(&policy, &opts).expect("encode must succeed");
     assert_eq!(
         backup.fingerprints.as_deref(),
         Some(fps.as_slice()),
-        "WdmBackup.fingerprints must reflect EncodeOptions.fingerprints"
+        "MdBackup.fingerprints must reflect EncodeOptions.fingerprints"
     );
 
     // The on-wire bytecode header MUST set bit 2 (header byte 0x04).
@@ -101,7 +101,7 @@ fn round_trip_without_fingerprints_two_keys() {
     let backup = encode(&policy, &opts).expect("encode must succeed");
     assert!(
         backup.fingerprints.is_none(),
-        "WdmBackup.fingerprints must be None when not opted in"
+        "MdBackup.fingerprints must be None when not opted in"
     );
 
     let bytecode = policy.to_bytecode(&opts).expect("to_bytecode must succeed");

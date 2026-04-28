@@ -1,16 +1,16 @@
-//! Top-level encode pipeline: `WalletPolicy` → `WdmBackup`.
+//! Top-level encode pipeline: `WalletPolicy` → `MdBackup`.
 //!
 //! Wires together Phases 1–5C: bytecode encoding, chunking decision,
 //! wallet-ID derivation, chunk assembly, and codex32 string encoding.
 
 use crate::{
-    BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, Result, WalletPolicy, WdmBackup,
+    BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, Result, WalletPolicy, MdBackup,
     chunking::{ChunkHeader, chunk_bytes, chunking_decision},
     encoding::encode_string,
     wallet_id::{ChunkWalletId, compute_wallet_id},
 };
 
-/// Encode a wallet policy as a [`WdmBackup`]: one or more codex32-derived
+/// Encode a wallet policy as a [`MdBackup`]: one or more codex32-derived
 /// strings ready to engrave, plus the Tier-3 12-word Wallet ID.
 ///
 /// # Pipeline
@@ -26,7 +26,7 @@ use crate::{
 ///    affected by the seed.
 /// 4. **Chunks** — [`chunk_bytes`] assembles `Vec<Chunk>`.
 /// 5. **Codex32 strings** — each chunk's bytes are wrapped by [`encode_string`].
-/// 6. **Result** — a [`WdmBackup`] containing the encoded chunks and the
+/// 6. **Result** — a [`MdBackup`] containing the encoded chunks and the
 ///    Tier-3 12-word wallet ID.
 ///
 /// # Errors
@@ -34,7 +34,7 @@ use crate::{
 /// Returns [`crate::Error::PolicyTooLarge`] when the bytecode exceeds the maximum
 /// supported length (1692 bytes). Propagates any error from
 /// [`WalletPolicy::to_bytecode`] or [`encode_string`].
-pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBackup> {
+pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<MdBackup> {
     // Stage 2: encode policy to canonical bytecode. The encoder consults
     // `options.shared_path` first per the Phase B precedence rule; see
     // [`WalletPolicy::to_bytecode`].
@@ -108,9 +108,9 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBacku
 
     // Surface the caller-supplied fingerprints on the backup so that an
     // `encode → user-side state` round-trip is observable without re-decoding.
-    // The decoder populates `WdmBackup.fingerprints` from the parsed bytecode
+    // The decoder populates `MdBackup.fingerprints` from the parsed bytecode
     // independently — see `decode::decode`.
-    Ok(WdmBackup {
+    Ok(MdBackup {
         chunks: encoded_chunks,
         wallet_id_words,
         fingerprints: options.fingerprints.clone(),
