@@ -304,7 +304,7 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
         description: "String length in reserved 94–95 char range → InvalidStringLength",
         // data-part length 94: 3 (md1) + 94 = 97 chars total; InvalidStringLength fires before BCH.
         input_strings: &[
-            "wdm1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+            "md1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
         ],
         expected_error_variant: "InvalidStringLength",
     },
@@ -312,15 +312,15 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
         id: "n04",
         description: "Non-bech32 character 'b' in data part → InvalidChar",
         // 'b' is not in the bech32 alphabet.
-        input_strings: &["wdm1bqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"],
+        input_strings: &["md1qqbqqvcrq5xpkvsqssytlfyyyy5m7"],
         expected_error_variant: "InvalidChar",
     },
     NegativeFixture {
         id: "n05",
         description: "Two character substitutions (BCH uncorrectable) → BchUncorrectable",
-        // A string whose data part has 2 corrupted chars — exceeds 1-error correction capacity.
-        // The chars at positions 5 and 7 are flipped to values that produce no valid codeword.
-        input_strings: &["wdm1pqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"],
+        // A string whose data part has 5 corrupted chars — exceeds v0.2 t=4 correction capacity.
+        // Positions 4..=8 are flipped; this is the schema-1 representative for BchUncorrectable.
+        input_strings: &["md1qppppqcrq5xpkvsqssytlfyyyy5m7"],
         expected_error_variant: "BchUncorrectable",
     },
     NegativeFixture {
@@ -329,37 +329,37 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
         // Raw chunk bytes: header byte = 0x01 (version=1, not VERSION_0=0x00).
         // Encoded as a fake MD string — this tests the bytecode layer directly.
         // Note: in practice this error surfaces via decode_string + header parse.
-        input_strings: &["wdm1pzry9x0s8q"],
+        input_strings: &["md1qyqqtrp8cauaexscd"],
         expected_error_variant: "UnsupportedVersion",
     },
     NegativeFixture {
         id: "n07",
         description: "Unsupported card-type byte in chunk header → UnsupportedCardType",
-        input_strings: &["wdm1qqsyqcyr"],
+        input_strings: &["md1qqpq7uaqn5d2t60d5"],
         expected_error_variant: "UnsupportedCardType",
     },
     NegativeFixture {
         id: "n08",
         description: "Reserved wallet-id bits set → ReservedWalletIdBitsSet",
-        input_strings: &["wdm1qqs8qnqd2kxs"],
+        input_strings: &["md1qqq3qqqqqyqql7qh2w5zykaa8"],
         expected_error_variant: "ReservedWalletIdBitsSet",
     },
     NegativeFixture {
         id: "n09",
         description: "Chunk count = 0 → InvalidChunkCount",
-        input_strings: &["wdm1qqsqqqdqaey0"],
+        input_strings: &["md1qqqsqqqqqqqqzsl6efvsygjrs"],
         expected_error_variant: "InvalidChunkCount",
     },
     NegativeFixture {
         id: "n10",
         description: "Chunk index ≥ count → InvalidChunkIndex",
-        input_strings: &["wdm1qqsqqqcqqlye9"],
+        input_strings: &["md1qqqsqqqqqvps7saeluczzldgx"],
         expected_error_variant: "InvalidChunkIndex",
     },
     NegativeFixture {
         id: "n11",
         description: "Chunk header bytes truncated → ChunkHeaderTruncated",
-        input_strings: &["wdm1qqy7e3yu"],
+        input_strings: &["md1qqttzyun7qcmczt"],
         expected_error_variant: "ChunkHeaderTruncated",
     },
     NegativeFixture {
@@ -373,99 +373,121 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
     NegativeFixture {
         id: "n13",
         description: "Single-string chunk appearing more than once → SingleStringWithMultipleChunks",
-        // Two copies of the same single-string chunk.
-        // Represented via a placeholder; real testing requires two identical strings.
-        input_strings: &["wdm1q9x8lhk6", "wdm1q9x8lhk6"],
+        // Two copies of the same single-string chunk (wsh(pk(@0/**)) encoded).
+        input_strings: &[
+            "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7",
+            "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7",
+        ],
         expected_error_variant: "SingleStringWithMultipleChunks",
     },
     NegativeFixture {
         id: "n14",
         description: "Mixed SingleString + Chunked in one decode list → MixedChunkTypes",
-        input_strings: &["wdm1q9x8lhk6", "wdm1qqs8qnqd2kxs"],
+        input_strings: &[
+            "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7",
+            "md1qqqsc2vzqyqqqvcrq5xpkvsqc2vz0fg4zdlu6c3gjnut",
+        ],
         expected_error_variant: "MixedChunkTypes",
     },
     NegativeFixture {
         id: "n15",
         description: "Wallet-id mismatch across chunks → WalletIdMismatch",
-        input_strings: &["wdm1qqsqqqaqqqqqrh06z7", "wdm1qqsqqq9qqqqqrqs8su"],
+        input_strings: &[
+            "md1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdss95kd8ekz69jdz9",
+            "md1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yfnxhzsfujawc9",
+        ],
         expected_error_variant: "WalletIdMismatch",
     },
     NegativeFixture {
         id: "n16",
         description: "Total-chunks mismatch across chunks → TotalChunksMismatch",
-        input_strings: &["wdm1qqsqqqaqqqqqrh06z7", "wdm1qqsqqqzqsqqqrw7gxr"],
+        input_strings: &[
+            "md1qqqszg69qgqqzzu9dyw2enjsnq",
+            "md1qqqszg69qvqsy559x6vg9mj2vm",
+        ],
         expected_error_variant: "TotalChunksMismatch",
     },
     NegativeFixture {
         id: "n17",
         description: "Chunk index out of range → ChunkIndexOutOfRange",
-        input_strings: &["wdm1qqsqqq9q9qqqlhj4j4"],
+        // Cannot be triggered via an MD string; ChunkHeader::from_bytes rejects index>=count
+        // earlier with InvalidChunkIndex. Conformance implementations test via Chunk::new bypass.
+        input_strings: &[],
         expected_error_variant: "ChunkIndexOutOfRange",
     },
     NegativeFixture {
         id: "n18",
         description: "Duplicate chunk index in a multi-chunk set → DuplicateChunkIndex",
-        input_strings: &["wdm1qqsqqqaqsqqqkjfkf3", "wdm1qqsqqqaqsqqqkjfkf3"],
+        input_strings: &[
+            "md1qqqsqqqpqgqqzsxhds46v88w2u",
+            "md1qqqsqqqpqgqqy5w25s37gh0v38",
+        ],
         expected_error_variant: "DuplicateChunkIndex",
     },
     NegativeFixture {
         id: "n19",
         description: "Missing chunk index in a multi-chunk set → MissingChunkIndex",
-        input_strings: &["wdm1qqsqqqaqzqqqehfpja", "wdm1qqsqqqaqzqqsqwjh6e"],
+        input_strings: &[
+            "md1qqqsqqqsqvqqzj4nzkfx3vlefh",
+            "md1qqqsqqqsqvpqxj9n0x6ny2em0k",
+        ],
         expected_error_variant: "MissingChunkIndex",
     },
     NegativeFixture {
         id: "n20",
         description: "Cross-chunk integrity hash mismatch → CrossChunkHashMismatch",
-        input_strings: &["wdm1qqsqqqaqsqqq9fqxvf", "wdm1qqsqqqaqsqqs9xf8qr"],
+        input_strings: &[
+            "md1qqqs40x7qgqqqqgzqvzq2ps8pqys5zcvp58q7yq3zgf3g9gkzuvpjxsmrsw3u8eqyy3zxfp9ycnjs2f29vkqezuydy42y2mz5r6",
+            "md1qqqs40x7qgqayt30xqc6vghp8qjqf3pdumxm73h",
+        ],
         expected_error_variant: "CrossChunkHashMismatch",
     },
     NegativeFixture {
         id: "n21",
         description: "Unknown tag byte 0xC0 in bytecode → InvalidBytecode(UnknownTag)",
-        input_strings: &["wdm1qqc0pq48c3n0"],
+        input_strings: &["md1qqqqpsqrq5eqqztcz7a888fnn4"],
         expected_error_variant: "InvalidBytecode",
     },
     NegativeFixture {
         id: "n22",
         description: "Bytecode truncated (only header byte) → InvalidBytecode(UnexpectedEnd)",
-        input_strings: &["wdm1qqy7e3yu"],
+        input_strings: &["md1qqqqq2fkyda0unmj34"],
         expected_error_variant: "InvalidBytecode",
     },
     NegativeFixture {
         id: "n23",
         description: "LEB128 varint overflow in bytecode path component → InvalidBytecode(VarintOverflow)",
-        input_strings: &["wdm1qqcqp9xqzqzqzqzqzqzqzqzqzqzqzxq0z2fv"],
+        input_strings: &["md1qqqqqvl7qxqgpqyqszqgpqyqszqq7wmlf9tv4zvev"],
         expected_error_variant: "InvalidBytecode",
     },
     NegativeFixture {
         id: "n24",
         description: "Trailing bytes after template tree → InvalidBytecode(TrailingBytes)",
-        input_strings: &["wdm1qqcqcq3gy0e8wp7w"],
+        input_strings: &["md1qqqqqvcrq5xpkvsqlud0wj00w55mqly"],
         expected_error_variant: "InvalidBytecode",
     },
     NegativeFixture {
         id: "n25",
         description: "Reserved bits set in bytecode header byte → InvalidBytecode(ReservedBitsSet)",
-        input_strings: &["wdm1qrcqcq3ghxxvv7"],
+        input_strings: &["md1qqqqzvcrq5eqqly5xuklu3qu80"],
         expected_error_variant: "InvalidBytecode",
     },
     NegativeFixture {
         id: "n26",
         description: "Wrong tag at path-declaration slot → InvalidBytecode(UnexpectedTag)",
-        input_strings: &["wdm1qqpqcq3g23pcqd"],
+        input_strings: &["md1qqqqqpgrq5eqqdvxvap92zp3d8"],
         expected_error_variant: "InvalidBytecode",
     },
     NegativeFixture {
         id: "n27",
         description: "k > n in multi threshold (type-check failure) → InvalidBytecode(TypeCheckFailed)",
-        input_strings: &["wdm1qqcqz5pqpq9qr24e3v"],
+        input_strings: &["md1qqqqqvcrq5vs2q3jqqeqzt0xs67x37zmn9"],
         expected_error_variant: "InvalidBytecode",
     },
     NegativeFixture {
         id: "n28",
         description: "Non-Wsh top-level descriptor → PolicyScopeViolation",
-        input_strings: &["wdm1qqcqpq3g3p7wpm5"],
+        input_strings: &["md1qqqqqvcrq5rryqq58axvfjmelq6v"],
         expected_error_variant: "PolicyScopeViolation",
     },
     NegativeFixture {
