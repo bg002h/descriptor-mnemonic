@@ -1,6 +1,91 @@
 # Migration guide
 
-Migration steps for upgrading between major releases of `wdm-codec`.
+Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
+
+## v0.2.x → v0.3.0
+
+v0.3.0 renames the project from "Wallet Descriptor Mnemonic" (WDM) to "Mnemonic Descriptor" (MD). This is a **wire-format-breaking change** because the HRP enters the polymod via HRP-expansion. Strings starting with `wdm1...` are invalid v0.3.0 inputs.
+
+### §1 — Wire format: HRP `wdm` → `md`
+
+The bech32 HRP changes from `wdm` to `md`. Any stored string starting with `wdm1...` cannot be decoded by v0.3.0. To migrate, re-encode from the original descriptor source:
+
+```bash
+# v0.2.x: produced wdm1... strings
+wdm encode 'wsh(pk(@0/**))'
+
+# v0.3.0: produces md1... strings
+md encode 'wsh(pk(@0/**))'
+```
+
+The HRP-expansion bytes change from `[3, 3, 3, 0, 23, 4, 13]` (length 7, for HRP `wdm`) to `[3, 3, 0, 13, 4]` (length 5, for HRP `md`), so the polymod-input prefix shrinks by 2 bytes. All checksums are therefore different.
+
+### §2 — Crate name: `wdm-codec` → `md-codec`
+
+Update `Cargo.toml`:
+
+```toml
+# Before (v0.2.x):
+[dependencies]
+wdm-codec = "0.2"
+
+# After (v0.3.0):
+[dependencies]
+md-codec = "0.3"
+```
+
+### §3 — Library import + identifier renames
+
+Update `use` statements and type references:
+
+```rust
+// Before (v0.2.x):
+use wdm_codec::{decode, encode, DecodeOptions, EncodeOptions, WalletPolicy};
+use wdm_codec::policy::WdmBackup;
+use wdm_codec::bytecode::key::WdmKey;
+use wdm_codec::encoding::{WDM_REGULAR_CONST, WDM_LONG_CONST};
+
+// After (v0.3.0):
+use md_codec::{decode, encode, DecodeOptions, EncodeOptions, WalletPolicy};
+use md_codec::policy::MdBackup;
+use md_codec::bytecode::key::MdKey;
+use md_codec::encoding::{MD_REGULAR_CONST, MD_LONG_CONST};
+```
+
+Type renames: `WdmBackup` → `MdBackup`, `WdmKey` → `MdKey`.
+
+Constant renames: `WDM_REGULAR_CONST` → `MD_REGULAR_CONST`, `WDM_LONG_CONST` → `MD_LONG_CONST`.
+
+### §4 — CLI binary: `wdm` → `md`
+
+The CLI binary is renamed from `wdm` to `md`. The subcommand surface and flags are unchanged:
+
+```bash
+# Before (v0.2.x):
+wdm encode 'wsh(pk(@0/**))'
+wdm decode <string>...
+wdm verify <string>... --policy <policy>
+
+# After (v0.3.0):
+md encode 'wsh(pk(@0/**))'
+md decode <string>...
+md verify <string>... --policy <policy>
+```
+
+### §5 — Test vector SHAs: both `v0.1.json` and `v0.2.json` changed
+
+Because the HRP-expansion bytes changed, all bech32 checksums in the test vectors changed. Both JSON files were regenerated with new SHA-256 digests:
+
+- `crates/md-codec/tests/vectors/v0.1.json` — new SHA-256: `aac3677fd84f06915c7bb5148a25ed80c399daa4f9bf56c8052ed84f83c9b71b`
+- `crates/md-codec/tests/vectors/v0.2.json` — new SHA-256: `18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909`
+
+Conformance suites pinning the v0.2.x family-stable SHA `b403073b8a925bdda37adb92daa8521d527476aa7937450bd27fcbe0efdfd072` need a one-time update to the new v0.2.json SHA above. The family-stable promise resets at v0.3.0: future v0.3.x patches will produce byte-identical SHAs (per the design from v0.2.1).
+
+### §6 — Repository URL: unchanged
+
+The repository URL `https://github.com/bg002h/descriptor-mnemonic` is unchanged. Only the crate name and format name changed.
+
+---
 
 ## v0.1.x → v0.2.0
 
