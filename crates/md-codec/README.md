@@ -27,7 +27,7 @@ Encode a wallet policy and decode it back:
 
 ```rust
 use std::str::FromStr;
-use wdm_codec::{decode, encode, DecodeOptions, EncodeOptions, WalletPolicy};
+use md_codec::{decode, encode, DecodeOptions, EncodeOptions, WalletPolicy};
 
 let policy = WalletPolicy::from_str("wsh(pk(@0/**))")?;
 let backup = encode(&policy, &EncodeOptions::default())?;
@@ -42,7 +42,7 @@ for (i, chunk) in backup.chunks.iter().enumerate() {
 let inputs: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
 let result = decode(&inputs, &DecodeOptions::new())?;
 assert_eq!(result.policy.to_canonical_string(), policy.to_canonical_string());
-# Ok::<(), wdm_codec::Error>(())
+# Ok::<(), md_codec::Error>(())
 ```
 
 For the full module-level overview (pipeline diagram, type-state graph,

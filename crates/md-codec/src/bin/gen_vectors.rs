@@ -132,7 +132,7 @@ fn cmd_verify(path: &PathBuf) -> Result<(), anyhow::Error> {
         .map_err(|e| anyhow::anyhow!("failed to read {}: {e}", path.display()))?;
 
     // 2. Deserialize the committed file.
-    let committed: wdm_codec::TestVectorFile = serde_json::from_str(&contents)
+    let committed: md_codec::TestVectorFile = serde_json::from_str(&contents)
         .map_err(|e| anyhow::anyhow!("failed to parse JSON from {}: {e}", path.display()))?;
 
     // 3. Regenerate in-memory using the file's declared schema version.
@@ -215,10 +215,10 @@ fn cmd_verify(path: &PathBuf) -> Result<(), anyhow::Error> {
 }
 
 /// Dispatch to the matching schema builder.
-fn build_for_schema(schema: u32) -> Result<wdm_codec::TestVectorFile, anyhow::Error> {
+fn build_for_schema(schema: u32) -> Result<md_codec::TestVectorFile, anyhow::Error> {
     match schema {
-        1 => Ok(wdm_codec::vectors::build_test_vectors_v1()),
-        2 => Ok(wdm_codec::vectors::build_test_vectors_v2()),
+        1 => Ok(md_codec::vectors::build_test_vectors_v1()),
+        2 => Ok(md_codec::vectors::build_test_vectors_v2()),
         other => Err(anyhow::anyhow!(
             "unsupported schema version {other}; supported: 1, 2"
         )),

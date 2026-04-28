@@ -16,7 +16,7 @@ use std::str::FromStr;
 
 use bitcoin::bip32::{DerivationPath, Fingerprint};
 use clap::{Parser, Subcommand};
-use wdm_codec::{
+use md_codec::{
     BchCode, ChunkHeader, DecodeOptions, EncodeOptions, WalletPolicy, decode, decode_string,
     encode, five_bit_to_bytes, wallet_id::WalletIdSeed,
 };
@@ -182,9 +182,9 @@ fn parse_path_arg(s: &str) -> Result<DerivationPath, anyhow::Error> {
 }
 
 /// Look up the `DerivationPath` for a known indicator byte using the path
-/// dictionary in `wdm_codec::bytecode::path`.
+/// dictionary in `md_codec::bytecode::path`.
 fn indicator_to_derivation_path(indicator: u8) -> Option<DerivationPath> {
-    wdm_codec::bytecode::path::indicator_to_path(indicator).cloned()
+    md_codec::bytecode::path::indicator_to_path(indicator).cloned()
 }
 
 // ---------------------------------------------------------------------------
@@ -452,7 +452,7 @@ fn cmd_inspect(string: &str) -> Result<(), anyhow::Error> {
 }
 
 fn cmd_vectors() -> Result<(), anyhow::Error> {
-    let vectors = wdm_codec::vectors::build_test_vectors();
+    let vectors = md_codec::vectors::build_test_vectors();
     let json = serde_json::to_string_pretty(&vectors)?;
     println!("{json}");
     Ok(())

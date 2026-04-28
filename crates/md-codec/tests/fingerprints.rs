@@ -15,7 +15,7 @@
 
 use bitcoin::bip32::Fingerprint;
 
-use wdm_codec::{
+use md_codec::{
     BytecodeErrorKind, DecodeOptions, EncodeOptions, Error, WalletPolicy, decode, encode,
 };
 
@@ -155,7 +155,7 @@ fn encoder_rejects_fingerprints_too_many() {
 /// `InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: <byte> } }`.
 #[test]
 fn decoder_rejects_missing_fingerprints_tag() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     // Layout: [header=0x04][Tag::SharedPath=0x33][indicator=0x03][Wsh=0x05][...]
     // The Wsh tag (0x05) sits where Tag::Fingerprints (0x35) should be.
@@ -188,7 +188,7 @@ fn decoder_rejects_missing_fingerprints_tag() {
 /// `FingerprintsCountMismatch { expected: 2, got: 5 }`.
 #[test]
 fn decoder_rejects_fingerprints_count_mismatch() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     // Tree: wsh(multi(2, @0/**, @1/**))
     //   [Wsh=0x05][Multi=0x19][k=0x02][n=0x02][Placeholder=0x32][0x00]
@@ -231,7 +231,7 @@ fn decoder_rejects_fingerprints_count_mismatch() {
 /// `InvalidBytecode { kind: UnexpectedEnd }`.
 #[test]
 fn decoder_rejects_fingerprints_truncated_mid_block() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     let bytes: Vec<u8> = vec![
         0x04, // header v0, fingerprints flag set
@@ -259,7 +259,7 @@ fn decoder_rejects_fingerprints_truncated_mid_block() {
 /// count byte. Decoder must surface `InvalidBytecode { kind: UnexpectedEnd }`.
 #[test]
 fn decoder_rejects_fingerprints_missing_count_byte() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     let bytes: Vec<u8> = vec![
         0x04, // header v0, fingerprints flag set

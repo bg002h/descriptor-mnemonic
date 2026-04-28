@@ -1,10 +1,10 @@
-//! Exhaustiveness gate: every `wdm_codec::Error` variant must have at least
+//! Exhaustiveness gate: every `md_codec::Error` variant must have at least
 //! one `rejects_*` test in `conformance.rs` (bucket E).
 //!
 //! # How it works
 //!
 //! `ErrorVariantName` is a hand-written mirror enum whose variant names match
-//! those of `wdm_codec::Error` case-for-case.  `strum::EnumIter` generates
+//! those of `md_codec::Error` case-for-case.  `strum::EnumIter` generates
 //! `ErrorVariantName::iter()` so the compiler catches any forgotten entry in
 //! this mirror enum at compile time (via an exhaustive `match` in `iter()`).
 //!
@@ -24,7 +24,7 @@
 use strum::EnumIter;
 use strum::IntoEnumIterator;
 
-/// Mirror enum of every `wdm_codec::Error` variant name.
+/// Mirror enum of every `md_codec::Error` variant name.
 ///
 /// Variant names must match the source enum **case-for-case**; the
 /// `pascal_to_snake` helper derives the expected test-name substring from

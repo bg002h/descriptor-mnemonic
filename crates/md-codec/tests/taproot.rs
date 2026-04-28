@@ -11,7 +11,7 @@
 //!
 //! See `design/PHASE_v0_2_D_DECISIONS.md` for the binding spec.
 
-use wdm_codec::{EncodeOptions, Error, WalletPolicy};
+use md_codec::{EncodeOptions, Error, WalletPolicy};
 
 /// Round-trip a policy through `to_bytecode → from_bytecode → to_bytecode`
 /// and assert the second `to_bytecode` produces byte-identical output to

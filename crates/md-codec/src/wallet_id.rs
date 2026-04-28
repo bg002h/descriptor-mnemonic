@@ -62,7 +62,7 @@ impl WalletId {
     /// is the typed accessor.
     ///
     /// ```
-    /// use wdm_codec::WalletId;
+    /// use md_codec::WalletId;
     /// let id = WalletId::from([0xAB; 16]);
     /// let bytes: &[u8; 16] = id.as_bytes();
     /// assert_eq!(bytes[0], 0xAB);
@@ -178,7 +178,7 @@ impl From<[u8; 16]> for WalletId {
 /// # Example
 ///
 /// ```
-/// # use wdm_codec::wallet_id::compute_wallet_id;
+/// # use md_codec::wallet_id::compute_wallet_id;
 /// let id = compute_wallet_id(b"");
 /// // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb924 27ae41e4649b934ca495991b7852b855
 /// //              └─────── first 16 bytes ────────┘

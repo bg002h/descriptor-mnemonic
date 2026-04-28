@@ -37,11 +37,11 @@
 //!
 //! ```rust
 //! // Schema 1 (v0.1 lock):
-//! let v1 = wdm_codec::vectors::build_test_vectors();
+//! let v1 = md_codec::vectors::build_test_vectors();
 //! assert_eq!(v1.schema_version, 1);
 //!
 //! // Schema 2 (v0.2 lock):
-//! let v2 = wdm_codec::vectors::build_test_vectors_v2();
+//! let v2 = md_codec::vectors::build_test_vectors_v2();
 //! assert_eq!(v2.schema_version, 2);
 //! ```
 

@@ -14,7 +14,7 @@
 
 mod common;
 
-use wdm_codec::{
+use md_codec::{
     BytecodeErrorKind, Chunk, ChunkHeader, ChunkWalletId, ChunkingMode, DecodeOptions,
     EncodeOptions, Error, WalletPolicy, chunk_bytes, chunking_decision, decode, encode,
     reassemble_chunks,
@@ -446,7 +446,7 @@ fn rejects_missing_chunk_index() {
 /// 20. Cross-chunk integrity hash mismatch → `Error::CrossChunkHashMismatch`
 #[test]
 fn rejects_cross_chunk_hash_mismatch() {
-    use wdm_codec::{ChunkCode, ChunkingPlan};
+    use md_codec::{ChunkCode, ChunkingPlan};
 
     let bytecode: Vec<u8> = (0u8..50).collect();
     let plan = ChunkingPlan::Chunked {
@@ -489,7 +489,7 @@ fn rejects_cross_chunk_hash_mismatch() {
 /// WDM string, and asserts decode rejects with `MalformedPayloadPadding`.
 #[test]
 fn rejects_malformed_payload_padding() {
-    use wdm_codec::encoding::{ALPHABET, bch_create_checksum_long};
+    use md_codec::encoding::{ALPHABET, bch_create_checksum_long};
 
     // 93 5-bit symbols, all zero except the last whose low bit is 1.
     let mut data_5bit = vec![0u8; 93];
@@ -603,7 +603,7 @@ fn rejects_invalid_bytecode_varint_overflow() {
 /// and converts it into `MissingChildren { expected: 2, got: 1 }`.
 #[test]
 fn rejects_invalid_bytecode_missing_children() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     // multi(2, @0) — k=2, n=2, only 1 key provided (second is absent).
     let bytes: Vec<u8> = vec![
@@ -640,7 +640,7 @@ fn rejects_invalid_bytecode_missing_children() {
 /// We stop mid-tree: header + SharedPath + Wsh tag but no inner tag.
 #[test]
 fn rejects_invalid_bytecode_unexpected_end() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     let bytes: Vec<u8> = vec![
         0x00,                      // header
@@ -712,7 +712,7 @@ fn rejects_invalid_bytecode_reserved_bits_set() {
 /// Supplying a different but defined tag (Tag::Wsh = 0x05) triggers UnexpectedTag.
 #[test]
 fn rejects_invalid_bytecode_unexpected_tag() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     // header=0x00, then Tag::Wsh (0x05) where Tag::SharedPath (0x33) is expected.
     let bytes: Vec<u8> = vec![
@@ -752,7 +752,7 @@ fn rejects_invalid_bytecode_unexpected_tag() {
 /// triggering a type-check failure during `Wsh::new(...)`.
 #[test]
 fn rejects_invalid_bytecode_type_check_failed() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     // multi(5, @0, @1): k=5, n=2, but keys only [@0, @1] → k > n → type-check failure.
     let bytes: Vec<u8> = vec![
@@ -827,7 +827,7 @@ fn rejects_invalid_bytecode_invalid_path_component() {
 /// Tag::Tr (taproot, 0x06) triggers PolicyScopeViolation.
 #[test]
 fn rejects_policy_scope_violation() {
-    use wdm_codec::bytecode::Tag;
+    use md_codec::bytecode::Tag;
 
     // header=0x00 + SharedPath + Tr tag (not Wsh) at the top level.
     let bytes: Vec<u8> = vec![

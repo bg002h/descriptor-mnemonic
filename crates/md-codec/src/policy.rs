@@ -138,10 +138,10 @@ fn all_dummy_keys() -> Vec<DescriptorPublicKey> {
 ///
 /// ```
 /// use std::str::FromStr;
-/// use wdm_codec::WalletPolicy;
+/// use md_codec::WalletPolicy;
 ///
 /// let p = WalletPolicy::from_str("wsh(pk(@0/**))")?;
-/// # Ok::<(), wdm_codec::Error>(())
+/// # Ok::<(), md_codec::Error>(())
 /// ```
 ///
 /// Both forms are accepted:

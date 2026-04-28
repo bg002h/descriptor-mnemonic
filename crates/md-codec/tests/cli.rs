@@ -187,7 +187,7 @@ fn wdm_decode_json_shape_is_stable() {
 /// through `EncodeOptions::shared_path` to `WalletPolicy::to_bytecode`.
 #[test]
 fn wdm_encode_path_override_bip48_takes_effect() {
-    use wdm_codec::{DecodeOptions, decode};
+    use md_codec::{DecodeOptions, decode};
 
     let output = Command::cargo_bin("wdm")
         .expect("binary built")
@@ -222,7 +222,7 @@ fn wdm_encode_path_override_bip48_takes_effect() {
     let result = decode(&[chunk], &DecodeOptions::new()).expect("decode");
     let bytecode = result
         .policy
-        .to_bytecode(&wdm_codec::EncodeOptions::default())
+        .to_bytecode(&md_codec::EncodeOptions::default())
         .expect("re-encode bytecode");
     // bytecode = [header=0x00, Tag::SharedPath=0x33, indicator, ...]
     assert_eq!(

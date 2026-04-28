@@ -25,7 +25,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-use wdm_codec::encoding::{
+use md_codec::encoding::{
     HRP, bch_correct_long, bch_correct_regular, bch_create_checksum_long,
     bch_create_checksum_regular,
 };
@@ -340,7 +340,7 @@ fn five_errors_uncorrectable_regular() {
     }
     let result = bch_correct_regular(HRP, &corrupted);
     assert!(
-        matches!(result, Err(wdm_codec::Error::BchUncorrectable)),
+        matches!(result, Err(md_codec::Error::BchUncorrectable)),
         "5-error regular input should be uncorrectable, got {:?}",
         result.map(|r| r.corrections_applied)
     );
@@ -357,7 +357,7 @@ fn five_errors_uncorrectable_long() {
     }
     let result = bch_correct_long(HRP, &corrupted);
     assert!(
-        matches!(result, Err(wdm_codec::Error::BchUncorrectable)),
+        matches!(result, Err(md_codec::Error::BchUncorrectable)),
         "5-error long input should be uncorrectable, got {:?}",
         result.map(|r| r.corrections_applied)
     );

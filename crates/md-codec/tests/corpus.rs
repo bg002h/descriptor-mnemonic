@@ -12,7 +12,7 @@
 
 mod common;
 
-use wdm_codec::{DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
+use md_codec::{DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
 
 // ---------------------------------------------------------------------------
 // Shared fixture array (used by 6.12 idempotency and 6.13 HRP-lowercase)

@@ -24,7 +24,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use wdm_codec::{
+use md_codec::{
     BchCode, Confidence, DecodeOutcome, DecodeReport, DecodeResult, EncodedChunk, Verifications,
     WdmBackup, chunking::Correction,
 };
@@ -222,7 +222,7 @@ impl From<&DecodeResult> for DecodeJson {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wdm_codec::{
+    use md_codec::{
         DecodeOptions, EncodeOptions, WalletPolicy, decode, decode_report::DecodeOutcome, encode,
     };
 

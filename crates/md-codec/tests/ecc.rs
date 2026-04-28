@@ -23,7 +23,7 @@ mod common;
 ///  - Assert the outcome is `DecodeOutcome::AutoCorrected`.
 #[test]
 fn bch_single_substitution_at_every_position_corrects() {
-    use wdm_codec::{
+    use md_codec::{
         BchCode, DecodeOptions, DecodeOutcome, EncodeOptions, WalletPolicy, decode, encode,
     };
 
@@ -87,7 +87,7 @@ fn many_substitutions_always_rejected() {
     use rand::Rng;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use wdm_codec::{DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
+    use md_codec::{DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
 
     let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
     let backup = encode(&p, &EncodeOptions::default()).unwrap();

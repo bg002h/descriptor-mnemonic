@@ -20,7 +20,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-use wdm_codec::{BchCode, Confidence, DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
+use md_codec::{BchCode, Confidence, DecodeOptions, EncodeOptions, WalletPolicy, decode, encode};
 
 // ---------------------------------------------------------------------------
 // round_trip_assert
@@ -89,7 +89,7 @@ pub fn assert_structural_eq(a: &WalletPolicy, b: &WalletPolicy) {
 // corrupt_n
 // ---------------------------------------------------------------------------
 
-/// The bech32 alphabet in 5-bit-value order (matches [`wdm_codec::encoding::ALPHABET`]).
+/// The bech32 alphabet in 5-bit-value order (matches [`md_codec::encoding::ALPHABET`]).
 const BECH32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
 /// Introduce exactly `n` substitution errors into a codex32-derived WDM

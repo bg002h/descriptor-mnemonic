@@ -12,7 +12,7 @@ fn round_trip_assert_works_on_simplest_policy() {
 #[test]
 fn assert_structural_eq_passes_for_equal_policies() {
     use std::str::FromStr;
-    use wdm_codec::WalletPolicy;
+    use md_codec::WalletPolicy;
     let p1 = WalletPolicy::from_str("wsh(pk(@0/**))").unwrap();
     let p2 = WalletPolicy::from_str("wsh(pk(@0/**))").unwrap();
     common::assert_structural_eq(&p1, &p2);
@@ -20,7 +20,7 @@ fn assert_structural_eq_passes_for_equal_policies() {
 
 #[test]
 fn corrupt_n_changes_n_chars() {
-    use wdm_codec::{EncodeOptions, WalletPolicy, encode};
+    use md_codec::{EncodeOptions, WalletPolicy, encode};
     let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
     let backup = encode(&p, &EncodeOptions::default()).unwrap();
     let original = backup.chunks[0].raw.clone();
