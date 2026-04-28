@@ -1,6 +1,6 @@
 //! Options passed to the top-level [`crate::encode()`] and [`crate::decode()`] functions.
 
-use bitcoin::bip32::DerivationPath;
+use bitcoin::bip32::{DerivationPath, Fingerprint};
 
 use crate::chunking::ChunkingMode;
 use crate::wallet_id::WalletIdSeed;
@@ -67,6 +67,29 @@ pub struct EncodeOptions {
     /// See [`crate::WalletPolicy::to_bytecode`] for the full precedence
     /// rule.
     pub shared_path: Option<DerivationPath>,
+    /// Optional master-key fingerprints to embed in a bytecode fingerprints
+    /// block (BIP §"Fingerprints block"). Indexed by placeholder position:
+    /// `fingerprints[i]` is the master-key fingerprint for placeholder `@i`.
+    ///
+    /// When `Some(fps)`, the encoder emits header byte `0x04` (bit 2 = 1)
+    /// and writes `[Tag::Fingerprints (0x35)][count = fps.len() as u8][4*count bytes]`
+    /// immediately after the path declaration. The encoder validates that
+    /// `fps.len()` equals the policy's placeholder count and returns
+    /// [`crate::Error::FingerprintsCountMismatch`] otherwise.
+    ///
+    /// When `None` (the default), the encoder emits header byte `0x00` and
+    /// no fingerprints block, preserving v0.1 wire output.
+    ///
+    /// # Privacy
+    ///
+    /// Fingerprints leak which seeds match which `@i` placeholders. The
+    /// fingerprints block is **optional** — only set this field if the
+    /// recovery flow benefits from the disclosure (e.g., a multisig recovery
+    /// tool that needs to match seeds to placeholder positions before
+    /// deriving). Recovery tools SHOULD warn before encoding fingerprints,
+    /// especially for solo-user single-seed wallets where the leak is
+    /// unnecessary.
+    pub fingerprints: Option<Vec<Fingerprint>>,
 }
 
 impl EncodeOptions {
@@ -104,6 +127,14 @@ impl EncodeOptions {
     /// [`crate::WalletPolicy::to_bytecode`] for the precedence rule.
     pub fn with_shared_path(mut self, path: DerivationPath) -> Self {
         self.shared_path = Some(path);
+        self
+    }
+
+    /// Set the master-key fingerprints to embed in a fingerprints block.
+    /// See [`EncodeOptions::fingerprints`] for full semantics, including
+    /// the privacy clause and validation rules.
+    pub fn with_fingerprints(mut self, fps: Vec<Fingerprint>) -> Self {
+        self.fingerprints = Some(fps);
         self
     }
 }
@@ -167,6 +198,7 @@ mod tests {
         assert!(!opts.force_long_code);
         assert!(opts.wallet_id_seed.is_none());
         assert!(opts.shared_path.is_none());
+        assert!(opts.fingerprints.is_none());
     }
 
     #[test]
@@ -215,6 +247,22 @@ mod tests {
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
         assert!(opts.wallet_id_seed.is_none());
+        assert!(opts.fingerprints.is_none());
+    }
+
+    #[test]
+    fn encode_options_with_fingerprints_sets_field() {
+        let fps = vec![
+            Fingerprint::from([0xde, 0xad, 0xbe, 0xef]),
+            Fingerprint::from([0xca, 0xfe, 0xba, 0xbe]),
+        ];
+        let opts = EncodeOptions::default().with_fingerprints(fps.clone());
+        assert_eq!(opts.fingerprints.as_deref(), Some(fps.as_slice()));
+        // Other fields remain at defaults.
+        assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
+        assert!(!opts.force_long_code);
+        assert!(opts.wallet_id_seed.is_none());
+        assert!(opts.shared_path.is_none());
     }
 
     #[test]

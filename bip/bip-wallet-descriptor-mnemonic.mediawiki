@@ -371,7 +371,7 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 |-
 | <code>0x33</code> || Shared-path declaration || See "Path declaration", above || 0
 |-
-| <code>0x35</code> || Fingerprints block || See "Fingerprints block", below || 0
+| <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0
 |}
 
 Tags <code>0x24</code>–<code>0x31</code> are reserved for future descriptor-codec compatibility (these tags are defined in <code>descriptor-codec</code> for inline keys, key origins, and wildcards, which WDM v0 does not use because it relies on the BIP 388 placeholder framing for keys; v1+ may expose them for foreign-xpub support).
@@ -411,6 +411,42 @@ When the bytecode header's fingerprints flag is set, a fingerprints block follow
 When the block is present, fingerprints[i] is the master key fingerprint corresponding to placeholder <code>@i</code>. This allows a recovery tool to verify which seed corresponds to which placeholder before performing derivation.
 
 When the block is absent (the default in v0), recovery tools match seeds to placeholders by trial derivation and xpub comparison, which is computationally trivial for typical wallets.
+
+'''Privacy.''' The fingerprints block leaks which seeds match which <code>@i</code> placeholders. The block is '''optional''' — implementations SHOULD NOT emit it by default. Recovery tools MUST warn the user before encoding fingerprints, especially for solo-user single-seed wallets where the disclosure is unnecessary. Decoders that surface the parsed block to the user MUST flag it as a privacy-sensitive field.
+
+=====Byte-layout example=====
+
+The bytecode for the policy <code>wsh(multi(2, @0/**, @1/**))</code> with fingerprints block <code>[0xdeadbeef, 0xcafebabe]</code> and the BIP 84 mainnet shared path (<code>m/84'/0'/0'</code>, named indicator <code>0x03</code>) is:
+
+<pre>
+04 33 03 35 02 deadbeef cafebabe 05 19 02 02 32 00 32 01
+</pre>
+
+Annotated:
+
+{| class="wikitable"
+! Bytes !! Field !! Decoded
+|-
+| <code>04</code> || Header || v0; fingerprints flag set (bit 2 = 1)
+|-
+| <code>33 03</code> || Path declaration || <code>Tag::SharedPath</code> (<code>0x33</code>) + named indicator <code>0x03</code> (= <code>m/84'/0'/0'</code>)
+|-
+| <code>35 02</code> || Fingerprints block header || <code>Tag::Fingerprints</code> (<code>0x35</code>) + count <code>2</code>
+|-
+| <code>deadbeef</code> || fps[0] || Fingerprint for placeholder <code>@0</code>
+|-
+| <code>cafebabe</code> || fps[1] || Fingerprint for placeholder <code>@1</code>
+|-
+| <code>05 19</code> || Operator path || <code>Tag::Wsh</code> (<code>0x05</code>) + <code>Tag::Multi</code> (<code>0x19</code>)
+|-
+| <code>02 02</code> || Multi parameters || k = 2; n = 2
+|-
+| <code>32 00</code> || @0 || <code>Tag::Placeholder</code> (<code>0x32</code>) + index <code>0</code>
+|-
+| <code>32 01</code> || @1 || <code>Tag::Placeholder</code> (<code>0x32</code>) + index <code>1</code>
+|}
+
+The same policy without a fingerprints block (header byte <code>0x00</code>) omits the <code>35 02 deadbeef cafebabe</code> bytes; the surrounding bytes are identical.
 
 ====LEB128 encoding====
 

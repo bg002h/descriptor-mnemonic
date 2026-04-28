@@ -38,10 +38,11 @@ pub use crate::wallet_id::ChunkWalletId;
 /// [`Error::MissingChunkIndex`], [`Error::CrossChunkHashMismatch`].
 ///
 /// Stage 5 (bytecode parse): [`Error::InvalidBytecode`],
-/// [`Error::PolicyScopeViolation`], [`Error::TapLeafSubsetViolation`].
+/// [`Error::PolicyScopeViolation`], [`Error::TapLeafSubsetViolation`],
+/// [`Error::FingerprintsCountMismatch`].
 ///
 /// Encode-side: [`Error::PolicyTooLarge`], [`Error::PolicyParse`],
-/// [`Error::Miniscript`].
+/// [`Error::Miniscript`], [`Error::FingerprintsCountMismatch`].
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum Error {
@@ -320,6 +321,29 @@ pub enum Error {
         /// The miniscript operator name (e.g. `"sha256"`, `"thresh"`,
         /// `"or_b"`) that violated the subset.
         operator: String,
+    },
+
+    /// Fingerprints-block count mismatched the policy's placeholder count.
+    ///
+    /// BIP §"Fingerprints block" requires the block's count byte to equal
+    /// `max(@i in template) + 1` (i.e. one fingerprint per placeholder index).
+    /// This variant fires from both directions:
+    ///
+    /// - **Encoder**: `EncodeOptions::fingerprints` was set to a `Vec<Fingerprint>`
+    ///   whose length does not match the policy's placeholder count.
+    /// - **Decoder**: the bytecode declared a fingerprints block whose count byte
+    ///   did not equal the placeholder count derived from the parsed template.
+    ///
+    /// Caller should surface a "your fingerprints list has the wrong number of
+    /// entries; the policy declares N placeholders" diagnostic. See
+    /// `design/PHASE_v0_2_E_DECISIONS.md` E-5.
+    #[error("fingerprints count mismatch: expected {expected} (one per placeholder), got {got}")]
+    FingerprintsCountMismatch {
+        /// The expected fingerprint count (placeholder count of the policy).
+        expected: usize,
+        /// The actual fingerprint count provided (encoder) or read from the
+        /// bytecode (decoder).
+        got: usize,
     },
 }
 

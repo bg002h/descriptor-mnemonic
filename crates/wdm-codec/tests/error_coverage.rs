@@ -61,6 +61,7 @@ enum ErrorVariantName {
     MixedChunkTypes,
     SingleStringWithMultipleChunks,
     TapLeafSubsetViolation,
+    FingerprintsCountMismatch,
 }
 
 /// For `InvalidBytecode` the expected substring is `rejects_invalid_bytecode_`

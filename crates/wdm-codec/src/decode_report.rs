@@ -3,6 +3,8 @@
 //! Pure data — no algorithms here. The decoder in `decode.rs` (Task 5-E)
 //! populates these types.
 
+use bitcoin::bip32::Fingerprint;
+
 use crate::WalletPolicy;
 use crate::chunking::Correction;
 
@@ -138,6 +140,16 @@ pub struct DecodeResult {
     pub policy: WalletPolicy,
     /// Full diagnostic report for this decode.
     pub report: DecodeReport,
+    /// Master-key fingerprints recovered from the bytecode's optional
+    /// fingerprints block (BIP §"Fingerprints block"). `None` if the
+    /// bytecode header bit 2 was 0 (no block); `Some(fps)` if the block
+    /// was present and parsed successfully, with `fps[i]` corresponding
+    /// to placeholder `@i`.
+    ///
+    /// Phase E (v0.2). Recovery tools that surface this field to users
+    /// MUST flag it as privacy-sensitive — fingerprints leak which seeds
+    /// match which placeholders.
+    pub fingerprints: Option<Vec<Fingerprint>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +227,12 @@ mod tests {
             },
             confidence: Confidence::Confirmed,
         };
-        let result = DecodeResult { policy, report };
+        let result = DecodeResult {
+            policy,
+            report,
+            fingerprints: None,
+        };
         assert_eq!(result.report.outcome, DecodeOutcome::Clean);
+        assert!(result.fingerprints.is_none());
     }
 }

@@ -18,7 +18,7 @@
 
 use std::str::FromStr;
 
-use bitcoin::bip32::DerivationPath;
+use bitcoin::bip32::{DerivationPath, Fingerprint};
 use miniscript::descriptor::{DescriptorPublicKey, WalletPolicy as InnerWalletPolicy};
 
 use crate::bytecode::cursor::Cursor;
@@ -332,6 +332,21 @@ impl WalletPolicy {
             )));
         }
 
+        // --- Validate fingerprints (E-3) ---
+        //
+        // If the caller supplied fingerprints, validate the count up front so
+        // we fail fast before the (relatively expensive) descriptor
+        // materialization. The BIP MUST clause requires one fingerprint per
+        // distinct `@i` placeholder.
+        if let Some(fps) = &opts.fingerprints {
+            if fps.len() != count {
+                return Err(Error::FingerprintsCountMismatch {
+                    expected: count,
+                    got: fps.len(),
+                });
+            }
+        }
+
         // --- Step 1: materialize descriptor with dummy keys (single materialization) ---
         // We do NOT call self.shared_path() here: that would materialize the
         // descriptor a second time. Instead we extract the shared path from the
@@ -381,11 +396,24 @@ impl WalletPolicy {
             })
         });
 
-        // --- Step 5: compose [header][path declaration][tree bytes] ---
-        let header = BytecodeHeader::new_v0(false);
+        // --- Step 5: compose [header][path declaration][fingerprints?][tree bytes] ---
+        //
+        // Per BIP §"Fingerprints block": the block, when present, follows the
+        // path declaration and precedes the tree operators. The header bit 2
+        // signals presence.
+        let header = BytecodeHeader::new_v0(opts.fingerprints.is_some());
         let mut out = Vec::new();
         out.push(header.as_byte());
         out.extend_from_slice(&encode_declaration(&shared_path));
+        if let Some(fps) = &opts.fingerprints {
+            // Count was validated above; cast is safe (count <= 32 = MAX_DUMMY_KEYS).
+            debug_assert!(fps.len() == count && count <= u8::MAX as usize);
+            out.push(crate::bytecode::Tag::Fingerprints.as_byte());
+            out.push(fps.len() as u8);
+            for fp in fps {
+                out.extend_from_slice(fp.as_bytes());
+            }
+        }
         out.extend_from_slice(&tree_bytes);
         Ok(out)
     }
@@ -397,13 +425,39 @@ impl WalletPolicy {
     /// keys. Real key info must be supplied separately (e.g., during restore
     /// flow via `set_key_info`).
     ///
+    /// If the bytecode header signals a fingerprints block (bit 2 = 1), the
+    /// block is parsed and validated but discarded. To recover the parsed
+    /// fingerprints alongside the policy, use
+    /// [`Self::from_bytecode_with_fingerprints`].
+    ///
     /// # Errors
     ///
-    /// - `Error::InvalidBytecode { .. }` — truncated or malformed header/path.
+    /// - `Error::InvalidBytecode { .. }` — truncated or malformed header/path,
+    ///   or a fingerprints block whose tag, count byte, or 4-byte entries are
+    ///   missing or wrong.
     /// - `Error::UnsupportedVersion(v)` — bytecode uses an unsupported version.
-    /// - `Error::PolicyScopeViolation(..)` — fingerprints flag is set (deferred
-    ///   to v0.2), or the template violates v0.1 scope.
+    /// - `Error::FingerprintsCountMismatch { .. }` — fingerprints block count
+    ///   byte did not equal the placeholder count of the parsed template.
+    /// - `Error::PolicyScopeViolation(..)` — the template violates v0.1/v0.2 scope.
     pub fn from_bytecode(bytes: &[u8]) -> Result<Self, Error> {
+        Self::from_bytecode_with_fingerprints(bytes).map(|(p, _)| p)
+    }
+
+    /// Decode canonical WDM bytecode into a `WalletPolicy` and the optional
+    /// parsed fingerprints block.
+    ///
+    /// Same parsing semantics and error conditions as
+    /// [`Self::from_bytecode`]; additionally returns
+    /// `Some(Vec<Fingerprint>)` when the bytecode contained a fingerprints
+    /// block, or `None` when the header bit 2 was 0.
+    ///
+    /// Used by [`crate::decode()`] to surface fingerprints on the decode-side
+    /// public API (`DecodeResult::fingerprints`); not exposed in the
+    /// crate-level prelude because external callers should prefer the
+    /// pipelined [`crate::decode()`] entry point.
+    pub fn from_bytecode_with_fingerprints(
+        bytes: &[u8],
+    ) -> Result<(Self, Option<Vec<Fingerprint>>), Error> {
         if bytes.is_empty() {
             return Err(Error::InvalidBytecode {
                 offset: 0,
@@ -413,18 +467,81 @@ impl WalletPolicy {
 
         // --- Step 1: parse and validate the header byte ---
         let header = BytecodeHeader::from_byte(bytes[0])?;
-        if header.fingerprints() {
-            return Err(Error::PolicyScopeViolation(
-                "v0.1 does not support the fingerprints block; use the no-fingerprints form (header byte 0x00)".to_string(),
-            ));
-        }
 
         // --- Step 2: parse the path declaration ---
         let mut cursor = Cursor::new(&bytes[1..]);
         let shared_path = decode_declaration(&mut cursor)?;
         let path_consumed = cursor.offset();
 
-        // --- Step 3: decode the template tree (Option A fix for D-8) ---
+        // --- Step 3 (Phase E): parse the optional fingerprints block ---
+        //
+        // The block, when present, sits between the path declaration and the
+        // template tree (BIP §"Fingerprints block"). We read the tag byte,
+        // count byte, and `count * 4` bytes here; count validation against
+        // the reconstructed template happens after the tree is decoded.
+        //
+        // Offset arithmetic: header byte at index 0, path declaration spans
+        // bytes[1..1+path_consumed], so the next byte is at 1+path_consumed.
+        let mut cursor_offset = 1 + path_consumed;
+        let mut fingerprints: Option<Vec<Fingerprint>> = None;
+        let mut declared_count: Option<usize> = None;
+        if header.fingerprints() {
+            // Expect Tag::Fingerprints (0x35).
+            if cursor_offset >= bytes.len() {
+                return Err(Error::InvalidBytecode {
+                    offset: cursor_offset,
+                    kind: crate::error::BytecodeErrorKind::UnexpectedEnd,
+                });
+            }
+            let tag_byte = bytes[cursor_offset];
+            if tag_byte != crate::bytecode::Tag::Fingerprints.as_byte() {
+                return Err(Error::InvalidBytecode {
+                    offset: cursor_offset,
+                    kind: crate::error::BytecodeErrorKind::UnexpectedTag {
+                        expected: crate::bytecode::Tag::Fingerprints.as_byte(),
+                        got: tag_byte,
+                    },
+                });
+            }
+            cursor_offset += 1;
+
+            // Count byte.
+            if cursor_offset >= bytes.len() {
+                return Err(Error::InvalidBytecode {
+                    offset: cursor_offset,
+                    kind: crate::error::BytecodeErrorKind::UnexpectedEnd,
+                });
+            }
+            let count = bytes[cursor_offset] as usize;
+            cursor_offset += 1;
+
+            // `count * 4` fingerprint bytes; reject mid-block truncation.
+            let fp_bytes_end =
+                cursor_offset
+                    .checked_add(count * 4)
+                    .ok_or(Error::InvalidBytecode {
+                        offset: cursor_offset,
+                        kind: crate::error::BytecodeErrorKind::UnexpectedEnd,
+                    })?;
+            if fp_bytes_end > bytes.len() {
+                return Err(Error::InvalidBytecode {
+                    offset: bytes.len(),
+                    kind: crate::error::BytecodeErrorKind::UnexpectedEnd,
+                });
+            }
+            let mut fps: Vec<Fingerprint> = Vec::with_capacity(count);
+            for i in 0..count {
+                let off = cursor_offset + i * 4;
+                let mut buf = [0u8; 4];
+                buf.copy_from_slice(&bytes[off..off + 4]);
+                fps.push(Fingerprint::from(buf));
+            }
+            cursor_offset = fp_bytes_end;
+            fingerprints = Some(fps);
+            declared_count = Some(count);
+        }
+
+        // --- Step 4: decode the template tree (Option A fix for D-8) ---
         //
         // Previously this used a `count_placeholder_indices` pre-scan to determine
         // how many dummy keys to supply to `decode_template`. That scan read the
@@ -443,12 +560,11 @@ impl WalletPolicy {
         //
         // This eliminates the need for a pre-scan entirely and is safe because
         // BIP 388 caps placeholder indices at 31 (= 32 keys), matching our table.
-        let tree_start = 1 + path_consumed;
-        let tree_bytes = &bytes[tree_start..];
+        let tree_bytes = &bytes[cursor_offset..];
         let dummies = all_dummy_keys();
         let descriptor = decode_template(tree_bytes, &dummies)?;
 
-        // --- Step 4: construct WalletPolicy from the descriptor ---
+        // --- Step 5: construct WalletPolicy from the descriptor ---
         // `from_descriptor` collects `descriptor.iter_pk()` which returns only the
         // keys actually referenced in the decoded tree — not all 32 dummies.
         //
@@ -458,10 +574,27 @@ impl WalletPolicy {
         // byte-stable for template-only policies.
         let inner = InnerWalletPolicy::from_descriptor(&descriptor)
             .map_err(|e| Error::PolicyScopeViolation(e.to_string()))?;
-        Ok(WalletPolicy {
+        let policy = WalletPolicy {
             inner,
             decoded_shared_path: Some(shared_path),
-        })
+        };
+
+        // --- Step 6 (Phase E): validate fingerprint count against template ---
+        //
+        // The BIP MUST clause: count == max(@i) + 1 == placeholder_count.
+        // Validate here, after the template is parsed and we can derive the
+        // authoritative placeholder count from the reconstructed policy.
+        if let Some(declared) = declared_count {
+            let derived = policy.key_count();
+            if declared != derived {
+                return Err(Error::FingerprintsCountMismatch {
+                    expected: derived,
+                    got: declared,
+                });
+            }
+        }
+
+        Ok((policy, fingerprints))
     }
 }
 
@@ -502,6 +635,15 @@ pub struct WdmBackup {
     /// The 12-word BIP-39 representation of the Tier-3 Wallet ID, for
     /// user verification.
     pub wallet_id_words: WalletIdWords,
+    /// The master-key fingerprints recovered from a fingerprints block, if
+    /// present. `None` iff the bytecode header bit 2 was 0 (no block);
+    /// `Some(fps)` iff the block was present and parsed successfully, with
+    /// `fps[i]` corresponding to placeholder `@i`.
+    ///
+    /// Phase E (v0.2). Recovery tools that surface this field to users MUST
+    /// flag it as privacy-sensitive — fingerprints leak which seeds match
+    /// which placeholders.
+    pub fingerprints: Option<Vec<Fingerprint>>,
 }
 
 impl WdmBackup {
@@ -783,12 +925,22 @@ mod tests {
     }
 
     #[test]
-    fn from_bytecode_rejects_fingerprints_flag() {
-        // 0x04 = version 0, fingerprints flag set — deferred to v0.2.
+    fn from_bytecode_with_fingerprints_flag_no_block_is_truncated() {
+        // 0x04 = version 0, fingerprints flag set. Phase E removed the v0.1
+        // PolicyScopeViolation rejection, so this byte sequence is now
+        // structurally a valid header. With only the path declaration (and
+        // no fingerprints block following), the decoder must report
+        // UnexpectedEnd when it reaches for the Tag::Fingerprints byte.
         let result = WalletPolicy::from_bytecode(&[0x04, 0x33, 0x03]);
         assert!(
-            matches!(result, Err(Error::PolicyScopeViolation(_))),
-            "expected PolicyScopeViolation for fingerprints flag, got {result:?}"
+            matches!(
+                result,
+                Err(Error::InvalidBytecode {
+                    kind: crate::error::BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                })
+            ),
+            "expected UnexpectedEnd for header 0x04 with no fingerprints block, got {result:?}"
         );
     }
 
@@ -1068,6 +1220,7 @@ mod tests {
         let backup = WdmBackup {
             chunks: vec![],
             wallet_id_words: words,
+            fingerprints: None,
         };
         let recovered_id = backup.wallet_id();
         assert_eq!(
@@ -1282,8 +1435,10 @@ mod tests {
         let backup = WdmBackup {
             chunks: vec![chunk],
             wallet_id_words: words,
+            fingerprints: None,
         };
         assert_eq!(backup.chunks.len(), 1);
         assert_eq!(backup.chunks[0].chunk_index, 0);
+        assert!(backup.fingerprints.is_none());
     }
 }

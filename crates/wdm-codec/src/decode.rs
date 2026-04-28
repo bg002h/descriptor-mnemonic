@@ -59,7 +59,7 @@ use crate::{
 /// | 2 – BCH | `BchUncorrectable` |
 /// | 3 – header | `ChunkHeaderTruncated`, `UnsupportedVersion`, `UnsupportedCardType`, `ReservedWalletIdBitsSet`, `InvalidChunkCount`, `InvalidChunkIndex` |
 /// | 4 – reassembly | `EmptyChunkList`, `MixedChunkTypes`, `SingleStringWithMultipleChunks`, `WalletIdMismatch`, `TotalChunksMismatch`, `ChunkIndexOutOfRange`, `DuplicateChunkIndex`, `MissingChunkIndex`, `CrossChunkHashMismatch` |
-/// | 5 – bytecode | `InvalidBytecode`, `UnsupportedVersion`, `PolicyScopeViolation` |
+/// | 5 – bytecode | `InvalidBytecode`, `UnsupportedVersion`, `PolicyScopeViolation`, `FingerprintsCountMismatch` |
 ///
 /// # v0.1 confidence levels produced
 ///
@@ -149,8 +149,9 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
     let wallet_id_consistent = true;
     let total_chunks_consistent = true;
 
-    // Stage 5: bytecode decode.
-    let policy = WalletPolicy::from_bytecode(&bytecode)?;
+    // Stage 5: bytecode decode (Phase E — also recovers the optional
+    // fingerprints block when header bit 2 is set).
+    let (policy, fingerprints) = WalletPolicy::from_bytecode_with_fingerprints(&bytecode)?;
 
     // After successful from_bytecode, the bytecode is well-formed and version is supported.
     let bytecode_well_formed = true;
@@ -178,7 +179,11 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
         confidence,
     };
 
-    Ok(DecodeResult { policy, report })
+    Ok(DecodeResult {
+        policy,
+        report,
+        fingerprints,
+    })
 }
 
 // ---------------------------------------------------------------------------

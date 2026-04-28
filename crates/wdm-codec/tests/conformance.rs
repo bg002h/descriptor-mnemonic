@@ -892,3 +892,32 @@ fn rejects_tap_leaf_subset_violation() {
         other => panic!("expected TapLeafSubsetViolation, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Layer 8: Fingerprints-block validation (Phase E)
+// ---------------------------------------------------------------------------
+
+/// 33. Fingerprints-block count mismatch → `Error::FingerprintsCountMismatch`
+///
+/// The BIP MUST clause requires `count == max(@i) + 1` (one fingerprint per
+/// distinct placeholder). Encoding a 2-key policy with only one fingerprint
+/// supplied via `EncodeOptions::with_fingerprints` must surface
+/// `Error::FingerprintsCountMismatch { expected: 2, got: 1 }`.
+#[test]
+fn rejects_fingerprints_count_mismatch() {
+    use bitcoin::bip32::Fingerprint;
+
+    let policy: WalletPolicy = "wsh(multi(2,@0/**,@1/**))"
+        .parse()
+        .expect("2-key multisig policy must parse");
+    let opts = EncodeOptions::default()
+        .with_fingerprints(vec![Fingerprint::from([0xde, 0xad, 0xbe, 0xef])]);
+    let err = policy.to_bytecode(&opts).unwrap_err();
+    match err {
+        Error::FingerprintsCountMismatch { expected, got } => {
+            assert_eq!(expected, 2, "expected count must equal placeholder_count");
+            assert_eq!(got, 1, "got count must equal supplied fingerprints len");
+        }
+        other => panic!("expected FingerprintsCountMismatch, got {other:?}"),
+    }
+}

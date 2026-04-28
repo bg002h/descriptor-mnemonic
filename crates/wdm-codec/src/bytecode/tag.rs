@@ -6,10 +6,12 @@
 /// (joshdoman, CC0). Values 0x32–0x33 are WDM-specific extensions for BIP 388
 /// placeholder framing and shared-path declarations.
 ///
-/// Tag 0x35 (fingerprints block) is reserved for v0.2 and is not in the v0.1 enum.
+/// Tag 0x35 (fingerprints block) is implemented in v0.2 (Phase E); the
+/// fingerprints block follows the path declaration when the bytecode header's
+/// fingerprints flag (bit 2 = 1) is set. See BIP §"Fingerprints block".
 ///
-/// Marked `#[non_exhaustive]` so adding new variants in v0.2+ (e.g. fingerprints
-/// at 0x35) does not break downstream `match` consumers. See PHASE_2_DECISIONS.md.
+/// Marked `#[non_exhaustive]` so adding new variants in v0.2+ does not break
+/// downstream `match` consumers. See PHASE_2_DECISIONS.md.
 #[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -118,6 +120,13 @@ pub enum Tag {
     Placeholder = 0x32,
     /// WDM extension: shared-path declaration for placeholder framing.
     SharedPath = 0x33,
+    /// WDM extension: fingerprints block (Phase E, v0.2).
+    ///
+    /// When the bytecode header's fingerprints flag (bit 2) is set, a
+    /// fingerprints block of the form `[Tag::Fingerprints][count][4*count
+    /// fingerprint bytes]` follows the path declaration and precedes the
+    /// tree operators. See BIP §"Fingerprints block".
+    Fingerprints = 0x35,
 }
 
 impl Tag {
@@ -180,6 +189,7 @@ impl Tag {
             0x31 => Some(Tag::ReservedHardenedWildcard),
             0x32 => Some(Tag::Placeholder),
             0x33 => Some(Tag::SharedPath),
+            0x35 => Some(Tag::Fingerprints),
             _ => None,
         }
     }
@@ -196,16 +206,29 @@ mod tests {
 
     #[test]
     fn tag_round_trip_all_defined() {
+        // 0x00–0x33 plus 0x35 are defined; 0x34 is reserved.
         for b in 0u8..=0x33 {
             let t = Tag::from_byte(b);
             assert!(t.is_some(), "byte {b:#04x} should be a valid tag");
             assert_eq!(t.unwrap().as_byte(), b);
         }
+        let t = Tag::from_byte(0x35);
+        assert!(
+            t.is_some(),
+            "byte 0x35 should be a valid tag (Fingerprints)"
+        );
+        assert_eq!(t.unwrap().as_byte(), 0x35);
     }
 
     #[test]
     fn tag_rejects_unknown_bytes() {
-        for b in 0x34u8..=0xFF {
+        // 0x34 is reserved; 0x35 is now Tag::Fingerprints (Phase E).
+        // 0x36..=0xFF are reserved.
+        assert!(
+            Tag::from_byte(0x34).is_none(),
+            "byte 0x34 should be rejected (reserved)"
+        );
+        for b in 0x36u8..=0xFF {
             assert!(
                 Tag::from_byte(b).is_none(),
                 "byte {b:#04x} should be rejected"
@@ -220,5 +243,6 @@ mod tests {
         assert_eq!(Tag::Sha256.as_byte(), 0x20);
         assert_eq!(Tag::Placeholder.as_byte(), 0x32);
         assert_eq!(Tag::SharedPath.as_byte(), 0x33);
+        assert_eq!(Tag::Fingerprints.as_byte(), 0x35);
     }
 }

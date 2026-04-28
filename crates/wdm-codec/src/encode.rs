@@ -117,9 +117,14 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBacku
     let tier3_wallet_id = compute_wallet_id(&bytecode);
     let wallet_id_words = tier3_wallet_id.to_words();
 
+    // Surface the caller-supplied fingerprints on the backup so that an
+    // `encode → user-side state` round-trip is observable without re-decoding.
+    // The decoder populates `WdmBackup.fingerprints` from the parsed bytecode
+    // independently — see `decode::decode`.
     Ok(WdmBackup {
         chunks: encoded_chunks,
         wallet_id_words,
+        fingerprints: options.fingerprints.clone(),
     })
 }
 
