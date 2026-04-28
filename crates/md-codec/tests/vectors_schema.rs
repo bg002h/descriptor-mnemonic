@@ -200,9 +200,6 @@ fn committed_json_matches_regenerated_if_present() {
 ///
 /// Mirrors `committed_json_matches_regenerated_if_present` but for the
 /// schema-2 lock. The file lives at `tests/vectors/v0.2.json`.
-// TODO Phase 7: re-enable after vector regen (Phase 6 adds new fixtures; regen in Phase 7
-// will update the committed v0.2.json to include the new v0.4 vectors).
-#[ignore]
 #[test]
 fn committed_v0_2_json_matches_regenerated_if_present() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
@@ -243,16 +240,13 @@ fn committed_v0_2_json_matches_regenerated_if_present() {
 /// `build_test_vectors_v2()` and the committed file (especially across
 /// `serde_json` formatting changes); not to prevent intentional
 /// regenerations.
-// TODO Phase 7: re-enable after vector regen (Phase 6 adds new fixtures; regen in Phase 7
-// will produce a new SHA that should replace V0_2_SHA256 below).
-#[ignore]
 #[test]
 fn v0_2_sha256_lock_matches_committed_file() {
     use bitcoin::hashes::{Hash, sha256};
 
     /// Lockfile SHA-256 (lowercase hex). Update when v0.2.json is
     /// intentionally regenerated.
-    const V0_2_SHA256: &str = "18804929d54f94fe4b83a135f3e53d3a26b6ae3565729970ce02ef38f74e9909";
+    const V0_2_SHA256: &str = "caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770";
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
     if !path.exists() {

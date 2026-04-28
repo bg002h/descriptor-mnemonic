@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "md-codec 0.3",
+  "generator": "md-codec 0.4",
   "vectors": [
     {
       "id": "c1",
@@ -342,6 +342,237 @@
           190
         ]
       ]
+    },
+    {
+      "id": "s1_wpkh",
+      "description": "S1 — BIP 84 wpkh single-sig (no fingerprints block)",
+      "policy": "wpkh(@0/**)",
+      "expected_bytecode_hex": "003303043200",
+      "expected_chunks": [
+        "md1qqqqqvcrqseqqrstk8lc2qudrk"
+      ],
+      "expected_wallet_id_words": [
+        "second",
+        "evil",
+        "naive",
+        "noodle",
+        "music",
+        "spend",
+        "wide",
+        "three",
+        "absurd",
+        "advance",
+        "smoke",
+        "exclude"
+      ]
+    },
+    {
+      "id": "s3_sh_wpkh",
+      "description": "S3 — BIP 49 sh(wpkh) nested-segwit single-sig (no fingerprints block)",
+      "policy": "sh(wpkh(@0/**))",
+      "expected_bytecode_hex": "00330203043200",
+      "expected_chunks": [
+        "md1qqqqqvczqvzryqqywavcrhgp4ksa"
+      ],
+      "expected_wallet_id_words": [
+        "sail",
+        "nation",
+        "acoustic",
+        "arch",
+        "february",
+        "kidney",
+        "symbol",
+        "acoustic",
+        "pudding",
+        "celery",
+        "slam",
+        "neck"
+      ]
+    },
+    {
+      "id": "m1_sh_wsh_sortedmulti_1of2",
+      "description": "M1 — BIP 48/1' sh(wsh(sortedmulti(1,...))) 1-of-2 nested-segwit multisig",
+      "policy": "sh(wsh(sortedmulti(1,@0/**,@1/**)))",
+      "expected_bytecode_hex": "003306030509010232003201",
+      "expected_chunks": [
+        "md1qqqqqvcxqvzsjqgzxgqryqg0xvza7td6vtul"
+      ],
+      "expected_wallet_id_words": [
+        "long",
+        "like",
+        "reward",
+        "sentence",
+        "man",
+        "dentist",
+        "ginger",
+        "weird",
+        "example",
+        "amount",
+        "adapt",
+        "summer"
+      ]
+    },
+    {
+      "id": "m2_sh_wsh_sortedmulti_2of3",
+      "description": "M2 — BIP 48/1' sh(wsh(sortedmulti(2,...))) 2-of-3 nested-segwit multisig",
+      "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+      "expected_bytecode_hex": "0033060305090203320032013202",
+      "expected_chunks": [
+        "md1qqqqqvcxqvzsjqsrxgqryqfjqgtkd8p6uqxhqnk"
+      ],
+      "expected_wallet_id_words": [
+        "arrive",
+        "net",
+        "sun",
+        "estate",
+        "eagle",
+        "cycle",
+        "honey",
+        "reunion",
+        "mercy",
+        "shell",
+        "limb",
+        "series"
+      ]
+    },
+    {
+      "id": "cs_coldcard_sh_wsh",
+      "description": "Cs — Coldcard firmware 5.4.0 BIP 48/1' 2-of-3 sh(wsh(sortedmulti)) export shape",
+      "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+      "expected_bytecode_hex": "0033060305090203320032013202",
+      "expected_chunks": [
+        "md1qqqqqvcxqvzsjqsrxgqryqfjqgtkd8p6uqxhqnk"
+      ],
+      "expected_wallet_id_words": [
+        "arrive",
+        "net",
+        "sun",
+        "estate",
+        "eagle",
+        "cycle",
+        "honey",
+        "reunion",
+        "mercy",
+        "shell",
+        "limb",
+        "series"
+      ]
+    },
+    {
+      "id": "s2_wpkh_fingerprint",
+      "description": "S2 — BIP 84 wpkh single-sig with master-key fingerprint (Phase 6)",
+      "policy": "wpkh(@0/**)",
+      "expected_bytecode_hex": "0433033501deadbeef043200",
+      "expected_chunks": [
+        "md1qqqqgvcrx5qaatd7auzryqqrlxz5e8y6c3nn"
+      ],
+      "expected_wallet_id_words": [
+        "private",
+        "century",
+        "already",
+        "theme",
+        "laptop",
+        "blood",
+        "bamboo",
+        "someone",
+        "slice",
+        "bean",
+        "jeans",
+        "group"
+      ],
+      "expected_fingerprints_hex": [
+        "deadbeef"
+      ],
+      "encode_options_fingerprints": [
+        [
+          222,
+          173,
+          190,
+          239
+        ]
+      ]
+    },
+    {
+      "id": "s4_sh_wpkh_fingerprint",
+      "description": "S4 — BIP 49 sh(wpkh) nested-segwit single-sig with master-key fingerprint (Phase 6)",
+      "policy": "sh(wpkh(@0/**))",
+      "expected_bytecode_hex": "0433023501deadbeef03043200",
+      "expected_chunks": [
+        "md1qqqqgvczx5qaatd7aupsgvsqmwhjgwqfdrdee"
+      ],
+      "expected_wallet_id_words": [
+        "wisdom",
+        "duty",
+        "critic",
+        "edge",
+        "magic",
+        "song",
+        "salon",
+        "vapor",
+        "voyage",
+        "enter",
+        "hip",
+        "ginger"
+      ],
+      "expected_fingerprints_hex": [
+        "deadbeef"
+      ],
+      "encode_options_fingerprints": [
+        [
+          222,
+          173,
+          190,
+          239
+        ]
+      ]
+    },
+    {
+      "id": "m3_sh_wsh_sortedmulti_2of3_fingerprints",
+      "description": "M3 — BIP 48/1' sh(wsh(sortedmulti(2,...))) 2-of-3 with 3 master-key fingerprints (Phase 6)",
+      "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+      "expected_bytecode_hex": "0433063503deadbeefcafebabed00df00d0305090203320032013202",
+      "expected_chunks": [
+        "md1qqqqgvcxx5paatd7al90aw476qxlqrgrq5ysyqejqqeqzvsz5etv6m3mnsd26"
+      ],
+      "expected_wallet_id_words": [
+        "charge",
+        "bicycle",
+        "pencil",
+        "kit",
+        "path",
+        "prefer",
+        "tape",
+        "select",
+        "siege",
+        "cradle",
+        "essay",
+        "own"
+      ],
+      "expected_fingerprints_hex": [
+        "deadbeef",
+        "cafebabe",
+        "d00df00d"
+      ],
+      "encode_options_fingerprints": [
+        [
+          222,
+          173,
+          190,
+          239
+        ],
+        [
+          202,
+          254,
+          186,
+          190
+        ],
+        [
+          208,
+          13,
+          240,
+          13
+        ]
+      ]
     }
   ],
   "negative_vectors": [
@@ -647,6 +878,87 @@
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode `[0x04, Tag::SharedPath, 0x03, Tag::Wsh, 0x00]`: header bit 2 (fingerprints) is set, but the byte where Tag::Fingerprints (0x35) is expected carries Tag::Wsh (0x05); decode emits InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }"
+    },
+    {
+      "id": "n_sh_multi",
+      "description": "sh(multi(...)) legacy P2SH-multi → PolicyScopeViolation (decode side)",
+      "input_strings": [
+        "md1qqqqqvcrqvvnyqqzwdcfse4h0lzu"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Multi, Placeholder, 0x00]`, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→Multi as legacy P2SH-multi (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_sh_sortedmulti",
+      "description": "sh(sortedmulti(...)) legacy P2SH-sortedmulti → PolicyScopeViolation (decode side)",
+      "input_strings": [
+        "md1qqqqqvcrqvynyqqzqqnc6e4cf9a4"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, SortedMulti, Placeholder, 0x00]`, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→SortedMulti as legacy P2SH-sortedmulti (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_sh_pkh",
+      "description": "sh(pkh(...)) legacy P2SH-PKH → PolicyScopeViolation (decode side)",
+      "input_strings": [
+        "md1qqqqqvcrqvpryqqx8fqulj2wd6cy"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Pkh, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects Sh→Pkh via peek-before-recurse restriction matrix (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_sh_tr",
+      "description": "sh(tr(...)) taproot nested inside Sh → PolicyScopeViolation (decode side)",
+      "input_strings": [
+        "md1qqqqqvcrqvrryqqxsqujfj2ncgpv"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Tr, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects Sh→Tr via peek-before-recurse restriction matrix (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_sh_bare",
+      "description": "sh(bare(...)) nested bare script inside Sh → PolicyScopeViolation (decode side)",
+      "input_strings": [
+        "md1qqqqqvcrqvrnyqqz0tsdze4vpn8f"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Bare, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects Sh→Bare via peek-before-recurse restriction matrix (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_sh_inner_script",
+      "description": "sh(<inner-script-tag>) AndV directly under Sh → PolicyScopeViolation",
+      "input_strings": [
+        "md1qqqqqvcrqvgnyqqzflf44e4yvjev"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→AndV (inner-script-family tag 0x11) via peek-before-recurse restriction matrix (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_sh_key_slot",
+      "description": "sh(<key-slot-tag>) Placeholder directly under Sh → PolicyScopeViolation (layering invariant)",
+      "input_strings": [
+        "md1qqqqqvcrqveryqqx47axpj2l8asl"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→Placeholder (key-slot-family tag 0x32) via peek-before-recurse restriction matrix layering invariant (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_top_pkh",
+      "description": "pkh(...) at top level → PolicyScopeViolation (legacy non-segwit out of scope)",
+      "input_strings": [
+        "md1qqqqqvcrqgeqq953ur9zwya0x9"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Pkh, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects top-level Pkh as legacy non-segwit out of v0.4 scope (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_top_bare",
+      "description": "bare(...) at top level → PolicyScopeViolation (legacy non-segwit out of scope)",
+      "input_strings": [
+        "md1qqqqqvcrqueqqqjxn9j4gzgv4t"
+      ],
+      "expected_error_variant": "PolicyScopeViolation",
+      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Bare, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects top-level Bare as legacy non-segwit out of v0.4 scope (PolicyScopeViolation)"
     }
   ]
 }
