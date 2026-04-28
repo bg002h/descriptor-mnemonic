@@ -47,7 +47,7 @@ pub fn path_to_indicator(path: &DerivationPath) -> Option<u8> {
     DICT.iter().find(|(_, p)| p == path).map(|(ind, _)| *ind)
 }
 
-/// Serialize a derivation path into its wire form for use in a WDM path
+/// Serialize a derivation path into its wire form for use in an MD path
 /// declaration.
 ///
 /// If the path has a known dictionary indicator (`path_to_indicator` returns

@@ -17,7 +17,7 @@
 //!    round-trip; recovered word must equal the original.
 //!
 //! All vectors use `bch_correct_regular` / `bch_correct_long` directly
-//! (working in the encoding-layer 5-bit symbol space, not WDM strings)
+//! (working in the encoding-layer 5-bit symbol space, not MD strings)
 //! so the tests exercise the BCH decoder in isolation from the higher
 //! decode-pipeline layers (chunking, header parsing, bytecode).
 
@@ -369,7 +369,7 @@ fn five_errors_uncorrectable_long() {
 
 /// Apply the same Fisher-Yates-style corruption used by
 /// `tests/common::corrupt_n` but operating on raw 5-bit symbol arrays
-/// (this test layer doesn't pass through the WDM string layer).
+/// (this test layer doesn't pass through the MD string layer).
 fn corrupt_random_n(codeword: &mut [u8], n: usize, rng: &mut StdRng) -> Vec<usize> {
     assert!(n <= codeword.len());
     let mut indices: Vec<usize> = (0..codeword.len()).collect();

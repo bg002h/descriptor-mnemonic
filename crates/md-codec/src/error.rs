@@ -46,7 +46,7 @@ pub use crate::wallet_id::ChunkWalletId;
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum Error {
-    /// HRP did not match the expected `"wdm"`.
+    /// HRP did not match the expected `"md"`.
     ///
     /// Returned by [`crate::decode_string`] / [`crate::decode()`]. The user
     /// transcribed a non-MD bech32 string (e.g. a Bitcoin address). Caller

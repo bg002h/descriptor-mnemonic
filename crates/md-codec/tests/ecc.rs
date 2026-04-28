@@ -1,4 +1,4 @@
-//! BCH error-correction stress tests for the WDM codec (Phase 6, Tasks 6.19–6.20).
+//! BCH error-correction stress tests for the MD codec (Phase 6, Tasks 6.19–6.20).
 //!
 //! Task 6.19 — single-substitution at every data-part position must be
 //! auto-corrected with exactly one correction reported.

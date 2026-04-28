@@ -1,6 +1,6 @@
-//! Corpus round-trip tests for the WDM codec (Tasks 6.2-6.13).
+//! Corpus round-trip tests for the MD codec (Tasks 6.2-6.13).
 //!
-//! Each test encodes a canonical BIP 388 wallet policy string to WDM format
+//! Each test encodes a canonical BIP 388 wallet policy string to MD format
 //! and decodes it back, asserting structural equality with the original.
 //!
 //! Policy sources:
@@ -296,7 +296,7 @@ fn corpus_encode_decode_encode_idempotency() {
 //
 // For each corpus policy, encode and assert all chunk raw strings are
 // entirely lowercase ASCII.  Per BIP "General format" / bech32 convention,
-// WDM strings are all-lowercase by default.  Bech32 characters are drawn
+// MD strings are all-lowercase by default.  Bech32 characters are drawn
 // from the 32-character lowercase alphabet; this test guards against any
 // encoder path that accidentally uppercases characters.
 // ---------------------------------------------------------------------------

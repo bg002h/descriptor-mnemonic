@@ -1,4 +1,4 @@
-//! Syndrome-based BCH decoder for the WDM regular and long codes.
+//! Syndrome-based BCH decoder for the MD regular and long codes.
 //!
 //! Implements the textbook decoder pipeline:
 //!
@@ -276,7 +276,7 @@ fn horner_ext(coeffs: &[Gf1024], x: Gf1024) -> Gf1024 {
 
 /// Compute the eight syndromes
 /// `S_m = E(α^{j_start + m - 1})` for `m = 1, …, 8`, where `E(x)` is the
-/// error polynomial (recoverable as the polymod residue minus the WDM
+/// error polynomial (recoverable as the polymod residue minus the MD
 /// target constant). The remainder is already congruent to `E(x)`
 /// modulo `g(x)`, so evaluating it at the generator's roots is
 /// equivalent to evaluating `E(x)` itself.

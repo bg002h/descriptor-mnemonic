@@ -106,7 +106,7 @@ fn positive_vectors_are_well_formed() {
             "vector {:?} expected_wallet_id_words must have exactly 12 words",
             vec.id
         );
-        // All chunk strings must start with the WDM HRP.
+        // All chunk strings must start with the MD HRP.
         for chunk in &vec.expected_chunks {
             assert!(
                 chunk.starts_with("wdm1"),

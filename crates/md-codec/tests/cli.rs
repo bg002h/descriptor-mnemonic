@@ -11,14 +11,14 @@ use predicates::prelude::*;
 // Helper
 // ---------------------------------------------------------------------------
 
-/// A short, deterministic wallet policy that encodes as a single-string WDM
-/// chunk (`wdm1…`) without needing any key origin information.
+/// A short, deterministic wallet policy that encodes as a single-string MD
+/// chunk (`md1…`) without needing any key origin information.
 const POLICY: &str = "wsh(pk(@0/**))";
 
 /// A different policy used to verify a mismatch exits non-zero.
 const OTHER_POLICY: &str = "wsh(multi(2,@0/**,@1/**))";
 
-/// Encode `POLICY` and return the first output line (the WDM chunk string).
+/// Encode `POLICY` and return the first output line (the MD chunk string).
 fn encode_first_chunk() -> String {
     let output = Command::cargo_bin("md")
         .expect("binary built")
@@ -27,7 +27,7 @@ fn encode_first_chunk() -> String {
         .expect("encode ran");
     assert!(output.status.success(), "encode must succeed");
     let stdout = String::from_utf8(output.stdout).expect("utf-8");
-    // First non-empty line is the WDM chunk.
+    // First non-empty line is the MD chunk.
     stdout
         .lines()
         .find(|l| !l.is_empty())
@@ -208,7 +208,7 @@ fn md_encode_path_override_bip48_takes_effect() {
         "Phase B removed the v0.1.1 warning; got stderr: {stderr}"
     );
 
-    // Take the first WDM chunk string from stdout.
+    // Take the first MD chunk string from stdout.
     let stdout = String::from_utf8(output.stdout).expect("utf-8");
     let chunk = stdout
         .lines()

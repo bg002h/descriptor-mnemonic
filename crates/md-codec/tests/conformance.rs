@@ -57,7 +57,7 @@ assert_decode_rejects!(
 /// 2. Mixed-case characters → `Error::MixedCase`
 #[test]
 fn rejects_mixed_case() {
-    // Build a valid WDM string, then uppercase one data character.
+    // Build a valid MD string, then uppercase one data character.
     let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
     let backup = encode(&p, &EncodeOptions::default()).unwrap();
     let raw = &backup.chunks[0].raw;
@@ -478,7 +478,7 @@ fn rejects_cross_chunk_hash_mismatch() {
 ///
 /// **Background**: the v0.2.1 full-code-audit
 /// (`design/agent-reports/v0-2-1-full-code-audit.md`) discovered that a
-/// crafted Long-code WDM string can pass the BCH validate stage and panic
+/// crafted Long-code MD string can pass the BCH validate stage and panic
 /// in Stage 3 of decode (`five_bit_to_bytes` returns None on non-byte-aligned
 /// input). v0.2.2 converts that panic to a structured error.
 ///
@@ -486,7 +486,7 @@ fn rejects_cross_chunk_hash_mismatch() {
 /// (= 58 bytes + 1 trailing bit). A conformant encoder always pads with zero
 /// bits. This test sets the final symbol's lowest bit, computes the
 /// legitimate Long-code BCH checksum over that hostile data, assembles the
-/// WDM string, and asserts decode rejects with `MalformedPayloadPadding`.
+/// MD string, and asserts decode rejects with `MalformedPayloadPadding`.
 #[test]
 fn rejects_malformed_payload_padding() {
     use md_codec::encoding::{ALPHABET, bch_create_checksum_long};
@@ -498,7 +498,7 @@ fn rejects_malformed_payload_padding() {
     // Compute the legitimate Long-code BCH checksum for HRP "wdm".
     let checksum = bch_create_checksum_long("wdm", &data_5bit);
 
-    // Assemble the WDM string: "wdm1" + ALPHABET[symbol] for each data + each checksum char.
+    // Assemble the MD string: "wdm1" + ALPHABET[symbol] for each data + each checksum char.
     let mut s = String::from("wdm1");
     for &v in &data_5bit {
         s.push(ALPHABET[v as usize] as char);
@@ -919,7 +919,7 @@ fn rejects_policy_too_large() {
 // time with a precise per-operator diagnostic. (We wrap sha256 inside an
 // and_v(v:..., pk()) so miniscript's "all spend paths must require a
 // signature" constraint is satisfied at parse time; the rejection then
-// comes from the WDM subset check, not from the upstream miniscript
+// comes from the MD subset check, not from the upstream miniscript
 // parser.)
 #[test]
 fn rejects_tap_leaf_subset_violation() {
