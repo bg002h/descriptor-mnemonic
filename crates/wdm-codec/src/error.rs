@@ -427,6 +427,21 @@ pub enum BytecodeErrorKind {
         /// The tag byte value that was actually read.
         got: u8,
     },
+
+    /// The Stage-3 5-bit→byte conversion of a BCH-validated payload failed
+    /// because the payload's bit length is not a multiple of 8. This can
+    /// happen for hostile inputs whose Long-code data part has 93 5-bit
+    /// symbols (= 465 bits, leaving 1 bit of trailing pad) and whose final
+    /// 5-bit symbol carries a non-zero low bit despite passing the BCH
+    /// validate stage. Conformant encoders always pad to the byte boundary
+    /// with zero bits per BIP §"Payload" "padding enabled on the encode side;
+    /// reversed on decode" — the decode-side reverse is this rejection.
+    ///
+    /// Discovered + fixed in v0.2.2 via the v0.2.1 full-code-audit
+    /// (`design/agent-reports/v0-2-1-full-code-audit.md`); the prior
+    /// implementation panicked with `expect()` on this code path.
+    #[error("malformed payload padding: 5-bit data does not byte-align")]
+    MalformedPayloadPadding,
 }
 
 /// Result type used throughout wdm-codec.

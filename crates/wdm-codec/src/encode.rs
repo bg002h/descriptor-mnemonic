@@ -10,17 +10,6 @@ use crate::{
     wallet_id::{ChunkWalletId, compute_wallet_id},
 };
 
-/// Convert a [`ChunkCode`] to its [`BchCode`] equivalent.
-///
-/// The two enums have parallel variants (Regular/Long) but live in different
-/// modules. This helper bridges them for Stage 5 of the encode pipeline.
-fn chunk_code_to_bch_code(c: ChunkCode) -> BchCode {
-    match c {
-        ChunkCode::Regular => BchCode::Regular,
-        ChunkCode::Long => BchCode::Long,
-    }
-}
-
 /// Encode a wallet policy as a [`WdmBackup`]: one or more codex32-derived
 /// strings ready to engrave, plus the Tier-3 12-word Wallet ID.
 ///
@@ -89,10 +78,10 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<WdmBacku
 
     // Stage 5: encode each chunk to a codex32 string.
     // Hoist the BCH code lookup — it is plan-level, not per-chunk.
-    let bch_code = chunk_code_to_bch_code(match plan {
-        ChunkingPlan::SingleString { code } => code,
-        ChunkingPlan::Chunked { code, .. } => code,
-    });
+    let bch_code: BchCode = match plan {
+        ChunkingPlan::SingleString { code } => code.into(),
+        ChunkingPlan::Chunked { code, .. } => code.into(),
+    };
     let chunk_count = chunks.len();
     let mut encoded_chunks: Vec<EncodedChunk> = Vec::with_capacity(chunk_count);
     for chunk in chunks {
@@ -263,7 +252,14 @@ mod tests {
         // Chunked type (even with 1 chunk): verify raw header is Chunked.
         // Decode the raw string to check the header bytes.
         let decoded = crate::decode_string(&chunk.raw).expect("should decode");
-        let bytes = crate::five_bit_to_bytes(&decoded.data).expect("five-bit decode");
+        // `expect` is sound HERE because `decoded.data` came from an
+        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder always pads to the byte boundary with zero bits so the
+        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
+        // inputs the same call returns None — see decode.rs:135's structured
+        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
+        let bytes = crate::five_bit_to_bytes(&decoded.data)
+            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _consumed) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
         assert!(header.is_chunked(), "expected Chunked header");
     }
@@ -337,7 +333,14 @@ mod tests {
         // Decode the raw string to access chunk header bytes.
         let raw = &backup.chunks[0].raw;
         let decoded = crate::decode_string(raw).expect("decode_string");
-        let bytes = crate::five_bit_to_bytes(&decoded.data).expect("five-bit decode");
+        // `expect` is sound HERE because `decoded.data` came from an
+        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder always pads to the byte boundary with zero bits so the
+        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
+        // inputs the same call returns None — see decode.rs:135's structured
+        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
+        let bytes = crate::five_bit_to_bytes(&decoded.data)
+            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
         // The chunk header wallet_id should equal seed.truncate() = top 20 bits of seed.
@@ -372,7 +375,14 @@ mod tests {
         // Decode the raw string to access chunk header bytes.
         let raw = &backup.chunks[0].raw;
         let decoded = crate::decode_string(raw).expect("decode_string");
-        let bytes = crate::five_bit_to_bytes(&decoded.data).expect("five-bit decode");
+        // `expect` is sound HERE because `decoded.data` came from an
+        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder always pads to the byte boundary with zero bits so the
+        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
+        // inputs the same call returns None — see decode.rs:135's structured
+        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
+        let bytes = crate::five_bit_to_bytes(&decoded.data)
+            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
         // The chunk-header wallet_id should be compute_wallet_id(bytecode).truncate().
@@ -461,7 +471,14 @@ mod tests {
 
         let raw = &backup.chunks[0].raw;
         let decoded = crate::decode_string(raw).expect("decode_string");
-        let bytes = crate::five_bit_to_bytes(&decoded.data).expect("five-bit decode");
+        // `expect` is sound HERE because `decoded.data` came from an
+        // encoder-produced WDM string that we constructed two lines up; the
+        // encoder always pads to the byte boundary with zero bits so the
+        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
+        // inputs the same call returns None — see decode.rs:135's structured
+        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
+        let bytes = crate::five_bit_to_bytes(&decoded.data)
+            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
         match header {

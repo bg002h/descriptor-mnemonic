@@ -4,6 +4,40 @@ All notable changes to `wdm-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.2.2] — 2026-04-28
+
+Security + audit-followup patch. Closes the one BLOCKER from the v0.2.1 full code audit (`design/agent-reports/v0-2-1-full-code-audit.md`) plus the audit's IMPORTANT and NIT findings. Wire format unchanged from v0.2.0/v0.2.1; v0.2.x backups remain valid v0.2.2 inputs and vice versa. **No `MIGRATION.md` changes required.**
+
+### Security
+
+- **Decoder no longer panics on hostile input.** A crafted Long-code WDM string (93 5-bit symbols ending with a non-zero low bit + a legitimate Long-code BCH checksum) passed Stage 2 of decode and panicked at Stage 3 via `expect()` in `decode.rs:135-136`. The `expect`'s justification ("structurally impossible") only held for encoder-produced strings; the decoder accepts any 5-bit sequence that satisfies the BCH polymod, including non-byte-aligned hostile inputs. v0.2.2 returns a structured `Error::InvalidBytecode { kind: BytecodeErrorKind::MalformedPayloadPadding }` instead. Affected entry points: `wdm_codec::decode()`, `wdm decode`, `wdm verify`. Reproducer + structured-error path are pinned by `tests/conformance.rs::rejects_malformed_payload_padding`.
+- The corresponding 4 `expect("five-bit decode")` sites in `crates/wdm-codec/src/encode.rs` (lines 266/340/375/464) are inside `#[cfg(test)]` and consume only encoder-produced strings, so they were never user-reachable. Their messages are updated to clarify the encoder-produced-input invariant for future readers.
+
+### Added
+
+- **`BytecodeErrorKind::MalformedPayloadPadding`** variant. Additive on `#[non_exhaustive]`; surfaces from the decoder as `Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::MalformedPayloadPadding }`. Display: `"malformed payload padding: 5-bit data does not byte-align"`.
+
+### Changed
+
+- `chunk_code_to_bch_code` private helper at `encode.rs:17-22` removed; call site uses the existing `From<ChunkCode> for BchCode` impl directly. Pure cleanup; no behavioral change. (NIT from audit.)
+
+### Notes
+
+- **MSRV: 1.85** (unchanged)
+- **`v0.2.json` SHA `b403073b…` UNCHANGED** — the family-stable generator field shipped in v0.2.1 means the regen at v0.2.2 produces the byte-identical v0.2.json file. **First v0.2.x patch with no SHA migration**, validating the v0.2.1 design fix.
+- **Test count**: 565 passing (was 564 at v0.2.1; +1 `rejects_malformed_payload_padding` conformance test)
+- **Workspace `[patch]` block** still ships unchanged (waiting on `apoelstra/rust-miniscript#1`); same downstream UX as v0.2.x predecessors
+
+### Audit closure
+
+The v0.2.1 full code audit (commit `3ac3bf6`, agent report at `design/agent-reports/v0-2-1-full-code-audit.md`) found 1 BLOCKER + 1 IMPORTANT + 2 NITs + a substantial POSITIVE. v0.2.2 closes all 4 findings:
+- BLOCKER (decode.rs:135 panic): fixed via new `MalformedPayloadPadding` variant + structured `?` propagation
+- IMPORTANT (4 false-invariant sites in encode.rs tests): comments updated to clarify encoder-produced-input invariant
+- NIT (vestigial `chunk_code_to_bch_code` helper): removed
+- NIT (pre-`expect` block-comment): updated to acknowledge the malicious-input case + reference the structured error
+
+Audit's verdict was `READY-WITH-CAVEATS`; with v0.2.2 the codebase is `READY-FOR-V0.3-AND-SHELL-IMPL`.
+
 ## [0.2.1] — 2026-04-28
 
 Patch release. Two post-release ergonomics items from `design/FOLLOWUPS.md`. Wire format identical to v0.2.0; `MIGRATION.md` from v0.2.0 still applies for v0.1.x → v0.2.x upgrades.
@@ -93,6 +127,7 @@ Patch release. 17 tests + bug fixes + cross-platform CI work after v0.1.0. See g
 
 Initial release. BIP 388 wsh-only wallet-policy backup format reference implementation. 445 tests, 95% library line coverage, 10 positive + 30 negative test vectors locked in `v0.1.json`. See `design/IMPLEMENTATION_PLAN_v0.1.md` and `design/agent-reports/phase-10-task-controller-closure.md` for the v0.1.0 phase-by-phase summary.
 
+[0.2.2]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.2
 [0.2.1]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.1
 [0.2.0]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.2.0
 [0.1.1]: https://github.com/bg002h/descriptor-mnemonic/releases/tag/wdm-codec-v0.1.1

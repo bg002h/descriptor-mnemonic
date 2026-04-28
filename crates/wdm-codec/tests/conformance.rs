@@ -473,6 +473,52 @@ fn rejects_cross_chunk_hash_mismatch() {
 // Layer 4: bytecode-level rejections (`WalletPolicy::from_bytecode`)
 // ---------------------------------------------------------------------------
 
+/// 20b. Malicious Long-code input with non-zero trailing pad bit →
+/// `Error::InvalidBytecode { kind: MalformedPayloadPadding }`.
+///
+/// **Background**: the v0.2.1 full-code-audit
+/// (`design/agent-reports/v0-2-1-full-code-audit.md`) discovered that a
+/// crafted Long-code WDM string can pass the BCH validate stage and panic
+/// in Stage 3 of decode (`five_bit_to_bytes` returns None on non-byte-aligned
+/// input). v0.2.2 converts that panic to a structured error.
+///
+/// **Construction**: the Long-code data part is 93 5-bit symbols = 465 bits
+/// (= 58 bytes + 1 trailing bit). A conformant encoder always pads with zero
+/// bits. This test sets the final symbol's lowest bit, computes the
+/// legitimate Long-code BCH checksum over that hostile data, assembles the
+/// WDM string, and asserts decode rejects with `MalformedPayloadPadding`.
+#[test]
+fn rejects_malformed_payload_padding() {
+    use wdm_codec::encoding::{ALPHABET, bch_create_checksum_long};
+
+    // 93 5-bit symbols, all zero except the last whose low bit is 1.
+    let mut data_5bit = vec![0u8; 93];
+    data_5bit[92] = 0x01;
+
+    // Compute the legitimate Long-code BCH checksum for HRP "wdm".
+    let checksum = bch_create_checksum_long("wdm", &data_5bit);
+
+    // Assemble the WDM string: "wdm1" + ALPHABET[symbol] for each data + each checksum char.
+    let mut s = String::from("wdm1");
+    for &v in &data_5bit {
+        s.push(ALPHABET[v as usize] as char);
+    }
+    for &v in &checksum {
+        s.push(ALPHABET[v as usize] as char);
+    }
+
+    let result = decode(&[s.as_str()], &DecodeOptions::new());
+    match result {
+        Err(Error::InvalidBytecode {
+            kind: BytecodeErrorKind::MalformedPayloadPadding,
+            ..
+        }) => {}
+        other => {
+            panic!("expected InvalidBytecode {{ kind: MalformedPayloadPadding }}, got {other:?}")
+        }
+    }
+}
+
 /// 21. Unknown tag byte in the bytecode → `Error::InvalidBytecode { kind: UnknownTag(_) }`
 ///
 /// The path-declaration slot (bytes[1]) expects Tag::SharedPath (0x33).

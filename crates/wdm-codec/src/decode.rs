@@ -33,6 +33,7 @@ use crate::{
     DecodeResult, Error, Verifications, WalletPolicy,
     chunking::{Correction, reassemble_chunks},
     encoding::{decode_string, five_bit_to_bytes},
+    error::BytecodeErrorKind,
 };
 
 // ---------------------------------------------------------------------------
@@ -127,13 +128,20 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
     let mut chunks: Vec<Chunk> = Vec::with_capacity(decoded_strings.len());
 
     for (data_5bit, _code) in decoded_strings {
-        // five_bit_to_bytes can only return None when the input length is not a
-        // multiple of 8 five-bit groups (i.e. the byte count cannot be represented
-        // exactly). After a successful BCH decode + checksum strip the BCH layer
-        // always emits length-aligned 5-bit data, so None is structurally
-        // impossible here. If this ever fires, the BCH layer has a bug.
-        let bytes = five_bit_to_bytes(&data_5bit)
-            .expect("five_bit_to_bytes failed after successful BCH decode — structurally impossible (BCH layer emits length-aligned 5-bit data)");
+        // `five_bit_to_bytes` returns None when the input bit length is not a
+        // multiple of 8 — i.e., a non-zero trailing pad bit after the byte
+        // boundary. For ENCODER-PRODUCED inputs this is structurally impossible
+        // (the encoder always pads with zero). For HOSTILE inputs, however,
+        // the BCH layer will validate any input that satisfies the polymod —
+        // including a Long-code data part (93 5-bit symbols = 465 bits) whose
+        // final symbol carries a non-zero low bit. The audit at
+        // `design/agent-reports/v0-2-1-full-code-audit.md` reproduced this
+        // case (was a panic via `expect()` in v0.2.0/v0.2.1; v0.2.2 returns
+        // a structured error).
+        let bytes = five_bit_to_bytes(&data_5bit).ok_or(Error::InvalidBytecode {
+            offset: 0,
+            kind: BytecodeErrorKind::MalformedPayloadPadding,
+        })?;
         let (header, header_len) = ChunkHeader::from_bytes(&bytes)?;
         let fragment = bytes[header_len..].to_vec();
         chunks.push(Chunk { header, fragment });
