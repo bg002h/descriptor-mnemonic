@@ -13,6 +13,14 @@
 //! attached. `Tag::TapTree` (0x08) is reserved for v1+ multi-leaf encoding;
 //! its appearance in v0.2 input is rejected as a `PolicyScopeViolation`.
 //!
+//! v0.4 scope: `Tag::Wpkh` and `Tag::Sh` are now accepted at the top level.
+//! `Wpkh` decodes to `Descriptor::Wpkh` (native segwit P2WPKH).
+//! `Sh` dispatches via peek-before-recurse to `sh(wpkh(...))` (P2SH-P2WPKH)
+//! or `sh(wsh(...))` (P2SH-P2WSH); all other inner tags are rejected with
+//! `PolicyScopeViolation`. Legacy non-segwit types (`pkh`, `bare`) remain
+//! rejected. See `design/IMPLEMENTATION_PLAN_v0_4_bip388_modern_segwit_surface.md`
+//! Phase 2 for the full restriction matrix.
+//!
 //! Architecture: cursor-style reader + per-tag dispatch. Each step returns
 //! `Result<T, crate::Error>` so decode failures surface a precise offset and
 //! `BytecodeErrorKind`. See `design/PHASE_2_DECISIONS.md` D-5.
@@ -48,47 +56,113 @@ pub fn decode_template(
     Ok(descriptor)
 }
 
-/// Decode the top-level `Descriptor`. v0.1 only accepts `Tag::Wsh`.
+/// Decode the top-level `Descriptor`. v0.4 accepts `Tag::Wsh`, `Tag::Tr`,
+/// `Tag::Wpkh`, and `Tag::Sh`. Legacy types (`pkh`, `bare`) remain rejected.
 fn decode_descriptor(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
 ) -> Result<Descriptor<DescriptorPublicKey>, Error> {
     let tag_byte = cur.read_byte()?;
     let tag_offset = cur.offset() - 1;
-    let tag = Tag::from_byte(tag_byte).ok_or(Error::InvalidBytecode {
-        offset: tag_offset,
-        kind: BytecodeErrorKind::UnknownTag(tag_byte),
-    })?;
-    match tag {
-        Tag::Wsh => decode_wsh_inner(cur, keys),
-        Tag::Tr => decode_tr_inner(cur, keys),
-        Tag::Sh | Tag::Pkh | Tag::Wpkh | Tag::Bare => Err(Error::PolicyScopeViolation(format!(
-            "v0.1 does not support top-level tag {tag:?}"
-        ))),
-        // Reserved key tags (descriptor-codec inline-key forms unused in v0.1).
-        Tag::ReservedOrigin
-        | Tag::ReservedNoOrigin
-        | Tag::ReservedUncompressedFullKey
-        | Tag::ReservedCompressedFullKey
-        | Tag::ReservedXOnly
-        | Tag::ReservedXPub
-        | Tag::ReservedMultiXPub
-        | Tag::ReservedUncompressedSinglePriv
-        | Tag::ReservedCompressedSinglePriv
-        | Tag::ReservedXPriv
-        | Tag::ReservedMultiXPriv
-        | Tag::ReservedNoWildcard
-        | Tag::ReservedUnhardenedWildcard
-        | Tag::ReservedHardenedWildcard => Err(Error::PolicyScopeViolation(format!(
-            "v0.1 rejects inline-key tag {tag:?} (deferred to v1+)"
+    match Tag::from_byte(tag_byte) {
+        Some(Tag::Wsh) => decode_wsh_inner(cur, keys),
+        Some(Tag::Tr) => decode_tr_inner(cur, keys),
+        Some(Tag::Wpkh) => decode_wpkh_inner(cur, keys), // v0.4: native P2WPKH
+        Some(Tag::Sh) => decode_sh_inner(cur, keys),     // v0.4: P2SH-P2WPKH / P2SH-P2WSH
+        Some(Tag::Pkh) | Some(Tag::Bare) => Err(Error::PolicyScopeViolation(
+            "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)"
+                .to_string(),
+        )),
+        // Reserved key tags (descriptor-codec inline-key forms, deferred to v1+).
+        Some(
+            Tag::ReservedOrigin
+            | Tag::ReservedNoOrigin
+            | Tag::ReservedUncompressedFullKey
+            | Tag::ReservedCompressedFullKey
+            | Tag::ReservedXOnly
+            | Tag::ReservedXPub
+            | Tag::ReservedMultiXPub
+            | Tag::ReservedUncompressedSinglePriv
+            | Tag::ReservedCompressedSinglePriv
+            | Tag::ReservedXPriv
+            | Tag::ReservedMultiXPriv
+            | Tag::ReservedNoWildcard
+            | Tag::ReservedUnhardenedWildcard
+            | Tag::ReservedHardenedWildcard,
+        ) => Err(Error::PolicyScopeViolation(format!(
+            "v0.4 rejects inline-key tag 0x{tag_byte:02x} (deferred to v1+)"
         ))),
         // A known fragment tag (e.g. AndV, PkK, True) appearing at the top
-        // level — malformed input from a v0.1 perspective. Use
-        // PolicyScopeViolation rather than UnknownTag because the byte was
-        // recognised; only its position is wrong.
-        _ => Err(Error::PolicyScopeViolation(format!(
-            "tag {tag:?} (0x{tag_byte:02x}) is not valid at the top level in v0.1"
+        // level — malformed input. Use PolicyScopeViolation rather than
+        // UnknownTag because the byte was recognised; only its position is wrong.
+        Some(other) => Err(Error::PolicyScopeViolation(format!(
+            "v0.4 does not support top-level tag {other:?}"
         ))),
+        None => Err(Error::InvalidBytecode {
+            offset: tag_offset,
+            kind: BytecodeErrorKind::UnknownTag(tag_byte),
+        }),
+    }
+}
+
+/// Decode a `Tag::Wpkh` body: reads one placeholder and wraps it in
+/// `Descriptor::Wpkh`. The outer `decode_template` calls `require_empty`
+/// afterwards, so we do not repeat it here.
+fn decode_wpkh_inner(
+    cur: &mut Cursor<'_>,
+    keys: &[DescriptorPublicKey],
+) -> Result<Descriptor<DescriptorPublicKey>, Error> {
+    let key = decode_placeholder(cur, keys)?;
+    let desc = Descriptor::new_wpkh(key).map_err(|e| Error::InvalidBytecode {
+        offset: cur.offset(),
+        kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+    })?;
+    Ok(desc)
+}
+
+/// Decode a `Tag::Sh` body using peek-before-recurse (recursion-bomb defense).
+///
+/// Only two inner shapes are accepted in v0.4:
+///   - `sh(wpkh(...))` — P2SH-P2WPKH, inner tag `Tag::Wpkh`
+///   - `sh(wsh(...))` — P2SH-P2WSH, inner tag `Tag::Wsh`
+///
+/// Every other inner tag — including bare inner-script tags (AndV, SortedMulti,
+/// etc.) and key-slot tags (Placeholder) — is rejected with
+/// `PolicyScopeViolation`. This upholds the three-family tag layering invariant
+/// described in §3 of the v0.4 spec:
+///   - Wrapper/top-level tags: Pkh, Sh, Wpkh, Wsh, Tr, Bare (0x02–0x07)
+///   - Inner-script tags: SortedMulti, Multi, MultiA, AndV, …, RawPkH (0x09–0x23)
+///   - Key-slot tags: Placeholder (0x32), Reserved* (0x24–0x31) [v1+]
+///
+/// Subsystem 5 implementers MUST NOT widen this dispatch to admit Reserved* tags
+/// directly under Sh; those tags only ever appear after a Wpkh/Wsh wrapper.
+fn decode_sh_inner(
+    cur: &mut Cursor<'_>,
+    keys: &[DescriptorPublicKey],
+) -> Result<Descriptor<DescriptorPublicKey>, Error> {
+    let inner_byte = cur.peek_byte()?;
+    match Tag::from_byte(inner_byte) {
+        Some(Tag::Wpkh) => {
+            cur.read_byte()?; // consume the peeked Wpkh byte
+            let key = decode_placeholder(cur, keys)?;
+            let desc = Descriptor::new_sh_wpkh(key).map_err(|e| Error::InvalidBytecode {
+                offset: cur.offset(),
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Ok(desc)
+        }
+        Some(Tag::Wsh) => {
+            cur.read_byte()?; // consume the peeked Wsh byte
+            let wsh = decode_wsh_body(cur, keys)?;
+            Ok(Descriptor::new_sh_with_wsh(wsh)) // takes Wsh<Pk>, infallible
+        }
+        Some(other) => Err(Error::PolicyScopeViolation(format!(
+            "v0.4 does not support sh({other:?}); only sh(wpkh(...)) and sh(wsh(...)) allowed"
+        ))),
+        None => Err(Error::InvalidBytecode {
+            offset: cur.offset(),
+            kind: BytecodeErrorKind::UnknownTag(inner_byte),
+        }),
     }
 }
 
@@ -761,11 +835,11 @@ mod tests {
 
     #[test]
     fn decode_rejects_top_level_pkh() {
-        // Pkh = 0x02. v0.1 doesn't support top-level pkh.
+        // Pkh = 0x02. v0.4 still rejects legacy top-level pkh (non-segwit out of scope).
         let err = decode_template(&[Tag::Pkh.as_byte()], &empty_keys()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("Pkh")),
-            "expected PolicyScopeViolation about Pkh, got {err:?}"
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("pkh")),
+            "expected PolicyScopeViolation about pkh, got {err:?}"
         );
     }
 
@@ -805,7 +879,7 @@ mod tests {
         // only its placement is wrong.
         let err = decode_template(&[Tag::True.as_byte()], &empty_keys()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("top level")),
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("top-level")),
             "expected PolicyScopeViolation about top-level placement, got {err:?}"
         );
     }
@@ -1795,5 +1869,263 @@ mod tests {
         let wsh: miniscript::descriptor::Wsh<DescriptorPublicKey> =
             decode_wsh_body(&mut cur, &keys).expect("decode_wsh_body succeeds");
         let _ = wsh; // type ascription above proves return type
+    }
+
+    // =========================================================================
+    // Phase 2 — Tasks 2.1–2.5: round-trip tests for new descriptor types
+    // =========================================================================
+
+    /// Task 2.1 / 2.2: wpkh round-trip.
+    /// Bytecode: [Wpkh=0x04, Placeholder=0x32, idx=0x00]
+    #[test]
+    fn decode_wpkh_round_trip() {
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+
+        // Build expected descriptor via string parser.
+        let expected = Descriptor::<DescriptorPublicKey>::from_str(&format!("wpkh({k0})")).unwrap();
+
+        // Build bytecode manually: [Wpkh, Placeholder, 0x00]
+        let bytes = vec![0x04, 0x32, 0x00];
+        let decoded = decode_template(&bytes, std::slice::from_ref(&k0)).unwrap();
+        assert_eq!(decoded, expected, "decoded wpkh does not match expected");
+
+        // Re-encode and check byte stability.
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
+        assert_eq!(reencoded, bytes, "re-encoded wpkh bytes do not match");
+    }
+
+    /// Task 2.3 / 2.4: sh(wpkh(...)) round-trip.
+    /// Bytecode: [Sh=0x03, Wpkh=0x04, Placeholder=0x32, idx=0x00]
+    #[test]
+    fn decode_sh_wpkh_round_trip() {
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+
+        let expected =
+            Descriptor::<DescriptorPublicKey>::from_str(&format!("sh(wpkh({k0}))")).unwrap();
+
+        // [Sh, Wpkh, Placeholder, 0x00]
+        let bytes = vec![0x03, 0x04, 0x32, 0x00];
+        let decoded = decode_template(&bytes, std::slice::from_ref(&k0)).unwrap();
+        assert_eq!(
+            decoded, expected,
+            "decoded sh(wpkh) does not match expected"
+        );
+
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
+        assert_eq!(reencoded, bytes, "re-encoded sh(wpkh) bytes do not match");
+    }
+
+    /// Task 2.5: sh(wsh(sortedmulti(2,K0,K1,K2))) round-trip.
+    /// Bytecode: [Sh=0x03, Wsh=0x05, SortedMulti=0x09, k=2, n=3, Placeholder*3]
+    #[test]
+    fn decode_sh_wsh_sortedmulti_round_trip() {
+        use std::collections::HashMap;
+        use std::str::FromStr;
+
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let k1 = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let k2 = DescriptorPublicKey::from_str(
+            "0395bcfdb728e8b1f0eda94f0db26d4ee3eebca73d11611ace1c0e4eed1bdc0e8a",
+        )
+        .unwrap();
+
+        let expected = Descriptor::<DescriptorPublicKey>::from_str(&format!(
+            "sh(wsh(sortedmulti(2,{k0},{k1},{k2})))"
+        ))
+        .unwrap();
+
+        // [Sh, Wsh, SortedMulti, k=2, n=3, Placeholder@0, Placeholder@1, Placeholder@2]
+        let bytes = vec![
+            0x03, // Sh
+            0x05, // Wsh
+            0x09, 0x02, 0x03, // SortedMulti k=2 n=3
+            0x32, 0x00, // Placeholder index 0
+            0x32, 0x01, // Placeholder index 1
+            0x32, 0x02, // Placeholder index 2
+        ];
+        let keys = vec![k0.clone(), k1.clone(), k2.clone()];
+        let decoded = decode_template(&bytes, &keys).unwrap();
+        assert_eq!(
+            decoded, expected,
+            "decoded sh(wsh(sortedmulti)) does not match expected"
+        );
+
+        let mut map = HashMap::new();
+        map.insert(k0.clone(), 0u8);
+        map.insert(k1.clone(), 1u8);
+        map.insert(k2.clone(), 2u8);
+        let reencoded = crate::bytecode::encode::encode_template(&decoded, &map).unwrap();
+        assert_eq!(
+            reencoded, bytes,
+            "re-encoded sh(wsh(sortedmulti)) bytes do not match"
+        );
+    }
+
+    // =========================================================================
+    // Phase 2 — Task 2.6: decode-side restriction-matrix tests (9 tests)
+    // =========================================================================
+
+    /// n_sh_multi: sh(multi(...)) is legacy P2SH — v0.4 rejects it.
+    #[test]
+    fn decode_rejects_sh_multi_legacy_p2sh() {
+        // [Sh=0x03, Multi=0x19, k=1, n=1, Placeholder@0]
+        let bytes = vec![0x03, 0x19, 0x01, 0x01, 0x32, 0x00];
+        use std::str::FromStr;
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let err = decode_template(&bytes, &[k0]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
+            "expected PolicyScopeViolation about sh(multi), got {err:?}"
+        );
+    }
+
+    /// n_sh_sortedmulti: sh(sortedmulti(...)) is legacy P2SH — v0.4 rejects it.
+    #[test]
+    fn decode_rejects_sh_sortedmulti_legacy_p2sh() {
+        // [Sh=0x03, SortedMulti=0x09, k=1, n=1, Placeholder@0]
+        let bytes = vec![0x03, 0x09, 0x01, 0x01, 0x32, 0x00];
+        use std::str::FromStr;
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let err = decode_template(&bytes, &[k0]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
+            "expected PolicyScopeViolation about sh(sortedmulti), got {err:?}"
+        );
+    }
+
+    /// n_sh_pkh: sh(pkh(...)) rejected — Pkh tag not allowed under Sh.
+    #[test]
+    fn decode_rejects_sh_pkh() {
+        // [Sh=0x03, Pkh=0x02, ...]
+        let bytes = vec![0x03, 0x02, 0x32, 0x00];
+        use std::str::FromStr;
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let err = decode_template(&bytes, &[k0]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
+            "expected PolicyScopeViolation about sh(pkh), got {err:?}"
+        );
+    }
+
+    /// n_sh_tr: sh(tr(...)) rejected — Tr tag not allowed under Sh.
+    #[test]
+    fn decode_rejects_sh_tr() {
+        // [Sh=0x03, Tr=0x06, ...]
+        let bytes = vec![0x03, 0x06, 0x32, 0x00];
+        use std::str::FromStr;
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let err = decode_template(&bytes, &[k0]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
+            "expected PolicyScopeViolation about sh(tr), got {err:?}"
+        );
+    }
+
+    /// n_sh_bare: sh(bare) — Bare tag not allowed under Sh.
+    #[test]
+    fn decode_rejects_sh_bare() {
+        // [Sh=0x03, Bare=0x07, ...]
+        let bytes = vec![0x03, 0x07];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
+            "expected PolicyScopeViolation about sh(bare), got {err:?}"
+        );
+    }
+
+    /// n_sh_inner_script: [Sh, AndV, ...] — inner-script tag directly under Sh rejected.
+    /// Uses lower-level decode_template directly (hand-rolled bytes bypass rust-miniscript parser).
+    #[test]
+    fn decode_rejects_sh_inner_script_andv() {
+        // [Sh=0x03, AndV=0x11, True=0x01, True=0x01]
+        // This bypasses the policy parser (which would reject "sh(and_v(1,1))").
+        let bytes = vec![0x03, 0x11, 0x01, 0x01];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
+            "expected PolicyScopeViolation about sh(AndV), got {err:?}"
+        );
+    }
+
+    /// n_sh_key_slot: [Sh, Placeholder, idx] — key-slot tag directly under Sh rejected
+    /// (layering invariant: Placeholder may only appear after Wpkh/Wsh/etc, not directly under Sh).
+    /// Uses lower-level decode_template directly.
+    #[test]
+    fn decode_rejects_sh_key_slot_placeholder() {
+        // [Sh=0x03, Placeholder=0x32, idx=0x00]
+        let bytes = vec![0x03, 0x32, 0x00];
+        use std::str::FromStr;
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let err = decode_template(&bytes, &[k0]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
+            "expected PolicyScopeViolation about sh(Placeholder), got {err:?}"
+        );
+    }
+
+    /// n_top_pkh: top-level pkh() — legacy non-segwit, v0.4 rejects.
+    #[test]
+    fn decode_rejects_top_pkh_legacy() {
+        // [Pkh=0x02, ...]
+        let bytes = vec![0x02, 0x32, 0x00];
+        use std::str::FromStr;
+        let k0 = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let err = decode_template(&bytes, &[k0]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("pkh")),
+            "expected PolicyScopeViolation about top-level pkh, got {err:?}"
+        );
+    }
+
+    /// n_top_bare: top-level bare() — legacy non-segwit, v0.4 rejects.
+    #[test]
+    fn decode_rejects_top_bare_legacy() {
+        // [Bare=0x07]
+        let bytes = vec![0x07];
+        let err = decode_template(&bytes, &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("bare")),
+            "expected PolicyScopeViolation about top-level bare, got {err:?}"
+        );
     }
 }
