@@ -236,13 +236,14 @@ fn encode_wpkh_single_placeholder() {
     let d = Descriptor::<DescriptorPublicKey>::from_str(policy)
         .expect("policy parses");
     let mut placeholder_map = HashMap::new();
-    // Construct placeholder_map matching the @0 placeholder. Existing pattern
-    // in encode.rs::tests uses parse_descriptor + a HashMap<DescriptorPublicKey, u8>
-    // built from the parsed policy's keys. Reference: encode.rs:655-720 for shape.
-    // Concrete inline: the @0 in the parsed Descriptor maps to a synthetic xpub;
-    // extract via the descriptor's first-key accessor or build via the
-    // placeholder_keys() helper used by other tests in the same module.
-    placeholder_map.insert(extract_first_key(&d), 0u8);
+    // Concrete construction (existing pattern at encode.rs:679-684):
+    // 1. Parse the policy with a literal xpub for @0 (use any well-formed xpub
+    //    or x-only key; tests don't validate xpub origin chains).
+    // 2. Insert the parsed key into placeholder_map at index 0.
+    let key = miniscript::descriptor::DescriptorPublicKey::from_str(
+        "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+    ).unwrap();
+    placeholder_map.insert(key, 0u8);
 
     let mut out = Vec::new();
     encode_template(&d, &placeholder_map, &mut out)
@@ -293,13 +294,14 @@ fn encode_sh_wpkh_single_placeholder() {
     let d = Descriptor::<DescriptorPublicKey>::from_str(policy)
         .expect("policy parses");
     let mut placeholder_map = HashMap::new();
-    // Construct placeholder_map matching the @0 placeholder. Existing pattern
-    // in encode.rs::tests uses parse_descriptor + a HashMap<DescriptorPublicKey, u8>
-    // built from the parsed policy's keys. Reference: encode.rs:655-720 for shape.
-    // Concrete inline: the @0 in the parsed Descriptor maps to a synthetic xpub;
-    // extract via the descriptor's first-key accessor or build via the
-    // placeholder_keys() helper used by other tests in the same module.
-    placeholder_map.insert(extract_first_key(&d), 0u8);
+    // Concrete construction (existing pattern at encode.rs:679-684):
+    // 1. Parse the policy with a literal xpub for @0 (use any well-formed xpub
+    //    or x-only key; tests don't validate xpub origin chains).
+    // 2. Insert the parsed key into placeholder_map at index 0.
+    let key = miniscript::descriptor::DescriptorPublicKey::from_str(
+        "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+    ).unwrap();
+    placeholder_map.insert(key, 0u8);
 
     let mut out = Vec::new();
     encode_template(&d, &placeholder_map, &mut out)
@@ -666,40 +668,52 @@ The 3 default-tier tests fail because there's no per-type selector yet (current 
 
 - [ ] **Step 1: Add helper to `policy.rs`**
 
+**Architecture note**: the existing tier fall-through chain at `policy.rs:390-397` uses `Option<DerivationPath>` chained via `or_else()`, NOT an `IndicatorOrPath` enum (no such type exists). The dictionary indicator bytes (0x02, 0x03, 0x06) are produced LATER by `bytecode/path.rs:18-22`'s path-to-indicator lookup table inside `encode_path`. So the helper returns a `DerivationPath`, not a `u8`.
+
 ```rust
-/// Returns the natural default-tier indicator for v0.4-introduced top-level
+/// Returns the natural default `DerivationPath` for v0.4-introduced top-level
 /// types when no Tier 0 / Tier 1 path is available. Intentionally scoped:
-/// existing wsh/tr types preserve their pre-v0.4 fallback behavior to avoid
+/// existing wsh/tr types preserve their pre-v0.4 BIP 84 fallback to avoid
 /// changing the bytecode of v0.3.x-shaped no-origin inputs.
-fn default_indicator_for_v0_4_types(d: &Descriptor<DescriptorPublicKey>) -> Option<u8> {
+///
+/// The returned path is later mapped to its dictionary indicator (0x03 for
+/// BIP 84, 0x02 for BIP 49, 0x06 for BIP 48/1') by bytecode/path.rs:18-22's
+/// path-to-indicator lookup. This helper does NOT need to know the indicator
+/// bytes — it just produces the canonical path.
+fn default_path_for_v0_4_types(
+    d: &Descriptor<DescriptorPublicKey>,
+) -> Option<DerivationPath> {
     use miniscript::descriptor::{Descriptor, ShInner};
-    match d {
-        Descriptor::Wpkh(_) => Some(0x03),                  // BIP 84
+    use std::str::FromStr;
+    let path_str = match d {
+        Descriptor::Wpkh(_) => "m/84'/0'/0'",                // BIP 84
         Descriptor::Sh(sh) => match sh.as_inner() {
-            ShInner::Wpkh(_) => Some(0x02),                 // BIP 49
-            ShInner::Wsh(_)  => Some(0x06),                 // BIP 48/1'
-            _ => None,                                       // unreachable in v0.4 (rejected upstream)
+            ShInner::Wpkh(_) => "m/49'/0'/0'",               // BIP 49
+            ShInner::Wsh(_)  => "m/48'/0'/0'/1'",            // BIP 48/1'
+            _ => return None,                                 // unreachable in v0.4 (rejected upstream)
         },
-        Descriptor::Wsh(_) | Descriptor::Tr(_) => None,     // preserve pre-v0.4 behavior
-        _ => None,                                           // unreachable in v0.4
-    }
+        Descriptor::Wsh(_) | Descriptor::Tr(_) => return None,  // preserve pre-v0.4 BIP 84 fallback
+        _ => return None,                                        // unreachable in v0.4
+    };
+    Some(DerivationPath::from_str(path_str).expect("static path string is valid"))
 }
 ```
 
 ### Task 3.3: Wire into existing fall-through chain
 
-- [ ] **Step 1: Edit `policy.rs:390-397`** — insert between Tier 1 (origin-extracted) and the hard-coded BIP 84 fallback
+- [ ] **Step 1: Edit `policy.rs:390-397`** — insert a new `or_else(...)` link in the existing chain BETWEEN the Tier 1 (origin-extracted) `Option<DerivationPath>` and the hard-coded BIP 84 fallback at the end. The pattern matches the existing chain idiom; verify the actual chain shape at `policy.rs:390-397` before editing (it may use `unwrap_or_else` rather than `or_else` depending on whether the final fallback is `Option` or always-Some).
 
 ```rust
-// (existing Tier 0 + Tier 1 logic unchanged)
-
-// Tier 1.5 (NEW v0.4): per-descriptor default for v0.4-introduced types
-if let Some(indicator) = default_indicator_for_v0_4_types(&descriptor) {
-    return Ok(IndicatorOrPath::Indicator(indicator));
-}
-
-// (existing hard-coded BIP 84 fallback for wsh/tr no-origin cases unchanged)
+// Pseudo-pattern (verify against actual code shape at policy.rs:390-397):
+let shared_path = caller_supplied_path             // Tier 0
+    .or_else(|| extracted_from_origin(&descriptor))  // Tier 1
+    .or_else(|| default_path_for_v0_4_types(&descriptor))  // Tier 1.5 (NEW v0.4)
+    .unwrap_or_else(|| {
+        DerivationPath::from_str("m/84'/0'/0'").unwrap()  // existing final fallback (preserved)
+    });
 ```
+
+The new tier 1.5 fires ONLY for `wpkh`/`sh-wpkh`/`sh-wsh` (returns `Some(path)`); for `wsh`/`tr` no-origin cases it returns `None` and falls through to the preserved BIP 84 fallback.
 
 - [ ] **Step 2: Run all 7 tests, verify all PASS**
 
