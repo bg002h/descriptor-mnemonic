@@ -183,7 +183,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `bip/bip-mnemonic-descriptor.mediawiki:8`
 - **What:** The BIP draft preamble's `Status:` field still reads `Pre-Draft, AI only, not yet human reviewed`. The root README and project memory now use `Pre-Draft, AI + reference implementation, awaiting human review`. The BIP draft is its own artifact and could legitimately stay on the older string (the spec text itself hasn't been ref-impl-validated by a human), but for consistency the next BIP touch should consider aligning.
 - **Why deferred:** stylistic; not a contract issue. The BIP draft predates the impl; the spec's status is independent.
-- **Status:** resolved <release-commit-SHA>
+- **Status:** resolved 270bf57
 - **Tier:** v0.1-nice-to-have
 
 ### `bip-preliminary-hrp-disclaimer-tension` — reconcile "preliminary HRP" disclaimer with collision-vet claim
@@ -192,7 +192,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — HRP §disclaimer vs §"Why a new HRP?" collision-vet claim
 - **What:** Line saying the HRP "is preliminary and subject to change before this BIP is finalized" reads awkwardly alongside the collision-vet claim. Both reviewers classified this as "not a Phase 2 defect; flag for finalization."
 - **Why deferred:** Reconciliation was deferred until SLIP-0173 PR (`slip-0173-register-md-hrp`) status was clearer. Fixed in v0.4.1 by upgrading the disclaimer to "subject to formal SLIP-0173 registration" which is consistent with the collision-vet claim.
-- **Status:** resolved <release-commit-SHA>
+- **Status:** resolved 270bf57
 - **Tier:** v0.3-finalization (pre-1.0 BIP cleanup)
 
 ### `bch-known-vector-repin-with-md-hrp` — repin BCH known-vector tests with Python-computed checksums for HRP "md"
@@ -201,7 +201,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/encoding.rs` — `bch_known_vector_regular` and `bch_known_vector_long` test functions
 - **What:** Phase 5 implementer converted these from hardcoded-expected-checksum tests to round-trip tests. Both could go wrong together (wrong polynomial constant) and the test would still pass. Fix: compute Python-reference checksums for HRP `"md"` and add `assert_eq!(actual, &[…])` pin lines.
 - **Why deferred:** Repinning required computing the new BCH-over-md-HRP checksums via an external Python reference.
-- **Status:** resolved <release-commit-SHA>
+- **Status:** resolved 270bf57
 - **Tier:** v0.3-nice-to-have (downgraded from v0.3-blocker; redundant with SHA-pin layer but adds unit-level isolation)
 - **Pins (v0.4.1):** regular `[25, 14, 21, 4, 26, 20, 18, 15, 5, 15, 23, 30, 15]`; long `[23, 8, 11, 10, 1, 2, 13, 8, 29, 0, 17, 11, 14, 25, 11]`. Script: `/tmp/compute_bch_md_pins.py`.
 
