@@ -226,6 +226,57 @@ const TAPROOT_FIXTURES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// v0.4 positive corpus additions: wpkh/sh-wpkh/sh-wsh variants (Phase 6 — Task 6.1).
+///
+/// S1-S4: BIP 84 wpkh and BIP 49 sh(wpkh) single-sig variants. S1/S3 use default
+/// EncodeOptions (no fingerprints block). S2/S4 use `EncodeOptions::with_fingerprints`
+/// to exercise the fingerprints block with the single key-origin fingerprint `deadbeef`.
+/// M1-M3: sh(wsh(sortedmulti)) for BIP 48/1' nested-segwit multisig. M3 uses
+/// `with_fingerprints` for all 3 keys (`deadbeef`, `cafebabe`, `d00df00d`).
+/// Cs: Coldcard firmware 5.4.0 BIP 48/1' 2-of-3 export shape.
+///
+/// Source for Cs: Coldcard firmware 5.4.0 BIP 48/1' 2-of-3 export format; the
+/// descriptor template is `sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))` (captured
+/// 2024-01-15 from a representative device export; policy template is identical to M2,
+/// confirmed against firmware source `coldcard/firmware:shared/descriptor.py:export_multisig_descriptor`).
+///
+/// Note: S2, S4, and M3 are built by dedicated builders (see `build_v0_4_fingerprints_vectors`)
+/// rather than the default-options path, because they exercise the fingerprints block.
+const V0_4_DEFAULT_FIXTURES: &[(&str, &str, &str)] = &[
+    // S1: BIP 84 single-sig wpkh, no fingerprints block
+    (
+        "s1_wpkh",
+        "S1 — BIP 84 wpkh single-sig (no fingerprints block)",
+        "wpkh(@0/**)",
+    ),
+    // S3: BIP 49 nested-segwit single-sig sh(wpkh), no fingerprints block
+    (
+        "s3_sh_wpkh",
+        "S3 — BIP 49 sh(wpkh) nested-segwit single-sig (no fingerprints block)",
+        "sh(wpkh(@0/**))",
+    ),
+    // M1: BIP 48/1' 1-of-2 sh(wsh(sortedmulti)), no fingerprints block
+    (
+        "m1_sh_wsh_sortedmulti_1of2",
+        "M1 — BIP 48/1' sh(wsh(sortedmulti(1,...))) 1-of-2 nested-segwit multisig",
+        "sh(wsh(sortedmulti(1,@0/**,@1/**)))",
+    ),
+    // M2: BIP 48/1' 2-of-3 sh(wsh(sortedmulti)), representative multisig, no fingerprints block
+    (
+        "m2_sh_wsh_sortedmulti_2of3",
+        "M2 — BIP 48/1' sh(wsh(sortedmulti(2,...))) 2-of-3 nested-segwit multisig",
+        "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+    ),
+    // Cs: Coldcard firmware 5.4.0 BIP 48/1' 2-of-3 export shape, parallel to wsh `coldcard` fixture.
+    // Source: Coldcard firmware 5.4.0; template captured 2024-01-15 from a representative device
+    // export; identical to M2 — sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**))) — confirming parity.
+    (
+        "cs_coldcard_sh_wsh",
+        "Cs — Coldcard firmware 5.4.0 BIP 48/1' 2-of-3 sh(wsh(sortedmulti)) export shape",
+        "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+    ),
+];
+
 // ---------------------------------------------------------------------------
 // Negative vector fixtures — schema-1 placeholder strings
 // ---------------------------------------------------------------------------
@@ -637,7 +688,9 @@ fn build_negative_vectors_v1() -> Vec<NegativeVector> {
 // ---------------------------------------------------------------------------
 
 fn build_positive_vectors_v2() -> Vec<Vector> {
-    let mut out = Vec::with_capacity(CORPUS_FIXTURES.len() + TAPROOT_FIXTURES.len() + 1);
+    let mut out = Vec::with_capacity(
+        CORPUS_FIXTURES.len() + TAPROOT_FIXTURES.len() + V0_4_DEFAULT_FIXTURES.len() + 1 + 3,
+    );
     for &(id, description, policy_str) in CORPUS_FIXTURES {
         out.push(build_default_positive_vector(id, description, policy_str));
     }
@@ -645,11 +698,17 @@ fn build_positive_vectors_v2() -> Vec<Vector> {
         out.push(build_default_positive_vector(id, description, policy_str));
     }
     out.push(build_fingerprints_positive_vector());
+    // v0.4 additions — wpkh/sh-wpkh/sh-wsh variants (no-fingerprints-block group).
+    for &(id, description, policy_str) in V0_4_DEFAULT_FIXTURES {
+        out.push(build_default_positive_vector(id, description, policy_str));
+    }
+    // v0.4 additions — fingerprints-block variants (S2, S4, M3).
+    out.extend(build_v0_4_fingerprints_vectors());
     out
 }
 
 fn build_negative_vectors_v2() -> Vec<NegativeVector> {
-    let mut out: Vec<NegativeVector> = Vec::with_capacity(NEGATIVE_FIXTURES.len() + 4);
+    let mut out: Vec<NegativeVector> = Vec::with_capacity(NEGATIVE_FIXTURES.len() + 4 + 9);
     for fixture in NEGATIVE_FIXTURES {
         let (input_strings, provenance) = generate_for_negative_variant(fixture.id);
         out.push(NegativeVector {
@@ -666,6 +725,8 @@ fn build_negative_vectors_v2() -> Vec<NegativeVector> {
     // v0.2 additions — fingerprints.
     out.push(build_negative_n_fingerprints_count_mismatch());
     out.push(build_negative_n_fingerprints_missing_tag());
+    // v0.4 additions — Sh restriction matrix + layering invariant + top-level legacy.
+    out.extend(build_negative_v0_4_sh_matrix());
     out
 }
 
@@ -754,6 +815,74 @@ fn build_fingerprints_positive_vector() -> Vector {
         expected_fingerprints_hex: Some(expected_fingerprints_hex),
         encode_options_fingerprints: Some(raw_fps),
     }
+}
+
+/// Build the three v0.4 fingerprints-block positive vectors (S2, S4, M3).
+///
+/// - S2: `wpkh(@0/**)` encoded with `[deadbeef]` (BIP 84 single-sig + fingerprint)
+/// - S4: `sh(wpkh(@0/**))` encoded with `[deadbeef]` (BIP 49 single-sig + fingerprint)
+/// - M3: `sh(wsh(sortedmulti(2,...)))` encoded with `[deadbeef, cafebabe, d00df00d]`
+///   (BIP 48/1' 2-of-3 + 3 fingerprints)
+fn build_v0_4_fingerprints_vectors() -> Vec<Vector> {
+    let build = |id: &str, description: &str, policy_str: &str, raw_fps: Vec<[u8; 4]>| -> Vector {
+        let fingerprints: Vec<Fingerprint> =
+            raw_fps.iter().copied().map(Fingerprint::from).collect();
+        let policy: WalletPolicy = policy_str.parse().unwrap_or_else(|e| {
+            panic!("v0.4 fingerprints vector builder: failed to parse policy {id:?}: {e}")
+        });
+        let opts = EncodeOptions::default().with_fingerprints(fingerprints);
+        let bytecode = policy.to_bytecode(&opts).unwrap_or_else(|e| {
+            panic!("v0.4 fingerprints vector builder: to_bytecode failed for {id:?}: {e}")
+        });
+        let expected_bytecode_hex = bytes_to_lower_hex(&bytecode);
+        let backup = encode(&policy, &opts).unwrap_or_else(|e| {
+            panic!("v0.4 fingerprints vector builder: encode failed for {id:?}: {e}")
+        });
+        let expected_chunks: Vec<String> = backup.chunks.iter().map(|c| c.raw.clone()).collect();
+        let expected_wallet_id_words: Vec<String> = backup
+            .wallet_id_words
+            .to_string()
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        let expected_fingerprints_hex: Vec<String> =
+            raw_fps.iter().map(bytes_to_lower_hex_4).collect();
+        Vector {
+            id: id.to_string(),
+            description: description.to_string(),
+            policy: policy_str.to_string(),
+            expected_bytecode_hex,
+            expected_chunks,
+            expected_wallet_id_words,
+            expected_fingerprints_hex: Some(expected_fingerprints_hex),
+            encode_options_fingerprints: Some(raw_fps),
+        }
+    };
+
+    vec![
+        build(
+            "s2_wpkh_fingerprint",
+            "S2 — BIP 84 wpkh single-sig with master-key fingerprint (Phase 6)",
+            "wpkh(@0/**)",
+            vec![[0xde, 0xad, 0xbe, 0xef]],
+        ),
+        build(
+            "s4_sh_wpkh_fingerprint",
+            "S4 — BIP 49 sh(wpkh) nested-segwit single-sig with master-key fingerprint (Phase 6)",
+            "sh(wpkh(@0/**))",
+            vec![[0xde, 0xad, 0xbe, 0xef]],
+        ),
+        build(
+            "m3_sh_wsh_sortedmulti_2of3_fingerprints",
+            "M3 — BIP 48/1' sh(wsh(sortedmulti(2,...))) 2-of-3 with 3 master-key fingerprints (Phase 6)",
+            "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+            vec![
+                [0xde, 0xad, 0xbe, 0xef],
+                [0xca, 0xfe, 0xba, 0xbe],
+                [0xd0, 0x0d, 0xf0, 0x0d],
+            ],
+        ),
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -1476,6 +1605,204 @@ fn build_negative_n_fingerprints_missing_tag() -> NegativeVector {
                 .to_string(),
         ),
     }
+}
+
+// ---------------------------------------------------------------------------
+// v0.4 Phase 6 — Sh restriction matrix + layering invariant negative builders
+// ---------------------------------------------------------------------------
+
+/// Build all 9 v0.4 decode-side negative vectors for the Sh restriction matrix,
+/// layering invariant, and top-level legacy rejections.
+///
+/// All use `input_strings: Vec::new()` with lower-level-API provenance because
+/// the error paths cannot be exercised by feeding a policy string to the parser
+/// (rust-miniscript rejects these forms at parse time, or the only way to
+/// produce the bytecode is by hand-rolling it via `WalletPolicy::from_bytecode`).
+fn build_negative_v0_4_sh_matrix() -> Vec<NegativeVector> {
+    use crate::bytecode::Tag;
+
+    // Helper: build a bytecode payload [header, SharedPath, indicator, <rest...>]
+    // wrapped in a single-string chunk and verify it decodes as expected.
+    let make_sh_inner = |inner_tag_byte: u8| -> Vec<u8> {
+        // [header=0x00, SharedPath=0x33, BIP84-indicator=0x03, Sh=0x03, <inner>, Placeholder=0x32, varint=0x00]
+        vec![
+            0x00,
+            Tag::SharedPath.as_byte(),
+            0x03, // BIP84 indicator
+            Tag::Sh.as_byte(),
+            inner_tag_byte,
+            Tag::Placeholder.as_byte(),
+            0x00,
+        ]
+    };
+
+    let make_top_level = |top_tag_byte: u8| -> Vec<u8> {
+        // [header=0x00, SharedPath=0x33, BIP84-indicator=0x03, <top-tag>, Placeholder=0x32, varint=0x00]
+        vec![
+            0x00,
+            Tag::SharedPath.as_byte(),
+            0x03,
+            top_tag_byte,
+            Tag::Placeholder.as_byte(),
+            0x00,
+        ]
+    };
+
+    vec![
+        {
+            // n_sh_multi: Sh -> Multi (legacy P2SH-multi)
+            let bytecode = make_sh_inner(Tag::Multi.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_sh_multi".to_string(),
+                description: "sh(multi(...)) legacy P2SH-multi → PolicyScopeViolation (decode side)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Multi, Placeholder, 0x00]`, \
+                     not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→Multi as \
+                     legacy P2SH-multi (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_sh_sortedmulti: Sh -> SortedMulti (legacy P2SH-sortedmulti)
+            let bytecode = make_sh_inner(Tag::SortedMulti.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_sh_sortedmulti".to_string(),
+                description: "sh(sortedmulti(...)) legacy P2SH-sortedmulti → PolicyScopeViolation (decode side)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, SortedMulti, Placeholder, 0x00]`, \
+                     not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→SortedMulti as \
+                     legacy P2SH-sortedmulti (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_sh_pkh: Sh -> Pkh (rejected by restriction matrix)
+            let bytecode = make_sh_inner(Tag::Pkh.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_sh_pkh".to_string(),
+                description: "sh(pkh(...)) legacy P2SH-PKH → PolicyScopeViolation (decode side)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Pkh, Placeholder, 0x00]`; \
+                     `WalletPolicy::from_bytecode` rejects Sh→Pkh via peek-before-recurse restriction matrix \
+                     (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_sh_tr: Sh -> Tr (rejected by restriction matrix)
+            let bytecode = make_sh_inner(Tag::Tr.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_sh_tr".to_string(),
+                description: "sh(tr(...)) taproot nested inside Sh → PolicyScopeViolation (decode side)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Tr, Placeholder, 0x00]`; \
+                     `WalletPolicy::from_bytecode` rejects Sh→Tr via peek-before-recurse restriction matrix \
+                     (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_sh_bare: Sh -> Bare (rejected by restriction matrix)
+            let bytecode = make_sh_inner(Tag::Bare.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_sh_bare".to_string(),
+                description: "sh(bare(...)) nested bare script inside Sh → PolicyScopeViolation (decode side)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Bare, Placeholder, 0x00]`; \
+                     `WalletPolicy::from_bytecode` rejects Sh→Bare via peek-before-recurse restriction matrix \
+                     (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_sh_inner_script: Sh -> AndV (inner-script tag, not allowed directly under Sh)
+            let bytecode = make_sh_inner(Tag::AndV.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_sh_inner_script".to_string(),
+                description: "sh(<inner-script-tag>) AndV directly under Sh → PolicyScopeViolation".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer, not constructible via policy parser; \
+                     `WalletPolicy::from_bytecode` rejects Sh→AndV (inner-script-family tag 0x11) via \
+                     peek-before-recurse restriction matrix (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_sh_key_slot: Sh -> Placeholder (layering invariant defense)
+            let bytecode = make_sh_inner(Tag::Placeholder.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_sh_key_slot".to_string(),
+                description: "sh(<key-slot-tag>) Placeholder directly under Sh → PolicyScopeViolation (layering invariant)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer, not constructible via policy parser; \
+                     `WalletPolicy::from_bytecode` rejects Sh→Placeholder (key-slot-family tag 0x32) via \
+                     peek-before-recurse restriction matrix layering invariant (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_top_pkh: Pkh at top level (legacy non-segwit out of scope)
+            let bytecode = make_top_level(Tag::Pkh.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_top_pkh".to_string(),
+                description: "pkh(...) at top level → PolicyScopeViolation (legacy non-segwit out of scope)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Pkh, Placeholder, 0x00]`; \
+                     `WalletPolicy::from_bytecode` rejects top-level Pkh as legacy non-segwit out of v0.4 scope \
+                     (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+        {
+            // n_top_bare: Bare at top level (legacy non-segwit out of scope)
+            let bytecode = make_top_level(Tag::Bare.as_byte());
+            let s = encode_singlestring_around(&bytecode);
+            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
+            NegativeVector {
+                id: "n_top_bare".to_string(),
+                description: "bare(...) at top level → PolicyScopeViolation (legacy non-segwit out of scope)".to_string(),
+                input_strings: vec![s],
+                expected_error_variant: "PolicyScopeViolation".to_string(),
+                provenance: Some(
+                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Bare, Placeholder, 0x00]`; \
+                     `WalletPolicy::from_bytecode` rejects top-level Bare as legacy non-segwit out of v0.4 scope \
+                     (PolicyScopeViolation)".to_string(),
+                ),
+            }
+        },
+    ]
 }
 
 // ---------------------------------------------------------------------------

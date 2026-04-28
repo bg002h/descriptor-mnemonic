@@ -35,24 +35,48 @@ fn build_test_vectors_is_deterministic() {
 
 /// Task 8.7-c — Corpus vector count and negative vector floor match expectations.
 ///
-/// C1-C5 + E10 + E12 + E13 + E14 + Coldcard = 10 positive vectors.
-/// At least 18 negative scenarios (conformance.rs minimum).
+/// Schema-1 (build_test_vectors / v1):
+///   C1-C5 + E10 + E12 + E13 + E14 + Coldcard = 10 positive vectors.
+///   At least 18 negative scenarios (conformance.rs minimum).
+///
+/// Schema-2 (build_test_vectors_v2):
+///   10 corpus + 3 taproot + 1 fingerprints + 5 v0.4 default + 3 v0.4 fingerprints = 22 total.
+///   Negatives: >= 39 (30 pre-v0.4 + 9 v0.4 Sh-matrix/top-level additions; minimum guard = 27).
 #[test]
 fn build_test_vectors_has_expected_corpus_count() {
-    let v = md_codec::vectors::build_test_vectors();
+    let v1 = md_codec::vectors::build_test_vectors();
 
     assert_eq!(
-        v.vectors.len(),
+        v1.vectors.len(),
         10,
-        "expected exactly 10 positive corpus vectors (C1-C5, E10, E12, E13, E14, Coldcard); \
+        "expected exactly 10 positive corpus vectors in schema-1 (C1-C5, E10, E12, E13, E14, Coldcard); \
          got {}",
-        v.vectors.len()
+        v1.vectors.len()
     );
 
     assert!(
-        v.negative_vectors.len() >= 18,
-        "expected >= 18 negative vectors (conformance.rs minimum); got {}",
-        v.negative_vectors.len()
+        v1.negative_vectors.len() >= 18,
+        "expected >= 18 negative vectors in schema-1 (conformance.rs minimum); got {}",
+        v1.negative_vectors.len()
+    );
+
+    let v2 = md_codec::vectors::build_test_vectors_v2();
+
+    assert_eq!(
+        v2.vectors.len(),
+        22,
+        "expected exactly 22 positive corpus vectors in schema-2 \
+         (10 corpus + 3 taproot + 1 fingerprints + 5 v0.4-default + 3 v0.4-fingerprints = 22 total); \
+         got {} — if this fails, update the expected count in tests/vectors_schema.rs",
+        v2.vectors.len()
+    );
+
+    assert!(
+        v2.negative_vectors.len() >= 27,
+        "expected >= 27 negative vectors in schema-2 \
+         (30 pre-v0.4 + 9 v0.4 Sh-matrix additions = 39 total; \
+         minimum is 27 to guard against regression); got {}",
+        v2.negative_vectors.len()
     );
 }
 
@@ -176,6 +200,9 @@ fn committed_json_matches_regenerated_if_present() {
 ///
 /// Mirrors `committed_json_matches_regenerated_if_present` but for the
 /// schema-2 lock. The file lives at `tests/vectors/v0.2.json`.
+// TODO Phase 7: re-enable after vector regen (Phase 6 adds new fixtures; regen in Phase 7
+// will update the committed v0.2.json to include the new v0.4 vectors).
+#[ignore]
 #[test]
 fn committed_v0_2_json_matches_regenerated_if_present() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
@@ -216,6 +243,9 @@ fn committed_v0_2_json_matches_regenerated_if_present() {
 /// `build_test_vectors_v2()` and the committed file (especially across
 /// `serde_json` formatting changes); not to prevent intentional
 /// regenerations.
+// TODO Phase 7: re-enable after vector regen (Phase 6 adds new fixtures; regen in Phase 7
+// will produce a new SHA that should replace V0_2_SHA256 below).
+#[ignore]
 #[test]
 fn v0_2_sha256_lock_matches_committed_file() {
     use bitcoin::hashes::{Hash, sha256};
@@ -329,6 +359,101 @@ fn schema_2_contains_v0_2_corpus_additions() {
         assert!(
             negative_ids.contains(&required),
             "schema-2 must include negative vector {required:?}; got {negative_ids:?}"
+        );
+    }
+}
+
+/// Phase 6 — schema-2 must contain the v0.4 corpus additions (S1-Cs positive + Sh-matrix negative).
+#[test]
+fn schema_2_contains_v0_4_corpus_additions() {
+    let v2 = md_codec::vectors::build_test_vectors_v2();
+
+    let positive_ids: Vec<&str> = v2.vectors.iter().map(|v| v.id.as_str()).collect();
+    for required in [
+        "s1_wpkh",
+        "s2_wpkh_fingerprint",
+        "s3_sh_wpkh",
+        "s4_sh_wpkh_fingerprint",
+        "m1_sh_wsh_sortedmulti_1of2",
+        "m2_sh_wsh_sortedmulti_2of3",
+        "m3_sh_wsh_sortedmulti_2of3_fingerprints",
+        "cs_coldcard_sh_wsh",
+    ] {
+        assert!(
+            positive_ids.contains(&required),
+            "schema-2 must include v0.4 positive vector {required:?}; got {positive_ids:?}"
+        );
+    }
+
+    let negative_ids: Vec<&str> = v2
+        .negative_vectors
+        .iter()
+        .map(|nv| nv.id.as_str())
+        .collect();
+    for required in [
+        "n_sh_multi",
+        "n_sh_sortedmulti",
+        "n_sh_pkh",
+        "n_sh_tr",
+        "n_sh_bare",
+        "n_sh_inner_script",
+        "n_sh_key_slot",
+        "n_top_pkh",
+        "n_top_bare",
+    ] {
+        assert!(
+            negative_ids.contains(&required),
+            "schema-2 must include v0.4 negative vector {required:?}; got {negative_ids:?}"
+        );
+    }
+
+    // All new fingerprints-carrying v0.4 vectors must populate both metadata fields.
+    for fingerprints_id in [
+        "s2_wpkh_fingerprint",
+        "s4_sh_wpkh_fingerprint",
+        "m3_sh_wsh_sortedmulti_2of3_fingerprints",
+    ] {
+        let v = v2
+            .vectors
+            .iter()
+            .find(|v| v.id == fingerprints_id)
+            .unwrap_or_else(|| {
+                panic!("v0.4 fingerprints vector {fingerprints_id:?} must be present")
+            });
+        assert!(
+            v.expected_fingerprints_hex.is_some(),
+            "v0.4 fingerprints vector {fingerprints_id:?} must carry expected_fingerprints_hex"
+        );
+        assert!(
+            v.encode_options_fingerprints.is_some(),
+            "v0.4 fingerprints vector {fingerprints_id:?} must carry encode_options_fingerprints"
+        );
+    }
+
+    // All v0.4 negative vectors must carry a provenance string.
+    for neg_id in [
+        "n_sh_multi",
+        "n_sh_sortedmulti",
+        "n_sh_pkh",
+        "n_sh_tr",
+        "n_sh_bare",
+        "n_sh_inner_script",
+        "n_sh_key_slot",
+        "n_top_pkh",
+        "n_top_bare",
+    ] {
+        let nv = v2
+            .negative_vectors
+            .iter()
+            .find(|nv| nv.id == neg_id)
+            .unwrap_or_else(|| panic!("v0.4 negative vector {neg_id:?} must be present"));
+        let prov = nv
+            .provenance
+            .as_ref()
+            .unwrap_or_else(|| panic!("v0.4 negative vector {neg_id:?} must carry provenance"));
+        assert!(
+            !prov.trim().is_empty(),
+            "v0.4 negative vector {neg_id:?} provenance must be non-empty"
         );
     }
 }

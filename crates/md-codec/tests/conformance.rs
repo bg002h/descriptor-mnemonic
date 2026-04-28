@@ -14,6 +14,7 @@
 
 mod common;
 
+use bitcoin::bip32::Fingerprint;
 use md_codec::{
     BytecodeErrorKind, Chunk, ChunkHeader, ChunkWalletId, ChunkingMode, DecodeOptions,
     EncodeOptions, Error, WalletPolicy, chunk_bytes, chunking_decision, decode, encode,
@@ -942,6 +943,271 @@ fn rejects_tap_leaf_subset_violation() {
 // ---------------------------------------------------------------------------
 // Layer 8: Fingerprints-block validation (Phase E)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Phase 6 Task 6.4 — Hostile-input tests (v0.4 restriction matrix + layering)
+// ---------------------------------------------------------------------------
+
+/// v0.4-H1. Recursion bomb: 100 Sh tags fed to `from_bytecode` directly.
+///
+/// Verifies the decoder rejects at depth 1 with `PolicyScopeViolation`, NOT
+/// panic, NOT stack-overflow. The peek-before-recurse Sh dispatch rejects any
+/// inner byte that is not `Tag::Wpkh` or `Tag::Wsh`; the second `Sh` tag
+/// (0x03) is itself such a byte (since Sh→Sh is not in the admission set),
+/// so rejection happens immediately without entering deep recursion.
+#[test]
+fn rejects_sh_recursion_bomb() {
+    use md_codec::bytecode::Tag;
+
+    // Build bytecode: header(0x00) + SharedPath(0x33) + indicator(0x03) +
+    // 100 × Sh tags + Wpkh + Placeholder + 0x00.
+    let mut bytes: Vec<u8> = vec![0x00, Tag::SharedPath.as_byte(), 0x03];
+    bytes.extend(std::iter::repeat_n(Tag::Sh.as_byte(), 100));
+    bytes.extend_from_slice(&[Tag::Wpkh.as_byte(), Tag::Placeholder.as_byte(), 0x00]);
+
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(err, Error::PolicyScopeViolation(_)),
+        "expected PolicyScopeViolation for Sh-recursion-bomb, got {:?}",
+        err
+    );
+}
+
+/// v0.4-H2. Minimal Sh recursion: `[Sh][Sh][Wpkh][Placeholder][0]` via `from_bytecode`.
+///
+/// Depth-1 rejection: the outer Sh peeks the next byte (inner Sh = 0x03)
+/// which is not in the admission set (only Wpkh/Wsh allowed), so the
+/// decoder emits `PolicyScopeViolation` immediately.
+#[test]
+fn rejects_sh_recursion_minimal() {
+    use md_codec::bytecode::Tag;
+
+    let bytes: Vec<u8> = vec![
+        0x00,
+        Tag::SharedPath.as_byte(),
+        0x03,
+        Tag::Sh.as_byte(), // top-level Sh (admitted at dispatch)
+        Tag::Sh.as_byte(), // inner byte peeked by Sh restriction matrix — NOT Wpkh/Wsh
+        Tag::Wpkh.as_byte(),
+        Tag::Placeholder.as_byte(),
+        0x00,
+    ];
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(err, Error::PolicyScopeViolation(_)),
+        "expected PolicyScopeViolation for Sh→Sh, got {:?}",
+        err
+    );
+}
+
+/// v0.4-H3. Trailing bytes after a valid `wpkh(@0/**)` tree → `InvalidBytecode(TrailingBytes)`.
+#[test]
+fn rejects_wpkh_trailing_bytes() {
+    // Build valid wpkh(@0/**) bytecode, then append a trailing 0xFF.
+    let policy: WalletPolicy = "wpkh(@0/**)".parse().expect("wpkh policy must parse");
+    let mut bytes = policy.to_bytecode(&EncodeOptions::default()).unwrap();
+    bytes.push(0xFF);
+
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TrailingBytes,
+                ..
+            }
+        ),
+        "expected InvalidBytecode {{ kind: TrailingBytes }}, got {:?}",
+        err
+    );
+}
+
+/// v0.4-H4. Trailing bytes after a valid `sh(wpkh(@0/**))` tree → `InvalidBytecode(TrailingBytes)`.
+#[test]
+fn rejects_sh_wpkh_trailing_bytes() {
+    let policy: WalletPolicy = "sh(wpkh(@0/**))"
+        .parse()
+        .expect("sh(wpkh) policy must parse");
+    let mut bytes = policy.to_bytecode(&EncodeOptions::default()).unwrap();
+    bytes.push(0xFF);
+
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::InvalidBytecode {
+                kind: BytecodeErrorKind::TrailingBytes,
+                ..
+            }
+        ),
+        "expected InvalidBytecode {{ kind: TrailingBytes }}, got {:?}",
+        err
+    );
+}
+
+/// v0.4-H5. Non-placeholder byte under `sh(wpkh(...))` → distinct diagnostic.
+///
+/// After Sh→Wpkh is admitted, the Wpkh decoder expects a `Tag::Placeholder`
+/// for the key slot. Supplying `Tag::Wsh` (0x05) where `Tag::Placeholder` (0x32)
+/// is expected triggers a `PolicyScopeViolation` with a message mentioning
+/// "Tag::Placeholder" — distinct from the Sh restriction-matrix rejection which
+/// mentions the admitted/rejected tag family.
+///
+/// Note: the implementation emits `PolicyScopeViolation("expected Tag::Placeholder,
+/// got Wsh at offset N")` rather than `InvalidBytecode { kind: UnexpectedTag }` for
+/// this path, because the placeholder decoder sits inside the policy-scope layer.
+#[test]
+fn rejects_sh_wpkh_non_placeholder() {
+    use md_codec::bytecode::Tag;
+
+    // Bytecode: header + SharedPath + indicator + Sh + Wpkh + Tag::Wsh (not Placeholder)
+    let bytes: Vec<u8> = vec![
+        0x00,
+        Tag::SharedPath.as_byte(),
+        0x03,
+        Tag::Sh.as_byte(),
+        Tag::Wpkh.as_byte(),
+        // Supply Tag::Wsh (0x05) where Tag::Placeholder (0x32) is expected.
+        Tag::Wsh.as_byte(),
+        0x00,
+    ];
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    // Must be a PolicyScopeViolation with a message distinct from the Sh-matrix rejection.
+    // The message mentions "Tag::Placeholder" (the expected tag that was not found).
+    match &err {
+        Error::PolicyScopeViolation(msg) => {
+            assert!(
+                msg.contains("Placeholder") || msg.contains("placeholder"),
+                "PolicyScopeViolation message must mention 'Placeholder' for non-placeholder key slot; got: {msg:?}"
+            );
+        }
+        other => panic!(
+            "expected PolicyScopeViolation (non-placeholder under sh(wpkh)), got {:?}",
+            other
+        ),
+    }
+}
+
+/// v0.4-H6. Sh appearing as child of AndV inside Wsh → layering invariant defense.
+///
+/// Construct bytecode `[Wsh][AndV][Sh][...]`: Sh appearing as the first child
+/// of an AndV fragment nested inside Wsh. The Wsh inner decoder invokes the
+/// miniscript-fragment dispatcher, which must not admit `Tag::Sh` (a
+/// wrapper-family tag) as a valid script fragment.
+#[test]
+fn rejects_sh_inside_wsh_andv() {
+    use md_codec::bytecode::Tag;
+
+    // Bytecode: header + SharedPath + indicator + Wsh + AndV + Sh + ...
+    // The inner-script decoder inside Wsh handles AndV, then recurses for the
+    // first child. Tag::Sh (0x03) is a wrapper-family tag that the inner-script
+    // dispatcher must reject as an unknown inner-script node.
+    let bytes: Vec<u8> = vec![
+        0x00,
+        Tag::SharedPath.as_byte(),
+        0x03,
+        Tag::Wsh.as_byte(),
+        Tag::AndV.as_byte(),
+        Tag::Sh.as_byte(), // Sh in inner-script position — layering invariant violation
+        Tag::Placeholder.as_byte(),
+        0x00,
+        Tag::Placeholder.as_byte(),
+        0x01,
+    ];
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    // Must not panic; must return either PolicyScopeViolation or InvalidBytecode.
+    assert!(
+        matches!(
+            err,
+            Error::PolicyScopeViolation(_) | Error::InvalidBytecode { .. }
+        ),
+        "expected rejection of Sh inside Wsh/AndV, got {:?}",
+        err
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 Task 6.5 — Round-trip property tests (S1-Cs, one per positive)
+// ---------------------------------------------------------------------------
+
+/// Round-trip: encode → decode returns a structurally equivalent WalletPolicy.
+///
+/// Helper: parse policy_str, encode, decode, compare canonical policy strings.
+fn round_trip_policy(policy_str: &str) {
+    common::round_trip_assert(policy_str);
+}
+
+/// RT-S1. Round-trip for S1: `wpkh(@0/**)` (BIP 84 single-sig, no fingerprints).
+#[test]
+fn round_trip_s1_wpkh() {
+    round_trip_policy("wpkh(@0/**)");
+}
+
+/// RT-S2. Round-trip for S2: `wpkh(@0/**)` with fingerprints block via EncodeOptions.
+#[test]
+fn round_trip_s2_wpkh_fingerprint() {
+    let policy: WalletPolicy = "wpkh(@0/**)".parse().expect("s2 parse");
+    let opts = EncodeOptions::default()
+        .with_fingerprints(vec![Fingerprint::from([0xde, 0xad, 0xbe, 0xef])]);
+    let backup = encode(&policy, &opts).expect("s2 encode");
+    let chunk_strs: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
+    let decoded = decode(&chunk_strs, &DecodeOptions::new()).expect("s2 decode");
+    common::assert_structural_eq(&policy, &decoded.policy);
+}
+
+/// RT-S3. Round-trip for S3: `sh(wpkh(@0/**))` (BIP 49 single-sig, no fingerprints).
+#[test]
+fn round_trip_s3_sh_wpkh() {
+    round_trip_policy("sh(wpkh(@0/**))");
+}
+
+/// RT-S4. Round-trip for S4: `sh(wpkh(@0/**))` with fingerprints block.
+#[test]
+fn round_trip_s4_sh_wpkh_fingerprint() {
+    let policy: WalletPolicy = "sh(wpkh(@0/**))".parse().expect("s4 parse");
+    let opts = EncodeOptions::default()
+        .with_fingerprints(vec![Fingerprint::from([0xde, 0xad, 0xbe, 0xef])]);
+    let backup = encode(&policy, &opts).expect("s4 encode");
+    let chunk_strs: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
+    let decoded = decode(&chunk_strs, &DecodeOptions::new()).expect("s4 decode");
+    common::assert_structural_eq(&policy, &decoded.policy);
+}
+
+/// RT-M1. Round-trip for M1: `sh(wsh(sortedmulti(1,@0/**,@1/**)))` (BIP 48/1' 1-of-2).
+#[test]
+fn round_trip_m1_sh_wsh_sortedmulti_1of2() {
+    round_trip_policy("sh(wsh(sortedmulti(1,@0/**,@1/**)))");
+}
+
+/// RT-M2. Round-trip for M2: `sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))` (BIP 48/1' 2-of-3).
+#[test]
+fn round_trip_m2_sh_wsh_sortedmulti_2of3() {
+    round_trip_policy("sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))");
+}
+
+/// RT-M3. Round-trip for M3: `sh(wsh(sortedmulti(2,...)))` with 3 fingerprints.
+#[test]
+fn round_trip_m3_sh_wsh_sortedmulti_2of3_fingerprints() {
+    let policy: WalletPolicy = "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))"
+        .parse()
+        .expect("m3 parse");
+    let opts = EncodeOptions::default().with_fingerprints(vec![
+        Fingerprint::from([0xde, 0xad, 0xbe, 0xef]),
+        Fingerprint::from([0xca, 0xfe, 0xba, 0xbe]),
+        Fingerprint::from([0xd0, 0x0d, 0xf0, 0x0d]),
+    ]);
+    let backup = encode(&policy, &opts).expect("m3 encode");
+    let chunk_strs: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
+    let decoded = decode(&chunk_strs, &DecodeOptions::new()).expect("m3 decode");
+    common::assert_structural_eq(&policy, &decoded.policy);
+}
+
+/// RT-Cs. Round-trip for Cs: Coldcard BIP 48/1' 2-of-3 export shape
+/// (same policy as M2: `sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))`).
+#[test]
+fn round_trip_cs_coldcard_sh_wsh() {
+    round_trip_policy("sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))");
+}
 
 /// 33. Fingerprints-block count mismatch → `Error::FingerprintsCountMismatch`
 ///
