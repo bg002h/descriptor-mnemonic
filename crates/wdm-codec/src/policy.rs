@@ -406,10 +406,16 @@ impl WalletPolicy {
         out.push(header.as_byte());
         out.extend_from_slice(&encode_declaration(&shared_path));
         if let Some(fps) = &opts.fingerprints {
-            // Count was validated above; cast is safe (count <= 32 = MAX_DUMMY_KEYS).
-            debug_assert!(fps.len() == count && count <= u8::MAX as usize);
+            // Count was validated above; defense-in-depth try_from guards
+            // against a future refactor that bypasses the validation funnel.
+            // BIP 388 caps placeholder count at 32, well within u8 range.
+            let count_u8 =
+                u8::try_from(fps.len()).map_err(|_| Error::FingerprintsCountMismatch {
+                    expected: count,
+                    got: fps.len(),
+                })?;
             out.push(crate::bytecode::Tag::Fingerprints.as_byte());
-            out.push(fps.len() as u8);
+            out.push(count_u8);
             for fp in fps {
                 out.extend_from_slice(fp.as_bytes());
             }

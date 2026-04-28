@@ -210,7 +210,7 @@ mod tests {
         EncodeOptions::default()
     }
 
-    fn force_chunking_opts() -> EncodeOptions {
+    fn force_chunked_mode_opts() -> EncodeOptions {
         EncodeOptions::default().with_force_chunking(true)
     }
 
@@ -269,7 +269,7 @@ mod tests {
             "wsh(and_v(v:pk(@0/**),sha256(1111111111111111111111111111111111111111111111111111111111111111)))",
         );
 
-        let backup = encode(&p, &force_chunking_opts()).expect("encode");
+        let backup = encode(&p, &force_chunked_mode_opts()).expect("encode");
         assert!(
             backup.chunks.len() >= 2,
             "expected ≥2 chunks for sha256 policy under force_chunking, got {}",
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn decode_rejects_chunks_with_duplicate_indices() {
         let p = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
-        let backup = encode(&p, &force_chunking_opts()).expect("encode");
+        let backup = encode(&p, &force_chunked_mode_opts()).expect("encode");
         let raw0 = backup.chunks[0].raw.as_str();
         // Pass chunk 0 twice → duplicate index 0.
         let err = decode(&[raw0, raw0], &default_opts())
@@ -503,7 +503,7 @@ mod tests {
         let p = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
 
         // force_chunking guarantees a multi-chunk backup regardless of encoder details.
-        let backup = encode(&p, &force_chunking_opts()).expect("encode");
+        let backup = encode(&p, &force_chunked_mode_opts()).expect("encode");
         let raws: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
         let result = decode(&raws, &default_opts()).expect("decode");
 

@@ -289,16 +289,20 @@ fn compute_syndromes(
     // Unpack the remainder: `checksum_len` GF(32) coefficients packed
     // with the highest-order coefficient (x^{checksum_len-1}) at bit
     // 5*(checksum_len-1) and the constant term (x^0) at bits 0..5.
-    let mut coeffs = vec![0u8; checksum_len as usize];
+    // Stack-allocate at the maximum (Long code = 15); the active slice
+    // is `&coeffs[..checksum_len]`.
+    let mut coeffs = [0u8; 15];
+    let len = checksum_len as usize;
     for i in 0..checksum_len {
         coeffs[i as usize] = ((residue_xor_const >> (5 * i)) & 0x1F) as u8;
     }
+    let coeffs = &coeffs[..len];
 
     let mut syndromes = [Gf1024::ZERO; 8];
     let alpha_j_start = alpha.pow(j_start);
     let mut alpha_j = alpha_j_start;
     for s in &mut syndromes {
-        *s = horner(&coeffs, alpha_j);
+        *s = horner(coeffs, alpha_j);
         alpha_j = alpha_j.mul(alpha);
     }
     syndromes
@@ -325,11 +329,10 @@ fn berlekamp_massey(syndromes: &[Gf1024; 8]) -> Vec<Gf1024> {
         // Discrepancy: d = syndromes[k] + sum_{i=1..L} lam[i] * syndromes[k-i]
         let mut d = syndromes[k];
         for i in 1..=l {
-            if i < lam.len() {
-                let s_idx = k.wrapping_sub(i);
-                if s_idx < n {
-                    d = d.add(lam[i].mul(syndromes[s_idx]));
-                }
+            // i > k means k - i would underflow; skip rather than wrap.
+            // i >= lam.len() means lam[i] doesn't exist yet; same skip.
+            if i <= k && i < lam.len() {
+                d = d.add(lam[i].mul(syndromes[k - i]));
             }
         }
 
@@ -362,7 +365,7 @@ fn berlekamp_massey(syndromes: &[Gf1024; 8]) -> Vec<Gf1024> {
         }
     }
 
-    while lam.len() > 1 && lam.last().unwrap().is_zero() {
+    while lam.len() > 1 && lam.last().is_some_and(|x| x.is_zero()) {
         lam.pop();
     }
     lam

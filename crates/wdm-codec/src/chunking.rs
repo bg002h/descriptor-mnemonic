@@ -1074,8 +1074,8 @@ mod tests {
     }
 
     #[test]
-    fn force_chunked_skips_single_string() {
-        // force_chunked=true with a short bytecode → Chunked, not SingleString.
+    fn chunking_mode_force_chunked_skips_single_string() {
+        // ChunkingMode::ForceChunked with a short bytecode → Chunked, not SingleString.
         // count = ceil((10 + 4) / 45) = ceil(14/45) = 1.
         let plan = chunking_decision(10, ChunkingMode::ForceChunked).unwrap();
         assert_eq!(
@@ -1166,8 +1166,8 @@ mod tests {
     }
 
     #[test]
-    fn force_chunked_at_max() {
-        // force_chunked=true at bytecode_len=1692 → same long-32 plan.
+    fn chunking_mode_force_chunked_at_max() {
+        // ChunkingMode::ForceChunked at bytecode_len=1692 → same long-32 plan.
         let plan = chunking_decision(1692, ChunkingMode::ForceChunked).unwrap();
         assert_eq!(
             plan,
@@ -1180,8 +1180,8 @@ mod tests {
     }
 
     #[test]
-    fn force_chunked_too_large() {
-        // force_chunked=true at bytecode_len=1693 → PolicyTooLarge.
+    fn chunking_mode_force_chunked_too_large() {
+        // ChunkingMode::ForceChunked at bytecode_len=1693 → PolicyTooLarge.
         let err = chunking_decision(1693, ChunkingMode::ForceChunked).unwrap_err();
         assert!(
             matches!(
@@ -1364,7 +1364,7 @@ mod tests {
     }
 
     #[test]
-    fn chunk_bytes_force_chunked_minimal() {
+    fn chunk_bytes_chunking_mode_force_chunked_minimal() {
         // 5-byte input, plan = Chunked { Regular, 45, 1 }.
         // stream = 5 + 4 = 9 bytes; single fragment of 9 bytes.
         let bytecode = vec![0x01u8, 0x02, 0x03, 0x04, 0x05];

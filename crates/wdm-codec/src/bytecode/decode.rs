@@ -597,10 +597,13 @@ fn decode_tap_terminal(
                     .to_string(),
             ));
         }
-        // Anything else is out-of-subset for v0.2 tap leaves.
+        // Anything else is out-of-subset for v0.2 tap leaves. Use the
+        // BIP 388 lowercase operator name (matches encode-side
+        // `tap_terminal_name`) so encode and decode rejections of the same
+        // operator surface identical user-facing diagnostics.
         other => {
             return Err(Error::TapLeafSubsetViolation {
-                operator: format!("{:?}", other),
+                operator: tag_to_bip388_name(other).to_string(),
             });
         }
     };
@@ -608,6 +611,80 @@ fn decode_tap_terminal(
         offset: tag_offset,
         kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
     })
+}
+
+/// Map a `Tag` to its BIP 388 lowercase operator name for user-facing
+/// error messages. Mirrors `bytecode::encode::tap_terminal_name` so
+/// encode-side and decode-side rejections of the same out-of-subset
+/// operator surface identical diagnostics. Tags that don't correspond
+/// to a BIP 388 operator (framing tags, reserved-for-v1+ inline-key
+/// tags) fall back to a `<framing:0xNN>` or `<reserved:0xNN>` label.
+fn tag_to_bip388_name(tag: Tag) -> &'static str {
+    match tag {
+        // Top-level descriptor wrappers
+        Tag::Sh => "sh",
+        Tag::Wsh => "wsh",
+        Tag::Pkh => "pkh",
+        Tag::Wpkh => "wpkh",
+        Tag::Tr => "tr",
+        Tag::TapTree => "TapTree",
+        Tag::Bare => "bare",
+        // Key + multisig
+        Tag::PkK => "pk_k",
+        Tag::PkH => "pk_h",
+        Tag::RawPkH => "raw_pk_h",
+        Tag::Multi => "multi",
+        Tag::SortedMulti => "sortedmulti",
+        Tag::MultiA => "multi_a",
+        // Wrapper terminals
+        Tag::Alt => "a:",
+        Tag::Swap => "s:",
+        Tag::Check => "c:",
+        Tag::DupIf => "d:",
+        Tag::Verify => "v:",
+        Tag::NonZero => "j:",
+        Tag::ZeroNotEqual => "n:",
+        // Logical operators
+        Tag::AndV => "and_v",
+        Tag::AndB => "and_b",
+        Tag::AndOr => "andor",
+        Tag::OrB => "or_b",
+        Tag::OrC => "or_c",
+        Tag::OrD => "or_d",
+        Tag::OrI => "or_i",
+        Tag::Thresh => "thresh",
+        // Constants
+        Tag::True => "1",
+        Tag::False => "0",
+        // Timelocks
+        Tag::Older => "older",
+        Tag::After => "after",
+        // Hashes
+        Tag::Sha256 => "sha256",
+        Tag::Hash256 => "hash256",
+        Tag::Ripemd160 => "ripemd160",
+        Tag::Hash160 => "hash160",
+        // Reserved-for-v1+ inline-key forms (descriptor-codec compatibility,
+        // tracked in FOLLOWUPS as `p2-inline-key-tags`).
+        Tag::ReservedOrigin => "<reserved:0x24>",
+        Tag::ReservedNoOrigin => "<reserved:0x25>",
+        Tag::ReservedUncompressedFullKey => "<reserved:0x26>",
+        Tag::ReservedCompressedFullKey => "<reserved:0x27>",
+        Tag::ReservedXOnly => "<reserved:0x28>",
+        Tag::ReservedXPub => "<reserved:0x29>",
+        Tag::ReservedMultiXPub => "<reserved:0x2A>",
+        Tag::ReservedUncompressedSinglePriv => "<reserved:0x2B>",
+        Tag::ReservedCompressedSinglePriv => "<reserved:0x2C>",
+        Tag::ReservedXPriv => "<reserved:0x2D>",
+        Tag::ReservedMultiXPriv => "<reserved:0x2E>",
+        Tag::ReservedNoWildcard => "<reserved:0x2F>",
+        Tag::ReservedUnhardenedWildcard => "<reserved:0x30>",
+        Tag::ReservedHardenedWildcard => "<reserved:0x31>",
+        // Framing tags (not operators)
+        Tag::Placeholder => "<framing:0x32>",
+        Tag::SharedPath => "<framing:0x33>",
+        Tag::Fingerprints => "<framing:0x35>",
+    }
 }
 
 /// Read a placeholder reference from the cursor: `Tag::Placeholder` (0x32)
