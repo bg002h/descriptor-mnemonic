@@ -402,6 +402,40 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.7.x
 
+### `v07-coldcard-multi-a-citation-gap` — `COLDCARD_TAP` initially included `multi_a` not cited in vendor source
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). The cited Coldcard `docs/taproot.md` allowed-descriptors list documents only `sortedmulti_a` for tap-leaf multisig — bare `multi_a` was not cited. The initial Phase 4 commit included `multi_a` in `COLDCARD_TAP.allowed_operators`.
+- **Where:** `crates/md-signer-compat/src/coldcard.rs::COLDCARD_TAP`.
+- **What:** removed `multi_a` from the allowlist; rustdoc explicitly notes "multi_a deliberately omitted" with rationale tying back to the cited source. If a future Coldcard revision admits `multi_a`, add back with a citation note.
+- **Status:** resolved (folded inline post-Phase-4)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-tap-tree-leaves-docstring-iterator-shape` — `validate_tap_tree` docstring drift on iterator-yield shape
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). `lib.rs::validate_tap_tree` originally claimed `TapTree::leaves()` "yields `(depth, leaf_ms)` tuples"; reality is a `TapTreeIterItem` struct with `.miniscript()` / `.depth()` accessors.
+- **Where:** `crates/md-signer-compat/src/lib.rs::validate_tap_tree`.
+- **What:** updated docstring to describe the actual `TapTreeIterItem` struct API.
+- **Status:** resolved (folded inline post-Phase-4)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-ledger-rustdoc-variant-enumeration-incomplete` — `LEDGER_TAP` rustdoc enumerates 7/16 vanadium variants
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). `ledger.rs` rustdoc lists 7 variants from `cleartext.rs` but the vanadium enum has 16. Operator-set is still sound (the omitted variants use already-listed operators) but doc enumeration is incomplete.
+- **Where:** `crates/md-signer-compat/src/ledger.rs::LEDGER_TAP` rustdoc.
+- **What:** expand to full 16-variant list, OR change framing to "representative subset" with note that the operator union covers all variants.
+- **Why deferred:** allowlist itself is correct; doc-enumeration completeness is cosmetic.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-md-signer-compat-shared-test-key-helpers` — `dummy_key_a` / `dummy_key_b` duplicated across crates
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). Same two test pubkey strings appear in both `crates/md-codec/src/bytecode/hand_ast_coverage.rs` and `crates/md-signer-compat/src/tests.rs`.
+- **Where:** both files.
+- **What:** consider a shared test-only helper module (e.g., a `pub(crate)` module in md-codec exported under `#[cfg(feature = "test-helpers")]`).
+- **Why deferred:** small duplication; cross-crate test utility is over-engineering at this scale.
+- **Status:** open
+- **Tier:** v0.7.x
+
 ### `v07-historical-coldcard-const-visibility` — tighten `pub const HISTORICAL_COLDCARD_TAP_OPERATORS` to `pub(crate)`
 
 - **Surfaced:** v0.7.0 Phase 3 reviewer (Opus). Plan §3.3 specified `const` (private); implementation used `pub const`. md-signer-compat (Phase 4) defines its own `COLDCARD_TAP.allowed_operators` array and does not reference this constant; the only in-tree consumer is the same-module back-compat shim.

@@ -17,19 +17,22 @@ use crate::SignerSubset;
 /// Operators extracted (desugared-AST naming):
 ///   - `pk_k` (from `pk(K)` desugaring + as `pk_k` directly)
 ///   - `pk_h` (from `pkh(K)` desugaring)
-///   - `multi_a`
-///   - `sortedmulti_a` (NEW in v0.6; Coldcard documented)
+///   - `sortedmulti_a` (Coldcard's documented multisig flavour for tap leaves)
 ///   - `or_d`
 ///   - `and_v`
 ///   - `older`
 ///   - `c:` (required for `pk(K)` and `pkh(K)` desugaring)
 ///   - `v:` (required for `and_v(v:..., ...)` and `v:pkh(...)`)
+///
+/// **`multi_a` deliberately omitted:** Coldcard's `docs/taproot.md`
+/// allowed-descriptors list documents only `sortedmulti_a` for tap-leaf
+/// multisig — bare `multi_a` is not cited. If a future revision admits
+/// `multi_a`, add it back with a citation note.
 pub const COLDCARD_TAP: SignerSubset = SignerSubset {
     name: "Coldcard tap-leaf (firmware/edge as of 2026-04-28)",
     allowed_operators: &[
         "pk_k",
         "pk_h",
-        "multi_a",
         "sortedmulti_a",
         "or_d",
         "and_v",

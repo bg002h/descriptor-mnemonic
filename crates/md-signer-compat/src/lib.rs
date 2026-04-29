@@ -86,9 +86,9 @@ pub fn validate_tap_tree(
     subset: &SignerSubset,
     tap_tree: &miniscript::descriptor::TapTree<miniscript::DescriptorPublicKey>,
 ) -> Result<(), md_codec::Error> {
-    // Upstream `TapTree::leaves()` returns leaves in DFS pre-order. The
-    // returned iterator yields `(depth, leaf_ms)` tuples; we re-index by
-    // enumeration order to derive leaf_index.
+    // Upstream `TapTree::leaves()` returns leaves in DFS pre-order via a
+    // `TapTreeIterItem` accessor (`leaf.miniscript()` / `leaf.depth()`).
+    // `enumerate()` re-indexes that order to derive `leaf_index`.
     for (idx, leaf) in tap_tree.leaves().enumerate() {
         validate(subset, leaf.miniscript(), Some(idx))?;
     }
