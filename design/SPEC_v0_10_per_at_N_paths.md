@@ -50,7 +50,11 @@ v0.10 of `md-codec` admits **per-placeholder origin paths** in BIP 388 wallet po
 2. New `Tag::OriginPaths = 0x36` block in canonical bytecode.
 3. `MAX_PATH_COMPONENTS = 10` enforced at both `Tag::SharedPath` and `Tag::OriginPaths`.
 4. Encoder auto-detects path divergence and selects between `SharedPath` and `OriginPaths` accordingly.
-5. New error variants: `Error::OriginPathsCountMismatch { expected, got }`, `Error::PathComponentCountExceeded { got, max: 10 }`, `Error::ConflictingPathDeclarations` (defensive — encoded path-decl bit doesn't match the tag at the slot).
+5. New error machinery (split between bytecode-layer `BytecodeErrorKind::*` and policy-layer `Error::*` per the v0.6 strip-Layer-3 convention):
+   - `BytecodeErrorKind::OriginPathsCountTooLarge { count, max: 32 }` — bytecode-layer structural error: the count byte exceeds the BIP 388 placeholder cap.
+   - `BytecodeErrorKind::UnexpectedTag { expected, got }` — already exists; reused for header-bit-vs-tag conflicts (Q3-A "0x36 with bit 3 clear" or "0x34 with bit 3 set" both surface here with `expected: 0x36 or 0x34` per the bit, `got: <other>`).
+   - `Error::OriginPathsCountMismatch { expected, got }` — policy-layer semantic error: bytecode count doesn't match the tree's placeholder count after parse.
+   - `Error::PathComponentCountExceeded { got, max: 10 }` — applies to both `Tag::SharedPath` and `Tag::OriginPaths` when an explicit-form path-decl declares too many components.
 6. `PolicyId::fingerprint() -> [u8; 4]` API (top 32 bits as a short identifier, parallel to BIP 32 master-key fingerprints).
 7. BIP draft updates: §"Path declaration" extended with §"Per-`@N` path declaration"; new §"PolicyId types" teaching subsection; §"Engraving the 12-word PolicyId phrase" softened to MAY-engrave.
 8. mk1 BIP cross-reference: new §"Authority precedence with MK" subsection in md1's BIP pointing to mk1's normative wording.
@@ -101,7 +105,9 @@ Order is fixed: path-declaration MUST precede the optional fingerprints block, w
 ```
 
 - **`0x36`** — `Tag::OriginPaths` tag byte.
-- **`count: u8`** — number of path declarations, MUST equal the placeholder count derivable from the tree (i.e., `max(@i) + 1` over all `@i` references). Decoder rejects `count > 32` (BIP 388 placeholder cap) and `count != tree_placeholder_count` with `Error::OriginPathsCountMismatch { expected, got }`.
+- **`count: u8`** — number of path declarations, MUST be in `1..=32` and MUST equal the placeholder count derivable from the tree (i.e., `max(@i) + 1` over all `@i` references). Two distinct rejection paths:
+  - **Structural** (bytecode layer, before tree-walk): `count == 0` or `count > 32` rejects with `BytecodeErrorKind::OriginPathsCountTooLarge { count, max: 32 }` — independent of the tree, applied during `decode_origin_paths`.
+  - **Semantic** (policy-construction layer, after tree-walk): `count != tree_placeholder_count` rejects with `Error::OriginPathsCountMismatch { expected, got }`.
 - **`path_decl_i`** — origin path for placeholder `@i`, encoded using the existing single-path format defined in `crates/md-codec/src/bytecode/path.rs`:
   - Single byte for dictionary-form paths: one of `0x01`–`0x07`, `0x11`–`0x17` (per the path dictionary table in BIP §"Path dictionary").
   - `0xFE` followed by `LEB128(component_count)` followed by per-component `2*index + hardened_bit` bytes for explicit paths. `component_count` MUST be ≤ `MAX_PATH_COMPONENTS = 10`.
@@ -136,23 +142,33 @@ The cap aligns with mk1 SPEC §3.5 (mk1 closure decision Q-3). No real-world BIP
 | <wsh sortedmulti 2 @0 @1 @2>   ← tree bytes
 ```
 
-**Example B — 3-cosigner divergent-path multisig with fingerprints.** Same policy, but cosigner C has explicit path `m/48'/0'/0'/100'` (not in dictionary), with all 3 fingerprints present:
+**Example B — 3-cosigner divergent-path multisig with fingerprints.** Same policy, but cosigner C has explicit path `m/48'/0'/0'/100'` (not in dictionary), with all 3 fingerprints present.
+
+Explicit-path byte derivation for `m/48'/0'/0'/100'`:
+- Component count = 4 → LEB128 `0x04`
+- `48'` hardened → `2*48 + 1 = 97 = 0x61`
+- `0'` hardened → `2*0 + 1 = 1 = 0x01`
+- `0'` hardened → `0x01`
+- `100'` hardened → `2*100 + 1 = 201`. 201 has bit 7 set, so LEB128 = `0xC9, 0x01` (two bytes — high-bit continuation).
+- Full explicit path bytes: `FE 04 61 01 01 C9 01` (7 bytes including the `0xFE` indicator).
 
 ```
-0C                                                      ← header: bits 2 + 3 set
-| 36 03 05 05 FE 04 60 00 00 C9                          ← Tag::OriginPaths: count=3, paths={0x05, 0x05, explicit}
-| 35 03 deadbeef cafebabe d00df00d                       ← Tag::Fingerprints: count=3, 4 bytes each
-| <wsh sortedmulti 2 @0 @1 @2>                           ← tree bytes
+0C                                                                ← header: bits 2 + 3 set
+| 36 03 05 05 FE 04 61 01 01 C9 01                                ← Tag::OriginPaths: count=3, paths={0x05, 0x05, explicit-7B}
+| 35 03 deadbeef cafebabe d00df00d                                ← Tag::Fingerprints: count=3, 4 bytes each
+| <wsh sortedmulti 2 @0 @1 @2>                                    ← tree bytes
 ```
 
 Decoder reads header byte `0x0C` → bit 3 set + bit 2 set. Dispatches: read `Tag::OriginPaths` block, then `Tag::Fingerprints` block, then tree.
 
+OriginPaths block size: 11 bytes (1 tag + 1 count + 1 + 1 + 7 explicit). Fingerprints block size: 14 bytes (1 + 1 + 12). Header: 1 byte. Total prefix before tree: 26 bytes.
+
 **Example C — 3-cosigner divergent-path, no fingerprints.** Same as B but without the fingerprints block:
 
 ```
-08                                                      ← header: bit 3 set, bit 2 clear
-| 36 03 05 05 FE 04 60 00 00 C9                          ← Tag::OriginPaths
-| <wsh sortedmulti 2 @0 @1 @2>                           ← tree bytes
+08                                                                ← header: bit 3 set, bit 2 clear
+| 36 03 05 05 FE 04 61 01 01 C9 01                                ← Tag::OriginPaths
+| <wsh sortedmulti 2 @0 @1 @2>                                    ← tree bytes
 ```
 
 Header byte `0x08` was previously a `ReservedBitsSet` violation in v0.x ≤ 0.9; now it's a valid v0.10 header.
@@ -184,37 +200,45 @@ Decoder reads the byte, validates `version == 0`, validates `(b & RESERVED_MASK)
 After header parse, decoder reads byte at offset 1:
 
 ```rust
+let expected = if header.origin_paths() { 0x36 } else { 0x34 };
 match (header.origin_paths(), tag_byte) {
     (false, 0x34) => decode_shared_path(...),
     (true,  0x36) => decode_origin_paths(...),
-    (false, 0x36) | (true, 0x34) => Err(Error::ConflictingPathDeclarations),
-    (_,     other) => Err(Error::InvalidBytecode { kind: BytecodeErrorKind::UnexpectedTag { expected, got: other } }),
+    (_,     other) => Err(Error::InvalidBytecode {
+        offset: 1,
+        kind: BytecodeErrorKind::UnexpectedTag { expected, got: other },
+    }),
 }
 ```
 
-The `expected` field of `UnexpectedTag` carries the tag the header bit predicted (`0x34` if bit 3 clear, `0x36` if set), giving callers a precise mismatch report.
+`UnexpectedTag` is reused for both arbitrary unknown bytes (a stray `0x00`) and for the structural "header-bit-vs-tag conflict" case (Q3-A: bit 3 clear but tag is `0x36`, or bit 3 set but tag is `0x34`). The diagnostic reports the tag the header bit predicted versus the byte actually seen — sharper than a generic "header-bit-and-tag-disagree" variant. (Per F5: avoid introducing a redundant peer top-level `Error::ConflictingPathDeclarations` variant when `BytecodeErrorKind::UnexpectedTag` already covers this.)
 
 ### `decode_origin_paths`
 
 ```rust
 fn decode_origin_paths(cursor: &mut Cursor) -> Result<Vec<DerivationPath>, Error> {
     let count = cursor.read_u8()?;
-    if count > 32 {
-        return Err(Error::OriginPathsCountMismatch { expected: 0, got: count as usize });
-        // The encoder-vs-decoder count consistency check happens at a higher
-        // layer (after tree-walk yields the placeholder count); here we only
-        // bound on the BIP 388 cap.
+    if count == 0 || count > 32 {
+        // Bytecode-layer structural error — the count byte alone is malformed,
+        // independent of the tree (BIP 388 caps placeholders at 32 and requires ≥1).
+        return Err(Error::InvalidBytecode {
+            offset: cursor.offset() - 1,
+            kind: BytecodeErrorKind::OriginPathsCountTooLarge { count, max: 32 },
+        });
     }
     let mut paths = Vec::with_capacity(count as usize);
     for _ in 0..count {
         paths.push(decode_path(cursor)?);
-        // decode_path enforces MAX_PATH_COMPONENTS = 10 internally.
+        // decode_path enforces MAX_PATH_COMPONENTS = 10 internally and surfaces
+        // BytecodeErrorKind::UnexpectedEnd on cursor exhaustion.
     }
     Ok(paths)
 }
 ```
 
-Cross-validation against tree placeholder count happens after the full bytecode parse, at the policy-construction layer. If the count declared in `Tag::OriginPaths` doesn't match `max(@i) + 1` from the tree, the policy assembly fails with `Error::OriginPathsCountMismatch { expected, got }`.
+The structural count check (`count == 0 || count > 32`) is a bytecode-layer concern surfacing as `BytecodeErrorKind::OriginPathsCountTooLarge { count, max: 32 }`. The semantic count check (`count == tree_placeholder_count`) is a policy-layer concern surfacing later as `Error::OriginPathsCountMismatch { expected, got }` — applied after tree-walk yields the actual placeholder count. Keeping these split aligns with the v0.6 strip-Layer-3 convention.
+
+Cursor exhaustion mid-list (e.g., `count=3` with only 2 path-decls' worth of bytes before the tree) surfaces as `BytecodeErrorKind::UnexpectedEnd` from the inner `decode_path` call — consistent with `decode_path` / `decode_declaration` existing convention.
 
 ### Behavior on unknown tag at path-decl slot
 
@@ -241,6 +265,33 @@ Pre-v0.10 decoders confronted with v0.10 OriginPaths-using encodings (header bit
 ---
 
 ## §4. Encoder Design + Type/Error Updates
+
+### Round-trip stability — `decoded_origin_paths` field
+
+v0.10's `WalletPolicy` gains a new field parallel to the existing `decoded_shared_path`:
+
+```rust
+pub struct WalletPolicy {
+    // ... existing fields ...
+    decoded_shared_path: Option<DerivationPath>,
+    decoded_origin_paths: Option<Vec<DerivationPath>>,    // NEW in v0.10
+}
+```
+
+Populated by `from_bytecode` when the source bytecode used `Tag::OriginPaths`. The encoder's source-of-truth precedence chain consults this field as Tier 1, parallel to the existing `decoded_shared_path` Tier 1. Without it, a `decode → encode` round-trip would lose per-`@N` path divergence and re-emit `Tag::SharedPath`, breaking byte-stability.
+
+**Invariant:** at most one of `decoded_shared_path` and `decoded_origin_paths` is `Some`. `from_bytecode` populates exactly one, based on which path-decl tag was present on the wire (per Q3-A strict mutual exclusion). Documented on the field rustdoc; defense-in-depth check in `to_bytecode`.
+
+### Encoder per-`@N`-path precedence chain
+
+`placeholder_paths_in_index_order(&self, opts: &EncodeOptions) -> Result<Vec<DerivationPath>, Error>` returns the per-`@N` path in placeholder-index order, consulting (in order):
+
+- **Tier 0 — `opts.origin_paths` override.** If `EncodeOptions::origin_paths: Some(Vec<DerivationPath>)`, use that. Tier 0 takes absolute precedence and is intended for deterministic test-vector generation. (No production code path uses this.)
+- **Tier 1 — `decoded_origin_paths`** (new). If `from_bytecode` decoded a `Tag::OriginPaths` block, the per-`@N` paths it observed sit here. Round-trip stability source.
+- **Tier 2 — Walk key information vector.** For each placeholder `@i` from `i=0` to `key_count-1`, extract the origin path from the corresponding xpub key in the KIV. Used when the policy was constructed from a concrete-key descriptor (e.g., parsed from a string).
+- **Tier 3 — Fall through to single-shared-path tier chain** (existing v0.x logic). When the policy has no per-`@N` divergence information available, every placeholder gets the single shared path. This produces a `SharedPath` encoding by Q9-A's auto-detect rule.
+
+The encoder dispatch then auto-detects whether all returned paths agree (→ emit `SharedPath`) or diverge (→ emit `OriginPaths`).
 
 ### Encoder dispatch
 
@@ -312,24 +363,35 @@ pub const MAX_PATH_COMPONENTS: usize = 10;    // NEW
 
 ```rust
 // crates/md-codec/src/error.rs
+
+// Bytecode-layer structural errors (within BytecodeErrorKind enum):
+pub enum BytecodeErrorKind {
+    // ... existing variants ...
+
+    /// The OriginPaths count byte is structurally invalid (zero or exceeds
+    /// the BIP 388 placeholder cap of 32). Independent of tree placeholder
+    /// count (which is checked separately at policy construction).
+    OriginPathsCountTooLarge { count: u8, max: u8 },
+}
+
+// Policy-layer semantic errors (top-level Error enum):
 pub enum Error {
     // ... existing variants ...
 
-    /// The OriginPaths block declares a count that doesn't match the tree's
-    /// placeholder count (or exceeds the BIP 388 cap of 32).
-    #[error("OriginPaths count mismatch: expected {expected}, got {got}")]
+    /// The OriginPaths bytecode count doesn't match the tree's actual
+    /// placeholder count after parse. Bytecode passed structural validation
+    /// (count is 1..=32) but is inconsistent with the tree.
+    #[error("OriginPaths count mismatch: tree has {expected} placeholders, OriginPaths declares {got}")]
     OriginPathsCountMismatch { expected: usize, got: usize },
 
     /// An explicit-form path declaration exceeded `MAX_PATH_COMPONENTS = 10`.
+    /// Applies to both `Tag::SharedPath` and `Tag::OriginPaths`.
     #[error("path component count {got} exceeds maximum {max}")]
     PathComponentCountExceeded { got: usize, max: usize },
-
-    /// The path-decl slot held a tag whose value contradicted the header
-    /// flag bit (e.g., bit 3 set but tag is 0x34, or bit 3 clear but tag is 0x36).
-    #[error("conflicting path declarations: header bit and tag byte disagree")]
-    ConflictingPathDeclarations,
 }
 ```
+
+(The peer top-level `Error::ConflictingPathDeclarations` variant from the v1 spec draft is dropped per F5: `BytecodeErrorKind::UnexpectedTag` already covers the header-bit-vs-tag conflict case.)
 
 `Error` is `#[non_exhaustive]`; adding variants is API-additive, not breaking.
 
@@ -378,7 +440,7 @@ Optionally (not strictly required for v0.10):
 
 - **`o2_sortedmulti_2of3_divergent_paths_with_fingerprints`** — same shape as o1 but with all 3 fingerprints, exercising header `0x0C` (both flags) and the OriginPaths-then-Fingerprints block ordering.
 
-- **`o3_pkh_divergent_paths_n4`** — a 4-`@N` policy exercising count=4 boundary in OriginPaths (just to stress count handling).
+- **`o3_wsh_sortedmulti_2of4_divergent_paths`** — `wsh(sortedmulti(2, @0/**, @1/**, @2/**, @3/**))` with paths e.g. `{0x05, 0x05, 0x06, 0x07}` to exercise count=4 boundary in OriginPaths and verify multi-distinct-dictionary-form encoding. (Reshaped per F12 — `pkh()` is a single-key descriptor with exactly one `@N`, so a "4-`@N` pkh policy" was a category error in the spec draft.)
 
 The existing v0.9 corpus vectors (M1, M2, M3, S1, S2, S3, S4, T1, Cs, etc.) are byte-identical regen — they all use shared paths, so v0.10 emits SharedPath as before. Vector count grows from 44 → 45 (or 46/47 if optional vectors land); SHA pin updates.
 
@@ -388,8 +450,10 @@ New negative vectors covering the new error variants:
 
 - **`n_orig_count_mismatch`** — synthetic encoding with `Tag::OriginPaths count = 4` but the tree carries only 3 placeholders. Decoder rejects with `Error::OriginPathsCountMismatch { expected: 3, got: 4 }`.
 - **`n_orig_path_components_too_long`** — `Tag::OriginPaths` with one `path_decl_i` declaring `component_count = 11`. Decoder rejects with `Error::PathComponentCountExceeded { got: 11, max: 10 }`.
-- **`n_conflicting_path_declarations`** — header byte with bit 3 set but offset-1 byte is `0x34` (or vice versa). Decoder rejects with `Error::ConflictingPathDeclarations`.
-- **`n_orig_paths_truncated`** — header bit 3 set, `Tag::OriginPaths count=3`, but only 2 path-decls follow before the tree bytes. Decoder hits cursor exhaustion mid-path-list, rejects with `Error::InvalidBytecode { kind: BytecodeErrorKind::Truncated }`.
+- **`n_orig_paths_truncated`** — header bit 3 set, `Tag::OriginPaths count=3`, but only 2 path-decls follow before the tree bytes. Decoder hits cursor exhaustion mid-path-list inside `decode_path`, rejects with `Error::InvalidBytecode { kind: BytecodeErrorKind::UnexpectedEnd }` (matching the existing convention in `decode_path` / `decode_declaration`).
+- **`n_orig_paths_count_zero`** — header bit 3 set, `Tag::OriginPaths count=0`. Decoder rejects at the bytecode layer with `BytecodeErrorKind::OriginPathsCountTooLarge { count: 0, max: 32 }` (the variant name covers both bounds — see F4 / §3 `decode_origin_paths`).
+- **`n_orig_paths_count_too_large`** — header bit 3 set, `Tag::OriginPaths count=33`. Decoder rejects with `BytecodeErrorKind::OriginPathsCountTooLarge { count: 33, max: 32 }`.
+- **`n_conflicting_path_declarations`** — header byte with bit 3 set but offset-1 byte is `0x34` (or vice versa). Decoder rejects with `Error::InvalidBytecode { offset: 1, kind: BytecodeErrorKind::UnexpectedTag { expected: 0x36, got: 0x34 } }` (or swapped per the bit). Per F5: reuses existing `UnexpectedTag` infrastructure rather than introducing a peer top-level variant.
 
 Existing negative vectors (n01–n15, etc.) regenerate without semantic change.
 
@@ -405,9 +469,9 @@ Existing negative vectors (n01–n15, etc.) regenerate without semantic change.
 
 ### Defensive-corpus byte-literal pinning
 
-Per `v07-decoder-arm-cursor-sentinel-pattern` (v0.7 P2 review): hand-AST coverage tests for the new OriginPaths decoder arm should use a trailing `0xFF` sentinel pattern to assert cursor-exhaustion correctness. Walker-position regression test:
+Per `v07-decoder-arm-cursor-sentinel-pattern` (v0.7 P2 review): hand-AST coverage tests for the new OriginPaths decoder arm should use a trailing `0xFF` sentinel pattern to assert cursor-exhaustion correctness — the decoder must consume exactly the bytes it declared and leave the cursor at the byte following the OriginPaths block, ready for the optional Fingerprints block or tree bytes.
 
-- **`origin_paths_walker_reports_first_violation`** — given multiple violations in OriginPaths (e.g., count mismatch + component-cap exceeded), decoder reports the first encountered (per existing depth-first leaf-first walker semantics).
+(F7: dropped the `origin_paths_walker_reports_first_violation` test from the v1 spec draft. The "walker-reports-first-violation" pattern in `hand_ast_coverage.rs` applies specifically to tap-leaf subset violations where a depth-first AST walk visits leaves in DFS pre-order. The OriginPaths decoder is a flat sequential `for _ in 0..count { decode_path(cursor)? }` loop with early `?` return on first error — the assertion would be trivially true by construction. No defensive value beyond the cursor-sentinel pin already covered.)
 
 ---
 
@@ -491,6 +555,10 @@ Followed by the standard sections (Added, Changed, Wire format, FOLLOWUPS closed
 
 Test-vector corpora regenerate under family token `"md-codec 0.10"`. SHA pins update in `crates/md-codec/tests/vectors_schema.rs`. Both schema-1 (`v0.1.json`) and schema-2 (`v0.2.json`) regenerate.
 
+### Existing tests affected by `MAX_PATH_COMPONENTS = 10`
+
+The existing `decode_path_round_trip_multi_byte_component_count` test in `crates/md-codec/src/bytecode/path.rs` exercises 128-component paths to validate multi-byte LEB128 round-trip in the count field. Under v0.10's cap of 10, this test must rewrite to exercise multi-byte LEB128 in the **child-index dimension** (e.g., `m/16384` where `16384 = 2 × 8192` requires 2-byte LEB128) rather than the **component-count dimension**. Plan-time work item; the test's defensive value (multi-byte LEB128 round-trip exercise) survives the rewrite.
+
 ### Sibling-repo coordination
 
 mk1's main branch (currently behind its in-flight `feature/v0.1.0-implementation`) inherits the path dictionary's continued definition; v0.10 doesn't change the path dictionary itself. mk1's `feature/v0.1.0-implementation` work or its successor branch will land mk1 v0.1.0 alongside or after md1 v0.10.0; coordination per `design/RELEASE_PROCESS.md` lockstep checklist.
@@ -505,7 +573,7 @@ These are minor questions deferred to plan time; nothing wire-format-affecting:
 
 1. **Should `WalletPolicy::placeholder_paths_in_index_order` be a public method or `pub(crate)`?** Public allows tooling to introspect the path layout; pub(crate) keeps the API surface tight. Default: pub(crate); promote later if a consumer use case surfaces.
 
-2. **Per-`@N` path inheritance from key-information-vector?** v0.x derives `SharedPath` from one of three sources (per the existing precedence chain in `WalletPolicy::to_bytecode`); v0.10 needs the same chain extended to "per-`@N` path source." The encoder logic in §4 assumes a `placeholder_paths_in_index_order()` helper; the precedence chain inside that helper is implementation detail finalized at plan time.
+2. ~~Per-`@N` path inheritance from key-information-vector?~~ **Resolved at spec time** per opus review F14: the precedence chain is documented in §4 "Encoder per-`@N`-path precedence chain" (Tier 0: `opts.origin_paths` override; Tier 1: `decoded_origin_paths`; Tier 2: walk KIV; Tier 3: shared-path fall-through). Plan-time finalizes the implementation details only.
 
 3. **Should the `o1_*` corpus vector use synthetic dummy keys or a fingerprints-block-bearing variant?** Default: synthetic, no fingerprints. Fingerprints variant is optional `o2_*`.
 
@@ -513,15 +581,33 @@ These are minor questions deferred to plan time; nothing wire-format-affecting:
 
 ---
 
-## Self-review checklist (pre-opus-review)
+## Self-review checklist (post-opus-review-pass-1)
 
 - [x] All 13 brainstorm questions addressed in §1 decision matrix.
-- [x] Wire-format examples cover shared-path, divergent-path, divergent-path-with-fingerprints.
+- [x] Wire-format examples cover shared-path, divergent-path, divergent-path-with-fingerprints. Byte sequences re-verified per F1 (`m/48'/0'/0'/100'` → `FE 04 61 01 01 C9 01`).
 - [x] Header byte changes documented with old/new mask.
-- [x] Encoder/decoder dispatch logic specified.
-- [x] New error variants enumerated with shapes.
-- [x] Test-corpus additions enumerated (positive + negative + hand-AST).
-- [x] Migration sed snippet provided.
+- [x] Encoder/decoder dispatch logic specified, including the new `decoded_origin_paths` round-trip stability field (F2) and the 4-tier per-`@N` path precedence chain (F14).
+- [x] New error variants enumerated with shapes; structural-vs-semantic split into `BytecodeErrorKind::OriginPathsCountTooLarge` (bytecode layer) and `Error::OriginPathsCountMismatch` (policy layer) per F4. `Error::ConflictingPathDeclarations` dropped per F5; `BytecodeErrorKind::UnexpectedTag` reused.
+- [x] Test-corpus additions enumerated (positive + negative + hand-AST). `o3_pkh_*` reshaped to `o3_wsh_sortedmulti_2of4_*` per F12 (pkh has only 1 placeholder).
+- [x] Migration sed snippet provided. Test rewrite for `MAX_PATH_COMPONENTS` cap noted per F15.
 - [x] BIP teaching subsections drafted (Type 0/1 typology, engraving softening, mk1 cross-reference).
 - [x] Cross-format coordination addressed (mk1 path dictionary stability, mk1 BIP unchanged).
 - [x] CHANGELOG and family-token framing specified.
+
+## Opus review pass-1 findings status
+
+- F1 (strong, byte sequence wrong) — fixed.
+- F2 (strong, missing `decoded_origin_paths` field) — added in §4.
+- F3 (nice-to-have, wrong error variant for truncation) — fixed.
+- F4 (strong, wrong-shaped count>32 rejection) — split into `BytecodeErrorKind::OriginPathsCountTooLarge` (structural) + `Error::OriginPathsCountMismatch` (semantic).
+- F5 (nice-to-have, redundant `ConflictingPathDeclarations`) — dropped; `BytecodeErrorKind::UnexpectedTag` reused.
+- F6 (nice-to-have, count=0 semantics) — explicit `1..=32` MUST clause added in §2; `n_orig_paths_count_zero` negative vector filed.
+- F7 (nice-to-have, premature walker test) — dropped from §5.
+- F8 (nice-to-have, encoder try_from cleanup) — minor; folded into encoder code sketch.
+- F9 (nice-to-have, cap-in-encode_path) — clarified in §4: cap lives in `encode_path` / `decode_path` for both `Tag::SharedPath` and `Tag::OriginPaths` reuse.
+- F10 (nice-to-have, BytecodeHeader builder API) — deferred; would benefit from v2 design pass.
+- F11 (nice-to-have, decoded_*_path mutual exclusion invariant) — added in §4.
+- F12 (nice-to-have, o3_pkh_* category error) — fixed.
+- F13 (confirmation, Type 0/1 prose accurate under Route X) — no change.
+- F14 (nice-to-have, lift Appendix Q2 into §4) — done.
+- F15 (nice-to-have, existing 128-component test rewrite) — migration note added in §6.
