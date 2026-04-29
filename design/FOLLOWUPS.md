@@ -262,6 +262,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.6+ (defensive testing nice-to-have)
 
+### `v06-corpus-or-c-coverage` — add or_c tap-leaf round-trip vector
+
+- **Surfaced:** v0.6 Phase 5 execution. The plan listed `tr_or_c_in_tap_leaf_md_v0_6` as a per-Terminal coverage vector with the form `tr(@0/**, or_c(pk(@1/**), v:pk(@2/**)))`. Parser rejected it: `or_c` returns V-type, but BIP 388 / rust-miniscript wallet-policy parser requires top-level tap leaves to be B-type.
+- **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES.
+- **What:** Add an or_c fixture using a B-typed wrapping like `tr(@0/**, t:or_c(pk(@1/**), v:pk(@2/**)))` (where `t:` desugars to `and_v(X, 1)` = B-type) OR construct the AST hand-coded in a unit test rather than via Descriptor::from_str. The Tag::OrC byte form needs corpus coverage; the parser reject is a typing constraint, not a wire-format issue.
+- **Why deferred:** Plan's per-Terminal coverage rule; not blocking v0.6.0 ship since OrC byte is wire-format-supported and exercised by encoder/decoder symmetric arms, just not pinned in a fixture.
+- **Status:** open
+- **Tier:** v0.6+ (defensive corpus growth; can land in v0.6.x patch)
+
+### `v06-corpus-j-n-wrapper-coverage` — add j: and n: wrapper tap-leaf round-trip vectors
+
+- **Surfaced:** v0.6 spec round-1 review (IMP-5) + Phase 5 execution. The j: (NonZero) and n: (ZeroNotEqual) wrappers have typing constraints (j: requires Bn-type child; n: requires B-type child) that make them awkward to spell in BIP 388 source form. Plan flagged as TBD; deferred to FOLLOWUPS.
+- **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES (or `tests/taproot.rs` hand-AST tests).
+- **What:** Add round-trip fixtures for Tag::NonZero (0x11) and Tag::ZeroNotEqual (0x12). If the BIP 388 source-form policies don't naturally produce these wrappers, hand-construct the AST via `Terminal::NonZero(Arc::new(child))` / `Terminal::ZeroNotEqual(Arc::new(child))` in unit tests. Encoder + decoder arms exist and are byte-symmetric; only the corpus pin is missing.
+- **Why deferred:** Same as `v06-corpus-or-c-coverage`. Not blocking ship; defensive corpus growth.
+- **Status:** open
+- **Tier:** v0.6+ (defensive corpus growth)
+
+### `v06-corpus-byte-order-defensive-test` — defensive hand-pinned hash byte-order test
+
+- **Surfaced:** v0.6 spec round-1 review (§6.3 spec-coverage concern). Plan Step 5.1.6 specified adding a defensive byte-pin test in `tests/taproot.rs` that takes a known input hash, encodes via the Hash256/Sha256/Ripemd160/Hash160 path, and asserts the bytecode contains the input bytes in **internal byte order** (NOT reversed-display-order). The corpus round-trip alone cannot catch a regression where encoder + decoder both flip to display-order (would be round-trip-stable but format-changed).
+- **Where:** `crates/md-codec/tests/taproot.rs` (or new `tests/hash_byte_order.rs`).
+- **What:** Hand-coded byte-pin assertion: construct a known 32-byte hash (e.g., all-0xAA), invoke encoder via `encode_template` or similar, assert the bytecode bytes immediately after the Tag byte equal the input bytes UNREVERSED. Repeat for all 4 hash terminals.
+- **Why deferred:** Plan's defensive-test step deferred to v0.6+ during overnight autonomous execution to focus on shipping. Round-trip via the corpus fixtures provides indirect coverage; the dedicated byte-pin would catch the very specific encoder+decoder symmetric regression.
+- **Status:** open
+- **Tier:** v0.6+ (defensive testing nice-to-have)
+
 ### `v06-spec-tag-byte-display-table` — alphabetical Tag→byte index for spec audit convenience
 
 - **Surfaced:** v0.6 spec round-1 review (agent report `v0-6-spec-review-1.md`); flagged as nice-to-have, not blocking.
