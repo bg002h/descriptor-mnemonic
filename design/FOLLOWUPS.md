@@ -88,6 +88,27 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.3
 
+### `tap-leaf-admit-sortedmulti-a` — admit `sortedmulti_a` in tap leaves (signer evidence available)
+
+- **Surfaced:** 2026-04-28 evidence-gathering session in response to `phase-d-tap-leaf-wrapper-subset-clarification`. Two independent hardware-signer vendors document admittance:
+  - **Coldcard** (firmware/edge branch): `docs/taproot.md` §"Allowed descriptors" lists `tr(internal_key, sortedmulti_a(2,@0,@1))` and `tr(internal_key, {sortedmulti_a(2,@0,@1),pk(@2)})` as admitted shapes.
+  - **Ledger** (LedgerHQ/vanadium): `apps/bitcoin/common/src/bip388/cleartext.rs` has first-class `SortedMultisig` variant in the BIP 388 wallet-policy validator.
+  Plus rust-miniscript's `VALID_TEMPLATES` test fixture (`src/descriptor/wallet_policy/mod.rs:351`) and a working address-invariance example (`examples/xpub_descriptors.rs::p2tr_sortedmulti_a`).
+- **Where:** `crates/md-codec/src/bytecode/tag.rs` (allocate new Tag — currently no wire-format slot exists; `Terminal::SortedMultiA` falls through to a literal `"sortedmulti_a"` string in `tap_terminal_name`); `crates/md-codec/src/bytecode/{encode,decode}.rs` (loosen `validate_tap_leaf_subset` + add round-trip path); `crates/md-codec/src/vectors.rs` (positive corpus fixture); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" admit-list update with vendor citations.
+- **What:** Allocate a Tag byte for `sortedmulti_a`. Candidates: `0x34` (currently "reserved-invalid" — would change `tag.rs:225-232` test gate semantics) or somewhere in `0x36+` (cleaner — further from existing operator block). Wire-format question covered separately: tag space has ~203 free bytes. Add encode/decode dispatch; loosen validators on both sides; add positive vector(s) covering bare `sortedmulti_a` in single-leaf form and inside a multi-leaf TapTree; update BIP draft to document admission with citations to Coldcard `docs/taproot.md` (edge) and Ledger `vanadium/apps/bitcoin/common/src/bip388/cleartext.rs`.
+- **Why deferred:** Wire-format-additive change (new Tag allocation) — should land in a labelled release for clean CHANGELOG/MIGRATION coverage. Could land in 0.6.0 alongside the `decoded-string-data-memory-microopt` API break and `tap-leaf-admit-after`.
+- **Status:** open
+- **Tier:** v0.6 (next breaking release)
+
+### `tap-leaf-admit-after` — admit `after` (absolute timelock) in tap leaves
+
+- **Surfaced:** 2026-04-28 evidence-gathering session in response to `phase-d-tap-leaf-wrapper-subset-clarification`. Ledger's vanadium bitcoin app (`apps/bitcoin/common/src/bip388/cleartext.rs`) admits 4 timelocked-multisig compound shapes as first-class wallet-policy variants. 2 of them use `after(n)`: `and_v(v:multi_a(...), after(n))` with `n < 500000000` (absolute height) and with `n >= 500000000 && n < 4194304` (absolute time-based, second range derived from BIP 65). MD's current admit set covers all other parts of these shapes (`and_v`, `v:`, `multi_a`); only `after` is missing.
+- **Where:** `crates/md-codec/src/bytecode/encode.rs::validate_tap_leaf_subset` (and decode-side counterpart); `crates/md-codec/src/vectors.rs` (positive corpus fixture for absolute-timelock multisig shape); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" admit-list update.
+- **What:** Add `Terminal::After` to the tap-leaf admit set in `validate_tap_leaf_subset` (and matching `Tag::After` arm on decode side). The Tag is already allocated (`Tag::After = 0x1E`); no wire-format change needed. Add at least one positive corpus vector capturing a `tr(KEY, and_v(v:multi_a(2,@1,@2), after(700000)))`-style shape so the round-trip is exercised by conformance tests. Update BIP draft.
+- **Why deferred:** Validator-only change but technically expands MD's admitted surface — should ship in a labelled release rather than a silent v0.5.x patch. v0.6 candidate (alongside `tap-leaf-admit-sortedmulti-a`) so signer-evidence-driven widenings land in one breaking release with a coherent CHANGELOG entry.
+- **Status:** open
+- **Tier:** v0.6 (next breaking release)
+
 
 ### `cli-json-debug-formatted-enum-strings` — replace `format!("{:?}", enum_value)` with serde-typed enum mirrors in CLI JSON output
 
