@@ -1,5 +1,13 @@
 # Phase v0.2 D — Taproot Tr / single-leaf TapTree (`p2-taproot-tr-taptree`)
 
+> **Forward note (added 2026-04-28):** the per-leaf Coldcard-subset enforcement
+> shipped here (`validate_tap_leaf_subset` invoked on every encode and decode)
+> is being **undone** in v0.6 as part of a deliberate scope reframing. The
+> rationale and supersession plan are documented in
+> [`design/MD_SCOPE_DECISION_2026-04-28.md`](../MD_SCOPE_DECISION_2026-04-28.md).
+> This report stays unchanged as a faithful record of the v0.2 reasoning;
+> read it for that context, not as a description of v0.6+ behaviour.
+
 **Status:** DONE
 
 **Commit SHA:** `6f6eae9` (cherry-picked onto main from worktree commit `267036f` because the worktree branch was cut from origin/main and didn't include the local-only Phase D decision-log commit `24a7a4b`)
