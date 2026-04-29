@@ -73,7 +73,7 @@ two-WalletId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 |---|---|---|
 | `cli` | yes | Build the `md` binary; pulls in `clap` + `anyhow`. Library-only consumers can disable. |
 | `compiler` | no | Expose `policy_compiler::{ScriptContext, policy_to_bytecode}` wrapping rust-miniscript's policy compiler. Heavyweight (ILP-style enumeration in the Tap branch). |
-| `cli-compiler` | no | Enables the `md from-policy <expr> --context <tap\|segwitv0> [--internal-key <KEY>]` subcommand. Implies `cli` + `compiler`. |
+| `cli-compiler` | no | Enables the `md from-policy <expr> --context <tap\|segwitv0> [--unspendable-key <KEY>]` subcommand. Implies `cli` + `compiler`. |
 | `test-helpers` | no | Exposes `pub mod test_helpers` with `dummy_key_a/b/c()` for downstream crates' integration tests. Enable in `[dev-dependencies]`. |
 
 ```toml

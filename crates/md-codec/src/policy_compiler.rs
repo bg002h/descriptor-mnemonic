@@ -13,14 +13,34 @@
 //! `WalletPolicy::from_descriptor`, and encodes the resulting bytecode
 //! verbatim through the standard `to_bytecode` path.
 //!
-//! # Tap-context internal key
+//! # Tap-context internal key — `unspendable_key` semantics
 //!
-//! `script_context = ScriptContext::Tap` requires a Taproot internal
-//! key. Per Plan reviewer #1 Concern 2 (Important), the API takes a
-//! caller-supplied `Option<DescriptorPublicKey>`:
-//!   - `Some(k)`: use `k` as the internal key.
-//!   - `None`: rust-miniscript's `compile_tr` derives an unspendable
-//!     NUMS internal key for script-path-only spends.
+//! `script_context = ScriptContext::Tap` is plumbed through to
+//! rust-miniscript's [`Concrete::compile_tr(unspendable_key)`]. This is
+//! a *fallback hint*, not a "force this internal key" override:
+//!
+//! 1. `compile_tr` first calls `extract_key(unspendable_key)`, which
+//!    walks the policy tree looking for a key that can serve as the
+//!    internal key (typically the highest-probability single-key spend).
+//! 2. If extraction succeeds, the extracted key becomes the Taproot
+//!    internal key, the policy's contribution to the script tree drops
+//!    that key, and `unspendable_key` is **unused**.
+//! 3. If extraction fails (no extractable single-key spend), `compile_tr`
+//!    falls back to `unspendable_key`. Passing `None` lets the upstream
+//!    derive an unspendable NUMS internal key for script-path-only
+//!    spends.
+//!
+//! Concretely: calling
+//! `policy_to_bytecode("pk(K2)", &opts, Tap, Some(K1))` produces
+//! `tr(K2)` (single-key spend; K1 unused), **not** `tr(K1, pk(K2))`.
+//! To force a specific internal key, build the descriptor manually
+//! via `miniscript::Descriptor::new_tr` and pass through the standard
+//! `WalletPolicy::from_descriptor` path.
+//!
+//! Per Plan reviewer #1 Concern 2 (Important), the API takes a
+//! caller-supplied `Option<DescriptorPublicKey>`. Parameter renamed to
+//! `unspendable_key` in v0.7.2 to mirror the upstream naming and make
+//! the fallback semantics obvious at the call site.
 
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey, WalletPolicy as InnerWalletPolicy};
 use miniscript::policy::Concrete;
@@ -54,9 +74,14 @@ pub enum ScriptContext {
 /// - `options`: standard `EncodeOptions` (shared_path overrides,
 ///   fingerprints, force-chunked / force-long-code flags, etc.).
 /// - `script_context`: `Segwitv0` for `wsh()`, `Tap` for `tr()`.
-/// - `internal_key`: Tap-context only. `None` → rust-miniscript's
-///   `compile_tr` synthesises an unspendable NUMS internal key for
-///   script-path-only spends. Ignored for `Segwitv0`.
+/// - `unspendable_key`: Tap-context fallback internal key. Plumbed to
+///   `Concrete::compile_tr(unspendable_key)`, which prefers a key
+///   extracted from the policy itself and only falls back to this
+///   parameter when no extraction is possible. `None` lets upstream
+///   derive an unspendable NUMS internal key for script-path-only
+///   spends. **This is not a "force this internal key" override** —
+///   see the module-level `# Tap-context internal key` section for
+///   the precedence rule. Ignored for `Segwitv0`.
 ///
 /// # Errors
 ///
@@ -70,7 +95,7 @@ pub fn policy_to_bytecode(
     policy: &str,
     options: &EncodeOptions,
     script_context: ScriptContext,
-    internal_key: Option<DescriptorPublicKey>,
+    unspendable_key: Option<DescriptorPublicKey>,
 ) -> Result<Vec<u8>, Error> {
     let concrete: Concrete<DescriptorPublicKey> = policy
         .parse()
@@ -84,7 +109,7 @@ pub fn policy_to_bytecode(
             Descriptor::new_wsh(ms).map_err(|e| Error::Miniscript(e.to_string()))?
         }
         ScriptContext::Tap => concrete
-            .compile_tr(internal_key)
+            .compile_tr(unspendable_key)
             .map_err(|e| Error::Miniscript(e.to_string()))?,
     };
 
@@ -134,30 +159,37 @@ mod tests {
         assert!(bytes.len() > 5);
     }
 
+    /// `unspendable_key` is a fallback hint per upstream `compile_tr`
+    /// semantics — when the policy contains a `pk(K)` shape, the
+    /// extracted key K becomes the internal key and `unspendable_key`
+    /// is unused. This test exercises that path: compile of `pk(K2)`
+    /// with `unspendable_key = Some(K1)` produces a single-key
+    /// `tr(K2)` (K1 ignored). Documented as `unspendable_key`
+    /// fallback semantics in the module-level rustdoc.
     #[test]
-    fn tap_pk_with_internal_key_compiles_and_encodes() {
-        let internal: DescriptorPublicKey = KEY_1
+    fn tap_pk_passes_unspendable_key_fallback_unused() {
+        let unspendable: DescriptorPublicKey = KEY_1
             .parse()
-            .expect("internal key must parse as DescriptorPublicKey");
+            .expect("unspendable_key fallback must parse as DescriptorPublicKey");
         let leaf_policy = format!("pk({KEY_2})");
         let bytes = policy_to_bytecode(
             &leaf_policy,
             &EncodeOptions::default(),
             ScriptContext::Tap,
-            Some(internal),
+            Some(unspendable),
         )
-        .expect("tap leaf with caller-supplied internal key compiles");
+        .expect("tap leaf with caller-supplied unspendable_key compiles");
         assert!(bytes.len() > 3);
     }
 
     /// Per Plan reviewer #1 Concern 2: when the caller passes
-    /// `internal_key = None`, rust-miniscript's `compile_tr` synthesises
+    /// `unspendable_key = None`, rust-miniscript's `compile_tr` synthesises
     /// an unspendable NUMS internal key. This test exercises that path
     /// end-to-end (compile → project to wallet policy → encode bytecode)
     /// to guard against silent regressions in either the upstream NUMS
     /// derivation or the wallet-policy projection's tolerance for it.
     #[test]
-    fn tap_pk_with_nums_internal_key_compiles_and_encodes() {
+    fn tap_pk_with_nums_unspendable_key_compiles_and_encodes() {
         let leaf_policy = format!("pk({KEY_1})");
         let bytes = policy_to_bytecode(
             &leaf_policy,

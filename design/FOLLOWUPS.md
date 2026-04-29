@@ -510,9 +510,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** v0.7.x docs-sync smoke test (2026-04-29). The `md from-policy --context tap --internal-key K1` CLI flag is plumbed through to rust-miniscript's `Concrete::compile_tr(unspendable_key=Some(K1))`. Upstream `compile_tr` calls `extract_key(unspendable_key)` first, which extracts a key from the *policy itself* if it can serve as the internal key (single-key spend), and only falls back to `K1` if no such extraction is possible. So passing `--internal-key K1` with a policy like `pk(K2)` produces `tr(K2)` (the optimizer picks K2; K1 is unused), not `tr(K1, pk(K2))`. The behaviour is upstream-correct but easily surprises a CLI user who expects "force K1 as internal".
 - **Where:** `crates/md-codec/src/policy_compiler.rs::policy_to_bytecode` rustdoc + `crates/md-codec/src/bin/md/main.rs::cmd_from_policy` `--internal-key` argument doc string.
 - **What:** rename the CLI flag and parameter doc to clarify the fallback semantic — e.g., `--unspendable-key <KEY>` (mirroring upstream naming) — and update the rustdoc on `policy_to_bytecode` to spell out the precedence rule. Optionally add an example in the CLI help showing how to force a specific internal key (use a policy that doesn't contain a single extractable key, or pre-build the descriptor manually).
-- **Why deferred:** Doc + flag-rename only; not blocking. Surfaced by smoke testing not unit tests.
-- **Status:** open
-- **Tier:** v0.7.x
+- **Status:** resolved md-codec-v0.7.2. CLI flag renamed `--internal-key` → `--unspendable-key`; library parameter on `policy_to_bytecode` renamed `internal_key` → `unspendable_key` (Rust positional-args semantics: not ABI-breaking; existing callers compile unchanged). Module rustdoc gains a "Tap-context internal key — `unspendable_key` semantics" section that describes the upstream precedence rule (`extract_key` first, fallback parameter second). Workaround for "force this internal key" use case spelled out: build the `Tr` descriptor manually via `miniscript::Descriptor::new_tr` and pass through `WalletPolicy::from_descriptor`.
+- **Tier:** v0.7.x (closed)
 
 ---
 
