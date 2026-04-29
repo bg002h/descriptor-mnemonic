@@ -503,3 +503,21 @@ fn md_encode_fingerprint_flag_rejects_short_hex() {
         .failure()
         .stderr(predicate::str::contains("8 hex chars"));
 }
+
+/// `md from-policy` — only available under the `cli-compiler` feature.
+/// Compiles a `pk(<xpub>)` Concrete-Policy in Segwitv0 context and
+/// asserts the printed hex starts with `00` (header byte).
+#[cfg(feature = "compiler")]
+#[test]
+fn md_from_policy_segwitv0_pk_emits_bytecode_hex() {
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+
+    let policy = "pk([6738736c/86'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*)";
+    Command::cargo_bin("md")
+        .expect("binary built")
+        .args(["from-policy", policy, "--context", "segwitv0"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("00")); // header byte 0x00
+}

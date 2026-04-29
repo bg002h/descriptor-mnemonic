@@ -121,6 +121,30 @@ enum Command {
     /// Outputs the same content as `gen_vectors --output -` (write mode prints to stderr).
     /// Use `md vectors > vectors.json` to capture the output.
     Vectors,
+
+    /// Compile a Concrete-Policy expression and emit the resulting MD bytecode hex.
+    ///
+    /// Available only when the `cli-compiler` feature is enabled. The
+    /// input policy uses rust-miniscript's high-level Concrete-Policy
+    /// syntax with fully-qualified `DescriptorPublicKey` strings — NOT
+    /// BIP 388 `@N/**` placeholders. The compiler picks an optimal
+    /// miniscript shape; the wrapper projects to a wallet policy and
+    /// runs the standard encode pipeline.
+    #[cfg(feature = "compiler")]
+    FromPolicy {
+        /// The Concrete-Policy expression (e.g. `or(pk(<xpub1>),pk(<xpub2>))`).
+        policy: String,
+
+        /// Script context: `tap` (tapscript) or `segwitv0` (`wsh`).
+        #[arg(long, value_name = "tap|segwitv0", default_value = "segwitv0")]
+        context: String,
+
+        /// Tap-context internal key. If omitted, rust-miniscript synthesises
+        /// an unspendable NUMS key for script-path-only spends. Ignored for
+        /// `segwitv0`.
+        #[arg(long, value_name = "DESCRIPTOR_PUBLIC_KEY")]
+        internal_key: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +482,45 @@ fn cmd_inspect(string: &str) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+#[cfg(feature = "compiler")]
+fn cmd_from_policy(
+    policy_str: &str,
+    context_str: &str,
+    internal_key_str: Option<&str>,
+) -> Result<(), anyhow::Error> {
+    use md_codec::{ScriptContext, policy_to_bytecode};
+
+    let context = match context_str.to_ascii_lowercase().as_str() {
+        "segwitv0" | "wsh" => ScriptContext::Segwitv0,
+        "tap" | "tr" => ScriptContext::Tap,
+        other => {
+            anyhow::bail!("--context must be one of: segwitv0, tap; got {other:?}");
+        }
+    };
+
+    let internal_key = match internal_key_str {
+        Some(s) => Some(
+            s.parse::<miniscript::DescriptorPublicKey>()
+                .map_err(|e| anyhow::anyhow!("--internal-key parse failed: {e}"))?,
+        ),
+        None => None,
+    };
+
+    let bytecode = policy_to_bytecode(policy_str, &EncodeOptions::default(), context, internal_key)
+        .map_err(|e| anyhow::anyhow!("policy compile/encode failed: {e}"))?;
+
+    let hex: String =
+        bytecode
+            .iter()
+            .fold(String::with_capacity(bytecode.len() * 2), |mut acc, b| {
+                use std::fmt::Write;
+                write!(acc, "{b:02x}").unwrap();
+                acc
+            });
+    println!("{hex}");
+    Ok(())
+}
+
 fn cmd_vectors() -> Result<(), anyhow::Error> {
     let vectors = md_codec::vectors::build_test_vectors();
     let json = serde_json::to_string_pretty(&vectors)?;
@@ -528,6 +591,13 @@ fn main() {
         Command::Bytecode { policy } => cmd_bytecode(&policy),
 
         Command::Vectors => cmd_vectors(),
+
+        #[cfg(feature = "compiler")]
+        Command::FromPolicy {
+            policy,
+            context,
+            internal_key,
+        } => cmd_from_policy(&policy, &context, internal_key.as_deref()),
     };
 
     if let Err(e) = result {

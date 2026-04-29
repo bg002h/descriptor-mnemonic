@@ -145,6 +145,8 @@ pub mod encoding;
 pub mod error;
 pub mod options;
 pub mod policy;
+#[cfg(feature = "compiler")]
+pub mod policy_compiler;
 pub mod vectors;
 pub mod wallet_id;
 
@@ -163,6 +165,8 @@ pub use encoding::{
 pub use error::{BytecodeErrorKind, Error, Result};
 pub use options::{DecodeOptions, EncodeOptions};
 pub use policy::{MdBackup, WalletPolicy};
+#[cfg(feature = "compiler")]
+pub use policy_compiler::{ScriptContext, policy_to_bytecode};
 pub use vectors::{NegativeVector, TestVectorFile, Vector};
 pub use wallet_id::{
     ChunkWalletId, WalletId, WalletIdSeed, WalletIdWords, compute_wallet_id_for_policy,
