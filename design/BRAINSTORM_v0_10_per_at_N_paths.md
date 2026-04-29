@@ -166,11 +166,35 @@ Old v0.x encodings (with only `SharedPath`) decode under v0.10 unchanged — wir
 
 After v0.10 ships, what natural extensions follow?
 
-- BIP 393 recovery hints (`Tag::RecoveryHints`) — already mapped to a future tag byte.
+- BIP 393 recovery hints (`Tag::RecoveryHints` at `0x37` post-Q1, gated by a new header flag bit) — birthday hint + gap-limit + max silent-payment label index. v1+ work.
 - Per-`@N` extended pubkey carrying (currently mk1's job; could md1 absorb in future v1.x?). Unlikely — that's mk1's domain by design, but worth noting.
 - Per-`@N` Wallet-Instance-ID carriage. Also mk1 / orchestrator territory.
 
 **My take:** for v0.10 we close the path question only. Don't speculate further; the `#[non_exhaustive]` posture and reserved bits 0/1 leave room.
+
+### Q12 — Formalize Type 0 / Type 1 PolicyId typology
+
+Surfaced 2026-04-29 user typology framing: PolicyId is best considered as a *type of* an ID. Type 0 = `WalletInstanceId` (template + paths + concrete xpubs; recovery-time computation). Type 1 = `PolicyId` (template + paths; engraved as 12-word phrase).
+
+**Light:** add a BIP §"PolicyId types" subsection naming Type 0 / Type 1 explicitly as teaching aid; keep code names (`PolicyId`, `WalletInstanceId`) unchanged.
+
+**Full:** rename in code (`Type0PolicyId` / `Type1PolicyId`); v0.10 wire-bump justifies the API churn.
+
+**My take:** Light. The typology is useful for reasoning; existing names are descriptive. We just shipped v0.8→v0.9 rename — re-renaming creates churn for marginal clarity gain.
+
+### Q13 — PolicyId UX (engraving optionality + fingerprint API)
+
+Surfaced 2026-04-29 user observation: for short policies the 128-bit / 12-word PolicyId phrase is *longer* than the codex32 md1 string it summarizes. PolicyId isn't part of the codex32 string — it's a separate engraved Tier-3 anchor — so engraving the 12-word phrase is *additional* cost on top of the codex32 string, not redundant copies. For a typical short policy: ~25-30 chars (codex32) + ~50-70 chars (12-word phrase) ≈ 75-100 chars total, of which the 12-word phrase dominates.
+
+**Three coupled sub-decisions:**
+
+(a) **BIP language softening.** Currently the BIP framing implies the 12-word phrase is part of the canonical backup. Soften to: "MAY engrave; SHOULD if maintaining cross-verification with a digital backup of the codex32 string." Pure docs change.
+
+(b) **Fingerprint API.** Add `PolicyId::fingerprint() → [u8; 4]` returning the first 32 bits as 8 hex chars (parallel to BIP 32 master-key fingerprints). Tools display this as a one-line identifier; users who want a *minimum-cost* engraved anchor get an 8-char option. ~10 lines of code; not a wire-format change.
+
+(c) **Canonical PolicyId stays 128 bits / 12 words.** No shrinking. Reasoning: 128 bits is the BIP-39-tool-compatible form; shrinking the canonical breaks the v0.8 anchor semantics for marginal gain. The fingerprint API (b) provides the short form for users who want it.
+
+**My take:** all three (Light bundle). Bundle into v0.10 alongside the per-`@N` path BIP work — same BIP review cycle, no scope expansion for the wire-format changes.
 
 ## 4. Resolved actions (A1, A2, A3)
 
@@ -196,19 +220,21 @@ mk1's 10-component cap is explicit per Q-3. **Decision implication:** v0.10 shou
 
 The five original questions resolved (with my take), plus six surfaced:
 
-| # | Question | My take |
-|---|---|---|
-| Q1 | Tag byte allocation | A — `0x36` (next clean) |
-| Q2 | Encoding shape | A — dense (one path-decl per `@N`) with explicit count prefix |
-| Q3 | SharedPath coexistence | A — strict mutual exclusion at path-decl position |
-| Q4 | Header flag bit | B — bit 3 = OriginPaths flag (symmetric with bit 2 = Fingerprints) |
-| Q5 | Authority precedence with mk1 | No additional md1-side semantics needed; cross-reference mk1 §5.1 |
-| Q6 | Interaction with Fingerprints | A — separate blocks |
-| Q7 | PolicyId impact | Route X (per-`@N` paths affect PolicyId) — coupled to Q9-A. mk1 BIP §"Naming and identifiers" prose needs minor update. |
-| Q8 | Path component count cap | Add `MAX_PATH_COMPONENTS = 10` to md1 (currently unbounded); aligns with mk1's Q-3. Wire-additive (no real-world policy exceeds 10). |
-| Q9 | Encoder default | A — auto-detect emit per-`@N` |
-| Q10 | Migration story | Wire-additive at decoder; auto-detect at encoder per Q9 |
-| Q11 | Forward-compat hooks | Not in scope; leave room |
+| # | Question | My take | Status |
+|---|---|---|---|
+| Q1 | Tag byte allocation | A — `0x36` (next clean) | **LOCKED** (RecoveryHints moves to `0x37` in POLICY_BACKUP.md) |
+| Q2 | Encoding shape | A — dense (one path-decl per `@N`) with explicit count prefix | open |
+| Q3 | SharedPath coexistence | A — strict mutual exclusion at path-decl position | open |
+| Q4 | Header flag bit | B — bit 3 = OriginPaths flag (symmetric with bit 2 = Fingerprints) | open |
+| Q5 | Authority precedence with mk1 | No additional md1-side semantics needed; cross-reference mk1 §5.1 | open |
+| Q6 | Interaction with Fingerprints | A — separate blocks | open |
+| Q7 | PolicyId impact | Route X (per-`@N` paths affect PolicyId) — coupled to Q9-A. mk1 BIP §"Naming and identifiers" prose needs minor update. | **LOCKED** (per Type 0 / Type 1 framing) |
+| Q8 | Path component count cap | Add `MAX_PATH_COMPONENTS = 10` to md1 (currently unbounded); aligns with mk1's Q-3. Wire-additive (no real-world policy exceeds 10). | open |
+| Q9 | Encoder default | A — auto-detect emit per-`@N` | open |
+| Q10 | Migration story | Wire-additive at decoder; auto-detect at encoder per Q9 | open |
+| Q11 | Forward-compat hooks | Not in scope; leave room | open |
+| Q12 | Type 0 / Type 1 PolicyId typology | Light (BIP teaching subsection; no code rename) | **LOCKED** |
+| Q13 | PolicyId UX (engraving + fingerprint) | Light bundle: BIP softens "MAY engrave"; add `PolicyId::fingerprint() → [u8; 4]`; canonical stays 128 bits | **LOCKED** |
 
 **Decisions needed from user:**
 
