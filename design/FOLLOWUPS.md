@@ -794,6 +794,15 @@ See BIP §FAQ for rationale.
 - **Status:** resolved `75e22f2` (`chore(v0.5 m2): fix target_depth literal in spec + plan`, on the v0.5 feature branch; merged to main via `865f889`). Working code at `encode.rs:166` was already correct; the doc fix updated `design/SPEC_v0_5_multi_leaf_taptree.md` §4 and `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md` Phase 4 Task 4.3 to match.
 - **Tier:** v0.5-must-close-before-ship (closed)
 
+### `v0-7-phase-1-integration-test-rebaseline` — rebaseline 17 integration-test failures using v0.5 byte literals
+
+- **Surfaced:** v0.7.0 Phase 1 Track A rebaseline pass (the 27 enumerated unit tests). After fixing those, `cargo test -p md-codec --no-fail-fast` still has ~17 failures across `tests/cli.rs`, `tests/conformance.rs`, and `tests/vectors_*.rs` (e.g., `md_encode_path_bip48_nested_resolves_to_indicator_0x06`, `rejects_invalid_bytecode_unexpected_tag`, `taproot_key_path_only_round_trips`, `fingerprints_block_byte_layout_matches_bip_example`, `tap_leaf_subset_violation_carries_leaf_index`, `schema_2_contains_v0_4_corpus_additions`, etc.). Failures partition into the same v0.5→v0.6 byte-shift class as the unit tests: `Tag::SharedPath` 0x33→0x34, `Tag::Placeholder` 0x32→0x33, plus a few hand-crafted byte vectors and asserted error-kind payloads (`UnexpectedTag { expected: 0x33, .. }`).
+- **Where:** `crates/md-codec/tests/cli.rs` (2 tests), `crates/md-codec/tests/conformance.rs` (~10 tests), `crates/md-codec/tests/vectors_*.rs` (~3 tests), `crates/md-codec/tests/build_test_vectors.rs`
+- **What:** Apply the same symbolic-`Tag::Foo.as_byte()` rebaseline pattern used in the unit-test rebaseline (decode/encode/path commit) to the integration test files. Some tests may also need vectors-corpus regeneration (`schema_2_contains_v0_*_corpus_additions` and `build_test_vectors_has_expected_corpus_count`). Goal: `cargo test -p md-codec --no-fail-fast` reports 0 failures.
+- **Why deferred:** The Phase 1 sub-task instruction explicitly enumerated exactly 27 unit tests in `bytecode::{decode,encode,path}::tests`; the integration-test failures fall outside that scope and were not flagged in the plan's failing-test inventory (plan §1.1.2 estimated ~38 across all modules but the actual count is higher). Folding them into a separate commit keeps the unit-test commit narrowly scoped per acceptance criterion #1 (`cargo test -p md-codec --lib` returns 0 failures).
+- **Status:** open
+- **Tier:** v0.7-blocker (must close before v0.7.0 release plumbing in Phase 6 — full suite must be green)
+
 ### `decoded-string-data-memory-microopt` — drop `DecodedString.data`, replace with accessor backed by `data_with_checksum`
 
 - **Surfaced:** Phase B bucket A reviewer (Opus 4.7) on commit `5f13812`

@@ -76,7 +76,7 @@ fn decode_descriptor(
         // TapTree (0x07 in v0.6) is valid INSIDE tr(KEY, TREE) as a multi-leaf
         // inner-node framing byte, but it is NOT a valid top-level descriptor.
         Some(Tag::TapTree) => Err(Error::PolicyScopeViolation(
-            "TapTree is not a valid top-level descriptor; \
+            "TapTree (0x07) is not a valid top-level descriptor; \
              it appears only inside `tr(KEY, TREE)` as multi-leaf inner-node framing"
                 .to_string(),
         )),
@@ -1157,11 +1157,24 @@ mod tests {
 
     #[test]
     fn decode_rejects_reserved_inline_key_tag() {
-        // 0x24 = ReservedOrigin (a v1+ inline-key form).
+        // 0x24 was `ReservedOrigin` (a v1+ inline-key form) in v0.5; in v0.6
+        // the entire 0x24..=0x32 Reserved* range was dropped (MD's BIP-388
+        // framing forbids inline keys; see crate-level rationale in tag.rs).
+        // The byte is now simply unallocated, so the decoder emits the
+        // generic UnknownTag diagnostic rather than an inline-key-specific
+        // PolicyScopeViolation. The test's intent — "v0.5's Reserved*
+        // sub-range is rejected" — is preserved by asserting the v0.6
+        // unknown-tag path on the same byte.
         let err = decode_template(&[0x24], &empty_keys()).unwrap_err();
         assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("inline-key")),
-            "expected PolicyScopeViolation about inline-key, got {err:?}"
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    offset: 0,
+                    kind: BytecodeErrorKind::UnknownTag(0x24)
+                }
+            ),
+            "expected UnknownTag(0x24) for v0.6-unallocated byte, got {err:?}"
         );
     }
 
@@ -1341,15 +1354,22 @@ mod tests {
     fn decode_thresh_with_constants_round_trip() {
         // The encoder's `encode_terminal_thresh_2_of_3_with_constants` test
         // exercises exactly this shape (k=2, n=3, [False, True, False]) at
-        // the Terminal level. The expected bytes were:
-        //   [Thresh, 0x02, 0x03, False, True, False] = [0x18, 0x02, 0x03, 0x00, 0x01, 0x00]
+        // the Terminal level.
         //
         // Drive the decoder with a manually-constructed byte stream that
         // wraps this in Wsh: [Wsh, Thresh, 0x02, 0x03, False, True, False].
         // Note: this byte stream may FAIL to decode because miniscript's type
         // checker rejects thresh(2, 0, 1, 0) under Wsh's B-type requirement
         // for the inner. If so, this test demonstrates the correct error path.
-        let bytes: Vec<u8> = vec![0x05, 0x18, 0x02, 0x03, 0x00, 0x01, 0x00];
+        let bytes: Vec<u8> = vec![
+            Tag::Wsh.as_byte(),
+            Tag::Thresh.as_byte(),
+            0x02, // k
+            0x03, // n
+            Tag::False.as_byte(),
+            Tag::True.as_byte(),
+            Tag::False.as_byte(),
+        ];
         let result = decode_template(&bytes, &[]);
         // Either Ok (if miniscript accepts) or Err(InvalidBytecode {
         // kind: TypeCheckFailed }) (if it rejects). Both are acceptable
@@ -1418,7 +1438,7 @@ mod tests {
     #[test]
     fn decode_multi_rejects_truncated_after_k() {
         // [Wsh, Multi, k=2] — truncated before n.
-        let bytes = vec![0x05, 0x19, 0x02];
+        let bytes = vec![Tag::Wsh.as_byte(), Tag::Multi.as_byte(), 0x02];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
             matches!(
@@ -1467,7 +1487,16 @@ mod tests {
         )
         .unwrap();
 
-        let bytes = vec![0x05, 0x19, 0x02, 0x03, 0x32, 0x00, 0x32, 0x01];
+        let bytes = vec![
+            Tag::Wsh.as_byte(),
+            Tag::Multi.as_byte(),
+            0x02, // k
+            0x03, // n
+            Tag::Placeholder.as_byte(),
+            0x00, // index 0
+            Tag::Placeholder.as_byte(),
+            0x01, // index 1
+        ];
         let err = decode_template(&bytes, &[k0, k1]).unwrap_err();
         assert!(
             matches!(
@@ -1551,7 +1580,7 @@ mod tests {
         // a separate concern handled by miniscript and surfaces as
         // TypeCheckFailed.
 
-        let alt_bytes = vec![0x05, 0x0A, 0x01]; // [Wsh, Alt, True]
+        let alt_bytes = vec![Tag::Wsh.as_byte(), Tag::Alt.as_byte(), Tag::True.as_byte()];
         let result = decode_template(&alt_bytes, &[]);
         match result {
             Ok(d) => {
@@ -1573,7 +1602,7 @@ mod tests {
             ),
         }
 
-        let swap_bytes = vec![0x05, 0x0B, 0x01]; // [Wsh, Swap, True]
+        let swap_bytes = vec![Tag::Wsh.as_byte(), Tag::Swap.as_byte(), Tag::True.as_byte()];
         let result = decode_template(&swap_bytes, &[]);
         match result {
             Ok(d) => {
@@ -2079,8 +2108,13 @@ mod tests {
 
     #[test]
     fn decode_or_d_known_vector() {
-        // [Wsh, OrD, False, True] = [0x05, 0x16, 0x00, 0x01]
-        let bytes = vec![0x05, 0x16, 0x00, 0x01];
+        // [Wsh, OrD, False, True]
+        let bytes = vec![
+            Tag::Wsh.as_byte(),
+            Tag::OrD.as_byte(),
+            Tag::False.as_byte(),
+            Tag::True.as_byte(),
+        ];
         let decoded = decode_template(&bytes, &[]).unwrap();
         use std::collections::HashMap;
         let reencoded =
@@ -2090,8 +2124,14 @@ mod tests {
 
     #[test]
     fn decode_andor_known_vector() {
-        // [Wsh, AndOr, False, True, False] = [0x05, 0x13, 0x00, 0x01, 0x00]
-        let bytes = vec![0x05, 0x13, 0x00, 0x01, 0x00];
+        // [Wsh, AndOr, False, True, False]
+        let bytes = vec![
+            Tag::Wsh.as_byte(),
+            Tag::AndOr.as_byte(),
+            Tag::False.as_byte(),
+            Tag::True.as_byte(),
+            Tag::False.as_byte(),
+        ];
         let decoded = decode_template(&bytes, &[]).unwrap();
         use std::collections::HashMap;
         let reencoded =
@@ -2102,7 +2142,7 @@ mod tests {
     #[test]
     fn decode_logical_op_rejects_truncated_after_first_child() {
         // [Wsh, AndV, True] — only one child present; AndV needs two.
-        let bytes = vec![0x05, 0x11, 0x01];
+        let bytes = vec![Tag::Wsh.as_byte(), Tag::AndV.as_byte(), Tag::True.as_byte()];
         let err = decode_template(&bytes, &[]).unwrap_err();
         // After reading the True child, the decoder tries to read the second
         // child and the cursor is at EOF. The next read_byte call returns
@@ -2122,7 +2162,12 @@ mod tests {
     #[test]
     fn decode_andor_rejects_truncated_after_two_children() {
         // [Wsh, AndOr, False, True] — AndOr expects 3 children, only 2 present.
-        let bytes = vec![0x05, 0x13, 0x00, 0x01];
+        let bytes = vec![
+            Tag::Wsh.as_byte(),
+            Tag::AndOr.as_byte(),
+            Tag::False.as_byte(),
+            Tag::True.as_byte(),
+        ];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
             matches!(
@@ -2141,8 +2186,15 @@ mod tests {
         use std::str::FromStr;
 
         let inner_bytes = vec![
-            0x09, 0x02, 0x03, // SortedMulti tag, k=2, n=3
-            0x32, 0x00, 0x32, 0x01, 0x32, 0x02, // 3 placeholders at indices 0, 1, 2
+            Tag::SortedMulti.as_byte(),
+            0x02, // k
+            0x03, // n
+            Tag::Placeholder.as_byte(),
+            0x00, // index 0
+            Tag::Placeholder.as_byte(),
+            0x01, // index 1
+            Tag::Placeholder.as_byte(),
+            0x02, // index 2
         ];
         let k0 = DescriptorPublicKey::from_str(
             "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
@@ -2169,7 +2221,7 @@ mod tests {
     // =========================================================================
 
     /// Task 2.1 / 2.2: wpkh round-trip.
-    /// Bytecode: [Wpkh=0x04, Placeholder=0x32, idx=0x00]
+    /// Bytecode: [Wpkh, Placeholder, idx=0x00]
     #[test]
     fn decode_wpkh_round_trip() {
         use std::collections::HashMap;
@@ -2184,7 +2236,7 @@ mod tests {
         let expected = Descriptor::<DescriptorPublicKey>::from_str(&format!("wpkh({k0})")).unwrap();
 
         // Build bytecode manually: [Wpkh, Placeholder, 0x00]
-        let bytes = vec![0x04, 0x32, 0x00];
+        let bytes = vec![Tag::Wpkh.as_byte(), Tag::Placeholder.as_byte(), 0x00];
         let decoded = decode_template(&bytes, std::slice::from_ref(&k0)).unwrap();
         assert_eq!(decoded, expected, "decoded wpkh does not match expected");
 
@@ -2196,7 +2248,7 @@ mod tests {
     }
 
     /// Task 2.3 / 2.4: sh(wpkh(...)) round-trip.
-    /// Bytecode: [Sh=0x03, Wpkh=0x04, Placeholder=0x32, idx=0x00]
+    /// Bytecode: [Sh, Wpkh, Placeholder, idx=0x00]
     #[test]
     fn decode_sh_wpkh_round_trip() {
         use std::collections::HashMap;
@@ -2211,7 +2263,12 @@ mod tests {
             Descriptor::<DescriptorPublicKey>::from_str(&format!("sh(wpkh({k0}))")).unwrap();
 
         // [Sh, Wpkh, Placeholder, 0x00]
-        let bytes = vec![0x03, 0x04, 0x32, 0x00];
+        let bytes = vec![
+            Tag::Sh.as_byte(),
+            Tag::Wpkh.as_byte(),
+            Tag::Placeholder.as_byte(),
+            0x00,
+        ];
         let decoded = decode_template(&bytes, std::slice::from_ref(&k0)).unwrap();
         assert_eq!(
             decoded, expected,
@@ -2225,7 +2282,7 @@ mod tests {
     }
 
     /// Task 2.5: sh(wsh(sortedmulti(2,K0,K1,K2))) round-trip.
-    /// Bytecode: [Sh=0x03, Wsh=0x05, SortedMulti=0x09, k=2, n=3, Placeholder*3]
+    /// Bytecode: [Sh, Wsh, SortedMulti, k=2, n=3, Placeholder*3]
     #[test]
     fn decode_sh_wsh_sortedmulti_round_trip() {
         use std::collections::HashMap;
@@ -2251,12 +2308,17 @@ mod tests {
 
         // [Sh, Wsh, SortedMulti, k=2, n=3, Placeholder@0, Placeholder@1, Placeholder@2]
         let bytes = vec![
-            0x03, // Sh
-            0x05, // Wsh
-            0x09, 0x02, 0x03, // SortedMulti k=2 n=3
-            0x32, 0x00, // Placeholder index 0
-            0x32, 0x01, // Placeholder index 1
-            0x32, 0x02, // Placeholder index 2
+            Tag::Sh.as_byte(),
+            Tag::Wsh.as_byte(),
+            Tag::SortedMulti.as_byte(),
+            0x02, // k
+            0x03, // n
+            Tag::Placeholder.as_byte(),
+            0x00, // index 0
+            Tag::Placeholder.as_byte(),
+            0x01, // index 1
+            Tag::Placeholder.as_byte(),
+            0x02, // index 2
         ];
         let keys = vec![k0.clone(), k1.clone(), k2.clone()];
         let decoded = decode_template(&bytes, &keys).unwrap();
@@ -2379,8 +2441,8 @@ mod tests {
     /// Uses lower-level decode_template directly.
     #[test]
     fn decode_rejects_sh_key_slot_placeholder() {
-        // [Sh=0x03, Placeholder=0x32, idx=0x00]
-        let bytes = vec![0x03, 0x32, 0x00];
+        // [Sh, Placeholder, idx=0x00]
+        let bytes = vec![Tag::Sh.as_byte(), Tag::Placeholder.as_byte(), 0x00];
         use std::str::FromStr;
         let k0 = DescriptorPublicKey::from_str(
             "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
@@ -2410,38 +2472,32 @@ mod tests {
         );
     }
 
-    /// n_top_bare: top-level bare() — legacy non-segwit, v0.4 rejects.
-    #[test]
-    fn decode_rejects_top_bare_legacy() {
-        // [Bare=0x07]
-        let bytes = vec![0x07];
-        let err = decode_template(&bytes, &[]).unwrap_err();
-        assert!(
-            matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("bare")),
-            "expected PolicyScopeViolation about top-level bare, got {err:?}"
-        );
-    }
+    // Note: v0.5 had `decode_rejects_top_bare_legacy` testing rejection of
+    // 0x07 (Bare in v0.5). In v0.6 the byte 0x07 is `Tag::TapTree`; rejection
+    // at the top level is covered by `taptree_at_top_level_produces_specific_diagnostic`
+    // below. The old test was redundant in v0.6 and was deleted during the
+    // v0.7.0 Phase 1 rebaseline.
 
     /// Phase 3 — TapTree at top level produces TapTree-specific diagnostic.
     ///
-    /// `Tag::TapTree` (0x08) is NOT a valid top-level descriptor; it is the
-    /// multi-leaf inner-node framing used INSIDE `tr(KEY, TREE)`. Presenting
-    /// it at the top level should produce a `PolicyScopeViolation` with a
-    /// message that:
-    ///   1. mentions "TapTree" and "0x08" — identifies the byte, and
+    /// `Tag::TapTree` (0x07 in v0.6; was 0x08 in v0.5) is NOT a valid
+    /// top-level descriptor; it is the multi-leaf inner-node framing used
+    /// INSIDE `tr(KEY, TREE)`. Presenting it at the top level should produce
+    /// a `PolicyScopeViolation` with a message that:
+    ///   1. mentions "TapTree" and "0x07" — identifies the byte, and
     ///   2. mentions "only inside" or "tr(KEY" — explains the correct context.
     ///
     /// This is distinct from the generic catch-all for unrecognised-but-known
     /// tags, which we also verify below is now version-agnostic.
     #[test]
     fn taptree_at_top_level_produces_specific_diagnostic() {
-        // Bytecode: Tag::TapTree (0x08) as a top-level descriptor — INVALID.
-        let bytes = vec![Tag::TapTree.as_byte()]; // 0x08
+        // Bytecode: Tag::TapTree (0x07) as a top-level descriptor — INVALID.
+        let bytes = vec![Tag::TapTree.as_byte()];
         let err = decode_template(&bytes, &[]).unwrap_err();
         let msg = format!("{err}");
         assert!(
-            msg.contains("TapTree") && msg.contains("0x08"),
-            "expected TapTree-specific diagnostic mentioning both 'TapTree' and '0x08', got: {msg}"
+            msg.contains("TapTree") && msg.contains("0x07"),
+            "expected TapTree-specific diagnostic mentioning both 'TapTree' and '0x07', got: {msg}"
         );
         assert!(
             msg.contains("only inside") || msg.contains("tr(KEY"),

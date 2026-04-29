@@ -968,8 +968,11 @@ mod tests {
         let mut out = Vec::new();
         term.encode_template(&mut out, &map).unwrap();
 
-        // Expected: Tag::PkK (0x1B), Tag::Placeholder (0x32), varint(0) (0x00).
-        assert_eq!(out, vec![0x1B, 0x32, 0x00]);
+        // Expected: Tag::PkK, Tag::Placeholder, varint(0).
+        assert_eq!(
+            out,
+            vec![Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 0x00]
+        );
     }
 
     #[test]
@@ -988,8 +991,11 @@ mod tests {
         let mut out = Vec::new();
         term.encode_template(&mut out, &map).unwrap();
 
-        // Expected: Tag::PkH (0x1C), Tag::Placeholder (0x32), varint(7) (0x07).
-        assert_eq!(out, vec![0x1C, 0x32, 0x07]);
+        // Expected: Tag::PkH, Tag::Placeholder, varint(7).
+        assert_eq!(
+            out,
+            vec![Tag::PkH.as_byte(), Tag::Placeholder.as_byte(), 0x07]
+        );
     }
 
     #[test]
@@ -1186,18 +1192,21 @@ mod tests {
         let mut out = Vec::new();
         term.encode_template(&mut out, &map).unwrap();
 
-        // Expected: Tag::Multi (0x19), varint(2) (0x02), varint(3) (0x03),
-        // then for each of three keys: Placeholder (0x32) + varint(idx).
+        // Expected: Tag::Multi, varint(2), varint(3),
+        // then for each of three keys: Placeholder + varint(idx).
         // Multi preserves key order, so indices appear 0, 1, 2.
         assert_eq!(
             out,
             vec![
-                0x19, // Tag::Multi
+                Tag::Multi.as_byte(),
                 0x02, // varint k=2
                 0x03, // varint n=3
-                0x32, 0x00, // Placeholder, idx 0
-                0x32, 0x01, // Placeholder, idx 1
-                0x32, 0x02, // Placeholder, idx 2
+                Tag::Placeholder.as_byte(),
+                0x00, // idx 0
+                Tag::Placeholder.as_byte(),
+                0x01, // idx 1
+                Tag::Placeholder.as_byte(),
+                0x02, // idx 2
             ]
         );
     }
@@ -1815,10 +1824,13 @@ mod tests {
         let mut out = Vec::new();
         term.encode_template(&mut out, &map).unwrap();
 
-        // Expected: Tag::PkK (0x1B), Tag::Placeholder (0x32), 0xC8 (= 200).
+        // Expected: Tag::PkK, Tag::Placeholder, 0xC8 (= 200).
         // Under LEB128, 200 would emit as [0xC8, 0x01] — total 4 bytes.
         // Under single-byte, 200 emits as [0xC8] — total 3 bytes.
-        assert_eq!(out, vec![0x1B, 0x32, 0xC8]);
+        assert_eq!(
+            out,
+            vec![Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 0xC8]
+        );
         assert_eq!(
             out.len(),
             3,
