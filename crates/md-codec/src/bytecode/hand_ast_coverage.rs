@@ -7,9 +7,8 @@
 //! coverage per Plan reviewer #1 Concern 5) a decode-direction round-trip
 //! that catches the asymmetric encode/decode reversal bug class.
 //!
-//! Per spec §3.1–§3.3 of `design/SPEC_v0_7_0.md`.
-
-#![cfg(test)]
+//! Per spec §3.1–§3.3 of `design/SPEC_v0_7_0.md`. The module is
+//! registered as `#[cfg(test)] mod hand_ast_coverage;` in `bytecode/mod.rs`.
 
 use std::collections::HashMap;
 use std::str::FromStr;
