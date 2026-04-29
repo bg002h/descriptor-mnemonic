@@ -133,8 +133,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bytecode/path.rs` lines 63, 168, 170, 171, 188, 199, 260 — rustdoc references claim `Tag::SharedPath` is `0x33`.
 - **What:** Actual value is `0x34` (per `crates/md-codec/src/bytecode/tag.rs:122`). The v0.5→v0.6 renumber bumped `Placeholder → 0x33` and `SharedPath → 0x33 → 0x34`, but `path.rs` rustdoc was not swept. Cosmetic but misleading for anyone reading the rustdoc to understand wire-format byte positions. No functional impact; the actual encoder/decoder uses the correct `Tag::SharedPath.as_byte()`.
 - **Why deferred:** Pre-existing in v0.6+; surfaced during P2 review but P2-orthogonal. Trivial sed `s/SharedPath\` (`0x33`)/SharedPath\` (`0x34`)/g` plus a few prose forms. Suitable for any v0.9.x housekeeping window.
-- **Status:** open
-- **Tier:** v0.9.x or v0.10 housekeeping
+- **Status:** resolved md-codec-v0.9.1. Eight rustdoc sites updated; `cargo doc` clean.
+- **Tier:** v0.9.x (closed)
 
 ### `policy-compiler-rustdoc-broken-link` — `Concrete::compile_tr(unspendable_key)` intra-doc-link warning
 
@@ -143,8 +143,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **What:** rustdoc emits `warning: unresolved link to \`Concrete::compile_tr(unspendable_key)\`` because the `(unspendable_key)` parameter notation isn't valid intra-doc syntax (parens are interpreted as a method-disambiguator, which fails to resolve). Lines 78 and `bin/md/main.rs:143` use the same prose but without bracket-link syntax, so they don't warn.
 - **Fix:** drop the bracket form on line 19 (keep just backticks: `` \`Concrete::compile_tr(unspendable_key)\` ``), or rewrite as a proper link to `[\`miniscript::policy::Concrete::compile_tr\`]` and move the `(unspendable_key)` clarification into surrounding prose.
 - **Why deferred:** Pre-existing pre-v0.9; doesn't block CI (warning, not error). Catches whenever the implementer next runs `cargo doc`.
-- **Status:** open
-- **Tier:** v0.9.x or v0.10 housekeeping
+- **Status:** resolved md-codec-v0.9.1. Dropped bracket-link form on `policy_compiler.rs:19`; kept code-formatting backticks. `cargo doc` now warning-free.
+- **Tier:** v0.9.x (closed)
 
 ### `reproducible-builds` — bit-for-bit reproducible builds
 
@@ -159,8 +159,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   1. **Cheap wins (any time, ~30 min).** Pin the rust toolchain via `rust-toolchain.toml` so all builds use the exact same compiler. Add `.cargo/config.toml` with `--remap-path-prefix=$(pwd)=.` and `-C codegen-units=1` so binaries don't bake in the build path or vary by parallelism. These are no-ops for normal contributors, modest improvement for any auditor diffing two builds. Cargo.lock is already committed; SHA-pinned test vectors already demonstrate reproducibility-aware design at the test-data level.
   2. **Full hermetic build (v1.0 milestone).** Add a Nix flake (or pinned Docker image) that fixes every input — toolchain, system libraries, build env — so any auditor can produce the same binary as the published release. Add a CI job that builds twice on different runners and asserts byte-identical output (Linux only initially; macOS/Windows linker reproducibility is a long tail). Document a verification recipe in README so users can verify a release tag against a published binary. Pairs naturally with v1.0 API+wire stability — once those settle, it's worth the trust statement.
 - **Why deferred:** Pre-v1.0, the wire format and public API are still moving (cf. v0.7→v0.8→v0.9 rename cascade). Building hermetic-build infrastructure now means re-doing it each time a major release breaks something. Auditors don't typically care about pre-1.0 reproducibility either — there are too many other moving parts. The cheap pins are different: they're free now and accumulate value, so they can land in any housekeeping window before v1.0.
-- **Status:** open
-- **Tier:** mixed — phase 1 (cheap pins) is v0.9.x or any v0.10+ housekeeping window; phase 2 (hermetic build) is v1.0 milestone
+- **Status:** phase 1 resolved md-codec-v0.9.1 (added `rust-toolchain.toml` pinning rustc 1.85.0 to match CI; added `.cargo/config.toml` with `[profile.release]` `codegen-units = 1` and `strip = "symbols"`). Phase 2 (hermetic Nix/Docker + repro-CI + verification recipe) remains open as a v1.0 milestone item.
+- **Tier:** phase 1 closed (v0.9.1); phase 2 open (v1.0 milestone)
 
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 

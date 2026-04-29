@@ -4,6 +4,48 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.9.1] — 2026-04-29
+
+Patch-level housekeeping. Three small pre-existing items closed; no
+functional change, no public-API change, no wire-format change. Test-
+vector corpus byte-identical to v0.9.0 (validates the `MAJOR.MINOR`-only
+family-generator design — patch bumps don't churn vector SHAs).
+
+### Added
+
+- `rust-toolchain.toml` pinning the compiler to `1.85.0` (matches CI's
+  `dtolnay/rust-toolchain@1.85.0` action), with `rustfmt`/`clippy`/`rust-docs`
+  components and `minimal` profile.
+- `.cargo/config.toml` setting `[profile.release]` `codegen-units = 1` and
+  `strip = "symbols"` for deterministic release-binary output. No effect
+  on dev builds.
+
+These together close phase 1 of the `reproducible-builds` FOLLOWUPS entry
+("cheap pins"). Phase 2 (hermetic Nix/Docker build environment + repro-CI)
+remains a v1.0 milestone.
+
+### Fixed
+
+- Pre-existing rustdoc references in `crates/md-codec/src/bytecode/path.rs`
+  said `Tag::SharedPath` was `0x33`; actual byte value (per
+  `bytecode/tag.rs:122`) is `0x34`. The v0.5→v0.6 renumber moved
+  `Placeholder → 0x33` and `SharedPath → 0x33 → 0x34` but missed the
+  rustdoc sweep. 8 sites updated. No functional change — encoders and
+  decoders use `Tag::SharedPath.as_byte()`, which has always been correct.
+- Pre-existing rustdoc broken intra-doc-link warning on
+  `crates/md-codec/src/policy_compiler.rs:19`
+  (`[\`Concrete::compile_tr(unspendable_key)\`]` — the `(unspendable_key)`
+  parameter notation isn't valid intra-doc syntax). Dropped the bracket
+  link form; kept the code-formatting backticks.
+
+`cargo doc --workspace --all-features --no-deps` now emits zero warnings.
+
+### FOLLOWUPS closed
+
+- `reproducible-builds` (phase 1 only; phase 2 stays open as v1.0 milestone)
+- `tag-sharedpath-rustdoc-stale-0x33`
+- `policy-compiler-rustdoc-broken-link`
+
 ## [0.9.0] — 2026-04-29
 
 Closes three mk1-surfaced FOLLOWUPS items:

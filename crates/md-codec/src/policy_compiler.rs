@@ -16,7 +16,7 @@
 //! # Tap-context internal key — `unspendable_key` semantics
 //!
 //! `script_context = ScriptContext::Tap` is plumbed through to
-//! rust-miniscript's [`Concrete::compile_tr(unspendable_key)`]. This is
+//! rust-miniscript's `Concrete::compile_tr(unspendable_key)`. This is
 //! a *fallback hint*, not a "force this internal key" override:
 //!
 //! 1. `compile_tr` first calls `extract_key(unspendable_key)`, which

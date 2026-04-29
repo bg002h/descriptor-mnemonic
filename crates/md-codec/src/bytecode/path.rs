@@ -60,7 +60,7 @@ pub fn path_to_indicator(path: &DerivationPath) -> Option<u8> {
 /// - For each component, LEB128-encoded child number `2c` (unhardened)
 ///   or `2c + 1` (hardened), computed as `u64` to avoid overflow.
 ///
-/// This function does **not** prepend `Tag::SharedPath` (0x33); that is the
+/// This function does **not** prepend `Tag::SharedPath` (0x34); that is the
 /// path-declaration framing layer's responsibility.
 pub fn encode_path(path: &DerivationPath) -> Vec<u8> {
     use crate::bytecode::varint::encode_u64;
@@ -165,10 +165,10 @@ pub(crate) fn decode_path(
 
 /// Serialize a path declaration into its wire form.
 ///
-/// A path declaration is a `Tag::SharedPath` (0x33) byte followed by the
+/// A path declaration is a `Tag::SharedPath` (0x34) byte followed by the
 /// `encode_path` output:
-/// - 1 byte for dictionary-form paths: `[0x33, indicator]`
-/// - 1 + 1 + N bytes for explicit paths: `[0x33, 0xFE, count, …components]`
+/// - 1 byte for dictionary-form paths: `[0x34, indicator]`
+/// - 1 + 1 + N bytes for explicit paths: `[0x34, 0xFE, count, …components]`
 ///
 /// This is the framing layer defined in BIP §"Path declaration" (lines 222–236).
 /// The `Tag::SharedPath` byte is prepended here; `encode_path` handles the rest.
@@ -185,7 +185,7 @@ pub fn encode_declaration(path: &DerivationPath) -> Vec<u8> {
 
 /// Deserialize a path declaration from a cursor-style byte stream.
 ///
-/// Reads a `Tag::SharedPath` (0x33) tag byte, then delegates to `decode_path`
+/// Reads a `Tag::SharedPath` (0x34) tag byte, then delegates to `decode_path`
 /// to consume the remainder of the declaration. The cursor is advanced past all
 /// consumed bytes, leaving it positioned at the first byte of the next structure
 /// (e.g., the template tree).
@@ -196,7 +196,7 @@ pub fn encode_declaration(path: &DerivationPath) -> Vec<u8> {
 ///   path indicator byte is missing.
 /// - `InvalidBytecode { kind: UnknownTag(b) }` — if the first byte is not a
 ///   defined tag at all.
-/// - `InvalidBytecode { kind: UnexpectedTag { expected: 0x33, got: b } }` — if
+/// - `InvalidBytecode { kind: UnexpectedTag { expected: 0x34, got: b } }` — if
 ///   the first byte is a defined tag but not `Tag::SharedPath`.
 /// - Any error from `decode_path` for malformed path data.
 ///
@@ -257,7 +257,7 @@ pub(crate) fn decode_declaration(
 /// - [`crate::Error::InvalidBytecode`] with `kind: UnknownTag(b)` if the
 ///   first byte is not a defined tag.
 /// - [`crate::Error::InvalidBytecode`] with
-///   `kind: UnexpectedTag { expected: 0x33, got: b }` if the first byte is
+///   `kind: UnexpectedTag { expected: 0x34, got: b }` if the first byte is
 ///   a defined tag but not `Tag::SharedPath`.
 /// - Any [`crate::Error::InvalidBytecode`] variant produced by the inner
 ///   path decoder for malformed path data (e.g. `UnexpectedEnd`,

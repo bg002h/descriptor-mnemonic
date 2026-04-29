@@ -1,0 +1,19 @@
+# Cargo build configuration.
+#
+# Reproducible-builds phase 1 (per `design/FOLLOWUPS.md` `reproducible-builds`):
+# the release profile pins flags that make release-mode binary output less
+# environment-dependent. Phase 2 (hermetic build infrastructure) is a
+# v1.0 milestone item and lives outside this file.
+#
+# `rust-toolchain.toml` at repo root pins the compiler version itself.
+
+[profile.release]
+# Single codegen unit eliminates non-determinism from cross-unit reordering.
+# Adds ~30s to release-build time on this crate; acceptable for release builds
+# (which run rarely) and a no-op for dev builds.
+codegen-units = 1
+
+# Strip debug symbols and unneeded section data from the release binary.
+# Reduces binary size and removes a source of build-environment leakage
+# (debug info embeds local paths and toolchain build IDs).
+strip = "symbols"
