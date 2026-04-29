@@ -256,13 +256,18 @@ fn n_wrapper_tap_leaf_byte_form() {
 /// would miss the asymmetric "encode reverses, decode reverses back"
 /// bug class where the round-trip succeeds but every wire byte is
 /// silently rotated. Decode-direction assertion is required.
+///
+/// Inputs are **asymmetric** byte sequences (strictly increasing) so
+/// that any reversal — encode-only, decode-only, or symmetric — is
+/// observable. A constant-fill (palindromic) input would defeat the
+/// asymmetric-reversal check (Phase 2 reviewer IMP-1).
 #[test]
 fn hash_terminals_encode_internal_byte_order_with_decode_round_trip() {
     use bitcoin::hashes::{hash160, ripemd160, sha256};
     use miniscript::hash256;
 
-    let known_32 = [0xAAu8; 32];
-    let known_20 = [0xBBu8; 20];
+    let known_32: [u8; 32] = std::array::from_fn(|i| i as u8); // [0x00, 0x01, ..., 0x1F]
+    let known_20: [u8; 20] = std::array::from_fn(|i| 0x80 + i as u8); // [0x80, 0x81, ..., 0x93]
     let map: HashMap<DescriptorPublicKey, u8> = HashMap::new();
     let no_keys: Vec<DescriptorPublicKey> = Vec::new();
 

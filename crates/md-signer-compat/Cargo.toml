@@ -1,0 +1,18 @@
+[package]
+name = "md-signer-compat"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Named signer-subset validators for Mnemonic Descriptor (MD) wallet policies"
+
+[lints]
+workspace = true
+
+[dependencies]
+md-codec = { path = "../md-codec" }
+miniscript = { git = "https://github.com/apoelstra/rust-miniscript", rev = "f7f1689ba92a17b09b03ea12f7048c15d134583e" }
+
+[dev-dependencies]
+bitcoin = "0.32"

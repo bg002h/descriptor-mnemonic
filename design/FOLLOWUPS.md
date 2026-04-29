@@ -347,11 +347,18 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 ### `v07-tap-leaf-iterator-with-index-coverage` — Phase 4 must include a multi-leaf DFS-pre-order leaf-index attribution test
 
 - **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). The Phase 1 commit `de63db3` deleted MD-codec test `tap_leaf_subset_violation_carries_leaf_index` (LI2) on the rationale that "leaf-index attribution moves to md-signer-compat." LI2 was the only test exercising **multi-leaf DFS-pre-order** `leaf_index` correctness.
-- **Where:** `crates/md-signer-compat/src/tests.rs` (Phase 4, NEW).
-- **What:** at least one multi-leaf test where the offending operator's `leaf_index` in the resulting `Error::SubsetViolation` is *derived* from a tap-tree walker (the v0.7+ "iterate tap leaves and call `validate(...)` per leaf" primitive), **not** supplied as a constant. Plan §4.2.1 currently leaves the iterator API "refined during implementation"; pin it explicitly so this test can be written.
-- **Why deferred:** Phase 1 (test rebaseline) is the wrong layer. md-signer-compat (Phase 4) owns this layer in v0.7+.
-- **Status:** open
-- **Tier:** v0.7-blocker (must close before Phase 4 lands).
+- **Where:** `crates/md-signer-compat/src/tests.rs`.
+- **What:** at least one multi-leaf test where the offending operator's `leaf_index` in the resulting `Error::SubsetViolation` is *derived* from a tap-tree walker (the v0.7+ "iterate tap leaves and call `validate(...)` per leaf" primitive), **not** supplied as a constant.
+- **Status:** resolved (this commit). md-signer-compat exposes `pub fn validate_tap_tree(subset, tap_tree)` that walks `TapTree::leaves()` in DFS pre-order, threading an enumerated `leaf_index` per call. New test `tests::validate_tap_tree_attributes_violation_to_dfs_pre_order_index` constructs a 3-leaf `{leaf_0, {leaf_1_violator, leaf_2}}` shape, places `sha256(...)` (out of COLDCARD_TAP) at leaf 1, and asserts the resulting `SubsetViolation.leaf_index == Some(1)`.
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-phase2-asymmetric-byte-order-test-inputs` — palindromic byte-fill defeats decode-direction asymmetric-reversal check
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). `hash_terminals_encode_internal_byte_order_with_decode_round_trip` originally used palindromic `[0xAA; 32]` and `[0xBB; 20]`; reversing a constant-fill array is a no-op, so a symmetric encode/decode reversal bug (the bug class Plan reviewer #1 Concern 5 motivated) would not be caught.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs::hash_terminals_encode_internal_byte_order_with_decode_round_trip`.
+- **What:** replace constant fills with strictly increasing patterns: `known_32 = [0x00..0x1F]` via `std::array::from_fn(|i| i as u8)`; `known_20 = [0x80..0x93]` via `std::array::from_fn(|i| 0x80 + i as u8)`.
+- **Status:** resolved (this commit). Inputs are now asymmetric so any reversal is observable.
+- **Tier:** v0.7-blocker (closed)
 
 ### `v07-decode-rejects-sh-bare-rename` — rename or delete `decode_rejects_sh_bare` (mislabelled in v0.6)
 
@@ -376,6 +383,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **What:** refactor to `format!("TapTree (0x{:02X}) is not a valid top-level...", Tag::TapTree.as_byte())` so the byte tracks the enum.
 - **Status:** open
 - **Tier:** v0.7.x or later (cleanup; not blocking).
+
+### `v07-phase2-decoder-arm-cursor-sentinel-pattern` — strengthen decoder-arm cursor-consumption assertions with trailing sentinel
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). All six `decoder_arm_*` tests in `crates/md-codec/src/bytecode/hand_ast_coverage.rs` assert `cur.is_empty()` after decode, but the wire bytes contain no trailing sentinel — over-consumption surfaces as `UnexpectedEnd` rather than as a cursor-position drift, and under-consumption can't surface at all.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs` (six `decoder_arm_*` tests); `crates/md-codec/src/bytecode/cursor.rs` (add `pub(crate) fn remaining(&self) -> &[u8]`).
+- **What:** add a `0xFF` sentinel byte to each test's wire form and assert remaining cursor contents equal `[0xFF]`. Requires adding `Cursor::remaining()` (~3 lines).
+- **Why deferred:** decoder primitives are themselves tightly bounded; bug class is unlikely in practice. Defensive nice-to-have.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-phase2-or-c-unwrapped-test-docstring-drift` — `or_c_unwrapped_tap_leaf_byte_form` docstring promises decoder-branch assertion the test body doesn't perform
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). Docstring describes a two-branch decoder-behavior policy ("If decoder accepts... If decoder rejects, this test asserts the rejection diagnostic"), but the test only asserts encoder wire bytes — the decoder is never run on `out`.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs::or_c_unwrapped_tap_leaf_byte_form`.
+- **What:** either tighten the docstring to "encoder wire-form pin only" or extend the test to run the decoder and assert the actual outcome.
+- **Why deferred:** test passes; coverage is provided by the companion `t_or_c_tap_leaf_round_trips`. Future-reader-confusion issue, not functional.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-phase2-decode-helpers-pub-super-tightening` — tighten `decode_tap_miniscript` / `decode_tap_terminal` to `pub(super)`
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). Both functions are currently `pub(crate)` solely for `bytecode::hand_ast_coverage` (sibling test module). `pub(super)` would suffice and constrain visibility tighter.
+- **Where:** `crates/md-codec/src/bytecode/decode.rs:583` (`decode_tap_miniscript`), `crates/md-codec/src/bytecode/decode.rs:608` (`decode_tap_terminal`).
+- **What:** change `pub(crate)` → `pub(super)` for both.
+- **Why deferred:** `pub(crate)` is already well-scoped (no public API leakage); tightening defensively guards against unintended future cross-module use, but no concrete risk today.
+- **Status:** open
+- **Tier:** v0.8 housekeeping
 
 ### `v07-n_taptree_at_top_level-description-stale-v05-byte` — `n_taptree_at_top_level` description still says "0x08"
 
