@@ -127,6 +127,25 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** resolved md-codec-v0.9.0. Created `design/RELEASE_PROCESS.md` documenting the lockstep-checklist invariant (any path-dictionary change requires a coordinated mk1 spec amendment in the same release window), CLAUDE.md crosspointer maintenance rules, SHA pin / family-generator practice, and a 16-step standard release checklist. BIP §"Path dictionary" gains a "Cross-format inheritance" paragraph pointing readers to the release-process doc.
 - **Tier:** external (closed — invariant now tracked)
 
+### `tag-sharedpath-rustdoc-stale-0x33` — `path.rs` rustdoc says `Tag::SharedPath` is `0x33`; actual is `0x34`
+
+- **Surfaced:** opus P2 review of v0.9.0 (commit `e622540`, see `design/agent-reports/v0-9-phase-2-review.md` finding F2).
+- **Where:** `crates/md-codec/src/bytecode/path.rs` lines 63, 168, 170, 171, 188, 199, 260 — rustdoc references claim `Tag::SharedPath` is `0x33`.
+- **What:** Actual value is `0x34` (per `crates/md-codec/src/bytecode/tag.rs:122`). The v0.5→v0.6 renumber bumped `Placeholder → 0x33` and `SharedPath → 0x33 → 0x34`, but `path.rs` rustdoc was not swept. Cosmetic but misleading for anyone reading the rustdoc to understand wire-format byte positions. No functional impact; the actual encoder/decoder uses the correct `Tag::SharedPath.as_byte()`.
+- **Why deferred:** Pre-existing in v0.6+; surfaced during P2 review but P2-orthogonal. Trivial sed `s/SharedPath\` (`0x33`)/SharedPath\` (`0x34`)/g` plus a few prose forms. Suitable for any v0.9.x housekeeping window.
+- **Status:** open
+- **Tier:** v0.9.x or v0.10 housekeeping
+
+### `policy-compiler-rustdoc-broken-link` — `Concrete::compile_tr(unspendable_key)` intra-doc-link warning
+
+- **Surfaced:** Observed during cargo doc runs in v0.7.2+ and again during v0.9.0 P1 work. Pre-existing rustdoc warning unrelated to v0.9 changes.
+- **Where:** `crates/md-codec/src/policy_compiler.rs:19` — `[\`Concrete::compile_tr(unspendable_key)\`]` rustdoc link.
+- **What:** rustdoc emits `warning: unresolved link to \`Concrete::compile_tr(unspendable_key)\`` because the `(unspendable_key)` parameter notation isn't valid intra-doc syntax (parens are interpreted as a method-disambiguator, which fails to resolve). Lines 78 and `bin/md/main.rs:143` use the same prose but without bracket-link syntax, so they don't warn.
+- **Fix:** drop the bracket form on line 19 (keep just backticks: `` \`Concrete::compile_tr(unspendable_key)\` ``), or rewrite as a proper link to `[\`miniscript::policy::Concrete::compile_tr\`]` and move the `(unspendable_key)` clarification into surrounding prose.
+- **Why deferred:** Pre-existing pre-v0.9; doesn't block CI (warning, not error). Catches whenever the implementer next runs `cargo doc`.
+- **Status:** open
+- **Tier:** v0.9.x or v0.10 housekeeping
+
 ### `reproducible-builds` — bit-for-bit reproducible builds
 
 - **Surfaced:** 2026-04-29 conversation post-md-codec-v0.9.0 ship. User asked whether reproducible builds are achievable and when to implement.
