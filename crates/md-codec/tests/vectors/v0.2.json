@@ -1,443 +1,811 @@
 {
   "schema_version": 2,
-  "generator": "md-codec 0.5",
+  "generator": "md-codec 0.6",
   "vectors": [
     {
       "id": "c1",
       "description": "C1 — Single-key wsh(pk)",
       "policy": "wsh(pk(@0/**))",
-      "expected_bytecode_hex": "003303050c1b3200",
+      "expected_bytecode_hex": "003403050e1b3300",
       "expected_chunks": [
-        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7"
+        "md1qqqqqdqrq58pkvcqgj7ymm8tejhhz"
       ],
       "expected_wallet_id_words": [
-        "secret",
-        "scorpion",
-        "truly",
-        "forum",
-        "van",
-        "cinnamon",
-        "hybrid",
-        "public",
-        "fun",
-        "during",
-        "bottom",
-        "clock"
+        "sad",
+        "swing",
+        "border",
+        "topic",
+        "rocket",
+        "penalty",
+        "garage",
+        "beauty",
+        "kidney",
+        "enable",
+        "south",
+        "gravity"
       ]
     },
     {
       "id": "c2",
       "description": "C2 — 2-of-3 wsh(sortedmulti)",
       "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
-      "expected_bytecode_hex": "00330305090203320032013202",
+      "expected_bytecode_hex": "00340305090203330033013302",
       "expected_chunks": [
-        "md1qqqqqvcrq5ysyqejqqeqzvszz258fczketjg6"
+        "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
       "expected_wallet_id_words": [
-        "payment",
-        "prosper",
-        "canvas",
-        "exercise",
-        "sniff",
-        "robot",
-        "dynamic",
-        "attitude",
-        "assist",
-        "sell",
-        "control",
-        "enroll"
+        "rent",
+        "lecture",
+        "ghost",
+        "home",
+        "word",
+        "imitate",
+        "cannon",
+        "penalty",
+        "hen",
+        "scene",
+        "pretty",
+        "tribe"
       ]
     },
     {
       "id": "c3",
       "description": "C3 — 2-of-3 with timelock fallback",
       "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
-      "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
+      "expected_bytecode_hex": "00340305180802023300330113101fd09a030e1b3302",
       "expected_chunks": [
-        "md1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqssxxvfplwl3dfq"
+        "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
       "expected_wallet_id_words": [
-        "hire",
-        "earth",
-        "doll",
-        "pride",
-        "naive",
-        "one",
-        "universe",
-        "shell",
-        "brain",
-        "sign",
-        "private",
-        "vivid"
+        "ginger",
+        "rival",
+        "verify",
+        "action",
+        "reveal",
+        "wise",
+        "embody",
+        "leader",
+        "vessel",
+        "iron",
+        "olive",
+        "shell"
       ]
     },
     {
       "id": "c4",
       "description": "C4 — 6-key inheritance miniscript",
       "policy": "wsh(andor(pk(@0/**),after(1200000),or_i(and_v(v:pkh(@1/**),and_v(v:pkh(@2/**),and_v(v:pkh(@3/**),older(4032)))),and_v(v:pkh(@4/**),and_v(v:pkh(@5/**),older(32768))))))",
-      "expected_bytecode_hex": "00330305130c1b32001e809f4917110e0c1c3201110e0c1c3202110e0c1c32031fc01f110e0c1c3204110e0c1c32051f808002",
+      "expected_bytecode_hex": "00340305150e1b33001e809f491913100e1c330113100e1c330213100e1c33031fc01f13100e1c330413100e1c33051f808002",
       "expected_chunks": [
-        "md1qqqqqvcrq5fscxejqq0gp86fzugsurquxgq3zrsvrseqyygwpswryqclcq03zrsvrseqgygwpswrypglszqqyc7r07jpm647hrcg"
+        "md1qqqqqdqrq52suxenqq0gp86fryf3qrsuxvq3xyqwrsesyycspcwrxqclcq03xyqwrsesgycspcwrxpglszqqy5hntfd74wrc0jdk"
       ],
       "expected_wallet_id_words": [
-        "magnet",
-        "gospel",
-        "nominee",
-        "alarm",
-        "member",
-        "retreat",
-        "whale",
-        "zero",
-        "moment",
-        "person",
-        "zoo",
-        "immense"
+        "hospital",
+        "inject",
+        "rifle",
+        "execute",
+        "execute",
+        "trigger",
+        "message",
+        "security",
+        "wink",
+        "liberty",
+        "device",
+        "clog"
       ]
     },
     {
       "id": "c5",
       "description": "C5 — 5-of-9 thresh with 2-key timelock recovery",
       "policy": "wsh(or_d(thresh(5,pk(@0/**),s:pk(@1/**),s:pk(@2/**),s:pk(@3/**),s:pk(@4/**),s:pk(@5/**),s:pk(@6/**),s:pk(@7/**),s:pk(@8/**)),and_v(v:older(105120),multi(2,@9/**,@10/**))))",
-      "expected_bytecode_hex": "00330305161805090c1b32000b0c1b32010b0c1b32020b0c1b32030b0c1b32040b0c1b32050b0c1b32060b0c1b32070b0c1b3208110e1fa0b5061902023209320a",
+      "expected_bytecode_hex": "00340305181a05090e1b33000d0e1b33010d0e1b33020d0e1b33030d0e1b33040d0e1b33050d0e1b33060d0e1b33070d0e1b330813101fa0b5060802023309330a",
       "expected_chunks": [
-        "md1qqqsp3nvqgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdsm7lmunwsppdmpt5",
-        "md1qqqsp3nvqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6ylpjjcclupncmz"
+        "md1qqqsjyhvqgqqqdqrq5vp5pgfpcdnxqqdpcdnxqgdpcdnxqsdpcdnxqcdpcdnxpqdpcdnxpgdpcdnxpsdpcdss5auap994w0l6ln",
+        "md1qqqsjyhvqgqnxpcdpcdnxzqnzq06pdgxpqpqyvcfxv9fztkqqvuxscfp75hf2ew"
       ],
       "expected_wallet_id_words": [
-        "arrest",
-        "curve",
-        "virtual",
-        "mechanic",
-        "dynamic",
-        "eager",
-        "wagon",
-        "embark",
-        "common",
-        "arctic",
-        "lion",
-        "pear"
+        "muffin",
+        "invite",
+        "absorb",
+        "employ",
+        "ketchup",
+        "cute",
+        "bomb",
+        "heart",
+        "couch",
+        "ginger",
+        "hunt",
+        "lend"
       ]
     },
     {
       "id": "e10",
       "description": "E10 — Liana Simple Inheritance single-key + 1-year recovery",
       "policy": "wsh(or_d(pk(@0/**),and_v(v:pk(@1/**),older(52560))))",
-      "expected_bytecode_hex": "00330305160c1b3200110e0c1b32011fd09a03",
+      "expected_bytecode_hex": "00340305180e1b330013100e1b33011fd09a03",
       "expected_chunks": [
-        "md1qqqqqvcrq5tqcxejqqgsurqmxgq3l5y6qvpw2q0t3k6rn26"
+        "md1qqqqqdqrq5vquxenqqf3qrsmxvq3l5y6qvmwjyf45jzsyje"
       ],
       "expected_wallet_id_words": [
-        "retire",
-        "sudden",
-        "diet",
-        "caught",
-        "rotate",
-        "similar",
-        "just",
-        "maximum",
-        "dinner",
-        "office",
-        "casual",
-        "region"
+        "delay",
+        "box",
+        "chief",
+        "guide",
+        "spy",
+        "wing",
+        "model",
+        "figure",
+        "initial",
+        "cheap",
+        "suggest",
+        "scare"
       ]
     },
     {
       "id": "e12",
       "description": "E12 — Liana Expanding Multisig 2-of-2 + recovery key",
       "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
-      "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
+      "expected_bytecode_hex": "00340305180802023300330113101fd09a030e1b3302",
       "expected_chunks": [
-        "md1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqssxxvfplwl3dfq"
+        "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
       "expected_wallet_id_words": [
-        "hire",
-        "earth",
-        "doll",
-        "pride",
-        "naive",
-        "one",
-        "universe",
-        "shell",
-        "brain",
-        "sign",
-        "private",
-        "vivid"
+        "ginger",
+        "rival",
+        "verify",
+        "action",
+        "reveal",
+        "wise",
+        "embody",
+        "leader",
+        "vessel",
+        "iron",
+        "olive",
+        "shell"
       ]
     },
     {
       "id": "e13",
       "description": "E13 — HTLC with sha256 preimage",
       "policy": "wsh(andor(pk(@0/**),sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),and_v(v:pk(@1/**),older(144))))",
-      "expected_bytecode_hex": "00330305130c1b320020b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9110e0c1b32011f9001",
+      "expected_bytecode_hex": "00340305150e1b330020b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde913100e1b33011f9001",
       "expected_chunks": [
-        "md1qqqqqvcrq5fscxejqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6g3pcxpkvspr7gqztl3xmvww76jynpc"
+        "md1qqqqqdqrq52suxenqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6gnzq8pkvcpr7gqzpv687uhcq22xrgn"
       ],
       "expected_wallet_id_words": [
-        "rotate",
-        "axis",
-        "genre",
-        "abuse",
-        "craft",
-        "hotel",
-        "pulp",
-        "beef",
-        "frost",
-        "cruel",
-        "fan",
-        "sure"
+        "agent",
+        "eternal",
+        "ordinary",
+        "pistol",
+        "orchard",
+        "crack",
+        "vote",
+        "engine",
+        "rapid",
+        "sure",
+        "donkey",
+        "front"
       ]
     },
     {
       "id": "e14",
       "description": "E14 — Decaying multisig 3-of-3 to 2-of-3 with 6 distinct keys",
       "policy": "wsh(or_d(multi(3,@0/**,@1/**,@2/**),and_v(v:older(52560),multi(2,@3/**,@4/**,@5/**))))",
-      "expected_bytecode_hex": "0033030516190303320032013202110e1fd09a03190203320332043205",
+      "expected_bytecode_hex": "003403051808030333003301330213101fd09a03080203330333043305",
       "expected_chunks": [
-        "md1qqqqqvcrq5tpjqcrxgqryqfjqggsu87sngp3jqsrxgpnyppjq5srzxkawjf8v05"
+        "md1qqqqqdqrq5vqsqcrxvqrxqfnqgf3q87sngpssqsrxvpnxppnq5ks0mr37t4l8v6"
       ],
       "expected_wallet_id_words": [
-        "gate",
-        "february",
-        "first",
-        "reveal",
-        "enable",
-        "green",
-        "pencil",
-        "galaxy",
-        "float",
-        "empty",
-        "gold",
-        "head"
+        "agent",
+        "purse",
+        "mystery",
+        "lock",
+        "remind",
+        "concert",
+        "evidence",
+        "poet",
+        "entire",
+        "slogan",
+        "garden",
+        "convince"
       ]
     },
     {
       "id": "coldcard",
       "description": "Coldcard — representative BIP 388 export shape (2-of-3 sortedmulti)",
       "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
-      "expected_bytecode_hex": "00330305090203320032013202",
+      "expected_bytecode_hex": "00340305090203330033013302",
       "expected_chunks": [
-        "md1qqqqqvcrq5ysyqejqqeqzvszz258fczketjg6"
+        "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
       "expected_wallet_id_words": [
-        "payment",
-        "prosper",
-        "canvas",
-        "exercise",
-        "sniff",
-        "robot",
-        "dynamic",
-        "attitude",
-        "assist",
-        "sell",
-        "control",
-        "enroll"
+        "rent",
+        "lecture",
+        "ghost",
+        "home",
+        "word",
+        "imitate",
+        "cannon",
+        "penalty",
+        "hen",
+        "scene",
+        "pretty",
+        "tribe"
       ]
     },
     {
       "id": "tr_keypath_only_md_v0_5",
       "description": "Taproot key-path-only (v0.5 regression anchor)",
       "policy": "tr(@0/**)",
-      "expected_bytecode_hex": "003303063200",
+      "expected_bytecode_hex": "003403063300",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqpt6suwf3my5qq"
+        "md1qqqqqdqrqcesqmldukfmy72ktd"
       ],
       "expected_wallet_id_words": [
-        "above",
-        "wreck",
-        "elevator",
-        "lion",
-        "cable",
-        "census",
-        "divert",
-        "angle",
-        "decline",
-        "make",
-        "please",
-        "misery"
+        "trim",
+        "cricket",
+        "stock",
+        "sausage",
+        "ribbon",
+        "castle",
+        "account",
+        "west",
+        "acid",
+        "sunny",
+        "gravity",
+        "benefit"
       ]
     },
     {
       "id": "tr_single_leaf_pk_md_v0_5",
       "description": "Taproot single-leaf pk (v0.5 regression anchor; bytecode == v0.4.x)",
       "policy": "tr(@0/**,pk(@1/**))",
-      "expected_bytecode_hex": "0033030632000c1b3201",
+      "expected_bytecode_hex": "0034030633000e1b3301",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqrqmxgqs24lq4z7pd7948"
+        "md1qqqqqdqrqcesqrsmxvqsy9v4v9emhgek5"
       ],
       "expected_wallet_id_words": [
-        "away",
-        "limb",
-        "trim",
-        "feel",
-        "fall",
-        "magnet",
-        "fall",
-        "file",
-        "tunnel",
-        "iron",
-        "sail",
-        "length"
+        "addict",
+        "protect",
+        "fringe",
+        "hole",
+        "turtle",
+        "manage",
+        "proof",
+        "fox",
+        "road",
+        "return",
+        "repair",
+        "crawl"
       ]
     },
     {
       "id": "tr_multia_2of3",
       "description": "Taproot single-leaf multi_a 2-of-3 script-path (4 distinct keys)",
       "policy": "tr(@0/**,multi_a(2,@1/**,@2/**,@3/**))",
-      "expected_bytecode_hex": "0033030632001a0203320132023203",
+      "expected_bytecode_hex": "0034030633000a0203330133023303",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqxszqveqzvszxgps5el5tn99asmn3"
+        "md1qqqqqdqrqcesqzszqveszvczxvpshjp2kzmuz6ukw"
       ],
       "expected_wallet_id_words": [
-        "forest",
-        "mechanic",
-        "picture",
-        "album",
-        "blue",
-        "tongue",
-        "stove",
-        "obscure",
-        "bottom",
-        "ignore",
-        "arch",
-        "discover"
+        "huge",
+        "tube",
+        "become",
+        "neck",
+        "envelope",
+        "snake",
+        "hand",
+        "online",
+        "scale",
+        "gallery",
+        "glue",
+        "cat"
       ]
     },
     {
       "id": "tr_two_leaf_symmetric_md_v0_5",
       "description": "Taproot 2-leaf symmetric tree (smallest multi-leaf; depth 1/1)",
       "policy": "tr(@0/**,{pk(@1/**),pk(@2/**)})",
-      "expected_bytecode_hex": "003303063200080c1b32010c1b3202",
+      "expected_bytecode_hex": "003403063300070e1b33010e1b3302",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqzqvrveqzrqmxgpq047xqk42r234a"
+        "md1qqqqqdqrqcesqpcwrveszrsmxvpqxxgas7vy0terx"
       ],
       "expected_wallet_id_words": [
-        "idea",
-        "defy",
-        "enrich",
-        "magnet",
-        "admit",
-        "involve",
-        "verify",
-        "poverty",
-        "sentence",
-        "vehicle",
-        "level",
-        "voyage"
+        "rhythm",
+        "risk",
+        "load",
+        "village",
+        "naive",
+        "usual",
+        "game",
+        "prepare",
+        "black",
+        "differ",
+        "before",
+        "excess"
       ]
     },
     {
       "id": "tr_three_leaf_left_heavy_md_v0_5",
       "description": "Taproot 3-leaf left-heavy tree (depth 1/2/2)",
       "policy": "tr(@0/**,{pk(@1/**),{pk(@2/**),pk(@3/**)}})",
-      "expected_bytecode_hex": "003303063200080c1b3201080c1b32020c1b3203",
+      "expected_bytecode_hex": "003403063300070e1b3301070e1b33020e1b3303",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqzqvrveqzzqvrveqyrqmxgpsmlqydgkqhe9wf"
+        "md1qqqqqdqrqcesqpcwrveszpcwrvesyrsmxvps55sahama6sler"
       ],
       "expected_wallet_id_words": [
-        "town",
-        "stock",
-        "gesture",
-        "excite",
-        "labor",
-        "shoulder",
-        "emotion",
-        "bus",
-        "paper",
-        "dizzy",
-        "reduce",
-        "forward"
+        "setup",
+        "undo",
+        "balcony",
+        "ladder",
+        "double",
+        "stuff",
+        "fiction",
+        "basket",
+        "scrub",
+        "pact",
+        "borrow",
+        "illegal"
       ]
     },
     {
       "id": "tr_three_leaf_right_heavy_md_v0_5",
       "description": "Taproot 3-leaf right-heavy tree (depth 2/2/1; mirror of T4)",
       "policy": "tr(@0/**,{{pk(@1/**),pk(@2/**)},pk(@3/**)})",
-      "expected_bytecode_hex": "00330306320008080c1b32010c1b32020c1b3203",
+      "expected_bytecode_hex": "00340306330007070e1b33010e1b33020e1b3303",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqzqgpsdnyqgvrveqyrqmxgpstk5t47dfgstw9"
+        "md1qqqqqdqrqcesqpc8pcdnxqgwrvesyrsmxvpsup8vzvqtzngru"
       ],
       "expected_wallet_id_words": [
-        "giant",
-        "vessel",
-        "jump",
-        "miracle",
-        "intact",
-        "coconut",
-        "food",
-        "noise",
-        "turtle",
-        "equal",
-        "eternal",
-        "demand"
+        "present",
+        "pill",
+        "pumpkin",
+        "exist",
+        "derive",
+        "prepare",
+        "borrow",
+        "rug",
+        "cost",
+        "divorce",
+        "lift",
+        "flee"
       ]
     },
     {
       "id": "tr_multi_leaf_with_multi_md_v0_5",
       "description": "Taproot multi-leaf with multi_a in one leaf",
       "policy": "tr(@0/**,{pk(@1/**),multi_a(2,@2/**,@3/**)})",
-      "expected_bytecode_hex": "003303063200080c1b32011a020232023203",
+      "expected_bytecode_hex": "003403063300070e1b33010a020233023303",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqzqvrveqzxszqgeqyvsrgfxcsa2uq4dmr"
+        "md1qqqqqdqrqcesqpcwrveszzszqgesyvcrxst2pn38fc6je"
       ],
       "expected_wallet_id_words": [
-        "man",
-        "cause",
-        "surround",
-        "float",
-        "excess",
-        "wood",
-        "extra",
-        "wave",
-        "slight",
-        "run",
-        "sword",
-        "right"
+        "february",
+        "advance",
+        "fashion",
+        "payment",
+        "security",
+        "motor",
+        "sudden",
+        "trip",
+        "rack",
+        "endorse",
+        "poet",
+        "engage"
       ]
     },
     {
       "id": "tr_multi_leaf_right_spine_md_v0_5",
       "description": "Taproot multi-leaf 6-leaf right-spine asymmetric tree",
       "policy": "tr(@0/**,{{pk(@1/**),pk(@2/**)},{pk(@3/**),{pk(@4/**),{pk(@5/**),pk(@6/**)}}}})",
-      "expected_bytecode_hex": "00330306320008080c1b32010c1b3202080c1b3203080c1b3204080c1b32050c1b3206",
+      "expected_bytecode_hex": "00340306330007070e1b33010e1b3302070e1b3303070e1b3304070e1b33050e1b3306",
       "expected_chunks": [
-        "md1qqqqqvcrqceqqzqgpsdnyqgvrveqyzqvrveqxzqvrveqgzqvrveq2rqmxgrq9p3m8l26sry0v"
+        "md1qqqqqdqrqcesqpc8pcdnxqgwrvesypcwrvesxpcwrvesgpcwrves2rsmxvrqkrnxl39h368c0"
       ],
       "expected_wallet_id_words": [
-        "way",
-        "about",
-        "occur",
-        "about",
-        "verb",
-        "retreat",
-        "hello",
-        "nothing",
-        "brass",
-        "denial",
-        "switch",
-        "erosion"
+        "crunch",
+        "uncover",
+        "vacant",
+        "swarm",
+        "swim",
+        "victory",
+        "jelly",
+        "doll",
+        "invest",
+        "anxiety",
+        "soul",
+        "thrive"
+      ]
+    },
+    {
+      "id": "tr_sortedmulti_a_2of3_md_v0_6",
+      "description": "Taproot sortedmulti_a 2-of-3 (v0.6 SortedMultiA Tag round-trip anchor)",
+      "policy": "tr(@0/**,sortedmulti_a(2,@1/**,@2/**,@3/**))",
+      "expected_bytecode_hex": "0034030633000b0203330133023303",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqzczqveszvczxvpsm5jn695esamr3"
+      ],
+      "expected_wallet_id_words": [
+        "kangaroo",
+        "snake",
+        "rookie",
+        "cat",
+        "camera",
+        "cabin",
+        "wasp",
+        "prepare",
+        "shift",
+        "slice",
+        "buddy",
+        "destroy"
+      ]
+    },
+    {
+      "id": "tr_multi_leaf_with_sortedmulti_a_md_v0_6",
+      "description": "Taproot multi-leaf TapTree with sortedmulti_a (Coldcard documented)",
+      "policy": "tr(@0/**,{sortedmulti_a(2,@1/**,@2/**),pk(@3/**)})",
+      "expected_bytecode_hex": "003403063300070b0202330133020e1b3303",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqpctqgprxqfnqg8pkvcrpdwaktd7rluvk"
+      ],
+      "expected_wallet_id_words": [
+        "essence",
+        "erosion",
+        "toss",
+        "sound",
+        "noble",
+        "robot",
+        "zero",
+        "total",
+        "thank",
+        "media",
+        "twice",
+        "firm"
+      ]
+    },
+    {
+      "id": "tr_complex_recovery_path_md_v0_6",
+      "description": "Taproot complex recovery path (Coldcard documented)",
+      "policy": "tr(@0/**,{and_v(v:pkh(@1/**),older(1000)),pk(@2/**)})",
+      "expected_bytecode_hex": "0034030633000713100e1c33011fe8070e1b3302",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqpcnzq8pcvcprl5qwrsmxvpqve753320zzd3u"
+      ],
+      "expected_wallet_id_words": [
+        "raise",
+        "lend",
+        "bullet",
+        "peace",
+        "summer",
+        "client",
+        "nation",
+        "company",
+        "force",
+        "dry",
+        "quantum",
+        "sunny"
+      ]
+    },
+    {
+      "id": "tr_pkh_in_tap_leaf_md_v0_6",
+      "description": "Taproot pkh() round-trip in tap leaf via desugaring (Coldcard documented)",
+      "policy": "tr(@0/**,and_v(v:pkh(@1/**),older(144)))",
+      "expected_bytecode_hex": "00340306330013100e1c33011f9001",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycspcwrxqgljqqs2fk89wdpcx5vk"
+      ],
+      "expected_wallet_id_words": [
+        "toddler",
+        "crane",
+        "master",
+        "okay",
+        "toast",
+        "enroll",
+        "volume",
+        "enemy",
+        "sniff",
+        "enjoy",
+        "student",
+        "then"
+      ]
+    },
+    {
+      "id": "tr_older_relative_time_md_v0_6",
+      "description": "Taproot relative-time locked multisig (Ledger compound shape)",
+      "policy": "tr(@0/**,and_v(v:multi_a(2,@1/**,@2/**),older(4194305)))",
+      "expected_bytecode_hex": "00340306330013100a0202330133021f81808002",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycspgpqyvcpxvpplqvqsqpqdvf88aya260lx"
+      ],
+      "expected_wallet_id_words": [
+        "violin",
+        "thrive",
+        "ordinary",
+        "lamp",
+        "cage",
+        "muffin",
+        "dish",
+        "alcohol",
+        "phrase",
+        "broom",
+        "claw",
+        "super"
+      ]
+    },
+    {
+      "id": "tr_after_absolute_height_md_v0_6",
+      "description": "Taproot absolute-height locked multisig (Ledger compound shape)",
+      "policy": "tr(@0/**,and_v(v:multi_a(2,@1/**,@2/**),after(700000)))",
+      "expected_bytecode_hex": "00340306330013100a0202330133021ee0dc2a",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycspgpqyvcpxvppacxu9gnqaj4wa9xy9re"
+      ],
+      "expected_wallet_id_words": [
+        "prize",
+        "quick",
+        "submit",
+        "mercy",
+        "physical",
+        "lava",
+        "eagle",
+        "pill",
+        "benefit",
+        "label",
+        "volcano",
+        "lyrics"
+      ]
+    },
+    {
+      "id": "tr_after_absolute_time_md_v0_6",
+      "description": "Taproot absolute-time locked multisig (Ledger compound shape)",
+      "policy": "tr(@0/**,and_v(v:multi_a(2,@1/**,@2/**),after(1734567890)))",
+      "expected_bytecode_hex": "00340306330013100a0202330133021ed2cf8dbb06",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycspgpqyvcpxvppa5k03kasv6ve9d8uweuphv"
+      ],
+      "expected_wallet_id_words": [
+        "garment",
+        "umbrella",
+        "apology",
+        "truck",
+        "attract",
+        "act",
+        "special",
+        "vast",
+        "street",
+        "afraid",
+        "cheap",
+        "become"
+      ]
+    },
+    {
+      "id": "tr_thresh_in_tap_leaf_md_v0_6",
+      "description": "Taproot thresh in tap leaf with s: wrappers",
+      "policy": "tr(@0/**,thresh(2,pk(@1/**),s:pk(@2/**),s:pk(@3/**)))",
+      "expected_bytecode_hex": "0034030633001a02030e1b33010d0e1b33020d0e1b3303",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqxszqv8pkvcpp58pkvczp58pkvcrvpeus966jhfw3"
+      ],
+      "expected_wallet_id_words": [
+        "rubber",
+        "hero",
+        "shaft",
+        "render",
+        "baby",
+        "ten",
+        "across",
+        "ribbon",
+        "loan",
+        "liberty",
+        "pill",
+        "receive"
+      ]
+    },
+    {
+      "id": "tr_or_b_in_tap_leaf_md_v0_6",
+      "description": "Taproot or_b in tap leaf with s: wrapper",
+      "policy": "tr(@0/**,or_b(pk(@1/**),s:pk(@2/**)))",
+      "expected_bytecode_hex": "003403063300160e1b33010d0e1b3302",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesq9swrveszrgwrvesyglezkmgm9vgfd"
+      ],
+      "expected_wallet_id_words": [
+        "lumber",
+        "prepare",
+        "three",
+        "town",
+        "spread",
+        "eyebrow",
+        "rotate",
+        "jaguar",
+        "truly",
+        "mix",
+        "lonely",
+        "uncover"
+      ]
+    },
+    {
+      "id": "tr_andor_in_tap_leaf_md_v0_6",
+      "description": "Taproot andor 3-arg in tap leaf",
+      "policy": "tr(@0/**,andor(pk(@1/**),pk(@2/**),pk(@3/**)))",
+      "expected_bytecode_hex": "003403063300150e1b33010e1b33020e1b3303",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesq9gwrveszrsmxvpquxenqvae9sf9kutg2l0"
+      ],
+      "expected_wallet_id_words": [
+        "junior",
+        "order",
+        "wheel",
+        "wire",
+        "simple",
+        "glide",
+        "near",
+        "dynamic",
+        "duck",
+        "alarm",
+        "trigger",
+        "certain"
+      ]
+    },
+    {
+      "id": "tr_or_i_in_tap_leaf_md_v0_6",
+      "description": "Taproot or_i in tap leaf",
+      "policy": "tr(@0/**,or_i(pk(@1/**),pk(@2/**)))",
+      "expected_bytecode_hex": "003403063300190e1b33010e1b3302",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqxgwrveszrsmxvpq3wlmmrecdczqt"
+      ],
+      "expected_wallet_id_words": [
+        "gun",
+        "salad",
+        "ladder",
+        "found",
+        "inmate",
+        "wealth",
+        "project",
+        "mango",
+        "infant",
+        "view",
+        "coast",
+        "coast"
+      ]
+    },
+    {
+      "id": "tr_sha256_htlc_md_v0_6",
+      "description": "Taproot sha256 HTLC pattern (locks internal-byte-order encoding)",
+      "policy": "tr(@0/**,and_v(v:sha256(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa),pk(@1/**)))",
+      "expected_bytecode_hex": "003403063300131020aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0e1b3301",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycsyz424242424242424242424242424242424242424242424242425rsmxvqs7f30qctksqpsx"
+      ],
+      "expected_wallet_id_words": [
+        "tomato",
+        "slow",
+        "clarify",
+        "sick",
+        "scatter",
+        "edge",
+        "drip",
+        "dragon",
+        "giraffe",
+        "tooth",
+        "version",
+        "reject"
+      ]
+    },
+    {
+      "id": "tr_hash256_htlc_md_v0_6",
+      "description": "Taproot hash256 HTLC pattern (locks internal-byte-order encoding for sha256d)",
+      "policy": "tr(@0/**,and_v(v:hash256(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb),pk(@1/**)))",
+      "expected_bytecode_hex": "003403063300131021bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0e1b3301",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycsyxamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamkrsmxvqstl9me60cut0eh"
+      ],
+      "expected_wallet_id_words": [
+        "wait",
+        "middle",
+        "such",
+        "ostrich",
+        "behind",
+        "banana",
+        "direct",
+        "jungle",
+        "robust",
+        "eyebrow",
+        "design",
+        "stove"
+      ]
+    },
+    {
+      "id": "tr_ripemd160_htlc_md_v0_6",
+      "description": "Taproot ripemd160 HTLC pattern",
+      "policy": "tr(@0/**,and_v(v:ripemd160(cccccccccccccccccccccccccccccccccccccccc),pk(@1/**)))",
+      "expected_bytecode_hex": "003403063300131022cccccccccccccccccccccccccccccccccccccccc0e1b3301",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycsytxvenxvenxvenxvenxvenxvenxvenxves8pkvcp9x3ucgl6q5v94"
+      ],
+      "expected_wallet_id_words": [
+        "clown",
+        "banner",
+        "magic",
+        "service",
+        "hero",
+        "casual",
+        "atom",
+        "leopard",
+        "cream",
+        "horn",
+        "ugly",
+        "frame"
+      ]
+    },
+    {
+      "id": "tr_hash160_htlc_md_v0_6",
+      "description": "Taproot hash160 HTLC pattern",
+      "policy": "tr(@0/**,and_v(v:hash160(dddddddddddddddddddddddddddddddddddddddd),pk(@1/**)))",
+      "expected_bytecode_hex": "003403063300131023dddddddddddddddddddddddddddddddddddddddd0e1b3301",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesqycsy0wamhwamhwamhwamhwamhwamhwamhwam58pkvcpmffhe4exaez0c"
+      ],
+      "expected_wallet_id_words": [
+        "aware",
+        "top",
+        "marriage",
+        "ice",
+        "business",
+        "flower",
+        "machine",
+        "order",
+        "ask",
+        "dry",
+        "chunk",
+        "real"
+      ]
+    },
+    {
+      "id": "tr_a_wrapper_in_tap_leaf_md_v0_6",
+      "description": "Taproot a: wrapper in tap leaf via and_b",
+      "policy": "tr(@0/**,and_b(pk(@1/**),a:pk(@2/**)))",
+      "expected_bytecode_hex": "003403063300140e1b33010c0e1b3302",
+      "expected_chunks": [
+        "md1qqqqqdqrqcesq9qwrveszrqwrvesy2ayycxwnamhlv"
+      ],
+      "expected_wallet_id_words": [
+        "expand",
+        "alley",
+        "riot",
+        "reform",
+        "believe",
+        "equal",
+        "swing",
+        "attack",
+        "heavy",
+        "century",
+        "flame",
+        "sting"
       ]
     },
     {
       "id": "multi_2of2_with_fingerprints",
       "description": "wsh(multi(2,...)) with two master-key fingerprints (Phase E)",
       "policy": "wsh(multi(2,@0/**,@1/**))",
-      "expected_bytecode_hex": "0433033502deadbeefcafebabe0519020232003201",
+      "expected_bytecode_hex": "0434033502deadbeefcafebabe0508020233003301",
       "expected_chunks": [
-        "md1qqqqgvcrx5pdatd7al90aw47q5vsyq3jqqeqzwqf8fr0xah3nd"
+        "md1qqqqgdqrx5pdatd7al90aw47q5yqyq3nqqeszs43qv3upgflqk"
       ],
       "expected_wallet_id_words": [
-        "goddess",
-        "lunch",
-        "harsh",
-        "flock",
-        "cream",
-        "slim",
-        "quiz",
-        "prefer",
-        "omit",
-        "yard",
-        "dial",
-        "zoo"
+        "pony",
+        "engine",
+        "fresh",
+        "beauty",
+        "miss",
+        "snap",
+        "private",
+        "wife",
+        "hurry",
+        "collect",
+        "chase",
+        "inside"
       ],
       "expected_fingerprints_hex": [
         "deadbeef",
@@ -462,138 +830,138 @@
       "id": "s1_wpkh",
       "description": "S1 — BIP 84 wpkh single-sig (no fingerprints block)",
       "policy": "wpkh(@0/**)",
-      "expected_bytecode_hex": "003303043200",
+      "expected_bytecode_hex": "003403043300",
       "expected_chunks": [
-        "md1qqqqqvcrqseqqrstk8lc2qudrk"
+        "md1qqqqqdqrqsesqeyu6dc2l9j0gm"
       ],
       "expected_wallet_id_words": [
-        "second",
-        "evil",
-        "naive",
-        "noodle",
-        "music",
-        "spend",
-        "wide",
-        "three",
-        "absurd",
-        "advance",
-        "smoke",
-        "exclude"
+        "ship",
+        "soccer",
+        "mercy",
+        "wasp",
+        "rate",
+        "gravity",
+        "prepare",
+        "treat",
+        "divert",
+        "sustain",
+        "disagree",
+        "prosper"
       ]
     },
     {
       "id": "s3_sh_wpkh",
       "description": "S3 — BIP 49 sh(wpkh) nested-segwit single-sig (no fingerprints block)",
       "policy": "sh(wpkh(@0/**))",
-      "expected_bytecode_hex": "00330203043200",
+      "expected_bytecode_hex": "00340203043300",
       "expected_chunks": [
-        "md1qqqqqvczqvzryqqywavcrhgp4ksa"
+        "md1qqqqqdqzqvzrxqqmd4phrt948h4t"
       ],
       "expected_wallet_id_words": [
-        "sail",
-        "nation",
-        "acoustic",
-        "arch",
-        "february",
-        "kidney",
-        "symbol",
-        "acoustic",
-        "pudding",
-        "celery",
-        "slam",
-        "neck"
+        "outside",
+        "topic",
+        "brush",
+        "damp",
+        "reason",
+        "that",
+        "squeeze",
+        "van",
+        "lens",
+        "rough",
+        "moon",
+        "latin"
       ]
     },
     {
       "id": "m1_sh_wsh_sortedmulti_1of2",
       "description": "M1 — BIP 48/1' sh(wsh(sortedmulti(1,...))) 1-of-2 nested-segwit multisig",
       "policy": "sh(wsh(sortedmulti(1,@0/**,@1/**)))",
-      "expected_bytecode_hex": "003306030509010232003201",
+      "expected_bytecode_hex": "003406030509010233003301",
       "expected_chunks": [
-        "md1qqqqqvcxqvzsjqgzxgqryqg0xvza7td6vtul"
+        "md1qqqqqdqxqvzsjqgzxvqrxqgslhh93t7fnn5n"
       ],
       "expected_wallet_id_words": [
-        "long",
-        "like",
-        "reward",
-        "sentence",
-        "man",
-        "dentist",
-        "ginger",
-        "weird",
-        "example",
-        "amount",
-        "adapt",
-        "summer"
+        "elite",
+        "special",
+        "eye",
+        "carry",
+        "shrimp",
+        "immune",
+        "route",
+        "wagon",
+        "crisp",
+        "rural",
+        "glory",
+        "best"
       ]
     },
     {
       "id": "m2_sh_wsh_sortedmulti_2of3",
       "description": "M2 — BIP 48/1' sh(wsh(sortedmulti(2,...))) 2-of-3 nested-segwit multisig",
       "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
-      "expected_bytecode_hex": "0033060305090203320032013202",
+      "expected_bytecode_hex": "0034060305090203330033013302",
       "expected_chunks": [
-        "md1qqqqqvcxqvzsjqsrxgqryqfjqgtkd8p6uqxhqnk"
+        "md1qqqqqdqxqvzsjqsrxvqrxqfnqgjfwehe96fgagz"
       ],
       "expected_wallet_id_words": [
-        "arrive",
-        "net",
-        "sun",
-        "estate",
-        "eagle",
-        "cycle",
-        "honey",
-        "reunion",
-        "mercy",
-        "shell",
-        "limb",
-        "series"
+        "upset",
+        "rebuild",
+        "index",
+        "lucky",
+        "sad",
+        "vessel",
+        "wrist",
+        "term",
+        "rug",
+        "right",
+        "forget",
+        "invest"
       ]
     },
     {
       "id": "cs_coldcard_sh_wsh",
       "description": "Cs — Coldcard firmware 5.4.0 BIP 48/1' 2-of-3 sh(wsh(sortedmulti)) export shape",
       "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
-      "expected_bytecode_hex": "0033060305090203320032013202",
+      "expected_bytecode_hex": "0034060305090203330033013302",
       "expected_chunks": [
-        "md1qqqqqvcxqvzsjqsrxgqryqfjqgtkd8p6uqxhqnk"
+        "md1qqqqqdqxqvzsjqsrxvqrxqfnqgjfwehe96fgagz"
       ],
       "expected_wallet_id_words": [
-        "arrive",
-        "net",
-        "sun",
-        "estate",
-        "eagle",
-        "cycle",
-        "honey",
-        "reunion",
-        "mercy",
-        "shell",
-        "limb",
-        "series"
+        "upset",
+        "rebuild",
+        "index",
+        "lucky",
+        "sad",
+        "vessel",
+        "wrist",
+        "term",
+        "rug",
+        "right",
+        "forget",
+        "invest"
       ]
     },
     {
       "id": "s2_wpkh_fingerprint",
       "description": "S2 — BIP 84 wpkh single-sig with master-key fingerprint (Phase 6)",
       "policy": "wpkh(@0/**)",
-      "expected_bytecode_hex": "0433033501deadbeef043200",
+      "expected_bytecode_hex": "0434033501deadbeef043300",
       "expected_chunks": [
-        "md1qqqqgvcrx5qaatd7auzryqqrlxz5e8y6c3nn"
+        "md1qqqqgdqrx5qaatd7auzrxqqm5vtfk8y22jtl"
       ],
       "expected_wallet_id_words": [
-        "private",
-        "century",
-        "already",
-        "theme",
-        "laptop",
-        "blood",
-        "bamboo",
-        "someone",
-        "slice",
-        "bean",
-        "jeans",
-        "group"
+        "clean",
+        "whale",
+        "pottery",
+        "pluck",
+        "other",
+        "silly",
+        "fun",
+        "muffin",
+        "price",
+        "sound",
+        "motion",
+        "fancy"
       ],
       "expected_fingerprints_hex": [
         "deadbeef"
@@ -611,23 +979,23 @@
       "id": "s4_sh_wpkh_fingerprint",
       "description": "S4 — BIP 49 sh(wpkh) nested-segwit single-sig with master-key fingerprint (Phase 6)",
       "policy": "sh(wpkh(@0/**))",
-      "expected_bytecode_hex": "0433023501deadbeef03043200",
+      "expected_bytecode_hex": "0434023501deadbeef03043300",
       "expected_chunks": [
-        "md1qqqqgvczx5qaatd7aupsgvsqmwhjgwqfdrdee"
+        "md1qqqqgdqzx5qaatd7aupsgvcqfdtegan9pd3qw"
       ],
       "expected_wallet_id_words": [
-        "wisdom",
-        "duty",
-        "critic",
-        "edge",
-        "magic",
-        "song",
-        "salon",
-        "vapor",
-        "voyage",
-        "enter",
-        "hip",
-        "ginger"
+        "salute",
+        "slot",
+        "reflect",
+        "enemy",
+        "slab",
+        "relief",
+        "slow",
+        "ancient",
+        "exercise",
+        "arrange",
+        "energy",
+        "nephew"
       ],
       "expected_fingerprints_hex": [
         "deadbeef"
@@ -645,23 +1013,23 @@
       "id": "m3_sh_wsh_sortedmulti_2of3_fingerprints",
       "description": "M3 — BIP 48/1' sh(wsh(sortedmulti(2,...))) 2-of-3 with 3 master-key fingerprints (Phase 6)",
       "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
-      "expected_bytecode_hex": "0433063503deadbeefcafebabed00df00d0305090203320032013202",
+      "expected_bytecode_hex": "0434063503deadbeefcafebabed00df00d0305090203330033013302",
       "expected_chunks": [
-        "md1qqqqgvcxx5paatd7al90aw476qxlqrgrq5ysyqejqqeqzvsz5etv6m3mnsd26"
+        "md1qqqqgdqxx5paatd7al90aw476qxlqrgrq5ysyqenqqeszvczmf9hl5n6c9tgt"
       ],
       "expected_wallet_id_words": [
-        "charge",
-        "bicycle",
-        "pencil",
-        "kit",
-        "path",
-        "prefer",
-        "tape",
-        "select",
-        "siege",
-        "cradle",
-        "essay",
-        "own"
+        "firm",
+        "category",
+        "green",
+        "strike",
+        "smoke",
+        "dentist",
+        "diesel",
+        "what",
+        "adapt",
+        "labor",
+        "police",
+        "gather"
       ],
       "expected_fingerprints_hex": [
         "deadbeef",
@@ -704,7 +1072,7 @@
       "id": "n02",
       "description": "Mixed-case characters in an MD string → MixedCase",
       "input_strings": [
-        "md1qqQqqvcrq5xpkvsqssytlfyyyy5m7"
+        "md1qqQqqdqrq58pkvcqgj7ymm8tejhhz"
       ],
       "expected_error_variant": "MixedCase",
       "provenance": "encoded `wsh(pk(@0/**))`, then uppercased the data character at position 5"
@@ -722,7 +1090,7 @@
       "id": "n04",
       "description": "Non-bech32 character 'b' in data part → InvalidChar",
       "input_strings": [
-        "md1qqbqqvcrq5xpkvsqssytlfyyyy5m7"
+        "md1qqbqqdqrq58pkvcqgj7ymm8tejhhz"
       ],
       "expected_error_variant": "InvalidChar",
       "provenance": "encoded `wsh(pk(@0/**))`, then replaced the data character at position 5 with `b` (not in the bech32 alphabet)"
@@ -731,7 +1099,7 @@
       "id": "n05",
       "description": "Two character substitutions (BCH uncorrectable) → BchUncorrectable",
       "input_strings": [
-        "md1qppppqcrq5xpkvsqssytlfyyyy5m7"
+        "md1qppppqqrq58pkvcqgj7ymm8tejhhz"
       ],
       "expected_error_variant": "BchUncorrectable",
       "provenance": "encoded `wsh(pk(@0/**))`, then flipped 5 data characters (positions 4..=8); exceeds the v0.2 BCH t=4 correction radius"
@@ -801,8 +1169,8 @@
       "id": "n13",
       "description": "Single-string chunk appearing more than once → SingleStringWithMultipleChunks",
       "input_strings": [
-        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7",
-        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7"
+        "md1qqqqqdqrq58pkvcqgj7ymm8tejhhz",
+        "md1qqqqqdqrq58pkvcqgj7ymm8tejhhz"
       ],
       "expected_error_variant": "SingleStringWithMultipleChunks",
       "provenance": "encoded `wsh(pk(@0/**))` to a single SingleString chunk, then submitted the same string twice; reassembly rejects"
@@ -811,8 +1179,8 @@
       "id": "n14",
       "description": "Mixed SingleString + Chunked in one decode list → MixedChunkTypes",
       "input_strings": [
-        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7",
-        "md1qqqsc2vzqyqqqvcrq5xpkvsqc2vz0fg4zdlu6c3gjnut"
+        "md1qqqqqdqrq58pkvcqgj7ymm8tejhhz",
+        "md1qqqshkacqyqqqdqrq58pkvcqhkacqec4xqn2u0r48pdr"
       ],
       "expected_error_variant": "MixedChunkTypes",
       "provenance": "encoded `wsh(pk(@0/**))` once with default options (SingleString) and once with `ChunkingMode::ForceChunked`, then submitted both chunks together; reassembly rejects mixed types"
@@ -821,8 +1189,8 @@
       "id": "n15",
       "description": "Wallet-id mismatch across chunks → WalletIdMismatch",
       "input_strings": [
-        "md1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdss95kd8ekz69jdz9",
-        "md1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yfnxhzsfujawc9"
+        "md1qqqs4242qgqqqdqrq5vp5pgfpcdnxqqdpcdnxqgdpcdnxqsdpcdnxqcdpcdnxpqdpcdnxpgdpcdnxpsdpcdsw9vfm8d6ypy4qx7",
+        "md1qqqshwamqgqnxpcdpcdnxzqnzq06pdgxpqpqyvcfxv9fztkqqvsvxkppsqm5mam"
       ],
       "expected_error_variant": "WalletIdMismatch",
       "provenance": "encoded the C5 corpus policy twice with distinct `wallet_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
@@ -905,7 +1273,7 @@
       "id": "n24",
       "description": "Trailing bytes after template tree → InvalidBytecode(TrailingBytes)",
       "input_strings": [
-        "md1qqqqqvcrq5xpkvsqlud0wj00w55mqly"
+        "md1qqqqqdqrq58pkvcqluz75auvlv4w9mh"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "encoded `wsh(pk(@0/**))` to bytecode, appended a trailing `0xFF` byte, wrapped in a SingleString chunk; bytecode parse rejects with TrailingBytes"
@@ -932,7 +1300,7 @@
       "id": "n27",
       "description": "k > n in multi threshold (type-check failure) → InvalidBytecode(TypeCheckFailed)",
       "input_strings": [
-        "md1qqqqqvcrq5vs2q3jqqeqzt0xs67x37zmn9"
+        "md1qqqqqdqrq5yq2q3nqqeszjp804xpsjh4y8"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode for `wsh(multi(k=5, n=2, @0, @1))` (k > n), wrapped in a SingleString chunk; bytecode parse rejects with TypeCheckFailed"
@@ -941,7 +1309,7 @@
       "id": "n28",
       "description": "Non-Wsh top-level descriptor → PolicyScopeViolation",
       "input_strings": [
-        "md1qqqqqvcrq5rryqq58axvfjmelq6v"
+        "md1qqqqqdqrq5rrxqqty4trfwkddpl6"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "encoded `wsh(pk(@0/**))`, replaced the inner Wsh content with `[Tag::Tr, Tag::Placeholder, 0x00]` (a Tr nested inside Wsh, which v0.2 still rejects), wrapped in a SingleString chunk; decode emits PolicyScopeViolation"
@@ -963,17 +1331,10 @@
       "provenance": "requires lower-level API: `chunking::chunking_decision(1693, ChunkingMode::Auto)` rejects bytecode lengths above the 1692-byte v0.1 cap; no MD string encodes the oversized condition"
     },
     {
-      "id": "n_tap_leaf_subset",
-      "description": "Taproot leaf miniscript uses `sha256` (not in the Coldcard subset) → TapLeafSubsetViolation",
-      "input_strings": [],
-      "expected_error_variant": "TapLeafSubsetViolation",
-      "provenance": "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. Construct via `\"tr(@0/**,and_v(v:sha256(<32B>),pk(@1/**)))\".parse::<WalletPolicy>()` followed by `to_bytecode(&EncodeOptions::default())`; the encoder rejects the leaf operator `sha256`."
-    },
-    {
       "id": "n_taptree_single_inner_under_tr",
       "description": "TapTree framing with only 1 child under tr → cursor runs out reading right child (InvalidBytecode/UnexpectedEnd)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzqmxgqqs03g4gw49jynp"
+        "md1qqqqqdqrqcesqpcmxvqq789rxceuvc55l"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::PkK, Tag::Placeholder, 0]` (one left leaf, no right child); decode_tap_subtree reads left leaf then UnexpectedEnd reading right"
@@ -982,61 +1343,61 @@
       "id": "n_taptree_three_inners_under_tr",
       "description": "TapTree framing with 3 children — trailing byte after right child (InvalidBytecode/TrailingBytes)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzqmxgqpkvsprveqylfypcjm2xranw"
+        "md1qqqqqdqrqcesqpcmxvqpkvcprvesyr2vjhjnh99ks9"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, leaf, leaf, leaf]`; decode_tap_subtree consumes left+right leaves, then bytecode parse reports TrailingBytes for the third"
     },
     {
       "id": "n_taptree_inner_wpkh",
-      "description": "Multi-leaf TapTree with `wpkh` leaf at index 0 — TapLeafSubsetViolation { operator: \"wpkh\", leaf_index: Some(0) }",
+      "description": "Multi-leaf TapTree with `wpkh` leaf at index 0 — InvalidBytecode { kind: TagInvalidContext { tag, context: \"tap-leaf-inner\" } } (v0.6 strip: was SubsetViolation in v0.5; decoder catch-all now uses structural TagInvalidContext)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzqyxgqpkvspazn6sj6auezrf"
+        "md1qqqqqdqrqcesqpcyxvqpkvcpkhnrpsmgf2xcz"
       ],
-      "expected_error_variant": "TapLeafSubsetViolation",
-      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Wpkh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `wpkh`"
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Wpkh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal whose v0.6 catch-all produces InvalidBytecode { kind: TagInvalidContext { tag: <byte>, context: \"tap-leaf-inner\" } }. v0.5 raised SubsetViolation here via the now-removed validate_tap_leaf_subset call."
     },
     {
       "id": "n_taptree_inner_sh",
-      "description": "Multi-leaf TapTree with `sh` leaf at index 0 — TapLeafSubsetViolation { operator: \"sh\", leaf_index: Some(0) }",
+      "description": "Multi-leaf TapTree with `sh` leaf at index 0 — InvalidBytecode { kind: TagInvalidContext { tag, context: \"tap-leaf-inner\" } } (v0.6 strip: was SubsetViolation in v0.5; decoder catch-all now uses structural TagInvalidContext)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzqrxgqpkvspf8rmh68lqgf9l"
+        "md1qqqqqdqrqcesqpcrxvqpkvcpzjrzxcx24md75"
       ],
-      "expected_error_variant": "TapLeafSubsetViolation",
-      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Sh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `sh`"
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Sh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal whose v0.6 catch-all produces InvalidBytecode { kind: TagInvalidContext { tag: <byte>, context: \"tap-leaf-inner\" } }. v0.5 raised SubsetViolation here via the now-removed validate_tap_leaf_subset call."
     },
     {
       "id": "n_taptree_inner_wsh",
-      "description": "Multi-leaf TapTree with `wsh` leaf at index 0 — TapLeafSubsetViolation { operator: \"wsh\", leaf_index: Some(0) }",
+      "description": "Multi-leaf TapTree with `wsh` leaf at index 0 — InvalidBytecode { kind: TagInvalidContext { tag, context: \"tap-leaf-inner\" } } (v0.6 strip: was SubsetViolation in v0.5; decoder catch-all now uses structural TagInvalidContext)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzq9xgqpkvsp8sx83vrwc3jlq"
+        "md1qqqqqdqrqcesqpc9xvqpkvcpv9x7qwzmdzkyt"
       ],
-      "expected_error_variant": "TapLeafSubsetViolation",
-      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Wsh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `wsh`"
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Wsh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal whose v0.6 catch-all produces InvalidBytecode { kind: TagInvalidContext { tag: <byte>, context: \"tap-leaf-inner\" } }. v0.5 raised SubsetViolation here via the now-removed validate_tap_leaf_subset call."
     },
     {
       "id": "n_taptree_inner_tr",
-      "description": "Multi-leaf TapTree with `tr` leaf at index 0 — TapLeafSubsetViolation { operator: \"tr\", leaf_index: Some(0) }",
+      "description": "Multi-leaf TapTree with `tr` leaf at index 0 — InvalidBytecode { kind: TagInvalidContext { tag, context: \"tap-leaf-inner\" } } (v0.6 strip: was SubsetViolation in v0.5; decoder catch-all now uses structural TagInvalidContext)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzqxxgqpkvspq0sfj8pj5ftjm"
+        "md1qqqqqdqrqcesqpcxxvqpkvcpt6ssr9q8p60fs"
       ],
-      "expected_error_variant": "TapLeafSubsetViolation",
-      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Tr, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `tr`"
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Tr, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal whose v0.6 catch-all produces InvalidBytecode { kind: TagInvalidContext { tag: <byte>, context: \"tap-leaf-inner\" } }. v0.5 raised SubsetViolation here via the now-removed validate_tap_leaf_subset call."
     },
     {
       "id": "n_taptree_inner_pkh",
-      "description": "Multi-leaf TapTree with `pkh` leaf at index 0 — TapLeafSubsetViolation { operator: \"pkh\", leaf_index: Some(0) }",
+      "description": "Multi-leaf TapTree with `pkh` leaf at index 0 — InvalidBytecode { kind: TagInvalidContext { tag, context: \"tap-leaf-inner\" } } (v0.6 strip: was SubsetViolation in v0.5; decoder catch-all now uses structural TagInvalidContext)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzqzxgqpkvspn4kxky7vyqeek"
+        "md1qqqqqdqrqcesqpczxvqpkvcpcqkl8xle3naza"
       ],
-      "expected_error_variant": "TapLeafSubsetViolation",
-      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Pkh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `pkh`"
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Pkh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal whose v0.6 catch-all produces InvalidBytecode { kind: TagInvalidContext { tag: <byte>, context: \"tap-leaf-inner\" } }. v0.5 raised SubsetViolation here via the now-removed validate_tap_leaf_subset call."
     },
     {
       "id": "n_taptree_unknown_tag_inner",
       "description": "TapTree framing with unallocated tag byte 0xC0 as inner — InvalidBytecode/UnknownTag",
       "input_strings": [
-        "md1qqqqqvcrqceqqzxqhmlv4wedyfdt9"
+        "md1qqqqqdqrqcesqp7qt9r00x78myfsu"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, 0xC0]`; decode_tap_subtree's Tag::from_byte(0xC0) returns None and emits InvalidBytecode { kind: UnknownTag(0xC0) }"
@@ -1045,7 +1406,7 @@
       "id": "n_taptree_at_top_level",
       "description": "Tag::TapTree (0x08) as top-level descriptor — PolicyScopeViolation (TapTree only valid inside tr(KEY, TREE))",
       "input_strings": [
-        "md1qqqqqvcypqa9v7hcslflskv"
+        "md1qqqqqdqyquxrfmdk4z55gee"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "synthesised bytecode `[0x00, Tag::SharedPath, 0x04, Tag::TapTree]`; top-level dispatcher rejects 0x08 with the v0.5 message about TapTree appearing only inside tr(KEY, TREE)"
@@ -1061,7 +1422,7 @@
       "id": "n_fingerprints_missing_tag",
       "description": "Bytecode header advertises fingerprints (bit 2 set) but the fingerprints block is missing `Tag::Fingerprints=0x35` (got Tag::Wsh=0x05) → InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }",
       "input_strings": [
-        "md1qqqqgvcrq5qq59zk9caumcp3d"
+        "md1qqqqgdqrq5qqmxmfm4279alk3"
       ],
       "expected_error_variant": "InvalidBytecode",
       "provenance": "synthesised bytecode `[0x04, Tag::SharedPath, 0x03, Tag::Wsh, 0x00]`: header bit 2 (fingerprints) is set, but the byte where Tag::Fingerprints (0x35) is expected carries Tag::Wsh (0x05); decode emits InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }"
@@ -1070,7 +1431,7 @@
       "id": "n_sh_multi",
       "description": "sh(multi(...)) legacy P2SH-multi → PolicyScopeViolation (decode side)",
       "input_strings": [
-        "md1qqqqqvcrqvvnyqqzwdcfse4h0lzu"
+        "md1qqqqqdqrqvyrxqqeurjg3w8nzl7x"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Multi, Placeholder, 0x00]`, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→Multi as legacy P2SH-multi (PolicyScopeViolation)"
@@ -1079,7 +1440,7 @@
       "id": "n_sh_sortedmulti",
       "description": "sh(sortedmulti(...)) legacy P2SH-sortedmulti → PolicyScopeViolation (decode side)",
       "input_strings": [
-        "md1qqqqqvcrqvynyqqzqqnc6e4cf9a4"
+        "md1qqqqqdqrqvynxqqarg7h69cvmycr"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, SortedMulti, Placeholder, 0x00]`, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→SortedMulti as legacy P2SH-sortedmulti (PolicyScopeViolation)"
@@ -1088,7 +1449,7 @@
       "id": "n_sh_pkh",
       "description": "sh(pkh(...)) legacy P2SH-PKH → PolicyScopeViolation (decode side)",
       "input_strings": [
-        "md1qqqqqvcrqvpryqqx8fqulj2wd6cy"
+        "md1qqqqqdqrqvprxqqeypdnlw86lmaj"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Pkh, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects Sh→Pkh via peek-before-recurse restriction matrix (PolicyScopeViolation)"
@@ -1097,25 +1458,16 @@
       "id": "n_sh_tr",
       "description": "sh(tr(...)) taproot nested inside Sh → PolicyScopeViolation (decode side)",
       "input_strings": [
-        "md1qqqqqvcrqvrryqqxsqujfj2ncgpv"
+        "md1qqqqqdqrqvrrxqqeng3afw882fy6"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Tr, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects Sh→Tr via peek-before-recurse restriction matrix (PolicyScopeViolation)"
     },
     {
-      "id": "n_sh_bare",
-      "description": "sh(bare(...)) nested bare script inside Sh → PolicyScopeViolation (decode side)",
-      "input_strings": [
-        "md1qqqqqvcrqvrnyqqz0tsdze4vpn8f"
-      ],
-      "expected_error_variant": "PolicyScopeViolation",
-      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Bare, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects Sh→Bare via peek-before-recurse restriction matrix (PolicyScopeViolation)"
-    },
-    {
       "id": "n_sh_inner_script",
       "description": "sh(<inner-script-tag>) AndV directly under Sh → PolicyScopeViolation",
       "input_strings": [
-        "md1qqqqqvcrqvgnyqqzflf44e4yvjev"
+        "md1qqqqqdqrqvfnxqqa482a79c2q6y7"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→AndV (inner-script-family tag 0x11) via peek-before-recurse restriction matrix (PolicyScopeViolation)"
@@ -1124,7 +1476,7 @@
       "id": "n_sh_key_slot",
       "description": "sh(<key-slot-tag>) Placeholder directly under Sh → PolicyScopeViolation (layering invariant)",
       "input_strings": [
-        "md1qqqqqvcrqveryqqx47axpj2l8asl"
+        "md1qqqqqdqrqvenxqqafauk29c5v8nv"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer, not constructible via policy parser; `WalletPolicy::from_bytecode` rejects Sh→Placeholder (key-slot-family tag 0x32) via peek-before-recurse restriction matrix layering invariant (PolicyScopeViolation)"
@@ -1133,19 +1485,10 @@
       "id": "n_top_pkh",
       "description": "pkh(...) at top level → PolicyScopeViolation (legacy non-segwit out of scope)",
       "input_strings": [
-        "md1qqqqqvcrqgeqq953ur9zwya0x9"
+        "md1qqqqqdqrqgesqlqxsfzsmpnddg"
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Pkh, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects top-level Pkh as legacy non-segwit out of v0.4 scope (PolicyScopeViolation)"
-    },
-    {
-      "id": "n_top_bare",
-      "description": "bare(...) at top level → PolicyScopeViolation (legacy non-segwit out of scope)",
-      "input_strings": [
-        "md1qqqqqvcrqueqqqjxn9j4gzgv4t"
-      ],
-      "expected_error_variant": "PolicyScopeViolation",
-      "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Bare, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects top-level Bare as legacy non-segwit out of v0.4 scope (PolicyScopeViolation)"
     }
   ]
 }

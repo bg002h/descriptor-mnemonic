@@ -1,236 +1,236 @@
 {
   "schema_version": 1,
-  "generator": "md-codec 0.5",
+  "generator": "md-codec 0.6",
   "vectors": [
     {
       "id": "c1",
       "description": "C1 — Single-key wsh(pk)",
       "policy": "wsh(pk(@0/**))",
-      "expected_bytecode_hex": "003303050c1b3200",
+      "expected_bytecode_hex": "003403050e1b3300",
       "expected_chunks": [
-        "md1qqqqqvcrq5xpkvsqssytlfyyyy5m7"
+        "md1qqqqqdqrq58pkvcqgj7ymm8tejhhz"
       ],
       "expected_wallet_id_words": [
-        "secret",
-        "scorpion",
-        "truly",
-        "forum",
-        "van",
-        "cinnamon",
-        "hybrid",
-        "public",
-        "fun",
-        "during",
-        "bottom",
-        "clock"
+        "sad",
+        "swing",
+        "border",
+        "topic",
+        "rocket",
+        "penalty",
+        "garage",
+        "beauty",
+        "kidney",
+        "enable",
+        "south",
+        "gravity"
       ]
     },
     {
       "id": "c2",
       "description": "C2 — 2-of-3 wsh(sortedmulti)",
       "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
-      "expected_bytecode_hex": "00330305090203320032013202",
+      "expected_bytecode_hex": "00340305090203330033013302",
       "expected_chunks": [
-        "md1qqqqqvcrq5ysyqejqqeqzvszz258fczketjg6"
+        "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
       "expected_wallet_id_words": [
-        "payment",
-        "prosper",
-        "canvas",
-        "exercise",
-        "sniff",
-        "robot",
-        "dynamic",
-        "attitude",
-        "assist",
-        "sell",
-        "control",
-        "enroll"
+        "rent",
+        "lecture",
+        "ghost",
+        "home",
+        "word",
+        "imitate",
+        "cannon",
+        "penalty",
+        "hen",
+        "scene",
+        "pretty",
+        "tribe"
       ]
     },
     {
       "id": "c3",
       "description": "C3 — 2-of-3 with timelock fallback",
       "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
-      "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
+      "expected_bytecode_hex": "00340305180802023300330113101fd09a030e1b3302",
       "expected_chunks": [
-        "md1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqssxxvfplwl3dfq"
+        "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
       "expected_wallet_id_words": [
-        "hire",
-        "earth",
-        "doll",
-        "pride",
-        "naive",
-        "one",
-        "universe",
-        "shell",
-        "brain",
-        "sign",
-        "private",
-        "vivid"
+        "ginger",
+        "rival",
+        "verify",
+        "action",
+        "reveal",
+        "wise",
+        "embody",
+        "leader",
+        "vessel",
+        "iron",
+        "olive",
+        "shell"
       ]
     },
     {
       "id": "c4",
       "description": "C4 — 6-key inheritance miniscript",
       "policy": "wsh(andor(pk(@0/**),after(1200000),or_i(and_v(v:pkh(@1/**),and_v(v:pkh(@2/**),and_v(v:pkh(@3/**),older(4032)))),and_v(v:pkh(@4/**),and_v(v:pkh(@5/**),older(32768))))))",
-      "expected_bytecode_hex": "00330305130c1b32001e809f4917110e0c1c3201110e0c1c3202110e0c1c32031fc01f110e0c1c3204110e0c1c32051f808002",
+      "expected_bytecode_hex": "00340305150e1b33001e809f491913100e1c330113100e1c330213100e1c33031fc01f13100e1c330413100e1c33051f808002",
       "expected_chunks": [
-        "md1qqqqqvcrq5fscxejqq0gp86fzugsurquxgq3zrsvrseqyygwpswryqclcq03zrsvrseqgygwpswrypglszqqyc7r07jpm647hrcg"
+        "md1qqqqqdqrq52suxenqq0gp86fryf3qrsuxvq3xyqwrsesyycspcwrxqclcq03xyqwrsesgycspcwrxpglszqqy5hntfd74wrc0jdk"
       ],
       "expected_wallet_id_words": [
-        "magnet",
-        "gospel",
-        "nominee",
-        "alarm",
-        "member",
-        "retreat",
-        "whale",
-        "zero",
-        "moment",
-        "person",
-        "zoo",
-        "immense"
+        "hospital",
+        "inject",
+        "rifle",
+        "execute",
+        "execute",
+        "trigger",
+        "message",
+        "security",
+        "wink",
+        "liberty",
+        "device",
+        "clog"
       ]
     },
     {
       "id": "c5",
       "description": "C5 — 5-of-9 thresh with 2-key timelock recovery",
       "policy": "wsh(or_d(thresh(5,pk(@0/**),s:pk(@1/**),s:pk(@2/**),s:pk(@3/**),s:pk(@4/**),s:pk(@5/**),s:pk(@6/**),s:pk(@7/**),s:pk(@8/**)),and_v(v:older(105120),multi(2,@9/**,@10/**))))",
-      "expected_bytecode_hex": "00330305161805090c1b32000b0c1b32010b0c1b32020b0c1b32030b0c1b32040b0c1b32050b0c1b32060b0c1b32070b0c1b3208110e1fa0b5061902023209320a",
+      "expected_bytecode_hex": "00340305181a05090e1b33000d0e1b33010d0e1b33020d0e1b33030d0e1b33040d0e1b33050d0e1b33060d0e1b33070d0e1b330813101fa0b5060802023309330a",
       "expected_chunks": [
-        "md1qqqsp3nvqgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdsm7lmunwsppdmpt5",
-        "md1qqqsp3nvqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6ylpjjcclupncmz"
+        "md1qqqsjyhvqgqqqdqrq5vp5pgfpcdnxqqdpcdnxqgdpcdnxqsdpcdnxqcdpcdnxpqdpcdnxpgdpcdnxpsdpcdss5auap994w0l6ln",
+        "md1qqqsjyhvqgqnxpcdpcdnxzqnzq06pdgxpqpqyvcfxv9fztkqqvuxscfp75hf2ew"
       ],
       "expected_wallet_id_words": [
-        "arrest",
-        "curve",
-        "virtual",
-        "mechanic",
-        "dynamic",
-        "eager",
-        "wagon",
-        "embark",
-        "common",
-        "arctic",
-        "lion",
-        "pear"
+        "muffin",
+        "invite",
+        "absorb",
+        "employ",
+        "ketchup",
+        "cute",
+        "bomb",
+        "heart",
+        "couch",
+        "ginger",
+        "hunt",
+        "lend"
       ]
     },
     {
       "id": "e10",
       "description": "E10 — Liana Simple Inheritance single-key + 1-year recovery",
       "policy": "wsh(or_d(pk(@0/**),and_v(v:pk(@1/**),older(52560))))",
-      "expected_bytecode_hex": "00330305160c1b3200110e0c1b32011fd09a03",
+      "expected_bytecode_hex": "00340305180e1b330013100e1b33011fd09a03",
       "expected_chunks": [
-        "md1qqqqqvcrq5tqcxejqqgsurqmxgq3l5y6qvpw2q0t3k6rn26"
+        "md1qqqqqdqrq5vquxenqqf3qrsmxvq3l5y6qvmwjyf45jzsyje"
       ],
       "expected_wallet_id_words": [
-        "retire",
-        "sudden",
-        "diet",
-        "caught",
-        "rotate",
-        "similar",
-        "just",
-        "maximum",
-        "dinner",
-        "office",
-        "casual",
-        "region"
+        "delay",
+        "box",
+        "chief",
+        "guide",
+        "spy",
+        "wing",
+        "model",
+        "figure",
+        "initial",
+        "cheap",
+        "suggest",
+        "scare"
       ]
     },
     {
       "id": "e12",
       "description": "E12 — Liana Expanding Multisig 2-of-2 + recovery key",
       "policy": "wsh(or_d(multi(2,@0/**,@1/**),and_v(v:older(52560),pk(@2/**))))",
-      "expected_bytecode_hex": "003303051619020232003201110e1fd09a030c1b3202",
+      "expected_bytecode_hex": "00340305180802023300330113101fd09a030e1b3302",
       "expected_chunks": [
-        "md1qqqqqvcrq5tpjqszxgqryqg3pc0apxsrpsdnyqssxxvfplwl3dfq"
+        "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
       "expected_wallet_id_words": [
-        "hire",
-        "earth",
-        "doll",
-        "pride",
-        "naive",
-        "one",
-        "universe",
-        "shell",
-        "brain",
-        "sign",
-        "private",
-        "vivid"
+        "ginger",
+        "rival",
+        "verify",
+        "action",
+        "reveal",
+        "wise",
+        "embody",
+        "leader",
+        "vessel",
+        "iron",
+        "olive",
+        "shell"
       ]
     },
     {
       "id": "e13",
       "description": "E13 — HTLC with sha256 preimage",
       "policy": "wsh(andor(pk(@0/**),sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),and_v(v:pk(@1/**),older(144))))",
-      "expected_bytecode_hex": "00330305130c1b320020b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9110e0c1b32011f9001",
+      "expected_bytecode_hex": "00340305150e1b330020b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde913100e1b33011f9001",
       "expected_chunks": [
-        "md1qqqqqvcrq5fscxejqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6g3pcxpkvspr7gqztl3xmvww76jynpc"
+        "md1qqqqqdqrq52suxenqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6gnzq8pkvcpr7gqzpv687uhcq22xrgn"
       ],
       "expected_wallet_id_words": [
-        "rotate",
-        "axis",
-        "genre",
-        "abuse",
-        "craft",
-        "hotel",
-        "pulp",
-        "beef",
-        "frost",
-        "cruel",
-        "fan",
-        "sure"
+        "agent",
+        "eternal",
+        "ordinary",
+        "pistol",
+        "orchard",
+        "crack",
+        "vote",
+        "engine",
+        "rapid",
+        "sure",
+        "donkey",
+        "front"
       ]
     },
     {
       "id": "e14",
       "description": "E14 — Decaying multisig 3-of-3 to 2-of-3 with 6 distinct keys",
       "policy": "wsh(or_d(multi(3,@0/**,@1/**,@2/**),and_v(v:older(52560),multi(2,@3/**,@4/**,@5/**))))",
-      "expected_bytecode_hex": "0033030516190303320032013202110e1fd09a03190203320332043205",
+      "expected_bytecode_hex": "003403051808030333003301330213101fd09a03080203330333043305",
       "expected_chunks": [
-        "md1qqqqqvcrq5tpjqcrxgqryqfjqggsu87sngp3jqsrxgpnyppjq5srzxkawjf8v05"
+        "md1qqqqqdqrq5vqsqcrxvqrxqfnqgf3q87sngpssqsrxvpnxppnq5ks0mr37t4l8v6"
       ],
       "expected_wallet_id_words": [
-        "gate",
-        "february",
-        "first",
-        "reveal",
-        "enable",
-        "green",
-        "pencil",
-        "galaxy",
-        "float",
-        "empty",
-        "gold",
-        "head"
+        "agent",
+        "purse",
+        "mystery",
+        "lock",
+        "remind",
+        "concert",
+        "evidence",
+        "poet",
+        "entire",
+        "slogan",
+        "garden",
+        "convince"
       ]
     },
     {
       "id": "coldcard",
       "description": "Coldcard — representative BIP 388 export shape (2-of-3 sortedmulti)",
       "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
-      "expected_bytecode_hex": "00330305090203320032013202",
+      "expected_bytecode_hex": "00340305090203330033013302",
       "expected_chunks": [
-        "md1qqqqqvcrq5ysyqejqqeqzvszz258fczketjg6"
+        "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
       "expected_wallet_id_words": [
-        "payment",
-        "prosper",
-        "canvas",
-        "exercise",
-        "sniff",
-        "robot",
-        "dynamic",
-        "attitude",
-        "assist",
-        "sell",
-        "control",
-        "enroll"
+        "rent",
+        "lecture",
+        "ghost",
+        "home",
+        "word",
+        "imitate",
+        "cannon",
+        "penalty",
+        "hen",
+        "scene",
+        "pretty",
+        "tribe"
       ]
     }
   ],

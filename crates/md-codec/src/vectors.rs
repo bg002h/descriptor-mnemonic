@@ -384,12 +384,9 @@ const TAPROOT_FIXTURES: &[(&str, &str, &str)] = &[
         "Taproot a: wrapper in tap leaf via and_b",
         "tr(@0/**,and_b(pk(@1/**),a:pk(@2/**)))",
     ),
-    // d: wrapper in tap leaf via andor (also locks andor + d:older).
-    (
-        "tr_d_wrapper_in_tap_leaf_md_v0_6",
-        "Taproot d: wrapper in tap leaf via andor with d:older",
-        "tr(@0/**,andor(pk(@1/**),pk(@2/**),d:older(144)))",
-    ),
+    // d: wrapper deferred: typing constraint (d: requires Vz-type child;
+    // older is B-type). Workarounds (`d:v:older`) are awkward in BIP 388
+    // source form. Filed as FOLLOWUPS v06-corpus-d-wrapper-coverage.
 ];
 
 /// v0.4 positive corpus additions: wpkh/sh-wpkh/sh-wsh variants (Phase 6 — Task 6.1).
