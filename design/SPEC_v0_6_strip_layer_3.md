@@ -1,6 +1,6 @@
 # v0.6 Design Spec: Strip Layer 3 (signer-compatibility curation)
 
-**Status:** Draft (2026-04-28)
+**Status:** Draft (2026-04-28; round-1 review folded in)
 **Supersedes (in concept):** Phase D's `validate_tap_leaf_subset` enforcement (commit `6f6eae9`) and the BIP draft MUST clause at `bip/bip-mnemonic-descriptor.mediawiki:547`.
 **Companion documents:**
 - Rationale: [`MD_SCOPE_DECISION_2026-04-28.md`](./MD_SCOPE_DECISION_2026-04-28.md)
@@ -105,9 +105,7 @@ The post-rework Tag enum:
 0x23  Hash160                     // hash160(h)
 
 // (gap: 0x24–0x31 — formerly Reserved* descriptor-codec inline-key forms; now unallocated, return None from from_byte)
-
-// Bare top-level (1)
-0x32  Bare                        // bare(SCRIPT) — top-level only; rejected by encoder per scope (kept allocated for completeness)
+// (gap: 0x32 — formerly Placeholder in v0.5; now unallocated. Placeholder moves to 0x33 to avoid ambiguity with v0.5 strings under transcoding mistakes — see §2.4)
 
 // MD-specific framing (3)
 0x33  Placeholder                 // @i — placeholder for key-info-vector index
@@ -117,9 +115,15 @@ The post-rework Tag enum:
 // 0x36–0xFF: unallocated (return None from from_byte)
 ```
 
+**Note on `Tag::Bare` removal.** v0.5's `Tag::Bare` (0x07) is **dropped entirely** in v0.6 per the round-1 spec review. Rationale: `Descriptor::Bare` is permanently rejected by the encoder per BIP draft scope (encode.rs:176-179) and `Tag::Bare` was never used as an inner tag, so the variant is dead weight. Its byte 0x07 is reused for `TapTree` (the more useful adjacent-to-Tr placement). The implementation must also drop the `Tag::Bare => "bare"` arm in `tag_to_bip388_name` at decode.rs:822.
+
+**Note on `Fingerprints = 0x35` retention.** The byte stays put rather than relocating into the contiguous framing block at 0x33–0x34 because the v0.2 fingerprints-block byte has shipped as part of the wire format; an external decoder that already inspects bytecode for the fingerprints flag pattern continues to work after the rework on this specific byte. (Other bytes change; this one preserves continuity.)
+
+**Note on byte 0x32 unallocation.** v0.5 emitted `Placeholder = 0x32` in every encoded MD string. Reusing 0x32 in v0.6 for any other operator would silently misinterpret a v0.5 string fed into a v0.6 decoder. Leaving 0x32 unallocated (return `None` from `from_byte`) surfaces such transcoder mistakes as a clean error (`UnknownTag(0x32)`) rather than data corruption.
+
 ### 2.3 Byte-for-byte changes from v0.5
 
-Every existing operator's byte changes. Worst case: every fixture in v0.1.json + v0.2.json regenerates with new bytecode. Selected before/after pairs:
+Every tap-leaf-bearing existing operator's byte may change. Worst case: every fixture in v0.1.json + v0.2.json regenerates with new bytecode. Full table:
 
 | Operator | v0.5 Tag | v0.6 Tag |
 |---|---|---|
@@ -130,7 +134,7 @@ Every existing operator's byte changes. Worst case: every fixture in v0.1.json +
 | `Wpkh` | 0x04 | 0x04 (unchanged) |
 | `Wsh` | 0x05 | 0x05 (unchanged) |
 | `Tr` | 0x06 | 0x06 (unchanged) |
-| `Bare` | 0x07 | 0x32 (moved to high range) |
+| `Bare` | 0x07 | (DROPPED — variant removed; not allocated) |
 | `TapTree` | 0x08 | 0x07 (moved adjacent to Tr) |
 | `SortedMulti` | 0x09 | 0x09 (unchanged byte; now grouped with multisig family) |
 | `Alt` | 0x0A | 0x0C |
@@ -160,12 +164,12 @@ Every existing operator's byte changes. Worst case: every fixture in v0.1.json +
 | `Hash256` | 0x21 | 0x21 (unchanged) |
 | `Ripemd160` | 0x22 | 0x22 (unchanged) |
 | `Hash160` | 0x23 | 0x23 (unchanged) |
-| `Reserved*` 0x24–0x31 | 14 variants | (dropped — `from_byte` returns `None`) |
+| `Reserved*` 0x24–0x31 | 14 variants | (DROPPED — variants removed; `from_byte` returns `None`) |
 | `Placeholder` | 0x32 | 0x33 |
 | `SharedPath` | 0x33 | 0x34 |
 | `Fingerprints` | 0x35 | 0x35 (unchanged) |
 
-Note: `0x07 ↔ 0x08` swap (Bare ↔ TapTree) and `0x08 ↔ 0x19` rotation (Multi adjacent to SortedMulti, then MultiA, then SortedMultiA new) are the structural changes. Wrappers and logical operators shift by 2 bytes (0x0A→0x0C etc.) because the multisig family expanded into the 0x08-0x0B range. Constants/top-level/keys/timelocks/hashes/Fingerprints stay byte-identical.
+**Structural summary.** `TapTree` moves down to 0x07 (adjacent to Tr=0x06); `Bare` is dropped entirely (its v0.5 byte 0x07 is reused for TapTree); the multisig family expands into 0x08–0x0B (Multi, SortedMulti, MultiA, SortedMultiA-NEW); wrappers (a:/s:/c:/d:/v:/j:/n:) and logical operators (and_v..thresh) all shift by 2 from their v0.5 positions because the multisig family grew. Constants (False/True), top-level descriptor wrappers (Pkh/Sh/Wpkh/Wsh/Tr), keys (PkK/PkH/RawPkH), timelocks (After/Older), hashes (Sha256/Hash256/Ripemd160/Hash160), and `Fingerprints` are byte-identical from v0.5 to v0.6. Placeholder/SharedPath shift by 1 (each moves up one byte) so byte 0x32 (formerly Placeholder) is unallocated post-rework — see §2.2 "Note on byte 0x32 unallocation".
 
 ### 2.4 Impact on family-stable SHAs
 
@@ -208,9 +212,11 @@ fn encode_template(...) -> Result<(), Error> {
 }
 ```
 
-`validate_tap_leaf_subset` and `validate_tap_leaf_terminal` remain `pub fn` in the same file. They can be called explicitly by consumer code that wants signer-aware validation. Their rustdoc updates to make this plain.
+`validate_tap_leaf_subset` and `validate_tap_leaf_terminal` remain `pub fn` in the same file. They can be called explicitly by consumer code that wants signer-aware validation. Their rustdoc updates to make this plain. Note that since `validate_tap_leaf_subset` becomes the only remaining caller of `tap_terminal_name`, the latter's rustdoc should clarify it is no longer the universal naming hook for tap-context errors — only the explicit-call validator path.
 
-`encode_tap_terminal`'s catch-all is broadened to dispatch any in-Tag-set Terminal variant. The defensive arm that produced `TapLeafSubsetViolation` is removed (the unconditional Tag emission handles it; type errors surface via miniscript's own type system at parse time).
+`encode_tap_terminal`'s catch-all is replaced by an **exhaustive match** (option (a) per the round-1 review). This is achievable because `Terminal` is NOT `#[non_exhaustive]` in the pinned miniscript revision (`apoelstra/rust-miniscript` rev `f7f1689b...` per `Cargo.toml:38`). The exhaustive match emits the Tag byte unconditionally for every `Terminal<DescriptorPublicKey, Tap>` variant — **including tap-illegal variants `Terminal::Multi` and `Terminal::SortedMulti`**. Rationale: the new "format is neutral" framing places the upstream gate in miniscript's parser (which refuses to construct `Terminal::Multi` in a `Tap` context). Emitting a wire byte for hand-built tap-illegal ASTs is harmless because no decoder will produce that AST shape from a tap-context decode (the decoder has its own context-aware dispatcher).
+
+If miniscript is ever upgraded to make `Terminal` `#[non_exhaustive]`, the compiler will force a re-evaluation at that boundary — a wildcard arm returning `Error::SubsetViolation { operator: format!("{:?}", term), leaf_index: None }` is the correct fallback (the explicit-call validator path's error variant; see §5).
 
 ### 3.3 `Tag::SortedMultiA` encoding
 
@@ -237,41 +243,73 @@ Two gates:
 - Remove the explicit `validate_tap_leaf_subset` calls at decode.rs:295 and decode.rs:802.
 - The `Tag::TapTree` depth-128 ceiling enforcement in `decode_tap_subtree` remains untouched — it's BIP 341 consensus, not signer policy.
 
-### 4.3 New tap-context Tag arms
+### 4.3 New tap-context Tag arms (substantive new code)
 
-The decoder gains explicit handling for tap-context Tags previously rejected:
+**Audit (per round-1 review).** The current `decode_tap_terminal` (decode.rs:626-730) covers only the Phase D Coldcard subset (`PkK`/`PkH`/`MultiA`/`Older`/`AndV`/`OrD`/`Check`/`Verify`) plus a defensive `Tag::TapTree` rejection arm and a catch-all returning `TapLeafSubsetViolation`. **Every other Tag listed below is absent from `decode_tap_terminal` and must be added — ~20 new arms.** This is real new code, not "remove the catch-all". The Segwitv0 dispatcher `decode_terminal` (decode.rs:324-583) has all of these arms; the implementations can be largely copy-adapted (read the same payload format, recurse via `decode_tap_miniscript` instead of `decode_miniscript`, return `Terminal<_, Tap>` instead of `Terminal<_, Segwitv0>`).
 
-| Tag | Terminal | Notes |
-|---|---|---|
-| `SortedMultiA` (NEW) | `Terminal::SortedMultiA(thresh)` | Read `[k][n][key_1]...[key_n]` like `MultiA`; construct `Threshold` with sorted-multisig discipline |
-| `Sha256` | `Terminal::Sha256(hash)` | Read 32-byte payload |
-| `Hash256` | `Terminal::Hash256(hash)` | Read 32-byte payload |
-| `Ripemd160` | `Terminal::Ripemd160(hash)` | Read 20-byte payload |
-| `Hash160` | `Terminal::Hash160(hash)` | Read 20-byte payload |
-| `After` | `Terminal::After(lock)` | Read varint, construct AbsLockTime |
-| `AndB` | `Terminal::AndB(X, Y)` | Two recursive children |
-| `AndOr` | `Terminal::AndOr(X, Y, Z)` | Three recursive children |
-| `OrB` | `Terminal::OrB(X, Z)` | Two recursive children |
-| `OrC` | `Terminal::OrC(X, Z)` | Two recursive children |
-| `OrI` | `Terminal::OrI(X, Z)` | Two recursive children |
-| `Thresh` | `Terminal::Thresh(thresh)` | Read `[k][n][X_1]...[X_n]` |
-| `Alt`/`Swap`/`DupIf`/`NonZero`/`ZeroNotEqual` | wrapper terminals | Single recursive child |
+**Add/Keep checklist** (use as a flat to-do during implementation):
 
-Most of these decoder arms ALREADY EXIST in `decode_tap_terminal` from Phase D (the encoder/decoder symmetry was implemented at Phase D time even though `validate_tap_leaf_subset` was the gate). Audit during implementation confirms which arms need adding versus only the catch-all needing removal.
+| Tag | Status | Terminal | Notes |
+|---|---|---|---|
+| `False` | **ADD** | `Terminal::False` | No payload |
+| `True` | **ADD** | `Terminal::True` | No payload |
+| `PkK` | KEEP | `Terminal::PkK(key)` | Existing arm |
+| `PkH` | KEEP | `Terminal::PkH(key)` | Existing arm |
+| `RawPkH` | **ADD** | `Terminal::RawPkH(hash160)` | Read 20-byte payload |
+| `Multi` | **ADD** | `Terminal::Multi(thresh)` | Read `[k][n][key_1]...[key_n]`; tap-illegal by miniscript typing — adding the arm completes the exhaustive match symmetric with the encoder, but in practice rust-miniscript refuses to construct this Terminal in a Tap context, so the arm is unreachable at runtime via parsed inputs. Surfacing the wire byte if encountered is consistent with §3.2 option (a). |
+| `SortedMulti` | **ADD** | `Terminal::SortedMulti(thresh)` | Same shape as `Multi`; same tap-illegal note |
+| `MultiA` | KEEP | `Terminal::MultiA(thresh)` | Existing arm |
+| `SortedMultiA` (NEW) | **ADD** | `Terminal::SortedMultiA(thresh)` | Read `[k][n][key_1]...[key_n]` like `MultiA`; construct `Threshold` with sorted-multisig discipline |
+| `Alt` | **ADD** | `Terminal::Alt(X)` | Single recursive child via `decode_tap_miniscript` |
+| `Swap` | **ADD** | `Terminal::Swap(X)` | Single recursive child |
+| `Check` | KEEP | `Terminal::Check(X)` | Existing arm |
+| `DupIf` | **ADD** | `Terminal::DupIf(X)` | Single recursive child |
+| `Verify` | KEEP | `Terminal::Verify(X)` | Existing arm |
+| `NonZero` | **ADD** | `Terminal::NonZero(X)` | Single recursive child |
+| `ZeroNotEqual` | **ADD** | `Terminal::ZeroNotEqual(X)` | Single recursive child |
+| `AndV` | KEEP | `Terminal::AndV(X, Y)` | Existing arm |
+| `AndB` | **ADD** | `Terminal::AndB(X, Y)` | Two recursive children |
+| `AndOr` | **ADD** | `Terminal::AndOr(X, Y, Z)` | Three recursive children |
+| `OrB` | **ADD** | `Terminal::OrB(X, Z)` | Two recursive children |
+| `OrC` | **ADD** | `Terminal::OrC(X, Z)` | Two recursive children |
+| `OrD` | KEEP | `Terminal::OrD(X, Z)` | Existing arm |
+| `OrI` | **ADD** | `Terminal::OrI(X, Z)` | Two recursive children |
+| `Thresh` | **ADD** | `Terminal::Thresh(thresh)` | Read `[k][n][X_1]...[X_n]` |
+| `After` | **ADD** | `Terminal::After(lock)` | Read varint, construct AbsLockTime per the existing `decode_terminal` pattern at decode.rs:481-490 |
+| `Older` | KEEP | `Terminal::Older(lock)` | Existing arm |
+| `Sha256` | **ADD** | `Terminal::Sha256(hash)` | Read 32-byte payload; `bitcoin::hashes::sha256::Hash::from_byte_array` (internal byte order — matches encoder; see §6.3 byte-order note) |
+| `Hash256` | **ADD** | `Terminal::Hash256(hash)` | Read 32-byte payload; `miniscript::hash256::Hash::from_byte_array` (internal byte order, NOT reversed-display-order — matches encoder.rs:316-319) |
+| `Ripemd160` | **ADD** | `Terminal::Ripemd160(hash)` | Read 20-byte payload; `bitcoin::hashes::ripemd160::Hash::from_byte_array` |
+| `Hash160` | **ADD** | `Terminal::Hash160(hash)` | Read 20-byte payload; `bitcoin::hashes::hash160::Hash::from_byte_array` |
+
+**Total: 8 KEEP + 20 ADD = 28 arms** in the post-rework `decode_tap_terminal`. The catch-all becomes the standard "Tag valid in some context but not here" rejection (e.g., a top-level descriptor tag like `Tag::Wsh` showing up where a tap leaf is expected); per §3.2 option (a), in-Tag-set tap-illegal Terminals (Multi/SortedMulti) get explicit arms rather than catch-all rejection.
 
 ---
 
-## §5. Error type — `TapLeafSubsetViolation` retained
+## §5. Error type — `TapLeafSubsetViolation` renamed to `SubsetViolation`
 
-### 5.1 No structural change
+### 5.1 Variant rename
 
-`Error::TapLeafSubsetViolation { operator: String, leaf_index: Option<usize> }` (variant `#[non_exhaustive]`) stays as-is. It's no longer raised by the default encoder/decoder paths but is the canonical error variant for explicit `validate_tap_leaf_subset(..)` calls.
+Per the round-1 review (IMP-6 / nice-to-have folded inline), `Error::TapLeafSubsetViolation { operator: String, leaf_index: Option<usize> }` is **renamed** to `Error::SubsetViolation { operator: String, leaf_index: Option<usize> }`. Field shape unchanged.
+
+Rationale: the variant name `TapLeafSubsetViolation` presumes Tap-context, but the explicit-call validator infrastructure (`validate_tap_leaf_subset` retained as `pub fn`) could plausibly be extended to Segwitv0 subsets later. Pre-1.0 + breaking-release boundary makes this rename cheap.
 
 ### 5.2 Rustdoc update
 
-The variant's rustdoc clarifies:
+The renamed variant's rustdoc:
 
-> Raised by explicit `validate_tap_leaf_subset` invocations when a tap-leaf miniscript contains an operator outside the caller's signer subset. v0.5 produced this error during default encode/decode paths; v0.6 retains the variant for opt-in validator paths only.
+> Raised by explicit `validate_tap_leaf_subset` invocations (and the future opt-in `EncodeOptions::with_signer_subset(...)` API) when a wallet-policy AST contains an operator outside the caller's signer subset. v0.5 produced this error during default encode/decode paths; v0.6 retains the variant for opt-in validator paths only. The variant name was renamed from `TapLeafSubsetViolation` to `SubsetViolation` in v0.6 to allow future Segwitv0 subset use without further rename.
+
+### 5.3 Use sites
+
+In v0.5, `TapLeafSubsetViolation` was raised at three sites:
+- `encode.rs` — encoder default-path call to `validate_tap_leaf_subset` (REMOVED per §3.2)
+- `encode.rs` — `encode_tap_terminal` catch-all (REMOVED per §3.2)
+- `decode.rs:295` and `decode.rs:802` — explicit calls after AST reconstruction (REMOVED per §4.2)
+
+In v0.6, `SubsetViolation` is raised only by:
+- The retained `pub fn validate_tap_leaf_subset` and `pub fn validate_tap_leaf_terminal` when explicit-called.
+- (Future) the `EncodeOptions::with_signer_subset(...)` opt-in API path; deferred to `md-signer-compat-checker-separate-library`.
 
 ---
 
@@ -279,7 +317,9 @@ The variant's rustdoc clarifies:
 
 ### 6.1 Positive vectors — newly admitted shapes
 
-Add to `crates/md-codec/src/vectors.rs` (`CORPUS_FIXTURES` or its v0.6 equivalent):
+Add to `crates/md-codec/src/vectors.rs` (`CORPUS_FIXTURES` or its v0.6 equivalent). The corpus aims for at least one round-trip fixture per newly-admitted Terminal variant so the v0.6 byte form is locked for every operator the strip newly admits.
+
+**Centerpiece + Ledger/Coldcard documented shapes (10):**
 
 | Fixture id | Policy | Purpose |
 |---|---|---|
@@ -293,6 +333,31 @@ Add to `crates/md-codec/src/vectors.rs` (`CORPUS_FIXTURES` or its v0.6 equivalen
 | `tr_pkh_in_tap_leaf_md_v0_6` | `tr(@0/**, and_v(v:pkh(@1/**), older(144)))` | `pkh()` desugars to `c:pk_h()` and round-trips today; locks the round-trip |
 | `tr_multi_leaf_with_sortedmulti_a_md_v0_6` | `tr(@0/**, {sortedmulti_a(2, @1/**, @2/**), pk(@3/**)})` | `sortedmulti_a` inside multi-leaf TapTree (Coldcard's documented shape) |
 | `tr_complex_recovery_path_md_v0_6` | `tr(@0/**, {and_v(v:pkh(@1/**), older(1000)), pk(@2/**)})` | Coldcard's documented recovery-path shape |
+
+**Per-Terminal coverage (8 — folded in from round-1 review IMP-5):**
+
+| Fixture id | Policy | Locks byte form for |
+|---|---|---|
+| `tr_andor_in_tap_leaf_md_v0_6` | `tr(@0/**, andor(pk(@1/**), pk(@2/**), pk(@3/**)))` | `andor` (3 children) |
+| `tr_or_c_in_tap_leaf_md_v0_6` | `tr(@0/**, or_c(pk(@1/**), v:pk(@2/**)))` | `or_c` |
+| `tr_or_i_in_tap_leaf_md_v0_6` | `tr(@0/**, or_i(pk(@1/**), pk(@2/**)))` | `or_i` |
+| `tr_hash256_htlc_md_v0_6` | `tr(@0/**, and_v(v:hash256(0xdead...beef), pk(@1/**)))` | `hash256` (locks internal-byte-order encoding per §6.3) |
+| `tr_ripemd160_htlc_md_v0_6` | `tr(@0/**, and_v(v:ripemd160(0xdeadbeef...), pk(@1/**)))` | `ripemd160` |
+| `tr_hash160_htlc_md_v0_6` | `tr(@0/**, and_v(v:hash160(0xdeadbeef...), pk(@1/**)))` | `hash160` |
+| `tr_a_wrapper_in_tap_leaf_md_v0_6` | `tr(@0/**, and_b(pk(@1/**), a:pk(@2/**)))` | `a:` wrapper (Tag::Alt) |
+| `tr_d_wrapper_in_tap_leaf_md_v0_6` | `tr(@0/**, andor(pk(@1/**), pk(@2/**), d:older(144)))` | `d:` wrapper (Tag::DupIf); also locks `andor` further |
+| `tr_j_wrapper_in_tap_leaf_md_v0_6` | (TBD — `j:` requires a `B`-type child returning nonzero; pattern TBD during implementation) | `j:` wrapper (Tag::NonZero) |
+| `tr_n_wrapper_in_tap_leaf_md_v0_6` | (TBD — similar typing constraint on `n:`) | `n:` wrapper (Tag::ZeroNotEqual) |
+
+If `j:` and `n:` round-trip patterns are awkward to construct via `Descriptor::from_str` (BIP 388 source form often doesn't naturally produce these wrappers — the parser typically handles them via canonical-form expansion), consider hand-constructing the AST in a unit test rather than via a corpus fixture, or accept these as round-trip-tested elsewhere via the encoder's exhaustiveness check at the type level.
+
+**Total:** 18 corpus fixtures + 2 hand-AST tests if `j:`/`n:` corpus is awkward. Every newly-admitted Terminal in §4.3's "ADD" list has at least one round-trip exercise.
+
+### 6.3 Hash terminal byte order (per round-1 review Q3)
+
+All four hash terminals encode their **internal** byte order (NOT reversed-display-order). For `Sha256`/`Ripemd160`/`Hash160`, internal byte order coincides with network/wire order. For `Hash256`, internal byte order is the SHA256d internal order, NOT the conventional reversed-display-order — this is documented in `crates/md-codec/src/bytecode/encode.rs:316-319` and is invariant from v0.5 to v0.6.
+
+The new corpus vectors pin specific byte sequences for each hash terminal. Implementers regenerating fixtures must use `Hash::from_byte_array(...)` from rust-bitcoin (which interprets bytes as internal order) rather than `Hash::from_str("...")` (which interprets the canonical reversed-display-order hex string).
 
 ### 6.2 Negative vectors — flips and removals
 
@@ -361,7 +426,24 @@ the proposed <code>md-signer-compat</code> crate.
 
 ### 7.3 Tag table updates
 
-The BIP draft's Tag table (location TBD by audit during implementation; likely §"Bytecode" or similar) updates to the v0.6 layout per §2.2.
+The BIP draft Tag table at `bip/bip-mnemonic-descriptor.mediawiki:371-453` updates to the v0.6 layout per §2.2. Specifically:
+
+- **Drop** the `Tag::Bare` row (was 0x07).
+- **Add** the `Tag::SortedMultiA` row at 0x0B with description "<code>sortedmulti_a(k, ...)</code> — Tapscript sorted multisig (BIP 388 / rust-miniscript extension; not in BIP 379)".
+- **Renumber** every operator from 0x07 onward per §2.3's table.
+- **Drop** the 14 `Reserved*` rows for 0x24–0x31.
+
+The prose paragraph at `bip/bip-mnemonic-descriptor.mediawiki:455` (currently "Tags 0x24–0x31 are reserved by descriptor-codec for inline-key forms; v1+ may expose them for foreign-xpub support if/when WDM extends beyond pure BIP-388") is **rewritten** to:
+
+> Tags 0x24–0x31 are unallocated. (In MD v0.5 and earlier, these bytes were reserved for descriptor-codec inline-key compatibility; MD v0.6 dropped them since MD's BIP-388 wallet-policy framing forbids inline keys. See the project's `MD_SCOPE_DECISION_2026-04-28.md` design document for rationale.)
+
+Tag 0x32 (formerly Placeholder; now unallocated) and Tag 0x34 (reserved-invalid) get a one-line note each:
+
+> Tag 0x32 is unallocated in v0.6. (In v0.5 it was the Placeholder framing tag; v0.6 moves Placeholder to 0x33 and intentionally leaves 0x32 vacant so any v0.5→v0.6 transcoding mistake surfaces as a clean `from_byte=None` error rather than data corruption.)
+
+> Tag 0x34 is reserved-invalid (no allocation; preserved across v0.5→v0.6).
+
+Tag 0x36+ continues to read "reserved" (no change).
 
 ### 7.4 Status header
 
@@ -395,11 +477,14 @@ Identical paragraph plus (if a "Limitations" or "Caveats" section exists) a sent
 
 For inclusion in `MIGRATION.md`:
 
-1. **Tag-space rework**: every existing tap-leaf bytecode regenerates. Consumers depending on specific Tag byte values (e.g., parsing MD bytecode in non-Rust tooling) need to update their Tag tables to v0.6.
-2. **Validator default flip**: encoder no longer raises `TapLeafSubsetViolation` by default. Callers depending on this rejection for safety must invoke `validate_tap_leaf_subset` explicitly.
+1. **Tag-space rework**: every tap-leaf-bearing bytecode regenerates. Consumers depending on specific Tag byte values (e.g., parsing MD bytecode in non-Rust tooling) need to update their Tag tables to the v0.6 layout per §2.2/§2.3.
+2. **Validator default flip**: encoder/decoder no longer raise `SubsetViolation` (formerly `TapLeafSubsetViolation`) by default. Callers depending on this rejection for safety must invoke `validate_tap_leaf_subset` explicitly.
 3. **`DecodedString.data` field removed** (already shipped in `d79125d`; reaffirm in MIGRATION).
-4. **`Reserved*` Tag variants removed**: any code matching on the 14 `ReservedOrigin`/`ReservedNoOrigin`/etc. variants will not compile under v0.6. These bytes (0x24–0x31) now return `None` from `Tag::from_byte`.
-5. **Tag enum is `#[non_exhaustive]`**: new variants in v0.6 are additive in spirit, but the Tag *byte values* of existing variants change. Any code matching by byte value rather than enum variant must be updated.
+4. **`Reserved*` Tag variants removed**: any code matching on the 14 `ReservedOrigin`/`ReservedNoOrigin`/etc. variants will not compile under v0.6. These bytes (0x24–0x31) now return `None` from `Tag::from_byte`. Code that defensively matched these to error out can simply rely on the `None` arm; the compile error catches the safety concern.
+5. **`Tag::Bare` variant removed**: any code matching on `Tag::Bare` will not compile under v0.6. The byte 0x07 is reused for `TapTree`. `Descriptor::Bare` continues to be rejected at the encoder via `PolicyScopeViolation` (unchanged behaviour).
+6. **`Error::TapLeafSubsetViolation` renamed to `Error::SubsetViolation`**: any code matching on the old variant name will not compile under v0.6. Field shape is unchanged (`{ operator: String, leaf_index: Option<usize> }`); only the variant name changes. Sed `s/TapLeafSubsetViolation/SubsetViolation/g` over consumer code is sufficient.
+7. **Tag enum is `#[non_exhaustive]`**: new variants in v0.6 (`SortedMultiA`) are additive in spirit, but the Tag *byte values* of existing variants change. Any code matching by byte value rather than enum variant must be updated.
+8. **v0.5.x → v0.6.0 wire-format break**: v0.5.x-encoded MD strings are NOT decodable under v0.6 (different Tag bytes for almost every tap-leaf operator). v0.6 is a clean break. No deprecation cycle, no v0.5-compat decoder shim — pre-1.0 + no users yet.
 
 ### 9.2 Wire-format compatibility
 
@@ -431,26 +516,28 @@ The v0.6.0 release is acceptance-ready when:
 3. **Rustdoc CI**: `RUSTDOCFLAGS="-D warnings" cargo doc -p md-codec --no-deps` clean.
 4. **Vector verification**: `cargo run --bin gen_vectors -- --verify crates/md-codec/tests/vectors/v0.1.json` and the v0.2.json equivalent pass (both regenerated and SHA-pinned to v0.6 values).
 5. **Round-trip suite**: every fixture in `CORPUS_FIXTURES` round-trips byte-identically (encode → decode → re-encode equals original).
-6. **BIP draft**: §"Taproot tree" and §"Signer compatibility (informational)" rendered correctly; Tag table matches §2.2 final layout.
-7. **CHANGELOG + MIGRATION**: `[0.6.0]` section in CHANGELOG; `v0.5.x → v0.6.0` section in MIGRATION covering all 5 breaking-changes items in §9.1.
+6. **BIP draft**: §"Taproot tree" and §"Signer compatibility (informational)" rendered correctly; Tag table at lines 371-453 matches §2.2 final layout; the `Reserved*` paragraph at line 455 is rewritten per §7.3; the `Tag::Bare` row is dropped; the `Tag::SortedMultiA` row is added.
+7. **CHANGELOG + MIGRATION**: `[0.6.0]` section in CHANGELOG; `v0.5.x → v0.6.0` section in MIGRATION covering all 8 breaking-changes items in §9.1.
 8. **Phase D agent report forward-pointer**: already added (commit `93ac9ae`).
 9. **Reconciliation**: every implementation-phase agent report in `design/agent-reports/` accounted for; nits/nice-to-haves filed in FOLLOWUPS, criticals/importants addressed inline, blockers escalated.
+10. **Error coverage**: `tests/error_coverage.rs` (the exhaustiveness CI gate) passes with the renamed `Error::SubsetViolation`. The strum::EnumIter mirror table in that file must be updated to match.
+11. **No regression on the v0.6 wire-format invariants**: per-operator round-trip tests (one per newly-admitted Terminal in §6.1) all pass. The bare-form `tr_sortedmulti_a_2of3_md_v0_6` fixture serves as the canonical SortedMultiA Tag byte-form lock.
 
 ---
 
-## §12. Open questions for review
+## §12. Open questions — resolved by round-1 review
 
-These are flagged for the spec-review agent to either confirm, reject, or refine:
+All five questions resolved by the spec reviewer (agent report at `design/agent-reports/v0-6-spec-review-1.md`). Resolutions folded inline into §§2-11; left here as a quick-reference closure log.
 
-1. **Tag layout finalization.** §2.2 proposes one specific reorganization. Is the chosen layout optimal (e.g., should `TapTree` stay at 0x08 for proximity to `Tr=0x06` rather than moving to 0x07)? Should `Bare` survive at all if it's still rejected by the encoder?
+1. **Tag layout finalization.** RESOLVED — §2.2 layout endorsed: `TapTree` at 0x07 (adjacent to `Tr=0x06`); multisig family contiguous at 0x08–0x0B; wrappers at 0x0C–0x12; logical operators at 0x13–0x1A; `Fingerprints=0x35` retained for v0.2-shipped wire-byte continuity. Rationale notes added inline in §2.2.
 
-2. **`encode_tap_terminal` catch-all behaviour.** v0.5 returned `TapLeafSubsetViolation` for unmatched arms. v0.6 needs to either (a) be exhaustive over all in-Tag-set Terminals (preferred — exhaustiveness checked by the compiler), or (b) keep a catch-all that returns a different error variant (`UnsupportedOperator` or similar). §3.2 leans (a). Confirm or refine.
+2. **`encode_tap_terminal` catch-all behaviour.** RESOLVED — option (a): exhaustive match emitting wire bytes for all in-Tag-set Terminals (including tap-illegal `Multi`/`SortedMulti`). Compiler-checked exhaustiveness; future miniscript upgrades that add Terminal variants will force re-evaluation. Detail in §3.2.
 
-3. **Hash terminal byte order in `Sha256(h)` etc.** Is the existing 32-byte payload encoding little-endian, big-endian, or raw-network-order? Need to audit during implementation; spec leaves this to the implementation phase since the byte order is invariant from v0.5.
+3. **Hash terminal byte order.** RESOLVED — all four hash terminals encode internal byte order (NOT reversed-display-order); invariant from v0.5. Detail in §6.3 with citation to `encode.rs:316-319`.
 
-4. **`Tag::Bare` retention.** Currently allocated; encoder rejects `Descriptor::Bare` per scope. Should v0.6 drop `Tag::Bare` entirely (since it's never emitted)? Or keep allocated for future bare-descriptor support? §2.2 keeps it; revisit if review prefers dropping.
+4. **`Tag::Bare` retention.** RESOLVED — DROP `Tag::Bare` entirely. The variant is dead weight (encoder rejects `Descriptor::Bare` via a different path). Byte 0x07 is reused for `TapTree`. Implementation removes the `tag_to_bip388_name` `"bare"` arm. Detail in §2.2/§2.3.
 
-5. **`p2-inline-key-tags` Resolved status timing.** The entry was flipped to `wont-fix — out of scope per design` ahead of this spec landing. Should the BIP draft's existing `Reserved*` discussion be removed entirely, or kept with a "for historical context" note? §7 implicitly removes it; confirm.
+5. **`p2-inline-key-tags` BIP draft cleanup.** RESOLVED — rewrite, don't remove entirely. The BIP draft's `Reserved*` paragraph at line 455 gets a one-line historical-orientation note pointing readers at `MD_SCOPE_DECISION_2026-04-28.md` for full rationale. Exact text pinned in §7.3.
 
 ---
 

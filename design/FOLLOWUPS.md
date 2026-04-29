@@ -253,6 +253,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.7+ (future release)
 
+### `v06-spec-tag-byte-display-table` — alphabetical Tag→byte index for spec audit convenience
+
+- **Surfaced:** v0.6 spec round-1 review (agent report `v0-6-spec-review-1.md`); flagged as nice-to-have, not blocking.
+- **Where:** `design/SPEC_v0_6_strip_layer_3.md` §2.2.
+- **What:** §2.2 lists the Tag enum grouped-by-purpose (constants, top-level, framing, multisig, wrappers, logical, keys, timelocks, hashes). For audit-by-name (e.g., "where is `Hash160`?"), an alphabetical secondary listing `Tag → byte` would make spot-checks fast. Add a small subsection §2.2.1 with the alphabetical index after §2.2's grouped listing.
+- **Why deferred:** Cosmetic spec readability; doesn't affect implementation. Easy to add at any time.
+- **Status:** open
+- **Tier:** v0.6 (cosmetic spec polish; can land alongside the implementation work)
+
 ### `v0-6-release-prep-revised` — coordinate the v0.6 release plumbing under the strip framing
 
 - **Surfaced:** 2026-04-28; replaces `v0-6-release-prep` (which was framed around the now-superseded admit-set widening approach).
