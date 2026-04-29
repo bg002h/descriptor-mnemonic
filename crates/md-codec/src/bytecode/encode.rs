@@ -550,19 +550,26 @@ fn encode_tap_subtree(
     out: &mut Vec<u8>,
     placeholder_map: &HashMap<DescriptorPublicKey, u8>,
 ) -> Result<(), Error> {
+    use std::cmp::Ordering;
     let leaf_depth = leaves[*cursor].0;
-    if leaf_depth == target_depth {
-        let leaf_index = *cursor;
-        let ms = leaves[*cursor].1;
-        validate_tap_leaf_subset(ms, Some(leaf_index))?;
-        ms.encode_template(out, placeholder_map)?;
-        *cursor += 1;
-    } else if leaf_depth > target_depth {
-        out.push(Tag::TapTree.as_byte());
-        encode_tap_subtree(leaves, cursor, target_depth + 1, out, placeholder_map)?;
-        encode_tap_subtree(leaves, cursor, target_depth + 1, out, placeholder_map)?;
+    match leaf_depth.cmp(&target_depth) {
+        Ordering::Equal => {
+            let leaf_index = *cursor;
+            let ms = leaves[*cursor].1;
+            validate_tap_leaf_subset(ms, Some(leaf_index))?;
+            ms.encode_template(out, placeholder_map)?;
+            *cursor += 1;
+        }
+        Ordering::Greater => {
+            out.push(Tag::TapTree.as_byte());
+            encode_tap_subtree(leaves, cursor, target_depth + 1, out, placeholder_map)?;
+            encode_tap_subtree(leaves, cursor, target_depth + 1, out, placeholder_map)?;
+        }
+        // `leaf_depth < target_depth` is unreachable given DFS pre-order from
+        // upstream `TapTree::leaves()`; intentionally a no-op rather than panic
+        // (helper is internal; ill-formed input would surface elsewhere first).
+        Ordering::Less => {}
     }
-    // leaf_depth < target_depth is unreachable given DFS pre-order from upstream `TapTree::leaves()`
     Ok(())
 }
 
