@@ -494,7 +494,7 @@ fn cmd_from_policy(
         "segwitv0" | "wsh" => ScriptContext::Segwitv0,
         "tap" | "tr" => ScriptContext::Tap,
         other => {
-            anyhow::bail!("--context must be one of: segwitv0, tap; got {other:?}");
+            anyhow::bail!("--context must be one of: segwitv0, wsh, tap, tr; got {other:?}");
         }
     };
 

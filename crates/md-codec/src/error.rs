@@ -177,14 +177,21 @@ pub enum Error {
         got: u8,
     },
 
-    /// Policy violates the v0.1 implementation scope.
+    /// Policy violates MD's encoding scope.
     ///
-    /// v0.1 supports only the BIP 388 wallet-policy subset: `wsh()` segwit-v0
-    /// top-level, all keys placeholder-referenced, all `@i` placeholders
-    /// share one derivation path. Foreign xpubs, taproot, MuSig2, and
-    /// per-placeholder paths are deferred to v0.2+. Caller should display
-    /// the embedded message to the user.
-    #[error("policy violates v0.1 scope: {0}")]
+    /// Originally framed against the v0.1 implementation subset: `wsh()`
+    /// segwit-v0 top-level, all keys placeholder-referenced, all `@i`
+    /// placeholders share one derivation path. Subsequent versions
+    /// expanded the admitted shapes (taproot in v0.2; multi-leaf TapTree
+    /// in v0.5), but this variant remains the structural-rejection
+    /// catch-all for top-level shapes MD does not encode.
+    ///
+    /// Also returned by `policy_to_bytecode` (v0.7+, `compiler` feature)
+    /// when the policy compiler emits a shape `WalletPolicy::from_descriptor`
+    /// rejects.
+    ///
+    /// Caller should display the embedded message to the user.
+    #[error("policy violates MD encoding scope: {0}")]
     PolicyScopeViolation(String),
 
     /// Cross-chunk integrity hash did not match the reassembled bytecode.

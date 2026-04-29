@@ -121,6 +121,52 @@ The post-rework Tag enum:
 
 **Note on byte 0x32 unallocation.** v0.5 emitted `Placeholder = 0x32` in every encoded MD string. Reusing 0x32 in v0.6 for any other operator would silently misinterpret a v0.5 string fed into a v0.6 decoder. Leaving 0x32 unallocated (return `None` from `from_byte`) surfaces such transcoder mistakes as a clean error (`UnknownTag(0x32)`) rather than data corruption.
 
+#### 2.2.1 Alphabetical Tag → byte index (audit convenience)
+
+Looking up by name rather than by group. Authoritative source remains §2.2 above; this is a secondary index for spot-checks (e.g. "where is `Hash160`?").
+
+| Tag | Byte |
+|---|---|
+| `Alt` | `0x0C` |
+| `AndB` | `0x14` |
+| `AndOr` | `0x15` |
+| `AndV` | `0x13` |
+| `After` | `0x1E` |
+| `Check` | `0x0E` |
+| `DupIf` | `0x0F` |
+| `False` | `0x00` |
+| `Fingerprints` | `0x35` |
+| `Hash160` | `0x23` |
+| `Hash256` | `0x21` |
+| `Multi` | `0x08` |
+| `MultiA` | `0x0A` |
+| `NonZero` | `0x11` |
+| `Older` | `0x1F` |
+| `OrB` | `0x16` |
+| `OrC` | `0x17` |
+| `OrD` | `0x18` |
+| `OrI` | `0x19` |
+| `Pkh` | `0x02` |
+| `PkH` | `0x1C` |
+| `PkK` | `0x1B` |
+| `Placeholder` | `0x33` |
+| `RawPkH` | `0x1D` |
+| `Ripemd160` | `0x22` |
+| `SharedPath` | `0x34` |
+| `Sh` | `0x03` |
+| `Sha256` | `0x20` |
+| `SortedMulti` | `0x09` |
+| `SortedMultiA` | `0x0B` |
+| `Swap` | `0x0D` |
+| `TapTree` | `0x07` |
+| `Thresh` | `0x1A` |
+| `Tr` | `0x06` |
+| `True` | `0x01` |
+| `Verify` | `0x10` |
+| `Wpkh` | `0x04` |
+| `Wsh` | `0x05` |
+| `ZeroNotEqual` | `0x12` |
+
 ### 2.3 Byte-for-byte changes from v0.5
 
 Every tap-leaf-bearing existing operator's byte may change. Worst case: every fixture in v0.1.json + v0.2.json regenerates with new bytecode. Full table:

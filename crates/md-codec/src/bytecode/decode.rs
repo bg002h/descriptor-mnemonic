@@ -73,13 +73,15 @@ fn decode_descriptor(
             "top-level pkh() is permanently rejected (legacy non-segwit out of scope per design)"
                 .to_string(),
         )),
-        // TapTree (0x07 in v0.6) is valid INSIDE tr(KEY, TREE) as a multi-leaf
-        // inner-node framing byte, but it is NOT a valid top-level descriptor.
-        Some(Tag::TapTree) => Err(Error::PolicyScopeViolation(
-            "TapTree (0x07) is not a valid top-level descriptor; \
-             it appears only inside `tr(KEY, TREE)` as multi-leaf inner-node framing"
-                .to_string(),
-        )),
+        // TapTree is valid INSIDE tr(KEY, TREE) as a multi-leaf inner-node
+        // framing byte, but it is NOT a valid top-level descriptor. The
+        // byte is formatted at runtime via `Tag::TapTree.as_byte()` so
+        // future Tag-byte rolls don't desync the diagnostic from the enum.
+        Some(Tag::TapTree) => Err(Error::PolicyScopeViolation(format!(
+            "TapTree (0x{:02X}) is not a valid top-level descriptor; \
+             it appears only inside `tr(KEY, TREE)` as multi-leaf inner-node framing",
+            Tag::TapTree.as_byte()
+        ))),
         // A known fragment tag (e.g. AndV, PkK, True) appearing at the top
         // level — malformed input. Use PolicyScopeViolation rather than
         // UnknownTag because the byte was recognised; only its position is wrong.
@@ -2410,15 +2412,19 @@ mod tests {
         );
     }
 
-    /// n_sh_bare: sh(bare) — Bare tag not allowed under Sh.
+    /// `sh(<inner>)` rejects when the byte after `Sh` is not `Wpkh`/`Wsh`.
+    /// In v0.5 byte 0x07 was `Tag::Bare`; v0.6 reorganization makes it
+    /// `Tag::TapTree`. The Sh inner-tag restriction matrix surfaces a
+    /// `PolicyScopeViolation` either way — this test pins that any
+    /// non-allowed inner tag is refused.
     #[test]
-    fn decode_rejects_sh_bare() {
-        // [Sh=0x03, Bare=0x07, ...]
-        let bytes = vec![0x03, 0x07];
+    fn decode_rejects_sh_with_disallowed_inner_tag() {
+        use crate::bytecode::Tag;
+        let bytes = vec![Tag::Sh.as_byte(), Tag::TapTree.as_byte()];
         let err = decode_template(&bytes, &[]).unwrap_err();
         assert!(
             matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("sh(")),
-            "expected PolicyScopeViolation about sh(bare), got {err:?}"
+            "expected PolicyScopeViolation about sh(<disallowed-inner>), got {err:?}"
         );
     }
 
