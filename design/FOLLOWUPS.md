@@ -253,6 +253,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.7+ (future release)
 
+### `v06-plan-targeted-decoder-arm-tests` — per-arm decoder unit tests for Phase 3 (defensive)
+
+- **Surfaced:** v0.6 plan round-1 review (`design/agent-reports/v0-6-plan-review-1.md` TDD audit); flagged as nice-to-have, not blocking.
+- **Where:** `crates/md-codec/tests/taproot.rs` or a new `tests/decoder_arms.rs`.
+- **What:** Phase 3 of the strip plan adds ~20 new arms to `decode_tap_terminal`. The plan relies on corpus round-trip (Phase 5 fixtures) to catch decoder bugs. This is adequate but defensive: a decoder arm that consumes the wrong number of payload bytes AND a symmetrically-wrong encoder arm would both round-trip but produce malformed wire output. Add 5-7 targeted unit tests that synthesize a known bytecode (Tag byte + payload), feed to `decode_tap_terminal` directly, and assert the resulting Terminal matches the expected AST shape and consumed-byte-count. ~30-minute effort.
+- **Why deferred:** corpus round-trip is sufficient for normal regression catching; this is purely defensive against a class of bug that hasn't actually occurred in the v0.5 codebase. Can land as a v0.6.x patch or v0.7+ when convenient.
+- **Status:** open
+- **Tier:** v0.6+ (defensive testing nice-to-have)
+
 ### `v06-spec-tag-byte-display-table` — alphabetical Tag→byte index for spec audit convenience
 
 - **Surfaced:** v0.6 spec round-1 review (agent report `v0-6-spec-review-1.md`); flagged as nice-to-have, not blocking.

@@ -6,6 +6,8 @@
 
 **Architecture:** Single coordinated breaking release on `feature/v0.6-strip-layer-3`. The Tag rework changes byte values for many operators, so corpus regen is forced; the validator default-flip widens admit set to the full BIP 379 + BIP 388 surface. `validate_tap_leaf_subset` retained as `pub fn` for explicit-call use. Wire-format-additive (`Tag::SortedMultiA` allocated) and wire-format-subtractive (`Tag::Bare` + `Reserved*` dropped) in the same release.
 
+**Test discipline:** Phase 1 follows TDD (failing tests first, then implementation). Phases 2/3 are *regen-and-verify* — the existing test suite (corpus round-trips, error_coverage gate, vectors_schema) catches regressions; adding per-arm unit tests to those phases would be defensive but is filed as a FOLLOWUPS nice-to-have rather than gating the v0.6 ship. Phase 4 is mechanical (sed substitution); Phase 5 introduces new corpus fixtures that *are* the test artifact; Phase 6+ are doc-only.
+
 **Tech Stack:** Rust 1.85, miniscript pinned to `apoelstra/rust-miniscript` rev `f7f1689b...`, bitcoin 0.32, bech32 0.11, serde, indexmap.
 
 **Spec reference:** `design/SPEC_v0_6_strip_layer_3.md` (round-1 review folded in; see `design/agent-reports/v0-6-spec-review-1.md`).
@@ -520,6 +522,71 @@ Critical/important inline; nits to FOLLOWUPS.
 
 **Cross-cutting impact:** the encoder currently won't compile because `Tag::Bare` and `Tag::Reserved*` are referenced. This phase makes it compile + adopts the strip behavior.
 
+### Task 2.0 — Add `BytecodeErrorKind::TagInvalidContext` variant (IMP-7 pre-decision)
+
+Pre-pinned per plan review IMP-7 to avoid catch-all error-kind rework downstream. The new variant is used by Phase 3's decoder catch-all and by Phase 5's negative-vector audit (per CRIT-3 audit table).
+
+**Files:**
+- Modify: `crates/md-codec/src/error.rs` (add the variant)
+- Modify: `crates/md-codec/tests/error_coverage.rs` (add to mirror)
+
+- [ ] **Step 2.0.1: Add the variant to BytecodeErrorKind**
+
+Locate the `pub enum BytecodeErrorKind { ... }` block in `crates/md-codec/src/error.rs`. Add:
+
+```rust
+/// A Tag valid in some context appears where it is not allowed.
+///
+/// E.g., a top-level descriptor tag (`Tag::Wsh`) where a tap-leaf
+/// inner is expected. Distinct from `UnknownTag` (no Tag exists for
+/// that byte) and `PolicyScopeViolation` (top-level admit decision).
+TagInvalidContext {
+    /// The tag byte that was structurally invalid in this context.
+    tag: u8,
+    /// Human-readable context name (e.g., "tap-leaf-inner",
+    /// "wsh-inner").
+    context: &'static str,
+},
+```
+
+Place adjacent to `UnknownTag` for related-error grouping. Update the `Display` impl to format the new variant cleanly.
+
+- [ ] **Step 2.0.2: Add to error_coverage mirror**
+
+In `crates/md-codec/tests/error_coverage.rs`, add the variant to the BytecodeErrorKind exhaustiveness mirror (or to the test that derives expected names).
+
+- [ ] **Step 2.0.3: Compile**
+
+Run: `cargo check -p md-codec --tests 2>&1 | tail -5`
+
+Expected: clean.
+
+- [ ] **Step 2.0.4: Commit**
+
+```bash
+git add crates/md-codec/src/error.rs crates/md-codec/tests/error_coverage.rs
+git commit -m "$(cat <<'EOF'
+feat(v0.6 phase 2.0): add BytecodeErrorKind::TagInvalidContext variant
+
+Pre-pinned per plan review IMP-7 to avoid catch-all error-kind rework
+downstream. Used by Phase 3's decoder catch-all (Tag valid elsewhere
+but not as a tap-leaf inner) and by Phase 5's negative-vector audit
+table.
+
+Variant shape: TagInvalidContext { tag: u8, context: &'static str }.
+Distinct from UnknownTag (no Tag exists) and PolicyScopeViolation
+(top-level admit).
+
+error_coverage mirror updated.
+
+Spec reference: design/SPEC_v0_6_strip_layer_3.md §4 (decoder strip).
+Plan review reference: design/agent-reports/v0-6-plan-review-1.md IMP-7.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
 ### Task 2.1 — Audit encoder for dropped Tag references
 
 - [ ] **Step 2.1.1: Find all Tag::Bare and Tag::Reserved* references in encode.rs**
@@ -686,12 +753,34 @@ EOF
 
 - [ ] **Step 2.7.1: Dispatch Opus reviewer**
 
-Same pattern as Phase 1. Brief:
+Same pattern as Phase 1. Brief (expanded per plan review IMP-5):
+
 - Files: `crates/md-codec/src/bytecode/encode.rs` after Phase 2 commit.
-- Verify: encoder admits the spec §4.3 admit set; exhaustive match has all 30 Terminal arms; no Tag::Bare or Tag::Reserved* references remain; `validate_tap_leaf_subset` retained pub with updated rustdoc; `tap_terminal_name` rustdoc updated.
+- Verify the basics:
+  - Encoder admits the spec §4.3 admit set (every Terminal variant gets a Tag emit).
+  - Exhaustive match has all 30 Terminal arms (no fallback wildcard).
+  - No `Tag::Bare` or `Tag::Reserved*` references remain.
+- Verify the option (a) decision specifically (per spec §3.2):
+  - Tap-illegal `Multi`/`SortedMulti` arms have appropriate `// tap-illegal but exhaustive ...` comments.
+  - Each arm emits the Tag byte unconditionally — no rejection logic in tap-illegal arms.
+- Cross-check Tag byte emissions against the v0.6 layout (read `tag.rs` from Phase 1 commit):
+  - New Hash256 arm emits `Tag::Hash256.as_byte() == 0x21`.
+  - New SortedMultiA arm emits `Tag::SortedMultiA.as_byte() == 0x0B`.
+  - All wrapper arms emit the renumbered v0.6 wrapper bytes (`Alt=0x0C`, etc.).
+- Verify hash terminal byte order matches spec §6.3:
+  - Encoder uses `h.as_byte_array()` directly for all four hash terminals.
+  - NOT swapped to `h.to_byte_array()` or display-order encoding.
+  - Reference comment at encode.rs:316-319 (or wherever it migrates after the rework) preserved.
+- Verify rustdoc updates:
+  - `validate_tap_leaf_subset` rustdoc clarifies "v0.6 note: no longer called by encoder/decoder default paths" per spec §3.2.
+  - `tap_terminal_name` rustdoc clarifies "no longer the universal naming hook for tap-context errors — only used by the explicit-call validator path".
+  - `validate_tap_leaf_subset` BODY is unchanged (only its rustdoc updates) — tempting to mistake "retain pub" as license to refactor.
+
 - Output: `design/agent-reports/v0-6-phase-2-review.md`.
 
 - [ ] **Step 2.7.2: Address findings**
+
+Critical/important inline; nits to FOLLOWUPS.
 
 ---
 
@@ -862,24 +951,24 @@ Tag::Hash160 => {
     Terminal::Hash160(bitcoin::hashes::hash160::Hash::from_byte_array(bytes))
 }
 
-// --- Catch-all: keep but narrow ---
-// In v0.6 the catch-all is for Tags valid in some context but not as a tap-leaf
-// inner (e.g., a top-level descriptor tag like Tag::Wsh). The TapLeafSubsetViolation
-// rename per Phase 4 makes the variant Error::SubsetViolation; the explicit-call
-// validator path produces it now. The decoder catch-all here uses a structural
-// variant like InvalidBytecode { kind: BytecodeErrorKind::UnexpectedTag } instead.
+// --- Catch-all: structural rejection via TagInvalidContext ---
+// In v0.6 the catch-all handles Tags valid in some context but not
+// as a tap-leaf inner (e.g., a top-level descriptor tag like
+// Tag::Wsh = 0x05 appearing where a tap-leaf inner is expected).
+// Use the new BytecodeErrorKind::TagInvalidContext variant introduced
+// for this purpose (see Step 3.0 below).
 _ => {
     return Err(Error::InvalidBytecode {
         offset: tag_offset,
-        kind: BytecodeErrorKind::UnexpectedTag {
-            expected: 0x00, // any tap-leaf tag — TODO: improve this diagnostic per Phase 3 review
-            got: tag.as_byte(),
+        kind: BytecodeErrorKind::TagInvalidContext {
+            tag: tag.as_byte(),
+            context: "tap-leaf-inner",
         },
     });
 }
 ```
 
-The exact error path for the catch-all is a Phase 3 review concern — it should produce a useful diagnostic, not just `UnexpectedTag`. Consider a new error kind `BytecodeErrorKind::TagInvalidContext { tag: u8, context: &'static str }` or repurposing `PolicyScopeViolation`. Decision deferred to Phase 3 review.
+The new `BytecodeErrorKind::TagInvalidContext { tag: u8, context: &'static str }` variant is added in Step 3.0 (below) before adding the new tap-leaf arms. Decision pre-pinned per plan review IMP-7 to avoid cascading rework.
 
 The exact `Threshold::new` error wrapping pattern is preserved from existing arms (look at the existing MultiA arm and copy its error-mapping shape).
 
@@ -999,6 +1088,14 @@ Run: `grep -rn "TapLeafSubsetViolation\|tap.leaf.subset" crates/md-codec/src/`
 
 Update any rustdoc that still references the old name conceptually (not the variant). Check `validate_tap_leaf_subset` rustdoc, `tap_terminal_name` rustdoc, etc.
 
+- [ ] **Step 4.1.5: Scrub design/ markdown for forward-pointing references** (per plan review CRIT-2)
+
+Run: `grep -rn "TapLeafSubsetViolation" design/ | grep -v "agent-reports/"`
+
+Audit each match. Past-tense/historical references (e.g., "v0.5 raised TapLeafSubsetViolation", "Phase D introduced TapLeafSubsetViolation") **stay** — they describe the v0.5 state accurately. Forward-pointing references (e.g., "callers get TapLeafSubsetViolation" in the spec or rationale doc) **update** to `SubsetViolation`.
+
+Files likely needing update: `design/SPEC_v0_6_strip_layer_3.md`, `design/MD_SCOPE_DECISION_2026-04-28.md`, `design/FOLLOWUPS.md`. Skip `design/agent-reports/` — those are durable historical records.
+
 ### Task 4.2 — Update error_coverage CI gate
 
 - [ ] **Step 4.2.1: Locate the EnumIter mirror**
@@ -1010,6 +1107,14 @@ The test file uses strum::EnumIter to assert exhaustiveness. The mirror table co
 - [ ] **Step 4.2.2: Update the variant name**
 
 Replace `TapLeafSubsetViolation` with `SubsetViolation` in the mirror.
+
+- [ ] **Step 4.2.3: Rename conformance.rs test for snake_case derivation** (per plan review IMP-4)
+
+The error_coverage gate derives expected test names from variant names via snake_case. After the rename, the conformance.rs test currently named `rejects_tap_leaf_subset_violation` must rename to `rejects_subset_violation`.
+
+Run: `grep -n 'rejects_tap_leaf_subset' crates/md-codec/tests/conformance.rs`
+
+If the test exists, rename it. Verify by re-running the grep — should produce no matches.
 
 ### Task 4.3 — Compile + test
 
@@ -1050,9 +1155,14 @@ EOF
 )"
 ```
 
-### Task 4.4 — No phase review needed
+### Task 4.4 — Phase 4 review folded into Phase 5 reviewer brief
 
-Mechanical rename; no judgment calls. Skip dedicated review; covered in Phase 5+ overall reviews.
+Per plan review IMP-6: Phase 4 is mechanical but is a public-API breaking change spanning ~20 sites. Risk: a rustdoc link sed missed. The Phase 5 reviewer brief (Task 5.3) will include explicit Phase 4 verification points:
+- Confirm every `TapLeafSubsetViolation` in `crates/md-codec/src/` is gone (post-Phase 4 sed).
+- Confirm `rejects_tap_leaf_subset_violation` is renamed in conformance.rs.
+- Confirm the EnumIter mirror in `tests/error_coverage.rs` updated.
+- Confirm `design/` markdown forward-pointing references updated per Step 4.1.5; past-tense references preserved.
+- Confirm rustdoc CI pre-passes with the rename (`RUSTDOCFLAGS="-D warnings" cargo doc -p md-codec --no-deps`).
 
 ---
 
@@ -1170,7 +1280,52 @@ Run: `cargo test -p md-codec --test vectors_schema 2>&1 | tail -20`
 
 Expected: SHA-pin tests fail (corpus content changed). That's expected — Phase 8 re-baselines SHAs.
 
-- [ ] **Step 5.1.6: Commit**
+- [ ] **Step 5.1.6: Add defensive hash-byte-order pin test** (per plan review §6.3 concern)
+
+Add to `crates/md-codec/tests/taproot.rs` (or a new `tests/hash_byte_order.rs`):
+
+```rust
+#[test]
+fn hash_terminals_encode_internal_byte_order_not_display_order() {
+    // Defensive: the round-trip corpus alone cannot catch an encoder+decoder
+    // both swapped to display-order (round-trip stable, but format changed).
+    // Pin the bytes directly.
+    use bitcoin::hashes::{Hash, hash160, ripemd160, sha256};
+    use miniscript::hash256;
+    use md_codec::bytecode::{Tag, encode_template};
+    // ... construct minimal Sha256 / Hash256 / Ripemd160 / Hash160 Terminals
+    // with known hashes (e.g., all-0xAA for 32 bytes), encode via
+    // encode_template, and assert the bytecode contains the input bytes
+    // in INTERNAL ORDER (not reversed-display-order).
+    //
+    // Reference: encode.rs:316-319 comment; spec §6.3.
+
+    let known_32 = [0xAAu8; 32];
+    let known_20 = [0xBBu8; 20];
+
+    // Sha256: encode and verify the bytecode contains 32 bytes of 0xAA
+    // immediately after the Tag::Sha256 byte.
+    {
+        let term: miniscript::Terminal<miniscript::DescriptorPublicKey, miniscript::Tap>
+            = miniscript::Terminal::Sha256(sha256::Hash::from_byte_array(known_32));
+        let mut out = Vec::new();
+        // ... call the appropriate encode helper
+        // assert!(out[1..33] == known_32);
+        // (exact API call TBD by implementer; shape is "encode then assert byte-prefix match")
+    }
+    // Repeat for Hash256, Ripemd160, Hash160.
+}
+```
+
+This test catches the case where encoder + decoder both regress to display-order (round-trip would still pass, but external decoders would interpret bytes differently).
+
+- [ ] **Step 5.1.7: Run test to verify it passes**
+
+Run: `cargo test -p md-codec --test taproot hash_terminals_encode_internal 2>&1 | tail -10`
+
+Expected: PASS (since the encoder uses `as_byte_array()` directly).
+
+- [ ] **Step 5.1.8: Commit** (this commit also captures the corpus expansion from Step 5.1.2-5.1.4 if not yet committed)
 
 ```bash
 git add crates/md-codec/src/vectors.rs
@@ -1209,44 +1364,60 @@ EOF
 )"
 ```
 
-### Task 5.2 — Audit existing negative vectors for flips
+### Task 5.2 — Apply pre-pinned negative-vector audit
 
-- [ ] **Step 5.2.1: List negative vectors with TapLeafSubsetViolation expectation**
+The negative-vector decisions are pre-pinned per the round-1 plan review (CRIT-3 / IMP-8). Apply the table below verbatim; do not re-derive judgment.
 
-Run: `grep -B5 -A2 "TapLeafSubsetViolation\|SubsetViolation" crates/md-codec/tests/vectors/v0.2.json 2>/dev/null | head -50`
+**Pre-pinned audit table:**
 
-Or post-rename: `grep -B5 -A2 "SubsetViolation" crates/md-codec/tests/vectors/v0.2.json | head -50`
+| Vector | Decision | Rationale |
+|---|---|---|
+| `n_tap_leaf_subset` (sha256 in tap leaf) | **DELETE** | sha256 is admitted in v0.6; redundant with new positive `tr_sha256_htlc_md_v0_6` |
+| `n_taptree_inner_wpkh` | **KEEP, change `expected_error_variant`** to the structural catch-all variant Phase 3 introduces (`InvalidBytecode { kind: TagInvalidContext { tag: 0x04, context: "tap-leaf-inner" } }` per IMP-7) | `wpkh` is a top-level descriptor tag; structurally invalid as tap-leaf inner regardless of strip |
+| `n_taptree_inner_sh` | **KEEP, change `expected_error_variant`** | Same; tag value 0x03 |
+| `n_taptree_inner_wsh` | **KEEP, change `expected_error_variant`** | Same; tag value 0x05 |
+| `n_taptree_inner_tr` | **KEEP, change `expected_error_variant`** | Same; tag value 0x06 |
+| `n_taptree_inner_pkh` | **KEEP, change `expected_error_variant`** | Same; tag value 0x02. Distinct from policy-level `pkh()` (which desugars to `c:pk_h(...)`) — this vector tests the descriptor wrapper byte showing up where a tap-leaf inner is expected. |
+| `n_sh_bare` | **KEEP, REBASE input bytes** | `expected_error_variant: PolicyScopeViolation` unchanged; input_strings shift because Tag layout shifted (Tag::Bare removed; byte 0x07 is now Tag::TapTree). Provenance prose updates. |
+| `n_top_bare` | **KEEP, REBASE input bytes** | Same as `n_sh_bare`. After Phase 8/10 regen, byte 0x07 in input is interpreted as Tag::TapTree top-level — produces `PolicyScopeViolation` with a different message ("TapTree as top-level descriptor"); same error variant. Provenance updates. |
 
-Expected matches: negative vectors that asserted operator-rejection in tap leaves.
+- [ ] **Step 5.2.1: Apply audit table — vectors.rs negative-vector definitions**
 
-- [ ] **Step 5.2.2: Categorize each match**
+Find the negative-vector array in `crates/md-codec/src/vectors.rs` (likely `NEGATIVE_FIXTURES` or similar). Apply each row of the audit table:
+- For DELETE rows: remove the entry.
+- For KEEP-with-error-variant-change rows: update the `expected_error_variant` field to whatever Phase 3 chose for the structural catch-all (IMP-7 recommends `InvalidBytecode { kind: TagInvalidContext { tag, context } }`).
+- For KEEP-with-input-rebase rows: update the input bytecode + provenance to use v0.6 Tag bytes. The input bytes regenerate at Phase 10 via `gen_vectors --output`.
 
-For each match, decide:
-- **Flip to positive**: vectors that asserted now-admitted-operator rejection (e.g., `n_tap_leaf_subset` with sha256). The operator is now admitted, so the input should round-trip as a positive vector.
-- **Keep but rename**: vectors whose intent is "structural rejection" (e.g., a top-level descriptor tag in a tap-leaf inner position). These remain valid; only their `expected_error_variant` field updates if it referred to TapLeafSubsetViolation.
-- **Delete**: vectors whose only purpose was to assert subset rejection of a now-admitted operator and don't add structural-rejection coverage.
+- [ ] **Step 5.2.2: Update test fixtures referring to deleted/renamed vectors**
 
-This is implementation-judgment; document each decision in the commit message.
+Run: `grep -rn "n_tap_leaf_subset\b" crates/md-codec/tests/`
 
-- [ ] **Step 5.2.3: Apply audit results**
+Any test that expects `n_tap_leaf_subset` to exist needs updating (delete the test or repoint to a structural-rejection vector).
 
-Update vectors.rs / test vector files / test fixtures to flip or remove per the audit. This step's output is concrete edits; the audit decisions document why.
-
-- [ ] **Step 5.2.4: Commit**
+- [ ] **Step 5.2.3: Commit**
 
 ```bash
 git add -A
 git commit -m "$(cat <<'EOF'
-test(v0.6 phase 5b): audit negative vectors for now-admitted operators
+test(v0.6 phase 5b): apply pre-pinned negative-vector audit
 
-After the strip, several v0.5 negative vectors no longer assert valid
-behavior:
-- n_tap_leaf_subset (sha256 in tap leaf): FLIPPED to positive vector
-  tr_sha256_htlc_md_v0_6 (already added in 5.1.2)
-- [list of decisions per the audit]
+Per spec §6.2 + plan review CRIT-3/IMP-8, the negative-vector audit
+decisions were pre-pinned in the plan and applied verbatim:
 
-Structural rejections (top-level Tag in tap-leaf position, malformed
-bytecode) preserved unchanged.
+- DELETE n_tap_leaf_subset (sha256 in tap leaf — admitted in v0.6;
+  redundant with new positive tr_sha256_htlc_md_v0_6)
+- KEEP-with-error-variant-change for n_taptree_inner_{wpkh,sh,wsh,tr,pkh}:
+  expected_error_variant updates from TapLeafSubsetViolation to
+  InvalidBytecode { kind: TagInvalidContext { tag, context } } per
+  Phase 3's structural catch-all (IMP-7)
+- KEEP-with-input-rebase for n_sh_bare, n_top_bare: input_strings
+  shift because Tag layout shifted (Tag::Bare removed; byte 0x07 is
+  now Tag::TapTree); expected_error_variant: PolicyScopeViolation
+  unchanged. Bytes regenerate at Phase 8/10.
+
+Note: tests/vectors_schema.rs failing tests (committed_v0_2_json_matches
++ v0_2_sha256_lock) remain RED until Phase 10 regen; this is expected
+and whitelisted in subsequent phase reviewer briefs.
 
 Spec reference: design/SPEC_v0_6_strip_layer_3.md §6.2.
 
@@ -1255,16 +1426,34 @@ EOF
 )"
 ```
 
-### Task 5.3 — Phase 5 review
+### Task 5.3 — Phase 5 review (also covers Phase 4 per IMP-6)
 
 - [ ] **Step 5.3.1: Dispatch Opus reviewer**
 
-Brief:
+Brief (covers Phases 4 and 5):
+
+**Phase 5 (corpus expansion):**
 - Files: `crates/md-codec/src/vectors.rs` after Phase 5 commits.
-- Verify: 18 new positive vectors; canonical form for each policy; per-Terminal coverage adequate; negative-vector audit decisions defensible.
+- Verify: 18 new positive vectors; canonical form for each policy; per-Terminal coverage adequate.
+- Verify the negative-vector audit was applied verbatim per the pre-pinned table in Step 5.2 (deletions, error-variant changes, input rebases match the plan).
+
+**Phase 4 (rolled in per IMP-6):**
+- Confirm every `TapLeafSubsetViolation` in `crates/md-codec/src/` is gone (post-Phase 4 sed).
+- Confirm `rejects_tap_leaf_subset_violation` is renamed in conformance.rs.
+- Confirm the EnumIter mirror in `tests/error_coverage.rs` updated.
+- Confirm `design/` markdown forward-pointing references updated per Step 4.1.5; past-tense references preserved.
+- Confirm rustdoc CI passes with the rename: `RUSTDOCFLAGS="-D warnings" cargo doc -p md-codec --no-deps` clean.
+
+**Whitelist (per CRIT-1):** the following tests are EXPECTED to fail at this checkpoint and must NOT be reported as findings:
+- `tests::vectors_schema::v0_2_sha256_lock_matches_committed_file`
+- `tests::vectors_schema::committed_v0_2_json_matches_regenerated_if_present`
+Both will pass after Phase 10 regen + SHA-pin update.
+
 - Output: `design/agent-reports/v0-6-phase-5-review.md`.
 
 - [ ] **Step 5.3.2: Address findings**
+
+Critical/important inline; nits to FOLLOWUPS.
 
 ---
 
@@ -1361,14 +1550,27 @@ EOF
 )"
 ```
 
-### Task 6.6 — Phase 6 review
+### Task 6.6 — Phase 6 review (also covers Phase 7 per IMP-6)
 
 - [ ] **Step 6.6.1: Dispatch Opus reviewer**
 
-Brief:
+Brief (covers Phases 6 and 7):
+
+**Phase 6 (BIP draft):**
 - File: `bip/bip-mnemonic-descriptor.mediawiki` after Phase 6 commit.
 - Verify: MAY clause text matches spec §7.1; new §"Signer compatibility" reads as drafted; Tag table updated correctly (cross-check against the in-tree `tag.rs` to confirm byte-for-byte agreement); historical-orientation note matches spec §7.3 verbatim.
+
+**Phase 7 (READMEs + CLI, rolled in per IMP-6):**
+- Files: `README.md`, `crates/md-codec/README.md`, `crates/md-codec/src/bin/md/main.rs` after Phase 7 commit.
+- Verify: recovery-responsibility paragraph wording per spec §8.1 reads as intended (clear, neutral, no signer-curation overclaim); no typos; cross-document tone consistency with the BIP §"Signer compatibility" section; CLI `md encode --help` long form contains the warning per spec §8.3.
+
+**Whitelist (per CRIT-1):** the same two `tests::vectors_schema` failures whitelisted in the Phase 5 review remain whitelisted here. Both will pass after Phase 10 regen + SHA-pin update.
+
 - Output: `design/agent-reports/v0-6-phase-6-review.md`.
+
+- [ ] **Step 6.6.2: Address findings**
+
+Critical/important inline; nits to FOLLOWUPS.
 
 ---
 
