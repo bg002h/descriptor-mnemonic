@@ -2,7 +2,7 @@
 //! These tests pin the new public surface so future refactors can't
 //! accidentally remove fields.
 //!
-//! `Error::TapLeafSubsetViolation` is `#[non_exhaustive]` (so external
+//! `Error::SubsetViolation` is `#[non_exhaustive]` (so external
 //! callers can't construct it directly), but downstream destructure
 //! patterns must still see the `leaf_index` field. We therefore obtain
 //! a real instance via the public encode API (which is the canonical
@@ -11,7 +11,7 @@
 
 use md_codec::{EncodeOptions, Error, WalletPolicy};
 
-/// Trigger a `TapLeafSubsetViolation` via the public encode API. The
+/// Trigger a `SubsetViolation` via the public encode API. The
 /// `tr(K, sha256(...))` policy parses but contains an out-of-subset
 /// tap-leaf operator (`sha256`), so the encoder rejects it with the
 /// variant we want to inspect.
@@ -29,7 +29,7 @@ fn trigger_tap_leaf_subset_violation() -> Error {
 fn tap_leaf_subset_violation_has_leaf_index_field() {
     let err = trigger_tap_leaf_subset_violation();
     match err {
-        Error::TapLeafSubsetViolation {
+        Error::SubsetViolation {
             operator,
             leaf_index,
             ..
@@ -42,7 +42,7 @@ fn tap_leaf_subset_violation_has_leaf_index_field() {
             // is present and populated.
             assert_eq!(leaf_index, Some(0));
         }
-        other => panic!("expected TapLeafSubsetViolation, got {other:?}"),
+        other => panic!("expected SubsetViolation, got {other:?}"),
     }
 }
 
@@ -50,14 +50,14 @@ fn tap_leaf_subset_violation_has_leaf_index_field() {
 fn tap_leaf_subset_violation_destructure_with_leaf_index_pattern() {
     let err = trigger_tap_leaf_subset_violation();
     // Pin the field name `leaf_index` so future renames break this test.
-    if let Error::TapLeafSubsetViolation {
+    if let Error::SubsetViolation {
         leaf_index: Some(_),
         ..
     } = err
     {
         // shape pinned
     } else {
-        panic!("expected TapLeafSubsetViolation with Some(leaf_index)");
+        panic!("expected SubsetViolation with Some(leaf_index)");
     }
 }
 

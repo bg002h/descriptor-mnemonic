@@ -253,6 +253,69 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.7+ (future release)
 
+### `v06-plan-targeted-decoder-arm-tests` — per-arm decoder unit tests for Phase 3 (defensive)
+
+- **Surfaced:** v0.6 plan round-1 review (`design/agent-reports/v0-6-plan-review-1.md` TDD audit); flagged as nice-to-have, not blocking.
+- **Where:** `crates/md-codec/tests/taproot.rs` or a new `tests/decoder_arms.rs`.
+- **What:** Phase 3 of the strip plan adds ~20 new arms to `decode_tap_terminal`. The plan relies on corpus round-trip (Phase 5 fixtures) to catch decoder bugs. This is adequate but defensive: a decoder arm that consumes the wrong number of payload bytes AND a symmetrically-wrong encoder arm would both round-trip but produce malformed wire output. Add 5-7 targeted unit tests that synthesize a known bytecode (Tag byte + payload), feed to `decode_tap_terminal` directly, and assert the resulting Terminal matches the expected AST shape and consumed-byte-count. ~30-minute effort.
+- **Why deferred:** corpus round-trip is sufficient for normal regression catching; this is purely defensive against a class of bug that hasn't actually occurred in the v0.5 codebase. Can land as a v0.6.x patch or v0.7+ when convenient.
+- **Status:** open
+- **Tier:** v0.6+ (defensive testing nice-to-have)
+
+### `v06-test-byte-literal-rebaseline` — rebaseline 38 unit tests pinning v0.5 byte literals
+
+- **Surfaced:** v0.6 Phase 10 release plumbing. After Tag enum reorganization (Phase 1), the wire format changed for many operators (e.g., `Tag::Multi` 0x19 → 0x08; `Tag::Placeholder` 0x32 → 0x33; logical operators shifted by 2). 38 unit tests in `bytecode::{encode,decode,path}::tests` and `policy::tests` and `vectors::tests` use literal byte values like `vec![0x05, 0x16, 0x00, 0x01]` that encode v0.5 byte sequences. These tests now fail because the decoder interprets the bytes per v0.6 semantics.
+- **Where:** Tests in `crates/md-codec/src/bytecode/decode.rs` (~16 tests), `crates/md-codec/src/bytecode/encode.rs` (~10 tests), `crates/md-codec/src/bytecode/path/...` (~6 tests), `crates/md-codec/src/policy.rs` (~5 tests), `crates/md-codec/src/vectors.rs` (~1 test).
+- **What:** Walk each failing test and update literal byte values per the v0.5→v0.6 byte-shift table in `design/SPEC_v0_6_strip_layer_3.md` §2.3. Pattern: replace literal v0.5 bytes (e.g., `0x16` for OrD) with v0.6 bytes (`0x18` for OrD). Where possible, replace literals with symbolic `Tag::Foo.as_byte()` references so future Tag changes don't re-break. The test SEMANTICS are correct; only the BYTE LITERALS need updating.
+- **Why deferred:** v0.6.0 release ships with these tests temporarily failing because the wire format change is a coordinated single-commit operation; rebaseline is mechanical follow-up work suitable for a v0.6.0.1 patch. The release cuts with v0.6.0 release-prep complete; rebaseline lands in v0.6.0.1.
+- **Status:** open
+- **Tier:** v0.6.0.1 (immediate post-tag patch)
+
+### `v06-corpus-d-wrapper-coverage` — add d: wrapper tap-leaf round-trip vector
+
+- **Surfaced:** v0.6 Phase 10 corpus regen. Initial fixture `tr_d_wrapper_in_tap_leaf_md_v0_6` with form `tr(@0/**, andor(pk(@1/**), pk(@2/**), d:older(144)))` failed parser typing: `d:` requires Vz-type child, but `older(n)` is B-type. Removed from corpus; filed for follow-up.
+- **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES.
+- **What:** Add a d: wrapper round-trip fixture using a Vz-type child (e.g., `d:v:older(144)` if v:older is V and z; or hand-construct the AST in `tests/taproot.rs`). Exercises `Tag::DupIf = 0x0F`. The wrapper byte is wire-format-supported and exercised by encoder/decoder symmetric arms; only the corpus pin is missing.
+- **Why deferred:** Same as `v06-corpus-or-c-coverage` and `v06-corpus-j-n-wrapper-coverage`. Not blocking ship; defensive corpus growth.
+- **Status:** open
+- **Tier:** v0.6.x (defensive corpus growth)
+
+### `v06-corpus-or-c-coverage` — add or_c tap-leaf round-trip vector
+
+- **Surfaced:** v0.6 Phase 5 execution. The plan listed `tr_or_c_in_tap_leaf_md_v0_6` as a per-Terminal coverage vector with the form `tr(@0/**, or_c(pk(@1/**), v:pk(@2/**)))`. Parser rejected it: `or_c` returns V-type, but BIP 388 / rust-miniscript wallet-policy parser requires top-level tap leaves to be B-type.
+- **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES.
+- **What:** Add an or_c fixture using a B-typed wrapping like `tr(@0/**, t:or_c(pk(@1/**), v:pk(@2/**)))` (where `t:` desugars to `and_v(X, 1)` = B-type) OR construct the AST hand-coded in a unit test rather than via Descriptor::from_str. The Tag::OrC byte form needs corpus coverage; the parser reject is a typing constraint, not a wire-format issue.
+- **Why deferred:** Plan's per-Terminal coverage rule; not blocking v0.6.0 ship since OrC byte is wire-format-supported and exercised by encoder/decoder symmetric arms, just not pinned in a fixture.
+- **Status:** open
+- **Tier:** v0.6+ (defensive corpus growth; can land in v0.6.x patch)
+
+### `v06-corpus-j-n-wrapper-coverage` — add j: and n: wrapper tap-leaf round-trip vectors
+
+- **Surfaced:** v0.6 spec round-1 review (IMP-5) + Phase 5 execution. The j: (NonZero) and n: (ZeroNotEqual) wrappers have typing constraints (j: requires Bn-type child; n: requires B-type child) that make them awkward to spell in BIP 388 source form. Plan flagged as TBD; deferred to FOLLOWUPS.
+- **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES (or `tests/taproot.rs` hand-AST tests).
+- **What:** Add round-trip fixtures for Tag::NonZero (0x11) and Tag::ZeroNotEqual (0x12). If the BIP 388 source-form policies don't naturally produce these wrappers, hand-construct the AST via `Terminal::NonZero(Arc::new(child))` / `Terminal::ZeroNotEqual(Arc::new(child))` in unit tests. Encoder + decoder arms exist and are byte-symmetric; only the corpus pin is missing.
+- **Why deferred:** Same as `v06-corpus-or-c-coverage`. Not blocking ship; defensive corpus growth.
+- **Status:** open
+- **Tier:** v0.6+ (defensive corpus growth)
+
+### `v06-corpus-byte-order-defensive-test` — defensive hand-pinned hash byte-order test
+
+- **Surfaced:** v0.6 spec round-1 review (§6.3 spec-coverage concern). Plan Step 5.1.6 specified adding a defensive byte-pin test in `tests/taproot.rs` that takes a known input hash, encodes via the Hash256/Sha256/Ripemd160/Hash160 path, and asserts the bytecode contains the input bytes in **internal byte order** (NOT reversed-display-order). The corpus round-trip alone cannot catch a regression where encoder + decoder both flip to display-order (would be round-trip-stable but format-changed).
+- **Where:** `crates/md-codec/tests/taproot.rs` (or new `tests/hash_byte_order.rs`).
+- **What:** Hand-coded byte-pin assertion: construct a known 32-byte hash (e.g., all-0xAA), invoke encoder via `encode_template` or similar, assert the bytecode bytes immediately after the Tag byte equal the input bytes UNREVERSED. Repeat for all 4 hash terminals.
+- **Why deferred:** Plan's defensive-test step deferred to v0.6+ during overnight autonomous execution to focus on shipping. Round-trip via the corpus fixtures provides indirect coverage; the dedicated byte-pin would catch the very specific encoder+decoder symmetric regression.
+- **Status:** open
+- **Tier:** v0.6+ (defensive testing nice-to-have)
+
+### `v06-spec-tag-byte-display-table` — alphabetical Tag→byte index for spec audit convenience
+
+- **Surfaced:** v0.6 spec round-1 review (agent report `v0-6-spec-review-1.md`); flagged as nice-to-have, not blocking.
+- **Where:** `design/SPEC_v0_6_strip_layer_3.md` §2.2.
+- **What:** §2.2 lists the Tag enum grouped-by-purpose (constants, top-level, framing, multisig, wrappers, logical, keys, timelocks, hashes). For audit-by-name (e.g., "where is `Hash160`?"), an alphabetical secondary listing `Tag → byte` would make spot-checks fast. Add a small subsection §2.2.1 with the alphabetical index after §2.2's grouped listing.
+- **Why deferred:** Cosmetic spec readability; doesn't affect implementation. Easy to add at any time.
+- **Status:** open
+- **Tier:** v0.6 (cosmetic spec polish; can land alongside the implementation work)
+
 ### `v0-6-release-prep-revised` — coordinate the v0.6 release plumbing under the strip framing
 
 - **Surfaced:** 2026-04-28; replaces `v0-6-release-prep` (which was framed around the now-superseded admit-set widening approach).

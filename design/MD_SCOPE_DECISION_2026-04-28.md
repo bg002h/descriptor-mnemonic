@@ -68,7 +68,7 @@ The vendor evidence converges: signers are *broader* than MD's Phase D subset, a
 **Survives:**
 
 - `validate_tap_leaf_subset` and `validate_tap_leaf_terminal` stay as `pub fn` in `crates/md-codec/src/bytecode/encode.rs`. Callers can invoke them explicitly. Encoder and decoder no longer call them by default.
-- `Error::TapLeafSubsetViolation` variant stays in `crates/md-codec/src/error.rs`. The explicit-call validator path produces it.
+- `Error::SubsetViolation` variant (renamed from `TapLeafSubsetViolation` in v0.6) stays in `crates/md-codec/src/error.rs`. The explicit-call validator path produces it.
 - The vendor citations and subset definitions Phase D documented are not lost — they migrate to a separate library (`md-signer-compat-checker-separate-library` in FOLLOWUPS) where named subsets like `COLDCARD_TAP` and `LEDGER_TAP` live alongside their citation comments and update cadence (vendor doc revision → subset bump).
 
 **Goes:**

@@ -11,14 +11,15 @@
 //! rejected with `PolicyScopeViolation`. Legacy non-segwit types (`pkh`,
 //! `bare`) are permanently excluded by design.
 //!
-//! Inside `Tr`, multi-leaf TapTrees are decoded via `Tag::TapTree` (0x08)
+//! Inside `Tr`, multi-leaf TapTrees are decoded via `Tag::TapTree` (0x07)
 //! inner-node framing; the decoder enforces a depth-128 ceiling matching
 //! BIP 341 (rust-miniscript's `TapTree::combine` enforces the same ceiling
 //! on reassembly).
 //!
-//! Inline-key tags `0x24..=0x31` (the `Reserved*` set in `Tag`) are reserved
-//! by descriptor-codec for inline-key forms outside MD's BIP-388 wallet-policy
-//! scope; they are rejected here.
+//! Bytes `0x24..=0x32` are unallocated in v0.6 (the v0.5 `Reserved*` range
+//! and v0.5 Placeholder=0x32 were dropped per
+//! `design/MD_SCOPE_DECISION_2026-04-28.md`); `Tag::from_byte` returns
+//! `None` for these bytes.
 //!
 //! Architecture: cursor-style reader + per-tag dispatch. Each step returns
 //! `Result<T, crate::Error>` so decode failures surface a precise offset and
@@ -68,36 +69,17 @@ fn decode_descriptor(
         Some(Tag::Tr) => decode_tr_inner(cur, keys),
         Some(Tag::Wpkh) => decode_wpkh_inner(cur, keys), // v0.4: native P2WPKH
         Some(Tag::Sh) => decode_sh_inner(cur, keys),     // v0.4: P2SH-P2WPKH / P2SH-P2WSH
-        Some(Tag::Pkh) | Some(Tag::Bare) => Err(Error::PolicyScopeViolation(
-            "top-level pkh()/bare() is permanently rejected (legacy non-segwit out of scope per design)"
+        Some(Tag::Pkh) => Err(Error::PolicyScopeViolation(
+            "top-level pkh() is permanently rejected (legacy non-segwit out of scope per design)"
                 .to_string(),
         )),
-        // TapTree (0x08) is valid INSIDE tr(KEY, TREE) as a multi-leaf
+        // TapTree (0x07 in v0.6) is valid INSIDE tr(KEY, TREE) as a multi-leaf
         // inner-node framing byte, but it is NOT a valid top-level descriptor.
         Some(Tag::TapTree) => Err(Error::PolicyScopeViolation(
-            "TapTree (0x08) is not a valid top-level descriptor; \
+            "TapTree is not a valid top-level descriptor; \
              it appears only inside `tr(KEY, TREE)` as multi-leaf inner-node framing"
                 .to_string(),
         )),
-        // Reserved key tags (descriptor-codec inline-key forms, deferred to v1+).
-        Some(
-            Tag::ReservedOrigin
-            | Tag::ReservedNoOrigin
-            | Tag::ReservedUncompressedFullKey
-            | Tag::ReservedCompressedFullKey
-            | Tag::ReservedXOnly
-            | Tag::ReservedXPub
-            | Tag::ReservedMultiXPub
-            | Tag::ReservedUncompressedSinglePriv
-            | Tag::ReservedCompressedSinglePriv
-            | Tag::ReservedXPriv
-            | Tag::ReservedMultiXPriv
-            | Tag::ReservedNoWildcard
-            | Tag::ReservedUnhardenedWildcard
-            | Tag::ReservedHardenedWildcard,
-        ) => Err(Error::PolicyScopeViolation(format!(
-            "inline-key tag 0x{tag_byte:02x} is reserved (deferred to v1+ per descriptor-codec scope)"
-        ))),
         // A known fragment tag (e.g. AndV, PkK, True) appearing at the top
         // level — malformed input. Use PolicyScopeViolation rather than
         // UnknownTag because the byte was recognised; only its position is wrong.
@@ -275,19 +257,17 @@ fn decode_tr_inner(
         // = 0x08 framing) without trial-and-error.
         let next_tag_byte = cur.peek_byte()?;
         if next_tag_byte == Tag::TapTree.as_byte() {
-            // v0.5 multi-leaf path: recurse via decode_tap_subtree starting
-            // at depth=1. The helper threads the DFS pre-order leaf_counter
-            // through into validate_tap_leaf_subset so per-leaf subset
-            // violations name the offending leaf.
+            // Multi-leaf path: recurse via decode_tap_subtree starting
+            // at depth=1. v0.6 strip: the per-leaf validate_tap_leaf_subset
+            // call is removed; explicit-call validation is opt-in.
             let mut leaf_counter: usize = 0;
             let tap_tree = decode_tap_subtree(cur, keys, 1, &mut leaf_counter)?;
             Some(tap_tree)
         } else {
             // Single-leaf path (preserved verbatim from v0.4.x): dispatch
             // to decode_tap_miniscript with leaf_index = Some(0).
+            // v0.6 strip: per-leaf validate_tap_leaf_subset call removed.
             let leaf = decode_tap_miniscript(cur, keys, Some(0))?;
-            // D-2: enforce per-leaf subset before constructing the TapTree.
-            crate::bytecode::encode::validate_tap_leaf_subset(&leaf, Some(0))?;
             Some(TapTree::leaf(leaf))
         }
     };
@@ -596,7 +576,7 @@ fn decode_terminal(
 ///
 /// `leaf_index` is the DFS pre-order index of this leaf within the
 /// containing tap tree. It is plumbed through to `decode_tap_terminal` so
-/// that a `TapLeafSubsetViolation` raised during decode names the offending
+/// that a `SubsetViolation` raised during decode names the offending
 /// leaf. Pass `Some(0)` for single-leaf `tr(KEY, leaf)`, `Some(n)` for the
 /// n-th leaf in DFS pre-order traversal of a multi-leaf tree, or `None`
 /// for callers that do not have leaf-index context.
@@ -616,13 +596,15 @@ fn decode_tap_miniscript(
 
 /// Decode a single tap-context Terminal given its already-consumed tag.
 ///
-/// The accepted set is intentionally narrower than the Segwitv0 dispatch:
-/// only the operators in the BIP §"Taproot tree" Coldcard subset
-/// (`pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`, `older` + safe wrappers
-/// `c:` / `v:`) parse cleanly. Out-of-subset tags surface
-/// `Error::TapLeafSubsetViolation` immediately rather than being typed-out
-/// at `Miniscript::from_ast`, so the diagnostic names the offending
-/// operator.
+/// v0.6: dispatch covers every Tag that has a tap-context Terminal
+/// counterpart (28 arms — see spec §4.3 Add/Keep checklist). Tags that
+/// are valid in some context but not as a tap-leaf inner (e.g.,
+/// `Tag::Wsh`/`Tag::Wpkh` top-level descriptor wrappers) hit the catch-all
+/// and produce `Error::InvalidBytecode { kind: BytecodeErrorKind::TagInvalidContext }`.
+/// Tap-illegal-by-typing arms (`Multi`/`SortedMulti`) are present for
+/// exhaustive Tag coverage; reaching them via parsed input is impossible
+/// because miniscript's parser refuses to construct those Terminals in
+/// a Tap context.
 fn decode_tap_terminal(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
@@ -631,6 +613,10 @@ fn decode_tap_terminal(
     leaf_index: Option<usize>,
 ) -> Result<Miniscript<DescriptorPublicKey, Tap>, Error> {
     let term: Terminal<DescriptorPublicKey, Tap> = match tag {
+        // Constants
+        Tag::True => Terminal::True,
+        Tag::False => Terminal::False,
+        // Keys
         Tag::PkK => {
             let key = decode_placeholder(cur, keys)?;
             Terminal::PkK(key)
@@ -638,6 +624,78 @@ fn decode_tap_terminal(
         Tag::PkH => {
             let key = decode_placeholder(cur, keys)?;
             Terminal::PkH(key)
+        }
+        Tag::RawPkH => {
+            // 20-byte pubkey-hash literal embedded directly. Distinct tag
+            // from Hash160 (0x23) — same width but different semantics.
+            let bytes = cur.read_array::<20>()?;
+            let hash = bitcoin::hashes::hash160::Hash::from_byte_array(bytes);
+            Terminal::RawPkH(hash)
+        }
+        // Multisig family
+        Tag::Multi => {
+            // Tap-illegal by miniscript typing (compiles to OP_CHECKMULTISIG
+            // which is disabled in tapscript per BIP 342). Arm exists for
+            // exhaustive Tag coverage; rust-miniscript's parser won't
+            // construct this in a Tap context, so reaching this arm via
+            // parsed inputs is impossible. Symmetric with the encoder's
+            // Multi arm (encode.rs).
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
+            for i in 0..n {
+                match decode_placeholder(cur, keys) {
+                    Ok(pk) => pks.push(pk),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Terminal::Multi(thresh)
+        }
+        Tag::SortedMulti => {
+            // Tap-illegal by miniscript typing (same as Multi; OP_CHECKMULTISIG
+            // is disabled in tapscript). Arm exists for exhaustive Tag coverage.
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
+            for i in 0..n {
+                match decode_placeholder(cur, keys) {
+                    Ok(pk) => pks.push(pk),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Terminal::SortedMulti(thresh)
         }
         Tag::MultiA => {
             let k = cur.read_byte()? as usize;
@@ -667,6 +725,150 @@ fn decode_tap_terminal(
             })?;
             Terminal::MultiA(thresh)
         }
+        Tag::SortedMultiA => {
+            // v0.6 NEW. Same shape as MultiA; key ordering is a descriptor-
+            // level concern handled upstream. Coldcard + Ledger documented.
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut pks: Vec<DescriptorPublicKey> = Vec::with_capacity(n);
+            for i in 0..n {
+                match decode_placeholder(cur, keys) {
+                    Ok(pk) => pks.push(pk),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            let thresh = Threshold::new(k, pks).map_err(|e| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Terminal::SortedMultiA(thresh)
+        }
+        // Wrappers (single recursive child)
+        Tag::Alt => {
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::Alt(std::sync::Arc::new(child))
+        }
+        Tag::Swap => {
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::Swap(std::sync::Arc::new(child))
+        }
+        Tag::Check => {
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::Check(std::sync::Arc::new(child))
+        }
+        Tag::DupIf => {
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::DupIf(std::sync::Arc::new(child))
+        }
+        Tag::Verify => {
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::Verify(std::sync::Arc::new(child))
+        }
+        Tag::NonZero => {
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::NonZero(std::sync::Arc::new(child))
+        }
+        Tag::ZeroNotEqual => {
+            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::ZeroNotEqual(std::sync::Arc::new(child))
+        }
+        // Logical operators
+        Tag::AndV => {
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::AndV(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::AndB => {
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::AndB(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::AndOr => {
+            let a = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let b = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let c = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::AndOr(
+                std::sync::Arc::new(a),
+                std::sync::Arc::new(b),
+                std::sync::Arc::new(c),
+            )
+        }
+        Tag::OrB => {
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::OrB(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::OrC => {
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::OrC(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::OrD => {
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::OrD(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::OrI => {
+            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
+            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
+            Terminal::OrI(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        }
+        Tag::Thresh => {
+            let k = cur.read_byte()? as usize;
+            let n = cur.read_byte()? as usize;
+            let mut children: Vec<std::sync::Arc<Miniscript<DescriptorPublicKey, Tap>>> =
+                Vec::with_capacity(n);
+            for i in 0..n {
+                match decode_tap_miniscript(cur, keys, leaf_index) {
+                    Ok(child) => children.push(std::sync::Arc::new(child)),
+                    Err(Error::InvalidBytecode {
+                        kind: BytecodeErrorKind::UnexpectedEnd | BytecodeErrorKind::Truncated,
+                        ..
+                    }) => {
+                        return Err(Error::InvalidBytecode {
+                            offset: cur.offset(),
+                            kind: BytecodeErrorKind::MissingChildren {
+                                expected: n,
+                                got: i,
+                            },
+                        });
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            let thresh = Threshold::new(k, children).map_err(|e| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+            })?;
+            Terminal::Thresh(thresh)
+        }
+        // Timelocks
+        Tag::After => {
+            let v = cur.read_varint_u64()?;
+            let v32 = u32::try_from(v).map_err(|_| Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::VarintOverflow,
+            })?;
+            let lock = miniscript::AbsLockTime::from_consensus(v32).map_err(|e| {
+                Error::InvalidBytecode {
+                    offset: tag_offset,
+                    kind: BytecodeErrorKind::TypeCheckFailed(e.to_string()),
+                }
+            })?;
+            Terminal::After(lock)
+        }
         Tag::Older => {
             let v = cur.read_varint_u64()?;
             let v32 = u32::try_from(v).map_err(|_| Error::InvalidBytecode {
@@ -681,45 +883,49 @@ fn decode_tap_terminal(
             })?;
             Terminal::Older(lock)
         }
-        Tag::AndV => {
-            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
-            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
-            Terminal::AndV(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        // Hashes — internal byte order, NOT reversed-display-order.
+        // Hash256 specifically uses miniscript::hash256::Hash newtype around
+        // sha256d::Hash; round-trip via from_byte_array (NOT from_hex which
+        // would interpret bytes as reversed-display-order).
+        Tag::Sha256 => {
+            let bytes = cur.read_array::<32>()?;
+            Terminal::Sha256(bitcoin::hashes::sha256::Hash::from_byte_array(bytes))
         }
-        Tag::OrD => {
-            let left = decode_tap_miniscript(cur, keys, leaf_index)?;
-            let right = decode_tap_miniscript(cur, keys, leaf_index)?;
-            Terminal::OrD(std::sync::Arc::new(left), std::sync::Arc::new(right))
+        Tag::Hash256 => {
+            let bytes = cur.read_array::<32>()?;
+            Terminal::Hash256(miniscript::hash256::Hash::from_byte_array(bytes))
         }
-        Tag::Check => {
-            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
-            Terminal::Check(std::sync::Arc::new(child))
+        Tag::Ripemd160 => {
+            let bytes = cur.read_array::<20>()?;
+            Terminal::Ripemd160(bitcoin::hashes::ripemd160::Hash::from_byte_array(bytes))
         }
-        Tag::Verify => {
-            let child = decode_tap_miniscript(cur, keys, leaf_index)?;
-            Terminal::Verify(std::sync::Arc::new(child))
+        Tag::Hash160 => {
+            let bytes = cur.read_array::<20>()?;
+            Terminal::Hash160(bitcoin::hashes::hash160::Hash::from_byte_array(bytes))
         }
-        // Defense-in-depth: in v0.5 `decode_tr_inner` routes Tag::TapTree
-        // (0x08) directly to `decode_tap_subtree`, and within that helper
-        // a Tag::TapTree byte at recursion-position is handled in the
-        // `Some(Tag::TapTree)` arm — never reaching `decode_tap_terminal`
-        // on the happy path. This arm catches direct callers that bypass
-        // the helper (none today, but keep the guard so a future caller
-        // surfaces a precise diagnostic instead of silently misparsing).
+        // Defense-in-depth: Tag::TapTree is routed by `decode_tr_inner`
+        // directly to `decode_tap_subtree`; reaching this arm means a
+        // direct caller bypassed that routing. Surface a precise diagnostic.
         Tag::TapTree => {
             return Err(Error::PolicyScopeViolation(
-                "Tag::TapTree (0x08) appeared in leaf position; this byte is the multi-leaf inner-node framing and must be routed via decode_tap_subtree, not decode_tap_terminal"
+                "Tag::TapTree appeared in leaf position; this byte is the multi-leaf inner-node framing and must be routed via decode_tap_subtree, not decode_tap_terminal"
                     .to_string(),
             ));
         }
-        // Anything else is out-of-subset for v0.2 tap leaves. Use the
-        // BIP 388 lowercase operator name (matches encode-side
-        // `tap_terminal_name`) so encode and decode rejections of the same
-        // operator surface identical user-facing diagnostics.
-        other => {
-            return Err(Error::TapLeafSubsetViolation {
-                operator: tag_to_bip388_name(other).to_string(),
-                leaf_index, // Threaded from decode_tap_subtree / decode_tap_miniscript.
+        // Catch-all: Tag valid in some context but not as a tap-leaf inner.
+        // E.g., a top-level descriptor tag (Tag::Wsh, Tag::Wpkh, Tag::Sh,
+        // Tag::Tr, Tag::Pkh) showing up where a tap-leaf inner is expected.
+        // Also catches MD-specific framing tags (Placeholder, SharedPath,
+        // Fingerprints) — those are valid framing bytes, just not tap-leaf
+        // operators. Use BytecodeErrorKind::TagInvalidContext for the
+        // structural diagnostic per spec §4 + plan IMP-7.
+        _ => {
+            return Err(Error::InvalidBytecode {
+                offset: tag_offset,
+                kind: BytecodeErrorKind::TagInvalidContext {
+                    tag: tag.as_byte(),
+                    context: "tap-leaf-inner",
+                },
             });
         }
     };
@@ -752,7 +958,7 @@ fn decode_tap_terminal(
 /// **Leaf-index propagation**: `leaf_counter` is incremented in DFS pre-order
 /// (left-subtree leaves numbered before right-subtree leaves at any inner
 /// node). This index is plumbed through to `validate_tap_leaf_subset` so
-/// `Error::TapLeafSubsetViolation` diagnostics name the offending leaf.
+/// `Error::SubsetViolation` diagnostics name the offending leaf.
 fn decode_tap_subtree(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
@@ -787,13 +993,11 @@ fn decode_tap_subtree(
             // unwinds, so a leaf encountered at recursion-depth N ends up
             // at miniscript-depth N in the final tree (see
             // rust-miniscript-fork taptree.rs:40-50).
+            // v0.6 strip: per-leaf validate_tap_leaf_subset call removed
+            // (see design/MD_SCOPE_DECISION_2026-04-28.md).
             let index = *leaf_counter;
             *leaf_counter += 1;
             let leaf = decode_tap_miniscript(cur, keys, Some(index))?;
-            // D-2: enforce per-leaf subset before returning.
-            // Mirrors the single-leaf path in `decode_tr_inner` so multi-leaf
-            // decode applies the same Coldcard subset gate per leaf.
-            crate::bytecode::encode::validate_tap_leaf_subset(&leaf, Some(index))?;
             Ok(TapTree::leaf(leaf))
         }
         None => Err(Error::InvalidBytecode {
@@ -819,7 +1023,6 @@ pub(crate) fn tag_to_bip388_name(tag: Tag) -> &'static str {
         Tag::Wpkh => "wpkh",
         Tag::Tr => "tr",
         Tag::TapTree => "TapTree",
-        Tag::Bare => "bare",
         // Key + multisig
         Tag::PkK => "pk_k",
         Tag::PkH => "pk_h",
@@ -827,6 +1030,7 @@ pub(crate) fn tag_to_bip388_name(tag: Tag) -> &'static str {
         Tag::Multi => "multi",
         Tag::SortedMulti => "sortedmulti",
         Tag::MultiA => "multi_a",
+        Tag::SortedMultiA => "sortedmulti_a",
         // Wrapper terminals
         Tag::Alt => "a:",
         Tag::Swap => "s:",
@@ -855,25 +1059,9 @@ pub(crate) fn tag_to_bip388_name(tag: Tag) -> &'static str {
         Tag::Hash256 => "hash256",
         Tag::Ripemd160 => "ripemd160",
         Tag::Hash160 => "hash160",
-        // Reserved-for-v1+ inline-key forms (descriptor-codec compatibility,
-        // tracked in FOLLOWUPS as `p2-inline-key-tags`).
-        Tag::ReservedOrigin => "<reserved:0x24>",
-        Tag::ReservedNoOrigin => "<reserved:0x25>",
-        Tag::ReservedUncompressedFullKey => "<reserved:0x26>",
-        Tag::ReservedCompressedFullKey => "<reserved:0x27>",
-        Tag::ReservedXOnly => "<reserved:0x28>",
-        Tag::ReservedXPub => "<reserved:0x29>",
-        Tag::ReservedMultiXPub => "<reserved:0x2A>",
-        Tag::ReservedUncompressedSinglePriv => "<reserved:0x2B>",
-        Tag::ReservedCompressedSinglePriv => "<reserved:0x2C>",
-        Tag::ReservedXPriv => "<reserved:0x2D>",
-        Tag::ReservedMultiXPriv => "<reserved:0x2E>",
-        Tag::ReservedNoWildcard => "<reserved:0x2F>",
-        Tag::ReservedUnhardenedWildcard => "<reserved:0x30>",
-        Tag::ReservedHardenedWildcard => "<reserved:0x31>",
         // Framing tags (not operators)
-        Tag::Placeholder => "<framing:0x32>",
-        Tag::SharedPath => "<framing:0x33>",
+        Tag::Placeholder => "<framing:0x33>",
+        Tag::SharedPath => "<framing:0x34>",
         Tag::Fingerprints => "<framing:0x35>",
     }
 }

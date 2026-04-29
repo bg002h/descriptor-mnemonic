@@ -38,7 +38,7 @@ pub use crate::wallet_id::ChunkWalletId;
 /// [`Error::MissingChunkIndex`], [`Error::CrossChunkHashMismatch`].
 ///
 /// Stage 5 (bytecode parse): [`Error::InvalidBytecode`],
-/// [`Error::PolicyScopeViolation`], [`Error::TapLeafSubsetViolation`],
+/// [`Error::PolicyScopeViolation`], [`Error::SubsetViolation`],
 /// [`Error::FingerprintsCountMismatch`].
 ///
 /// Encode-side: [`Error::PolicyTooLarge`], [`Error::PolicyParse`],
@@ -323,7 +323,7 @@ pub enum Error {
     /// don't yet plumb the index pass `None`).
     #[error("tap-leaf subset violation: operator '{operator}' not in Coldcard subset")]
     #[non_exhaustive]
-    TapLeafSubsetViolation {
+    SubsetViolation {
         /// The miniscript operator name (e.g. `"sha256"`, `"thresh"`,
         /// `"or_b"`) that violated the subset.
         operator: String,
@@ -435,6 +435,26 @@ pub enum BytecodeErrorKind {
         expected: u8,
         /// The tag byte value that was actually read.
         got: u8,
+    },
+
+    /// A tag byte is valid in some context but not allowed in this context.
+    ///
+    /// For example, a top-level descriptor tag (`Tag::Wsh`) appearing where
+    /// a tap-leaf inner is expected. Distinct from
+    /// [`BytecodeErrorKind::UnknownTag`] (no Tag exists for that byte) and
+    /// [`Error::PolicyScopeViolation`] (top-level admit-set decision).
+    ///
+    /// Introduced in v0.6 alongside the strip-Layer-3 change so the decoder
+    /// catch-all in `decode_tap_terminal` can produce a structural diagnostic
+    /// rather than the now-removed `SubsetViolation`.
+    ///
+    /// [`Error::PolicyScopeViolation`]: super::Error::PolicyScopeViolation
+    #[error("tag {tag:#04x} is invalid in context {context}")]
+    TagInvalidContext {
+        /// The tag byte that was structurally invalid in this context.
+        tag: u8,
+        /// Human-readable context name (e.g., "tap-leaf-inner", "wsh-inner").
+        context: &'static str,
     },
 
     /// The Stage-3 5-bit→byte conversion of a BCH-validated payload failed

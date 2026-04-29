@@ -17,7 +17,8 @@
 //! BIP 388 string form).
 //!
 //! v0.5: multi-leaf TapTree `tr()` is admitted via DFS pre-order traversal of
-//! `TapTree::leaves()`, emitting `Tag::TapTree` (0x08) inner-node framings.
+//! `TapTree::leaves()`, emitting `Tag::TapTree` (v0.6 byte 0x07; was 0x08
+//! in v0.5) inner-node framings.
 //! KeyOnly `tr(KEY)` and single-leaf `tr(KEY, leaf)` paths are preserved
 //! byte-identically from v0.4.x.
 //!
@@ -149,8 +150,9 @@ impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
                     }
                     if leaves.len() == 1 && leaves[0].0 == 0 {
                         // Single-leaf path — byte-identical to v0.4.x.
+                        // v0.6 strip: validate_tap_leaf_subset no longer called
+                        // by default; retained as pub fn for explicit use.
                         let leaf_ms = leaves[0].1;
-                        validate_tap_leaf_subset(leaf_ms, Some(0))?;
                         leaf_ms.encode_template(out, placeholder_map)?;
                     } else {
                         // Multi-leaf path — emit 0x08 framings.
@@ -384,15 +386,20 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Segwitv0> {
 }
 
 // ---------------------------------------------------------------------------
-// Tap-context encoder (Phase D)
+// Tap-context encoder (v0.6 strip)
 // ---------------------------------------------------------------------------
 //
 // Forwarding impls so `Miniscript<DescriptorPublicKey, Tap>` and its inner
-// `Terminal<DescriptorPublicKey, Tap>` flow through the same encoding shape
-// the Segwitv0 path uses. The wire format for shared operators (e.g. `pk_k`,
-// `multi_a`, `or_d`, `and_v`, `older`, the `c:` / `v:` wrappers) is identical
-// across contexts: the per-leaf subset validator (`validate_tap_leaf_subset`)
-// is what prevents the encoder from emitting any tap-illegal terminal.
+// `Terminal<DescriptorPublicKey, Tap>` flow through encoding. v0.6 strips the
+// Phase D Coldcard-subset gate: the encoder admits any `Terminal<_, Tap>` AST
+// that miniscript constructs. The exhaustive match below covers every
+// Terminal variant including tap-illegal `Multi`/`SortedMulti` (which can't
+// arise via miniscript's parser in a Tap context, but exhaustiveness keeps
+// the match compiler-checked against future miniscript upgrades).
+//
+// `validate_tap_leaf_subset` and `validate_tap_leaf_terminal` are retained
+// as `pub fn` for explicit-call use by callers wanting signer-aware
+// validation; they're no longer invoked by the encoder default path.
 
 impl EncodeTemplate for Miniscript<DescriptorPublicKey, Tap> {
     fn encode_template(
@@ -411,6 +418,16 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
         placeholder_map: &HashMap<DescriptorPublicKey, u8>,
     ) -> Result<(), Error> {
         match self {
+            // Constants
+            Terminal::True => {
+                out.push(Tag::True.as_byte());
+                Ok(())
+            }
+            Terminal::False => {
+                out.push(Tag::False.as_byte());
+                Ok(())
+            }
+            // Keys
             Terminal::PkK(key) => {
                 out.push(Tag::PkK.as_byte());
                 key.encode_template(out, placeholder_map)
@@ -419,12 +436,91 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
                 out.push(Tag::PkH.as_byte());
                 key.encode_template(out, placeholder_map)
             }
+            Terminal::RawPkH(h) => {
+                out.push(Tag::RawPkH.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            // Multisig family. Multi/SortedMulti are tap-illegal by
+            // miniscript typing (they compile to OP_CHECKMULTISIG which is
+            // disabled in tapscript per BIP 342). Arms exist for
+            // exhaustiveness; rust-miniscript's parser won't construct
+            // these in a Tap context, so reaching them via parsed inputs
+            // is impossible. A hand-built Tap-context AST containing them
+            // would be malformed; we emit the wire byte regardless under
+            // the v0.6 "format is neutral" framing.
+            Terminal::Multi(thresh) => {
+                out.push(Tag::Multi.as_byte());
+                thresh.encode_template(out, placeholder_map)
+            }
+            Terminal::SortedMulti(thresh) => {
+                out.push(Tag::SortedMulti.as_byte());
+                out.push(u8::try_from(thresh.k()).map_err(|_| {
+                    Error::PolicyScopeViolation(format!(
+                        "threshold k={} exceeds single-byte width (255)",
+                        thresh.k()
+                    ))
+                })?);
+                out.push(u8::try_from(thresh.n()).map_err(|_| {
+                    Error::PolicyScopeViolation(format!(
+                        "threshold n={} exceeds single-byte width (255)",
+                        thresh.n()
+                    ))
+                })?);
+                for pk in thresh.iter() {
+                    pk.encode_template(out, placeholder_map)?;
+                }
+                Ok(())
+            }
             Terminal::MultiA(thresh) => {
                 out.push(Tag::MultiA.as_byte());
                 thresh.encode_template(out, placeholder_map)
             }
+            Terminal::SortedMultiA(thresh) => {
+                // v0.6 NEW. Same shape as MultiA; key ordering is a
+                // descriptor-level concern handled upstream.
+                out.push(Tag::SortedMultiA.as_byte());
+                out.push(u8::try_from(thresh.k()).map_err(|_| {
+                    Error::PolicyScopeViolation(format!(
+                        "threshold k={} exceeds single-byte width (255)",
+                        thresh.k()
+                    ))
+                })?);
+                out.push(u8::try_from(thresh.n()).map_err(|_| {
+                    Error::PolicyScopeViolation(format!(
+                        "threshold n={} exceeds single-byte width (255)",
+                        thresh.n()
+                    ))
+                })?);
+                for pk in thresh.iter() {
+                    pk.encode_template(out, placeholder_map)?;
+                }
+                Ok(())
+            }
+            // Logical operators
             Terminal::AndV(left, right) => {
                 out.push(Tag::AndV.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::AndB(left, right) => {
+                out.push(Tag::AndB.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::AndOr(a, b, c) => {
+                out.push(Tag::AndOr.as_byte());
+                a.encode_template(out, placeholder_map)?;
+                b.encode_template(out, placeholder_map)?;
+                c.encode_template(out, placeholder_map)
+            }
+            Terminal::OrB(left, right) => {
+                out.push(Tag::OrB.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::OrC(left, right) => {
+                out.push(Tag::OrC.as_byte());
                 left.encode_template(out, placeholder_map)?;
                 right.encode_template(out, placeholder_map)
             }
@@ -433,73 +529,124 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
                 left.encode_template(out, placeholder_map)?;
                 right.encode_template(out, placeholder_map)
             }
+            Terminal::OrI(left, right) => {
+                out.push(Tag::OrI.as_byte());
+                left.encode_template(out, placeholder_map)?;
+                right.encode_template(out, placeholder_map)
+            }
+            Terminal::Thresh(thresh) => {
+                out.push(Tag::Thresh.as_byte());
+                thresh.encode_template(out, placeholder_map)
+            }
+            // Timelocks
+            Terminal::After(after) => {
+                out.push(Tag::After.as_byte());
+                crate::bytecode::varint::encode_u64(u64::from(after.to_consensus_u32()), out);
+                Ok(())
+            }
             Terminal::Older(older) => {
                 out.push(Tag::Older.as_byte());
                 crate::bytecode::varint::encode_u64(u64::from(older.to_consensus_u32()), out);
                 Ok(())
             }
+            // Hashes — internal byte order, NOT reversed-display-order.
+            // Hash256 specifically: as_byte_array() is the SHA256d internal
+            // order; round-trip via hash256::Hash::from_byte_array, NOT
+            // sha256d::Hash::from_hex.
+            Terminal::Sha256(h) => {
+                out.push(Tag::Sha256.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            Terminal::Hash256(h) => {
+                out.push(Tag::Hash256.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            Terminal::Ripemd160(h) => {
+                out.push(Tag::Ripemd160.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            Terminal::Hash160(h) => {
+                out.push(Tag::Hash160.as_byte());
+                out.extend_from_slice(h.as_byte_array());
+                Ok(())
+            }
+            // Wrappers
+            Terminal::Alt(child) => {
+                out.push(Tag::Alt.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::Swap(child) => {
+                out.push(Tag::Swap.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
             Terminal::Check(child) => {
-                // `c:` wrapper. Emitted by the BIP 388 parser when the user
-                // writes `pk(K)` (a tap-illegal bare K-type fragment is
-                // wrapped as `c:pk_k(K)` to lift it to B-type).
                 out.push(Tag::Check.as_byte());
                 child.encode_template(out, placeholder_map)
             }
+            Terminal::DupIf(child) => {
+                out.push(Tag::DupIf.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
             Terminal::Verify(child) => {
-                // `v:` wrapper. Required to drive `and_v(v:..., ...)`, the
-                // canonical way to write `and(...)` with timelocks under
-                // tapscript per BIP §"Taproot tree" (Coldcard subset).
                 out.push(Tag::Verify.as_byte());
                 child.encode_template(out, placeholder_map)
             }
-            // Anything else is outside the Phase D Coldcard subset.
-            // `validate_tap_leaf_subset` is the gate that catches these
-            // before the encoder is invoked; if a caller bypasses validation
-            // and emits an out-of-subset terminal we still surface a precise
-            // error rather than silently writing it.
-            other => Err(Error::TapLeafSubsetViolation {
-                operator: tap_terminal_name(other).to_string(),
-                leaf_index: None, // Terminal-encoder catch-all has no leaf-index context;
-                                  // the outer validate_tap_leaf_subset call site supplies index.
+            Terminal::NonZero(child) => {
+                out.push(Tag::NonZero.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            Terminal::ZeroNotEqual(child) => {
+                out.push(Tag::ZeroNotEqual.as_byte());
+                child.encode_template(out, placeholder_map)
+            }
+            // Defensive catch-all — Terminal isn't `#[non_exhaustive]` in the
+            // pinned miniscript, so this is unreachable today. The `#[allow]`
+            // keeps the guard against a future upgrade adding new variants.
+            #[allow(unreachable_patterns)]
+            other => Err(Error::SubsetViolation {
+                operator: format!("{other:?}"),
+                leaf_index: None,
             }),
         }
     }
 }
 
 /// Validate that a tap-leaf miniscript fragment uses only operators in the
-/// BIP §"Taproot tree" Coldcard subset (`pk_k`, `pk_h`, `multi_a`, `or_d`,
-/// `and_v`, `older`, plus the `c:` and `v:` wrappers needed to spell them
-/// through the BIP 388 parser).
+/// historical Coldcard subset (`pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`,
+/// `older`, plus the `c:` and `v:` wrappers needed to spell them through
+/// the BIP 388 parser).
+///
+/// **v0.6 note:** this function is no longer called by the encoder/decoder
+/// default paths. It is retained as a public API for callers (typically
+/// the layered `md-signer-compat` crate or an explicit pre-encode check)
+/// who want signer-aware validation. The historical "encode rejects
+/// out-of-subset operators" guarantee from v0.5 is GONE in v0.6 — see
+/// `design/MD_SCOPE_DECISION_2026-04-28.md` for rationale.
 ///
 /// Walks the AST recursively. On the first violation, returns
-/// [`Error::TapLeafSubsetViolation`] with the offending operator name. See
-/// `design/PHASE_v0_2_D_DECISIONS.md` D-2.
+/// [`Error::SubsetViolation`] with the offending operator name.
 ///
-/// **Wrapper-terminal handling** (D-2 narrowing): `Terminal::Check` (`c:`)
-/// and `Terminal::Verify` (`v:`) are allowed because the BIP 388 parser
-/// emits them implicitly when the user writes `pk(K)` (= `c:pk_k`) or
-/// `and_v(v:..., ...)`, both of which are explicitly named in the
-/// Coldcard subset. Every other miniscript wrapper (`a:` / `s:` / `d:` /
-/// `j:` / `n:`) is rejected: none appear in the Coldcard tap-leaf
-/// vocabulary documented as of edge firmware. v0.3 may relax this if a
-/// signer documents a wider safe wrapper set; tracked as
-/// `phase-d-tap-leaf-wrapper-subset-clarification` in `FOLLOWUPS.md`.
+/// **Wrapper-terminal handling**: `Terminal::Check` (`c:`) and
+/// `Terminal::Verify` (`v:`) are allowed because the BIP 388 parser emits
+/// them implicitly when the user writes `pk(K)` (= `c:pk_k`) or
+/// `and_v(v:..., ...)`. Every other miniscript wrapper is rejected.
 ///
 /// # Parameters
 ///
 /// `leaf_index` is the DFS pre-order index of this leaf within the
 /// containing tap tree. The value is propagated into
-/// [`Error::TapLeafSubsetViolation`] to enrich diagnostics for multi-leaf
-/// decode/encode paths. Pass `Some(0)` for single-leaf `tr(KEY, leaf)`,
-/// `Some(n)` for the n-th leaf in DFS pre-order traversal of a multi-leaf
-/// tree, or `None` for callers without leaf-index context (currently no
-/// in-tree caller passes `None`; reserved for external callers).
+/// [`Error::SubsetViolation`] to enrich diagnostics. Pass `Some(0)` for
+/// single-leaf, `Some(n)` for multi-leaf, or `None` for callers without
+/// leaf-index context.
 pub fn validate_tap_leaf_subset(
     ms: &Miniscript<DescriptorPublicKey, Tap>,
     leaf_index: Option<usize>,
 ) -> Result<(), Error> {
     validate_tap_leaf_terminal(&ms.node).map_err(|e| match e {
-        Error::TapLeafSubsetViolation { operator, .. } => Error::TapLeafSubsetViolation {
+        Error::SubsetViolation { operator, .. } => Error::SubsetViolation {
             operator,
             leaf_index,
         },
@@ -522,7 +669,7 @@ fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Resu
         // `pk(...)` and `and_v(v:..., ...)`).
         Terminal::Check(child) | Terminal::Verify(child) => validate_tap_leaf_terminal(&child.node),
         // Everything else is out-of-subset for v0.2.
-        other => Err(Error::TapLeafSubsetViolation {
+        other => Err(Error::SubsetViolation {
             operator: tap_terminal_name(other).to_string(),
             leaf_index: None, // Sub-helper of validate_tap_leaf_subset; the outer
                               // caller re-wraps via map_err to attach the correct
@@ -554,9 +701,10 @@ fn encode_tap_subtree(
     let leaf_depth = leaves[*cursor].0;
     match leaf_depth.cmp(&target_depth) {
         Ordering::Equal => {
-            let leaf_index = *cursor;
+            // v0.6 strip: validate_tap_leaf_subset no longer called by default;
+            // retained as pub fn for explicit use. The leaf_index variable used
+            // to be passed to the validator; keep the *cursor read inline.
             let ms = leaves[*cursor].1;
-            validate_tap_leaf_subset(ms, Some(leaf_index))?;
             ms.encode_template(out, placeholder_map)?;
             *cursor += 1;
         }
@@ -573,29 +721,31 @@ fn encode_tap_subtree(
     Ok(())
 }
 
-/// Human-readable name for a tap-context Terminal variant, used in error
-/// messages. Delegates to `decode::tag_to_bip388_name` via a
-/// `Terminal → Tag` adapter so encode-side and decode-side diagnostics
-/// for the same operator are guaranteed byte-identical.
+/// Human-readable name for a tap-context Terminal variant.
 ///
-/// `Terminal::SortedMultiA` has no `Tag` counterpart (the wire format does
-/// not encode `sortedmulti_a` — it would require a future Tag allocation),
-/// so its name is supplied directly here.
+/// **v0.6 note:** no longer the universal naming hook for tap-context
+/// errors — only used by the explicit-call validator path
+/// (`validate_tap_leaf_subset` / `validate_tap_leaf_terminal`). The
+/// default encoder/decoder paths no longer call into this function.
+///
+/// Delegates to `decode::tag_to_bip388_name` via a `Terminal → Tag`
+/// adapter so encode-side and decode-side diagnostics for the same
+/// operator are guaranteed byte-identical.
 fn tap_terminal_name(term: &Terminal<DescriptorPublicKey, Tap>) -> &'static str {
     if let Some(tag) = terminal_to_tag(term) {
         return super::decode::tag_to_bip388_name(tag);
     }
-    match term {
-        Terminal::SortedMultiA(_) => "sortedmulti_a",
-        // Defensive catch-all — Terminal isn't `#[non_exhaustive]` in the
-        // pinned miniscript v13, so this is unreachable today; kept against
-        // a future upgrade adding new variants.
-        _ => "<unknown-terminal>",
-    }
+    // Defensive catch-all — Terminal isn't `#[non_exhaustive]` in the
+    // pinned miniscript, so this is unreachable today; kept against
+    // a future upgrade adding new variants.
+    "<unknown-terminal>"
 }
 
 /// Map a tap-context `Terminal` to its corresponding wire-format `Tag`,
-/// or `None` for variants without a Tag allocation (`SortedMultiA`).
+/// or `None` for variants without a Tag allocation (none in v0.6 — every
+/// `Terminal` variant has a Tag). The `None` arm is retained for
+/// forward-compatibility with future miniscript variants that haven't
+/// been allocated a Tag yet.
 ///
 /// Used by `tap_terminal_name` to delegate operator naming to the
 /// single-source-of-truth `tag_to_bip388_name`. Not used in the encode
@@ -611,6 +761,7 @@ fn terminal_to_tag(term: &Terminal<DescriptorPublicKey, Tap>) -> Option<Tag> {
         Terminal::Multi(_) => Tag::Multi,
         Terminal::SortedMulti(_) => Tag::SortedMulti,
         Terminal::MultiA(_) => Tag::MultiA,
+        Terminal::SortedMultiA(_) => Tag::SortedMultiA, // v0.6 NEW
         Terminal::After(_) => Tag::After,
         Terminal::Older(_) => Tag::Older,
         Terminal::Sha256(_) => Tag::Sha256,
@@ -632,8 +783,7 @@ fn terminal_to_tag(term: &Terminal<DescriptorPublicKey, Tap>) -> Option<Tag> {
         Terminal::Verify(_) => Tag::Verify,
         Terminal::NonZero(_) => Tag::NonZero,
         Terminal::ZeroNotEqual(_) => Tag::ZeroNotEqual,
-        // No Tag variant — caller falls back to a string-only name.
-        Terminal::SortedMultiA(_) => return None,
+        // Forward-compatibility catch-all for future miniscript variants.
         #[allow(unreachable_patterns)]
         _ => return None,
     })
@@ -642,7 +792,8 @@ fn terminal_to_tag(term: &Terminal<DescriptorPublicKey, Tap>) -> Option<Tag> {
 /// Emit a `DescriptorPublicKey` as a placeholder reference.
 ///
 /// Looks up `self` in `placeholder_map` and writes `Tag::Placeholder`
-/// (`0x32`) followed by the LEB128-encoded index. Returns
+/// (v0.6 byte `0x33`; was `0x32` in v0.5) followed by the LEB128-encoded
+/// index. Returns
 /// [`Error::PolicyScopeViolation`] if the key is not present in the map
 /// (v0.1 forbids inline keys; every leaf key must come through the
 /// wallet-policy key information vector).
@@ -1909,13 +2060,16 @@ mod tests {
             );
         }
 
-        // SortedMultiA has no Tag counterpart (no wire-format byte allocated).
-        // Verify the explicit string fallback so a future Tag allocation
-        // doesn't silently change the diagnostic.
+        // SortedMultiA gets a Tag allocation in v0.6 (Tag::SortedMultiA = 0x0B).
+        // Verify the delegation works through the same name-table single-source.
         let sma: Terminal<DescriptorPublicKey, Tap> = Terminal::SortedMultiA(
             Threshold::new(1, vec![key_a.clone()]).unwrap(),
         );
         assert_eq!(tap_terminal_name(&sma), "sortedmulti_a");
-        assert!(terminal_to_tag(&sma).is_none());
+        assert_eq!(terminal_to_tag(&sma), Some(Tag::SortedMultiA));
+        assert_eq!(
+            tap_terminal_name(&sma),
+            tag_to_bip388_name(Tag::SortedMultiA),
+        );
     }
 }

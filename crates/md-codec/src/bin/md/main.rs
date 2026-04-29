@@ -39,6 +39,11 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Encode a wallet policy into MD backup strings.
+    ///
+    /// WARNING: This tool encodes any BIP 388 wallet policy. It does NOT
+    /// check whether the policy is signable on any particular hardware
+    /// wallet — that is your responsibility. See the project README for
+    /// the responsibility-chain framing.
     Encode {
         /// The wallet policy (BIP 388 template string).
         policy: String,

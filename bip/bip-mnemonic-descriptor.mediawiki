@@ -387,45 +387,45 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 |-
 | <code>0x06</code> || <code>tr()</code> || — || 1 internal key, optional tree ||
 |-
-| <code>0x07</code> || <code>bare()</code> || — || 1 || Top-level: REJECTED. Not used in any nested context in MD's accepted surface.
+| <code>0x07</code> || <code>TapTree</code> || — || Multi-leaf TapTree inner-node framing (taproot script-tree subtree); recursive <code>[TapTree=0x07][LEFT_SUBTREE][RIGHT_SUBTREE]</code> (see §"Taproot tree") || Active (v0.5; tag was 0x08 in v0.5, renumbered to 0x07 in v0.6)
 |-
-| <code>0x08</code> || <code>TapTree</code> || — || Multi-leaf TapTree inner-node framing (taproot script-tree subtree); recursive <code>[TapTree=0x08][LEFT_SUBTREE][RIGHT_SUBTREE]</code> (see §"Taproot tree") || Active (v0.5)
+| <code>0x08</code> || <code>multi()</code> || threshold (1 byte), count (1 byte) || count keys || Renumbered from 0x19 in v0.6 to group multisig family contiguously
 |-
 | <code>0x09</code> || <code>sortedmulti()</code> || threshold (1 byte), count (1 byte) || count keys ||
 |-
-| <code>0x0A</code> || <code>a:</code> wrapper (Alt) || — || 1 ||
+| <code>0x0A</code> || <code>multi_a()</code> || threshold (1 byte), count (1 byte) || count keys (taproot) || Renumbered from 0x1A in v0.6
 |-
-| <code>0x0B</code> || <code>s:</code> wrapper (Swap) || — || 1 ||
+| <code>0x0B</code> || <code>sortedmulti_a()</code> || threshold (1 byte), count (1 byte) || count keys (taproot) || NEW in v0.6 (Coldcard + Ledger documented)
 |-
-| <code>0x0C</code> || <code>c:</code> wrapper (Check) || — || 1 ||
+| <code>0x0C</code> || <code>a:</code> wrapper (Alt) || — || 1 ||
 |-
-| <code>0x0D</code> || <code>d:</code> wrapper (DupIf) || — || 1 ||
+| <code>0x0D</code> || <code>s:</code> wrapper (Swap) || — || 1 ||
 |-
-| <code>0x0E</code> || <code>v:</code> wrapper (Verify) || — || 1 ||
+| <code>0x0E</code> || <code>c:</code> wrapper (Check) || — || 1 ||
 |-
-| <code>0x0F</code> || <code>j:</code> wrapper (NonZero) || — || 1 ||
+| <code>0x0F</code> || <code>d:</code> wrapper (DupIf) || — || 1 ||
 |-
-| <code>0x10</code> || <code>n:</code> wrapper (ZeroNotEqual) || — || 1 ||
+| <code>0x10</code> || <code>v:</code> wrapper (Verify) || — || 1 ||
 |-
-| <code>0x11</code> || <code>and_v</code> || — || 2 ||
+| <code>0x11</code> || <code>j:</code> wrapper (NonZero) || — || 1 ||
 |-
-| <code>0x12</code> || <code>and_b</code> || — || 2 ||
+| <code>0x12</code> || <code>n:</code> wrapper (ZeroNotEqual) || — || 1 ||
 |-
-| <code>0x13</code> || <code>andor</code> || — || 3 ||
+| <code>0x13</code> || <code>and_v</code> || — || 2 ||
 |-
-| <code>0x14</code> || <code>or_b</code> || — || 2 ||
+| <code>0x14</code> || <code>and_b</code> || — || 2 ||
 |-
-| <code>0x15</code> || <code>or_c</code> || — || 2 ||
+| <code>0x15</code> || <code>andor</code> || — || 3 ||
 |-
-| <code>0x16</code> || <code>or_d</code> || — || 2 ||
+| <code>0x16</code> || <code>or_b</code> || — || 2 ||
 |-
-| <code>0x17</code> || <code>or_i</code> || — || 2 ||
+| <code>0x17</code> || <code>or_c</code> || — || 2 ||
 |-
-| <code>0x18</code> || <code>thresh()</code> || threshold (1 byte), count (1 byte) || count ||
+| <code>0x18</code> || <code>or_d</code> || — || 2 ||
 |-
-| <code>0x19</code> || <code>multi()</code> || threshold (1 byte), count (1 byte) || count keys ||
+| <code>0x19</code> || <code>or_i</code> || — || 2 ||
 |-
-| <code>0x1A</code> || <code>multi_a()</code> || threshold (1 byte), count (1 byte) || count keys (taproot) ||
+| <code>0x1A</code> || <code>thresh()</code> || threshold (1 byte), count (1 byte) || count ||
 |-
 | <code>0x1B</code> || <code>pk_k()</code> || — || 1 key ||
 |-
@@ -445,18 +445,20 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 |-
 | <code>0x23</code> || <code>hash160()</code> || 20-byte hash || 0 ||
 |-
-| <code>0x32</code> || <code>@i</code> placeholder || 1-byte placeholder index (0–255) || 0 (a key reference, leaf) ||
+| <code>0x33</code> || <code>@i</code> placeholder || 1-byte placeholder index (0–255) || 0 (a key reference, leaf) || Renumbered from 0x32 in v0.6 (byte 0x32 intentionally vacant)
 |-
-| <code>0x33</code> || Shared-path declaration || See "Path declaration", above || 0 ||
+| <code>0x34</code> || Shared-path declaration || See "Path declaration", above || 0 || Renumbered from 0x33 in v0.6
 |-
-| <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0 ||
+| <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0 || Byte preserved across v0.5→v0.6 for wire-format continuity
 |}
 
-Tags <code>0x24</code>–<code>0x31</code> are reserved for future descriptor-codec compatibility (these tags are defined in <code>descriptor-codec</code> for inline keys, key origins, and wildcards, which MD v0 does not use because it relies on the BIP 388 placeholder framing for keys; v1+ may expose them for foreign-xpub support).
+Tags <code>0x24</code>–<code>0x31</code> are unallocated. (In MD v0.5 and earlier, these bytes were reserved for descriptor-codec inline-key compatibility; MD v0.6 dropped them since MD's BIP-388 wallet-policy framing forbids inline keys. See the project's <code>MD_SCOPE_DECISION_2026-04-28.md</code> design document for rationale.)
 
-Tag <code>0x34</code> is reserved.
+Tag <code>0x32</code> is unallocated in v0.6. (In v0.5 it was the Placeholder framing tag; v0.6 moves Placeholder to <code>0x33</code> and intentionally leaves <code>0x32</code> vacant so any v0.5→v0.6 transcoding mistake surfaces as a clean <code>from_byte=None</code> error rather than data corruption.)
 
 Tags <code>0x36</code>–<code>0xFF</code> are reserved.
+
+In v0.6 MD's BIP-388 wallet-policy framing additionally drops the legacy v0.5 <code>bare()</code> tag (was 0x07) — <code>Descriptor::Bare</code> is permanently rejected by the encoder via <code>PolicyScopeViolation</code>; no Tag is allocated for it in v0.6.
 
 =====Operator children layout=====
 
@@ -538,13 +540,28 @@ The <code>tr()</code> operator (<code>0x06</code>) encodes a top-level taproot w
 
 * Absent — keypath-only <code>tr(KEY)</code>; no further bytes in the operator payload.
 * A single tap-leaf miniscript — encoded directly as a leaf-script tag sequence (any operator from the per-leaf miniscript subset detailed below in this section). This is the <code>tr(KEY, leaf)</code> form.
-* A <code>TapTree</code> inner-node framing — a recursive <code>[TapTree=0x08][LEFT_SUBTREE][RIGHT_SUBTREE]</code> sequence where each <code>SUBTREE</code> is recursively defined as another tap-leaf or another inner-node framing. This is the <code>tr(KEY, TREE)</code> multi-leaf form (v0.5+).
+* A <code>TapTree</code> inner-node framing — a recursive <code>[TapTree=0x07][LEFT_SUBTREE][RIGHT_SUBTREE]</code> sequence where each <code>SUBTREE</code> is recursively defined as another tap-leaf or another inner-node framing. This is the <code>tr(KEY, TREE)</code> multi-leaf form (v0.5+; <code>TapTree</code> tag was 0x08 in v0.5; renumbered to 0x07 in v0.6).
 
-Multi-leaf taproot trees are encoded recursively using the <code>TapTree (0x08)</code> tag as inner-node framing. BIP 388's curly-brace source form <code>{LEFT, RIGHT}</code> is the human-readable counterpart of this bytecode; the MD bytecode is the wire encoding of that grammar.
+Multi-leaf taproot trees are encoded recursively using the <code>TapTree (0x07)</code> tag as inner-node framing. BIP 388's curly-brace source form <code>{LEFT, RIGHT}</code> is the human-readable counterpart of this bytecode; the MD bytecode is the wire encoding of that grammar.
 
-The decoder enforces BIP 341's <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> ceiling on tree depth via a peek-before-recurse pattern: a <code>0x08</code> byte is consumed only after the depth gate passes, so a hostile producer cannot blow the parser's stack via deeply nested framings. Decoders MUST reject trees that would exceed depth 128 with <code>Error::PolicyScopeViolation</code> identifying the depth overflow.
+The decoder enforces BIP 341's <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> ceiling on tree depth via a peek-before-recurse pattern: a <code>0x07</code> byte is consumed only after the depth gate passes, so a hostile producer cannot blow the parser's stack via deeply nested framings. Decoders MUST reject trees that would exceed depth 128 with <code>Error::PolicyScopeViolation</code> identifying the depth overflow.
 
-Implementations supporting taproot MUST enforce the per-leaf miniscript subset constraints required by deployed hardware signers (notably Coldcard, which restricts to <code>pk</code>, <code>pk_h</code>, <code>multi_a</code>, <code>or_d</code>, <code>and_v</code>, <code>older</code> — plus the <code>c:</code> and <code>v:</code> wrappers required to spell those operators in canonical BIP 388 form — as of edge firmware). Producing a tap-miniscript wallet policy beyond this subset risks the wallet being unspendable on hardware signers.
+Implementations MAY enforce a per-leaf miniscript subset matching their target hardware signer's documented admit list. The MD encoding format itself does not require this — see §"Signer compatibility (informational)" below for the layered-responsibility framing. Implementations SHOULD clearly document any such limitations per BIP 388 §"Implementation guidelines".
+
+=====Signer compatibility (informational)=====
+
+The MD encoding format is neutral on hardware-signer compatibility. An MD-encoded backup of a BIP 388 wallet policy is structurally well-formed if and only if the policy parses under BIP 388 + BIP 379; whether the policy is signable on a particular hardware signer is a separate concern handled by tools above and below MD.
+
+The responsibility chain is:
+
+# Wallet software (e.g., Sparrow, Liana, Specter, Bitcoin Core) constructs a BIP 388 wallet policy. The wallet should know which signer the policy targets and produce shapes the signer admits.
+# MD encodes the policy losslessly into engravable steel-backup form.
+# The user, recovering the backup, decodes the MD string back into a BIP 388 policy.
+# The recovery wallet pairs the policy with the matching signer and constructs spending transactions.
+
+If an MD-encoded backup contains operators a recovery-time signer will not sign, recovery may require either a different signer or manual signing infrastructure (Bitcoin Core, custom signing pipelines).
+
+Implementations MAY provide opt-in signer-subset validators as a layered concern. Such validators are tracked separately from this specification — see for example the named subsets maintained for Coldcard (firmware/edge <code>docs/taproot.md</code>) and Ledger (<code>LedgerHQ/vanadium</code> <code>apps/bitcoin/common/src/bip388/cleartext.rs</code>). A reference Rust implementation of the layered checker pattern is the proposed <code>md-signer-compat</code> crate.
 
 =====Byte-layout examples=====
 

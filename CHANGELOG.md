@@ -4,13 +4,124 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## [Unreleased] (next breaking release, planned 0.6.0)
+## [0.6.0] — 2026-04-28
+
+The v0.6 release strips MD's signer-compatibility curation layer. MD's scope
+is now encoding-only: it serializes any BIP 388 wallet policy losslessly,
+without enforcing a hardware-signer-specific operator subset. Whether a given
+policy is signable on a given signer becomes a layered concern handled by
+tools above MD (wallet software) and below MD (signer firmware).
+
+See [`design/MD_SCOPE_DECISION_2026-04-28.md`](./design/MD_SCOPE_DECISION_2026-04-28.md)
+for the full rationale, and [`MIGRATION.md`](./MIGRATION.md#v05x--v060) for
+upgrade steps. The BIP draft §"Taproot tree" subset clause is rewritten from
+MUST to MAY-informational; a new §"Signer compatibility (informational)"
+section frames the responsibility chain.
 
 ### Changed (breaking)
-- `DecodedString.data` field removed; replaced by `pub fn data(&self) -> &[u8]` accessor backed by the existing `data_with_checksum: Vec<u8>` field. Eliminates the redundant per-`DecodedString` allocation that previously duplicated the data-symbol prefix. Migration: `decoded.data` → `decoded.data()` (yields `&[u8]` instead of an owned `Vec<u8>`). For consumers that need an owned copy, use `decoded.data().to_vec()`. Do **not** substitute `decoded.data_with_checksum` — it includes the trailing BCH checksum symbols and is NOT a drop-in replacement for the old `data` in payload-processing contexts.
 
-### Migration
-See [`MIGRATION.md`](./MIGRATION.md#v05x--v060) for upgrade steps.
+- **Tag enum reorganized** (wire-format-breaking): every tap-leaf-bearing
+  bytecode regenerates. `Tag::TapTree` 0x08 → 0x07 (adjacent to `Tr=0x06`);
+  multisig family contiguous at 0x08-0x0B (Multi 0x08, SortedMulti 0x09,
+  MultiA 0x0A, NEW SortedMultiA 0x0B); wrappers and logical operators shift
+  by 2 positions; `Placeholder` 0x32 → 0x33 (byte 0x32 left intentionally
+  unallocated to surface v0.5→v0.6 transcoder mistakes); `SharedPath`
+  0x33 → 0x34. Constants (False/True), top-level descriptors (Pkh/Sh/Wpkh/
+  Wsh/Tr), keys (PkK/PkH/RawPkH), timelocks (After/Older), hashes
+  (Sha256/Hash256/Ripemd160/Hash160), and `Fingerprints` byte-identical
+  from v0.5.
+
+- **`Tag::Bare` variant DROPPED**: the v0.5 byte 0x07 is reused for
+  `TapTree`. `Descriptor::Bare` continues to be rejected by the encoder
+  via `PolicyScopeViolation` (unchanged behaviour); only the unused Tag
+  variant is gone.
+
+- **`Reserved*` variant range DROPPED** (14 variants at 0x24-0x31):
+  descriptor-codec inline-key vendoring is incompatible with MD's BIP-388
+  wallet-policy scope. `Tag::from_byte` returns `None` for these bytes in
+  v0.6.
+
+- **`Error::TapLeafSubsetViolation` renamed to `Error::SubsetViolation`**:
+  variant name presumed Tap-context, but the explicit-call validator
+  infrastructure could plausibly extend to Segwitv0 subsets. Field shape
+  unchanged (`{ operator: String, leaf_index: Option<usize> }`).
+
+- **Encoder/decoder default validator stripped**: `validate_tap_leaf_subset`
+  no longer called by default. Callers depending on this rejection for
+  safety must invoke `validate_tap_leaf_subset` explicitly. The function
+  is retained as `pub fn` in `bytecode::encode` for opt-in use.
+
+- **`DecodedString.data` field removed** (already shipped in `d79125d`):
+  replaced by `pub fn data(&self) -> &[u8]` accessor backed by the
+  existing `data_with_checksum: Vec<u8>` field. Migration: `decoded.data`
+  → `decoded.data()`.
+
+### Added
+
+- **`Tag::SortedMultiA` (0x0B)** for taproot sorted-multisig. Coldcard's
+  `firmware/edge` `docs/taproot.md` and Ledger's `vanadium`
+  `apps/bitcoin/common/src/bip388/cleartext.rs` both document this shape;
+  rust-miniscript's `VALID_TEMPLATES` test corpus uses it.
+
+- **`BytecodeErrorKind::TagInvalidContext { tag, context }`** structural
+  diagnostic used by the decoder catch-all when a Tag is valid in some
+  context but not in the expected position (e.g., a top-level descriptor
+  tag appearing where a tap-leaf inner is expected). Replaces the v0.5
+  default-path `TapLeafSubsetViolation` rejection.
+
+- **17 new positive corpus fixtures** for newly-admitted shapes:
+  `sortedmulti_a`, `thresh`, `or_b`, `or_i`, `andor`, all four hash
+  terminals, `after`, `a:` and `d:` wrappers, plus Coldcard- and
+  Ledger-documented compound shapes (timelocked multisig, recovery
+  paths). See `design/SPEC_v0_6_strip_layer_3.md` §6.1 for the full
+  list.
+
+### Removed
+
+- 14 `Reserved*` Tag variants (descriptor-codec inline-key forms).
+- `Tag::Bare` variant.
+- 2 negative corpus vectors (`n_top_bare`, `n_sh_bare`) made redundant
+  by the Tag::Bare drop (their semantic intent is covered by
+  `n_taptree_at_top_level` and `n_sh_inner_script`).
+- 1 negative corpus vector (`n_tap_leaf_subset`) made obsolete by the
+  default-validator strip; the round-trip is now covered by the new
+  positive vector `tr_sha256_htlc_md_v0_6`.
+
+### Wire format
+
+- v0.5.x-encoded MD strings are NOT decodable under v0.6 (different Tag
+  bytes for almost every tap-leaf operator). v0.6 is a clean break;
+  pre-1.0 + no users yet means no deprecation cycle.
+- Family-stable SHA reset at v0.5.x → v0.6.0 boundary.
+  `GENERATOR_FAMILY` rolls `"md-codec 0.5"` → `"md-codec 0.6"`.
+
+### Notes
+
+- MSRV: 1.85 (unchanged)
+- Workspace `[patch]` block unchanged (apoelstra/rust-miniscript#1 still open)
+
+### Closes FOLLOWUPS
+
+- `md-scope-strip-layer-3-signer-curation` (master)
+- `md-strip-validator-default-and-corpus`
+- `md-strip-spec-and-docs`
+- `md-tag-space-rework`
+- `decoded-string-data-memory-microopt` (already closed in d79125d)
+- `v0-6-release-prep-revised` (this release)
+
+### NEW FOLLOWUPS (v0.6+ defensive testing)
+
+- `md-signer-compat-checker-separate-library` (aspirational v0.6+)
+- `md-policy-compiler-feature` (future v0.7+)
+- `v06-corpus-or-c-coverage` (V-typing constraint workaround needed)
+- `v06-corpus-j-n-wrapper-coverage` (typing-awkward wrapper fixtures)
+- `v06-corpus-byte-order-defensive-test` (hand-pinned hash byte-order test)
+
+---
+
+## [Unreleased]
+
+(empty — v0.6.0 just shipped; new entries go here)
 
 ## [0.5.0] — 2026-04-28
 
