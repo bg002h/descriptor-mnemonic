@@ -229,7 +229,7 @@ The five original questions resolved (with my take), plus six surfaced:
 | Q5 | Authority precedence with mk1 | No additional md1-side semantics needed; cross-reference mk1 §5.1 | open |
 | Q6 | Interaction with Fingerprints | A — separate blocks | open |
 | Q7 | PolicyId impact | Route X (per-`@N` paths affect PolicyId) — coupled to Q9-A. mk1 BIP §"Naming and identifiers" prose needs minor update. | **LOCKED** (per Type 0 / Type 1 framing) |
-| Q8 | Path component count cap | Add `MAX_PATH_COMPONENTS = 10` to md1 (currently unbounded); aligns with mk1's Q-3. Wire-additive (no real-world policy exceeds 10). | open |
+| Q8 | Path component count cap | (b) `MAX_PATH_COMPONENTS = 10` applied uniformly to both `Tag::SharedPath` and `Tag::OriginPaths`. Aligns with mk1's Q-3. Wire-format tightening (no real-world policy exceeds 10). | **LOCKED** |
 | Q9 | Encoder default | A — auto-detect emit per-`@N` | open |
 | Q10 | Migration story | Wire-additive at decoder; auto-detect at encoder per Q9 | open |
 | Q11 | Forward-compat hooks | Not in scope; leave room | open |
@@ -243,3 +243,21 @@ The five original questions resolved (with my take), plus six surfaced:
 3. Confirm the workflow: spec → opus review → plan → opus review → phase-by-phase implementation → per-phase opus reviews.
 
 After user input, A1–A3 resolve (cheap greps), spec is written, and the cascade begins.
+
+## 6. Spec-inclusion notes (carried into SPEC_v0_10_per_at_N_paths.md)
+
+These are observations from the brainstorm that should land as concrete prose in the spec, not reinvented at spec time:
+
+1. **Dense encoding is not deduplicated.** Q2-A specifies one path-decl per `@N` in placeholder-index order, regardless of repetition. The spec §"Per-`@N` path declaration" should state this explicitly with a one-sentence rationale: "Optimizes for the common case of dictionary-form paths (1 byte each); deduplication for the rare partial-sharing-with-explicit-paths case is deferred to a future major redesign — see `v2-design-questions` FOLLOWUPS entry, item 2."
+
+2. **`Tag::OriginPaths` strictly mutually excludes `Tag::SharedPath`** (Q3-A). Decoder dispatches on header bit 3; encountering the wrong tag for the bit is `Error::UnexpectedTag`. Encoder rule: SharedPath if all `@N` agree on path; OriginPaths otherwise.
+
+3. **`Fingerprints` and `OriginPaths` are independent blocks** (Q6-A). Each gated by its own header flag; each has its own count; orthogonal information (seed identity vs path identity).
+
+4. **Authority-precedence wording** (Q5-A): three-sentence subsection in md1 BIP cross-referencing mk1 BIP §"Authority precedence" / SPEC §5.1. md1 carries the descriptive path; mk1's `origin_path` is authoritative; orchestrator owns consistency.
+
+5. **`MAX_PATH_COMPONENTS = 10`** (Q8-b) applies to both `SharedPath` and `OriginPaths`. Documented in BIP and enforced by both encoder and decoder. Wire-format tightening; no real-world impact.
+
+6. **PolicyId Type 0 / Type 1 typology** (Q12-Light): BIP gains a §"PolicyId types" teaching subsection introducing the framing. Code names (`PolicyId`, `WalletInstanceId`) unchanged.
+
+7. **PolicyId UX softening** (Q13): BIP softens 12-word phrase from MUST/SHOULD-engrave to MAY-engrave-for-cross-verification. New `PolicyId::fingerprint() → [u8; 4]` API for short identifiers (32 bits / 8 hex chars). Canonical PolicyId stays 128 bits / 12 BIP-39 words.
