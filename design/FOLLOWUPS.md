@@ -402,6 +402,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.7.x
 
+### `v07-historical-coldcard-const-visibility` — tighten `pub const HISTORICAL_COLDCARD_TAP_OPERATORS` to `pub(crate)`
+
+- **Surfaced:** v0.7.0 Phase 3 reviewer (Opus). Plan §3.3 specified `const` (private); implementation used `pub const`. md-signer-compat (Phase 4) defines its own `COLDCARD_TAP.allowed_operators` array and does not reference this constant; the only in-tree consumer is the same-module back-compat shim.
+- **Where:** `crates/md-codec/src/bytecode/encode.rs` `pub const HISTORICAL_COLDCARD_TAP_OPERATORS`.
+- **What:** change `pub const` → `pub(crate) const`.
+- **Why deferred:** harmless as `pub`; modest auditor-facing value; not breaking.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-walker-deepest-violation-pin-test` — add regression test for depth-first leaf-first walker semantics
+
+- **Surfaced:** v0.7.0 Phase 3 reviewer (Opus). The new walker's "depth-first leaf-first reporting → deepest violation surfaced" contract is observable in `taproot_rejects_wrapper_alt_outside_subset` (which defensively allows both old "thresh" and new "s:" outcomes) but no test pins it. A future regression flipping back to top-down rejection would pass existing tests.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs` (suggested location).
+- **What:** ≤20-line hand-AST test on `thresh(1, sha256(H))` with empty allowlist — assert `operator == "sha256"`, not `"thresh"`.
+- **Why deferred:** test passes today (semantics match the docstring); regression-pin coverage is defensive.
+- **Status:** open
+- **Tier:** v0.7.x
+
 ### `v07-phase2-decode-helpers-pub-super-tightening` — tighten `decode_tap_miniscript` / `decode_tap_terminal` to `pub(super)`
 
 - **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). Both functions are currently `pub(crate)` solely for `bytecode::hand_ast_coverage` (sibling test module). `pub(super)` would suffice and constrain visibility tighter.
