@@ -241,8 +241,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   (b) **Opt-in validation API**: design and ship the `EncodeOptions::with_signer_subset(subset: SignerSubset)` / `DecodeOptions::with_signer_subset(...)` mechanism. Recommended shape per the 2026-04-28 design discussion: `SignerSubset` is a public struct (operator allowlist) defined in md-codec, *populated by the caller*. md-codec ships only the validation mechanism; named subsets ship in the separate crate so vendor-tracking concerns don't bleed into md-codec.
   (c) Optional CLI surface: `md validate --signer coldcard <bytecode>` decodes a bytecode and runs the named subset check, reporting any out-of-subset operators.
 - **Why deferred:** Aspirational — does not block the strip. Provides an opt-in safety net for users who want signer-aware validation without committing md-codec itself to tracking signer firmware. Maintenance burden concentrates in this crate, where it belongs.
-- **Status:** open
-- **Tier:** v0.6+ (post-strip; can ship at any later point)
+- **Status:** resolved md-codec-v0.7.0 (Phase 4). NEW workspace crate `crates/md-signer-compat/` ships `pub const COLDCARD_TAP`, `pub const LEDGER_TAP`, `pub fn validate(subset, ms, leaf_index)`, and `pub fn validate_tap_tree(subset, tap_tree)` for DFS-pre-order leaf-index threading. Vendor-citation discipline established: each subset rustdoc cites source URL, repo SHA, last-checked date.
+- **Tier:** v0.6+ (closed)
 
 ### `md-policy-compiler-feature` — expose policy-to-bytecode compilation (future release)
 
@@ -250,8 +250,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/Cargo.toml` (enable rust-miniscript `compiler` feature); new public API surface in md-codec; CLI tool exposure.
 - **What:** Enable the `compiler` feature on the `miniscript` git-pinned dep. Expose a `pub fn policy_to_bytecode(policy: &str, options: &EncodeOptions) -> Result<Vec<u8>, Error>` (or similar shape) that parses a high-level Concrete-Policy string, runs miniscript's policy compiler to produce optimal miniscript, and encodes the result. CLI tool gains a `md encode --from-policy <expr>` mode. With Layer 3 stripped, the compiler can pick any miniscript shape and md-codec will encode it; signer compatibility is the caller's concern. Optional pairing with the layered checker (`md-signer-compat-checker-separate-library`) for "compile then validate against signer X" workflows.
 - **Why deferred:** Independent feature. Future release post-strip; the strip itself doesn't require the compiler.
-- **Status:** open
-- **Tier:** v0.7+ (future release)
+- **Status:** resolved md-codec-v0.7.0 (Phase 5). Added `compiler` and `cli-compiler` cargo features (default-off). New `pub fn policy_to_bytecode(policy, options, ScriptContext, internal_key)` with caller-supplied Tap internal key per Plan reviewer #1 Concern 2 (None → upstream NUMS unspendable). New `md from-policy <expr> --context <tap|segwitv0> [--internal-key <KEY>]` CLI subcommand.
+- **Tier:** v0.7+ (closed)
 
 ### `v06-plan-targeted-decoder-arm-tests` — per-arm decoder unit tests for Phase 3 (defensive)
 
@@ -259,8 +259,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/tests/taproot.rs` or a new `tests/decoder_arms.rs`.
 - **What:** Phase 3 of the strip plan adds ~20 new arms to `decode_tap_terminal`. The plan relies on corpus round-trip (Phase 5 fixtures) to catch decoder bugs. This is adequate but defensive: a decoder arm that consumes the wrong number of payload bytes AND a symmetrically-wrong encoder arm would both round-trip but produce malformed wire output. Add 5-7 targeted unit tests that synthesize a known bytecode (Tag byte + payload), feed to `decode_tap_terminal` directly, and assert the resulting Terminal matches the expected AST shape and consumed-byte-count. ~30-minute effort.
 - **Why deferred:** corpus round-trip is sufficient for normal regression catching; this is purely defensive against a class of bug that hasn't actually occurred in the v0.5 codebase. Can land as a v0.6.x patch or v0.7+ when convenient.
-- **Status:** open
-- **Tier:** v0.6+ (defensive testing nice-to-have)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added 6 per-arm decoder unit tests in `crates/md-codec/src/bytecode/hand_ast_coverage.rs`: multi_a, andor, thresh, after, sortedmulti_a, hash256.
+- **Tier:** v0.6+ (closed)
 
 ### `v06-test-byte-literal-rebaseline` — rebaseline 38 unit tests pinning v0.5 byte literals
 
@@ -268,8 +268,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** Tests in `crates/md-codec/src/bytecode/decode.rs` (~16 tests), `crates/md-codec/src/bytecode/encode.rs` (~10 tests), `crates/md-codec/src/bytecode/path/...` (~6 tests), `crates/md-codec/src/policy.rs` (~5 tests), `crates/md-codec/src/vectors.rs` (~1 test).
 - **What:** Walk each failing test and update literal byte values per the v0.5→v0.6 byte-shift table in `design/SPEC_v0_6_strip_layer_3.md` §2.3. Pattern: replace literal v0.5 bytes (e.g., `0x16` for OrD) with v0.6 bytes (`0x18` for OrD). Where possible, replace literals with symbolic `Tag::Foo.as_byte()` references so future Tag changes don't re-break. The test SEMANTICS are correct; only the BYTE LITERALS need updating.
 - **Why deferred:** v0.6.0 release ships with these tests temporarily failing because the wire format change is a coordinated single-commit operation; rebaseline is mechanical follow-up work suitable for a v0.6.0.1 patch. The release cuts with v0.6.0 release-prep complete; rebaseline lands in v0.6.0.1.
-- **Status:** open
-- **Tier:** v0.6.0.1 (immediate post-tag patch)
+- **Status:** resolved md-codec-v0.7.0 (Phase 1, commits 35caa24/d7de42d/de63db3). All 38 unit tests + ~11 integration tests rebaselined to v0.6 byte codes using symbolic `Tag::Foo.as_byte()` references where helpful. Three subset-violation tests rewrote to use the v0.6 opt-in `validate_tap_leaf_subset` API; corpus-count assertions updated for the regenerated v0.6 corpus (43 positive vectors).
+- **Tier:** v0.7.0 (closed)
 
 ### `v06-corpus-d-wrapper-coverage` — add d: wrapper tap-leaf round-trip vector
 
@@ -277,8 +277,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES.
 - **What:** Add a d: wrapper round-trip fixture using a Vz-type child (e.g., `d:v:older(144)` if v:older is V and z; or hand-construct the AST in `tests/taproot.rs`). Exercises `Tag::DupIf = 0x0F`. The wrapper byte is wire-format-supported and exercised by encoder/decoder symmetric arms; only the corpus pin is missing.
 - **Why deferred:** Same as `v06-corpus-or-c-coverage` and `v06-corpus-j-n-wrapper-coverage`. Not blocking ship; defensive corpus growth.
-- **Status:** open
-- **Tier:** v0.6.x (defensive corpus growth)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `d_wrapper_tap_leaf_byte_form` hand-AST test in `crates/md-codec/src/bytecode/hand_ast_coverage.rs`: pins wire bytes for `d:v:older(144)` (= `Terminal::DupIf(Verify(Older))`) including LEB128(144) = `[0x90, 0x01]`.
+- **Tier:** v0.6.x (closed)
 
 ### `v06-corpus-or-c-coverage` — add or_c tap-leaf round-trip vector
 
@@ -286,8 +286,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES.
 - **What:** Add an or_c fixture using a B-typed wrapping like `tr(@0/**, t:or_c(pk(@1/**), v:pk(@2/**)))` (where `t:` desugars to `and_v(X, 1)` = B-type) OR construct the AST hand-coded in a unit test rather than via Descriptor::from_str. The Tag::OrC byte form needs corpus coverage; the parser reject is a typing constraint, not a wire-format issue.
 - **Why deferred:** Plan's per-Terminal coverage rule; not blocking v0.6.0 ship since OrC byte is wire-format-supported and exercised by encoder/decoder symmetric arms, just not pinned in a fixture.
-- **Status:** open
-- **Tier:** v0.6+ (defensive corpus growth; can land in v0.6.x patch)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `or_c_unwrapped_tap_leaf_byte_form` (encoder wire-byte pin) and `t_or_c_tap_leaf_round_trips` (full encode→decode→re-encode round-trip via `t:or_c` wrap) hand-AST tests.
+- **Tier:** v0.6+ (closed)
 
 ### `v06-corpus-j-n-wrapper-coverage` — add j: and n: wrapper tap-leaf round-trip vectors
 
@@ -295,8 +295,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES (or `tests/taproot.rs` hand-AST tests).
 - **What:** Add round-trip fixtures for Tag::NonZero (0x11) and Tag::ZeroNotEqual (0x12). If the BIP 388 source-form policies don't naturally produce these wrappers, hand-construct the AST via `Terminal::NonZero(Arc::new(child))` / `Terminal::ZeroNotEqual(Arc::new(child))` in unit tests. Encoder + decoder arms exist and are byte-symmetric; only the corpus pin is missing.
 - **Why deferred:** Same as `v06-corpus-or-c-coverage`. Not blocking ship; defensive corpus growth.
-- **Status:** open
-- **Tier:** v0.6+ (defensive corpus growth)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `j_wrapper_tap_leaf_byte_form` (`j:pk_k(a)` = `Terminal::NonZero(PkK)`) and `n_wrapper_tap_leaf_byte_form` (`n:c:pk_k(a)` = `Terminal::ZeroNotEqual(Check(PkK))`) hand-AST tests pinning wire-byte form for both wrappers.
+- **Tier:** v0.6+ (closed)
 
 ### `v07-cli-validate-signer-subset` — `md validate --signer <name> <bytecode>` CLI mode
 
@@ -313,8 +313,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/tests/taproot.rs` (or new `tests/hash_byte_order.rs`).
 - **What:** Hand-coded byte-pin assertion: construct a known 32-byte hash (e.g., all-0xAA), invoke encoder via `encode_template` or similar, assert the bytecode bytes immediately after the Tag byte equal the input bytes UNREVERSED. Repeat for all 4 hash terminals.
 - **Why deferred:** Plan's defensive-test step deferred to v0.6+ during overnight autonomous execution to focus on shipping. Round-trip via the corpus fixtures provides indirect coverage; the dedicated byte-pin would catch the very specific encoder+decoder symmetric regression.
-- **Status:** open
-- **Tier:** v0.6+ (defensive testing nice-to-have)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `hash_terminals_encode_internal_byte_order_with_decode_round_trip` covering Sha256, Hash256, Ripemd160, Hash160 with **asymmetric** input patterns (`[0x00..0x1F]` and `[0x80..0x93]` via `std::array::from_fn`) per Phase 2 reviewer IMP-1 — palindromic constant-fill defeats the asymmetric encode/decode reversal bug class. Decode-direction round-trip per Plan reviewer #1 Concern 5.
+- **Tier:** v0.6+ (closed)
 
 ### `v06-spec-tag-byte-display-table` — alphabetical Tag→byte index for spec audit convenience
 
