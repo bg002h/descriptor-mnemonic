@@ -162,6 +162,34 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** phase 1 resolved md-codec-v0.9.1 (added `rust-toolchain.toml` pinning rustc 1.85.0 to match CI; added `.cargo/config.toml` with `[profile.release]` `codegen-units = 1` and `strip = "symbols"`). Phase 2 (hermetic Nix/Docker + repro-CI + verification recipe) remains open as a v1.0 milestone item.
 - **Tier:** phase 1 closed (v0.9.1); phase 2 open (v1.0 milestone)
 
+### `v2-design-questions` — clean-slate questions to revisit at a major redesign
+
+- **Surfaced:** 2026-04-29 v0.10 brainstorm conversation. While locking Q6 (Tag::Fingerprints vs Tag::OriginPaths separation), the question came up: "if we were starting the format from scratch today, would we pick something different?" Yes — and the same question generalizes to other accumulated design choices.
+- **Where:** Conceptual / cross-cutting. Lives as a v2+ scoping document if/when major-redesign is on the table. Not tied to any specific code path.
+- **What:** This entry catalogs design choices that v0.x ships with for good reason (path dependence, accumulated constraints, organic evolution) but that a clean-slate v2.0 redesign would likely re-evaluate. Capturing them now prevents future sessions from reinventing the analysis.
+
+  Specific questions to revisit:
+
+  1. **Unified per-`@N` metadata block.** Today md1 has three different ways to express path/fingerprint metadata (`Tag::SharedPath`, `Tag::Fingerprints`, `Tag::OriginPaths` from v0.10). A fresh design would likely use one block carrying `(fingerprint, path, ...)` tuples per `@N`, with optional shared-path / shared-fingerprint optimizations layered on top. Wire format closer to BIP 380's `[fp/path]xpub` origin-block structure.
+
+  2. **Path dictionary.** v0.x has a 14-entry dictionary of well-known BIP paths (`0x01`–`0x17`) plus explicit-path encoding via `0xFE`. A fresh design might choose: always-explicit (simpler decoder, bigger wire), or a more aggressive dictionary (more compact for common cases, but more allocation churn).
+
+  3. **md1 + mk1 unification.** v0.x ships md1 and mk1 as twin formats with shared BCH plumbing (codex32 + HRP-mixing). A fresh design might unify them into a single "MC" format with one HRP and a top-level type discriminator, eliminating the cross-format coordination overhead. Or — going the other way — split further, with separate HRPs per use case.
+
+  4. **Bytecode encoding uniformity.** v0.x mixes varints, LEB128, and fixed-width u8 fields somewhat ad-hoc. A fresh design might pick one (probably LEB128 throughout for unsigned integers; fixed-width for byte arrays) and apply uniformly.
+
+  5. **String-layer vs bytecode-layer metadata split.** Today most metadata lives in the bytecode layer; the string-layer header carries only chunking metadata. A fresh design might move some per-`@N` metadata directly into the string-layer header for streaming-decoder friendliness.
+
+  6. **BCH polynomial domain separation.** v0.x reuses BIP 93 polynomials with HRP-mixing for cross-format domain separation (md1, mk1, ms1 all share polynomials). A fresh design might use distinct polynomials per format (more rigorous separation; complicates the shared `mc-codex32` extraction targeted at v1.0+).
+
+  7. **Tag space layout.** v0.x has tag bytes scattered across `0x00`–`0x35` (now `0x36+` post-v0.10) due to organic accumulation. A fresh design might reserve byte ranges semantically — operators 0x00-0x3F, framing 0x40-0x4F, etc.
+
+  8. **Header version field width.** v0.x uses 4 bits for version (allowing 16 future versions). A fresh design might use 8 bits or none (using the format-name itself for major-version discrimination).
+
+- **Why deferred:** None of these affect v0.10 (or v0.11, v0.12, v1.0). They're meta-design questions worth capturing once and revisiting if a major redesign is ever contemplated. Pursuing any one of them now would mean re-doing wire-format work each iteration, which the project has explicitly avoided pre-v1.0.
+- **Status:** open
+- **Tier:** v2+ (or wont-fix if v2.0 is never contemplated; the analysis here remains useful as design rationale either way)
+
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
 - **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
