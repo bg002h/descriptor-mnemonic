@@ -645,7 +645,42 @@ pub fn validate_tap_leaf_subset(
     ms: &Miniscript<DescriptorPublicKey, Tap>,
     leaf_index: Option<usize>,
 ) -> Result<(), Error> {
-    validate_tap_leaf_terminal(&ms.node).map_err(|e| match e {
+    validate_tap_leaf_subset_with_allowlist(ms, HISTORICAL_COLDCARD_TAP_OPERATORS, leaf_index)
+}
+
+/// Historical Coldcard tap-leaf operator subset, retained as a back-compat
+/// constant for the [`validate_tap_leaf_subset`] shim. New callers should
+/// supply their own allowlist (or use a named subset from the
+/// `md-signer-compat` crate).
+///
+/// Names follow the desugared-AST convention emitted by
+/// [`super::decode::tag_to_bip388_name`].
+pub const HISTORICAL_COLDCARD_TAP_OPERATORS: &[&str] = &[
+    "pk_k", "pk_h", "multi_a", "or_d", "and_v", "older", "c:", "v:",
+];
+
+/// Validate a tap-leaf miniscript against a caller-supplied operator
+/// allowlist. The recursive walker visits every child first (depth-first
+/// leaf-first) so the deepest violation is reported, then checks the
+/// current operator's name.
+///
+/// Operator names follow rust-miniscript desugared AST node naming —
+/// the same convention emitted by [`super::decode::tag_to_bip388_name`]
+/// (e.g. `Terminal::Check` → `"c:"`, `Terminal::PkK` → `"pk_k"`).
+/// Admitting `pk(...)` therefore requires both `"c:"` and `"pk_k"` in
+/// the allowlist (BIP 388 source-form `pk(K)` desugars to `c:pk_k(K)`).
+///
+/// `leaf_index` is the DFS pre-order index of this leaf within the
+/// containing tap tree. The value is propagated into
+/// [`Error::SubsetViolation`] to enrich diagnostics. Pass `Some(0)` for
+/// single-leaf, `Some(n)` for multi-leaf, or `None` for callers without
+/// leaf-index context.
+pub fn validate_tap_leaf_subset_with_allowlist(
+    ms: &Miniscript<DescriptorPublicKey, Tap>,
+    allowlist: &[&str],
+    leaf_index: Option<usize>,
+) -> Result<(), Error> {
+    validate_tap_leaf_terminal_with_allowlist(&ms.node, allowlist).map_err(|e| match e {
         Error::SubsetViolation { operator, .. } => Error::SubsetViolation {
             operator,
             leaf_index,
@@ -654,28 +689,70 @@ pub fn validate_tap_leaf_subset(
     })
 }
 
-fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Result<(), Error> {
+fn validate_tap_leaf_terminal_with_allowlist(
+    term: &Terminal<DescriptorPublicKey, Tap>,
+    allowlist: &[&str],
+) -> Result<(), Error> {
+    // Recurse into children first — depth-first leaf-first reporting
+    // surfaces the deepest violation, which is usually the most actionable
+    // diagnostic.
     match term {
-        // Allowed leaves (per BIP §"Taproot tree" / Coldcard subset).
-        Terminal::PkK(_) | Terminal::PkH(_) => Ok(()),
-        Terminal::MultiA(_) => Ok(()),
-        Terminal::Older(_) => Ok(()),
-        // Allowed compositions — recurse into children.
-        Terminal::AndV(a, b) | Terminal::OrD(a, b) => {
-            validate_tap_leaf_terminal(&a.node)?;
-            validate_tap_leaf_terminal(&b.node)
+        Terminal::AndV(a, b)
+        | Terminal::AndB(a, b)
+        | Terminal::OrB(a, b)
+        | Terminal::OrC(a, b)
+        | Terminal::OrD(a, b)
+        | Terminal::OrI(a, b) => {
+            validate_tap_leaf_terminal_with_allowlist(&a.node, allowlist)?;
+            validate_tap_leaf_terminal_with_allowlist(&b.node, allowlist)?;
         }
-        // Allowed safe wrappers (used by the BIP 388 parser when spelling
-        // `pk(...)` and `and_v(v:..., ...)`).
-        Terminal::Check(child) | Terminal::Verify(child) => validate_tap_leaf_terminal(&child.node),
-        // Everything else is out-of-subset for v0.2.
-        other => Err(Error::SubsetViolation {
-            operator: tap_terminal_name(other).to_string(),
-            leaf_index: None, // Sub-helper of validate_tap_leaf_subset; the outer
-                              // caller re-wraps via map_err to attach the correct
-                              // leaf_index.
-        }),
+        Terminal::AndOr(a, b, c) => {
+            validate_tap_leaf_terminal_with_allowlist(&a.node, allowlist)?;
+            validate_tap_leaf_terminal_with_allowlist(&b.node, allowlist)?;
+            validate_tap_leaf_terminal_with_allowlist(&c.node, allowlist)?;
+        }
+        Terminal::Alt(child)
+        | Terminal::Swap(child)
+        | Terminal::Check(child)
+        | Terminal::DupIf(child)
+        | Terminal::Verify(child)
+        | Terminal::NonZero(child)
+        | Terminal::ZeroNotEqual(child) => {
+            validate_tap_leaf_terminal_with_allowlist(&child.node, allowlist)?;
+        }
+        Terminal::Thresh(thresh) => {
+            for child in thresh.iter() {
+                validate_tap_leaf_terminal_with_allowlist(&child.node, allowlist)?;
+            }
+        }
+        // Leaf terminals (no children to recurse into).
+        Terminal::True
+        | Terminal::False
+        | Terminal::PkK(_)
+        | Terminal::PkH(_)
+        | Terminal::RawPkH(_)
+        | Terminal::Multi(_)
+        | Terminal::SortedMulti(_)
+        | Terminal::MultiA(_)
+        | Terminal::SortedMultiA(_)
+        | Terminal::After(_)
+        | Terminal::Older(_)
+        | Terminal::Sha256(_)
+        | Terminal::Hash256(_)
+        | Terminal::Ripemd160(_)
+        | Terminal::Hash160(_) => {}
     }
+    // Check this operator against the allowlist.
+    let op_name = tap_terminal_name(term);
+    if !allowlist.contains(&op_name) {
+        return Err(Error::SubsetViolation {
+            operator: op_name.to_string(),
+            // Sub-helper; outer caller re-wraps via map_err to attach the
+            // correct leaf_index.
+            leaf_index: None,
+        });
+    }
+    Ok(())
 }
 
 /// Recursive encoder helper for v0.5 multi-leaf TapTree emission.
