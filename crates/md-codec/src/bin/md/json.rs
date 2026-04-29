@@ -154,7 +154,7 @@ pub(crate) struct VerificationsJson {
     pub total_chunks_consistent: bool,
     /// The bytecode header version is supported by this implementation.
     pub version_supported: bool,
-    /// All chunks declared the same `policy_id`.
+    /// All chunks declared the same `chunk_set_id`.
     pub policy_id_consistent: bool,
 }
 

@@ -18,7 +18,7 @@ use bitcoin::bip32::{DerivationPath, Fingerprint};
 use clap::{Parser, Subcommand};
 use md_codec::{
     BchCode, ChunkHeader, DecodeOptions, EncodeOptions, WalletPolicy, decode, decode_string,
-    encode, five_bit_to_bytes, policy_id::PolicyIdSeed,
+    encode, five_bit_to_bytes, policy_id::ChunkSetIdSeed,
 };
 
 mod json;
@@ -326,7 +326,7 @@ fn cmd_encode(
     };
 
     // Parse --seed.
-    let policy_id_seed: Option<PolicyIdSeed> = match seed_arg {
+    let chunk_set_id_seed: Option<ChunkSetIdSeed> = match seed_arg {
         None => None,
         Some(s) => {
             let hex_part = s.to_ascii_lowercase();
@@ -334,7 +334,7 @@ fn cmd_encode(
             let val = u32::from_str_radix(hex_part, 16).map_err(|_| {
                 anyhow::anyhow!("--seed: expected 4-byte hex like 0xdeadbeef, got {s:?}")
             })?;
-            Some(PolicyIdSeed::from(val))
+            Some(ChunkSetIdSeed::from(val))
         }
     };
 
@@ -358,7 +358,7 @@ fn cmd_encode(
     let mut opts = EncodeOptions::default();
     opts = opts.with_force_chunking(force_chunked);
     opts.force_long_code = force_long_code;
-    opts.policy_id_seed = policy_id_seed;
+    opts.chunk_set_id_seed = chunk_set_id_seed;
     opts.shared_path = shared_path_override;
     opts.fingerprints = fingerprints;
 
@@ -468,13 +468,13 @@ fn cmd_inspect(string: &str) -> Result<(), anyhow::Error> {
         }
         ChunkHeader::Chunked {
             version,
-            policy_id,
+            chunk_set_id,
             count,
             index,
         } => {
             println!("Type:            Chunked");
             println!("Version:         {version}");
-            println!("Policy ID:       0x{:05x}", policy_id.as_u32());
+            println!("Policy ID:       0x{:05x}", chunk_set_id.as_u32());
             println!("Total chunks:    {count}");
             println!("Chunk index:     {index}");
         }

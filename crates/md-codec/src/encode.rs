@@ -1,13 +1,13 @@
 //! Top-level encode pipeline: `WalletPolicy` → `MdBackup`.
 //!
 //! Wires together Phases 1–5C: bytecode encoding, chunking decision,
-//! wallet-ID derivation, chunk assembly, and codex32 string encoding.
+//! chunk-set-ID derivation, chunk assembly, and codex32 string encoding.
 
 use crate::{
     BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, MdBackup, Result, WalletPolicy,
     chunking::{ChunkHeader, chunk_bytes, chunking_decision},
     encoding::encode_string,
-    policy_id::{ChunkPolicyId, compute_policy_id},
+    policy_id::{ChunkSetId, compute_policy_id},
 };
 
 /// Encode a wallet policy as a [`MdBackup`]: one or more codex32-derived
@@ -20,8 +20,8 @@ use crate::{
 ///    chunked encoding. `force_long_code` can upgrade Regular → Long after
 ///    the fact. `chunking_mode = ChunkingMode::ForceChunked` causes chunked
 ///    encoding even for short input.
-/// 3. **Policy IDs** — the *chunk-header* 20-bit `policy_id` is derived from
-///    `options.policy_id_seed` (if present) or the content hash. The
+/// 3. **Policy IDs** — the *chunk-header* 20-bit `chunk_set_id` is derived from
+///    `options.chunk_set_id_seed` (if present) or the content hash. The
 ///    *Tier-3* 16-byte `PolicyId` is **always** content-derived, never
 ///    affected by the seed.
 /// 4. **Chunks** — [`chunk_bytes`] assembles `Vec<Chunk>`.
@@ -69,12 +69,12 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<MdBackup
         };
     }
 
-    // Stage 4: derive chunk-header policy_id (affected by seed) and assemble chunks.
-    let chunk_wallet_id: ChunkPolicyId = match options.policy_id_seed {
+    // Stage 4: derive chunk-header chunk_set_id (affected by seed) and assemble chunks.
+    let chunk_set_id: ChunkSetId = match options.chunk_set_id_seed {
         Some(seed) => seed.truncate(),
         None => compute_policy_id(&bytecode).truncate(),
     };
-    let chunks = chunk_bytes(&bytecode, plan, chunk_wallet_id)?;
+    let chunks = chunk_bytes(&bytecode, plan, chunk_set_id)?;
 
     // Stage 5: encode each chunk to a codex32 string.
     // Hoist the BCH code lookup — it is plan-level, not per-chunk.
@@ -103,8 +103,8 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<MdBackup
     }
 
     // Stage 6: Tier-3 policy ID is ALWAYS content-derived, never affected by seed.
-    let tier3_wallet_id = compute_policy_id(&bytecode);
-    let policy_id_words = tier3_wallet_id.to_words();
+    let tier3_policy_id = compute_policy_id(&bytecode);
+    let policy_id_words = tier3_policy_id.to_words();
 
     // Surface the caller-supplied fingerprints on the backup so that an
     // `encode → user-side state` round-trip is observable without re-decoding.
@@ -127,7 +127,7 @@ mod tests {
     use crate::{
         EncodeOptions, WalletPolicy,
         chunking::{ChunkHeader, ChunkingMode},
-        policy_id::{PolicyIdSeed, compute_policy_id},
+        policy_id::{ChunkSetIdSeed, compute_policy_id},
     };
 
     fn policy(s: &str) -> WalletPolicy {
@@ -281,12 +281,12 @@ mod tests {
         let backup = encode(&p, &opts).expect("encode");
 
         let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
-        let expected_wallet_id = compute_policy_id(&bytecode);
+        let expected_chunk_set_id = compute_policy_id(&bytecode);
 
         // Reconstruct PolicyId from the backup's words and compare.
         let recovered = backup.policy_id();
         assert_eq!(
-            recovered, expected_wallet_id,
+            recovered, expected_chunk_set_id,
             "Tier-3 PolicyId must equal compute_policy_id(bytecode)"
         );
     }
@@ -303,7 +303,7 @@ mod tests {
         let backup_no_seed = encode(&p, &opts_no_seed).expect("encode no seed");
 
         let opts_with_seed = EncodeOptions {
-            policy_id_seed: Some(PolicyIdSeed::from(0xDEAD_BEEFu32)),
+            chunk_set_id_seed: Some(ChunkSetIdSeed::from(0xDEAD_BEEFu32)),
             ..Default::default()
         };
         let backup_with_seed = encode(&p, &opts_with_seed).expect("encode with seed");
@@ -324,7 +324,7 @@ mod tests {
         let seed_val: u32 = 0x1234_5678;
         let opts = EncodeOptions {
             chunking_mode: ChunkingMode::ForceChunked,
-            policy_id_seed: Some(PolicyIdSeed::from(seed_val)),
+            chunk_set_id_seed: Some(ChunkSetIdSeed::from(seed_val)),
             ..Default::default()
         };
         let backup = encode(&p, &opts).expect("encode");
@@ -343,13 +343,13 @@ mod tests {
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
-        // The chunk header policy_id should equal seed.truncate() = top 20 bits of seed.
-        let expected_chunk_wid = PolicyIdSeed::from(seed_val).truncate();
+        // The chunk header chunk_set_id should equal seed.truncate() = top 20 bits of seed.
+        let expected_chunk_set_id = ChunkSetIdSeed::from(seed_val).truncate();
         match header {
-            ChunkHeader::Chunked { policy_id, .. } => {
+            ChunkHeader::Chunked { chunk_set_id, .. } => {
                 assert_eq!(
-                    policy_id, expected_chunk_wid,
-                    "chunk-header policy_id must equal seed.truncate()"
+                    chunk_set_id, expected_chunk_set_id,
+                    "chunk-header chunk_set_id must equal seed.truncate()"
                 );
             }
             ChunkHeader::SingleString { .. } => {
@@ -385,14 +385,14 @@ mod tests {
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
-        // The chunk-header policy_id should be compute_policy_id(bytecode).truncate().
+        // The chunk-header chunk_set_id should be compute_policy_id(bytecode).truncate().
         let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
-        let expected_chunk_wid = compute_policy_id(&bytecode).truncate();
+        let expected_chunk_set_id = compute_policy_id(&bytecode).truncate();
         match header {
-            ChunkHeader::Chunked { policy_id, .. } => {
+            ChunkHeader::Chunked { chunk_set_id, .. } => {
                 assert_eq!(
-                    policy_id, expected_chunk_wid,
-                    "chunk-header policy_id must equal compute_policy_id(bytecode).truncate()"
+                    chunk_set_id, expected_chunk_set_id,
+                    "chunk-header chunk_set_id must equal compute_policy_id(bytecode).truncate()"
                 );
             }
             ChunkHeader::SingleString { .. } => {
@@ -409,7 +409,7 @@ mod tests {
     fn encode_is_deterministic_with_fixed_seed() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
-            policy_id_seed: Some(PolicyIdSeed::from(0xABCD_1234u32)),
+            chunk_set_id_seed: Some(ChunkSetIdSeed::from(0xABCD_1234u32)),
             ..Default::default()
         };
         let backup1 = encode(&p, &opts).expect("first encode");
@@ -453,12 +453,12 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Bonus: when seed is None, chunk-header policy_id == Tier-3 truncation
+    // Bonus: when seed is None, chunk-header chunk_set_id == Tier-3 truncation
     // -----------------------------------------------------------------------
 
     #[test]
     fn encode_chunk_header_wid_is_truncation_of_tier3_without_seed() {
-        // When seed is None, chunk-header policy_id = first 20 bits of Tier-3.
+        // When seed is None, chunk-header chunk_set_id = first 20 bits of Tier-3.
         // The Tier-3 is compute_policy_id(bytecode); chunk-header = .truncate().
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
@@ -467,7 +467,7 @@ mod tests {
         };
         let backup = encode(&p, &opts).expect("encode");
         let tier3 = backup.policy_id();
-        let expected_chunk_wid = tier3.truncate();
+        let expected_chunk_set_id = tier3.truncate();
 
         let raw = &backup.chunks[0].raw;
         let decoded = crate::decode_string(raw).expect("decode_string");
@@ -482,10 +482,10 @@ mod tests {
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
         match header {
-            ChunkHeader::Chunked { policy_id, .. } => {
+            ChunkHeader::Chunked { chunk_set_id, .. } => {
                 assert_eq!(
-                    policy_id, expected_chunk_wid,
-                    "chunk-header policy_id must be the first 20 bits of the Tier-3 PolicyId"
+                    chunk_set_id, expected_chunk_set_id,
+                    "chunk-header chunk_set_id must be the first 20 bits of the Tier-3 PolicyId"
                 );
             }
             ChunkHeader::SingleString { .. } => {

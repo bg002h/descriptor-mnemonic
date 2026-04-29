@@ -711,7 +711,7 @@ impl MdBackup {
     ///
     /// The 12-word form is the storage format; this method converts back to
     /// the binary representation that is the derivation source for
-    /// `truncate → ChunkPolicyId`.
+    /// `truncate → ChunkSetId`.
     ///
     /// # Panics
     ///

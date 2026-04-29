@@ -3,7 +3,7 @@
 use bitcoin::bip32::{DerivationPath, Fingerprint};
 
 use crate::chunking::ChunkingMode;
-use crate::policy_id::PolicyIdSeed;
+use crate::policy_id::ChunkSetIdSeed;
 
 // ---------------------------------------------------------------------------
 // EncodeOptions
@@ -14,7 +14,7 @@ use crate::policy_id::PolicyIdSeed;
 /// All fields default to "natural" behavior:
 /// - `chunking_mode = ChunkingMode::Auto`: single-string is preferred when bytecode fits.
 /// - `force_long_code = false`: regular BCH code is preferred when it fits.
-/// - `policy_id_seed = None`: chunk-header `policy_id` is content-derived.
+/// - `chunk_set_id_seed = None`: chunk-header `chunk_set_id` is content-derived.
 /// - `shared_path = None`: encoder picks the shared path per the
 ///   `WalletPolicy::to_bytecode` precedence chain (see that method's
 ///   rustdoc).
@@ -48,16 +48,16 @@ pub struct EncodeOptions {
     /// `chunking_mode = ChunkingMode::ForceChunked` to test long-code behavior
     /// on small inputs.
     pub force_long_code: bool,
-    /// Override the chunk-header [`crate::ChunkPolicyId`] with this seed instead of
+    /// Override the chunk-header [`crate::ChunkSetId`] with this seed instead of
     /// using the first 20 bits of the content-derived SHA-256.
     ///
     /// The Tier-3 16-byte [`crate::PolicyId`] is **unaffected** by this
     /// option (per `IMPLEMENTATION_PLAN_v0.1.md` §4 "Policy ID semantics"
-    /// and the BIP draft §"Wallet identifier"). Used for deterministic
+    /// and the BIP draft §"Chunk-set identifier"). Used for deterministic
     /// test-vector generation; production encoders should leave this `None`
     /// so the chunk-header bits remain predictable from the Tier-3 mnemonic.
-    /// See [`PolicyIdSeed`] for the full rationale and footgun warning.
-    pub policy_id_seed: Option<PolicyIdSeed>,
+    /// See [`ChunkSetIdSeed`] for the full rationale and footgun warning.
+    pub chunk_set_id_seed: Option<ChunkSetIdSeed>,
     /// Override the shared derivation path used in the bytecode's path
     /// declaration. When `Some(path)`, this takes precedence over both
     /// `WalletPolicy.decoded_shared_path` (populated by from_bytecode) and
@@ -127,10 +127,10 @@ impl EncodeOptions {
         self
     }
 
-    /// Override the chunk-header `policy_id` with this seed.
-    /// See [`EncodeOptions::policy_id_seed`] for full semantics.
-    pub fn with_seed(mut self, seed: PolicyIdSeed) -> Self {
-        self.policy_id_seed = Some(seed);
+    /// Override the chunk-header `chunk_set_id` with this seed.
+    /// See [`EncodeOptions::chunk_set_id_seed`] for full semantics.
+    pub fn with_seed(mut self, seed: ChunkSetIdSeed) -> Self {
+        self.chunk_set_id_seed = Some(seed);
         self
     }
 
@@ -208,19 +208,19 @@ mod tests {
         let opts = EncodeOptions::default();
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
-        assert!(opts.policy_id_seed.is_none());
+        assert!(opts.chunk_set_id_seed.is_none());
         assert!(opts.shared_path.is_none());
         assert!(opts.fingerprints.is_none());
     }
 
     #[test]
     fn encode_options_construct_with_seed() {
-        let seed = PolicyIdSeed::from(0xDEAD_BEEFu32);
+        let seed = ChunkSetIdSeed::from(0xDEAD_BEEFu32);
         let opts = EncodeOptions {
-            policy_id_seed: Some(seed),
+            chunk_set_id_seed: Some(seed),
             ..Default::default()
         };
-        assert_eq!(opts.policy_id_seed, Some(seed));
+        assert_eq!(opts.chunk_set_id_seed, Some(seed));
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
         assert!(opts.shared_path.is_none());
@@ -228,14 +228,14 @@ mod tests {
 
     #[test]
     fn encode_options_builder_chain() {
-        let seed = PolicyIdSeed::from(0xdeadbeefu32);
+        let seed = ChunkSetIdSeed::from(0xdeadbeefu32);
         let opts = EncodeOptions::default()
             .with_force_chunking(true)
             .with_force_long_code(true)
             .with_seed(seed);
         assert_eq!(opts.chunking_mode, ChunkingMode::ForceChunked);
         assert!(opts.force_long_code);
-        assert_eq!(opts.policy_id_seed, Some(seed));
+        assert_eq!(opts.chunk_set_id_seed, Some(seed));
         assert!(opts.shared_path.is_none());
     }
 
@@ -245,7 +245,7 @@ mod tests {
         let opts = opts.with_force_chunking(false);
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
-        assert_eq!(opts.policy_id_seed, None);
+        assert_eq!(opts.chunk_set_id_seed, None);
         assert!(opts.shared_path.is_none());
     }
 
@@ -258,7 +258,7 @@ mod tests {
         // Other fields remain at defaults.
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
-        assert!(opts.policy_id_seed.is_none());
+        assert!(opts.chunk_set_id_seed.is_none());
         assert!(opts.fingerprints.is_none());
     }
 
@@ -273,7 +273,7 @@ mod tests {
         // Other fields remain at defaults.
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
-        assert!(opts.policy_id_seed.is_none());
+        assert!(opts.chunk_set_id_seed.is_none());
         assert!(opts.shared_path.is_none());
     }
 

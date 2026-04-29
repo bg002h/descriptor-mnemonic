@@ -61,8 +61,8 @@ use crate::{
 /// |-------|--------|
 /// | 1 – parse | `InvalidHrp`, `MixedCase`, `InvalidStringLength`, `InvalidChar` |
 /// | 2 – BCH | `BchUncorrectable` |
-/// | 3 – header | `ChunkHeaderTruncated`, `UnsupportedVersion`, `UnsupportedCardType`, `ReservedPolicyIdBitsSet`, `InvalidChunkCount`, `InvalidChunkIndex` |
-/// | 4 – reassembly | `EmptyChunkList`, `MixedChunkTypes`, `SingleStringWithMultipleChunks`, `PolicyIdMismatch`, `TotalChunksMismatch`, `ChunkIndexOutOfRange`, `DuplicateChunkIndex`, `MissingChunkIndex`, `CrossChunkHashMismatch` |
+/// | 3 – header | `ChunkHeaderTruncated`, `UnsupportedVersion`, `UnsupportedCardType`, `ReservedChunkSetIdBitsSet`, `InvalidChunkCount`, `InvalidChunkIndex` |
+/// | 4 – reassembly | `EmptyChunkList`, `MixedChunkTypes`, `SingleStringWithMultipleChunks`, `ChunkSetIdMismatch`, `TotalChunksMismatch`, `ChunkIndexOutOfRange`, `DuplicateChunkIndex`, `MissingChunkIndex`, `CrossChunkHashMismatch` |
 /// | 5 – bytecode | `InvalidBytecode`, `UnsupportedVersion`, `PolicyScopeViolation`, `FingerprintsCountMismatch` |
 ///
 /// # v0.1 confidence levels produced
@@ -252,7 +252,7 @@ mod tests {
     use super::*;
     use crate::{
         BchCode, DecodeOptions, EncodeOptions, WalletPolicy, chunking::ChunkingMode,
-        encode::encode, policy_id::PolicyIdSeed,
+        encode::encode, policy_id::ChunkSetIdSeed,
     };
 
     fn policy(s: &str) -> WalletPolicy {
@@ -347,14 +347,14 @@ mod tests {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
             chunking_mode: ChunkingMode::ForceChunked,
-            policy_id_seed: Some(PolicyIdSeed::from(0xDEAD_BEEFu32)),
+            chunk_set_id_seed: Some(ChunkSetIdSeed::from(0xDEAD_BEEFu32)),
             ..Default::default()
         };
         let backup = encode(&p, &opts).expect("encode");
 
         let raws: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
         let result = decode(&raws, &default_opts()).expect("decode");
-        // Seed only affects chunk-header policy_id; recovered policy must still match.
+        // Seed only affects chunk-header chunk_set_id; recovered policy must still match.
         assert_eq!(result.policy.to_canonical_string(), p.to_canonical_string());
     }
 
@@ -441,12 +441,12 @@ mod tests {
 
         let opts_a = EncodeOptions {
             chunking_mode: ChunkingMode::ForceChunked,
-            policy_id_seed: Some(PolicyIdSeed::from(0x1111_1111u32)),
+            chunk_set_id_seed: Some(ChunkSetIdSeed::from(0x1111_1111u32)),
             ..Default::default()
         };
         let opts_b = EncodeOptions {
             chunking_mode: ChunkingMode::ForceChunked,
-            policy_id_seed: Some(PolicyIdSeed::from(0x2222_2222u32)),
+            chunk_set_id_seed: Some(ChunkSetIdSeed::from(0x2222_2222u32)),
             ..Default::default()
         };
 
@@ -459,8 +459,8 @@ mod tests {
         let err = decode(&[raw_a, raw_b], &default_opts())
             .expect_err("should reject chunks with different policy_ids");
         assert!(
-            matches!(err, Error::PolicyIdMismatch { .. }),
-            "expected PolicyIdMismatch, got {err:?}"
+            matches!(err, Error::ChunkSetIdMismatch { .. }),
+            "expected ChunkSetIdMismatch, got {err:?}"
         );
     }
 

@@ -241,7 +241,7 @@ cryptographic primitives only.
   the 2-character slim header) cap at 48 bytes (regular) or 56 bytes
   (long) of bytecode. Arbitrary-length policies must be supportable.
   Each chunk is an independently-valid codex32-derived string with its
-  own BCH ECC; chunks carry index + count + wallet-id for correct
+  own BCH ECC; chunks carry index + count + chunk-set-id for correct
   reassembly; a 4-byte canonical-bytecode hash appended before chunking
   provides cross-chunk integrity. See §6.8 for the chunk format.
 
@@ -401,7 +401,7 @@ across multiple independently-valid codex32-derived strings.
 #### Chunk structure
 
 ```
-wdm 1 <ver> <type> <wallet-id> <count> <index> <fragment> <checksum>
+wdm 1 <ver> <type> <chunk-set-id> <count> <index> <fragment> <checksum>
 └──┘ │  1ch    1ch       4ch       1ch     1ch     N ch       13/15ch
 HRP  sep
 ```
@@ -412,13 +412,13 @@ HRP  sep
 | separator `1` | 1 char | always | bech32 convention |
 | version | 1 char (5 bits) | always | currently `0` |
 | type | 1 char | always | `0`=single-string, `1`=chunked, more reserved |
-| wallet-id | 4 chars | chunked only | random 20-bit per-wallet identifier |
+| chunk-set-id | 4 chars | chunked only | random 20-bit chunk-set assembly identifier |
 | count | 1 char | chunked only | total chunks 1–32 (5 bits) |
 | index | 1 char | chunked only | this chunk's index 0..count-1 |
 | fragment | variable | always | bytes of canonical bytecode (full or partial) |
 | checksum | 13 (regular) / 15 (long) chars | always | codex32 BCH ECC over this chunk |
 
-For type=0 (single-string), wallet-id/count/index are absent.
+For type=0 (single-string), chunk-set-id/count/index are absent.
 Header overhead: HRP(2) + sep(1) + version(1) + type(1) = 5 chars.
 Plus checksum = 18 chars (regular) or 20 chars (long).
 
@@ -447,7 +447,7 @@ After reassembling chunks, the decoder:
 
 This catches: out-of-order reassembly that happens to pass per-chunk BCH;
 missing chunks not detected by index gaps; chunks from a different wallet
-mixed in (despite wallet-id check).
+mixed in (despite chunk-set-id check).
 
 #### Capacity
 
@@ -463,20 +463,20 @@ fragment − 4 bytes for the cross-chunk hash.)
 Realistic miniscripts top out at a few hundred bytes; typical wallets
 fit in 1–4 chunks.
 
-#### Wallet-id allocation
+#### Chunk-set-id allocation
 
-The 4-char (20-bit) wallet-id is generated randomly at first stamping.
+The 4-char (20-bit) chunk-set-id is generated randomly at first stamping.
 With 2^20 ≈ 1M values, collision probability for a user with N wallets
-is negligible. Wallet-id is per-wallet, not per-chunk.
+is negligible. Chunk-set-id is per-wallet, not per-chunk.
 
-For type=0 (single-string) Template Cards, no wallet-id is needed since
+For type=0 (single-string) Template Cards, no chunk-set-id is needed since
 there's only one chunk.
 
 **OPEN:** decide whether single-string Template Cards should also carry
-a wallet-id for cross-format consistency (cost: 4 chars per single-string
+a chunk-set-id for cross-format consistency (cost: 4 chars per single-string
 Template Card).
 
-**OPEN:** is wallet-id derived from Template Card content, or random?
+**OPEN:** is chunk-set-id derived from Template Card content, or random?
 Random has the property that re-stamping the same policy gets a fresh
 ID; derived means same policy always produces same ID. Trade-off worth
 discussing.
@@ -783,10 +783,10 @@ of what was adopted vs. rejected:
   4 zero), count 1 byte (1..=32), index 1 byte (`< count`). Total 2
   bytes (SingleString) or 7 bytes (Chunked) before codex32 5-bit
   packing.
-- **RESOLVED:** Wallet-id is **content-derived by default**
+- **RESOLVED:** Chunk-set-id is **content-derived by default**
   (`SHA-256(canonical_bytecode)[0..16]` for Tier-3, truncated to first
-  20 bits for the chunk-header `ChunkPolicyId`). The `EncodeOptions`
-  field `policy_id_seed` provides a deterministic override for the
+  20 bits for the chunk-header `ChunkSetId`). The `EncodeOptions`
+  field `chunk_set_id_seed` provides a deterministic override for the
   chunk-header field only (Tier-3 stays content-derived). Single-string
   cards carry no chunk-header `policy_id`. Implemented across Phase
   4-B/4-C/5-D.

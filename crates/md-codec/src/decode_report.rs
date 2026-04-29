@@ -73,7 +73,7 @@ pub struct Verifications {
     /// chunk reassembly. `true` by convention for single-string backups
     /// (no cross-chunk hash exists to verify against).
     pub cross_chunk_hash_ok: bool,
-    /// All chunks declared the same `policy_id`. Trivially `true` for
+    /// All chunks declared the same `chunk_set_id`. Trivially `true` for
     /// single-string backups.
     pub policy_id_consistent: bool,
     /// All chunks declared the same `total_chunks`. Trivially `true` for

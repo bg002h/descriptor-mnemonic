@@ -554,9 +554,9 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
     },
     NegativeFixture {
         id: "n08",
-        description: "Reserved wallet-id bits set → ReservedPolicyIdBitsSet",
+        description: "Reserved chunk-set-id bits set → ReservedChunkSetIdBitsSet",
         input_strings: &["md1qqq3qqqqqyqql7qh2w5zykaa8"],
-        expected_error_variant: "ReservedPolicyIdBitsSet",
+        expected_error_variant: "ReservedChunkSetIdBitsSet",
     },
     NegativeFixture {
         id: "n09",
@@ -605,12 +605,12 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
     },
     NegativeFixture {
         id: "n15",
-        description: "Wallet-id mismatch across chunks → PolicyIdMismatch",
+        description: "Chunk-set-id mismatch across chunks → ChunkSetIdMismatch",
         input_strings: &[
             "md1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdss95kd8ekz69jdz9",
             "md1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yfnxhzsfujawc9",
         ],
-        expected_error_variant: "PolicyIdMismatch",
+        expected_error_variant: "ChunkSetIdMismatch",
     },
     NegativeFixture {
         id: "n16",
@@ -1202,13 +1202,13 @@ fn generate_n07_unsupported_card_type() -> (Vec<String>, String) {
 }
 
 fn generate_n08_reserved_policy_id_bits_set() -> (Vec<String>, String) {
-    // 7-byte chunked header with the wallet-id top nibble set: [ver=0,
-    // type=1 (Chunked), wid first byte = 0x10, 0x00, 0x00, count=1, index=0].
+    // 7-byte chunked header with the chunk-set-id top nibble set: [ver=0,
+    // type=1 (Chunked), csid first byte = 0x10, 0x00, 0x00, count=1, index=0].
     let s = encode_string_from_bytes(&[0x00, 0x01, 0x10, 0x00, 0x00, 0x01, 0x00]);
-    debug_assert_decode_matches(&[s.as_str()], "ReservedPolicyIdBitsSet");
+    debug_assert_decode_matches(&[s.as_str()], "ReservedChunkSetIdBitsSet");
     (
         vec![s],
-        "encoded chunked-header bytes with the wallet-id high nibble set (0x10 in the wid first byte); chunk-header parse rejects the reserved bits"
+        "encoded chunked-header bytes with the chunk-set-id high nibble set (0x10 in the csid first byte); chunk-header parse rejects the reserved bits"
             .to_string(),
     )
 }
@@ -1309,12 +1309,12 @@ fn generate_n14_mixed_chunk_types() -> (Vec<String>, String) {
 
 fn generate_n15_policy_id_mismatch() -> (Vec<String>, String) {
     use crate::chunking::ChunkingMode;
-    use crate::policy_id::PolicyIdSeed;
+    use crate::policy_id::ChunkSetIdSeed;
 
-    // Encode the same multi-chunk policy under two distinct `policy_id_seed`
+    // Encode the same multi-chunk policy under two distinct `chunk_set_id_seed`
     // overrides; then submit chunk 0 from encoding A together with chunk 1
     // from encoding B. The chunk-header layer accepts both (each chunk is
-    // self-consistent), but reassembly's wallet-id consistency check rejects
+    // self-consistent), but reassembly's chunk-set-id consistency check rejects
     // the cross-encoding mix. We use C5 (the largest corpus policy) under
     // ForceChunked so the chunking plan produces 2+ chunks.
     let large_policy: WalletPolicy = CORPUS_FIXTURES
@@ -1324,12 +1324,12 @@ fn generate_n15_policy_id_mismatch() -> (Vec<String>, String) {
         .unwrap();
     let opts_a = EncodeOptions {
         chunking_mode: ChunkingMode::ForceChunked,
-        policy_id_seed: Some(PolicyIdSeed::from(0xAAAA_AAAAu32)),
+        chunk_set_id_seed: Some(ChunkSetIdSeed::from(0xAAAA_AAAAu32)),
         ..Default::default()
     };
     let opts_b = EncodeOptions {
         chunking_mode: ChunkingMode::ForceChunked,
-        policy_id_seed: Some(PolicyIdSeed::from(0xBBBB_BBBBu32)),
+        chunk_set_id_seed: Some(ChunkSetIdSeed::from(0xBBBB_BBBBu32)),
         ..Default::default()
     };
     let backup_a = encode(&large_policy, &opts_a).unwrap();
@@ -1340,11 +1340,11 @@ fn generate_n15_policy_id_mismatch() -> (Vec<String>, String) {
     let inputs = vec![chunk0, chunk1];
     debug_assert_decode_matches(
         &inputs.iter().map(String::as_str).collect::<Vec<_>>(),
-        "PolicyIdMismatch",
+        "ChunkSetIdMismatch",
     );
     (
         inputs,
-        "encoded the C5 corpus policy twice with distinct `policy_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
+        "encoded the C5 corpus policy twice with distinct `chunk_set_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the chunk-set-id mismatch"
             .to_string(),
     )
 }
@@ -1353,14 +1353,14 @@ fn generate_n16_total_chunks_mismatch() -> (Vec<String>, String) {
     // Build two raw chunks via the chunking API with mismatched count
     // fields, then encode each chunk's bytes via `encode_string`.
     use crate::chunking::ChunkHeader;
-    use crate::policy_id::ChunkPolicyId;
+    use crate::policy_id::ChunkSetId;
 
-    let wid = ChunkPolicyId::new(0x12345);
+    let csid = ChunkSetId::new(0x12345);
     // Chunk 0: count=2, index=0, payload=[0x01]
     let c0 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 2,
             index: 0,
         },
@@ -1370,7 +1370,7 @@ fn generate_n16_total_chunks_mismatch() -> (Vec<String>, String) {
     let c1 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 3,
             index: 1,
         },
@@ -1384,7 +1384,7 @@ fn generate_n16_total_chunks_mismatch() -> (Vec<String>, String) {
     );
     (
         inputs,
-        "synthesised two Chunked chunks with the same wallet-id but different `count` headers (2 vs 3); reassembly rejects"
+        "synthesised two Chunked chunks with the same chunk-set-id but different `count` headers (2 vs 3); reassembly rejects"
             .to_string(),
     )
 }
@@ -1403,16 +1403,16 @@ fn generate_n17_chunk_index_out_of_range() -> (Vec<String>, String) {
 }
 
 fn generate_n18_duplicate_chunk_index() -> (Vec<String>, String) {
-    // Two chunks with the same wallet-id and same index=0 (count=2) →
+    // Two chunks with the same chunk-set-id and same index=0 (count=2) →
     // reassembly rejects with DuplicateChunkIndex.
     use crate::chunking::ChunkHeader;
-    use crate::policy_id::ChunkPolicyId;
+    use crate::policy_id::ChunkSetId;
 
-    let wid = ChunkPolicyId::new(0x0001);
+    let csid = ChunkSetId::new(0x0001);
     let c0a = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 2,
             index: 0,
         },
@@ -1421,7 +1421,7 @@ fn generate_n18_duplicate_chunk_index() -> (Vec<String>, String) {
     let c0b = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 2,
             index: 0,
         },
@@ -1434,7 +1434,7 @@ fn generate_n18_duplicate_chunk_index() -> (Vec<String>, String) {
     );
     (
         inputs,
-        "synthesised two Chunked chunks with identical wallet-id, count=2, and index=0 (different fragments); reassembly rejects the duplicate index"
+        "synthesised two Chunked chunks with identical chunk-set-id, count=2, and index=0 (different fragments); reassembly rejects the duplicate index"
             .to_string(),
     )
 }
@@ -1442,13 +1442,13 @@ fn generate_n18_duplicate_chunk_index() -> (Vec<String>, String) {
 fn generate_n19_missing_chunk_index() -> (Vec<String>, String) {
     // Claim count=3 but supply only indices 0 and 2 → MissingChunkIndex(1).
     use crate::chunking::ChunkHeader;
-    use crate::policy_id::ChunkPolicyId;
+    use crate::policy_id::ChunkSetId;
 
-    let wid = ChunkPolicyId::new(0x0010);
+    let csid = ChunkSetId::new(0x0010);
     let c0 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 3,
             index: 0,
         },
@@ -1457,7 +1457,7 @@ fn generate_n19_missing_chunk_index() -> (Vec<String>, String) {
     let c2 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 3,
             index: 2,
         },
@@ -1477,7 +1477,7 @@ fn generate_n19_missing_chunk_index() -> (Vec<String>, String) {
 
 fn generate_n20_cross_chunk_hash_mismatch() -> (Vec<String>, String) {
     use crate::chunking::{ChunkCode, ChunkingPlan, chunk_bytes};
-    use crate::policy_id::ChunkPolicyId;
+    use crate::policy_id::ChunkSetId;
 
     // Build a synthetic 50-byte bytecode and a deterministic 2-chunk plan;
     // chunk it, then corrupt the first byte of the last fragment. The
@@ -1488,8 +1488,8 @@ fn generate_n20_cross_chunk_hash_mismatch() -> (Vec<String>, String) {
         fragment_size: 45,
         count: 2,
     };
-    let wid = ChunkPolicyId::new(0xABCDE);
-    let mut chunks = chunk_bytes(&bytecode, plan, wid).unwrap();
+    let csid = ChunkSetId::new(0xABCDE);
+    let mut chunks = chunk_bytes(&bytecode, plan, csid).unwrap();
     chunks.last_mut().unwrap().fragment[0] ^= 0xFF;
 
     // Re-encode each (header, fragment) into a MD string.
@@ -2266,13 +2266,13 @@ fn error_variant_name(e: &crate::Error) -> &'static str {
         Error::UnsupportedCardType(_) => "UnsupportedCardType",
         Error::ChunkIndexOutOfRange { .. } => "ChunkIndexOutOfRange",
         Error::DuplicateChunkIndex(_) => "DuplicateChunkIndex",
-        Error::PolicyIdMismatch { .. } => "PolicyIdMismatch",
+        Error::ChunkSetIdMismatch { .. } => "ChunkSetIdMismatch",
         Error::TotalChunksMismatch { .. } => "TotalChunksMismatch",
         Error::PolicyScopeViolation(_) => "PolicyScopeViolation",
         Error::CrossChunkHashMismatch => "CrossChunkHashMismatch",
         Error::InvalidChunkCount(_) => "InvalidChunkCount",
         Error::InvalidChunkIndex { .. } => "InvalidChunkIndex",
-        Error::ReservedPolicyIdBitsSet => "ReservedPolicyIdBitsSet",
+        Error::ReservedChunkSetIdBitsSet => "ReservedChunkSetIdBitsSet",
         Error::ChunkHeaderTruncated { .. } => "ChunkHeaderTruncated",
         Error::PolicyTooLarge { .. } => "PolicyTooLarge",
         Error::EmptyChunkList => "EmptyChunkList",

@@ -185,11 +185,13 @@ For '''chunked Template Cards''', the header is eight bech32 characters:
 
 * Version (1 char): as above.
 * Type (1 char): value <code>1</code>.
-* Wallet identifier (4 chars, 20 bits): a per-wallet random identifier shared by all chunks of one Template Card. Generated at first encoding. Used to detect chunks from different wallets being mixed during reassembly.
+* Chunk-set identifier (4 chars, 20 bits): a per-wallet random identifier shared by all chunks of one Template Card. Generated at first encoding. Used to detect chunks from different wallets being mixed during reassembly.
 * Total chunk count (1 char, 5 bits): number of chunks comprising this Template Card. Range 1–32. Encoders SHOULD use the smallest count that fits the payload.
 * Chunk index (1 char, 5 bits): position of this chunk in the sequence, 0-indexed. Range 0 through (count − 1).
 
-The wallet identifier is opaque to the format; its only purpose is mismatch detection during reassembly. Encoders SHOULD generate it from a cryptographically secure random source at first encoding and use the same value for all subsequent re-encodings of the same wallet.
+The chunk-set identifier is opaque to the format; its only purpose is mismatch detection during reassembly. Encoders SHOULD generate it from a cryptographically secure random source at first encoding and use the same value for all subsequent re-encodings of the same wallet.
+
+'''Naming note:''' the field was called "wallet identifier" in MD versions ≤ 0.8.x. The v0.8 rename (which renamed Tier-3 "wallet ID" → "Policy ID" — see §"Naming note" under "Policy ID" below for that rename's rationale) mechanically renamed this chunk-header field to ''ChunkPolicyId'' as collateral, but on review for the sibling Mnemonic Key (MK) format that name was misleading: the chunk-header field is neither a Policy ID (which lives at Tier 3 and identifies a policy template) nor a Wallet Instance ID (which identifies a template + xpub set); it identifies a chunk-set assembly and nothing more. v0.9 corrects the name to "chunk-set identifier" / <code>chunk_set_id</code>. Wire format and bit layout are unchanged across the v0.8 → v0.9 rename.
 
 ====Payload====
 
@@ -659,7 +661,7 @@ Decoders compute the hash over the reassembled bytecode (excluding the trailing 
 
 ====Chunk format====
 
-Each chunk is a complete codex32-derived string with the chunked Template Card header (type = 1). The total chunk count and chunk index fields in the header determine reassembly order. The wallet identifier (4 chars) MUST be identical across all chunks of one Template Card.
+Each chunk is a complete codex32-derived string with the chunked Template Card header (type = 1). The total chunk count and chunk index fields in the header determine reassembly order. The chunk-set identifier (4 chars) MUST be identical across all chunks of one Template Card.
 
 Encoders SHOULD divide the canonical bytecode + hash into chunks of approximately equal size; the exact division is implementation-defined provided each chunk's fragment fits within the chunk's chosen code (regular or long). Decoders MUST accept any valid division.
 
@@ -668,7 +670,7 @@ Encoders SHOULD divide the canonical bytecode + hash into chunks of approximatel
 Decoders reassemble a chunked Template Card by:
 
 # Collecting all chunks transcribed by the user.
-# Verifying all chunks share the same wallet identifier; reject if mixed.
+# Verifying all chunks share the same chunk-set identifier; reject if mixed.
 # Verifying all chunks declare the same total chunk count; reject if inconsistent.
 # Sorting chunks by chunk index; reject if any index appears multiple times or is missing.
 # Verifying the highest index equals (count − 1); reject if not.
@@ -768,7 +770,7 @@ The flow MUST proceed through these stages, in order:
 # '''Damage assessment.''' Accept the user's transcribed string(s). Display per-position character status. Allow user to mark positions as unreadable (erasures).
 # '''Standard decode.''' Attempt BCH decoding with no user input. If successful, report and stop.
 # '''Erasure-aware decode.''' If standard decode fails and erasures are marked, attempt erasure decoding (up to 8 erasures per string). If successful, report and stop.
-# '''Structure elicitation.''' If decoding still fails, prompt the user for structural information they remember about the policy: wallet kind, key count, threshold, derivation path, timelock values, wallet identifier (if separately stamped).
+# '''Structure elicitation.''' If decoding still fails, prompt the user for structural information they remember about the policy: wallet kind, key count, threshold, derivation path, timelock values, chunk-set identifier (if separately stamped).
 # '''Constrained candidate search.''' Encode the user's structural assertions as a partial bytecode template. Enumerate candidate codewords within an extended Hamming radius (up to ~12) that decode to valid MD bytecode AND match the user's assertions.
 # '''Candidate verification.''' For each surviving candidate, derive xpubs from available seeds at the candidate's declared paths, verify they map to the expected placeholders, verify cross-chunk hash if multi-chunk, and reject candidates failing any check.
 # '''Optional blockchain verification.''' With explicit user consent, derive the candidate's first N receive addresses and check on-chain history. Disclose privacy implications before this step.
@@ -850,11 +852,11 @@ Encrypting the Template Card is technically straightforward but introduces a new
 
 A future revision MAY define an optional encrypted Template Card variant. v0 does not include one.
 
-===Why mandatory wallet identifier in chunked cards?===
+===Why mandatory chunk-set identifier in chunked cards?===
 
-Without per-wallet identifiers, a user with multiple wallets risks mixing chunks from different Template Cards during reassembly. The 20-bit identifier provides ~1-in-1M discrimination against accidental cross-wallet contamination. Combined with the cross-chunk hash, the false-accept probability for accidental misassembly is approximately 2<sup>−52</sup>, which is negligible in practice.
+Without per-chunk-set identifiers, a user with multiple wallets risks mixing chunks from different Template Cards during reassembly. The 20-bit identifier provides ~1-in-1M discrimination against accidental cross-wallet contamination. Combined with the cross-chunk hash, the false-accept probability for accidental misassembly is approximately 2<sup>−52</sup>, which is negligible in practice.
 
-For single-string Template Cards, no wallet identifier is needed because there are no chunks to confuse.
+For single-string Template Cards, no chunk-set identifier is needed because there are no chunks to confuse.
 
 ==Frequently Asked Questions==
 

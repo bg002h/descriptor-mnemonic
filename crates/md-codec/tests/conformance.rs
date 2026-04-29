@@ -16,7 +16,7 @@ mod common;
 
 use bitcoin::bip32::Fingerprint;
 use md_codec::{
-    BytecodeErrorKind, Chunk, ChunkHeader, ChunkPolicyId, ChunkingMode, DecodeOptions,
+    BytecodeErrorKind, Chunk, ChunkHeader, ChunkSetId, ChunkingMode, DecodeOptions,
     EncodeOptions, Error, WalletPolicy, chunk_bytes, chunking_decision, decode, encode,
     reassemble_chunks,
 };
@@ -187,15 +187,15 @@ fn rejects_unsupported_card_type() {
     );
 }
 
-/// 8. Reserved wallet-id bits set → `Error::ReservedPolicyIdBitsSet`
+/// 8. Reserved chunk-set-id bits set → `Error::ReservedChunkSetIdBitsSet`
 #[test]
-fn rejects_reserved_policy_id_bits_set() {
-    // version=0, type=Chunked(1), policy_id first byte=0x10 (top nibble set).
+fn rejects_reserved_chunk_set_id_bits_set() {
+    // version=0, type=Chunked(1), chunk_set_id first byte=0x10 (top nibble set).
     let bytes = [0x00u8, 0x01, 0x10, 0x00, 0x00, 0x01, 0x00];
     let err = ChunkHeader::from_bytes(&bytes).unwrap_err();
     assert!(
-        matches!(err, Error::ReservedPolicyIdBitsSet),
-        "expected ReservedPolicyIdBitsSet, got {:?}",
+        matches!(err, Error::ReservedChunkSetIdBitsSet),
+        "expected ReservedChunkSetIdBitsSet, got {:?}",
         err
     );
 }
@@ -203,7 +203,7 @@ fn rejects_reserved_policy_id_bits_set() {
 /// 9. Count=0 → `Error::InvalidChunkCount`
 #[test]
 fn rejects_invalid_chunk_count() {
-    // [ver=0, type=1, wid=0,0,0, count=0, index=0]
+    // [ver=0, type=1, csid=0,0,0, count=0, index=0]
     let bytes = [0x00u8, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
     let err = ChunkHeader::from_bytes(&bytes).unwrap_err();
     assert!(
@@ -216,7 +216,7 @@ fn rejects_invalid_chunk_count() {
 /// 10. index >= count → `Error::InvalidChunkIndex`
 #[test]
 fn rejects_invalid_chunk_index() {
-    // [ver=0, type=1, wid=0,0,0, count=3, index=3] (index==count → out of range)
+    // [ver=0, type=1, csid=0,0,0, count=3, index=3] (index==count → out of range)
     let bytes = [0x00u8, 0x01, 0x00, 0x00, 0x00, 0x03, 0x03];
     let err = ChunkHeader::from_bytes(&bytes).unwrap_err();
     assert!(
@@ -275,7 +275,7 @@ fn rejects_mixed_chunk_types() {
     let chunked = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: ChunkPolicyId::new(0x0001),
+            chunk_set_id: ChunkSetId::new(0x0001),
             count: 2,
             index: 0,
         },
@@ -290,15 +290,15 @@ fn rejects_mixed_chunk_types() {
     );
 }
 
-/// 15. Wallet-id mismatch across chunks → `Error::PolicyIdMismatch`
+/// 15. Chunk-set-id mismatch across chunks → `Error::ChunkSetIdMismatch`
 #[test]
-fn rejects_policy_id_mismatch() {
-    let wid_a = ChunkPolicyId::new(0xAAAAA);
-    let wid_b = ChunkPolicyId::new(0xBBBBB);
+fn rejects_chunk_set_id_mismatch() {
+    let csid_a = ChunkSetId::new(0xAAAAA);
+    let csid_b = ChunkSetId::new(0xBBBBB);
     let c0 = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid_a,
+            chunk_set_id: csid_a,
             count: 2,
             index: 0,
         },
@@ -307,7 +307,7 @@ fn rejects_policy_id_mismatch() {
     let c1 = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid_b,
+            chunk_set_id: csid_b,
             count: 2,
             index: 1,
         },
@@ -315,8 +315,8 @@ fn rejects_policy_id_mismatch() {
     );
     let err = reassemble_chunks(vec![c0, c1]).unwrap_err();
     assert!(
-        matches!(err, Error::PolicyIdMismatch { .. }),
-        "expected PolicyIdMismatch, got {:?}",
+        matches!(err, Error::ChunkSetIdMismatch { .. }),
+        "expected ChunkSetIdMismatch, got {:?}",
         err
     );
 }
@@ -324,11 +324,11 @@ fn rejects_policy_id_mismatch() {
 /// 16. Total-chunks mismatch across chunks → `Error::TotalChunksMismatch`
 #[test]
 fn rejects_total_chunks_mismatch() {
-    let wid = ChunkPolicyId::new(0x12345);
+    let csid = ChunkSetId::new(0x12345);
     let c0 = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 2,
             index: 0,
         },
@@ -337,7 +337,7 @@ fn rejects_total_chunks_mismatch() {
     let c1 = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 3, // mismatch
             index: 1,
         },
@@ -364,12 +364,12 @@ fn rejects_total_chunks_mismatch() {
 /// header validation.
 #[test]
 fn rejects_chunk_index_out_of_range() {
-    let wid = ChunkPolicyId::new(0x0042);
+    let csid = ChunkSetId::new(0x0042);
     // Build a Chunk directly with index > count using Chunk::new (bypasses from_bytes validation).
     let bad = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 2,
             index: 5, // out of range: 5 >= 2
         },
@@ -386,11 +386,11 @@ fn rejects_chunk_index_out_of_range() {
 /// 18. Duplicate chunk index → `Error::DuplicateChunkIndex`
 #[test]
 fn rejects_duplicate_chunk_index() {
-    let wid = ChunkPolicyId::new(0x0001);
+    let csid = ChunkSetId::new(0x0001);
     let c0a = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 2,
             index: 0,
         },
@@ -399,7 +399,7 @@ fn rejects_duplicate_chunk_index() {
     let c0b = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 2,
             index: 0, // duplicate
         },
@@ -416,12 +416,12 @@ fn rejects_duplicate_chunk_index() {
 /// 19. Missing chunk index in a multi-chunk set → `Error::MissingChunkIndex`
 #[test]
 fn rejects_missing_chunk_index() {
-    let wid = ChunkPolicyId::new(0x0010);
+    let csid = ChunkSetId::new(0x0010);
     // Claim count=3 but only provide indices 0 and 2; index 1 is absent.
     let c0 = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 3,
             index: 0,
         },
@@ -430,7 +430,7 @@ fn rejects_missing_chunk_index() {
     let c2 = Chunk::new(
         ChunkHeader::Chunked {
             version: 0,
-            policy_id: wid,
+            chunk_set_id: csid,
             count: 3,
             index: 2,
         },
@@ -455,8 +455,8 @@ fn rejects_cross_chunk_hash_mismatch() {
         fragment_size: 45,
         count: 2,
     };
-    let wid = ChunkPolicyId::new(0xABCDE);
-    let mut chunks = chunk_bytes(&bytecode, plan, wid).unwrap();
+    let csid = ChunkSetId::new(0xABCDE);
+    let mut chunks = chunk_bytes(&bytecode, plan, csid).unwrap();
 
     // Corrupt the first byte of the last fragment (corrupts either payload or hash).
     let last = chunks.last_mut().unwrap();
