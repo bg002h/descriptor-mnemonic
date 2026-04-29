@@ -605,7 +605,7 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
             // pinned miniscript, so this is unreachable today. The `#[allow]`
             // keeps the guard against a future upgrade adding new variants.
             #[allow(unreachable_patterns)]
-            other => Err(Error::TapLeafSubsetViolation {
+            other => Err(Error::SubsetViolation {
                 operator: format!("{other:?}"),
                 leaf_index: None,
             }),
@@ -626,7 +626,7 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
 /// `design/MD_SCOPE_DECISION_2026-04-28.md` for rationale.
 ///
 /// Walks the AST recursively. On the first violation, returns
-/// [`Error::TapLeafSubsetViolation`] with the offending operator name.
+/// [`Error::SubsetViolation`] with the offending operator name.
 ///
 /// **Wrapper-terminal handling**: `Terminal::Check` (`c:`) and
 /// `Terminal::Verify` (`v:`) are allowed because the BIP 388 parser emits
@@ -637,7 +637,7 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
 ///
 /// `leaf_index` is the DFS pre-order index of this leaf within the
 /// containing tap tree. The value is propagated into
-/// [`Error::TapLeafSubsetViolation`] to enrich diagnostics. Pass `Some(0)` for
+/// [`Error::SubsetViolation`] to enrich diagnostics. Pass `Some(0)` for
 /// single-leaf, `Some(n)` for multi-leaf, or `None` for callers without
 /// leaf-index context.
 pub fn validate_tap_leaf_subset(
@@ -645,7 +645,7 @@ pub fn validate_tap_leaf_subset(
     leaf_index: Option<usize>,
 ) -> Result<(), Error> {
     validate_tap_leaf_terminal(&ms.node).map_err(|e| match e {
-        Error::TapLeafSubsetViolation { operator, .. } => Error::TapLeafSubsetViolation {
+        Error::SubsetViolation { operator, .. } => Error::SubsetViolation {
             operator,
             leaf_index,
         },
@@ -668,7 +668,7 @@ fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Resu
         // `pk(...)` and `and_v(v:..., ...)`).
         Terminal::Check(child) | Terminal::Verify(child) => validate_tap_leaf_terminal(&child.node),
         // Everything else is out-of-subset for v0.2.
-        other => Err(Error::TapLeafSubsetViolation {
+        other => Err(Error::SubsetViolation {
             operator: tap_terminal_name(other).to_string(),
             leaf_index: None, // Sub-helper of validate_tap_leaf_subset; the outer
                               // caller re-wraps via map_err to attach the correct

@@ -575,7 +575,7 @@ fn decode_terminal(
 ///
 /// `leaf_index` is the DFS pre-order index of this leaf within the
 /// containing tap tree. It is plumbed through to `decode_tap_terminal` so
-/// that a `TapLeafSubsetViolation` raised during decode names the offending
+/// that a `SubsetViolation` raised during decode names the offending
 /// leaf. Pass `Some(0)` for single-leaf `tr(KEY, leaf)`, `Some(n)` for the
 /// n-th leaf in DFS pre-order traversal of a multi-leaf tree, or `None`
 /// for callers that do not have leaf-index context.
@@ -599,7 +599,7 @@ fn decode_tap_miniscript(
 /// only the operators in the BIP §"Taproot tree" Coldcard subset
 /// (`pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`, `older` + safe wrappers
 /// `c:` / `v:`) parse cleanly. Out-of-subset tags surface
-/// `Error::TapLeafSubsetViolation` immediately rather than being typed-out
+/// `Error::SubsetViolation` immediately rather than being typed-out
 /// at `Miniscript::from_ast`, so the diagnostic names the offending
 /// operator.
 fn decode_tap_terminal(
@@ -955,7 +955,7 @@ fn decode_tap_terminal(
 /// **Leaf-index propagation**: `leaf_counter` is incremented in DFS pre-order
 /// (left-subtree leaves numbered before right-subtree leaves at any inner
 /// node). This index is plumbed through to `validate_tap_leaf_subset` so
-/// `Error::TapLeafSubsetViolation` diagnostics name the offending leaf.
+/// `Error::SubsetViolation` diagnostics name the offending leaf.
 fn decode_tap_subtree(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],

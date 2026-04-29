@@ -1573,15 +1573,15 @@ fn build_negative_n_tap_leaf_subset() -> NegativeVector {
             .expect("tap-leaf subset policy must parse");
     debug_assert!(matches!(
         policy.to_bytecode(&EncodeOptions::default()),
-        Err(crate::Error::TapLeafSubsetViolation { .. })
+        Err(crate::Error::SubsetViolation { .. })
     ));
     NegativeVector {
         id: "n_tap_leaf_subset".to_string(),
         description:
-            "Taproot leaf miniscript uses `sha256` (not in the Coldcard subset) → TapLeafSubsetViolation"
+            "Taproot leaf miniscript uses `sha256` (not in the Coldcard subset) → SubsetViolation"
                 .to_string(),
         input_strings: Vec::new(),
-        expected_error_variant: "TapLeafSubsetViolation".to_string(),
+        expected_error_variant: "SubsetViolation".to_string(),
         provenance: Some(
             "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. \
              Construct via `\"tr(@0/**,and_v(v:sha256(<32B>),pk(@1/**)))\".parse::<WalletPolicy>()` followed by \
@@ -1692,9 +1692,9 @@ fn build_negative_taptree_inner_off_subset(
     // unrecognised-leaf-tag arm or per-leaf subset check. The exact variant
     // depends on whether the tag is recognised in tap-leaf position.
     //
-    // We assert at the variant family level (`TapLeafSubsetViolation` for
+    // We assert at the variant family level (`SubsetViolation` for
     // recognised-but-off-subset tags; the v0.5 spec calls all five out as
-    // `TapLeafSubsetViolation { operator: <name>, leaf_index: Some(0) }`).
+    // `SubsetViolation { operator: <name>, leaf_index: Some(0) }`).
     // Sanity: confirm decode produces *some* error so the fixture is not
     // accidentally exercising the success path.
     if cfg!(debug_assertions) {
@@ -1705,10 +1705,10 @@ fn build_negative_taptree_inner_off_subset(
     NegativeVector {
         id: id.to_string(),
         description: format!(
-            "Multi-leaf TapTree with `{operator_name}` leaf at index 0 — TapLeafSubsetViolation {{ operator: {operator_name:?}, leaf_index: Some(0) }}"
+            "Multi-leaf TapTree with `{operator_name}` leaf at index 0 — SubsetViolation {{ operator: {operator_name:?}, leaf_index: Some(0) }}"
         ),
         input_strings: vec![s],
-        expected_error_variant: "TapLeafSubsetViolation".to_string(),
+        expected_error_variant: "SubsetViolation".to_string(),
         provenance: Some(format!(
             "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::{:?}, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `{operator_name}`",
             offender_tag,
@@ -2180,7 +2180,7 @@ fn error_variant_name(e: &crate::Error) -> &'static str {
         Error::SingleStringWithMultipleChunks => "SingleStringWithMultipleChunks",
         Error::PolicyParse(_) => "PolicyParse",
         Error::Miniscript(_) => "Miniscript",
-        Error::TapLeafSubsetViolation { .. } => "TapLeafSubsetViolation",
+        Error::SubsetViolation { .. } => "SubsetViolation",
         Error::FingerprintsCountMismatch { .. } => "FingerprintsCountMismatch",
     }
 }

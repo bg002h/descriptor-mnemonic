@@ -18,7 +18,7 @@ v0.6 strips MD's signer-compatibility curation layer. After v0.6:
 - The encoder admits any `Miniscript<DescriptorPublicKey, Tap>` AST that rust-miniscript produces from a valid BIP 388 wallet-policy parse — no per-operator subset gate by default.
 - The decoder admits any wire input that parses to a valid `Tag` and structurally well-formed bytecode — no per-operator subset gate by default.
 - `validate_tap_leaf_subset` (and its helper `validate_tap_leaf_terminal`) are retained as `pub fn` for explicit-call use by callers who want signer-aware validation.
-- `Error::TapLeafSubsetViolation` variant is retained (used by the explicit-call validator path).
+- `Error::SubsetViolation` variant (renamed from `TapLeafSubsetViolation` in v0.6 per §5) is retained (used by the explicit-call validator path).
 
 ### 1.2 What does NOT change
 

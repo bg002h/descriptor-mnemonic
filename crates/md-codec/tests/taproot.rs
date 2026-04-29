@@ -120,13 +120,13 @@ fn taproot_rejects_out_of_subset_sha256() {
             .expect("policy should parse");
     let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
     match err {
-        Error::TapLeafSubsetViolation { ref operator, .. } => {
+        Error::SubsetViolation { ref operator, .. } => {
             assert!(
                 operator.contains("sha256"),
                 "expected operator='sha256', got {operator:?}"
             );
         }
-        other => panic!("expected TapLeafSubsetViolation, got {other:?}"),
+        other => panic!("expected SubsetViolation, got {other:?}"),
     }
 }
 
@@ -141,7 +141,7 @@ fn taproot_rejects_wrapper_alt_outside_subset() {
         .expect("policy should parse");
     let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
     match err {
-        Error::TapLeafSubsetViolation { ref operator, .. } => {
+        Error::SubsetViolation { ref operator, .. } => {
             // The outer operator (`thresh`) is what the validator hits
             // first when walking the AST. We don't prescribe which is
             // reported, but we do prescribe that *some* out-of-subset
@@ -151,7 +151,7 @@ fn taproot_rejects_wrapper_alt_outside_subset() {
                 "expected thresh or s: rejection, got {operator:?}"
             );
         }
-        other => panic!("expected TapLeafSubsetViolation, got {other:?}"),
+        other => panic!("expected SubsetViolation, got {other:?}"),
     }
 }
 

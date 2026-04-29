@@ -60,7 +60,7 @@ enum ErrorVariantName {
     MissingChunkIndex,
     MixedChunkTypes,
     SingleStringWithMultipleChunks,
-    TapLeafSubsetViolation,
+    SubsetViolation,
     FingerprintsCountMismatch,
 }
 

@@ -38,7 +38,7 @@ pub use crate::wallet_id::ChunkWalletId;
 /// [`Error::MissingChunkIndex`], [`Error::CrossChunkHashMismatch`].
 ///
 /// Stage 5 (bytecode parse): [`Error::InvalidBytecode`],
-/// [`Error::PolicyScopeViolation`], [`Error::TapLeafSubsetViolation`],
+/// [`Error::PolicyScopeViolation`], [`Error::SubsetViolation`],
 /// [`Error::FingerprintsCountMismatch`].
 ///
 /// Encode-side: [`Error::PolicyTooLarge`], [`Error::PolicyParse`],
@@ -323,7 +323,7 @@ pub enum Error {
     /// don't yet plumb the index pass `None`).
     #[error("tap-leaf subset violation: operator '{operator}' not in Coldcard subset")]
     #[non_exhaustive]
-    TapLeafSubsetViolation {
+    SubsetViolation {
         /// The miniscript operator name (e.g. `"sha256"`, `"thresh"`,
         /// `"or_b"`) that violated the subset.
         operator: String,
@@ -446,7 +446,7 @@ pub enum BytecodeErrorKind {
     ///
     /// Introduced in v0.6 alongside the strip-Layer-3 change so the decoder
     /// catch-all in `decode_tap_terminal` can produce a structural diagnostic
-    /// rather than the now-removed `TapLeafSubsetViolation`.
+    /// rather than the now-removed `SubsetViolation`.
     ///
     /// [`Error::PolicyScopeViolation`]: super::Error::PolicyScopeViolation
     #[error("tag {tag:#04x} is invalid in context {context}")]

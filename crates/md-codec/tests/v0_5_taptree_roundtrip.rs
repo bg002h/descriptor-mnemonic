@@ -6,7 +6,7 @@
 //!   T3, T4, T6 fixtures, plus a defense-against-symbug bytecode-distinctness
 //!   check between left-heavy T4 and right-heavy T5.
 //! - LI1-LI3: `decode_report.tap_leaves` populates `leaf_index` in DFS
-//!   pre-order, plumbs `leaf_index` into `Error::TapLeafSubsetViolation`,
+//!   pre-order, plumbs `leaf_index` into `Error::SubsetViolation`,
 //!   and treats single-leaf `tr(KEY, leaf)` as `leaf_index = 0`.
 //! - PR1-PR2: parser-roundtrip equivalence — re-parsing the recovered
 //!   policy's canonical string yields a structurally-identical descriptor.
@@ -118,7 +118,7 @@ fn decode_report_populates_leaf_index_dfs_preorder() {
 fn tap_leaf_subset_violation_carries_leaf_index() {
     // LI2: hand-construct a multi-leaf TapTree with wpkh leaf at index 0
     // (left leaf of a 2-leaf depth-1 tree); expect
-    // TapLeafSubsetViolation { operator: "wpkh", leaf_index: Some(0) }.
+    // SubsetViolation { operator: "wpkh", leaf_index: Some(0) }.
     //
     // Build a valid `tr(@0/**)` bytecode and append the multi-leaf body
     // with a Wpkh leaf in left position.
@@ -134,7 +134,7 @@ fn tap_leaf_subset_violation_carries_leaf_index() {
 
     let err = decode_bytecode(&bytecode).expect_err("wpkh tap leaf must reject");
     match err {
-        Error::TapLeafSubsetViolation {
+        Error::SubsetViolation {
             operator,
             leaf_index,
             ..
@@ -146,7 +146,7 @@ fn tap_leaf_subset_violation_carries_leaf_index() {
                 "expected leaf_index=Some(0) (left leaf)"
             );
         }
-        other => panic!("expected TapLeafSubsetViolation, got {other:?}"),
+        other => panic!("expected SubsetViolation, got {other:?}"),
     }
 }
 
