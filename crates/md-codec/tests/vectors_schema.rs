@@ -66,9 +66,9 @@ fn build_test_vectors_has_expected_corpus_count() {
 
     assert_eq!(
         v2.vectors.len(),
-        43,
-        "expected exactly 43 positive corpus vectors in schema-2 \
-         (v0.6 corpus regenerated under family token \"md-codec 0.6\"); \
+        44,
+        "expected exactly 44 positive corpus vectors in schema-2 \
+         (v0.9 added T1 testnet 0x16 vector — closes md-path-dictionary-0x16-gap); \
          got {} — if this fails, update the expected count in tests/vectors_schema.rs",
         v2.vectors.len()
     );
@@ -248,7 +248,7 @@ fn v0_2_sha256_lock_matches_committed_file() {
 
     /// Lockfile SHA-256 (lowercase hex). Update when v0.2.json is
     /// intentionally regenerated.
-    const V0_2_SHA256: &str = "b3f4138937a8f129d218c45d8732776c5d9942be72861a8f8a3eed1ddafcae7d";
+    const V0_2_SHA256: &str = "13f3f0ba78b835208caece13a9bd8b296b516267825b70935b4cb9cb954ef045";
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
     if !path.exists() {

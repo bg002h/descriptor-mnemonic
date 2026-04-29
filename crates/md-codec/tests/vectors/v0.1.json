@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generator": "md-codec 0.8",
+  "generator": "md-codec 0.9",
   "vectors": [
     {
       "id": "c1",
@@ -293,11 +293,11 @@
     },
     {
       "id": "n08",
-      "description": "Reserved wallet-id bits set → ReservedPolicyIdBitsSet",
+      "description": "Reserved chunk-set-id bits set → ReservedChunkSetIdBitsSet",
       "input_strings": [
         "md1qqq3qqqqqyqql7qh2w5zykaa8"
       ],
-      "expected_error_variant": "ReservedPolicyIdBitsSet"
+      "expected_error_variant": "ReservedChunkSetIdBitsSet"
     },
     {
       "id": "n09",
@@ -349,12 +349,12 @@
     },
     {
       "id": "n15",
-      "description": "Wallet-id mismatch across chunks → PolicyIdMismatch",
+      "description": "Chunk-set-id mismatch across chunks → ChunkSetIdMismatch",
       "input_strings": [
         "md1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdss95kd8ekz69jdz9",
         "md1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yfnxhzsfujawc9"
       ],
-      "expected_error_variant": "PolicyIdMismatch"
+      "expected_error_variant": "ChunkSetIdMismatch"
     },
     {
       "id": "n16",

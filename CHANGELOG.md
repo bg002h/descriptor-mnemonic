@@ -4,6 +4,90 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.9.0] — 2026-04-29
+
+Closes three mk1-surfaced FOLLOWUPS items:
+[`chunk-set-id-rename`](design/FOLLOWUPS.md),
+[`md-path-dictionary-0x16-gap`](design/FOLLOWUPS.md), and
+[`path-dictionary-mirror-stewardship`](design/FOLLOWUPS.md). Wire format
+unchanged for the rename portion; wire-additive (`0x16`) for the new
+testnet BIP 48 P2SH-P2WSH path indicator. Test-vector corpora regenerate
+because `GENERATOR_FAMILY` rolls `"md-codec 0.8"` → `"md-codec 0.9"` and
+because `expected_error_variant` strings rename in lockstep with code.
+
+### Why a rename, *again*?
+
+v0.8.0 (2026-04-28) renamed `WalletId → PolicyId` to align with BIP 388's
+policy-template framing (Tier-3 = "the policy"). That rename mechanically
+renamed the chunk-header 20-bit field `ChunkWalletId → ChunkPolicyId` and
+two error variants (`WalletIdMismatch → PolicyIdMismatch`,
+`ReservedWalletIdBitsSet → ReservedPolicyIdBitsSet`) along with it. On
+review for the sibling Mnemonic Key (mk1) BIP submission, this turned out
+to be miscategorized: those names belong to the chunk-header sub-domain
+and identify a *chunk-set assembly* — not a Policy ID, not a Wallet
+Instance ID. v0.9.0 corrects the chunk-header sub-domain to
+`ChunkSetId`/`ChunkSetIdMismatch`/`ReservedChunkSetIdBitsSet`. v0.8's
+`PolicyId` and `WalletInstanceId` are stable and unchanged. We expect
+this to be the last identifier rename in this family.
+
+### Changed (chunk-header field renames)
+
+- `ChunkPolicyId` → `ChunkSetId`
+- `PolicyIdSeed` → `ChunkSetIdSeed`
+- `EncodeOptions::policy_id_seed` → `EncodeOptions::chunk_set_id_seed`
+- `EncodeOptions::with_policy_id_seed(seed)` →
+  `EncodeOptions::with_chunk_set_id_seed(seed)` (if/when the builder is
+  used; check call sites)
+- `Error::PolicyIdMismatch { expected, got }` →
+  `Error::ChunkSetIdMismatch { expected, got }`
+- `Error::ReservedPolicyIdBitsSet` → `Error::ReservedChunkSetIdBitsSet`
+- `ChunkHeader::Chunked.policy_id` field → `chunk_set_id`
+- `Chunk.policy_id` field → `chunk_set_id`
+- `Verifications.policy_id_consistent` field → `chunk_set_id_consistent`
+- BIP §"Wallet identifier" → §"Chunk-set identifier" with a v0.8→v0.9
+  naming-note explaining the correction
+- Test helpers: `test_wallet_id`, `expected_wallet_id`,
+  `chunked_round_trip_max_wallet_id`, `wid_a`/`wid_b` →
+  `test_chunk_set_id`, `expected_chunk_set_id`,
+  `chunked_round_trip_max_chunk_set_id`, `csid_a`/`csid_b`
+
+`PolicyId`, `PolicyIdWords`, `WalletInstanceId`,
+`compute_policy_id_for_policy`, `compute_wallet_instance_id`,
+`MdBackup::policy_id()` are intentionally unchanged.
+
+### Added
+
+- Path-dictionary indicator `0x16 = m/48'/1'/0'/1'` (BIP 48 testnet
+  P2SH-P2WSH; mirror of mainnet `0x06`). Wire-additive — existing
+  decoders rejected `0x16` as an unknown indicator.
+- Corpus vector `t1_sh_wsh_testnet_0x16` exercising the new dictionary
+  entry via `EncodeOptions::with_shared_path("m/48'/1'/0'/1'")`.
+- `design/RELEASE_PROCESS.md` documenting the md1↔mk1 path-dictionary
+  lockstep release invariant and standard 16-step release checklist.
+- BIP §"Path dictionary" trailing "Cross-format inheritance" paragraph.
+
+### Wire format
+
+- Unchanged for the rename portion (chunk-set identifier is the same
+  20-bit field, just spelled differently in code, prose, and JSON).
+- Additive for `0x16` (forward-only — old encodings remain valid;
+  encodings that select the testnet `m/48'/1'/0'/1'` path now serialize
+  as a single `0x16` byte rather than the explicit-path fallback).
+- Test-vector corpus JSON files (`v0.1.json` and `v0.2.json`)
+  regenerated to absorb the renamed `expected_error_variant` strings,
+  the family-token roll to `"md-codec 0.9"`, and (for v0.2) the new T1
+  vector. Both SHA pins update.
+
+### FOLLOWUPS closed
+
+- `chunk-set-id-rename` (mk1-surfaced — hard precondition for mk1's BIP
+  submission)
+- `md-path-dictionary-0x16-gap` (mk1-surfaced)
+- `path-dictionary-mirror-stewardship` (mk1-surfaced)
+
+`md-per-at-N-path-tag-allocation` (the fourth mk1-surfaced item) remains
+open and is deferred to v1+ pending per-cosigner-path scheduling.
+
 ## [0.8.0] — 2026-04-29
 
 Closes [`wallet-id-is-really-template-id`](design/FOLLOWUPS.md). Renames

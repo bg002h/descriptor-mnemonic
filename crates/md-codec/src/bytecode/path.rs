@@ -1,6 +1,6 @@
 //! v0 path dictionary: indicator ↔ derivation-path lookup.
 //!
-//! Maps the 13 well-known indicator bytes defined in BIP §"Path dictionary"
+//! Maps the 14 well-known indicator bytes defined in BIP §"Path dictionary"
 //! (lines 238–276) to their corresponding `DerivationPath` values and back.
 //! Special indicators `0xFE` (explicit path) and `0xFF` (no-path reserved)
 //! are *not* in this table; they are handled by the framing layer.
@@ -10,8 +10,8 @@ use std::sync::LazyLock;
 
 use bitcoin::bip32::DerivationPath;
 
-/// The 13 v0 dictionary entries, parsed once on first access.
-static DICT: LazyLock<[(u8, DerivationPath); 13]> = LazyLock::new(|| {
+/// The 14 v0 dictionary entries, parsed once on first access.
+static DICT: LazyLock<[(u8, DerivationPath); 14]> = LazyLock::new(|| {
     [
         // Mainnet
         (0x01, DerivationPath::from_str("m/44'/0'/0'").unwrap()),
@@ -21,12 +21,13 @@ static DICT: LazyLock<[(u8, DerivationPath); 13]> = LazyLock::new(|| {
         (0x05, DerivationPath::from_str("m/48'/0'/0'/2'").unwrap()),
         (0x06, DerivationPath::from_str("m/48'/0'/0'/1'").unwrap()),
         (0x07, DerivationPath::from_str("m/87'/0'/0'").unwrap()),
-        // Testnet (0x16 is reserved — intentional gap)
+        // Testnet
         (0x11, DerivationPath::from_str("m/44'/1'/0'").unwrap()),
         (0x12, DerivationPath::from_str("m/49'/1'/0'").unwrap()),
         (0x13, DerivationPath::from_str("m/84'/1'/0'").unwrap()),
         (0x14, DerivationPath::from_str("m/86'/1'/0'").unwrap()),
         (0x15, DerivationPath::from_str("m/48'/1'/0'/2'").unwrap()),
+        (0x16, DerivationPath::from_str("m/48'/1'/0'/1'").unwrap()),
         (0x17, DerivationPath::from_str("m/87'/1'/0'").unwrap()),
     ]
 });
@@ -86,7 +87,7 @@ pub fn encode_path(path: &DerivationPath) -> Vec<u8> {
 ///
 /// Reads a single indicator byte from `cur`, then either:
 /// - Returns the corresponding dictionary path if the byte is one of the 13
-///   known indicators (`0x01`–`0x07`, `0x11`–`0x15`, `0x17`).
+///   known indicators (`0x01`–`0x07`, `0x11`–`0x17`).
 /// - Decodes an explicit path if the byte is `0xFE`: reads a LEB128 component
 ///   count, then that many LEB128-encoded child numbers. Each encoded value `n`
 ///   maps to: hardened `n >> 1` if `n & 1 == 1`, else unhardened `n >> 1`.
@@ -355,12 +356,26 @@ mod tests {
         assert_eq!(m0h, DerivationPath::from_str("m/0'").unwrap());
     }
 
+    // ── indicator_0x16_decodes_to_bip48_testnet_p2sh_p2wsh ──────────────────
+
+    /// Closes md-path-dictionary-0x16-gap (mk1-surfaced FOLLOWUPS, v0.9.0).
+    /// Mainnet indicator 0x06 is m/48'/0'/0'/1' (BIP 48 nested-segwit
+    /// P2SH-P2WSH); the testnet companion 0x16 = m/48'/1'/0'/1' was missed
+    /// in v0.x. v0.9 closes the gap.
+    #[test]
+    fn indicator_0x16_decodes_to_bip48_testnet_p2sh_p2wsh() {
+        let expected = DerivationPath::from_str("m/48'/1'/0'/1'").unwrap();
+        let got = indicator_to_path(0x16).expect("0x16 must map to a path after v0.9");
+        assert_eq!(*got, expected);
+        assert_eq!(path_to_indicator(got), Some(0x16));
+    }
+
     // ── decode_rejects_reserved_indicator ───────────────────────────────────
 
     /// Reserved and unknown indicator bytes must be rejected with UnknownTag.
     #[test]
     fn decode_rejects_reserved_indicator() {
-        for &b in &[0x00u8, 0x08, 0x10, 0x16, 0x18, 0xFD, 0xFF] {
+        for &b in &[0x00u8, 0x08, 0x10, 0x18, 0xFD, 0xFF] {
             let mut cur = Cursor::new(std::slice::from_ref(&b));
             let err = decode_path(&mut cur).unwrap_err();
             assert!(
@@ -475,7 +490,7 @@ mod tests {
         );
     }
 
-    /// Fixture: all 13 (indicator, path_str) pairs.
+    /// Fixture: all 14 (indicator, path_str) pairs.
     const FIXTURE: &[(u8, &str)] = &[
         (0x01, "m/44'/0'/0'"),
         (0x02, "m/49'/0'/0'"),
@@ -489,6 +504,7 @@ mod tests {
         (0x13, "m/84'/1'/0'"),
         (0x14, "m/86'/1'/0'"),
         (0x15, "m/48'/1'/0'/2'"),
+        (0x16, "m/48'/1'/0'/1'"),
         (0x17, "m/87'/1'/0'"),
     ];
 
@@ -509,7 +525,7 @@ mod tests {
 
     #[test]
     fn unknown_indicator_returns_none() {
-        for &ind in &[0x00u8, 0x08, 0x10, 0x16, 0x18, 0xFD] {
+        for &ind in &[0x00u8, 0x08, 0x10, 0x18, 0xFD] {
             assert!(
                 indicator_to_path(ind).is_none(),
                 "expected None for indicator 0x{ind:02x}"

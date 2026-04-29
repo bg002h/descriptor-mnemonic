@@ -84,20 +84,20 @@
 //! ## Identifiers
 //!
 //! MD defines three identifier values with distinct scopes. See
-//! [`PolicyId`], [`ChunkPolicyId`], [`PolicyIdSeed`], and
+//! [`PolicyId`], [`ChunkSetId`], [`ChunkSetIdSeed`], and
 //! [`WalletInstanceId`] for the full semantics. Short version:
 //!
 //! - The **Tier-3 [`PolicyId`]** (16 bytes, displayed as 12 BIP-39 words via
 //!   [`PolicyIdWords`]) is **always** content-derived from
 //!   `SHA-256(canonical_bytecode)[0..16]`. It is **never** affected by
-//!   [`EncodeOptions::policy_id_seed`]. A user holding only the 12-word
+//!   [`EncodeOptions::chunk_set_id_seed`]. A user holding only the 12-word
 //!   mnemonic can verify which seed corresponds to which `@i` placeholder.
 //!   The PolicyId hashes the BIP 388 *template* only — two distinct
 //!   wallets that share a template share a PolicyId.
-//! - The **chunk-header [`ChunkPolicyId`]** (20 bits embedded in every chunked
+//! - The **chunk-header [`ChunkSetId`]** (20 bits embedded in every chunked
 //!   string's header) is by default the first 20 bits of the same SHA-256
 //!   (so the Tier-3 mnemonic predicts it). It can be overridden by setting
-//!   [`EncodeOptions::policy_id_seed`] for deterministic test-vector
+//!   [`EncodeOptions::chunk_set_id_seed`] for deterministic test-vector
 //!   generation.
 //! - The **derived [`WalletInstanceId`]** (16 bytes, no engraving anchor)
 //!   distinguishes wallets that share a policy template but differ in their
@@ -127,7 +127,7 @@
 //! - [`chunking`] — multi-string chunk header, plan selection, assembly,
 //!   reassembly.
 //! - [`policy`] — [`WalletPolicy`] newtype + [`MdBackup`] struct.
-//! - [`policy_id`] — Tier-3 [`PolicyId`] / [`ChunkPolicyId`] / [`PolicyIdSeed`].
+//! - [`policy_id`] — Tier-3 [`PolicyId`] / [`ChunkSetId`] / [`ChunkSetIdSeed`].
 //! - [`options`] — [`EncodeOptions`] / [`DecodeOptions`] knobs.
 //! - [`decode_report`] — [`DecodeResult`] / [`DecodeReport`] / [`Confidence`].
 //! - [`error`] — [`Error`] enum (the public API contract for failures).
@@ -177,7 +177,7 @@ pub use policy::{MdBackup, WalletPolicy};
 #[cfg(feature = "compiler")]
 pub use policy_compiler::{ScriptContext, policy_to_bytecode};
 pub use policy_id::{
-    ChunkPolicyId, PolicyId, PolicyIdSeed, PolicyIdWords, WalletInstanceId,
+    ChunkSetId, ChunkSetIdSeed, PolicyId, PolicyIdWords, WalletInstanceId,
     compute_policy_id_for_policy, compute_wallet_instance_id,
 };
 pub use vectors::{NegativeVector, TestVectorFile, Vector};

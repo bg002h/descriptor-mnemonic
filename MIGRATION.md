@@ -2,6 +2,91 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.8.x → v0.9.0
+
+v0.9.0 is a **chunk-header-naming-cleanup release**. v0.8.0's mechanical
+`WalletId → PolicyId` sweep accidentally renamed the chunk-header 20-bit
+field family to a "PolicyId" name when it actually identifies a chunk-set
+assembly (not a Policy ID, not a Wallet Instance ID). v0.9.0 corrects the
+chunk-header sub-domain to `ChunkSetId` / `ChunkSetIdMismatch` /
+`ReservedChunkSetIdBitsSet` etc. v0.8's Tier-3 `PolicyId` and derived
+`WalletInstanceId` are stable and unchanged.
+
+### Why a rename, *again*?
+
+The same rationale that justified the v0.8 rename ("the value identifies
+a template, not a wallet instance") applies one level deeper to the
+chunk-header field: it identifies neither — it identifies the chunk-set
+assembly. We expect this to be the last identifier rename in this family.
+
+### What renamed
+
+Chunk-header sub-domain only (~150 references in md-codec; small surface
+in consumer code):
+
+| Before (v0.8.x) | After (v0.9.0) |
+| --- | --- |
+| `md_codec::ChunkPolicyId` | `md_codec::ChunkSetId` |
+| `md_codec::PolicyIdSeed` | `md_codec::ChunkSetIdSeed` |
+| `EncodeOptions::policy_id_seed` field | `EncodeOptions::chunk_set_id_seed` |
+| `EncodeOptions::with_policy_id_seed(seed)` | `EncodeOptions::with_chunk_set_id_seed(seed)` |
+| `Error::PolicyIdMismatch { expected, got }` | `Error::ChunkSetIdMismatch { expected, got }` |
+| `Error::ReservedPolicyIdBitsSet` | `Error::ReservedChunkSetIdBitsSet` |
+| `ChunkHeader::Chunked.policy_id` field | `ChunkHeader::Chunked.chunk_set_id` |
+| `Chunk.policy_id` field | `Chunk.chunk_set_id` |
+| `Verifications.policy_id_consistent` field | `Verifications.chunk_set_id_consistent` |
+| CLI JSON output: `policy_id_consistent` | `chunk_set_id_consistent` |
+
+`PolicyId`, `PolicyIdWords`, `WalletInstanceId`, `compute_policy_id`,
+`compute_policy_id_for_policy`, `compute_wallet_instance_id`,
+`MdBackup::policy_id()` are intentionally unchanged.
+
+### Mechanical sed for consumer code
+
+```bash
+# Type names (CamelCase)
+find . -type f -name '*.rs' -exec sed -i \
+  -e 's/\bChunkPolicyId\b/ChunkSetId/g' \
+  -e 's/\bPolicyIdSeed\b/ChunkSetIdSeed/g' \
+  -e 's/\bPolicyIdMismatch\b/ChunkSetIdMismatch/g' \
+  -e 's/\bReservedPolicyIdBitsSet\b/ReservedChunkSetIdBitsSet/g' \
+  {} +
+
+# Snake-case bare names
+find . -type f -name '*.rs' -exec sed -i \
+  -e 's/\bchunk_policy_id\b/chunk_set_id/g' \
+  -e 's/\bpolicy_id_seed\b/chunk_set_id_seed/g' \
+  -e 's/\bpolicy_id_consistent\b/chunk_set_id_consistent/g' \
+  {} +
+
+# Snake-case test-name compound forms (P1 sed lesson — \b doesn't
+# match between word-chars; explicit suffix forms required)
+find . -type f -name '*.rs' -exec sed -i \
+  -e 's/chunk_policy_id\(_[a-z]\)/chunk_set_id\1/g' \
+  -e 's/policy_id_seed\(_[a-z]\)/chunk_set_id_seed\1/g' \
+  {} +
+```
+
+**Hand-rename only:** `ChunkHeader::Chunked.policy_id` and
+`Chunk.policy_id` *struct field* accesses — sed can't disambiguate from
+`compute_policy_id` or `MdBackup::policy_id()` (the Tier-3 getter, which
+intentionally stays). Consumers grepping `\.policy_id\b` should review
+hits manually.
+
+### Wire format
+
+Unchanged for the rename portion. The chunk-header is bit-identical
+across the v0.8→v0.9 boundary; only names move. The `expected_error_variant`
+strings in the test-vector JSON corpora rename in lockstep with the code.
+
+### Wire-additive: testnet `0x16`
+
+v0.9.0 also adds `0x16 = m/48'/1'/0'/1'` to the path dictionary (BIP 48
+testnet P2SH-P2WSH, mirror of mainnet `0x06`). Encoders that previously
+encoded the testnet path via the explicit-path fallback (`0xFE` form) will
+now select the single-byte dictionary form. Old encodings remain valid;
+new encodings using `0x16` require v0.9+ decoders.
+
 ## v0.7.x → v0.8.0
 
 v0.8.0 is a **naming-cleanup release**. The 16-byte template-only hash

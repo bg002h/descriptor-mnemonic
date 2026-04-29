@@ -30,7 +30,7 @@ use md_codec::{BchCode, Confidence, DecodeOptions, EncodeOptions, WalletPolicy, 
 /// recovered policy is structurally equal to the original.
 ///
 /// Uses default [`EncodeOptions`] and [`DecodeOptions`]. For tests that
-/// need non-default options (chunking_mode, policy_id_seed), use the
+/// need non-default options (chunking_mode, chunk_set_id_seed), use the
 /// `encode`/`decode` API directly.
 pub fn round_trip_assert(policy_str: &str) {
     let policy: WalletPolicy = policy_str.parse().unwrap_or_else(|e| {

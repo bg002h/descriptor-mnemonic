@@ -15,10 +15,9 @@ mk1 is a sibling format (HRP `mk`, codex32-derived xpub backup) developed in `/s
 
 **Currently open mk1-surfaced items affecting md1** (see `design/FOLLOWUPS.md` for full entries):
 
-- `chunk-set-id-rename` — rename "wallet identifier" → `chunk_set_id`. Hard precondition for mk1's BIP submission.
-- `md-per-at-N-path-tag-allocation` — Q-4 from mk1 closure design; allocate per-`@N` origin path tag in md1 bytecode.
-- `md-path-dictionary-0x16-gap` — add missing testnet 0x16 entry to path dictionary.
-- `path-dictionary-mirror-stewardship` — formalize the bidirectional release-checklist invariant that path-dictionary changes update both repos in lockstep.
+- `md-per-at-N-path-tag-allocation` — Q-4 from mk1 closure design; allocate per-`@N` origin path tag in md1 bytecode (deferred to v1+ pending per-cosigner-path scheduling).
+
+**Recently resolved (md-codec v0.9.0):** `chunk-set-id-rename`, `md-path-dictionary-0x16-gap`, `path-dictionary-mirror-stewardship`. mk1's BIP-submission gate is now cleared.
 
 ## Other repo-specific notes
 

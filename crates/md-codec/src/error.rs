@@ -9,9 +9,10 @@
 
 use thiserror::Error;
 
-// `ChunkPolicyId` is defined in `policy_id` and re-exported here so that
-// `Error` variants can reference it without a cross-module path.
-pub use crate::policy_id::ChunkPolicyId;
+// `ChunkSetId` is defined in `policy_id` (the module owns both Tier-3
+// `PolicyId` and the chunk-domain `ChunkSetId`) and re-exported here so
+// that `Error` variants can reference it without a cross-module path.
+pub use crate::policy_id::ChunkSetId;
 
 /// Every error md-codec can return.
 ///
@@ -28,12 +29,12 @@ pub use crate::policy_id::ChunkPolicyId;
 ///
 /// Stage 3 (header parse): [`Error::ChunkHeaderTruncated`],
 /// [`Error::UnsupportedVersion`], [`Error::UnsupportedCardType`],
-/// [`Error::ReservedPolicyIdBitsSet`], [`Error::InvalidChunkCount`],
+/// [`Error::ReservedChunkSetIdBitsSet`], [`Error::InvalidChunkCount`],
 /// [`Error::InvalidChunkIndex`].
 ///
 /// Stage 4 (reassembly): [`Error::EmptyChunkList`],
 /// [`Error::MixedChunkTypes`], [`Error::SingleStringWithMultipleChunks`],
-/// [`Error::PolicyIdMismatch`], [`Error::TotalChunksMismatch`],
+/// [`Error::ChunkSetIdMismatch`], [`Error::TotalChunksMismatch`],
 /// [`Error::ChunkIndexOutOfRange`], [`Error::DuplicateChunkIndex`],
 /// [`Error::MissingChunkIndex`], [`Error::CrossChunkHashMismatch`].
 ///
@@ -149,18 +150,18 @@ pub enum Error {
     #[error("duplicate chunk index: {0}")]
     DuplicateChunkIndex(u8),
 
-    /// Two chunks reported different wallet identifiers.
+    /// Two chunks reported different chunk-set identifiers.
     ///
     /// The user mixed chunks from two different wallets in one decode call.
     /// Compare the `expected` and `got` 20-bit fields against the Tier-3
     /// [`crate::PolicyId`] truncations to identify which chunk is foreign,
     /// then ask the user to retry with a single wallet's chunks.
-    #[error("wallet identifier mismatch across chunks: expected {expected:?}, got {got:?}")]
-    PolicyIdMismatch {
-        /// The expected (first-seen) chunk wallet identifier.
-        expected: ChunkPolicyId,
+    #[error("chunk-set identifier mismatch across chunks: expected {expected:?}, got {got:?}")]
+    ChunkSetIdMismatch {
+        /// The expected (first-seen) chunk-set identifier.
+        expected: ChunkSetId,
         /// The mismatched value seen on a later chunk.
-        got: ChunkPolicyId,
+        got: ChunkSetId,
     },
 
     /// Two chunks reported different total chunk counts.
@@ -227,13 +228,13 @@ pub enum Error {
         count: u8,
     },
 
-    /// The three wallet-id bytes in a chunk header had the reserved top 4 bits set.
+    /// The three chunk-set-id bytes in a chunk header had the reserved top 4 bits set.
     ///
-    /// The wallet-id field is 20 bits wide; the top 4 bits of the three-byte
+    /// The chunk-set-id field is 20 bits wide; the top 4 bits of the three-byte
     /// big-endian encoding must be zero. Any non-zero high nibble in the
     /// first byte triggers this error and indicates a corrupted chunk header.
-    #[error("reserved wallet-id bits set: top 4 bits of wallet-id field must be zero")]
-    ReservedPolicyIdBitsSet,
+    #[error("reserved chunk-set-id bits set: top 4 bits of chunk-set-id field must be zero")]
+    ReservedChunkSetIdBitsSet,
 
     /// The chunk header bytes were truncated (too short to contain a complete header).
     ///

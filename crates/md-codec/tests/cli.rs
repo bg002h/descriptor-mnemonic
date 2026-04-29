@@ -167,7 +167,7 @@ fn md_decode_json_shape_is_stable() {
         "cross_chunk_hash_ok",
         "total_chunks_consistent",
         "version_supported",
-        "policy_id_consistent",
+        "chunk_set_id_consistent",
     ] {
         assert!(
             verifications.get(flag).and_then(|f| f.as_bool()).is_some(),

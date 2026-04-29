@@ -1,14 +1,14 @@
-//! Wallet-identity types used across MD chunking.
+//! Chunk-set-identity types used across MD chunking.
 //!
 //! This module provides four types:
 //! - [`PolicyId`] — 16-byte Tier-3 Policy ID (first 16 bytes of SHA-256 of
 //!   canonical bytecode).
 //! - [`PolicyIdWords`] — the 12 BIP-39 words derived deterministically from a
 //!   `PolicyId`.
-//! - [`ChunkPolicyId`] — the 20-bit chunk-header field derived from a
+//! - [`ChunkSetId`] — the 20-bit chunk-header field derived from a
 //!   `PolicyId` by taking its first 20 bits.
-//! - [`PolicyIdSeed`] — optional 4-byte seed to override the chunk-header
-//!   `policy_id` field during encoding.
+//! - [`ChunkSetIdSeed`] — optional 4-byte seed to override the chunk-header
+//!   `chunk_set_id` field during encoding.
 
 use bitcoin::hashes::{Hash, sha256};
 use std::fmt;
@@ -22,29 +22,29 @@ use std::fmt;
 ///
 /// The full 128 bits serve as a collision-resistant identifier for the wallet;
 /// the BIP-39 encoding ([`PolicyIdWords`]) gives a human-friendly 12-word
-/// form, and [`ChunkPolicyId`] extracts the 20 most-significant bits for use
+/// form, and [`ChunkSetId`] extracts the 20 most-significant bits for use
 /// in chunk headers.
 ///
 /// # Two-PolicyId story
 ///
-/// MD uses **two distinct wallet identifiers** with different override
+/// MD uses **two distinct chunk-set identifiers** with different override
 /// semantics. This `PolicyId` is the **content-derived** Tier-3 identifier,
 /// always equal to `SHA-256(canonical_bytecode)[0..16]`. It is **never**
-/// affected by [`PolicyIdSeed`] or [`crate::EncodeOptions::policy_id_seed`].
-/// In contrast, the 20-bit [`ChunkPolicyId`] embedded in chunk headers can be
-/// overridden by [`PolicyIdSeed`] for deterministic test-vector generation.
+/// affected by [`ChunkSetIdSeed`] or [`crate::EncodeOptions::chunk_set_id_seed`].
+/// In contrast, the 20-bit [`ChunkSetId`] embedded in chunk headers can be
+/// overridden by [`ChunkSetIdSeed`] for deterministic test-vector generation.
 ///
 /// The relationship is:
 ///
 /// ```text
-/// default ChunkPolicyId  =  PolicyId.truncate()       // first 20 bits of SHA-256
-/// override ChunkPolicyId =  PolicyIdSeed.truncate()   // top 20 bits of seed
+/// default ChunkSetId  =  PolicyId.truncate()       // first 20 bits of SHA-256
+/// override ChunkSetId =  ChunkSetIdSeed.truncate()   // top 20 bits of seed
 /// ```
 ///
 /// A user holding only the 12-word [`PolicyIdWords`] form of this `PolicyId`
 /// can verify which seed corresponds to which `@i` placeholder in their
 /// recovered wallet policy. See `IMPLEMENTATION_PLAN_v0.1.md` §4
-/// "Policy ID semantics" and the BIP draft §"Wallet identifier".
+/// "Policy ID semantics" and the BIP draft §"Chunk-set identifier".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PolicyId([u8; 16]);
 
@@ -101,15 +101,15 @@ impl PolicyId {
     /// ```
     /// This preserves the significance ordering of the underlying SHA-256
     /// output; the top 20 bits of the 128-bit value appear as the 20
-    /// least-significant bits of the returned `ChunkPolicyId`.
-    pub fn truncate(&self) -> ChunkPolicyId {
+    /// least-significant bits of the returned `ChunkSetId`.
+    pub fn truncate(&self) -> ChunkSetId {
         let b = &self.0;
         let bits = ((b[0] as u32) << 12) | ((b[1] as u32) << 4) | ((b[2] as u32) >> 4);
         // bits is at most 0xF_FFFF because the upper 12 bits of the u32 are
         // always zero (we shift b[0] by 12, so max contribution is 0xFF << 12
         // = 0x000F_F000, plus 0xFF << 4 = 0x0000_0FF0, plus 0x0F = 0x0000_000F
-        // → max = 0x000F_FFFF = ChunkPolicyId::MAX).
-        ChunkPolicyId(bits)
+        // → max = 0x000F_FFFF = ChunkSetId::MAX).
+        ChunkSetId(bits)
     }
 }
 
@@ -164,7 +164,7 @@ impl From<[u8; 16]> for PolicyId {
 ///
 /// The relationship to the chunk-header 20-bit field is:
 /// ```text
-/// ChunkPolicyId = PolicyId::truncate() = first 20 bits of SHA-256(bytecode)
+/// ChunkSetId = PolicyId::truncate() = first 20 bits of SHA-256(bytecode)
 /// ```
 /// i.e. the `PolicyId` and the chunk-header field share the same SHA-256 hash;
 /// the chunk-header ([`PolicyId::truncate`]) simply keeps fewer bits.
@@ -222,7 +222,7 @@ pub fn compute_policy_id_for_policy(
 ///
 /// Defined in v0.8 alongside the `WalletId` → `PolicyId` rename. See
 /// the BIP draft §"Wallet Instance ID" for the canonical definition
-/// and `design/FOLLOWUPS.md` `wallet-id-is-really-template-id` for
+/// and `design/FOLLOWUPS.md` `chunk-set-id-is-really-template-id` for
 /// the rationale.
 ///
 /// `WalletInstanceId` is **not** carried by any physical card or wire
@@ -356,16 +356,16 @@ impl IntoIterator for PolicyIdWords {
 }
 
 // ---------------------------------------------------------------------------
-// ChunkPolicyId
+// ChunkSetId
 // ---------------------------------------------------------------------------
 
-/// A 20-bit wallet-identity field carried in each MD chunk header.
+/// A 20-bit chunk-set-identity field carried in each MD chunk header.
 ///
 /// Derived from a [`PolicyId`] via [`PolicyId::truncate`], which extracts the
 /// first 20 bits (MSB-first) of the underlying 16-byte SHA-256 prefix.
 ///
 /// The upper 12 bits of the inner `u32` are always zero.  Construct via
-/// [`ChunkPolicyId::new`]; direct tuple-struct access is intentionally private.
+/// [`ChunkSetId::new`]; direct tuple-struct access is intentionally private.
 ///
 /// # Why 20 bits, and how it relates to [`PolicyId`]
 ///
@@ -376,24 +376,24 @@ impl IntoIterator for PolicyIdWords {
 /// adequate for engraving misfile detection while keeping the chunk header
 /// compact.
 ///
-/// By default, `ChunkPolicyId == PolicyId::truncate()`, so a user who knows
+/// By default, `ChunkSetId == PolicyId::truncate()`, so a user who knows
 /// the 12-word [`PolicyIdWords`] of their Tier-3 [`PolicyId`] can predict
 /// what the chunk-header field SHOULD be and confirm it matches at decode
 /// time. This binding is the crux of MD's "verify the recovery without
 /// access to the original media" property.
 ///
-/// The binding can be broken on purpose by passing a [`PolicyIdSeed`] in
-/// [`crate::EncodeOptions::policy_id_seed`]; this is used by the test-vector
+/// The binding can be broken on purpose by passing a [`ChunkSetIdSeed`] in
+/// [`crate::EncodeOptions::chunk_set_id_seed`]; this is used by the test-vector
 /// generator to fix the chunk-header bits to a known value independent of
 /// the bytecode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ChunkPolicyId(u32);
+pub struct ChunkSetId(u32);
 
-impl ChunkPolicyId {
-    /// The maximum value a `ChunkPolicyId` may hold: 2²⁰ − 1 = `0xF_FFFF`.
+impl ChunkSetId {
+    /// The maximum value a `ChunkSetId` may hold: 2²⁰ − 1 = `0xF_FFFF`.
     pub const MAX: u32 = (1 << 20) - 1;
 
-    /// Construct a `ChunkPolicyId` from a 20-bit value.
+    /// Construct a `ChunkSetId` from a 20-bit value.
     ///
     /// # Panics
     ///
@@ -402,7 +402,7 @@ impl ChunkPolicyId {
     pub fn new(bits: u32) -> Self {
         assert!(
             bits <= Self::MAX,
-            "ChunkPolicyId value {bits:#x} exceeds 20-bit maximum ({:#x})",
+            "ChunkSetId value {bits:#x} exceeds 20-bit maximum ({:#x})",
             Self::MAX
         );
         Self(bits)
@@ -416,21 +416,21 @@ impl ChunkPolicyId {
 }
 
 // ---------------------------------------------------------------------------
-// PolicyIdSeed
+// ChunkSetIdSeed
 // ---------------------------------------------------------------------------
 
 /// Optional 4-byte seed that, when supplied via
-/// [`crate::EncodeOptions::policy_id_seed`], overrides the chunk-header
-/// `policy_id` field.
+/// [`crate::EncodeOptions::chunk_set_id_seed`], overrides the chunk-header
+/// `chunk_set_id` field.
 ///
 /// The Tier-3 16-byte [`PolicyId`] is *always* content-derived and is NOT
 /// affected by this seed (per `IMPLEMENTATION_PLAN_v0.1.md` §4 "Policy ID
-/// semantics" and the BIP draft §"Wallet identifier"). The seed is only used
-/// to override the 20-bit [`ChunkPolicyId`] embedded in chunk headers.
+/// semantics" and the BIP draft §"Chunk-set identifier"). The seed is only used
+/// to override the 20-bit [`ChunkSetId`] embedded in chunk headers.
 ///
 /// # When to use this
 ///
-/// Production encoders should leave [`crate::EncodeOptions::policy_id_seed`]
+/// Production encoders should leave [`crate::EncodeOptions::chunk_set_id_seed`]
 /// at `None` so that the chunk-header field is content-derived from the
 /// canonical bytecode and a holder of the Tier-3 mnemonic can verify it.
 ///
@@ -446,12 +446,12 @@ impl ChunkPolicyId {
 /// # Debug redaction
 ///
 /// `Debug` deliberately redacts the byte contents (printing
-/// `PolicyIdSeed(<redacted>)`) so log spew cannot accidentally leak
+/// `ChunkSetIdSeed(<redacted>)`) so log spew cannot accidentally leak
 /// the seed.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PolicyIdSeed([u8; 4]);
+pub struct ChunkSetIdSeed([u8; 4]);
 
-impl PolicyIdSeed {
+impl ChunkSetIdSeed {
     /// Get the underlying 4 bytes.
     pub fn as_bytes(&self) -> &[u8; 4] {
         &self.0
@@ -462,7 +462,7 @@ impl PolicyIdSeed {
         u32::from_be_bytes(self.0)
     }
 
-    /// Truncate this seed to a 20-bit [`ChunkPolicyId`].
+    /// Truncate this seed to a 20-bit [`ChunkSetId`].
     ///
     /// Takes the high 20 bits of the u32 view (matches
     /// [`PolicyId::truncate`]'s big-endian-first-20-bits convention):
@@ -470,27 +470,27 @@ impl PolicyIdSeed {
     /// result = self.as_u32() >> 12
     /// ```
     /// This yields the top 20 bits of the 32-bit seed.
-    pub fn truncate(&self) -> ChunkPolicyId {
+    pub fn truncate(&self) -> ChunkSetId {
         let bits = self.as_u32() >> 12;
-        ChunkPolicyId::new(bits)
+        ChunkSetId::new(bits)
     }
 }
 
-impl fmt::Debug for PolicyIdSeed {
+impl fmt::Debug for ChunkSetIdSeed {
     /// Redacts the raw bytes to prevent accidental logging of seed material.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PolicyIdSeed(<redacted>)")
+        write!(f, "ChunkSetIdSeed(<redacted>)")
     }
 }
 
-impl From<u32> for PolicyIdSeed {
+impl From<u32> for ChunkSetIdSeed {
     /// Construct from a `u32` using big-endian byte order (high byte first).
     fn from(n: u32) -> Self {
         Self(n.to_be_bytes())
     }
 }
 
-impl From<[u8; 4]> for PolicyIdSeed {
+impl From<[u8; 4]> for ChunkSetIdSeed {
     /// Construct directly from a 4-byte array.
     fn from(bytes: [u8; 4]) -> Self {
         Self(bytes)
@@ -655,10 +655,10 @@ mod tests {
 
     #[test]
     fn compute_policy_id_distinguishes_inputs() {
-        // Different inputs must produce different WalletIds.
+        // Different inputs must produce different PolicyIds.
         let id_a = compute_policy_id(b"a");
         let id_b = compute_policy_id(b"b");
-        assert_ne!(id_a, id_b, "distinct inputs must yield distinct WalletIds");
+        assert_ne!(id_a, id_b, "distinct inputs must yield distinct PolicyIds");
     }
 
     #[test]
@@ -676,7 +676,7 @@ mod tests {
         assert_eq!(
             chunk_id.as_u32(),
             0xe3b0c,
-            "ChunkPolicyId must equal the first 20 bits of SHA-256(bytecode)"
+            "ChunkSetId must equal the first 20 bits of SHA-256(bytecode)"
         );
     }
 
@@ -695,49 +695,49 @@ mod tests {
         );
     }
 
-    // --- ChunkPolicyId ---
+    // --- ChunkSetId ---
 
     #[test]
-    fn chunk_policy_id_new_accepts_zero_and_max() {
-        assert_eq!(ChunkPolicyId::new(0).as_u32(), 0);
-        assert_eq!(ChunkPolicyId::new(ChunkPolicyId::MAX).as_u32(), 0xF_FFFF);
+    fn chunk_set_id_new_accepts_zero_and_max() {
+        assert_eq!(ChunkSetId::new(0).as_u32(), 0);
+        assert_eq!(ChunkSetId::new(ChunkSetId::MAX).as_u32(), 0xF_FFFF);
     }
 
     #[test]
     #[should_panic]
-    fn chunk_policy_id_new_panics_above_max() {
-        ChunkPolicyId::new(0x10_0000); // MAX + 1
+    fn chunk_set_id_new_panics_above_max() {
+        ChunkSetId::new(0x10_0000); // MAX + 1
     }
 
     #[test]
-    fn chunk_policy_id_max_is_20_bits() {
-        assert_eq!(ChunkPolicyId::MAX, 0xF_FFFF);
+    fn chunk_set_id_max_is_20_bits() {
+        assert_eq!(ChunkSetId::MAX, 0xF_FFFF);
     }
 
-    // --- PolicyIdSeed ---
+    // --- ChunkSetIdSeed ---
 
     #[test]
-    fn policy_id_seed_from_u32_is_big_endian() {
-        let seed = PolicyIdSeed::from(0x1234_5678u32);
+    fn chunk_set_id_seed_from_u32_is_big_endian() {
+        let seed = ChunkSetIdSeed::from(0x1234_5678u32);
         assert_eq!(seed.as_bytes(), &[0x12, 0x34, 0x56, 0x78]);
     }
 
     #[test]
-    fn policy_id_seed_from_bytes_round_trip() {
-        let seed = PolicyIdSeed::from([0xab; 4]);
+    fn chunk_set_id_seed_from_bytes_round_trip() {
+        let seed = ChunkSetIdSeed::from([0xab; 4]);
         assert_eq!(seed.as_bytes(), &[0xab; 4]);
     }
 
     #[test]
-    fn policy_id_seed_as_u32_round_trip() {
-        let seed = PolicyIdSeed::from(0x1234_5678u32);
+    fn chunk_set_id_seed_as_u32_round_trip() {
+        let seed = ChunkSetIdSeed::from(0x1234_5678u32);
         assert_eq!(seed.as_u32(), 0x1234_5678);
     }
 
     #[test]
-    fn policy_id_seed_debug_redacts_bytes() {
-        let s = format!("{:?}", PolicyIdSeed::from(0xDEAD_BEEFu32));
-        assert_eq!(s, "PolicyIdSeed(<redacted>)");
+    fn chunk_set_id_seed_debug_redacts_bytes() {
+        let s = format!("{:?}", ChunkSetIdSeed::from(0xDEAD_BEEFu32));
+        assert_eq!(s, "ChunkSetIdSeed(<redacted>)");
         // Must not reveal any part of the raw bytes.
         assert!(!s.to_lowercase().contains("dead"));
         assert!(!s.to_lowercase().contains("beef"));
@@ -745,9 +745,9 @@ mod tests {
     }
 
     #[test]
-    fn policy_id_seed_truncate_takes_high_20_bits() {
+    fn chunk_set_id_seed_truncate_takes_high_20_bits() {
         // 0x12345678 >> 12 = 0x12345
-        let seed = PolicyIdSeed::from(0x1234_5678u32);
+        let seed = ChunkSetIdSeed::from(0x1234_5678u32);
         assert_eq!(seed.truncate().as_u32(), 0x12345);
     }
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "md-codec 0.8",
+  "generator": "md-codec 0.9",
   "vectors": [
     {
       "id": "c1",
@@ -1056,6 +1056,29 @@
           13
         ]
       ]
+    },
+    {
+      "id": "t1_sh_wsh_testnet_0x16",
+      "description": "T1 — BIP 48 testnet P2SH-P2WSH 2-of-3 (path indicator 0x16; closes md-path-dictionary-0x16-gap)",
+      "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+      "expected_bytecode_hex": "0034160305090203330033013302",
+      "expected_chunks": [
+        "md1qqqqqdqkqvzsjqsrxvqrxqfnqglw6m4vgypwe0h"
+      ],
+      "expected_policy_id_words": [
+        "hood",
+        "laugh",
+        "fault",
+        "uncle",
+        "cream",
+        "length",
+        "garbage",
+        "delay",
+        "ball",
+        "ring",
+        "muscle",
+        "depart"
+      ]
     }
   ],
   "negative_vectors": [
@@ -1124,12 +1147,12 @@
     },
     {
       "id": "n08",
-      "description": "Reserved wallet-id bits set → ReservedPolicyIdBitsSet",
+      "description": "Reserved chunk-set-id bits set → ReservedChunkSetIdBitsSet",
       "input_strings": [
         "md1qqq3qqqqqyqql7qh2w5zykaa8"
       ],
-      "expected_error_variant": "ReservedPolicyIdBitsSet",
-      "provenance": "encoded chunked-header bytes with the wallet-id high nibble set (0x10 in the wid first byte); chunk-header parse rejects the reserved bits"
+      "expected_error_variant": "ReservedChunkSetIdBitsSet",
+      "provenance": "encoded chunked-header bytes with the chunk-set-id high nibble set (0x10 in the csid first byte); chunk-header parse rejects the reserved bits"
     },
     {
       "id": "n09",
@@ -1187,13 +1210,13 @@
     },
     {
       "id": "n15",
-      "description": "Wallet-id mismatch across chunks → PolicyIdMismatch",
+      "description": "Chunk-set-id mismatch across chunks → ChunkSetIdMismatch",
       "input_strings": [
         "md1qqqs4242qgqqqdqrq5vp5pgfpcdnxqqdpcdnxqgdpcdnxqsdpcdnxqcdpcdnxpqdpcdnxpgdpcdnxpsdpcdsw9vfm8d6ypy4qx7",
         "md1qqqshwamqgqnxpcdpcdnxzqnzq06pdgxpqpqyvcfxv9fztkqqvsvxkppsqm5mam"
       ],
-      "expected_error_variant": "PolicyIdMismatch",
-      "provenance": "encoded the C5 corpus policy twice with distinct `policy_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
+      "expected_error_variant": "ChunkSetIdMismatch",
+      "provenance": "encoded the C5 corpus policy twice with distinct `chunk_set_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the chunk-set-id mismatch"
     },
     {
       "id": "n16",
@@ -1203,7 +1226,7 @@
         "md1qqqszg69qvqsy559x6vg9mj2vm"
       ],
       "expected_error_variant": "TotalChunksMismatch",
-      "provenance": "synthesised two Chunked chunks with the same wallet-id but different `count` headers (2 vs 3); reassembly rejects"
+      "provenance": "synthesised two Chunked chunks with the same chunk-set-id but different `count` headers (2 vs 3); reassembly rejects"
     },
     {
       "id": "n17",
@@ -1220,7 +1243,7 @@
         "md1qqqsqqqpqgqqy5w25s37gh0v38"
       ],
       "expected_error_variant": "DuplicateChunkIndex",
-      "provenance": "synthesised two Chunked chunks with identical wallet-id, count=2, and index=0 (different fragments); reassembly rejects the duplicate index"
+      "provenance": "synthesised two Chunked chunks with identical chunk-set-id, count=2, and index=0 (different fragments); reassembly rejects the duplicate index"
     },
     {
       "id": "n19",
