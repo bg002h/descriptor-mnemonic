@@ -655,10 +655,10 @@ mod tests {
 
     #[test]
     fn compute_policy_id_distinguishes_inputs() {
-        // Different inputs must produce different WalletIds.
+        // Different inputs must produce different PolicyIds.
         let id_a = compute_policy_id(b"a");
         let id_b = compute_policy_id(b"b");
-        assert_ne!(id_a, id_b, "distinct inputs must yield distinct WalletIds");
+        assert_ne!(id_a, id_b, "distinct inputs must yield distinct PolicyIds");
     }
 
     #[test]

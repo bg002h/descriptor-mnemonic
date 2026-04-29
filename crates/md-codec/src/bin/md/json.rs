@@ -155,7 +155,7 @@ pub(crate) struct VerificationsJson {
     /// The bytecode header version is supported by this implementation.
     pub version_supported: bool,
     /// All chunks declared the same `chunk_set_id`.
-    pub policy_id_consistent: bool,
+    pub chunk_set_id_consistent: bool,
 }
 
 impl From<&Correction> for CorrectionJson {
@@ -176,7 +176,7 @@ impl From<&Verifications> for VerificationsJson {
             cross_chunk_hash_ok: v.cross_chunk_hash_ok,
             total_chunks_consistent: v.total_chunks_consistent,
             version_supported: v.version_supported,
-            policy_id_consistent: v.policy_id_consistent,
+            chunk_set_id_consistent: v.chunk_set_id_consistent,
         }
     }
 }
@@ -305,14 +305,14 @@ mod tests {
     fn verifications_from_library_type() {
         let v = Verifications {
             cross_chunk_hash_ok: true,
-            policy_id_consistent: false,
+            chunk_set_id_consistent: false,
             total_chunks_consistent: true,
             bytecode_well_formed: false,
             version_supported: true,
         };
         let j = VerificationsJson::from(&v);
         assert!(j.cross_chunk_hash_ok);
-        assert!(!j.policy_id_consistent);
+        assert!(!j.chunk_set_id_consistent);
         assert!(j.total_chunks_consistent);
         assert!(!j.bytecode_well_formed);
         assert!(j.version_supported);

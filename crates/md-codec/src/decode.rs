@@ -160,7 +160,7 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
 
     // After reassembly succeeded, all cross-chunk verifications are satisfied.
     let cross_chunk_hash_ok = true;
-    let policy_id_consistent = true;
+    let chunk_set_id_consistent = true;
     let total_chunks_consistent = true;
 
     // Stage 5: bytecode decode (Phase E — also recovers the optional
@@ -174,7 +174,7 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
     // Stage 6: build report.
     let verifications = Verifications {
         cross_chunk_hash_ok,
-        policy_id_consistent,
+        chunk_set_id_consistent,
         total_chunks_consistent,
         bytecode_well_formed,
         version_supported,
@@ -545,7 +545,7 @@ mod tests {
     fn decode_report_verifications_all_true_on_happy_path() {
         let result = happy_path_decode();
         assert!(result.report.verifications.cross_chunk_hash_ok);
-        assert!(result.report.verifications.policy_id_consistent);
+        assert!(result.report.verifications.chunk_set_id_consistent);
         assert!(result.report.verifications.total_chunks_consistent);
         assert!(result.report.verifications.bytecode_well_formed);
         assert!(result.report.verifications.version_supported);
@@ -568,7 +568,7 @@ mod tests {
         assert_eq!(result.report.confidence, Confidence::Confirmed);
         assert!(result.report.corrections.is_empty());
         assert!(result.report.verifications.cross_chunk_hash_ok);
-        assert!(result.report.verifications.policy_id_consistent);
+        assert!(result.report.verifications.chunk_set_id_consistent);
         assert!(result.report.verifications.total_chunks_consistent);
         assert!(result.report.verifications.bytecode_well_formed);
         assert!(result.report.verifications.version_supported);

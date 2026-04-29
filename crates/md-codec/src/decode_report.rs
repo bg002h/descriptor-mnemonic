@@ -75,7 +75,7 @@ pub struct Verifications {
     pub cross_chunk_hash_ok: bool,
     /// All chunks declared the same `chunk_set_id`. Trivially `true` for
     /// single-string backups.
-    pub policy_id_consistent: bool,
+    pub chunk_set_id_consistent: bool,
     /// All chunks declared the same `total_chunks`. Trivially `true` for
     /// single-string backups.
     pub total_chunks_consistent: bool,
@@ -216,13 +216,13 @@ mod tests {
     fn verifications_default_construction() {
         let v = Verifications {
             cross_chunk_hash_ok: true,
-            policy_id_consistent: true,
+            chunk_set_id_consistent: true,
             total_chunks_consistent: true,
             bytecode_well_formed: true,
             version_supported: true,
         };
         assert!(v.cross_chunk_hash_ok);
-        assert!(v.policy_id_consistent);
+        assert!(v.chunk_set_id_consistent);
         assert!(v.total_chunks_consistent);
         assert!(v.bytecode_well_formed);
         assert!(v.version_supported);
@@ -235,7 +235,7 @@ mod tests {
             corrections: vec![],
             verifications: Verifications {
                 cross_chunk_hash_ok: true,
-                policy_id_consistent: true,
+                chunk_set_id_consistent: true,
                 total_chunks_consistent: true,
                 bytecode_well_formed: true,
                 version_supported: true,
@@ -257,7 +257,7 @@ mod tests {
             corrections: vec![],
             verifications: Verifications {
                 cross_chunk_hash_ok: true,
-                policy_id_consistent: true,
+                chunk_set_id_consistent: true,
                 total_chunks_consistent: true,
                 bytecode_well_formed: true,
                 version_supported: true,

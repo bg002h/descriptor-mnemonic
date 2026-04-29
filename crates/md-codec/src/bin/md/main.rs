@@ -404,7 +404,7 @@ fn cmd_decode(strings: &[String], json: bool) -> Result<(), anyhow::Error> {
         let v = result.report.verifications;
         println!("Verifications:");
         println!("  cross_chunk_hash_ok:    {}", v.cross_chunk_hash_ok);
-        println!("  policy_id_consistent:   {}", v.policy_id_consistent);
+        println!("  chunk_set_id_consistent:   {}", v.chunk_set_id_consistent);
         println!("  total_chunks_consistent:{}", v.total_chunks_consistent);
         println!("  bytecode_well_formed:   {}", v.bytecode_well_formed);
         println!("  version_supported:      {}", v.version_supported);

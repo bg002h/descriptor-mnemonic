@@ -37,6 +37,7 @@
 | `ChunkHeader::Chunked.policy_id` (struct field) | `ChunkHeader::Chunked.chunk_set_id` | **field rename** — sed-invisible (F2) |
 | `Chunk.policy_id` (struct field) | `Chunk.chunk_set_id` | field rename |
 | `chunk_policy_id` (vars/params) | `chunk_set_id` | local names |
+| `Verifications.policy_id_consistent` (struct field) | `Verifications.chunk_set_id_consistent` | public-API field — added post P1-review (F1) |
 | `test_wallet_id`, `expected_wallet_id`, `chunked_round_trip_max_wallet_id`, `wid_a`/`wid_b` | `test_chunk_set_id`, `expected_chunk_set_id`, `chunked_round_trip_max_chunk_set_id`, `csid_a`/`csid_b` | test-helper names (F2) |
 | "Wallet identifier" / "wallet-id" / "wallet identifier bits" (BIP §, prose, comments) | "Chunk-set identifier" / "chunk-set-id" / "chunk-set-id bits" | ~76 prose hits across crate, design/, README, MIGRATION |
 

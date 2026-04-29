@@ -9,8 +9,9 @@
 
 use thiserror::Error;
 
-// `ChunkSetId` is defined in `chunk_set_id` and re-exported here so that
-// `Error` variants can reference it without a cross-module path.
+// `ChunkSetId` is defined in `policy_id` (the module owns both Tier-3
+// `PolicyId` and the chunk-domain `ChunkSetId`) and re-exported here so
+// that `Error` variants can reference it without a cross-module path.
 pub use crate::policy_id::ChunkSetId;
 
 /// Every error md-codec can return.
