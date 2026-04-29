@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generator": "md-codec 0.7",
+  "generator": "md-codec 0.8",
   "vectors": [
     {
       "id": "c1",
@@ -10,7 +10,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq58pkvcqgj7ymm8tejhhz"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "sad",
         "swing",
         "border",
@@ -33,7 +33,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "rent",
         "lecture",
         "ghost",
@@ -56,7 +56,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "ginger",
         "rival",
         "verify",
@@ -79,7 +79,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq52suxenqq0gp86fryf3qrsuxvq3xyqwrsesyycspcwrxqclcq03xyqwrsesgycspcwrxpglszqqy5hntfd74wrc0jdk"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "hospital",
         "inject",
         "rifle",
@@ -103,7 +103,7 @@
         "md1qqqsjyhvqgqqqdqrq5vp5pgfpcdnxqqdpcdnxqgdpcdnxqsdpcdnxqcdpcdnxpqdpcdnxpgdpcdnxpsdpcdss5auap994w0l6ln",
         "md1qqqsjyhvqgqnxpcdpcdnxzqnzq06pdgxpqpqyvcfxv9fztkqqvuxscfp75hf2ew"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "muffin",
         "invite",
         "absorb",
@@ -126,7 +126,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vquxenqqf3qrsmxvq3l5y6qvmwjyf45jzsyje"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "delay",
         "box",
         "chief",
@@ -149,7 +149,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "ginger",
         "rival",
         "verify",
@@ -172,7 +172,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq52suxenqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6gnzq8pkvcpr7gqzpv687uhcq22xrgn"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "agent",
         "eternal",
         "ordinary",
@@ -195,7 +195,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vqsqcrxvqrxqfnqgf3q87sngpssqsrxvpnxppnq5ks0mr37t4l8v6"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "agent",
         "purse",
         "mystery",
@@ -218,7 +218,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "rent",
         "lecture",
         "ghost",
@@ -293,11 +293,11 @@
     },
     {
       "id": "n08",
-      "description": "Reserved wallet-id bits set → ReservedWalletIdBitsSet",
+      "description": "Reserved wallet-id bits set → ReservedPolicyIdBitsSet",
       "input_strings": [
         "md1qqq3qqqqqyqql7qh2w5zykaa8"
       ],
-      "expected_error_variant": "ReservedWalletIdBitsSet"
+      "expected_error_variant": "ReservedPolicyIdBitsSet"
     },
     {
       "id": "n09",
@@ -349,12 +349,12 @@
     },
     {
       "id": "n15",
-      "description": "Wallet-id mismatch across chunks → WalletIdMismatch",
+      "description": "Wallet-id mismatch across chunks → PolicyIdMismatch",
       "input_strings": [
         "md1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdss95kd8ekz69jdz9",
         "md1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yfnxhzsfujawc9"
       ],
-      "expected_error_variant": "WalletIdMismatch"
+      "expected_error_variant": "PolicyIdMismatch"
     },
     {
       "id": "n16",

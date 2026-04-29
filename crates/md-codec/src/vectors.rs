@@ -85,8 +85,8 @@ pub struct Vector {
     pub expected_bytecode_hex: String,
     /// Expected encoded chunk strings under default [`EncodeOptions`].
     pub expected_chunks: Vec<String>,
-    /// Expected 12-word Tier-3 Wallet ID.
-    pub expected_wallet_id_words: Vec<String>,
+    /// Expected 12-word Tier-3 Policy ID.
+    pub expected_policy_id_words: Vec<String>,
     /// Schema-2 only: fingerprints encoded into this vector.
     ///
     /// `Some(_)` iff the generator passed fingerprints to
@@ -554,9 +554,9 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
     },
     NegativeFixture {
         id: "n08",
-        description: "Reserved wallet-id bits set → ReservedWalletIdBitsSet",
+        description: "Reserved wallet-id bits set → ReservedPolicyIdBitsSet",
         input_strings: &["md1qqq3qqqqqyqql7qh2w5zykaa8"],
-        expected_error_variant: "ReservedWalletIdBitsSet",
+        expected_error_variant: "ReservedPolicyIdBitsSet",
     },
     NegativeFixture {
         id: "n09",
@@ -605,12 +605,12 @@ const NEGATIVE_FIXTURES: &[NegativeFixture] = &[
     },
     NegativeFixture {
         id: "n15",
-        description: "Wallet-id mismatch across chunks → WalletIdMismatch",
+        description: "Wallet-id mismatch across chunks → PolicyIdMismatch",
         input_strings: &[
             "md1qqqs4242qgqqqvcrq5tpspgfpsdnyqqtpsdnyqgtpsdnyqstpsdnyqctpsdnypqtpsdnypgtpsdnypstpsdss95kd8ekz69jdz9",
             "md1qqqshwamqgqnypctpsdnyzq3pc06pdgxrypqyvsfxg9qcekt6yfnxhzsfujawc9",
         ],
-        expected_error_variant: "WalletIdMismatch",
+        expected_error_variant: "PolicyIdMismatch",
     },
     NegativeFixture {
         id: "n16",
@@ -931,8 +931,8 @@ fn build_default_positive_vector(id: &str, description: &str, policy_str: &str) 
 
     let expected_chunks: Vec<String> = backup.chunks.iter().map(|c| c.raw.clone()).collect();
 
-    let expected_wallet_id_words: Vec<String> = backup
-        .wallet_id_words
+    let expected_policy_id_words: Vec<String> = backup
+        .policy_id_words
         .to_string()
         .split_whitespace()
         .map(str::to_string)
@@ -944,7 +944,7 @@ fn build_default_positive_vector(id: &str, description: &str, policy_str: &str) 
         policy: policy_str.to_string(),
         expected_bytecode_hex,
         expected_chunks,
-        expected_wallet_id_words,
+        expected_policy_id_words,
         expected_fingerprints_hex: None,
         encode_options_fingerprints: None,
     }
@@ -974,8 +974,8 @@ fn build_fingerprints_positive_vector() -> Vector {
     let backup = encode(&policy, &opts)
         .unwrap_or_else(|e| panic!("vector builder: fingerprints encode failed: {e}"));
     let expected_chunks: Vec<String> = backup.chunks.iter().map(|c| c.raw.clone()).collect();
-    let expected_wallet_id_words: Vec<String> = backup
-        .wallet_id_words
+    let expected_policy_id_words: Vec<String> = backup
+        .policy_id_words
         .to_string()
         .split_whitespace()
         .map(str::to_string)
@@ -989,7 +989,7 @@ fn build_fingerprints_positive_vector() -> Vector {
         policy: policy_str.to_string(),
         expected_bytecode_hex,
         expected_chunks,
-        expected_wallet_id_words,
+        expected_policy_id_words,
         expected_fingerprints_hex: Some(expected_fingerprints_hex),
         encode_options_fingerprints: Some(raw_fps),
     }
@@ -1017,8 +1017,8 @@ fn build_v0_4_fingerprints_vectors() -> Vec<Vector> {
             panic!("v0.4 fingerprints vector builder: encode failed for {id:?}: {e}")
         });
         let expected_chunks: Vec<String> = backup.chunks.iter().map(|c| c.raw.clone()).collect();
-        let expected_wallet_id_words: Vec<String> = backup
-            .wallet_id_words
+        let expected_policy_id_words: Vec<String> = backup
+            .policy_id_words
             .to_string()
             .split_whitespace()
             .map(str::to_string)
@@ -1031,7 +1031,7 @@ fn build_v0_4_fingerprints_vectors() -> Vec<Vector> {
             policy: policy_str.to_string(),
             expected_bytecode_hex,
             expected_chunks,
-            expected_wallet_id_words,
+            expected_policy_id_words,
             expected_fingerprints_hex: Some(expected_fingerprints_hex),
             encode_options_fingerprints: Some(raw_fps),
         }
@@ -1078,14 +1078,14 @@ fn generate_for_negative_variant(id: &str) -> (Vec<String>, String) {
         "n05" => generate_n05_bch_uncorrectable(),
         "n06" => generate_n06_unsupported_version(),
         "n07" => generate_n07_unsupported_card_type(),
-        "n08" => generate_n08_reserved_wallet_id_bits_set(),
+        "n08" => generate_n08_reserved_policy_id_bits_set(),
         "n09" => generate_n09_invalid_chunk_count(),
         "n10" => generate_n10_invalid_chunk_index(),
         "n11" => generate_n11_chunk_header_truncated(),
         "n12" => generate_n12_empty_chunk_list(),
         "n13" => generate_n13_single_string_with_multiple_chunks(),
         "n14" => generate_n14_mixed_chunk_types(),
-        "n15" => generate_n15_wallet_id_mismatch(),
+        "n15" => generate_n15_policy_id_mismatch(),
         "n16" => generate_n16_total_chunks_mismatch(),
         "n17" => generate_n17_chunk_index_out_of_range(),
         "n18" => generate_n18_duplicate_chunk_index(),
@@ -1201,11 +1201,11 @@ fn generate_n07_unsupported_card_type() -> (Vec<String>, String) {
     )
 }
 
-fn generate_n08_reserved_wallet_id_bits_set() -> (Vec<String>, String) {
+fn generate_n08_reserved_policy_id_bits_set() -> (Vec<String>, String) {
     // 7-byte chunked header with the wallet-id top nibble set: [ver=0,
     // type=1 (Chunked), wid first byte = 0x10, 0x00, 0x00, count=1, index=0].
     let s = encode_string_from_bytes(&[0x00, 0x01, 0x10, 0x00, 0x00, 0x01, 0x00]);
-    debug_assert_decode_matches(&[s.as_str()], "ReservedWalletIdBitsSet");
+    debug_assert_decode_matches(&[s.as_str()], "ReservedPolicyIdBitsSet");
     (
         vec![s],
         "encoded chunked-header bytes with the wallet-id high nibble set (0x10 in the wid first byte); chunk-header parse rejects the reserved bits"
@@ -1307,11 +1307,11 @@ fn generate_n14_mixed_chunk_types() -> (Vec<String>, String) {
     )
 }
 
-fn generate_n15_wallet_id_mismatch() -> (Vec<String>, String) {
+fn generate_n15_policy_id_mismatch() -> (Vec<String>, String) {
     use crate::chunking::ChunkingMode;
-    use crate::wallet_id::WalletIdSeed;
+    use crate::policy_id::PolicyIdSeed;
 
-    // Encode the same multi-chunk policy under two distinct `wallet_id_seed`
+    // Encode the same multi-chunk policy under two distinct `policy_id_seed`
     // overrides; then submit chunk 0 from encoding A together with chunk 1
     // from encoding B. The chunk-header layer accepts both (each chunk is
     // self-consistent), but reassembly's wallet-id consistency check rejects
@@ -1324,12 +1324,12 @@ fn generate_n15_wallet_id_mismatch() -> (Vec<String>, String) {
         .unwrap();
     let opts_a = EncodeOptions {
         chunking_mode: ChunkingMode::ForceChunked,
-        wallet_id_seed: Some(WalletIdSeed::from(0xAAAA_AAAAu32)),
+        policy_id_seed: Some(PolicyIdSeed::from(0xAAAA_AAAAu32)),
         ..Default::default()
     };
     let opts_b = EncodeOptions {
         chunking_mode: ChunkingMode::ForceChunked,
-        wallet_id_seed: Some(WalletIdSeed::from(0xBBBB_BBBBu32)),
+        policy_id_seed: Some(PolicyIdSeed::from(0xBBBB_BBBBu32)),
         ..Default::default()
     };
     let backup_a = encode(&large_policy, &opts_a).unwrap();
@@ -1340,11 +1340,11 @@ fn generate_n15_wallet_id_mismatch() -> (Vec<String>, String) {
     let inputs = vec![chunk0, chunk1];
     debug_assert_decode_matches(
         &inputs.iter().map(String::as_str).collect::<Vec<_>>(),
-        "WalletIdMismatch",
+        "PolicyIdMismatch",
     );
     (
         inputs,
-        "encoded the C5 corpus policy twice with distinct `wallet_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
+        "encoded the C5 corpus policy twice with distinct `policy_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
             .to_string(),
     )
 }
@@ -1353,14 +1353,14 @@ fn generate_n16_total_chunks_mismatch() -> (Vec<String>, String) {
     // Build two raw chunks via the chunking API with mismatched count
     // fields, then encode each chunk's bytes via `encode_string`.
     use crate::chunking::ChunkHeader;
-    use crate::wallet_id::ChunkWalletId;
+    use crate::policy_id::ChunkPolicyId;
 
-    let wid = ChunkWalletId::new(0x12345);
+    let wid = ChunkPolicyId::new(0x12345);
     // Chunk 0: count=2, index=0, payload=[0x01]
     let c0 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            wallet_id: wid,
+            policy_id: wid,
             count: 2,
             index: 0,
         },
@@ -1370,7 +1370,7 @@ fn generate_n16_total_chunks_mismatch() -> (Vec<String>, String) {
     let c1 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            wallet_id: wid,
+            policy_id: wid,
             count: 3,
             index: 1,
         },
@@ -1406,13 +1406,13 @@ fn generate_n18_duplicate_chunk_index() -> (Vec<String>, String) {
     // Two chunks with the same wallet-id and same index=0 (count=2) →
     // reassembly rejects with DuplicateChunkIndex.
     use crate::chunking::ChunkHeader;
-    use crate::wallet_id::ChunkWalletId;
+    use crate::policy_id::ChunkPolicyId;
 
-    let wid = ChunkWalletId::new(0x0001);
+    let wid = ChunkPolicyId::new(0x0001);
     let c0a = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            wallet_id: wid,
+            policy_id: wid,
             count: 2,
             index: 0,
         },
@@ -1421,7 +1421,7 @@ fn generate_n18_duplicate_chunk_index() -> (Vec<String>, String) {
     let c0b = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            wallet_id: wid,
+            policy_id: wid,
             count: 2,
             index: 0,
         },
@@ -1442,13 +1442,13 @@ fn generate_n18_duplicate_chunk_index() -> (Vec<String>, String) {
 fn generate_n19_missing_chunk_index() -> (Vec<String>, String) {
     // Claim count=3 but supply only indices 0 and 2 → MissingChunkIndex(1).
     use crate::chunking::ChunkHeader;
-    use crate::wallet_id::ChunkWalletId;
+    use crate::policy_id::ChunkPolicyId;
 
-    let wid = ChunkWalletId::new(0x0010);
+    let wid = ChunkPolicyId::new(0x0010);
     let c0 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            wallet_id: wid,
+            policy_id: wid,
             count: 3,
             index: 0,
         },
@@ -1457,7 +1457,7 @@ fn generate_n19_missing_chunk_index() -> (Vec<String>, String) {
     let c2 = encoded_from_header_and_fragment(
         ChunkHeader::Chunked {
             version: 0,
-            wallet_id: wid,
+            policy_id: wid,
             count: 3,
             index: 2,
         },
@@ -1477,7 +1477,7 @@ fn generate_n19_missing_chunk_index() -> (Vec<String>, String) {
 
 fn generate_n20_cross_chunk_hash_mismatch() -> (Vec<String>, String) {
     use crate::chunking::{ChunkCode, ChunkingPlan, chunk_bytes};
-    use crate::wallet_id::ChunkWalletId;
+    use crate::policy_id::ChunkPolicyId;
 
     // Build a synthetic 50-byte bytecode and a deterministic 2-chunk plan;
     // chunk it, then corrupt the first byte of the last fragment. The
@@ -1488,7 +1488,7 @@ fn generate_n20_cross_chunk_hash_mismatch() -> (Vec<String>, String) {
         fragment_size: 45,
         count: 2,
     };
-    let wid = ChunkWalletId::new(0xABCDE);
+    let wid = ChunkPolicyId::new(0xABCDE);
     let mut chunks = chunk_bytes(&bytecode, plan, wid).unwrap();
     chunks.last_mut().unwrap().fragment[0] ^= 0xFF;
 
@@ -2266,13 +2266,13 @@ fn error_variant_name(e: &crate::Error) -> &'static str {
         Error::UnsupportedCardType(_) => "UnsupportedCardType",
         Error::ChunkIndexOutOfRange { .. } => "ChunkIndexOutOfRange",
         Error::DuplicateChunkIndex(_) => "DuplicateChunkIndex",
-        Error::WalletIdMismatch { .. } => "WalletIdMismatch",
+        Error::PolicyIdMismatch { .. } => "PolicyIdMismatch",
         Error::TotalChunksMismatch { .. } => "TotalChunksMismatch",
         Error::PolicyScopeViolation(_) => "PolicyScopeViolation",
         Error::CrossChunkHashMismatch => "CrossChunkHashMismatch",
         Error::InvalidChunkCount(_) => "InvalidChunkCount",
         Error::InvalidChunkIndex { .. } => "InvalidChunkIndex",
-        Error::ReservedWalletIdBitsSet => "ReservedWalletIdBitsSet",
+        Error::ReservedPolicyIdBitsSet => "ReservedPolicyIdBitsSet",
         Error::ChunkHeaderTruncated { .. } => "ChunkHeaderTruncated",
         Error::PolicyTooLarge { .. } => "PolicyTooLarge",
         Error::EmptyChunkList => "EmptyChunkList",

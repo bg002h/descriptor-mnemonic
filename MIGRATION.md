@@ -2,6 +2,114 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.7.x → v0.8.0
+
+v0.8.0 is a **naming-cleanup release**. The 16-byte template-only hash
+that md-codec previously called "wallet ID" was renamed to "Policy ID"
+to reflect what it actually identifies, and a new derived
+`WalletInstanceId` quantity is introduced for per-wallet
+disambiguation. **Wire format byte-identical to v0.7.x**; existing MD
+chunks decode unchanged.
+
+### Why the rename
+
+The 16-byte hash `SHA-256(canonical_bytecode)[0..16]` covers the BIP
+388 wallet-policy *template* only — no concrete cosigner xpubs — so
+two distinct wallets that share an identical policy template (same
+multisig shape and shared path, *different* cosigner sets) collide on
+this value. The "wallet ID" name treated a one-to-many relationship as
+one-to-one. The new "Policy ID" name makes the template-level scope
+explicit, and a new derived `WalletInstanceId` (computed at recovery
+time from policy + assembled xpubs) provides per-wallet disambiguation
+for tools that need it.
+
+### What changed (breaking for code consumers)
+
+Every `WalletId*` and `wallet_id*` identifier renamed to
+`PolicyId*` / `policy_id*`. Concretely:
+
+| Old | New |
+|---|---|
+| `md_codec::WalletId` | `md_codec::PolicyId` |
+| `md_codec::WalletIdSeed` | `md_codec::PolicyIdSeed` |
+| `md_codec::WalletIdWords` | `md_codec::PolicyIdWords` |
+| `md_codec::ChunkWalletId` | `md_codec::ChunkPolicyId` |
+| `md_codec::wallet_id::compute_wallet_id` | `md_codec::policy_id::compute_policy_id` |
+| `md_codec::wallet_id::compute_wallet_id_for_policy` | `md_codec::policy_id::compute_policy_id_for_policy` |
+| Module `md_codec::wallet_id` | Module `md_codec::policy_id` |
+| `Error::WalletIdMismatch` | `Error::PolicyIdMismatch` |
+| `Error::ReservedWalletIdBitsSet` | `Error::ReservedPolicyIdBitsSet` |
+| `Verifications::wallet_id_consistent` | `Verifications::policy_id_consistent` |
+| `EncodeOptions::wallet_id_seed` | `EncodeOptions::policy_id_seed` |
+| `EncodeOptions::with_wallet_id_seed(seed)` | `EncodeOptions::with_policy_id_seed(seed)` |
+| Vector JSON field `wallet_id_words` | `policy_id_words` |
+| Vector JSON field `wallet_id_*` (any) | `policy_id_*` |
+| CLI output: `Wallet ID:` | `Policy ID:` |
+| CLI JSON output: `wallet_id*` | `policy_id*` |
+
+### What's new
+
+`md_codec::WalletInstanceId` — the per-wallet identifier:
+
+```rust
+pub fn compute_wallet_instance_id(
+    canonical_bytecode: &[u8],
+    xpubs: &[bitcoin::bip32::Xpub],
+) -> WalletInstanceId
+```
+
+Computes `SHA-256(canonical_bytecode || encode(xpubs[0]) || encode(xpubs[1]) || ...)[0..16]`,
+where `encode(xpub)` is the canonical 78-byte BIP 32 serialization.
+Xpubs are concatenated in placeholder-index order (`@0`, then `@1`,
+..., `@(N-1)`); ordering is significant.
+
+Wallet Instance IDs are **not** carried by any physical card or wire
+structure — they are recovery-time derivations. Tools that have the
+policy card (template) plus the cosigner xpubs (whether from a digital
+backup, the wallet itself, or engraved `mk1` key cards in foreign-xpub
+multisig) compute it on demand.
+
+### What didn't change
+
+- **Wire format byte-identical to v0.7.x.** Existing MD chunks decode
+  unchanged.
+- The 16-byte value, the 4-byte `ChunkPolicyId` stub field width, and
+  the 12-word BIP 39 mnemonic anchor encoding — all unchanged.
+- All public API behaviour: only names changed. The same bytes
+  produce the same values.
+- MSRV unchanged: 1.85.
+
+### How to upgrade
+
+The rename is mechanical:
+
+```bash
+# In your project's source:
+sed -i '
+  s/WalletIdMismatch/PolicyIdMismatch/g
+  s/WalletIdBitsSet/PolicyIdBitsSet/g
+  s/WalletIdSeed/PolicyIdSeed/g
+  s/WalletIdWords/PolicyIdWords/g
+  s/ChunkWalletId/ChunkPolicyId/g
+  s/\bWalletId\b/PolicyId/g
+  s/\bcompute_wallet_id_for_policy\b/compute_policy_id_for_policy/g
+  s/\bcompute_wallet_id\b/compute_policy_id/g
+  s/wallet_id\([_a-zA-Z0-9]\)/policy_id\1/g
+  s/\bwallet_id\b/policy_id/g
+  s/Wallet ID/Policy ID/g
+  s/wallet ID/policy ID/g
+' your-files-here
+```
+
+`cargo update -p md-codec --precise 0.8.0` to pull the new crate.
+
+If you parse MD's CLI JSON output, update field-name expectations
+(`wallet_id*` → `policy_id*`).
+
+If you parse `tests/vectors/v0.2.json` for cross-implementation
+testing, regenerate it from the v0.8 reference impl; field names
+changed in lockstep.
+
 ## v0.6.x → v0.7.0
 
 v0.7.0 is **purely additive**. No breaking changes since v0.6.0.

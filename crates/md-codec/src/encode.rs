@@ -7,11 +7,11 @@ use crate::{
     BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, MdBackup, Result, WalletPolicy,
     chunking::{ChunkHeader, chunk_bytes, chunking_decision},
     encoding::encode_string,
-    wallet_id::{ChunkWalletId, compute_wallet_id},
+    policy_id::{ChunkPolicyId, compute_policy_id},
 };
 
 /// Encode a wallet policy as a [`MdBackup`]: one or more codex32-derived
-/// strings ready to engrave, plus the Tier-3 12-word Wallet ID.
+/// strings ready to engrave, plus the Tier-3 12-word Policy ID.
 ///
 /// # Pipeline
 ///
@@ -20,14 +20,14 @@ use crate::{
 ///    chunked encoding. `force_long_code` can upgrade Regular → Long after
 ///    the fact. `chunking_mode = ChunkingMode::ForceChunked` causes chunked
 ///    encoding even for short input.
-/// 3. **Wallet IDs** — the *chunk-header* 20-bit `wallet_id` is derived from
-///    `options.wallet_id_seed` (if present) or the content hash. The
-///    *Tier-3* 16-byte `WalletId` is **always** content-derived, never
+/// 3. **Policy IDs** — the *chunk-header* 20-bit `policy_id` is derived from
+///    `options.policy_id_seed` (if present) or the content hash. The
+///    *Tier-3* 16-byte `PolicyId` is **always** content-derived, never
 ///    affected by the seed.
 /// 4. **Chunks** — [`chunk_bytes`] assembles `Vec<Chunk>`.
 /// 5. **Codex32 strings** — each chunk's bytes are wrapped by [`encode_string`].
 /// 6. **Result** — a [`MdBackup`] containing the encoded chunks and the
-///    Tier-3 12-word wallet ID.
+///    Tier-3 12-word policy ID.
 ///
 /// # Errors
 ///
@@ -69,10 +69,10 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<MdBackup
         };
     }
 
-    // Stage 4: derive chunk-header wallet_id (affected by seed) and assemble chunks.
-    let chunk_wallet_id: ChunkWalletId = match options.wallet_id_seed {
+    // Stage 4: derive chunk-header policy_id (affected by seed) and assemble chunks.
+    let chunk_wallet_id: ChunkPolicyId = match options.policy_id_seed {
         Some(seed) => seed.truncate(),
-        None => compute_wallet_id(&bytecode).truncate(),
+        None => compute_policy_id(&bytecode).truncate(),
     };
     let chunks = chunk_bytes(&bytecode, plan, chunk_wallet_id)?;
 
@@ -102,9 +102,9 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<MdBackup
         });
     }
 
-    // Stage 6: Tier-3 wallet ID is ALWAYS content-derived, never affected by seed.
-    let tier3_wallet_id = compute_wallet_id(&bytecode);
-    let wallet_id_words = tier3_wallet_id.to_words();
+    // Stage 6: Tier-3 policy ID is ALWAYS content-derived, never affected by seed.
+    let tier3_wallet_id = compute_policy_id(&bytecode);
+    let policy_id_words = tier3_wallet_id.to_words();
 
     // Surface the caller-supplied fingerprints on the backup so that an
     // `encode → user-side state` round-trip is observable without re-decoding.
@@ -112,7 +112,7 @@ pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<MdBackup
     // independently — see `decode::decode`.
     Ok(MdBackup {
         chunks: encoded_chunks,
-        wallet_id_words,
+        policy_id_words,
         fingerprints: options.fingerprints.clone(),
     })
 }
@@ -127,7 +127,7 @@ mod tests {
     use crate::{
         EncodeOptions, WalletPolicy,
         chunking::{ChunkHeader, ChunkingMode},
-        wallet_id::{WalletIdSeed, compute_wallet_id},
+        policy_id::{PolicyIdSeed, compute_policy_id},
     };
 
     fn policy(s: &str) -> WalletPolicy {
@@ -271,60 +271,60 @@ mod tests {
     // Covered by the existing chunking_decision unit tests.
 
     // -----------------------------------------------------------------------
-    // 7. encode_tier3_wallet_id_is_content_derived_without_seed
+    // 7. encode_tier3_policy_id_is_content_derived_without_seed
     // -----------------------------------------------------------------------
 
     #[test]
-    fn encode_tier3_wallet_id_is_content_derived_without_seed() {
+    fn encode_tier3_policy_id_is_content_derived_without_seed() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions::default();
         let backup = encode(&p, &opts).expect("encode");
 
         let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
-        let expected_wallet_id = compute_wallet_id(&bytecode);
+        let expected_wallet_id = compute_policy_id(&bytecode);
 
-        // Reconstruct WalletId from the backup's words and compare.
-        let recovered = backup.wallet_id();
+        // Reconstruct PolicyId from the backup's words and compare.
+        let recovered = backup.policy_id();
         assert_eq!(
             recovered, expected_wallet_id,
-            "Tier-3 WalletId must equal compute_wallet_id(bytecode)"
+            "Tier-3 PolicyId must equal compute_policy_id(bytecode)"
         );
     }
 
     // -----------------------------------------------------------------------
-    // 8. encode_tier3_wallet_id_unaffected_by_seed
+    // 8. encode_tier3_policy_id_unaffected_by_seed
     // -----------------------------------------------------------------------
 
     #[test]
-    fn encode_tier3_wallet_id_unaffected_by_seed() {
+    fn encode_tier3_policy_id_unaffected_by_seed() {
         let p = policy("wsh(pk(@0/**))");
 
         let opts_no_seed = EncodeOptions::default();
         let backup_no_seed = encode(&p, &opts_no_seed).expect("encode no seed");
 
         let opts_with_seed = EncodeOptions {
-            wallet_id_seed: Some(WalletIdSeed::from(0xDEAD_BEEFu32)),
+            policy_id_seed: Some(PolicyIdSeed::from(0xDEAD_BEEFu32)),
             ..Default::default()
         };
         let backup_with_seed = encode(&p, &opts_with_seed).expect("encode with seed");
 
         assert_eq!(
-            backup_no_seed.wallet_id_words, backup_with_seed.wallet_id_words,
-            "Tier-3 wallet_id_words must be identical regardless of seed"
+            backup_no_seed.policy_id_words, backup_with_seed.policy_id_words,
+            "Tier-3 policy_id_words must be identical regardless of seed"
         );
     }
 
     // -----------------------------------------------------------------------
-    // 9. encode_chunk_header_wallet_id_uses_seed_when_present
+    // 9. encode_chunk_header_policy_id_uses_seed_when_present
     // -----------------------------------------------------------------------
 
     #[test]
-    fn encode_chunk_header_wallet_id_uses_seed_when_present() {
+    fn encode_chunk_header_policy_id_uses_seed_when_present() {
         let p = policy("wsh(pk(@0/**))");
         let seed_val: u32 = 0x1234_5678;
         let opts = EncodeOptions {
             chunking_mode: ChunkingMode::ForceChunked,
-            wallet_id_seed: Some(WalletIdSeed::from(seed_val)),
+            policy_id_seed: Some(PolicyIdSeed::from(seed_val)),
             ..Default::default()
         };
         let backup = encode(&p, &opts).expect("encode");
@@ -343,13 +343,13 @@ mod tests {
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
-        // The chunk header wallet_id should equal seed.truncate() = top 20 bits of seed.
-        let expected_chunk_wid = WalletIdSeed::from(seed_val).truncate();
+        // The chunk header policy_id should equal seed.truncate() = top 20 bits of seed.
+        let expected_chunk_wid = PolicyIdSeed::from(seed_val).truncate();
         match header {
-            ChunkHeader::Chunked { wallet_id, .. } => {
+            ChunkHeader::Chunked { policy_id, .. } => {
                 assert_eq!(
-                    wallet_id, expected_chunk_wid,
-                    "chunk-header wallet_id must equal seed.truncate()"
+                    policy_id, expected_chunk_wid,
+                    "chunk-header policy_id must equal seed.truncate()"
                 );
             }
             ChunkHeader::SingleString { .. } => {
@@ -359,11 +359,11 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // 10. encode_chunk_header_wallet_id_is_content_derived_without_seed
+    // 10. encode_chunk_header_policy_id_is_content_derived_without_seed
     // -----------------------------------------------------------------------
 
     #[test]
-    fn encode_chunk_header_wallet_id_is_content_derived_without_seed() {
+    fn encode_chunk_header_policy_id_is_content_derived_without_seed() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
             chunking_mode: ChunkingMode::ForceChunked,
@@ -385,14 +385,14 @@ mod tests {
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
-        // The chunk-header wallet_id should be compute_wallet_id(bytecode).truncate().
+        // The chunk-header policy_id should be compute_policy_id(bytecode).truncate().
         let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
-        let expected_chunk_wid = compute_wallet_id(&bytecode).truncate();
+        let expected_chunk_wid = compute_policy_id(&bytecode).truncate();
         match header {
-            ChunkHeader::Chunked { wallet_id, .. } => {
+            ChunkHeader::Chunked { policy_id, .. } => {
                 assert_eq!(
-                    wallet_id, expected_chunk_wid,
-                    "chunk-header wallet_id must equal compute_wallet_id(bytecode).truncate()"
+                    policy_id, expected_chunk_wid,
+                    "chunk-header policy_id must equal compute_policy_id(bytecode).truncate()"
                 );
             }
             ChunkHeader::SingleString { .. } => {
@@ -409,7 +409,7 @@ mod tests {
     fn encode_is_deterministic_with_fixed_seed() {
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
-            wallet_id_seed: Some(WalletIdSeed::from(0xABCD_1234u32)),
+            policy_id_seed: Some(PolicyIdSeed::from(0xABCD_1234u32)),
             ..Default::default()
         };
         let backup1 = encode(&p, &opts).expect("first encode");
@@ -453,20 +453,20 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Bonus: when seed is None, chunk-header wallet_id == Tier-3 truncation
+    // Bonus: when seed is None, chunk-header policy_id == Tier-3 truncation
     // -----------------------------------------------------------------------
 
     #[test]
     fn encode_chunk_header_wid_is_truncation_of_tier3_without_seed() {
-        // When seed is None, chunk-header wallet_id = first 20 bits of Tier-3.
-        // The Tier-3 is compute_wallet_id(bytecode); chunk-header = .truncate().
+        // When seed is None, chunk-header policy_id = first 20 bits of Tier-3.
+        // The Tier-3 is compute_policy_id(bytecode); chunk-header = .truncate().
         let p = policy("wsh(pk(@0/**))");
         let opts = EncodeOptions {
             chunking_mode: ChunkingMode::ForceChunked,
             ..Default::default()
         };
         let backup = encode(&p, &opts).expect("encode");
-        let tier3 = backup.wallet_id();
+        let tier3 = backup.policy_id();
         let expected_chunk_wid = tier3.truncate();
 
         let raw = &backup.chunks[0].raw;
@@ -482,10 +482,10 @@ mod tests {
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
         match header {
-            ChunkHeader::Chunked { wallet_id, .. } => {
+            ChunkHeader::Chunked { policy_id, .. } => {
                 assert_eq!(
-                    wallet_id, expected_chunk_wid,
-                    "chunk-header wallet_id must be the first 20 bits of the Tier-3 WalletId"
+                    policy_id, expected_chunk_wid,
+                    "chunk-header policy_id must be the first 20 bits of the Tier-3 PolicyId"
                 );
             }
             ChunkHeader::SingleString { .. } => {

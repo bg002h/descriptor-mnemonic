@@ -77,8 +77,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 - **Why deferred:** Naming change is mechanical but touches many surfaces (code identifiers, rustdoc, spec text, BIP draft, in-flight mk1 design). The new `WalletInstanceId` definition is small (one paragraph in the BIP, ~20 lines of derived helper in md-codec) but should land alongside the rename so the conceptual split is introduced atomically rather than across two releases.
 
-- **Status:** open
-- **Tier:** v0.8 (bundled rename + new derived quantity).
+- **Status:** resolved md-codec-v0.8.0. All three steps of the proposed v0.8 shape landed atomically: (1) `WalletId` → `PolicyId` rename across ~720 references and ~40 files (code, rustdoc, spec, BIP draft, README, CHANGELOG, MIGRATION); (2) new `WalletInstanceId` 16-byte derived identifier with `pub fn compute_wallet_instance_id(canonical_bytecode, xpubs)` helper, three unit tests, and a new `===Wallet Instance ID===` BIP draft section; (3) the mk1 SPEC §5 recovery-flow step-4 update lands in the sibling `bg002h/mnemonic-key` repo (not in this commit; doc-only follow-up over there). Wire format byte-identical to v0.7.x; vector files regenerated under `"md-codec 0.8"` family token.
+- **Tier:** v0.8 (closed)
 
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 

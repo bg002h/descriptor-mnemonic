@@ -18,7 +18,7 @@ use bitcoin::bip32::{DerivationPath, Fingerprint};
 use clap::{Parser, Subcommand};
 use md_codec::{
     BchCode, ChunkHeader, DecodeOptions, EncodeOptions, WalletPolicy, decode, decode_string,
-    encode, five_bit_to_bytes, wallet_id::WalletIdSeed,
+    encode, five_bit_to_bytes, policy_id::PolicyIdSeed,
 };
 
 mod json;
@@ -63,7 +63,7 @@ enum Command {
         #[arg(long)]
         force_long_code: bool,
 
-        /// Override the chunk-header wallet ID seed (4-byte hex, e.g. 0xdeadbeef).
+        /// Override the chunk-header policy ID seed (4-byte hex, e.g. 0xdeadbeef).
         #[arg(long, value_name = "0xHEX")]
         seed: Option<String>,
 
@@ -326,7 +326,7 @@ fn cmd_encode(
     };
 
     // Parse --seed.
-    let wallet_id_seed: Option<WalletIdSeed> = match seed_arg {
+    let policy_id_seed: Option<PolicyIdSeed> = match seed_arg {
         None => None,
         Some(s) => {
             let hex_part = s.to_ascii_lowercase();
@@ -334,7 +334,7 @@ fn cmd_encode(
             let val = u32::from_str_radix(hex_part, 16).map_err(|_| {
                 anyhow::anyhow!("--seed: expected 4-byte hex like 0xdeadbeef, got {s:?}")
             })?;
-            Some(WalletIdSeed::from(val))
+            Some(PolicyIdSeed::from(val))
         }
     };
 
@@ -358,7 +358,7 @@ fn cmd_encode(
     let mut opts = EncodeOptions::default();
     opts = opts.with_force_chunking(force_chunked);
     opts.force_long_code = force_long_code;
-    opts.wallet_id_seed = wallet_id_seed;
+    opts.policy_id_seed = policy_id_seed;
     opts.shared_path = shared_path_override;
     opts.fingerprints = fingerprints;
 
@@ -373,12 +373,12 @@ fn cmd_encode(
         let out = EncodeJson::from(&backup);
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
-        // Human-readable: one chunk string per line, wallet ID at the end.
+        // Human-readable: one chunk string per line, policy ID at the end.
         for chunk in &backup.chunks {
             println!("{}", chunk.raw);
         }
         println!();
-        println!("Wallet ID: {}", backup.wallet_id_words);
+        println!("Policy ID: {}", backup.policy_id_words);
     }
 
     Ok(())
@@ -404,7 +404,7 @@ fn cmd_decode(strings: &[String], json: bool) -> Result<(), anyhow::Error> {
         let v = result.report.verifications;
         println!("Verifications:");
         println!("  cross_chunk_hash_ok:    {}", v.cross_chunk_hash_ok);
-        println!("  wallet_id_consistent:   {}", v.wallet_id_consistent);
+        println!("  policy_id_consistent:   {}", v.policy_id_consistent);
         println!("  total_chunks_consistent:{}", v.total_chunks_consistent);
         println!("  bytecode_well_formed:   {}", v.bytecode_well_formed);
         println!("  version_supported:      {}", v.version_supported);
@@ -468,13 +468,13 @@ fn cmd_inspect(string: &str) -> Result<(), anyhow::Error> {
         }
         ChunkHeader::Chunked {
             version,
-            wallet_id,
+            policy_id,
             count,
             index,
         } => {
             println!("Type:            Chunked");
             println!("Version:         {version}");
-            println!("Wallet ID:       0x{:05x}", wallet_id.as_u32());
+            println!("Policy ID:       0x{:05x}", policy_id.as_u32());
             println!("Total chunks:    {count}");
             println!("Chunk index:     {index}");
         }

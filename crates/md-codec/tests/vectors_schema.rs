@@ -127,9 +127,9 @@ fn positive_vectors_are_well_formed() {
             vec.id
         );
         assert_eq!(
-            vec.expected_wallet_id_words.len(),
+            vec.expected_policy_id_words.len(),
             12,
-            "vector {:?} expected_wallet_id_words must have exactly 12 words",
+            "vector {:?} expected_policy_id_words must have exactly 12 words",
             vec.id
         );
         // All chunk strings must start with the MD HRP.
@@ -248,7 +248,7 @@ fn v0_2_sha256_lock_matches_committed_file() {
 
     /// Lockfile SHA-256 (lowercase hex). Update when v0.2.json is
     /// intentionally regenerated.
-    const V0_2_SHA256: &str = "4f8afba0cb379e58b9b03cb9397c37a11b4a038a96698664798ab84985dbb8b9";
+    const V0_2_SHA256: &str = "b3f4138937a8f129d218c45d8732776c5d9942be72861a8f8a3eed1ddafcae7d";
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
     if !path.exists() {
@@ -313,8 +313,8 @@ fn schema_2_is_a_superset_of_schema_1_positive_vectors() {
             v1_vec.id
         );
         assert_eq!(
-            v2_vec.expected_wallet_id_words, v1_vec.expected_wallet_id_words,
-            "schema-2 vector {:?} expected_wallet_id_words must equal schema-1",
+            v2_vec.expected_policy_id_words, v1_vec.expected_policy_id_words,
+            "schema-2 vector {:?} expected_policy_id_words must equal schema-1",
             v1_vec.id
         );
         // Schema-1 vectors carry no fingerprints fields.

@@ -50,7 +50,7 @@ let policy = WalletPolicy::from_str("wsh(pk(@0/**))")?;
 let backup = encode(&policy, &EncodeOptions::default())?;
 
 // `backup.chunks` holds 1+ codex32-derived strings ready to engrave.
-println!("Wallet ID: {}", backup.wallet_id_words);
+println!("Policy ID: {}", backup.policy_id_words);
 for (i, chunk) in backup.chunks.iter().enumerate() {
     println!("chunk {i}: {}", chunk.raw);
 }
@@ -63,7 +63,7 @@ assert_eq!(result.policy.to_canonical_string(), policy.to_canonical_string());
 ```
 
 For the full module-level overview (pipeline diagram, type-state graph,
-two-WalletId story, scope), see the [crate-level rustdoc][rustdoc-crate].
+two-PolicyId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 
 [rustdoc-crate]: https://docs.rs/md-codec
 
