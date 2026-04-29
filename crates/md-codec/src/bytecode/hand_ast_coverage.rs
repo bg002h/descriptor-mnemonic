@@ -72,13 +72,11 @@ fn or_c_unwrapped_tap_leaf_byte_form() {
         .expect("pk_k(a) must build");
     let pk_b = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(key_b))
         .expect("pk_k(b) must build");
-    let c_pk_b =
-        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_b)))
-            .expect("c:pk_k(b) must build");
-    let v_c_pk_b = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Verify(Arc::new(
-        c_pk_b,
-    )))
-    .expect("v:c:pk_k(b) must build");
+    let c_pk_b = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_b)))
+        .expect("c:pk_k(b) must build");
+    let v_c_pk_b =
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Verify(Arc::new(c_pk_b)))
+            .expect("v:c:pk_k(b) must build");
     let or_c_term: Terminal<DescriptorPublicKey, Tap> =
         Terminal::OrC(Arc::new(pk_a), Arc::new(v_c_pk_b));
 
@@ -116,24 +114,21 @@ fn t_or_c_tap_leaf_round_trips() {
     // or_c(B-du, V): both children must be wrapped — left to B, right to V.
     let pk_a = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(key_a))
         .expect("pk_k(a) must build");
-    let c_pk_a =
-        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_a)))
-            .expect("c:pk_k(a) must build (B-type)");
+    let c_pk_a = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_a)))
+        .expect("c:pk_k(a) must build (B-type)");
     let pk_b = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(key_b))
         .expect("pk_k(b) must build");
-    let c_pk_b =
-        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_b)))
-            .expect("c:pk_k(b) must build");
-    let v_c_pk_b = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Verify(Arc::new(
-        c_pk_b,
-    )))
-    .expect("v:c:pk_k(b) must build (V-type)");
+    let c_pk_b = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_b)))
+        .expect("c:pk_k(b) must build");
+    let v_c_pk_b =
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Verify(Arc::new(c_pk_b)))
+            .expect("v:c:pk_k(b) must build (V-type)");
     let or_c_inner: Terminal<DescriptorPublicKey, Tap> =
         Terminal::OrC(Arc::new(c_pk_a), Arc::new(v_c_pk_b));
     let or_c_ms = Miniscript::<DescriptorPublicKey, Tap>::from_ast(or_c_inner)
         .expect("or_c(B-du, V) must build");
-    let true_ms = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::True)
-        .expect("True must build");
+    let true_ms =
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::True).expect("True must build");
     // `t:X` desugars to `and_v(X, True)`. and_v requires a V-type left
     // child; or_c is itself V-type, so we feed it directly (no extra
     // v: wrap, which would fail since v: requires B-type).
@@ -154,10 +149,7 @@ fn t_or_c_tap_leaf_round_trips() {
     decoded
         .encode_template(&mut out2, &map)
         .expect("re-encode of decoded t:or_c must succeed");
-    assert_eq!(
-        out, out2,
-        "round-trip of t:or_c must be byte-stable"
-    );
+    assert_eq!(out, out2, "round-trip of t:or_c must be byte-stable");
 }
 
 /// `d:v:older(144)` — `Terminal::DupIf(Verify(Older))`. v0.6 byte-shift
@@ -168,10 +160,9 @@ fn d_wrapper_tap_leaf_byte_form() {
     let older_term: Terminal<DescriptorPublicKey, Tap> =
         Terminal::Older(RelLockTime::from_consensus(144).unwrap());
     let older_ms = Miniscript::<DescriptorPublicKey, Tap>::from_ast(older_term).unwrap();
-    let v_older = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Verify(Arc::new(
-        older_ms,
-    )))
-    .unwrap();
+    let v_older =
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Verify(Arc::new(older_ms)))
+            .unwrap();
     let d_v_older: Terminal<DescriptorPublicKey, Tap> = Terminal::DupIf(Arc::new(v_older));
 
     let mut out = Vec::new();
@@ -309,8 +300,8 @@ fn hash_terminals_encode_internal_byte_order_with_decode_round_trip() {
     assert_eq!(out[0], Tag::Ripemd160.as_byte());
     assert_eq!(&out[1..21], &known_20[..]);
     let mut cur = Cursor::new(&out[1..]);
-    let decoded =
-        decode_tap_terminal(&mut cur, &no_keys, Tag::Ripemd160, 0, None).expect("ripemd160 decodes");
+    let decoded = decode_tap_terminal(&mut cur, &no_keys, Tag::Ripemd160, 0, None)
+        .expect("ripemd160 decodes");
     match decoded.node {
         Terminal::Ripemd160(h) => assert_eq!(h.as_byte_array(), &known_20),
         other => panic!("expected Ripemd160, got {other:?}"),
@@ -369,10 +360,14 @@ fn decoder_arm_multi_a_consumes_correct_bytes() {
 fn decoder_arm_andor_consumes_three_children() {
     let no_keys: Vec<DescriptorPublicKey> = Vec::new();
     // [False, True, False]
-    let bytes = vec![Tag::False.as_byte(), Tag::True.as_byte(), Tag::False.as_byte()];
+    let bytes = vec![
+        Tag::False.as_byte(),
+        Tag::True.as_byte(),
+        Tag::False.as_byte(),
+    ];
     let mut cur = Cursor::new(&bytes);
-    let decoded = decode_tap_terminal(&mut cur, &no_keys, Tag::AndOr, 0, None)
-        .expect("andor decodes");
+    let decoded =
+        decode_tap_terminal(&mut cur, &no_keys, Tag::AndOr, 0, None).expect("andor decodes");
     assert!(cur.is_empty(), "decoder must consume all three children");
     assert!(matches!(decoded.node, Terminal::AndOr(_, _, _)));
 }
@@ -398,10 +393,7 @@ fn decoder_arm_thresh_consumes_k_and_children() {
     let pk_k = Tag::PkK.as_byte();
     // [k=2, n=3, c:pk_k(@0), s:c:pk_k(@1), s:c:pk_k(@2)]
     let bytes = vec![
-        0x02, 0x03,
-        c, pk_k, p, 0,
-        s, c, pk_k, p, 1,
-        s, c, pk_k, p, 2,
+        0x02, 0x03, c, pk_k, p, 0, s, c, pk_k, p, 1, s, c, pk_k, p, 2,
     ];
     let mut cur = Cursor::new(&bytes);
     let decoded =
@@ -423,9 +415,12 @@ fn decoder_arm_after_consumes_varint_only() {
     let no_keys: Vec<DescriptorPublicKey> = Vec::new();
     let bytes = vec![0xD2, 0x09];
     let mut cur = Cursor::new(&bytes);
-    let decoded = decode_tap_terminal(&mut cur, &no_keys, Tag::After, 0, None)
-        .expect("after decodes");
-    assert!(cur.is_empty(), "decoder must consume only the LEB128 varint");
+    let decoded =
+        decode_tap_terminal(&mut cur, &no_keys, Tag::After, 0, None).expect("after decodes");
+    assert!(
+        cur.is_empty(),
+        "decoder must consume only the LEB128 varint"
+    );
     match decoded.node {
         Terminal::After(lock) => {
             assert_eq!(lock.to_consensus_u32(), 1234);
@@ -468,8 +463,8 @@ fn decoder_arm_hash256_consumes_32_bytes() {
     let no_keys: Vec<DescriptorPublicKey> = Vec::new();
     let payload = [0x42u8; 32];
     let mut cur = Cursor::new(&payload);
-    let decoded = decode_tap_terminal(&mut cur, &no_keys, Tag::Hash256, 0, None)
-        .expect("hash256 decodes");
+    let decoded =
+        decode_tap_terminal(&mut cur, &no_keys, Tag::Hash256, 0, None).expect("hash256 decodes");
     assert!(cur.is_empty(), "decoder must consume exactly 32 bytes");
     match decoded.node {
         Terminal::Hash256(h) => assert_eq!(h.as_byte_array(), &payload),

@@ -32,8 +32,8 @@ use miniscript::Descriptor;
 use miniscript::descriptor::DescriptorPublicKey;
 
 use crate::{
-    Chunk, ChunkHeader, Confidence, DecodedString, DecodeOptions, DecodeOutcome, DecodeReport,
-    DecodeResult, Error, TapLeafReport, Verifications, WalletPolicy,
+    Chunk, ChunkHeader, Confidence, DecodeOptions, DecodeOutcome, DecodeReport, DecodeResult,
+    DecodedString, Error, TapLeafReport, Verifications, WalletPolicy,
     chunking::{Correction, reassemble_chunks},
     encoding::{decode_string, five_bit_to_bytes},
     error::BytecodeErrorKind,

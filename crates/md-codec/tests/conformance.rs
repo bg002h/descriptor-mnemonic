@@ -719,8 +719,8 @@ fn rejects_invalid_bytecode_unexpected_tag() {
 
     // header=0x00, then Tag::Wsh where Tag::SharedPath is expected.
     let bytes: Vec<u8> = vec![
-        0x00,                       // header
-        Tag::Wsh.as_byte(),         // wrong tag at the declaration slot
+        0x00,               // header
+        Tag::Wsh.as_byte(), // wrong tag at the declaration slot
         0x03,
         Tag::Wsh.as_byte(),
         Tag::Placeholder.as_byte(),
@@ -805,7 +805,11 @@ fn rejects_invalid_bytecode_invalid_path_component() {
         Tag::SharedPath.as_byte(), // path-declaration tag
         0xFE,                      // explicit path marker
         0x01,                      // count = 1
-        0x80, 0x80, 0x80, 0x80, 0x10, // LEB128(2^32) → InvalidPathComponent
+        0x80,
+        0x80,
+        0x80,
+        0x80,
+        0x10, // LEB128(2^32) → InvalidPathComponent
     ];
 
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();

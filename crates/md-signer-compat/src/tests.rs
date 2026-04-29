@@ -35,14 +35,12 @@ fn coldcard_admits_documented_pk_shape() {
 #[test]
 fn coldcard_rejects_thresh_with_operator_name() {
     let key = dummy_key_a();
-    let pk_k =
-        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(key)).unwrap();
+    let pk_k = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(key)).unwrap();
     let c_pk = Arc::new(
         Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_k))).unwrap(),
     );
     let thresh_term = Terminal::Thresh(Threshold::new(1, vec![c_pk]).unwrap());
-    let thresh_ms =
-        Miniscript::<DescriptorPublicKey, Tap>::from_ast(thresh_term).unwrap();
+    let thresh_ms = Miniscript::<DescriptorPublicKey, Tap>::from_ast(thresh_term).unwrap();
     let err = validate(&COLDCARD_TAP, &thresh_ms, Some(2)).unwrap_err();
     match err {
         md_codec::Error::SubsetViolation {
@@ -116,16 +114,12 @@ fn allowlist_entries_are_recognized_by_naming_hook() {
         for op in allowed_operators {
             let leaf = match *op {
                 "pk_k" => Some(
-                    Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(
-                        dummy_key_a(),
-                    ))
-                    .unwrap(),
+                    Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(dummy_key_a()))
+                        .unwrap(),
                 ),
                 "pk_h" => Some(
-                    Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkH(
-                        dummy_key_a(),
-                    ))
-                    .unwrap(),
+                    Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkH(dummy_key_a()))
+                        .unwrap(),
                 ),
                 "multi_a" => Some(
                     Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::MultiA(
@@ -193,11 +187,10 @@ fn validate_tap_tree_attributes_violation_to_dfs_pre_order_index() {
     //     after wrapping with c: (B-type at leaf root).
     //   - leaf_1 (pre-order index 1): bare sha256 — out of subset.
     //   - leaf_2 (pre-order index 2): pk_k(b) wrapped in c:.
-    let pk_a = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(dummy_key_a()))
-        .unwrap();
+    let pk_a =
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(dummy_key_a())).unwrap();
     let leaf_0 = Arc::new(
-        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_a)))
-            .unwrap(),
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_a))).unwrap(),
     );
     let leaf_1 = Arc::new(
         Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Sha256(
@@ -205,15 +198,13 @@ fn validate_tap_tree_attributes_violation_to_dfs_pre_order_index() {
         ))
         .unwrap(),
     );
-    let pk_b = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(dummy_key_b()))
-        .unwrap();
+    let pk_b =
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::PkK(dummy_key_b())).unwrap();
     let leaf_2 = Arc::new(
-        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_b)))
-            .unwrap(),
+        Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Check(Arc::new(pk_b))).unwrap(),
     );
 
-    let right_subtree =
-        TapTree::combine(TapTree::leaf(leaf_1), TapTree::leaf(leaf_2)).unwrap();
+    let right_subtree = TapTree::combine(TapTree::leaf(leaf_1), TapTree::leaf(leaf_2)).unwrap();
     let tree = TapTree::combine(TapTree::leaf(leaf_0), right_subtree).unwrap();
 
     let err = validate_tap_tree(&COLDCARD_TAP, &tree).unwrap_err();

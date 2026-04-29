@@ -72,10 +72,9 @@ pub fn policy_to_bytecode(
     script_context: ScriptContext,
     internal_key: Option<DescriptorPublicKey>,
 ) -> Result<Vec<u8>, Error> {
-    let concrete: Concrete<DescriptorPublicKey> =
-        policy.parse().map_err(|e: miniscript::Error| {
-            Error::PolicyParse(e.to_string())
-        })?;
+    let concrete: Concrete<DescriptorPublicKey> = policy
+        .parse()
+        .map_err(|e: miniscript::Error| Error::PolicyParse(e.to_string()))?;
 
     let descriptor: Descriptor<DescriptorPublicKey> = match script_context {
         ScriptContext::Segwitv0 => {

@@ -2058,24 +2058,21 @@ mod tests {
             // Keys (subset operators)
             (Terminal::PkK(key_a.clone()), Tag::PkK),
             (Terminal::PkH(key_b.clone()), Tag::PkH),
-            (Terminal::RawPkH(hash160::Hash::from_byte_array(zero20)), Tag::RawPkH),
+            (
+                Terminal::RawPkH(hash160::Hash::from_byte_array(zero20)),
+                Tag::RawPkH,
+            ),
             // Multisig family
             (
-                Terminal::Multi(
-                    Threshold::new(1, vec![key_a.clone()]).unwrap(),
-                ),
+                Terminal::Multi(Threshold::new(1, vec![key_a.clone()]).unwrap()),
                 Tag::Multi,
             ),
             (
-                Terminal::SortedMulti(
-                    Threshold::new(1, vec![key_a.clone()]).unwrap(),
-                ),
+                Terminal::SortedMulti(Threshold::new(1, vec![key_a.clone()]).unwrap()),
                 Tag::SortedMulti,
             ),
             (
-                Terminal::MultiA(
-                    Threshold::new(1, vec![key_a.clone()]).unwrap(),
-                ),
+                Terminal::MultiA(Threshold::new(1, vec![key_a.clone()]).unwrap()),
                 Tag::MultiA,
             ),
             // Timelocks
@@ -2088,10 +2085,22 @@ mod tests {
                 Tag::Older,
             ),
             // Hashes
-            (Terminal::Sha256(sha256::Hash::from_byte_array(zero32)), Tag::Sha256),
-            (Terminal::Hash256(hash256::Hash::from_byte_array(zero32)), Tag::Hash256),
-            (Terminal::Ripemd160(ripemd160::Hash::from_byte_array(zero20)), Tag::Ripemd160),
-            (Terminal::Hash160(hash160::Hash::from_byte_array(zero20)), Tag::Hash160),
+            (
+                Terminal::Sha256(sha256::Hash::from_byte_array(zero32)),
+                Tag::Sha256,
+            ),
+            (
+                Terminal::Hash256(hash256::Hash::from_byte_array(zero32)),
+                Tag::Hash256,
+            ),
+            (
+                Terminal::Ripemd160(ripemd160::Hash::from_byte_array(zero20)),
+                Tag::Ripemd160,
+            ),
+            (
+                Terminal::Hash160(hash160::Hash::from_byte_array(zero20)),
+                Tag::Hash160,
+            ),
             // Wrappers (subset members c:/v: + others for breadth)
             (Terminal::Alt(dummy_child.clone()), Tag::Alt),
             (Terminal::Swap(dummy_child.clone()), Tag::Swap),
@@ -2099,7 +2108,10 @@ mod tests {
             (Terminal::DupIf(dummy_child.clone()), Tag::DupIf),
             (Terminal::Verify(dummy_child.clone()), Tag::Verify),
             (Terminal::NonZero(dummy_child.clone()), Tag::NonZero),
-            (Terminal::ZeroNotEqual(dummy_child.clone()), Tag::ZeroNotEqual),
+            (
+                Terminal::ZeroNotEqual(dummy_child.clone()),
+                Tag::ZeroNotEqual,
+            ),
             // Logical operators
             (
                 Terminal::AndV(dummy_child.clone(), dummy_child.clone()),
@@ -2134,9 +2146,7 @@ mod tests {
                 Tag::OrI,
             ),
             (
-                Terminal::Thresh(
-                    Threshold::new(1, vec![dummy_child.clone()]).unwrap(),
-                ),
+                Terminal::Thresh(Threshold::new(1, vec![dummy_child.clone()]).unwrap()),
                 Tag::Thresh,
             ),
         ];
@@ -2151,9 +2161,8 @@ mod tests {
 
         // SortedMultiA gets a Tag allocation in v0.6 (Tag::SortedMultiA = 0x0B).
         // Verify the delegation works through the same name-table single-source.
-        let sma: Terminal<DescriptorPublicKey, Tap> = Terminal::SortedMultiA(
-            Threshold::new(1, vec![key_a.clone()]).unwrap(),
-        );
+        let sma: Terminal<DescriptorPublicKey, Tap> =
+            Terminal::SortedMultiA(Threshold::new(1, vec![key_a.clone()]).unwrap());
         assert_eq!(tap_terminal_name(&sma), "sortedmulti_a");
         assert_eq!(terminal_to_tag(&sma), Some(Tag::SortedMultiA));
         assert_eq!(

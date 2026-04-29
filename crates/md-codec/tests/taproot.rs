@@ -96,9 +96,18 @@ fn taproot_single_leaf_multi_a_round_trips() {
     let n = bytes.len();
     let p = Tag::Placeholder.as_byte();
     let expected_tail: &[u8] = &[
-        Tag::Tr.as_byte(), p, 0x00,        // Tr, Placeholder, idx 0 (internal key)
-        Tag::MultiA.as_byte(), 0x02, 0x03, // MultiA, k=2, n=3
-        p, 0x01, p, 0x02, p, 0x03,         // 3 placeholder records
+        Tag::Tr.as_byte(),
+        p,
+        0x00, // Tr, Placeholder, idx 0 (internal key)
+        Tag::MultiA.as_byte(),
+        0x02,
+        0x03, // MultiA, k=2, n=3
+        p,
+        0x01,
+        p,
+        0x02,
+        p,
+        0x03, // 3 placeholder records
     ];
     assert_eq!(
         &bytes[n - expected_tail.len()..],

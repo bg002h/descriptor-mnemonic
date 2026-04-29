@@ -946,7 +946,11 @@ mod tests {
         // Path declaration: byte[1] = Tag::SharedPath (0x33), byte[2] = indicator 0x03.
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
         let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath (0x33)");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath (0x33)"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "byte[2] must be BIP 84 mainnet indicator (0x03)"
@@ -961,7 +965,11 @@ mod tests {
         let p: WalletPolicy = desc_str.parse().expect("should parse");
         let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
         assert_eq!(bytes[0], 0x00, "header must be 0x00");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(bytes[2], 0x03, "byte[2] must be BIP 84 indicator 0x03");
     }
 
@@ -1367,7 +1375,11 @@ mod tests {
 
         // Header byte = 0x00, then SharedPath tag = 0x33, then indicator.
         assert_eq!(bytes[0], 0x00, "header must be 0x00");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x05,
             "override path m/48'/0'/0'/2' must serialize as named indicator 0x05, not the default 0x03"
@@ -1512,7 +1524,11 @@ mod tests {
         let bytes = p
             .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for wpkh");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "wpkh default path must be BIP 84 indicator 0x03 (m/84'/0'/0'); got 0x{:02x}",
@@ -1528,7 +1544,11 @@ mod tests {
         let bytes = p
             .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for sh(wpkh)");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x02,
             "sh(wpkh) default path must be BIP 49 indicator 0x02 (m/49'/0'/0'); got 0x{:02x}",
@@ -1547,7 +1567,11 @@ mod tests {
         let bytes = p
             .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for sh(wsh(sortedmulti))");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x06,
             "sh(wsh) default path must be BIP 48/1' indicator 0x06 (m/48'/0'/0'/1'); got 0x{:02x}",
@@ -1564,7 +1588,11 @@ mod tests {
         let custom = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
         let opts = EncodeOptions::default().with_shared_path(custom);
         let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x05,
             "tier-0 override must win over wpkh default; expected 0x05 (m/48'/0'/0'/2'), \
@@ -1582,7 +1610,11 @@ mod tests {
         let custom = DerivationPath::from_str("m/84'/0'/0'").unwrap();
         let opts = EncodeOptions::default().with_shared_path(custom);
         let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "tier-0 override must win over sh(wpkh) default; expected 0x03 (m/84'/0'/0'), \
@@ -1602,7 +1634,11 @@ mod tests {
         let custom = DerivationPath::from_str("m/84'/0'/0'").unwrap();
         let opts = EncodeOptions::default().with_shared_path(custom);
         let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
-        assert_eq!(bytes[1], Tag::SharedPath.as_byte(), "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "tier-0 override must win over sh(wsh) default; expected 0x03 (m/84'/0'/0'), \
