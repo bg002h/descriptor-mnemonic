@@ -731,6 +731,7 @@ impl MdBackup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytecode::Tag;
     use crate::wallet_id::compute_wallet_id;
 
     // -----------------------------------------------------------------------
@@ -945,7 +946,11 @@ mod tests {
         // Path declaration: byte[1] = Tag::SharedPath (0x33), byte[2] = indicator 0x03.
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
         let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath (0x33)");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath (0x33)"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "byte[2] must be BIP 84 mainnet indicator (0x03)"
@@ -960,7 +965,11 @@ mod tests {
         let p: WalletPolicy = desc_str.parse().expect("should parse");
         let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
         assert_eq!(bytes[0], 0x00, "header must be 0x00");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(bytes[2], 0x03, "byte[2] must be BIP 84 indicator 0x03");
     }
 
@@ -991,7 +1000,7 @@ mod tests {
         // structurally a valid header. With only the path declaration (and
         // no fingerprints block following), the decoder must report
         // UnexpectedEnd when it reaches for the Tag::Fingerprints byte.
-        let result = WalletPolicy::from_bytecode(&[0x04, 0x33, 0x03]);
+        let result = WalletPolicy::from_bytecode(&[0x04, Tag::SharedPath.as_byte(), 0x03]);
         assert!(
             matches!(
                 result,
@@ -1052,82 +1061,68 @@ mod tests {
     // Critical fix regression tests (Task 5-B review)
     // -----------------------------------------------------------------------
 
-    /// Verify that LEB128-encoded data bytes containing 0x32 (which happens to
-    /// equal Tag::Placeholder) do not cause `count_placeholder_indices` to
+    /// Verify that LEB128-encoded data bytes whose value collides with the
+    /// `Tag::Placeholder` byte do not cause `count_placeholder_indices` to
     /// spuriously report extra keys during `from_bytecode`.
     ///
-    /// The concrete policy is `wsh(and_v(v:older(50),pk(@0/**)))`:
-    /// - `older(50)` encodes as `[Older=0x1F, LEB128(50)=0x32]`
-    /// - the byte 0x32 = LEB128(50) is followed by `Check=0x0C` (tag for pk's c: wrapper)
-    /// - old `count_placeholder_indices` sees `0x32` at that position and reads `0x0C`
-    ///   as placeholder index 12, giving key_count = 13 instead of 1
-    /// - this triggers `PolicyScopeViolation` ("decoded policy has 13 placeholder indices")
-    ///   on a perfectly valid 1-key policy
+    /// In v0.6 the Placeholder tag byte is `0x33` (=51 decimal), so we use
+    /// `older(51)` to manufacture the collision: `older(51)` encodes as
+    /// `[Older, LEB128(51)=0x33]` — the LEB128 byte equals the Placeholder
+    /// tag byte. A naive scan-based decoder would mistake the data byte for
+    /// a Placeholder tag and read the next byte as a placeholder index.
     ///
-    /// Without Critical fix #1 this test fails. With Option A (delete the pre-scan,
-    /// pass 32 dummies to `decode_template`) the LEB128 byte is consumed correctly
-    /// by the Older decoder and never confused with a Placeholder tag.
+    /// Without the fix (old `count_placeholder_indices` pre-scan) this test
+    /// fails. With Option A (delete the pre-scan, pass 32 dummies directly
+    /// to `decode_template`) the LEB128 byte is consumed correctly by the
+    /// Older decoder and never confused with a Placeholder tag.
     ///
     /// The bytecode is constructed directly to control the exact byte layout.
     #[test]
-    fn from_bytecode_leb128_byte_0x32_not_counted_as_placeholder() {
+    fn from_bytecode_leb128_byte_collides_with_placeholder_tag_not_counted() {
         use crate::bytecode::Tag;
-        // Tree bytes for wsh(and_v(v:older(50), c:pk_k(@0/**)))
-        //   where older(50) encodes varint 50 = 0x32 (LEB128 terminal byte).
-        //
-        // Byte layout:
-        //   [0]  Wsh   = 0x05
-        //   [1]  AndV  = 0x11
-        //   [2]  Verify= 0x0E   ← v: wrapper for older
-        //   [3]  Older = 0x1F
-        //   [4]  0x32           ← LEB128(50); OLD scanner mistakes this for Placeholder tag
-        //   [5]  Check = 0x0C   ← OLD scanner reads this as placeholder index 12 → count=13
-        //   [6]  PkK   = 0x1B
-        //   [7]  Placeholder = 0x32  ← the REAL placeholder tag
-        //   [8]  0x00           ← placeholder index 0
+        // Tree bytes for wsh(and_v(v:older(51), c:pk_k(@0/**))) where
+        // older(51) encodes varint 51 = 0x33 = Tag::Placeholder.as_byte().
         let tree_bytes: Vec<u8> = vec![
-            Tag::Wsh.as_byte(),         // [0]  0x05
-            Tag::AndV.as_byte(),        // [1]  0x11
-            Tag::Verify.as_byte(),      // [2]  0x0E
-            Tag::Older.as_byte(),       // [3]  0x1F
-            0x32,                       // [4]  LEB128(50) — CONFUSES old scanner
-            Tag::Check.as_byte(),       // [5]  0x0C — old scanner reads as spurious index 12
-            Tag::PkK.as_byte(),         // [6]  0x1B
-            Tag::Placeholder.as_byte(), // [7]  0x32 — real placeholder
-            0x00,                       // [8]  index 0
+            Tag::Wsh.as_byte(),         // [0]
+            Tag::AndV.as_byte(),        // [1]
+            Tag::Verify.as_byte(),      // [2] v: wrapper for older
+            Tag::Older.as_byte(),       // [3]
+            0x33,                       // [4] LEB128(51) — collides with Placeholder tag byte
+            Tag::Check.as_byte(),       // [5] OLD scanner would read as spurious placeholder index
+            Tag::PkK.as_byte(),         // [6]
+            Tag::Placeholder.as_byte(), // [7] the REAL placeholder
+            0x00,                       // [8] index 0
         ];
 
-        // Assemble full MD bytecode: header(0x00) + SharedPath(0x33, BIP84=0x03) + tree
+        // Assemble full MD bytecode: header(0x00) + SharedPath + BIP84=0x03 + tree
         let mut bytecode: Vec<u8> = vec![0x00, Tag::SharedPath.as_byte(), 0x03];
         bytecode.extend_from_slice(&tree_bytes);
 
-        // Sanity: byte at tree[4] is 0x32 followed by tree[5]=0x0C.
-        // Old scanner would see 0x32 → Placeholder, read 0x0C=12 as index → count=13.
+        // Sanity: byte at tree[4] equals Tag::Placeholder.as_byte() (the collision),
+        // and the byte after it is Tag::Check (which OLD scanner would read as index).
         assert_eq!(
-            tree_bytes[4], 0x32,
-            "pre-condition: LEB128(50) must be 0x32"
+            tree_bytes[4],
+            Tag::Placeholder.as_byte(),
+            "pre-condition: LEB128(51) must equal Tag::Placeholder.as_byte()"
         );
         assert_eq!(
-            tree_bytes[5], 0x0C,
-            "pre-condition: next byte must be Check=0x0C"
+            tree_bytes[5],
+            Tag::Check.as_byte(),
+            "pre-condition: next byte must be Tag::Check"
         );
 
-        // from_bytecode must succeed with key_count=1.
-        //
-        // WITHOUT fix (old count_placeholder_indices):
-        //   count=max(12,0)+1=13 → PolicyScopeViolation("decoded policy has 13 placeholder indices")
-        //
-        // WITH fix (Option A — pass 32 dummies directly, delete count_placeholder_indices):
-        //   decode_template reads Older tag, then LEB128 cursor consumes 0x32 correctly as value 50;
-        //   then reads Check, PkK, Placeholder+0x00 → 1 key reference.
-        //   from_descriptor produces key_count=1.
+        // from_bytecode must succeed with key_count=1. Without the fix, the
+        // pre-scan would over-count placeholder indices and trigger
+        // PolicyScopeViolation. With Option A, decode_template consumes the
+        // LEB128 byte inside Older correctly and only the real Placeholder
+        // contributes to the key count.
         let p = WalletPolicy::from_bytecode(&bytecode).expect(
-            "from_bytecode must succeed; LEB128 byte 0x32 must not be confused with Placeholder tag",
+            "from_bytecode must succeed; LEB128 byte equal to Placeholder tag must not be confused",
         );
         assert_eq!(
             p.key_count(),
             1,
-            "key_count must be 1; LEB128(50)=0x32 in older() must not be counted as a placeholder"
+            "key_count must be 1; LEB128 byte inside older() must not be counted as a placeholder"
         );
     }
 
@@ -1380,7 +1375,11 @@ mod tests {
 
         // Header byte = 0x00, then SharedPath tag = 0x33, then indicator.
         assert_eq!(bytes[0], 0x00, "header must be 0x00");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x05,
             "override path m/48'/0'/0'/2' must serialize as named indicator 0x05, not the default 0x03"
@@ -1525,7 +1524,11 @@ mod tests {
         let bytes = p
             .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for wpkh");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "wpkh default path must be BIP 84 indicator 0x03 (m/84'/0'/0'); got 0x{:02x}",
@@ -1541,7 +1544,11 @@ mod tests {
         let bytes = p
             .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for sh(wpkh)");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x02,
             "sh(wpkh) default path must be BIP 49 indicator 0x02 (m/49'/0'/0'); got 0x{:02x}",
@@ -1560,7 +1567,11 @@ mod tests {
         let bytes = p
             .to_bytecode(&EncodeOptions::default())
             .expect("to_bytecode must succeed for sh(wsh(sortedmulti))");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x06,
             "sh(wsh) default path must be BIP 48/1' indicator 0x06 (m/48'/0'/0'/1'); got 0x{:02x}",
@@ -1577,7 +1588,11 @@ mod tests {
         let custom = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
         let opts = EncodeOptions::default().with_shared_path(custom);
         let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x05,
             "tier-0 override must win over wpkh default; expected 0x05 (m/48'/0'/0'/2'), \
@@ -1595,7 +1610,11 @@ mod tests {
         let custom = DerivationPath::from_str("m/84'/0'/0'").unwrap();
         let opts = EncodeOptions::default().with_shared_path(custom);
         let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "tier-0 override must win over sh(wpkh) default; expected 0x03 (m/84'/0'/0'), \
@@ -1615,7 +1634,11 @@ mod tests {
         let custom = DerivationPath::from_str("m/84'/0'/0'").unwrap();
         let opts = EncodeOptions::default().with_shared_path(custom);
         let bytes = p.to_bytecode(&opts).expect("to_bytecode must succeed");
-        assert_eq!(bytes[1], 0x33, "byte[1] must be Tag::SharedPath");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath"
+        );
         assert_eq!(
             bytes[2], 0x03,
             "tier-0 override must win over sh(wsh) default; expected 0x03 (m/84'/0'/0'), \

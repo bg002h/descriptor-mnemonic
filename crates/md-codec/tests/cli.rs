@@ -187,6 +187,7 @@ fn md_decode_json_shape_is_stable() {
 /// through `EncodeOptions::shared_path` to `WalletPolicy::to_bytecode`.
 #[test]
 fn md_encode_path_override_bip48_takes_effect() {
+    use md_codec::bytecode::Tag;
     use md_codec::{DecodeOptions, decode};
 
     let output = Command::cargo_bin("md")
@@ -224,9 +225,10 @@ fn md_encode_path_override_bip48_takes_effect() {
         .policy
         .to_bytecode(&md_codec::EncodeOptions::default())
         .expect("re-encode bytecode");
-    // bytecode = [header=0x00, Tag::SharedPath=0x33, indicator, ...]
+    // bytecode = [header=0x00, Tag::SharedPath, indicator, ...]
     assert_eq!(
-        bytecode[1], 0x33,
+        bytecode[1],
+        Tag::SharedPath.as_byte(),
         "bytecode byte[1] must be Tag::SharedPath; got {:02x}",
         bytecode[1]
     );
@@ -245,6 +247,7 @@ fn md_encode_path_override_bip48_takes_effect() {
 /// exercises only the CLI name-to-indicator resolution added in Phase 4.
 #[test]
 fn md_encode_path_bip48_nested_resolves_to_indicator_0x06() {
+    use md_codec::bytecode::Tag;
     use md_codec::{DecodeOptions, decode};
 
     let output = Command::cargo_bin("md")
@@ -271,9 +274,10 @@ fn md_encode_path_bip48_nested_resolves_to_indicator_0x06() {
         .policy
         .to_bytecode(&md_codec::EncodeOptions::default())
         .expect("re-encode bytecode");
-    // bytecode = [header=0x00, Tag::SharedPath=0x33, indicator, ...]
+    // bytecode = [header=0x00, Tag::SharedPath, indicator, ...]
     assert_eq!(
-        bytecode[1], 0x33,
+        bytecode[1],
+        Tag::SharedPath.as_byte(),
         "bytecode byte[1] must be Tag::SharedPath; got {:02x}",
         bytecode[1]
     );
@@ -498,4 +502,26 @@ fn md_encode_fingerprint_flag_rejects_short_hex() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("8 hex chars"));
+}
+
+/// `md from-policy` — only available under the `cli-compiler` feature.
+/// Compiles a `pk(<xpub>)` Concrete-Policy in Segwitv0 context and
+/// asserts the printed hex starts with `00` (header byte).
+///
+/// Gate: `all(compiler, cli)` — the `md` binary requires the `cli`
+/// feature, so a `compiler`-only build (no `cli`) would compile this
+/// test but fail at runtime in `cargo_bin("md")`.
+#[cfg(all(feature = "compiler", feature = "cli"))]
+#[test]
+fn md_from_policy_segwitv0_pk_emits_bytecode_hex() {
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+
+    let policy = "pk([6738736c/86'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*)";
+    Command::cargo_bin("md")
+        .expect("binary built")
+        .args(["from-policy", policy, "--context", "segwitv0"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("00")); // header byte 0x00
 }

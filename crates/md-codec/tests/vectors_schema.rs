@@ -66,10 +66,9 @@ fn build_test_vectors_has_expected_corpus_count() {
 
     assert_eq!(
         v2.vectors.len(),
-        27,
-        "expected exactly 27 positive corpus vectors in schema-2 \
-         (10 corpus + 8 taproot v0.5 [T1, T2, tr_multia_2of3, T3-T7] + 1 fingerprints \
-         + 5 v0.4-default + 3 v0.4-fingerprints = 27 total); \
+        43,
+        "expected exactly 43 positive corpus vectors in schema-2 \
+         (v0.6 corpus regenerated under family token \"md-codec 0.6\"); \
          got {} — if this fails, update the expected count in tests/vectors_schema.rs",
         v2.vectors.len()
     );
@@ -249,7 +248,7 @@ fn v0_2_sha256_lock_matches_committed_file() {
 
     /// Lockfile SHA-256 (lowercase hex). Update when v0.2.json is
     /// intentionally regenerated.
-    const V0_2_SHA256: &str = "38fca116713033130e47631fa5e5fb8499a8604ad227d83db767456cd2cfb260";
+    const V0_2_SHA256: &str = "014006eaf870d4a853e49850f483fe7f884450033fddb443ef5be88aebf99628";
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
     if !path.exists() {
@@ -350,8 +349,8 @@ fn schema_2_contains_v0_2_corpus_additions() {
     // v0.5 SPEC §5 renamed `n_taptree_multi_leaf` (the v0.4 reservation rejection)
     // into the canonical N1-N9 negative set; `n_taptree_single_inner_under_tr`
     // (N1) is the closest semantic match (truncated multi-leaf subtree → UnexpectedEnd).
+    // `n_tap_leaf_subset` was removed in v0.6 (Layer 3 strip).
     for required in [
-        "n_tap_leaf_subset",
         "n_taptree_single_inner_under_tr",
         "n_fingerprints_count_mismatch",
         "n_fingerprints_missing_tag",
@@ -390,16 +389,16 @@ fn schema_2_contains_v0_4_corpus_additions() {
         .iter()
         .map(|nv| nv.id.as_str())
         .collect();
+    // `n_sh_bare` and `n_top_bare` were deleted in v0.6 (Tag::Bare dropped;
+    // byte 0x07 is now Tag::TapTree, covered by `n_taptree_at_top_level`).
     for required in [
         "n_sh_multi",
         "n_sh_sortedmulti",
         "n_sh_pkh",
         "n_sh_tr",
-        "n_sh_bare",
         "n_sh_inner_script",
         "n_sh_key_slot",
         "n_top_pkh",
-        "n_top_bare",
     ] {
         assert!(
             negative_ids.contains(&required),
@@ -431,16 +430,15 @@ fn schema_2_contains_v0_4_corpus_additions() {
     }
 
     // All v0.4 negative vectors must carry a provenance string.
+    // (`n_sh_bare`/`n_top_bare` removed in v0.6 — see comment above.)
     for neg_id in [
         "n_sh_multi",
         "n_sh_sortedmulti",
         "n_sh_pkh",
         "n_sh_tr",
-        "n_sh_bare",
         "n_sh_inner_script",
         "n_sh_key_slot",
         "n_top_pkh",
-        "n_top_bare",
     ] {
         let nv = v2
             .negative_vectors

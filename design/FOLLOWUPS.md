@@ -241,8 +241,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   (b) **Opt-in validation API**: design and ship the `EncodeOptions::with_signer_subset(subset: SignerSubset)` / `DecodeOptions::with_signer_subset(...)` mechanism. Recommended shape per the 2026-04-28 design discussion: `SignerSubset` is a public struct (operator allowlist) defined in md-codec, *populated by the caller*. md-codec ships only the validation mechanism; named subsets ship in the separate crate so vendor-tracking concerns don't bleed into md-codec.
   (c) Optional CLI surface: `md validate --signer coldcard <bytecode>` decodes a bytecode and runs the named subset check, reporting any out-of-subset operators.
 - **Why deferred:** Aspirational — does not block the strip. Provides an opt-in safety net for users who want signer-aware validation without committing md-codec itself to tracking signer firmware. Maintenance burden concentrates in this crate, where it belongs.
-- **Status:** open
-- **Tier:** v0.6+ (post-strip; can ship at any later point)
+- **Status:** resolved md-codec-v0.7.0 (Phase 4). NEW workspace crate `crates/md-signer-compat/` ships `pub const COLDCARD_TAP`, `pub const LEDGER_TAP`, `pub fn validate(subset, ms, leaf_index)`, and `pub fn validate_tap_tree(subset, tap_tree)` for DFS-pre-order leaf-index threading. Vendor-citation discipline established: each subset rustdoc cites source URL, repo SHA, last-checked date.
+- **Tier:** v0.6+ (closed)
 
 ### `md-policy-compiler-feature` — expose policy-to-bytecode compilation (future release)
 
@@ -250,8 +250,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/Cargo.toml` (enable rust-miniscript `compiler` feature); new public API surface in md-codec; CLI tool exposure.
 - **What:** Enable the `compiler` feature on the `miniscript` git-pinned dep. Expose a `pub fn policy_to_bytecode(policy: &str, options: &EncodeOptions) -> Result<Vec<u8>, Error>` (or similar shape) that parses a high-level Concrete-Policy string, runs miniscript's policy compiler to produce optimal miniscript, and encodes the result. CLI tool gains a `md encode --from-policy <expr>` mode. With Layer 3 stripped, the compiler can pick any miniscript shape and md-codec will encode it; signer compatibility is the caller's concern. Optional pairing with the layered checker (`md-signer-compat-checker-separate-library`) for "compile then validate against signer X" workflows.
 - **Why deferred:** Independent feature. Future release post-strip; the strip itself doesn't require the compiler.
-- **Status:** open
-- **Tier:** v0.7+ (future release)
+- **Status:** resolved md-codec-v0.7.0 (Phase 5). Added `compiler` and `cli-compiler` cargo features (default-off). New `pub fn policy_to_bytecode(policy, options, ScriptContext, internal_key)` with caller-supplied Tap internal key per Plan reviewer #1 Concern 2 (None → upstream NUMS unspendable). New `md from-policy <expr> --context <tap|segwitv0> [--internal-key <KEY>]` CLI subcommand.
+- **Tier:** v0.7+ (closed)
 
 ### `v06-plan-targeted-decoder-arm-tests` — per-arm decoder unit tests for Phase 3 (defensive)
 
@@ -259,8 +259,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/tests/taproot.rs` or a new `tests/decoder_arms.rs`.
 - **What:** Phase 3 of the strip plan adds ~20 new arms to `decode_tap_terminal`. The plan relies on corpus round-trip (Phase 5 fixtures) to catch decoder bugs. This is adequate but defensive: a decoder arm that consumes the wrong number of payload bytes AND a symmetrically-wrong encoder arm would both round-trip but produce malformed wire output. Add 5-7 targeted unit tests that synthesize a known bytecode (Tag byte + payload), feed to `decode_tap_terminal` directly, and assert the resulting Terminal matches the expected AST shape and consumed-byte-count. ~30-minute effort.
 - **Why deferred:** corpus round-trip is sufficient for normal regression catching; this is purely defensive against a class of bug that hasn't actually occurred in the v0.5 codebase. Can land as a v0.6.x patch or v0.7+ when convenient.
-- **Status:** open
-- **Tier:** v0.6+ (defensive testing nice-to-have)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added 6 per-arm decoder unit tests in `crates/md-codec/src/bytecode/hand_ast_coverage.rs`: multi_a, andor, thresh, after, sortedmulti_a, hash256.
+- **Tier:** v0.6+ (closed)
 
 ### `v06-test-byte-literal-rebaseline` — rebaseline 38 unit tests pinning v0.5 byte literals
 
@@ -268,8 +268,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** Tests in `crates/md-codec/src/bytecode/decode.rs` (~16 tests), `crates/md-codec/src/bytecode/encode.rs` (~10 tests), `crates/md-codec/src/bytecode/path/...` (~6 tests), `crates/md-codec/src/policy.rs` (~5 tests), `crates/md-codec/src/vectors.rs` (~1 test).
 - **What:** Walk each failing test and update literal byte values per the v0.5→v0.6 byte-shift table in `design/SPEC_v0_6_strip_layer_3.md` §2.3. Pattern: replace literal v0.5 bytes (e.g., `0x16` for OrD) with v0.6 bytes (`0x18` for OrD). Where possible, replace literals with symbolic `Tag::Foo.as_byte()` references so future Tag changes don't re-break. The test SEMANTICS are correct; only the BYTE LITERALS need updating.
 - **Why deferred:** v0.6.0 release ships with these tests temporarily failing because the wire format change is a coordinated single-commit operation; rebaseline is mechanical follow-up work suitable for a v0.6.0.1 patch. The release cuts with v0.6.0 release-prep complete; rebaseline lands in v0.6.0.1.
-- **Status:** open
-- **Tier:** v0.6.0.1 (immediate post-tag patch)
+- **Status:** resolved md-codec-v0.7.0 (Phase 1, commits 35caa24/d7de42d/de63db3). All 38 unit tests + ~11 integration tests rebaselined to v0.6 byte codes using symbolic `Tag::Foo.as_byte()` references where helpful. Three subset-violation tests rewrote to use the v0.6 opt-in `validate_tap_leaf_subset` API; corpus-count assertions updated for the regenerated v0.6 corpus (43 positive vectors).
+- **Tier:** v0.7.0 (closed)
 
 ### `v06-corpus-d-wrapper-coverage` — add d: wrapper tap-leaf round-trip vector
 
@@ -277,8 +277,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES.
 - **What:** Add a d: wrapper round-trip fixture using a Vz-type child (e.g., `d:v:older(144)` if v:older is V and z; or hand-construct the AST in `tests/taproot.rs`). Exercises `Tag::DupIf = 0x0F`. The wrapper byte is wire-format-supported and exercised by encoder/decoder symmetric arms; only the corpus pin is missing.
 - **Why deferred:** Same as `v06-corpus-or-c-coverage` and `v06-corpus-j-n-wrapper-coverage`. Not blocking ship; defensive corpus growth.
-- **Status:** open
-- **Tier:** v0.6.x (defensive corpus growth)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `d_wrapper_tap_leaf_byte_form` hand-AST test in `crates/md-codec/src/bytecode/hand_ast_coverage.rs`: pins wire bytes for `d:v:older(144)` (= `Terminal::DupIf(Verify(Older))`) including LEB128(144) = `[0x90, 0x01]`.
+- **Tier:** v0.6.x (closed)
 
 ### `v06-corpus-or-c-coverage` — add or_c tap-leaf round-trip vector
 
@@ -286,8 +286,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES.
 - **What:** Add an or_c fixture using a B-typed wrapping like `tr(@0/**, t:or_c(pk(@1/**), v:pk(@2/**)))` (where `t:` desugars to `and_v(X, 1)` = B-type) OR construct the AST hand-coded in a unit test rather than via Descriptor::from_str. The Tag::OrC byte form needs corpus coverage; the parser reject is a typing constraint, not a wire-format issue.
 - **Why deferred:** Plan's per-Terminal coverage rule; not blocking v0.6.0 ship since OrC byte is wire-format-supported and exercised by encoder/decoder symmetric arms, just not pinned in a fixture.
-- **Status:** open
-- **Tier:** v0.6+ (defensive corpus growth; can land in v0.6.x patch)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `or_c_unwrapped_tap_leaf_byte_form` (encoder wire-byte pin) and `t_or_c_tap_leaf_round_trips` (full encode→decode→re-encode round-trip via `t:or_c` wrap) hand-AST tests.
+- **Tier:** v0.6+ (closed)
 
 ### `v06-corpus-j-n-wrapper-coverage` — add j: and n: wrapper tap-leaf round-trip vectors
 
@@ -295,8 +295,17 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` TAPROOT_FIXTURES (or `tests/taproot.rs` hand-AST tests).
 - **What:** Add round-trip fixtures for Tag::NonZero (0x11) and Tag::ZeroNotEqual (0x12). If the BIP 388 source-form policies don't naturally produce these wrappers, hand-construct the AST via `Terminal::NonZero(Arc::new(child))` / `Terminal::ZeroNotEqual(Arc::new(child))` in unit tests. Encoder + decoder arms exist and are byte-symmetric; only the corpus pin is missing.
 - **Why deferred:** Same as `v06-corpus-or-c-coverage`. Not blocking ship; defensive corpus growth.
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `j_wrapper_tap_leaf_byte_form` (`j:pk_k(a)` = `Terminal::NonZero(PkK)`) and `n_wrapper_tap_leaf_byte_form` (`n:c:pk_k(a)` = `Terminal::ZeroNotEqual(Check(PkK))`) hand-AST tests pinning wire-byte form for both wrappers.
+- **Tier:** v0.6+ (closed)
+
+### `v07-cli-validate-signer-subset` — `md validate --signer <name> <bytecode>` CLI mode
+
+- **Surfaced:** v0.7.0 spec round-1 review (Q5). Spec §9 deferred this CLI surface to v0.7.x patch.
+- **Where:** `crates/md-codec/src/bin/md/main.rs` (CLI subcommand for validate-against-signer); depends on `crates/md-signer-compat` (NEW in v0.7.0).
+- **What:** Add a `validate` subcommand to the `md` CLI that takes a bytecode (or string) input and a `--signer <NAME>` arg, decodes the bytecode, and runs the named SignerSubset's `validate()` against each tap leaf. Output: pretty-print pass/fail per leaf with operator name + leaf_index on rejection. Considerations: machine-readable mode (`--json`), exit code on subset violation, handling of decoded but partial-validation cases.
+- **Why deferred:** v0.7.0 release adds three new things (md-signer-compat crate, compiler feature, CLI policy mode); a fourth would dilute focus. CLI UX questions (output format, exit code, machine-readable) deserve their own design pass.
 - **Status:** open
-- **Tier:** v0.6+ (defensive corpus growth)
+- **Tier:** v0.7.x (CLI surface; not blocking initial signer-compat ship)
 
 ### `v06-corpus-byte-order-defensive-test` — defensive hand-pinned hash byte-order test
 
@@ -304,8 +313,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/tests/taproot.rs` (or new `tests/hash_byte_order.rs`).
 - **What:** Hand-coded byte-pin assertion: construct a known 32-byte hash (e.g., all-0xAA), invoke encoder via `encode_template` or similar, assert the bytecode bytes immediately after the Tag byte equal the input bytes UNREVERSED. Repeat for all 4 hash terminals.
 - **Why deferred:** Plan's defensive-test step deferred to v0.6+ during overnight autonomous execution to focus on shipping. Round-trip via the corpus fixtures provides indirect coverage; the dedicated byte-pin would catch the very specific encoder+decoder symmetric regression.
-- **Status:** open
-- **Tier:** v0.6+ (defensive testing nice-to-have)
+- **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `hash_terminals_encode_internal_byte_order_with_decode_round_trip` covering Sha256, Hash256, Ripemd160, Hash160 with **asymmetric** input patterns (`[0x00..0x1F]` and `[0x80..0x93]` via `std::array::from_fn`) per Phase 2 reviewer IMP-1 — palindromic constant-fill defeats the asymmetric encode/decode reversal bug class. Decode-direction round-trip per Plan reviewer #1 Concern 5.
+- **Tier:** v0.6+ (closed)
 
 ### `v06-spec-tag-byte-display-table` — alphabetical Tag→byte index for spec audit convenience
 
@@ -334,6 +343,167 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** Coordination only — no per-entry blocker. Lands at the v0.6 release cut.
 - **Status:** open
 - **Tier:** v0.6 (release-prep meta-entry; closes only at the v0.6.0 tag)
+
+### `v07-tap-leaf-iterator-with-index-coverage` — Phase 4 must include a multi-leaf DFS-pre-order leaf-index attribution test
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). The Phase 1 commit `de63db3` deleted MD-codec test `tap_leaf_subset_violation_carries_leaf_index` (LI2) on the rationale that "leaf-index attribution moves to md-signer-compat." LI2 was the only test exercising **multi-leaf DFS-pre-order** `leaf_index` correctness.
+- **Where:** `crates/md-signer-compat/src/tests.rs`.
+- **What:** at least one multi-leaf test where the offending operator's `leaf_index` in the resulting `Error::SubsetViolation` is *derived* from a tap-tree walker (the v0.7+ "iterate tap leaves and call `validate(...)` per leaf" primitive), **not** supplied as a constant.
+- **Status:** resolved (this commit). md-signer-compat exposes `pub fn validate_tap_tree(subset, tap_tree)` that walks `TapTree::leaves()` in DFS pre-order, threading an enumerated `leaf_index` per call. New test `tests::validate_tap_tree_attributes_violation_to_dfs_pre_order_index` constructs a 3-leaf `{leaf_0, {leaf_1_violator, leaf_2}}` shape, places `sha256(...)` (out of COLDCARD_TAP) at leaf 1, and asserts the resulting `SubsetViolation.leaf_index == Some(1)`.
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-phase2-asymmetric-byte-order-test-inputs` — palindromic byte-fill defeats decode-direction asymmetric-reversal check
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). `hash_terminals_encode_internal_byte_order_with_decode_round_trip` originally used palindromic `[0xAA; 32]` and `[0xBB; 20]`; reversing a constant-fill array is a no-op, so a symmetric encode/decode reversal bug (the bug class Plan reviewer #1 Concern 5 motivated) would not be caught.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs::hash_terminals_encode_internal_byte_order_with_decode_round_trip`.
+- **What:** replace constant fills with strictly increasing patterns: `known_32 = [0x00..0x1F]` via `std::array::from_fn(|i| i as u8)`; `known_20 = [0x80..0x93]` via `std::array::from_fn(|i| 0x80 + i as u8)`.
+- **Status:** resolved (this commit). Inputs are now asymmetric so any reversal is observable.
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-decode-rejects-sh-bare-rename` — rename or delete `decode_rejects_sh_bare` (mislabelled in v0.6)
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). `crates/md-codec/src/bytecode/decode.rs:2413-2423` defines `decode_rejects_sh_bare` whose inline comment says `// [Sh=0x03, Bare=0x07, ...]`, but in v0.6 byte 0x07 is `Tag::TapTree`. The test passes (assertion is `msg.contains("sh(")` — generic) but is misleadingly named.
+- **Where:** `crates/md-codec/src/bytecode/decode.rs::tests::decode_rejects_sh_bare`.
+- **What:** rename to `decode_rejects_sh_taptree` and update the inline byte comment, or delete as redundant with `decode_rejects_sh_inner_script_andv` + `decode_rejects_sh_key_slot`.
+- **Status:** open
+- **Tier:** v0.7.x (defensive cleanup; not blocking).
+
+### `v07-stale-byte-annotation-comments` — sweep stale v0.5 byte comments in integration tests
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). Several integration tests use symbolic `Tag::Foo.as_byte()` (correct) but trail with stale `// 0x32`, `// 0x19`, `// 0x33`, `// 0x05` annotations naming **v0.5** byte values. Tests function correctly; comments mislead future readers.
+- **Where:** `crates/md-codec/tests/fingerprints.rs:175`; `crates/md-codec/tests/conformance.rs:765, 768, 771, 773, 1083, 650`.
+- **What:** mechanical sed sweep — either remove the byte-value comment entirely or update to the v0.6 byte.
+- **Status:** open
+- **Tier:** v0.7.x (defensive cleanup; not blocking).
+
+### `v07-taptree-diagnostic-runtime-byte` — refactor TapTree-at-top diagnostic to format byte at runtime
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). Phase 1 added the literal `(0x07)` to `decode_descriptor`'s `Tag::TapTree` arm error message at `decode.rs:78-82` (test-driven; see `taptree_at_top_level_produces_specific_diagnostic`). Hardcoding the byte creates a Tag-byte-rolling drift liability — a future major release re-numbering TapTree must update both the production string AND test pin in lockstep.
+- **Where:** `crates/md-codec/src/bytecode/decode.rs:78-82` and the test at `decode.rs:2429-2447`.
+- **What:** refactor to `format!("TapTree (0x{:02X}) is not a valid top-level...", Tag::TapTree.as_byte())` so the byte tracks the enum.
+- **Status:** open
+- **Tier:** v0.7.x or later (cleanup; not blocking).
+
+### `v07-phase2-decoder-arm-cursor-sentinel-pattern` — strengthen decoder-arm cursor-consumption assertions with trailing sentinel
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). All six `decoder_arm_*` tests in `crates/md-codec/src/bytecode/hand_ast_coverage.rs` assert `cur.is_empty()` after decode, but the wire bytes contain no trailing sentinel — over-consumption surfaces as `UnexpectedEnd` rather than as a cursor-position drift, and under-consumption can't surface at all.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs` (six `decoder_arm_*` tests); `crates/md-codec/src/bytecode/cursor.rs` (add `pub(crate) fn remaining(&self) -> &[u8]`).
+- **What:** add a `0xFF` sentinel byte to each test's wire form and assert remaining cursor contents equal `[0xFF]`. Requires adding `Cursor::remaining()` (~3 lines).
+- **Why deferred:** decoder primitives are themselves tightly bounded; bug class is unlikely in practice. Defensive nice-to-have.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-phase2-or-c-unwrapped-test-docstring-drift` — `or_c_unwrapped_tap_leaf_byte_form` docstring promises decoder-branch assertion the test body doesn't perform
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). Docstring describes a two-branch decoder-behavior policy ("If decoder accepts... If decoder rejects, this test asserts the rejection diagnostic"), but the test only asserts encoder wire bytes — the decoder is never run on `out`.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs::or_c_unwrapped_tap_leaf_byte_form`.
+- **What:** either tighten the docstring to "encoder wire-form pin only" or extend the test to run the decoder and assert the actual outcome.
+- **Why deferred:** test passes; coverage is provided by the companion `t_or_c_tap_leaf_round_trips`. Future-reader-confusion issue, not functional.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-coldcard-multi-a-citation-gap` — `COLDCARD_TAP` initially included `multi_a` not cited in vendor source
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). The cited Coldcard `docs/taproot.md` allowed-descriptors list documents only `sortedmulti_a` for tap-leaf multisig — bare `multi_a` was not cited. The initial Phase 4 commit included `multi_a` in `COLDCARD_TAP.allowed_operators`.
+- **Where:** `crates/md-signer-compat/src/coldcard.rs::COLDCARD_TAP`.
+- **What:** removed `multi_a` from the allowlist; rustdoc explicitly notes "multi_a deliberately omitted" with rationale tying back to the cited source. If a future Coldcard revision admits `multi_a`, add back with a citation note.
+- **Status:** resolved (folded inline post-Phase-4)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-tap-tree-leaves-docstring-iterator-shape` — `validate_tap_tree` docstring drift on iterator-yield shape
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). `lib.rs::validate_tap_tree` originally claimed `TapTree::leaves()` "yields `(depth, leaf_ms)` tuples"; reality is a `TapTreeIterItem` struct with `.miniscript()` / `.depth()` accessors.
+- **Where:** `crates/md-signer-compat/src/lib.rs::validate_tap_tree`.
+- **What:** updated docstring to describe the actual `TapTreeIterItem` struct API.
+- **Status:** resolved (folded inline post-Phase-4)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-ledger-rustdoc-variant-enumeration-incomplete` — `LEDGER_TAP` rustdoc enumerates 7/16 vanadium variants
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). `ledger.rs` rustdoc lists 7 variants from `cleartext.rs` but the vanadium enum has 16. Operator-set is still sound (the omitted variants use already-listed operators) but doc enumeration is incomplete.
+- **Where:** `crates/md-signer-compat/src/ledger.rs::LEDGER_TAP` rustdoc.
+- **What:** expand to full 16-variant list, OR change framing to "representative subset" with note that the operator union covers all variants.
+- **Why deferred:** allowlist itself is correct; doc-enumeration completeness is cosmetic.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-md-signer-compat-shared-test-key-helpers` — `dummy_key_a` / `dummy_key_b` duplicated across crates
+
+- **Surfaced:** v0.7.0 Phase 4 reviewer (Opus). Same two test pubkey strings appear in both `crates/md-codec/src/bytecode/hand_ast_coverage.rs` and `crates/md-signer-compat/src/tests.rs`.
+- **Where:** both files.
+- **What:** consider a shared test-only helper module (e.g., a `pub(crate)` module in md-codec exported under `#[cfg(feature = "test-helpers")]`).
+- **Why deferred:** small duplication; cross-crate test utility is over-engineering at this scale.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-historical-coldcard-const-visibility` — tighten `pub const HISTORICAL_COLDCARD_TAP_OPERATORS` to `pub(crate)`
+
+- **Surfaced:** v0.7.0 Phase 3 reviewer (Opus). Plan §3.3 specified `const` (private); implementation used `pub const`. md-signer-compat (Phase 4) defines its own `COLDCARD_TAP.allowed_operators` array and does not reference this constant; the only in-tree consumer is the same-module back-compat shim.
+- **Where:** `crates/md-codec/src/bytecode/encode.rs` `pub const HISTORICAL_COLDCARD_TAP_OPERATORS`.
+- **What:** change `pub const` → `pub(crate) const`.
+- **Why deferred:** harmless as `pub`; modest auditor-facing value; not breaking.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-walker-deepest-violation-pin-test` — add regression test for depth-first leaf-first walker semantics
+
+- **Surfaced:** v0.7.0 Phase 3 reviewer (Opus). The new walker's "depth-first leaf-first reporting → deepest violation surfaced" contract is observable in `taproot_rejects_wrapper_alt_outside_subset` (which defensively allows both old "thresh" and new "s:" outcomes) but no test pins it. A future regression flipping back to top-down rejection would pass existing tests.
+- **Where:** `crates/md-codec/src/bytecode/hand_ast_coverage.rs` (suggested location).
+- **What:** ≤20-line hand-AST test on `thresh(1, sha256(H))` with empty allowlist — assert `operator == "sha256"`, not `"thresh"`.
+- **Why deferred:** test passes today (semantics match the docstring); regression-pin coverage is defensive.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-phase5-tap-none-test` — add unit test for `ScriptContext::Tap` with `internal_key=None` NUMS path
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). Initial Phase 5 unit-test set covered `Some(internal)` for Tap; the `None` (NUMS-unspendable internal-key) path — the very behaviour Plan reviewer #1 Concern 2 motivated — was untested.
+- **Where:** `crates/md-codec/src/policy_compiler.rs::tests`.
+- **What:** new test `tap_pk_with_nums_internal_key_compiles_and_encodes` exercising `internal_key = None`.
+- **Status:** resolved (folded inline post-Phase-5)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-phase5-cli-test-gate` — tighten CLI test gate from `compiler` to `all(compiler, cli)`
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). `tests/cli.rs::md_from_policy_segwitv0_pk_emits_bytecode_hex` was gated `#[cfg(feature = "compiler")]`, but the `md` binary requires `cli`. A `compiler`-only feature combo would compile the test and then panic at `cargo_bin("md")`.
+- **Where:** `crates/md-codec/tests/cli.rs::md_from_policy_segwitv0_pk_emits_bytecode_hex`.
+- **What:** changed gate to `#[cfg(all(feature = "compiler", feature = "cli"))]`.
+- **Status:** resolved (folded inline post-Phase-5)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-phase5-policyscopeviolation-rustdoc` — `Error::PolicyScopeViolation` rustdoc still says "v0.1 scope"
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). `error.rs::Error::PolicyScopeViolation` rustdoc opens with "Policy violates the v0.1 implementation scope" — pre-strip language. Phase 5's `policy_to_bytecode` wrapper widens the variant's semantic load by also returning it when the compiler emits a top-level shape MD can't encode.
+- **Where:** `crates/md-codec/src/error.rs::Error::PolicyScopeViolation` rustdoc.
+- **What:** add a one-line note: "Also returned by `policy_to_bytecode` when the compiler emits a top-level shape MD does not encode."
+- **Why deferred:** doc-only refresh; low-priority.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-phase5-cli-context-error-msg` — `--context` error message omits `wsh`/`tr` aliases
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). `cmd_from_policy` accepts `segwitv0`/`wsh`/`tap`/`tr` (case-insensitive) but the bail message says "must be one of: segwitv0, tap; got X".
+- **Where:** `crates/md-codec/src/bin/md/main.rs::cmd_from_policy`.
+- **What:** update error message to enumerate all four accepted forms.
+- **Why deferred:** user-facing UX nit; not blocking.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-phase2-decode-helpers-pub-super-tightening` — tighten `decode_tap_miniscript` / `decode_tap_terminal` to `pub(super)`
+
+- **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). Both functions are currently `pub(crate)` solely for `bytecode::hand_ast_coverage` (sibling test module). `pub(super)` would suffice and constrain visibility tighter.
+- **Where:** `crates/md-codec/src/bytecode/decode.rs:583` (`decode_tap_miniscript`), `crates/md-codec/src/bytecode/decode.rs:608` (`decode_tap_terminal`).
+- **What:** change `pub(crate)` → `pub(super)` for both.
+- **Why deferred:** `pub(crate)` is already well-scoped (no public API leakage); tightening defensively guards against unintended future cross-module use, but no concrete risk today.
+- **Status:** open
+- **Tier:** v0.8 housekeeping
+
+### `v07-n_taptree_at_top_level-description-stale-v05-byte` — `n_taptree_at_top_level` description still says "0x08"
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). `vectors.rs:1867-1895` — the in-source comment AND the public-facing `description` field of the negative vector say "Tag::TapTree (0x08)" (v0.5). The vector itself is correct (built via `Tag::TapTree.as_byte()` symbolic refs). The `description` ships in `tests/vectors/v0.2.json` and is part of the v0.2 schema-2 SHA pin; updating requires regenerating the SHA.
+- **Where:** `crates/md-codec/src/vectors.rs:1867-1895`.
+- **What:** update both the in-source comment and the `description` field to "(0x07)" when v0.7 regenerates `v0.2.json`.
+- **Status:** open
+- **Tier:** v0.7-Phase-6 (fold into vector regen at release plumbing).
 
 ---
 
@@ -784,6 +954,15 @@ See BIP §FAQ for rationale.
 - **Surfaced:** Phase 4 implementer (commit `bca2804`); Phase 4 reviewer confirmed independently
 - **Status:** resolved `75e22f2` (`chore(v0.5 m2): fix target_depth literal in spec + plan`, on the v0.5 feature branch; merged to main via `865f889`). Working code at `encode.rs:166` was already correct; the doc fix updated `design/SPEC_v0_5_multi_leaf_taptree.md` §4 and `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md` Phase 4 Task 4.3 to match.
 - **Tier:** v0.5-must-close-before-ship (closed)
+
+### `v0-7-phase-1-integration-test-rebaseline` — rebaseline 17 integration-test failures using v0.5 byte literals
+
+- **Surfaced:** v0.7.0 Phase 1 Track A rebaseline pass (the 27 enumerated unit tests). After fixing those, `cargo test -p md-codec --no-fail-fast` still has ~17 failures across `tests/cli.rs`, `tests/conformance.rs`, and `tests/vectors_*.rs` (e.g., `md_encode_path_bip48_nested_resolves_to_indicator_0x06`, `rejects_invalid_bytecode_unexpected_tag`, `taproot_key_path_only_round_trips`, `fingerprints_block_byte_layout_matches_bip_example`, `tap_leaf_subset_violation_carries_leaf_index`, `schema_2_contains_v0_4_corpus_additions`, etc.). Failures partition into the same v0.5→v0.6 byte-shift class as the unit tests: `Tag::SharedPath` 0x33→0x34, `Tag::Placeholder` 0x32→0x33, plus a few hand-crafted byte vectors and asserted error-kind payloads (`UnexpectedTag { expected: 0x33, .. }`).
+- **Where:** `crates/md-codec/tests/cli.rs` (2 tests), `crates/md-codec/tests/conformance.rs` (~10 tests), `crates/md-codec/tests/vectors_*.rs` (~3 tests), `crates/md-codec/tests/build_test_vectors.rs`
+- **What:** Apply the same symbolic-`Tag::Foo.as_byte()` rebaseline pattern used in the unit-test rebaseline (decode/encode/path commit) to the integration test files. Some tests may also need vectors-corpus regeneration (`schema_2_contains_v0_*_corpus_additions` and `build_test_vectors_has_expected_corpus_count`). Goal: `cargo test -p md-codec --no-fail-fast` reports 0 failures.
+- **Why deferred:** The Phase 1 sub-task instruction explicitly enumerated exactly 27 unit tests in `bytecode::{decode,encode,path}::tests`; the integration-test failures fall outside that scope and were not flagged in the plan's failing-test inventory (plan §1.1.2 estimated ~38 across all modules but the actual count is higher). Folding them into a separate commit keeps the unit-test commit narrowly scoped per acceptance criterion #1 (`cargo test -p md-codec --lib` returns 0 failures).
+- **Status:** resolved (this commit). All integration tests rebaselined to v0.6 byte codes with symbolic `Tag::Foo.as_byte()` refs where helpful. Three subset-violation tests (`rejects_subset_violation`, `taproot_rejects_out_of_subset_sha256`, `taproot_rejects_wrapper_alt_outside_subset`, plus `tap_leaf_subset_violation_*` in v0_5_type_wiring.rs) were rewritten to call the v0.6 opt-in `validate_tap_leaf_subset` API directly — `to_bytecode` is scope-agnostic post-v0.6-strip. One test (`tap_leaf_subset_violation_carries_leaf_index` in v0_5_taptree_roundtrip.rs) was removed: the leaf-index attribution it pinned is a Layer-3 concern md-signer-compat (Phase 4) will own. Two corpus-count tests in `vectors_schema.rs` updated for v0.6's regenerated 43-vector corpus and the deletions of `n_tap_leaf_subset`, `n_top_bare`, `n_sh_bare`. `cargo test --workspace` reports 0 failures.
+- **Tier:** v0.7-blocker (closed)
 
 ### `decoded-string-data-memory-microopt` — drop `DecodedString.data`, replace with accessor backed by `data_with_checksum`
 

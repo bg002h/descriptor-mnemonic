@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/md-codec"]
+members = ["crates/md-codec", "crates/md-signer-compat"]
 
 [workspace.package]
 edition = "2024"

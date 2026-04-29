@@ -272,6 +272,7 @@ pub fn decode_declaration_from_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytecode::Tag;
     use crate::bytecode::cursor::Cursor;
     use crate::error::BytecodeErrorKind;
 
@@ -701,7 +702,7 @@ mod tests {
     }
 
     /// All 13 dictionary entries round-trip through encode_declaration →
-    /// decode_declaration. Output must be 2 bytes: [0x33, indicator].
+    /// decode_declaration. Output must be 2 bytes: [Tag::SharedPath, indicator].
     #[test]
     fn declaration_round_trip_dict() {
         for &(ind, _) in FIXTURE {
@@ -712,7 +713,11 @@ mod tests {
                 2,
                 "dictionary declaration must be 2 bytes for indicator 0x{ind:02x}"
             );
-            assert_eq!(encoded[0], 0x33, "first byte must be Tag::SharedPath");
+            assert_eq!(
+                encoded[0],
+                Tag::SharedPath.as_byte(),
+                "first byte must be Tag::SharedPath"
+            );
             assert_eq!(encoded[1], ind, "second byte must be the indicator");
             let decoded = decode_declaration_from_slice(&encoded)
                 .unwrap_or_else(|e| panic!("decode failed for indicator 0x{ind:02x}: {e}"));
@@ -724,14 +729,18 @@ mod tests {
     }
 
     /// Non-dictionary paths round-trip through encode_declaration →
-    /// decode_declaration. Output starts with [0x33, 0xFE, …].
+    /// decode_declaration. Output starts with [Tag::SharedPath, 0xFE, …].
     #[test]
     fn declaration_round_trip_explicit() {
         let cases = ["m", "m/0'", "m/100", "m/44'/0", "m/44'/0'/1'"];
         for path_str in &cases {
             let original = DerivationPath::from_str(path_str).unwrap();
             let encoded = encode_declaration(&original);
-            assert_eq!(encoded[0], 0x33, "first byte must be Tag::SharedPath");
+            assert_eq!(
+                encoded[0],
+                Tag::SharedPath.as_byte(),
+                "first byte must be Tag::SharedPath"
+            );
             assert_eq!(encoded[1], 0xFE, "second byte must be explicit marker 0xFE");
             let decoded = decode_declaration_from_slice(&encoded)
                 .unwrap_or_else(|e| panic!("decode failed for '{path_str}': {e}"));
@@ -739,21 +748,24 @@ mod tests {
         }
     }
 
-    /// Pin the wire format: encode_declaration("m/44'/0'/0'") == [0x33, 0x01].
+    /// Pin the wire format: encode_declaration("m/44'/0'/0'") == [Tag::SharedPath, 0x01].
     #[test]
     fn encode_declaration_dictionary_byte_layout() {
         let path = DerivationPath::from_str("m/44'/0'/0'").unwrap();
-        assert_eq!(encode_declaration(&path), vec![0x33, 0x01]);
+        assert_eq!(
+            encode_declaration(&path),
+            vec![Tag::SharedPath.as_byte(), 0x01]
+        );
     }
 
-    /// Pin the wire format: encode_declaration("m/44'/0") == [0x33, 0xFE, 0x02, 0x59, 0x00].
+    /// Pin the wire format: encode_declaration("m/44'/0") == [Tag::SharedPath, 0xFE, 0x02, 0x59, 0x00].
     ///   count=2, 44 hardened → 2*44+1=89=0x59, 0 unhardened → 0x00
     #[test]
     fn encode_declaration_explicit_byte_layout() {
         let path = DerivationPath::from_str("m/44'/0").unwrap();
         assert_eq!(
             encode_declaration(&path),
-            vec![0x33, 0xFE, 0x02, 0x59, 0x00]
+            vec![Tag::SharedPath.as_byte(), 0xFE, 0x02, 0x59, 0x00]
         );
     }
 
@@ -761,21 +773,21 @@ mod tests {
     /// Tag::SharedPath must return UnexpectedTag.
     #[test]
     fn decode_declaration_rejects_wrong_tag() {
-        // Tag::Wsh = 0x05 — a valid defined tag, but not Tag::SharedPath.
-        let bytes = [0x05u8, 0x01];
+        // Tag::Wsh — a valid defined tag, but not Tag::SharedPath.
+        let bytes = [Tag::Wsh.as_byte(), 0x01];
         let err = decode_declaration_from_slice(&bytes).unwrap_err();
         assert!(
             matches!(
                 err,
                 crate::Error::InvalidBytecode {
                     kind: BytecodeErrorKind::UnexpectedTag {
-                        expected: 0x33,
-                        got: 0x05
+                        expected,
+                        got,
                     },
                     ..
-                }
+                } if expected == Tag::SharedPath.as_byte() && got == Tag::Wsh.as_byte()
             ),
-            "expected UnexpectedTag {{ expected: 0x33, got: 0x05 }}, got {err:?}"
+            "expected UnexpectedTag {{ expected: Tag::SharedPath, got: Tag::Wsh }}, got {err:?}"
         );
     }
 
@@ -830,11 +842,11 @@ mod tests {
         );
     }
 
-    /// [0x33] alone (no indicator byte) must return UnexpectedEnd when
+    /// [Tag::SharedPath] alone (no indicator byte) must return UnexpectedEnd when
     /// decode_path tries to read the missing indicator byte.
     #[test]
     fn decode_declaration_rejects_truncated() {
-        let err = decode_declaration_from_slice(&[0x33]).unwrap_err();
+        let err = decode_declaration_from_slice(&[Tag::SharedPath.as_byte()]).unwrap_err();
         assert!(
             matches!(
                 err,
@@ -896,24 +908,24 @@ mod tests {
     /// Errors propagate identically to the cursor-based decode_declaration.
     #[test]
     fn from_bytes_propagates_errors() {
-        // Wrong tag (0x05 = Tag::Wsh).
-        let err = decode_declaration_from_bytes(&[0x05u8, 0x01]).unwrap_err();
+        // Wrong tag (Tag::Wsh).
+        let err = decode_declaration_from_bytes(&[Tag::Wsh.as_byte(), 0x01]).unwrap_err();
         assert!(
             matches!(
                 err,
                 crate::Error::InvalidBytecode {
                     kind: BytecodeErrorKind::UnexpectedTag {
-                        expected: 0x33,
-                        got: 0x05
+                        expected,
+                        got,
                     },
                     ..
-                }
+                } if expected == Tag::SharedPath.as_byte() && got == Tag::Wsh.as_byte()
             ),
             "expected UnexpectedTag, got {err:?}"
         );
 
         // Truncated (just the tag byte).
-        let err = decode_declaration_from_bytes(&[0x33u8]).unwrap_err();
+        let err = decode_declaration_from_bytes(&[Tag::SharedPath.as_byte()]).unwrap_err();
         assert!(
             matches!(
                 err,

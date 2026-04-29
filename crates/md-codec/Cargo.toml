@@ -1,6 +1,6 @@
 [package]
 name = "md-codec"
-version = "0.6.0"
+version = "0.7.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -32,6 +32,12 @@ required-features = ["cli"]
 default = ["cli"]
 # Library-only consumers can disable `cli` to avoid pulling clap.
 cli = ["dep:clap", "dep:anyhow"]
+# Concrete-Policy compiler wrapper (`policy_to_bytecode`). Pulls in
+# rust-miniscript's `compiler` feature, which is heavyweight (ILP-style
+# enumeration in the Tap branch); off by default.
+compiler = ["miniscript/compiler"]
+# CLI mode for `md encode --from-policy <expr> --context <tap|segwitv0>`.
+cli-compiler = ["cli", "compiler"]
 
 [dependencies]
 bitcoin = "0.32"

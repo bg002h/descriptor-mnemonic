@@ -350,7 +350,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "md-codec"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -367,6 +367,15 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror",
+]
+
+[[package]]
+name = "md-signer-compat"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "md-codec",
+ "miniscript",
 ]
 
 [[package]]
