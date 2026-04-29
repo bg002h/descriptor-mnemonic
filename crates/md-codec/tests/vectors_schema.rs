@@ -248,7 +248,7 @@ fn v0_2_sha256_lock_matches_committed_file() {
 
     /// Lockfile SHA-256 (lowercase hex). Update when v0.2.json is
     /// intentionally regenerated.
-    const V0_2_SHA256: &str = "38fca116713033130e47631fa5e5fb8499a8604ad227d83db767456cd2cfb260";
+    const V0_2_SHA256: &str = "014006eaf870d4a853e49850f483fe7f884450033fddb443ef5be88aebf99628";
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
     if !path.exists() {

@@ -507,7 +507,11 @@ fn md_encode_fingerprint_flag_rejects_short_hex() {
 /// `md from-policy` — only available under the `cli-compiler` feature.
 /// Compiles a `pk(<xpub>)` Concrete-Policy in Segwitv0 context and
 /// asserts the printed hex starts with `00` (header byte).
-#[cfg(feature = "compiler")]
+///
+/// Gate: `all(compiler, cli)` — the `md` binary requires the `cli`
+/// feature, so a `compiler`-only build (no `cli`) would compile this
+/// test but fail at runtime in `cargo_bin("md")`.
+#[cfg(all(feature = "compiler", feature = "cli"))]
 #[test]
 fn md_from_policy_segwitv0_pk_emits_bytecode_hex() {
     use assert_cmd::Command;

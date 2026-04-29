@@ -151,6 +151,26 @@ mod tests {
         assert!(bytes.len() > 3);
     }
 
+    /// Per Plan reviewer #1 Concern 2: when the caller passes
+    /// `internal_key = None`, rust-miniscript's `compile_tr` synthesises
+    /// an unspendable NUMS internal key. This test exercises that path
+    /// end-to-end (compile → project to wallet policy → encode bytecode)
+    /// to guard against silent regressions in either the upstream NUMS
+    /// derivation or the wallet-policy projection's tolerance for it.
+    #[test]
+    fn tap_pk_with_nums_internal_key_compiles_and_encodes() {
+        let leaf_policy = format!("pk({KEY_1})");
+        let bytes = policy_to_bytecode(
+            &leaf_policy,
+            &EncodeOptions::default(),
+            ScriptContext::Tap,
+            None, // NUMS path
+        )
+        .expect("tap leaf with NUMS-synthesised internal key must compile");
+        assert!(bytes.len() > 3);
+        assert_eq!(bytes[0], 0x00, "header byte");
+    }
+
     #[test]
     fn parse_error_surfaces_as_policy_parse() {
         let bad = "not a policy";

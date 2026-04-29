@@ -2,6 +2,75 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.6.x → v0.7.0
+
+v0.7.0 is **purely additive**. No breaking changes since v0.6.0.
+
+### What's new
+
+1. **NEW workspace crate `md-signer-compat`.** Add as a dependency if
+   you want named-subset validation (Coldcard, Ledger):
+   ```toml
+   [dependencies]
+   md-signer-compat = "0.1"
+   ```
+   API:
+   ```rust
+   use md_signer_compat::{COLDCARD_TAP, LEDGER_TAP, validate, validate_tap_tree};
+   // single-leaf
+   validate(&COLDCARD_TAP, &leaf_ms, Some(0))?;
+   // multi-leaf with DFS-pre-order leaf_index threading
+   validate_tap_tree(&COLDCARD_TAP, &tap_tree)?;
+   ```
+
+2. **NEW pub function `md_codec::bytecode::encode::validate_tap_leaf_subset_with_allowlist`.**
+   Caller-supplied operator allowlist; existing
+   `validate_tap_leaf_subset` is now a back-compat shim around this
+   function with the historical Coldcard list.
+
+3. **NEW cargo features on md-codec:**
+   - `compiler` (default-off): exposes `ScriptContext`,
+     `policy_to_bytecode`. Pulls in rust-miniscript's `compiler`
+     (heavyweight ILP-style enumeration in the Tap branch).
+   - `cli-compiler`: enables `md from-policy <expr> --context
+     <tap|segwitv0> [--internal-key <KEY>]` subcommand.
+
+4. **Tap-context internal key for `policy_to_bytecode` is
+   caller-supplied.** Pass `Some(key)` to use a specific internal key,
+   or `None` to defer to rust-miniscript's NUMS-unspendable default
+   for script-path-only spends.
+
+### What didn't change
+
+- **Wire format byte-identical to v0.6.x.** Existing MD chunks decode
+  unchanged.
+- All existing public API. No removals; no renames; back-compat shims
+  preserve every v0.6 caller.
+- MSRV: 1.85.
+
+### How to upgrade
+
+```bash
+cargo update -p md-codec --precise 0.7.0
+# (Optional) Add the new signer-compat crate:
+cargo add md-signer-compat
+# (Optional) Enable the policy-compiler feature:
+# (in your Cargo.toml)
+# md-codec = { version = "0.7", features = ["compiler"] }
+```
+
+### Behavioral change worth knowing
+
+`validate_tap_leaf_subset` (and its new generic sibling) walks
+operator-tree children **depth-first leaf-first** — it reports the
+deepest out-of-subset operator instead of the shallowest. For a tree
+like `or_b(sha256(...), pk(...))` with neither `or_b` nor `sha256` in
+the allowlist, v0.6 reported `"or_b"`; v0.7 reports `"sha256"`. The
+back-compat allowlist (HISTORICAL_COLDCARD_TAP_OPERATORS) is unchanged
+so no test outcome flips for the historical Coldcard subset; if you've
+written tests against custom allowlists that asserted the shallower
+operator name, this change may surface there.
+
 ## v0.5.x → v0.6.0
 
 v0.6.0 strips MD's signer-compatibility curation layer. MD's scope is now

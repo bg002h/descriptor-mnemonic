@@ -4,6 +4,102 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.7.0] — 2026-04-29
+
+First post-strip-Layer-3 release. Bundles four tracks: test rebaseline,
+defensive corpus growth, `md-signer-compat` workspace crate, and policy
+compiler wrapper. **Wire format byte-identical to v0.6.x.** Purely additive
+public API changes — no breaking changes since v0.6.0.
+
+### Added
+
+- **NEW workspace crate `md-signer-compat`** providing opt-in
+  caller-driven validation of MD-encoded BIP 388 wallet policies
+  against named hardware-signer subsets:
+  - `pub const COLDCARD_TAP: SignerSubset` — Coldcard `firmware/edge`
+    `docs/taproot.md` allowed-descriptors set, verified 2026-04-28.
+  - `pub const LEDGER_TAP: SignerSubset` — LedgerHQ/vanadium
+    `apps/bitcoin/common/src/bip388/cleartext.rs`, verified 2026-04-28.
+  - `pub fn validate(subset, ms, leaf_index)` — single-leaf delegation
+    to md-codec's `validate_tap_leaf_subset_with_allowlist`.
+  - `pub fn validate_tap_tree(subset, tap_tree)` — multi-leaf walker
+    threading enumerated DFS-pre-order `leaf_index` through each call.
+- **NEW pub function `bytecode::encode::validate_tap_leaf_subset_with_allowlist`**
+  (in md-codec) — caller-supplied operator allowlist; the existing
+  `validate_tap_leaf_subset` becomes a back-compat shim around the
+  new function with `HISTORICAL_COLDCARD_TAP_OPERATORS`.
+- **NEW cargo feature `compiler` (default-off)** on md-codec: pulls in
+  rust-miniscript's `compiler`. Exposes:
+  - `pub enum ScriptContext { Segwitv0, Tap }`.
+  - `pub fn policy_to_bytecode(policy, options, script_context, internal_key)`
+    — wraps `Concrete::compile`/`compile_tr`, projects to BIP 388 wallet
+    policy, and emits MD bytecode. Tap-context internal key is
+    caller-supplied (`Option<DescriptorPublicKey>`); `None` defers to
+    rust-miniscript's NUMS-unspendable internal-key default.
+- **NEW cargo feature `cli-compiler`** (= `cli` + `compiler`): adds
+  `md from-policy <expr> --context <tap|segwitv0> [--internal-key <KEY>]`
+  CLI subcommand.
+- **12 hand-AST defensive tests** in
+  `crates/md-codec/src/bytecode/hand_ast_coverage.rs` (`#[cfg(test)]`):
+  - `or_c`, `d:`, `j:`, `n:` typing-awkward operators (encoder wire
+    bytes pinned + `t:or_c` round-trip).
+  - Hash byte-order pin (encode + decode round-trip with asymmetric
+    inputs `[0x00..0x1F]` / `[0x80..0x93]`).
+  - 6 per-arm decoder tests (multi_a, andor, thresh, after,
+    sortedmulti_a, hash256).
+
+### Changed
+
+- **Test rebaseline.** All ~38 tests that pinned v0.5 byte literals
+  rebaselined to v0.6 codes using symbolic `Tag::Foo.as_byte()` refs
+  where helpful (closes `v06-test-byte-literal-rebaseline`).
+- **`validate_tap_leaf_subset` walk order** is now depth-first
+  leaf-first: the walker recurses into every Terminal variant's
+  children before checking the parent, so the deepest violation is
+  reported (more actionable diagnostic). Behaviour-preserving for the
+  back-compat shim's allowlist (no test outcome changes).
+- **CHANGELOG / MIGRATION discipline:** `[Unreleased]` entries
+  consolidated at release time per Plan §9 Q6.
+
+### Notes
+
+- Wire format byte-identical to v0.6.x. Existing chunks decode
+  unchanged.
+- `GENERATOR_FAMILY` rolls `"md-codec 0.6"` → `"md-codec 0.7"`.
+- `tests/vectors/v0.1.json` and `tests/vectors/v0.2.json` regenerate
+  with the new family token; `V0_2_SHA256` pin updates once.
+- MSRV unchanged: 1.85.
+
+### Closes FOLLOWUPS
+
+- `v06-test-byte-literal-rebaseline`
+- `v06-corpus-or-c-coverage`
+- `v06-corpus-d-wrapper-coverage`
+- `v06-corpus-j-n-wrapper-coverage`
+- `v06-corpus-byte-order-defensive-test`
+- `v06-plan-targeted-decoder-arm-tests`
+- `md-signer-compat-checker-separate-library`
+- `md-policy-compiler-feature`
+- `v07-tap-leaf-iterator-with-index-coverage`
+- `v07-phase2-asymmetric-byte-order-test-inputs`
+- `v07-coldcard-multi-a-citation-gap`
+- `v07-tap-tree-leaves-docstring-iterator-shape`
+
+### Deferred to v0.7.x
+
+- `v07-cli-validate-signer-subset` — `md validate --signer <name> <bytecode>` CLI track (Plan §9 Q5).
+- `v07-decode-rejects-sh-bare-rename`
+- `v07-stale-byte-annotation-comments`
+- `v07-taptree-diagnostic-runtime-byte`
+- `v07-n_taptree_at_top_level-description-stale-v05-byte`
+- `v07-historical-coldcard-const-visibility`
+- `v07-walker-deepest-violation-pin-test`
+- `v07-phase2-decoder-arm-cursor-sentinel-pattern`
+- `v07-phase2-or-c-unwrapped-test-docstring-drift`
+- `v07-phase2-decode-helpers-pub-super-tightening`
+- `v07-ledger-rustdoc-variant-enumeration-incomplete`
+- `v07-md-signer-compat-shared-test-key-helpers`
+
 ## [0.6.0] — 2026-04-28
 
 The v0.6 release strips MD's signer-compatibility curation layer. MD's scope

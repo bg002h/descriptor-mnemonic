@@ -454,6 +454,40 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.7.x
 
+### `v07-phase5-tap-none-test` — add unit test for `ScriptContext::Tap` with `internal_key=None` NUMS path
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). Initial Phase 5 unit-test set covered `Some(internal)` for Tap; the `None` (NUMS-unspendable internal-key) path — the very behaviour Plan reviewer #1 Concern 2 motivated — was untested.
+- **Where:** `crates/md-codec/src/policy_compiler.rs::tests`.
+- **What:** new test `tap_pk_with_nums_internal_key_compiles_and_encodes` exercising `internal_key = None`.
+- **Status:** resolved (folded inline post-Phase-5)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-phase5-cli-test-gate` — tighten CLI test gate from `compiler` to `all(compiler, cli)`
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). `tests/cli.rs::md_from_policy_segwitv0_pk_emits_bytecode_hex` was gated `#[cfg(feature = "compiler")]`, but the `md` binary requires `cli`. A `compiler`-only feature combo would compile the test and then panic at `cargo_bin("md")`.
+- **Where:** `crates/md-codec/tests/cli.rs::md_from_policy_segwitv0_pk_emits_bytecode_hex`.
+- **What:** changed gate to `#[cfg(all(feature = "compiler", feature = "cli"))]`.
+- **Status:** resolved (folded inline post-Phase-5)
+- **Tier:** v0.7-blocker (closed)
+
+### `v07-phase5-policyscopeviolation-rustdoc` — `Error::PolicyScopeViolation` rustdoc still says "v0.1 scope"
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). `error.rs::Error::PolicyScopeViolation` rustdoc opens with "Policy violates the v0.1 implementation scope" — pre-strip language. Phase 5's `policy_to_bytecode` wrapper widens the variant's semantic load by also returning it when the compiler emits a top-level shape MD can't encode.
+- **Where:** `crates/md-codec/src/error.rs::Error::PolicyScopeViolation` rustdoc.
+- **What:** add a one-line note: "Also returned by `policy_to_bytecode` when the compiler emits a top-level shape MD does not encode."
+- **Why deferred:** doc-only refresh; low-priority.
+- **Status:** open
+- **Tier:** v0.7.x
+
+### `v07-phase5-cli-context-error-msg` — `--context` error message omits `wsh`/`tr` aliases
+
+- **Surfaced:** v0.7.0 Phase 5 reviewer (Opus). `cmd_from_policy` accepts `segwitv0`/`wsh`/`tap`/`tr` (case-insensitive) but the bail message says "must be one of: segwitv0, tap; got X".
+- **Where:** `crates/md-codec/src/bin/md/main.rs::cmd_from_policy`.
+- **What:** update error message to enumerate all four accepted forms.
+- **Why deferred:** user-facing UX nit; not blocking.
+- **Status:** open
+- **Tier:** v0.7.x
+
 ### `v07-phase2-decode-helpers-pub-super-tightening` — tighten `decode_tap_miniscript` / `decode_tap_terminal` to `pub(super)`
 
 - **Surfaced:** v0.7.0 Phase 2 reviewer (Opus). Both functions are currently `pub(crate)` solely for `bytecode::hand_ast_coverage` (sibling test module). `pub(super)` would suffice and constrain visibility tighter.
