@@ -58,8 +58,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/wdm-codec/src/bytecode/{tag,encode,decode}.rs`
 - **What:** Tags `0x24..=0x31` are reserved by descriptor-codec for inline-key forms (raw xpubs, key origins, wildcards). v0.1 rejects them per BIP-388 wallet-policy framing. v1+ may expose them for foreign-xpub support if/when WDM extends beyond pure BIP-388.
 - **Why deferred:** v0.1 spec scope.
-- **Status:** open
-- **Tier:** v1+
+- **Status:** wont-fix — out of scope per design (2026-04-28 decision: drop the Reserved\* range entirely as part of `md-tag-space-rework`; MD's BIP 388 wallet-policy framing explicitly forbids inline keys, and the descriptor-codec inline-key-form vendoring is dead weight relative to MD's stated scope. Engravable steel backup is incompatible with raw-xpub or full-pubkey encoding by size alone — a separate format with its own HRP would be the right home if anyone ever wanted that, not a v1+ extension of MD)
+- **Tier:** v1+ → wont-fix
 
 ### `external-pr-1-hash-terminals` — apoelstra/rust-miniscript PR #1
 
@@ -76,8 +76,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/wdm-codec/src/bytecode/encode.rs::validate_tap_leaf_subset`
 - **What:** Phase D allows only `c:` and `v:` wrapper terminals in tap leaves (BIP 388 parser emits both implicitly when expanding `pk(K)` and `and_v(v:..., ...)`). All other wrappers (`a:`/`s:`/`d:`/`j:`/`n:`/`u:`/`l:`/`t:`) are rejected. If hardware signers (Coldcard, others) document broader safe support for additional wrappers, widen the subset and update both encode-side and decode-side validators.
 - **Why deferred:** v0.2 errs on the side of strict per the BIP MUST clause; widening requires evidence from real signers.
-- **Status:** open
-- **Tier:** v0.3
+- **Status:** wont-fix — superseded by `md-scope-strip-layer-3-signer-curation` (the broader meta-question dissolves: MD no longer curates a signer-specific admit set, so per-wrapper widening decisions are no longer MD's concern; named signer subsets move to `md-signer-compat-checker-separate-library`)
+- **Tier:** v0.3 → wont-fix
 
 ### `phase-d-tap-miniscript-type-check-parity` — full Tap-context type-check rules beyond the named subset
 
@@ -85,8 +85,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/wdm-codec/src/bytecode/encode.rs::validate_tap_leaf_subset` (and downstream — full type-check parity may need its own module)
 - **What:** Phase D's subset filter accepts any `Terminal` from the named operator set (`PkK`/`PkH`/`MultiA`/`OrD`/`AndV`/`Older` plus `c:`/`v:` wrappers) without re-running miniscript's full Tap-context type-check. Coldcard and other signers may enforce more than just the operator-name set (e.g., satisfaction-cost bounds, dust-amount minimums). Full type-check parity with deployed signers is out of v0.2 scope; consider adding a `validate_tap_leaf_full()` wrapper that re-runs miniscript's Tap-context type-check + any signer-specific extras.
 - **Why deferred:** the operator-name subset matches the BIP MUST clause and is sufficient for the v0.2 ship target; full parity is a tighter contract than the BIP requires.
-- **Status:** open
-- **Tier:** v0.3
+- **Status:** wont-fix — superseded by `md-scope-strip-layer-3-signer-curation` (signer-specific type-check parity is no longer MD's concern; if implemented at all it lives in `md-signer-compat-checker-separate-library` as part of a named signer subset's validation logic)
+- **Tier:** v0.3 → wont-fix
 
 ### `tap-leaf-admit-sortedmulti-a` — admit `sortedmulti_a` in tap leaves (signer evidence available)
 
@@ -97,8 +97,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bytecode/tag.rs` (allocate new Tag — currently no wire-format slot exists; `Terminal::SortedMultiA` falls through to a literal `"sortedmulti_a"` string in `tap_terminal_name`); `crates/md-codec/src/bytecode/{encode,decode}.rs` (loosen `validate_tap_leaf_subset` + add round-trip path); `crates/md-codec/src/vectors.rs` (positive corpus fixture); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" admit-list update with vendor citations.
 - **What:** Allocate a Tag byte for `sortedmulti_a`. Candidates: `0x34` (currently "reserved-invalid" — would change `tag.rs:225-232` test gate semantics) or somewhere in `0x36+` (cleaner — further from existing operator block). Wire-format question covered separately: tag space has ~203 free bytes. Add encode/decode dispatch; loosen validators on both sides; add positive vector(s) covering bare `sortedmulti_a` in single-leaf form and inside a multi-leaf TapTree; update BIP draft to document admission with citations to Coldcard `docs/taproot.md` (edge) and Ledger `vanadium/apps/bitcoin/common/src/bip388/cleartext.rs`.
 - **Why deferred:** Wire-format-additive change (new Tag allocation) — should land in a labelled release for clean CHANGELOG/MIGRATION coverage. Could land in 0.6.0 alongside the `decoded-string-data-memory-microopt` API break and `tap-leaf-admit-after`.
-- **Status:** open
-- **Tier:** v0.6 (next breaking release)
+- **Status:** wont-fix — superseded by `md-tag-space-rework` (Tag allocation absorbed into the broader v0.6 reorganization) + `md-strip-validator-default-and-corpus` (the validator widening is moot once the gate is removed by default; `sortedmulti_a` is admitted along with everything else)
+- **Tier:** v0.6 → wont-fix
 
 ### `tap-leaf-admit-after` — admit `after` (absolute timelock) in tap leaves
 
@@ -106,8 +106,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bytecode/encode.rs::validate_tap_leaf_subset` (and decode-side counterpart); `crates/md-codec/src/vectors.rs` (positive corpus fixture for absolute-timelock multisig shape); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" admit-list update.
 - **What:** Add `Terminal::After` to the tap-leaf admit set in `validate_tap_leaf_subset` (and matching `Tag::After` arm on decode side). The Tag is already allocated (`Tag::After = 0x1E`); no wire-format change needed. Add at least one positive corpus vector capturing a `tr(KEY, and_v(v:multi_a(2,@1,@2), after(700000)))`-style shape so the round-trip is exercised by conformance tests. Update BIP draft.
 - **Why deferred:** Validator-only change but technically expands MD's admitted surface — should ship in a labelled release rather than a silent v0.5.x patch. v0.6 candidate (alongside `tap-leaf-admit-sortedmulti-a`) so signer-evidence-driven widenings land in one breaking release with a coherent CHANGELOG entry.
-- **Status:** open
-- **Tier:** v0.6 (next breaking release)
+- **Status:** wont-fix — superseded by `md-strip-validator-default-and-corpus` (`after` is admitted by default once the gate is removed; positive corpus vector for the absolute-timelock multisig shape is part of the corpus expansion in that entry)
+- **Tier:** v0.6 → wont-fix
 
 ### `tap-leaf-corpus-timelocked-multisig-shapes` — add positive corpus vectors for signer-canonical timelocked-multisig compound shapes
 
@@ -115,8 +115,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` (positive corpus fixtures); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" example list.
 - **What:** Add 2–4 positive corpus vectors capturing canonical timelocked-multisig shapes — e.g. `tr(@0/**, and_v(v:multi_a(2,@1/**,@2/**), older(144)))` for relative height, plus `after`-using variants once `tap-leaf-admit-after` lands. The relative-height/time variants (using `older`) work today with our current admit set; only the corpus coverage is missing. Absolute variants (using `after`) are blocked on `tap-leaf-admit-after`. Update BIP draft examples to mirror the Ledger compound-shape vocabulary so signer-aware tooling can recognize the patterns even though MD itself is shape-agnostic.
 - **Why deferred:** Pure corpus expansion + spec example growth. No validator changes; not blocking. Family-stable SHA promise means new corpus vectors cannot land in a v0.5.x patch — they'd change the v0.5.json SHA. v0.6 is the natural home alongside the other admit-set widenings.
-- **Status:** open
-- **Tier:** v0.6 (alongside `tap-leaf-admit-after`)
+- **Status:** wont-fix — superseded by `md-strip-validator-default-and-corpus` (the corpus expansion in that entry covers all 4 timelocked-multisig compound shapes alongside the broader strip-driven corpus growth)
+- **Tier:** v0.6 → wont-fix
 
 ### `tap-leaf-corpus-pkh-shape` — verify and lock in `pkh()` round-trip in tap leaves
 
@@ -124,8 +124,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/vectors.rs` (positive corpus fixture); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" examples (mention `pkh()` as part of Coldcard's documented shape vocabulary).
 - **What:** First, verify `tr(@0/**, and_v(v:pkh(@1/**), older(144)))` round-trips through MD today. Expected: rust-miniscript desugars `pkh(K)` → `c:pk_h(K)` at parse time, both terminals already admitted, so round-trip succeeds. If verified, add a positive corpus vector capturing the shape so the round-trip is locked by conformance tests. If the round-trip unexpectedly fails (e.g., rust-miniscript preserves a distinct `Pkh` AST node we don't handle), reframe as an admit-set widening rather than a corpus addition.
 - **Why deferred:** Verification + corpus expansion. No validator changes expected; sub-day work. Family-stable SHA constraint pushes this to v0.6.
-- **Status:** open
-- **Tier:** v0.6 (alongside `tap-leaf-admit-after` and `tap-leaf-corpus-timelocked-multisig-shapes`)
+- **Status:** wont-fix — superseded by `md-strip-validator-default-and-corpus` (`pkh()` round-trip is part of the corpus expansion; the verification step still runs but now within the broader strip work)
+- **Tier:** v0.6 → wont-fix
 
 ### `v0-6-release-prep` — coordinate the cross-cutting v0.6 release work
 
@@ -136,8 +136,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   2. **Coordinated validator + corpus + BIP-draft pass.** Land the `validate_tap_leaf_subset` widening (covers `tap-leaf-admit-sortedmulti-a` and `tap-leaf-admit-after` together), regenerate corpus with the new positive vectors (covers `tap-leaf-corpus-timelocked-multisig-shapes` and `tap-leaf-corpus-pkh-shape`), update BIP draft §"Taproot tree" admit-list with vendor citations (Coldcard `docs/taproot.md` edge + Ledger `vanadium/apps/bitcoin/common/src/bip388/cleartext.rs`). Single PR or stacked PRs at controller's discretion.
   3. **Release plumbing.** `Cargo.toml` version 0.5.0 → 0.6.0; `GENERATOR_FAMILY` token rolls `"md-codec 0.5"` → `"md-codec 0.6"`; v0.1.json and v0.2.json regenerated with the new family token (SHAs change once at the v0.5.x → v0.6.0 boundary, then stable across the v0.6.x patch line per the family-stable promise); `vectors_schema.rs` SHA pins updated; CHANGELOG `[Unreleased]` section renamed to `[0.6.0] — <date>` with entries from all v0.6 work consolidated; MIGRATION's `v0.5.x → v0.6.0` section extended to cover the admit-set widenings (currently only documents the `DecodedString.data` field removal).
 - **Why deferred:** Coordination only — no per-entry blocker. Lands at the v0.6 release cut, after the per-entry implementation work is done.
-- **Status:** open
-- **Tier:** v0.6 (release-prep meta-entry; closes only at the v0.6.0 tag)
+- **Status:** wont-fix — superseded by `v0-6-release-prep-revised` (the original framing assumed admit-set widening; the strip-Layer-3 design pivot replaces that approach, and the release-prep-revised entry covers the new plumbing requirements including Tag-space reorganization rather than per-operator admit decisions)
+- **Tier:** v0.6 → wont-fix
 
 
 ### `cli-json-debug-formatted-enum-strings` — replace `format!("{:?}", enum_value)` with serde-typed enum mirrors in CLI JSON output
@@ -185,6 +185,92 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** This is a meta-improvement to the workflow doc, not a current rename defect. Best applied next time `RENAME_WORKFLOW.md` is updated (e.g., during the next rename, or as a pre-emptive cleanup pass).
 - **Status:** open
 - **Tier:** v1+ (process improvement, not version-gating)
+
+### `md-scope-strip-layer-3-signer-curation` — strip MD's signer-compatibility curation layer
+
+- **Surfaced:** 2026-04-28 design discussion. The premise that MD must enforce hardware-signer-subset compatibility was challenged: MD is a wire format for BIP 388 wallet policies; whether a given policy is signable on a given signer is a layered concern handled by tools above and below MD. BIP 388 §"Implementation guidelines" (`bip-0388.mediawiki:216`) explicitly permits subsets but doesn't direct implementations to mirror signers — "It is acceptable to implement only a subset of the possible wallet policies defined by this standard." The MUST clause in MD's own BIP draft (`bip/bip-mnemonic-descriptor.mediawiki:547`) was a Phase D / Phase 2 design choice, not a spec inheritance. Recovery-footgun argument reconsidered: the responsibility chain is wallet software → MD → signer, not "MD curates for the signer."
+- **Where:** Cross-cutting design pivot. See child entries for component-level work: `md-strip-validator-default-and-corpus`, `md-strip-spec-and-docs`, `md-tag-space-rework`, `md-signer-compat-checker-separate-library`, `md-policy-compiler-feature`, `v0-6-release-prep-revised`.
+- **What:** Reframe MD's scope to encoding-only (BIP 388 wallet-policy serialization with BCH error correction). Drop the implicit "MD-encoded backups are guaranteed signable on Coldcard" promise; replace with explicit responsibility-chain framing in BIP draft and READMEs. The Phase D `validate_tap_leaf_subset` infrastructure is retained as `pub fn` for explicit-call use but no longer gates encoding/decoding by default. Named signer subsets become a separately-versioned layer (`md-signer-compat-checker-separate-library`).
+- **Why deferred:** Master principle entry; no commits close it directly. Closes when all child entries close at the v0.6.0 tag.
+- **Status:** open
+- **Tier:** v0.6 (design pivot for the next breaking release)
+
+### `md-strip-validator-default-and-corpus` — flip encoder/decoder defaults; expand corpus
+
+- **Surfaced:** 2026-04-28; child of `md-scope-strip-layer-3-signer-curation`.
+- **Where:** `crates/md-codec/src/bytecode/encode.rs` (encoder's `EncodeTemplate for Miniscript<_, Tap>` impl + `validate_tap_leaf_subset` infrastructure); `crates/md-codec/src/bytecode/decode.rs` (`decode_tap_terminal` rejection paths + the `validate_tap_leaf_subset` calls at `decode.rs:295` and `decode.rs:802`); `crates/md-codec/src/error.rs` (`Error::TapLeafSubsetViolation` variant — retained); `crates/md-codec/src/vectors.rs` (positive corpus vectors for newly-admitted shapes); negative-fixture generators that asserted rejection of out-of-subset operators (flip or remove).
+- **What:** Three coupled changes:
+  (a) **Encoder default**: tap-leaf encode path no longer calls `validate_tap_leaf_subset`. The function and `validate_tap_leaf_terminal` helper stay as `pub fn` so callers can invoke them explicitly. Decoder mirrors: drop the catch-all rejection arms in `decode_tap_terminal`; drop the `validate_tap_leaf_subset` calls at `decode.rs:295` (single-leaf path) and `decode.rs:802` (multi-leaf path).
+  (b) **Corpus**: add positive vectors for previously-rejected-but-now-admitted shapes — `sortedmulti_a` (once Tag allocated by `md-tag-space-rework`), `after` in tap context, `thresh`, `or_b`, hash terminals (`sha256`/`hash256`/`ripemd160`/`hash160`) in tap leaves, timelocked-multisig compounds (`and_v(v:multi_a(...), older(n))` and `after(n)` variants), `pkh()` round-trip via desugaring, and a representative wrapper-richer fixture (`s:`/`a:`/`d:`/`j:`/`n:` wrappers in legitimate compositions). Negative vectors that asserted rejection of these get flipped to positive or removed.
+  (c) **`Error::TapLeafSubsetViolation` retained**: the variant stays in `error.rs` for use by the explicit-call validator path. Optional opt-in API design (`EncodeOptions::with_signer_subset(...)`) is deferred to `md-signer-compat-checker-separate-library` — not part of this v0.6 entry.
+- **Why deferred:** Wire-format-affecting (corpus changes regenerate v0.1.json + v0.2.json). v0.6 breaking release.
+- **Status:** open
+- **Tier:** v0.6
+
+### `md-strip-spec-and-docs` — rewrite BIP draft + README + CLI help for the new framing
+
+- **Surfaced:** 2026-04-28; child of `md-scope-strip-layer-3-signer-curation`.
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" (line 547 MUST clause) + new informational §"Signer compatibility"; `README.md` (top-level scope framing); `crates/md-codec/README.md`; CLI help text in `crates/md-codec/src/bin/md/main.rs`; rustdoc on relevant public API.
+- **What:** Two coupled doc changes:
+  (a) **BIP draft**: rewrite §"Taproot tree" subset paragraph from MUST to MAY-informational. Cite BIP 388 §"Implementation guidelines" (line 216) allowing subsets. Add a §"Signer compatibility (informational)" section that (1) explains MD's scope is encoding/decoding, not signer curation; (2) frames the responsibility chain (wallet software → MD → signer); (3) provides vendor-citation pattern as an example (Coldcard `docs/taproot.md` edge, Ledger vanadium `apps/bitcoin/common/src/bip388/cleartext.rs`) without endorsing a specific subset; (4) points readers at the layered checker (`md-signer-compat-checker-separate-library`) once it exists.
+  (b) **READMEs + CLI help**: add a "you are responsible for ensuring your policy is signable on your target signer" warning. Link to the BIP §"Signer compatibility" section. CLI help on `md encode`: brief one-liner pointer.
+- **Why deferred:** Spec text changes paired with the v0.6 code release.
+- **Status:** open
+- **Tier:** v0.6
+
+### `md-tag-space-rework` — allocate `Tag::SortedMultiA`, reorganize Tag enum, drop Reserved\* range
+
+- **Surfaced:** 2026-04-28; child of `md-scope-strip-layer-3-signer-curation`. User confirmed pre-1.0 backwards compatibility is not a constraint ("nobody has used the software yet"), opening the full Tag enum to reshuffling. User chose Option B for the Reserved\* tags: drop entirely, since MD's BIP 388 wallet-policy framing explicitly forbids inline keys and the descriptor-codec inline-key-form vendoring is dead weight.
+- **Where:** `crates/md-codec/src/bytecode/tag.rs` (Tag enum + `from_byte` match + tests + module rustdoc); `crates/md-codec/src/bytecode/{encode,decode}.rs` (any code matching Tag values explicitly); `bip/bip-mnemonic-descriptor.mediawiki` Tag table (§"Bytecode operators" or wherever the tag list lives); `crates/md-codec/src/vectors.rs` (every existing fixture's `expected_bytecode_hex` changes); `crates/md-codec/tests/vectors/v0.1.json` + `v0.2.json` (fully regenerated); `crates/md-codec/tests/vectors_schema.rs` (SHA pin updates).
+- **What:** Coordinated wire-format-breaking reorganization, lands once for v0.6:
+  (a) **Allocate `Tag::SortedMultiA`** — adjacent to the rest of the multisig family. `Terminal::SortedMultiA` exists in miniscript (used by Coldcard / Ledger / rust-miniscript wallet-policy fixture); MD currently has no Tag for it.
+  (b) **Reorganize the Tag enum** from descriptor-codec-vendored layout to a coherent grouping. Move `SortedMulti = 0x09` (descriptor-codec heritage, out-of-place) adjacent to `Multi`. Group all multisig adjacent (`Multi`, `SortedMulti`, `MultiA`, `SortedMultiA`).
+  (c) **Drop `Reserved*` variants entirely (Option B)** — remove all 14 variants (`ReservedOrigin`/`ReservedNoOrigin`/`Reserved*FullKey`/`ReservedXOnly`/`Reserved*XPub`/`Reserved*Priv*`/`Reserved*Wildcard`) at 0x24–0x31 from the Tag enum. The bytes 0x24–0x31 become unallocated (return `None` from `from_byte`); MD's BIP 388 wallet-policy scope explicitly forbids inline keys, so the descriptor-codec inline-key-form vendoring is dead weight. Reclaims a contiguous 14-byte block adjacent to the operator block. Update `tag.rs:225-232` test gates accordingly. Document the design rationale in module rustdoc.
+  (d) **Reshuffle remaining tags** for clean blocks (constants / top-level descriptors / framing / wrappers / logical / multisig / keys / timelocks / hashes). Final layout documented in `tag.rs` and the BIP draft Tag table.
+  (e) **Corpus regen**: every existing positive-vector `expected_bytecode_hex` changes. v0.1.json + v0.2.json fully regenerated; SHA pins in `tests/vectors_schema.rs` updated. `GENERATOR_FAMILY` token roll covered separately by `v0-6-release-prep-revised`.
+- **Why deferred:** Once-and-done opportunity — pre-1.0 + no users yet means we can reshape; after v0.6 ships and gets used, this freedom evaporates. v0.6 is the moment.
+- **Status:** open
+- **Tier:** v0.6
+
+### `md-signer-compat-checker-separate-library` — named signer subsets + opt-in validation API (aspirational)
+
+- **Surfaced:** 2026-04-28; child of `md-scope-strip-layer-3-signer-curation`. Phase D's `validate_tap_leaf_subset` infrastructure is preserved by `md-strip-validator-default-and-corpus`; this entry covers (a) the *named signer subset* registry that should live separately from md-codec, and (b) the opt-in validation API design that lets callers wire the checker into the encoder/decoder.
+- **Where:** New crate, e.g. `crates/md-signer-compat/` (or a separate repo if MD ever spins out). md-codec stays neutral on signer specifics.
+- **What:** Two coupled deliverables:
+  (a) **Named signer subsets**: `md_signer_compat::COLDCARD_TAP`, `md_signer_compat::LEDGER_TAP`, etc. Each is a `SignerSubset` value (operator allowlist) populated from the vendor's documented admit list, with a citation comment pointing at the source (e.g., Coldcard `docs/taproot.md` edge SHA, Ledger `vanadium/apps/bitcoin/common/src/bip388/cleartext.rs`). Update cadence: vendor doc revision → subset bump → patch release of the layered crate.
+  (b) **Opt-in validation API**: design and ship the `EncodeOptions::with_signer_subset(subset: SignerSubset)` / `DecodeOptions::with_signer_subset(...)` mechanism. Recommended shape per the 2026-04-28 design discussion: `SignerSubset` is a public struct (operator allowlist) defined in md-codec, *populated by the caller*. md-codec ships only the validation mechanism; named subsets ship in the separate crate so vendor-tracking concerns don't bleed into md-codec.
+  (c) Optional CLI surface: `md validate --signer coldcard <bytecode>` decodes a bytecode and runs the named subset check, reporting any out-of-subset operators.
+- **Why deferred:** Aspirational — does not block the strip. Provides an opt-in safety net for users who want signer-aware validation without committing md-codec itself to tracking signer firmware. Maintenance burden concentrates in this crate, where it belongs.
+- **Status:** open
+- **Tier:** v0.6+ (post-strip; can ship at any later point)
+
+### `md-policy-compiler-feature` — expose policy-to-bytecode compilation (future release)
+
+- **Surfaced:** 2026-04-28; child of `md-scope-strip-layer-3-signer-curation`. Now-clean feature add since the admit-set gate is gone.
+- **Where:** `crates/md-codec/Cargo.toml` (enable rust-miniscript `compiler` feature); new public API surface in md-codec; CLI tool exposure.
+- **What:** Enable the `compiler` feature on the `miniscript` git-pinned dep. Expose a `pub fn policy_to_bytecode(policy: &str, options: &EncodeOptions) -> Result<Vec<u8>, Error>` (or similar shape) that parses a high-level Concrete-Policy string, runs miniscript's policy compiler to produce optimal miniscript, and encodes the result. CLI tool gains a `md encode --from-policy <expr>` mode. With Layer 3 stripped, the compiler can pick any miniscript shape and md-codec will encode it; signer compatibility is the caller's concern. Optional pairing with the layered checker (`md-signer-compat-checker-separate-library`) for "compile then validate against signer X" workflows.
+- **Why deferred:** Independent feature. Future release post-strip; the strip itself doesn't require the compiler.
+- **Status:** open
+- **Tier:** v0.7+ (future release)
+
+### `v0-6-release-prep-revised` — coordinate the v0.6 release plumbing under the strip framing
+
+- **Surfaced:** 2026-04-28; replaces `v0-6-release-prep` (which was framed around the now-superseded admit-set widening approach).
+- **Where:** `crates/md-codec/Cargo.toml` (version bump); `crates/md-codec/src/vectors.rs` (`GENERATOR_FAMILY` token); `crates/md-codec/tests/vectors_schema.rs` (SHA pin updates after regen); `CHANGELOG.md`; `MIGRATION.md`.
+- **What:** Release plumbing for v0.6 once the per-entry implementation work lands:
+  - Cargo.toml: 0.5.0 → 0.6.0
+  - GENERATOR_FAMILY token: `"md-codec 0.5"` → `"md-codec 0.6"`
+  - v0.1.json + v0.2.json fully regenerated (Tag-space rework changes every `expected_bytecode_hex`; corpus expansion adds new positive vectors)
+  - vectors_schema.rs SHA pins updated
+  - CHANGELOG `[Unreleased]` → `[0.6.0] — <date>` with consolidated entries from all v0.6 strip work + the `decoded-string-data-memory-microopt` change already landed in `d79125d`
+  - MIGRATION's `v0.5.x → v0.6.0` section extended to cover:
+    - The `DecodedString.data` field removal (already documented; reaffirm)
+    - The strip (no longer-validated tap-leaf shapes — `Error::TapLeafSubsetViolation` no longer fired by default; explicit-call path documented for callers who want it)
+    - Tag-space reorganization (every Tag value changes; consumers depending on specific bytes break)
+    - Spec changes (BIP MUST → MAY clause; new §"Signer compatibility (informational)")
+- **Why deferred:** Coordination only — no per-entry blocker. Lands at the v0.6 release cut.
+- **Status:** open
+- **Tier:** v0.6 (release-prep meta-entry; closes only at the v0.6.0 tag)
 
 ---
 
