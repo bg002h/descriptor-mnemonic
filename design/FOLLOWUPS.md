@@ -298,6 +298,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.6+ (defensive corpus growth)
 
+### `v07-cli-validate-signer-subset` — `md validate --signer <name> <bytecode>` CLI mode
+
+- **Surfaced:** v0.7.0 spec round-1 review (Q5). Spec §9 deferred this CLI surface to v0.7.x patch.
+- **Where:** `crates/md-codec/src/bin/md/main.rs` (CLI subcommand for validate-against-signer); depends on `crates/md-signer-compat` (NEW in v0.7.0).
+- **What:** Add a `validate` subcommand to the `md` CLI that takes a bytecode (or string) input and a `--signer <NAME>` arg, decodes the bytecode, and runs the named SignerSubset's `validate()` against each tap leaf. Output: pretty-print pass/fail per leaf with operator name + leaf_index on rejection. Considerations: machine-readable mode (`--json`), exit code on subset violation, handling of decoded but partial-validation cases.
+- **Why deferred:** v0.7.0 release adds three new things (md-signer-compat crate, compiler feature, CLI policy mode); a fourth would dilute focus. CLI UX questions (output format, exit code, machine-readable) deserve their own design pass.
+- **Status:** open
+- **Tier:** v0.7.x (CLI surface; not blocking initial signer-compat ship)
+
 ### `v06-corpus-byte-order-defensive-test` — defensive hand-pinned hash byte-order test
 
 - **Surfaced:** v0.6 spec round-1 review (§6.3 spec-coverage concern). Plan Step 5.1.6 specified adding a defensive byte-pin test in `tests/taproot.rs` that takes a known input hash, encodes via the Hash256/Sha256/Ripemd160/Hash160 path, and asserts the bytecode contains the input bytes in **internal byte order** (NOT reversed-display-order). The corpus round-trip alone cannot catch a regression where encoder + decoder both flip to display-order (would be round-trip-stable but format-changed).

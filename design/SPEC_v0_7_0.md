@@ -1,6 +1,6 @@
 # v0.7.0 Design Spec — test rebaseline + defensive corpus + md-signer-compat + policy compiler
 
-**Status:** Draft (2026-04-29)
+**Status:** Draft (2026-04-29; round-1 review folded in)
 **Companion documents:**
 - v0.6 rationale: [`MD_SCOPE_DECISION_2026-04-28.md`](./MD_SCOPE_DECISION_2026-04-28.md)
 - v0.6 spec: [`SPEC_v0_6_strip_layer_3.md`](./SPEC_v0_6_strip_layer_3.md)
@@ -75,7 +75,7 @@ pub fn policy_to_bytecode(
 ) -> Result<Vec<u8>, Error>
 ```
 
-`ScriptContext` is a thin enum (`Segwitv0` | `Tap`) that selects which miniscript context the compiler targets. CLI gains `md encode --from-policy <policy> --context tap` mode.
+`ScriptContext` is a thin enum (`Segwitv0` | `Tap`) that selects which miniscript context the compiler targets. The runtime-enum-over-generic-monomorphize pattern is intentional: both branches pull through the existing per-context `EncodeTemplate` impls already in encode.rs. The CLI's `--context tap|segwitv0` flag is inherently a runtime value, so the enum is mandatory at the CLI boundary anyway. CLI gains `md encode --from-policy <policy> --context tap` mode.
 
 Closes FOLLOWUPS: `md-policy-compiler-feature`.
 
@@ -187,10 +187,11 @@ fn or_c_tap_leaf_round_trip_via_hand_ast() {
     );
 
     // Decode the bytecode back; assert structural round-trip via Miniscript::from_ast equality.
-    // (Exact assertion shape refined during implementation; the goal is:
-    //  encoded bytes round-trip back through the decoder to the same AST shape.)
+    // (Exact assertion shape refined during implementation.)
 }
 ```
+
+**Decoder round-trip policy for V-type top-level fragments (per round-1 review O-4):** an unwrapped `or_c` at the top-level of a tap leaf is V-typed; the decoder reconstructs miniscript via parser-equivalent typing rules and may reject this shape. The implementation plan resolves the policy as follows: if `decode_tap_terminal` does NOT round-trip an unwrapped `or_c` (verified during Phase 2), the test wraps `or_c` under `t:` (`Terminal::AndV(or_c, true)`) — which produces a B-type wrapped form that round-trips. The wire-byte sequence is then `[Tag::AndV, Tag::OrC, ..., Tag::True]`; the test still asserts the OrC byte-form. Same fallback applies to any V-type terminal in this defensive corpus.
 
 Same pattern for:
 - `tr_d_wrapper_hand_ast`: `d:v:older(144)` (where `v:older` is V-typed and z-typed, satisfying d:'s Vz requirement).
@@ -256,8 +257,24 @@ crates/
 
 ```rust
 /// A named subset of miniscript operators a hardware signer is documented
-/// to admit. Operator names match BIP 388 / BIP 379 source-form spelling
-/// (e.g., "pk_k", "multi_a", "and_v", "older", "c:", "v:").
+/// to admit. Operator names match **rust-miniscript desugared AST node
+/// names** as produced by md-codec's `tag_to_bip388_name` adapter — the
+/// validator walks the AST, not the source-form string, so admit-set
+/// entries must match what the AST emits, not what the user types.
+///
+/// Examples:
+///   - `Terminal::PkK` → `"pk_k"`
+///   - `Terminal::PkH` → `"pk_h"`
+///   - `Terminal::Check` → `"c:"`
+///   - `Terminal::Verify` → `"v:"`
+///   - `Terminal::SortedMultiA` → `"sortedmulti_a"`
+///
+/// Note: BIP 388 source form `pk(K)` desugars to `c:pk_k(K)`, so a
+/// subset that admits `pk(...)` must contain BOTH `"c:"` AND `"pk_k"`.
+/// Same for `pkh(K)` → `c:pk_h(K)`. The single-source-of-truth naming
+/// hook is `md_codec::bytecode::decode::tag_to_bip388_name` (`pub(crate)`
+/// in md-codec, but the operator-name strings are stable wire-format
+/// concepts and safe for md-signer-compat to mirror in its allowlists).
 ///
 /// The vendor-citation comment on each subset value carries the source
 /// URL, the source repo's commit SHA at the time of last verification,
@@ -267,7 +284,7 @@ crates/
 pub struct SignerSubset {
     /// Human-readable name (e.g., "Coldcard tap-leaf").
     pub name: &'static str,
-    /// Operator names (BIP 388 source-form spellings) the signer admits.
+    /// Operator names (rust-miniscript desugared AST node names) the signer admits.
     pub allowed_operators: &'static [&'static str],
 }
 
@@ -344,11 +361,19 @@ pub const LEDGER_TAP: SignerSubset = SignerSubset {
 
 The `validate` function delegates to md-codec's retained `validate_tap_leaf_subset` infrastructure but with a configurable allowlist. Two implementation paths:
 
-**Option A (preferred):** add a new `pub fn validate_tap_leaf_subset_with_allowlist` to md-codec that takes `&[&str]` allowlist; have md-signer-compat call it with `subset.allowed_operators`.
+**Option A (preferred):** add a new `pub fn validate_tap_leaf_subset_with_allowlist` to md-codec that takes `&[&str]` allowlist; have md-signer-compat call it with `subset.allowed_operators`. Operator names compared via the existing `tag_to_bip388_name` hook so subset entries align with diagnostic strings.
 
 **Option B (alternative):** md-signer-compat re-implements the AST-walking validator from scratch.
 
-§7.1 of this spec selects Option A; the new md-codec function is a small refactor of the existing `validate_tap_leaf_terminal`.
+**Trade-off (§4.4 fold-in per round-1 review I-3):**
+- **Option A pros:** AST-walk logic lives in one place; bug fixes / extensions (e.g., handling new miniscript variants) happen once; md-signer-compat stays a thin policy layer.
+- **Option A cons:** tight coupling between the two crates' release cadences (any md-codec API change to `_with_allowlist` is an md-signer-compat-breaking change). Mitigated by them releasing together as workspace members.
+- **Option B pros:** clean separation; md-signer-compat owns its validation logic end-to-end.
+- **Option B cons:** AST-walking logic duplicated; future miniscript-variant additions must be reflected in two places; the existing naming hook in md-codec has to either be re-exported (back to coupling) or re-implemented (drift risk).
+
+**Selected: Option A.** AST-walk-locality wins; coupling is mild because the two crates co-release. §7.1 selects Option A.
+
+**Backwards-compat guarantee (Phase 3 implementation):** the existing `pub fn validate_tap_leaf_subset(ms, leaf_index)` signature is preserved as a back-compat shim that calls into `_with_allowlist` with the historical hardcoded Coldcard list (`pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`, `older`, `c:`, `v:`). Existing callers continue to work unchanged.
 
 ### 4.5 Cargo dependencies
 
@@ -371,7 +396,8 @@ miniscript = { workspace = true }
 
 - `cargo build -p md-signer-compat` clean.
 - 4–6 unit tests in `crates/md-signer-compat/src/tests.rs` exercising: a happy-path Coldcard validation; a Coldcard rejection with operator name + leaf_index; a happy-path Ledger validation; a Ledger rejection.
-- Optional CLI integration deferred to v0.7.x patch (not blocking ship).
+- **Allowlist coverage test** (per round-1 review I-6): a unit test that asserts every string in `COLDCARD_TAP.allowed_operators` and `LEDGER_TAP.allowed_operators` is recognized by md-codec's operator-naming hook. Catches typos at build time.
+- Optional CLI integration deferred to v0.7.x patch (not blocking ship; tracked as `v07-cli-validate-signer-subset` in FOLLOWUPS).
 
 ---
 
@@ -388,26 +414,10 @@ cli = ["dep:clap", "dep:anyhow"]
 compiler = ["miniscript/compiler"]    # NEW
 
 [dependencies]
-miniscript = { ..., features = ["compiler"], optional = true }
-# Wait — miniscript is a hard dep, not optional.
-# Better:
-miniscript = { ... }   # core (no extra features)
-# Then compiler feature gates code paths inside md-codec.
+miniscript = { git = "...", rev = "..." }   # unchanged (non-optional)
 ```
 
-Actually the cleaner shape: enable `miniscript/compiler` via a passthrough feature:
-
-```toml
-[features]
-default = ["cli"]
-cli = ["dep:clap", "dep:anyhow"]
-compiler = ["miniscript/compiler"]
-
-[dependencies]
-miniscript = { git = "...", rev = "..." }   # unchanged
-```
-
-The cargo `compiler = ["miniscript/compiler"]` feature pulls in the rust-miniscript compiler module via cargo's feature passthrough. Default build does NOT pull the compiler (~30 cfg-gated files in rust-miniscript).
+The cargo `compiler = ["miniscript/compiler"]` feature passes through to the rust-miniscript compiler module. Cargo's `dep_name/feature_name` syntax works on both optional and non-optional deps; for a non-optional dep it just enables the named feature on the existing dependency. Default build does NOT pull the compiler module surface.
 
 ### 5.2 Public API
 
@@ -542,7 +552,7 @@ The v0.7.0 release is acceptance-ready when:
 
 1. `cargo check --workspace` clean.
 2. `cargo clippy --workspace --all-targets` clean.
-3. `cargo test --workspace` passes 100% — no `#[ignore]` markers introduced.
+3. `cargo test --workspace` passes 100% — no `#[ignore]` markers introduced. **No NEW failures introduced** relative to the pre-rebaseline baseline (per round-1 review C-1); every test fixed in Track A documented in the agent report with file:line + old-bytes / new-bytes.
 4. `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` clean.
 5. `cargo build --workspace --features md-codec/compiler` clean.
 6. `cargo build --workspace --features md-codec/cli-compiler` clean.
@@ -555,21 +565,21 @@ The v0.7.0 release is acceptance-ready when:
 
 ---
 
-## §9. Open questions for review
+## §9. Open questions — resolved by round-1 review
 
-These are flagged for the spec-review agent:
+All six questions resolved by the spec reviewer (agent report at `design/agent-reports/v0-7-0-spec-review-1.md`). Resolutions folded inline into §§4-8; left here as a closure log.
 
-1. **Refactor visibility (Phase 3)**: should the new `validate_tap_leaf_subset_with_allowlist` be `pub fn` or `pub(crate)` (with md-signer-compat having a separate impl)? §4.4 leans Option A (pub fn in md-codec). Confirm or refine.
+1. **Refactor visibility:** RESOLVED — `pub fn validate_tap_leaf_subset_with_allowlist`. Detail in §4.4 fold-in.
 
-2. **`SignerSubset.allowed_operators` shape**: `&'static [&'static str]` (operator names as BIP 388 source-form strings) vs a typed enum (variant per Tag). String-based is simpler for vendor tracking; typed enum is compiler-checked. §4.2 chose string-based; reconfirm.
+2. **`SignerSubset.allowed_operators` shape:** RESOLVED — `&'static [&'static str]`. Vendor-doc-fidelity wins; allowlist-coverage test catches typos. Detail in §4.2 + §4.6.
 
-3. **`ScriptContext` placement**: in md-codec (publicly exposed via `pub use ScriptContext`) vs in a new module (`pub mod compiler { pub enum ScriptContext { ... } }`). §5.2 leans top-level pub; reconfirm.
+3. **`ScriptContext` placement:** RESOLVED — top-level `pub use ScriptContext`, gated behind `#[cfg(feature = "compiler")]`. Detail in §5.2.
 
-4. **`cli-compiler` feature naming**: alternative names: `cli-with-compiler`, `cli-policy`, etc. §5.3 chose `cli-compiler`; pick a final name.
+4. **`cli-compiler` feature naming:** RESOLVED — keep as `cli-compiler`.
 
-5. **CLI surface for md-signer-compat validation**: `md validate --signer coldcard <bytecode>` was mentioned in earlier FOLLOWUPS. Defer to v0.7.x or include in v0.7.0? §4.6 defers; reconfirm.
+5. **CLI surface for md-signer-compat validation:** RESOLVED — defer to v0.7.x patch; tracked as `v07-cli-validate-signer-subset` FOLLOWUPS entry.
 
-6. **CHANGELOG `Unreleased` discipline**: v0.7.0 work happens on `feature/v0.7.0-development`; should the in-flight `[Unreleased]` section in CHANGELOG.md track per-phase entries (rolled into `[0.7.0]` at release time)? Or single consolidated entry at release time only? §6 picks the latter; confirm.
+6. **CHANGELOG `[Unreleased]` discipline:** RESOLVED — consolidated entry at release time only. Matches v0.6 practice.
 
 ---
 
