@@ -852,7 +852,7 @@ fn build_negative_vectors_v1() -> Vec<NegativeVector> {
 
 fn build_positive_vectors_v2() -> Vec<Vector> {
     let mut out = Vec::with_capacity(
-        CORPUS_FIXTURES.len() + TAPROOT_FIXTURES.len() + V0_4_DEFAULT_FIXTURES.len() + 1 + 3,
+        CORPUS_FIXTURES.len() + TAPROOT_FIXTURES.len() + V0_4_DEFAULT_FIXTURES.len() + 1 + 3 + 1,
     );
     for &(id, description, policy_str) in CORPUS_FIXTURES {
         out.push(build_default_positive_vector(id, description, policy_str));
@@ -867,6 +867,8 @@ fn build_positive_vectors_v2() -> Vec<Vector> {
     }
     // v0.4 additions — fingerprints-block variants (S2, S4, M3).
     out.extend(build_v0_4_fingerprints_vectors());
+    // v0.9 addition — testnet 0x16 path indicator.
+    out.push(build_v0_9_testnet_p2sh_p2wsh_vector());
     out
 }
 
@@ -1063,6 +1065,52 @@ fn build_v0_4_fingerprints_vectors() -> Vec<Vector> {
     ]
 }
 
+/// Build the v0.9 testnet BIP 48 P2SH-P2WSH vector exercising path indicator
+/// `0x16` (= `m/48'/1'/0'/1'`). Closes `md-path-dictionary-0x16-gap` (mk1-
+/// surfaced FOLLOWUPS). Template is identical to M2; the shared-path
+/// override forces selection of the testnet companion to mainnet's `0x06`.
+fn build_v0_9_testnet_p2sh_p2wsh_vector() -> Vector {
+    use bitcoin::bip32::DerivationPath;
+    use std::str::FromStr;
+
+    let id = "t1_sh_wsh_testnet_0x16";
+    let description = "T1 — BIP 48 testnet P2SH-P2WSH 2-of-3 (path indicator 0x16; closes md-path-dictionary-0x16-gap)";
+    let policy_str = "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))";
+
+    let policy: WalletPolicy = policy_str
+        .parse()
+        .unwrap_or_else(|e| panic!("v0.9 testnet vector builder: failed to parse policy: {e}"));
+
+    let testnet_path = DerivationPath::from_str("m/48'/1'/0'/1'").unwrap();
+    let opts = EncodeOptions::default().with_shared_path(testnet_path);
+
+    let bytecode = policy
+        .to_bytecode(&opts)
+        .unwrap_or_else(|e| panic!("v0.9 testnet vector builder: to_bytecode failed: {e}"));
+    let expected_bytecode_hex = bytes_to_lower_hex(&bytecode);
+
+    let backup = encode(&policy, &opts)
+        .unwrap_or_else(|e| panic!("v0.9 testnet vector builder: encode failed: {e}"));
+    let expected_chunks: Vec<String> = backup.chunks.iter().map(|c| c.raw.clone()).collect();
+    let expected_policy_id_words: Vec<String> = backup
+        .policy_id_words
+        .to_string()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+
+    Vector {
+        id: id.to_string(),
+        description: description.to_string(),
+        policy: policy_str.to_string(),
+        expected_bytecode_hex,
+        expected_chunks,
+        expected_policy_id_words,
+        expected_fingerprints_hex: None,
+        encode_options_fingerprints: None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Per-variant negative generators (Phase F — F-4)
 // ---------------------------------------------------------------------------
@@ -1078,14 +1126,14 @@ fn generate_for_negative_variant(id: &str) -> (Vec<String>, String) {
         "n05" => generate_n05_bch_uncorrectable(),
         "n06" => generate_n06_unsupported_version(),
         "n07" => generate_n07_unsupported_card_type(),
-        "n08" => generate_n08_reserved_policy_id_bits_set(),
+        "n08" => generate_n08_reserved_chunk_set_id_bits_set(),
         "n09" => generate_n09_invalid_chunk_count(),
         "n10" => generate_n10_invalid_chunk_index(),
         "n11" => generate_n11_chunk_header_truncated(),
         "n12" => generate_n12_empty_chunk_list(),
         "n13" => generate_n13_single_string_with_multiple_chunks(),
         "n14" => generate_n14_mixed_chunk_types(),
-        "n15" => generate_n15_policy_id_mismatch(),
+        "n15" => generate_n15_chunk_set_id_mismatch(),
         "n16" => generate_n16_total_chunks_mismatch(),
         "n17" => generate_n17_chunk_index_out_of_range(),
         "n18" => generate_n18_duplicate_chunk_index(),
@@ -1201,7 +1249,7 @@ fn generate_n07_unsupported_card_type() -> (Vec<String>, String) {
     )
 }
 
-fn generate_n08_reserved_policy_id_bits_set() -> (Vec<String>, String) {
+fn generate_n08_reserved_chunk_set_id_bits_set() -> (Vec<String>, String) {
     // 7-byte chunked header with the chunk-set-id top nibble set: [ver=0,
     // type=1 (Chunked), csid first byte = 0x10, 0x00, 0x00, count=1, index=0].
     let s = encode_string_from_bytes(&[0x00, 0x01, 0x10, 0x00, 0x00, 0x01, 0x00]);
@@ -1307,7 +1355,7 @@ fn generate_n14_mixed_chunk_types() -> (Vec<String>, String) {
     )
 }
 
-fn generate_n15_policy_id_mismatch() -> (Vec<String>, String) {
+fn generate_n15_chunk_set_id_mismatch() -> (Vec<String>, String) {
     use crate::chunking::ChunkingMode;
     use crate::policy_id::ChunkSetIdSeed;
 

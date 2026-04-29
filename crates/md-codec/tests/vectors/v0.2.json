@@ -1056,6 +1056,29 @@
           13
         ]
       ]
+    },
+    {
+      "id": "t1_sh_wsh_testnet_0x16",
+      "description": "T1 — BIP 48 testnet P2SH-P2WSH 2-of-3 (path indicator 0x16; closes md-path-dictionary-0x16-gap)",
+      "policy": "sh(wsh(sortedmulti(2,@0/**,@1/**,@2/**)))",
+      "expected_bytecode_hex": "0034160305090203330033013302",
+      "expected_chunks": [
+        "md1qqqqqdqkqvzsjqsrxvqrxqfnqglw6m4vgypwe0h"
+      ],
+      "expected_policy_id_words": [
+        "hood",
+        "laugh",
+        "fault",
+        "uncle",
+        "cream",
+        "length",
+        "garbage",
+        "delay",
+        "ball",
+        "ring",
+        "muscle",
+        "depart"
+      ]
     }
   ],
   "negative_vectors": [

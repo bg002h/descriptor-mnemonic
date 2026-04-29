@@ -348,6 +348,8 @@ The path encoding indicator selects between a dictionary of well-known paths and
 |-
 | <code>0x15</code> || <code>m/48'/1'/0'/2'</code> || BIP 48 testnet multisig P2WSH
 |-
+| <code>0x16</code> || <code>m/48'/1'/0'/1'</code> || BIP 48 testnet multisig P2SH-P2WSH
+|-
 | <code>0x17</code> || <code>m/87'/1'/0'</code> || BIP 87 testnet multisig generic
 |-
 | <code>0xFE</code> || (explicit) || Path encoded explicitly; see below
