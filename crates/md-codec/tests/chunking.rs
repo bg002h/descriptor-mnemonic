@@ -198,7 +198,7 @@ fn natural_long_code_boundary() {
         // Verify the header is SingleString (no cross-chunk hash involvement).
         // Parse the raw string to extract the header.
         let decoded_str = md_codec::decode_string(&backup.chunks[0].raw).expect("decode_string");
-        let raw_bytes = md_codec::five_bit_to_bytes(&decoded_str.data).expect("five_bit_to_bytes");
+        let raw_bytes = md_codec::five_bit_to_bytes(decoded_str.data()).expect("five_bit_to_bytes");
         let (header, _consumed) = ChunkHeader::from_bytes(&raw_bytes).expect("header parse");
         assert!(
             matches!(header, ChunkHeader::SingleString { .. }),

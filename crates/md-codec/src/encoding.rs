@@ -558,21 +558,20 @@ pub fn encode_string(header: &[u8], payload: &[u8]) -> Result<String, crate::Err
 
 /// Result of a successful MD string decode.
 ///
-/// `data` is the data part as 5-bit values (header + payload, checksum stripped).
-/// Use [`five_bit_to_bytes`] to recover the original byte sequence.
+/// Use [`Self::data`] to access the data part as 5-bit values (header +
+/// payload, checksum stripped); use [`five_bit_to_bytes`] to recover the
+/// original byte sequence from that slice.
 ///
 /// The full post-correction 5-bit symbol sequence (data **plus** the trailing
-/// 13- or 15-char checksum) is retained internally and can be queried by
-/// [`DecodedString::corrected_char_at`] for any position in the data part —
-/// including positions that fall inside the checksum region. This is what
-/// the top-level [`decode`][crate::decode::decode] pipeline uses to report the
-/// real corrected character in [`Correction.corrected`][crate::Correction] when
-/// BCH ECC repairs a substitution inside the checksum.
+/// 13- or 15-char checksum) is retained internally as [`Self::data_with_checksum`]
+/// and can be queried by [`Self::corrected_char_at`] for any position in
+/// the data part — including positions that fall inside the checksum region.
+/// This is what the top-level [`decode`][crate::decode::decode] pipeline uses
+/// to report the real corrected character in [`Correction.corrected`][crate::Correction]
+/// when BCH ECC repairs a substitution inside the checksum.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedString {
-    /// Data part as 5-bit values, with the trailing checksum already stripped.
-    pub data: Vec<u8>,
     /// Detected BCH code variant.
     pub code: BchCode,
     /// Number of substitution errors corrected (0 = clean input, 1 = recovered).
@@ -582,20 +581,33 @@ pub struct DecodedString {
     /// Full post-correction 5-bit symbol sequence (data part + checksum), in
     /// the same coordinate system as [`Self::corrected_positions`].
     ///
-    /// Length is `data.len() + 13` (regular code) or `data.len() + 15`
-    /// (long code). Indices `0..data.len()` mirror [`Self::data`] symbol-for-symbol;
-    /// indices `data.len()..` are the corrected checksum symbols. Use
+    /// Length is `data().len() + 13` (regular code) or `data().len() + 15`
+    /// (long code). Indices `0..data().len()` mirror [`Self::data`] symbol-for-symbol;
+    /// indices `data().len()..` are the corrected checksum symbols. Use
     /// [`Self::corrected_char_at`] for the human-readable bech32 character at
     /// any position.
     pub data_with_checksum: Vec<u8>,
 }
 
 impl DecodedString {
+    /// Data part as 5-bit values, with the trailing checksum stripped.
+    ///
+    /// Returns a slice into [`Self::data_with_checksum`] — the data part is
+    /// `data_with_checksum[..len - checksum_len]`, where `checksum_len` is 13
+    /// for [`BchCode::Regular`] and 15 for [`BchCode::Long`].
+    pub fn data(&self) -> &[u8] {
+        let checksum_len = match self.code {
+            BchCode::Regular => 13,
+            BchCode::Long => 15,
+        };
+        &self.data_with_checksum[..self.data_with_checksum.len() - checksum_len]
+    }
+
     /// Look up the corrected bech32 character at the given position in the
     /// data part (chars after the `"md1"` HRP+separator).
     ///
-    /// `char_position` is 0-indexed. Positions `0..data.len()` are in the
-    /// data region; positions `data.len()..data.len() + checksum_len` are
+    /// `char_position` is 0-indexed. Positions `0..data().len()` are in the
+    /// data region; positions `data().len()..data().len() + checksum_len` are
     /// inside the BCH checksum (13 chars for [`BchCode::Regular`], 15 for
     /// [`BchCode::Long`]). All positions return the post-correction
     /// character — i.e., what the symbol *should* be after BCH repair, which
@@ -676,14 +688,7 @@ pub fn decode_string(s: &str) -> Result<DecodedString, crate::Error> {
     };
     let result = correction?;
 
-    let checksum_len = match code {
-        BchCode::Regular => 13,
-        BchCode::Long => 15,
-    };
-    let data_only = result.data[..result.data.len() - checksum_len].to_vec();
-
     Ok(DecodedString {
-        data: data_only,
         code,
         corrections_applied: result.corrections_applied,
         corrected_positions: result.corrected_positions,
@@ -1239,7 +1244,7 @@ mod tests {
         assert_eq!(decoded.corrections_applied, 0);
         assert!(decoded.corrected_positions.is_empty());
 
-        let bytes = five_bit_to_bytes(&decoded.data).unwrap();
+        let bytes = five_bit_to_bytes(decoded.data()).unwrap();
         let mut expected = header.clone();
         expected.extend_from_slice(&payload);
         assert_eq!(bytes, expected);
@@ -1257,7 +1262,7 @@ mod tests {
         let decoded = decode_string(&s).unwrap();
         assert_eq!(decoded.code, BchCode::Long);
 
-        let bytes = five_bit_to_bytes(&decoded.data).unwrap();
+        let bytes = five_bit_to_bytes(decoded.data()).unwrap();
         let mut expected = header.clone();
         expected.extend_from_slice(&payload);
         assert_eq!(bytes, expected);
@@ -1337,7 +1342,7 @@ mod tests {
         assert_eq!(decoded.corrected_positions.len(), 1);
 
         // The recovered data should match the original payload via bytes round-trip.
-        let bytes = five_bit_to_bytes(&decoded.data).unwrap();
+        let bytes = five_bit_to_bytes(decoded.data()).unwrap();
         let mut expected = header.clone();
         expected.extend_from_slice(&payload);
         assert_eq!(bytes, expected);

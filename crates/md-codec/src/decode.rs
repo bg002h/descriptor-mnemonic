@@ -32,7 +32,7 @@ use miniscript::Descriptor;
 use miniscript::descriptor::DescriptorPublicKey;
 
 use crate::{
-    BchCode, Chunk, ChunkHeader, Confidence, DecodeOptions, DecodeOutcome, DecodeReport,
+    Chunk, ChunkHeader, Confidence, DecodedString, DecodeOptions, DecodeOutcome, DecodeReport,
     DecodeResult, Error, TapLeafReport, Verifications, WalletPolicy,
     chunking::{Correction, reassemble_chunks},
     encoding::{decode_string, five_bit_to_bytes},
@@ -85,8 +85,11 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
 
     let mut all_corrections: Vec<Correction> = Vec::new();
 
-    // Stage 2 output: one (decoded_5bit_data, bch_code) per input string.
-    let mut decoded_strings: Vec<(Vec<u8>, BchCode)> = Vec::with_capacity(strings.len());
+    // Stage 2 output: one DecodedString per input string. Holding the full
+    // DecodedString (rather than just its data slice) reuses the single
+    // `data_with_checksum` allocation already produced by the BCH layer; we
+    // call `.data()` at the consumer site to view the data-only prefix.
+    let mut decoded_strings: Vec<DecodedString> = Vec::with_capacity(strings.len());
 
     for (chunk_idx, &s) in strings.iter().enumerate() {
         let decoded = decode_string(s)?;
@@ -105,7 +108,7 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
             for &pos in &decoded.corrected_positions {
                 // `pos` is an index into the data-part 5-bit values, in the
                 // same coordinate system as `data_chars` (chars after `"md1"`).
-                // It may land in the data region (`pos < decoded.data.len()`)
+                // It may land in the data region (`pos < decoded.data().len()`)
                 // OR in the checksum region — both cases are answered uniformly
                 // by `DecodedString::corrected_char_at`, which retains the full
                 // post-correction symbol sequence (data + checksum).
@@ -124,13 +127,13 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
             }
         }
 
-        decoded_strings.push((decoded.data, decoded.code));
+        decoded_strings.push(decoded);
     }
 
     // Stage 3: header parse — convert 5-bit data → bytes → Chunk.
     let mut chunks: Vec<Chunk> = Vec::with_capacity(decoded_strings.len());
 
-    for (data_5bit, _code) in decoded_strings {
+    for decoded in decoded_strings {
         // `five_bit_to_bytes` returns None when the input bit length is not a
         // multiple of 8 — i.e., a non-zero trailing pad bit after the byte
         // boundary. For ENCODER-PRODUCED inputs this is structurally impossible
@@ -141,7 +144,7 @@ pub fn decode(strings: &[&str], _options: &DecodeOptions) -> Result<DecodeResult
         // `design/agent-reports/v0-2-1-full-code-audit.md` reproduced this
         // case (was a panic via `expect()` in v0.2.0/v0.2.1; v0.2.2 returns
         // a structured error).
-        let bytes = five_bit_to_bytes(&data_5bit).ok_or(Error::InvalidBytecode {
+        let bytes = five_bit_to_bytes(decoded.data()).ok_or(Error::InvalidBytecode {
             offset: 0,
             kind: BytecodeErrorKind::MalformedPayloadPadding,
         })?;
@@ -248,8 +251,8 @@ fn build_tap_leaves(desc: &Descriptor<DescriptorPublicKey>) -> Vec<TapLeafReport
 mod tests {
     use super::*;
     use crate::{
-        DecodeOptions, EncodeOptions, WalletPolicy, chunking::ChunkingMode, encode::encode,
-        wallet_id::WalletIdSeed,
+        BchCode, DecodeOptions, EncodeOptions, WalletPolicy, chunking::ChunkingMode,
+        encode::encode, wallet_id::WalletIdSeed,
     };
 
     fn policy(s: &str) -> WalletPolicy {
@@ -579,7 +582,7 @@ mod tests {
     //
     // BCH ECC corrections inside the *data* region (i.e. before the checksum)
     // have always reported the actual corrected character because
-    // `DecodedString.data` retained the corrected 5-bit symbol at that index.
+    // `DecodedString::data()` exposes the corrected 5-bit symbol at that index.
     // This test pins that historical behaviour so the parallel checksum-region
     // fix doesn't regress it.
 
@@ -642,8 +645,9 @@ mod tests {
     //
     // Before the v0.2 fix, BCH corrections that landed inside the 13-char
     // checksum region reported `Correction.corrected = 'q'` (= `ALPHABET[0]`)
-    // as a placeholder because `DecodedString.data` had the checksum stripped
-    // off, and the decode path had no way to look up the corrected symbol.
+    // as a placeholder because `DecodedString::data()` returns the data
+    // part with the checksum stripped off, and the decode path had no way
+    // to look up the corrected symbol there.
     // After the fix, `DecodedString::corrected_char_at` exposes the post-BCH
     // character at any data-part position, so the reported `corrected` is now
     // the actual restored character — even for corruptions inside the

@@ -258,7 +258,7 @@ mod tests {
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured
         // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(&decoded.data)
+        let bytes = crate::five_bit_to_bytes(decoded.data())
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _consumed) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
         assert!(header.is_chunked(), "expected Chunked header");
@@ -339,7 +339,7 @@ mod tests {
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured
         // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(&decoded.data)
+        let bytes = crate::five_bit_to_bytes(decoded.data())
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
@@ -381,7 +381,7 @@ mod tests {
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured
         // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(&decoded.data)
+        let bytes = crate::five_bit_to_bytes(decoded.data())
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 
@@ -477,7 +477,7 @@ mod tests {
         // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
         // inputs the same call returns None — see decode.rs:135's structured
         // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(&decoded.data)
+        let bytes = crate::five_bit_to_bytes(decoded.data())
             .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
         let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
 

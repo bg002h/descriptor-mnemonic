@@ -52,17 +52,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v1+ (file as upstream issue if desired; not on md-codec critical path)
 
-### `v0-5-spec-plan-encode-tap-subtree-entry-depth-bug` — spec + plan say `target_depth=1` at outer entry; should be `0`
-
-- **Surfaced:** Phase 4 implementer (commit `bca2804`) caught this when the post-condition `debug_assert_eq!(cursor, leaves.len())` failed on a 2-leaf tree compiled per the literal spec text. Phase 4 reviewer (combined pass) confirmed independently with depth-trace analysis.
-- **Where:**
-  - `design/SPEC_v0_5_multi_leaf_taptree.md` §4 line 220: `encode_tap_subtree(&leaves, &mut cursor, 1, out, &placeholder_map)?;`
-  - `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md` Phase 4 Task 4.3 line 1325: same literal `1`
-- **What:** The outer call to `encode_tap_subtree` must pass `target_depth=0` (the tree-root depth) so that for any `leaves[0].0 >= 1` the helper emits a `Tag::TapTree` framing before recursing into children with `target_depth=1`. Calling with `target_depth=1` short-circuits emission for symmetric depth-1 trees (matches the first leaf inline, drops the `0x08` framing, fails post-condition). Implementer's actual code at `encode.rs:166` correctly uses `0`; spec + plan text disagree with the working code.
-- **Why deferred:** Documentation-only fix; working code is already correct. Spec + plan live on `main` (separate from the feature branch).
-- **Status:** resolved (folded into release PR; see `chore(v0.5 m2): fix target_depth literal in spec + plan` commit on `feature/v0.5-multi-leaf-taptree`)
-- **Tier:** v0.5-must-close-before-ship (closed)
-
 ### `p2-inline-key-tags` — Reserved tags 0x24–0x31 (descriptor-codec inline-key forms)
 
 - **Surfaced:** Phase 2 D-2 (`design/PHASE_2_DECISIONS.md`)
@@ -598,6 +587,12 @@ See BIP §FAQ for rationale.
 - **Surfaced:** Phase 3 (Cargo rename) code-quality reviewer
 - **Status:** resolved `aa318ea` (Pass-2 batch) — added `homepage = "https://github.com/bg002h/descriptor-mnemonic"`, `documentation = "https://docs.rs/md-codec"`, `keywords = ["bitcoin", "bip388", "wallet", "descriptor", "bech32"]`, and `categories = ["cryptography::cryptocurrencies", "encoding", "command-line-utilities"]` to `crates/md-codec/Cargo.toml`. Verified parsing via `cargo metadata --no-deps`. Note: `cargo publish` is still blocked separately by the `external-pr-1-hash-terminals` git-pin entry; this commit closes only the metadata-fields gap.
 - **Tier:** v1+ (closed; was originally v1+ publish-prep but applied during Pass-2 cleanup)
+
+### `v0-5-spec-plan-encode-tap-subtree-entry-depth-bug` — spec + plan say `target_depth=1` at outer entry; should be `0`
+
+- **Surfaced:** Phase 4 implementer (commit `bca2804`); Phase 4 reviewer confirmed independently
+- **Status:** resolved `75e22f2` (`chore(v0.5 m2): fix target_depth literal in spec + plan`, on the v0.5 feature branch; merged to main via `865f889`). Working code at `encode.rs:166` was already correct; the doc fix updated `design/SPEC_v0_5_multi_leaf_taptree.md` §4 and `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md` Phase 4 Task 4.3 to match.
+- **Tier:** v0.5-must-close-before-ship (closed)
 
 ---
 

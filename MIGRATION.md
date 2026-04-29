@@ -2,6 +2,58 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.5.x → v0.6.0
+
+v0.6.0 is wire-format-compatible with v0.5.x — no encoded MD strings change. The
+break is one removed public field on the `DecodedString` type returned by
+[`encoding::decode_string`].
+
+### What changed
+
+- `DecodedString.data` field has been removed. Use `DecodedString::data() -> &[u8]`
+  instead (a method that returns a slice into the existing `data_with_checksum`
+  buffer rather than a separately-allocated `Vec<u8>`).
+- The motivation is to eliminate the redundant per-`DecodedString` allocation:
+  before v0.6, the `data` field stored a copy of `data_with_checksum[..len-13/15]`
+  (a small ~26–30 byte prefix), wasting an allocation on every decode.
+
+### What didn't change
+
+- Wire format (no MD-string content change).
+- All other `DecodedString` fields: `code`, `corrections_applied`,
+  `corrected_positions`, `data_with_checksum`.
+- `DecodedString::corrected_char_at(char_position)` (unchanged behaviour).
+
+### How to upgrade
+
+```bash
+cargo update -p md-codec --precise 0.6.0
+```
+
+Pattern-match consumers that read `decoded.data` field-style:
+
+```rust
+// BEFORE (v0.5.x and earlier)
+let data: &Vec<u8> = &decoded.data;
+let owned: Vec<u8> = decoded.data;
+
+// AFTER (v0.6.0+)
+let data: &[u8] = decoded.data();
+let owned: Vec<u8> = decoded.data().to_vec();
+```
+
+If you previously used `&decoded.data` as a slice (e.g., as input to
+`five_bit_to_bytes`), the rename is mechanical: `&decoded.data` →
+`decoded.data()`.
+
+Note: do **not** substitute `decoded.data_with_checksum` for the removed
+`data` field. `data_with_checksum` is longer — it includes the trailing
+13- or 15-symbol BCH checksum that the old `data` field had stripped off.
+Passing `data_with_checksum` to `five_bit_to_bytes` (or any other
+payload processor) will silently emit extra bytes decoded from the
+checksum region. Always use `decoded.data()` or
+`decoded.data().to_vec()` for payload-processing contexts.
+
 ## v0.4.x → v0.5.0
 
 v0.5.0 is wire-format-additive over v0.4.x. Multi-leaf `tr(KEY, TREE)` descriptors

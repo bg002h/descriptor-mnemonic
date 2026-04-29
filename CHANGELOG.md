@@ -4,6 +4,14 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [Unreleased] (next breaking release, planned 0.6.0)
+
+### Changed (breaking)
+- `DecodedString.data` field removed; replaced by `pub fn data(&self) -> &[u8]` accessor backed by the existing `data_with_checksum: Vec<u8>` field. Eliminates the redundant per-`DecodedString` allocation that previously duplicated the data-symbol prefix. Migration: `decoded.data` → `decoded.data()` (yields `&[u8]` instead of an owned `Vec<u8>`). For consumers that need an owned copy, use `decoded.data().to_vec()`. Do **not** substitute `decoded.data_with_checksum` — it includes the trailing BCH checksum symbols and is NOT a drop-in replacement for the old `data` in payload-processing contexts.
+
+### Migration
+See [`MIGRATION.md`](./MIGRATION.md#v05x--v060) for upgrade steps.
+
 ## [0.5.0] — 2026-04-28
 
 The v0.5 release admits multi-leaf `tr(KEY, TREE)` descriptors per BIP 388

@@ -407,7 +407,7 @@ fn cmd_inspect(string: &str) -> Result<(), anyhow::Error> {
     let decoded = decode_string(string).map_err(|e| anyhow::anyhow!("string parse failed: {e}"))?;
 
     // Convert 5-bit data to bytes.
-    let bytes = five_bit_to_bytes(&decoded.data)
+    let bytes = five_bit_to_bytes(decoded.data())
         .ok_or_else(|| anyhow::anyhow!("invalid 5-bit data in string"))?;
 
     // Parse the chunk header (do NOT proceed to bytecode decode).
