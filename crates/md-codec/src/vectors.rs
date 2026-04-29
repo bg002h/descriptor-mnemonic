@@ -278,6 +278,118 @@ const TAPROOT_FIXTURES: &[(&str, &str, &str)] = &[
         "Taproot multi-leaf 6-leaf right-spine asymmetric tree",
         "tr(@0/**,{{pk(@1/**),pk(@2/**)},{pk(@3/**),{pk(@4/**),{pk(@5/**),pk(@6/**)}}}})",
     ),
+    // ---------------------------------------------------------------------
+    // v0.6 corpus expansion (per spec §6.1) — strip-Layer-3 admit-set widening.
+    // Every newly-admitted Terminal in v0.6 has at least one round-trip
+    // fixture locking its byte form. See design/SPEC_v0_6_strip_layer_3.md §6.
+    // ---------------------------------------------------------------------
+    // Centerpiece: SortedMultiA (Tag::SortedMultiA = 0x0B, NEW in v0.6).
+    (
+        "tr_sortedmulti_a_2of3_md_v0_6",
+        "Taproot sortedmulti_a 2-of-3 (v0.6 SortedMultiA Tag round-trip anchor)",
+        "tr(@0/**,sortedmulti_a(2,@1/**,@2/**,@3/**))",
+    ),
+    // Coldcard documented: sortedmulti_a inside multi-leaf TapTree.
+    (
+        "tr_multi_leaf_with_sortedmulti_a_md_v0_6",
+        "Taproot multi-leaf TapTree with sortedmulti_a (Coldcard documented)",
+        "tr(@0/**,{sortedmulti_a(2,@1/**,@2/**),pk(@3/**)})",
+    ),
+    // Coldcard documented: complex recovery path.
+    (
+        "tr_complex_recovery_path_md_v0_6",
+        "Taproot complex recovery path (Coldcard documented)",
+        "tr(@0/**,{and_v(v:pkh(@1/**),older(1000)),pk(@2/**)})",
+    ),
+    // pkh() in tap leaf — desugars to c:pk_h() and round-trips today.
+    (
+        "tr_pkh_in_tap_leaf_md_v0_6",
+        "Taproot pkh() round-trip in tap leaf via desugaring (Coldcard documented)",
+        "tr(@0/**,and_v(v:pkh(@1/**),older(144)))",
+    ),
+    // Ledger-documented compound shape: relative-time locked multisig.
+    (
+        "tr_older_relative_time_md_v0_6",
+        "Taproot relative-time locked multisig (Ledger compound shape)",
+        "tr(@0/**,and_v(v:multi_a(2,@1/**,@2/**),older(4194305)))",
+    ),
+    // Ledger-documented compound shape: absolute-height locked multisig.
+    (
+        "tr_after_absolute_height_md_v0_6",
+        "Taproot absolute-height locked multisig (Ledger compound shape)",
+        "tr(@0/**,and_v(v:multi_a(2,@1/**,@2/**),after(700000)))",
+    ),
+    // Ledger-documented compound shape: absolute-time locked multisig.
+    (
+        "tr_after_absolute_time_md_v0_6",
+        "Taproot absolute-time locked multisig (Ledger compound shape)",
+        "tr(@0/**,and_v(v:multi_a(2,@1/**,@2/**),after(1734567890)))",
+    ),
+    // thresh + s: wrapper in tap leaf — signer-permissive shape.
+    (
+        "tr_thresh_in_tap_leaf_md_v0_6",
+        "Taproot thresh in tap leaf with s: wrappers",
+        "tr(@0/**,thresh(2,pk(@1/**),s:pk(@2/**),s:pk(@3/**)))",
+    ),
+    // or_b + s: wrapper.
+    (
+        "tr_or_b_in_tap_leaf_md_v0_6",
+        "Taproot or_b in tap leaf with s: wrapper",
+        "tr(@0/**,or_b(pk(@1/**),s:pk(@2/**)))",
+    ),
+    // andor 3-arg.
+    (
+        "tr_andor_in_tap_leaf_md_v0_6",
+        "Taproot andor 3-arg in tap leaf",
+        "tr(@0/**,andor(pk(@1/**),pk(@2/**),pk(@3/**)))",
+    ),
+    // or_c deferred: V-typing constraint forbids it as a top-level tap leaf
+    // without wrapping (e.g., `t:or_c` or `and_v(or_c, 1)`). The miniscript
+    // typing rules require the top-level leaf to be B-type; or_c is V-type.
+    // BIP 388 source-form parsers reject the unwrapped form. Hand-AST test
+    // filed in FOLLOWUPS as `v06-corpus-or-c-coverage`.
+    // or_i (or-if).
+    (
+        "tr_or_i_in_tap_leaf_md_v0_6",
+        "Taproot or_i in tap leaf",
+        "tr(@0/**,or_i(pk(@1/**),pk(@2/**)))",
+    ),
+    // sha256 hash terminal in HTLC pattern (locks internal byte order).
+    (
+        "tr_sha256_htlc_md_v0_6",
+        "Taproot sha256 HTLC pattern (locks internal-byte-order encoding)",
+        "tr(@0/**,and_v(v:sha256(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa),pk(@1/**)))",
+    ),
+    // hash256 hash terminal — locks Hash256-internal-byte-order vs reversed-display-order.
+    (
+        "tr_hash256_htlc_md_v0_6",
+        "Taproot hash256 HTLC pattern (locks internal-byte-order encoding for sha256d)",
+        "tr(@0/**,and_v(v:hash256(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb),pk(@1/**)))",
+    ),
+    // ripemd160 hash terminal.
+    (
+        "tr_ripemd160_htlc_md_v0_6",
+        "Taproot ripemd160 HTLC pattern",
+        "tr(@0/**,and_v(v:ripemd160(cccccccccccccccccccccccccccccccccccccccc),pk(@1/**)))",
+    ),
+    // hash160 hash terminal.
+    (
+        "tr_hash160_htlc_md_v0_6",
+        "Taproot hash160 HTLC pattern",
+        "tr(@0/**,and_v(v:hash160(dddddddddddddddddddddddddddddddddddddddd),pk(@1/**)))",
+    ),
+    // a: wrapper in tap leaf via and_b.
+    (
+        "tr_a_wrapper_in_tap_leaf_md_v0_6",
+        "Taproot a: wrapper in tap leaf via and_b",
+        "tr(@0/**,and_b(pk(@1/**),a:pk(@2/**)))",
+    ),
+    // d: wrapper in tap leaf via andor (also locks andor + d:older).
+    (
+        "tr_d_wrapper_in_tap_leaf_md_v0_6",
+        "Taproot d: wrapper in tap leaf via andor with d:older",
+        "tr(@0/**,andor(pk(@1/**),pk(@2/**),d:older(144)))",
+    ),
 ];
 
 /// v0.4 positive corpus additions: wpkh/sh-wpkh/sh-wsh variants (Phase 6 — Task 6.1).
@@ -773,8 +885,11 @@ fn build_negative_vectors_v2() -> Vec<NegativeVector> {
             provenance: Some(provenance),
         });
     }
-    // v0.2 additions — taproot single-leaf subset violation.
-    out.push(build_negative_n_tap_leaf_subset());
+    // n_tap_leaf_subset DELETED in v0.6: the v0.5 fixture asserted
+    // sha256-in-tap-leaf encode-side rejection via SubsetViolation. v0.6
+    // strip admits sha256 in tap leaves; the new positive vector
+    // tr_sha256_htlc_md_v0_6 covers the round-trip. The negative-vector
+    // role is gone (no rejection happens at the default encoder).
     // v0.5 additions — N1-N9 multi-leaf TapTree negative corpus per
     // `design/SPEC_v0_5_multi_leaf_taptree.md` §5. Replaces the legacy
     // `n_taptree_multi_leaf` (v0.4 reservation rejection) which is subsumed
@@ -1566,30 +1681,10 @@ fn generate_n30_policy_too_large() -> (Vec<String>, String) {
 // Phase D / Phase E — v0.2 additions
 // ---------------------------------------------------------------------------
 
-fn build_negative_n_tap_leaf_subset() -> NegativeVector {
-    let policy: WalletPolicy =
-        "tr(@0/**,and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),pk(@1/**)))"
-            .parse()
-            .expect("tap-leaf subset policy must parse");
-    debug_assert!(matches!(
-        policy.to_bytecode(&EncodeOptions::default()),
-        Err(crate::Error::SubsetViolation { .. })
-    ));
-    NegativeVector {
-        id: "n_tap_leaf_subset".to_string(),
-        description:
-            "Taproot leaf miniscript uses `sha256` (not in the Coldcard subset) → SubsetViolation"
-                .to_string(),
-        input_strings: Vec::new(),
-        expected_error_variant: "SubsetViolation".to_string(),
-        provenance: Some(
-            "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. \
-             Construct via `\"tr(@0/**,and_v(v:sha256(<32B>),pk(@1/**)))\".parse::<WalletPolicy>()` followed by \
-             `to_bytecode(&EncodeOptions::default())`; the encoder rejects the leaf operator `sha256`."
-                .to_string(),
-        ),
-    }
-}
+// build_negative_n_tap_leaf_subset DELETED in v0.6: the v0.5 fixture
+// asserted sha256-in-tap-leaf encode-side rejection via SubsetViolation.
+// v0.6 strip admits sha256 in tap leaves; round-trip covered by the new
+// positive vector tr_sha256_htlc_md_v0_6.
 
 // ---------------------------------------------------------------------------
 // v0.5 — N1-N9 multi-leaf TapTree negative builders
@@ -1705,12 +1800,12 @@ fn build_negative_taptree_inner_off_subset(
     NegativeVector {
         id: id.to_string(),
         description: format!(
-            "Multi-leaf TapTree with `{operator_name}` leaf at index 0 — SubsetViolation {{ operator: {operator_name:?}, leaf_index: Some(0) }}"
+            "Multi-leaf TapTree with `{operator_name}` leaf at index 0 — InvalidBytecode {{ kind: TagInvalidContext {{ tag, context: \"tap-leaf-inner\" }} }} (v0.6 strip: was SubsetViolation in v0.5; decoder catch-all now uses structural TagInvalidContext)"
         ),
         input_strings: vec![s],
-        expected_error_variant: "SubsetViolation".to_string(),
+        expected_error_variant: "InvalidBytecode".to_string(),
         provenance: Some(format!(
-            "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::{:?}, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `{operator_name}`",
+            "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::{:?}, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal whose v0.6 catch-all produces InvalidBytecode {{ kind: TagInvalidContext {{ tag: <byte>, context: \"tap-leaf-inner\" }} }}. v0.5 raised SubsetViolation here via the now-removed validate_tap_leaf_subset call.",
             offender_tag,
         )),
     }

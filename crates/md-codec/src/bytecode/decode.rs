@@ -11,14 +11,15 @@
 //! rejected with `PolicyScopeViolation`. Legacy non-segwit types (`pkh`,
 //! `bare`) are permanently excluded by design.
 //!
-//! Inside `Tr`, multi-leaf TapTrees are decoded via `Tag::TapTree` (0x08)
+//! Inside `Tr`, multi-leaf TapTrees are decoded via `Tag::TapTree` (0x07)
 //! inner-node framing; the decoder enforces a depth-128 ceiling matching
 //! BIP 341 (rust-miniscript's `TapTree::combine` enforces the same ceiling
 //! on reassembly).
 //!
-//! Inline-key tags `0x24..=0x31` (the `Reserved*` set in `Tag`) are reserved
-//! by descriptor-codec for inline-key forms outside MD's BIP-388 wallet-policy
-//! scope; they are rejected here.
+//! Bytes `0x24..=0x32` are unallocated in v0.6 (the v0.5 `Reserved*` range
+//! and v0.5 Placeholder=0x32 were dropped per
+//! `design/MD_SCOPE_DECISION_2026-04-28.md`); `Tag::from_byte` returns
+//! `None` for these bytes.
 //!
 //! Architecture: cursor-style reader + per-tag dispatch. Each step returns
 //! `Result<T, crate::Error>` so decode failures surface a precise offset and
@@ -595,13 +596,15 @@ fn decode_tap_miniscript(
 
 /// Decode a single tap-context Terminal given its already-consumed tag.
 ///
-/// The accepted set is intentionally narrower than the Segwitv0 dispatch:
-/// only the operators in the BIP §"Taproot tree" Coldcard subset
-/// (`pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`, `older` + safe wrappers
-/// `c:` / `v:`) parse cleanly. Out-of-subset tags surface
-/// `Error::SubsetViolation` immediately rather than being typed-out
-/// at `Miniscript::from_ast`, so the diagnostic names the offending
-/// operator.
+/// v0.6: dispatch covers every Tag that has a tap-context Terminal
+/// counterpart (28 arms — see spec §4.3 Add/Keep checklist). Tags that
+/// are valid in some context but not as a tap-leaf inner (e.g.,
+/// `Tag::Wsh`/`Tag::Wpkh` top-level descriptor wrappers) hit the catch-all
+/// and produce `Error::InvalidBytecode { kind: BytecodeErrorKind::TagInvalidContext }`.
+/// Tap-illegal-by-typing arms (`Multi`/`SortedMulti`) are present for
+/// exhaustive Tag coverage; reaching them via parsed input is impossible
+/// because miniscript's parser refuses to construct those Terminals in
+/// a Tap context.
 fn decode_tap_terminal(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],

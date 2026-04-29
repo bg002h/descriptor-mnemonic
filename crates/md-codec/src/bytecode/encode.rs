@@ -17,7 +17,8 @@
 //! BIP 388 string form).
 //!
 //! v0.5: multi-leaf TapTree `tr()` is admitted via DFS pre-order traversal of
-//! `TapTree::leaves()`, emitting `Tag::TapTree` (0x08) inner-node framings.
+//! `TapTree::leaves()`, emitting `Tag::TapTree` (v0.6 byte 0x07; was 0x08
+//! in v0.5) inner-node framings.
 //! KeyOnly `tr(KEY)` and single-leaf `tr(KEY, leaf)` paths are preserved
 //! byte-identically from v0.4.x.
 //!
@@ -791,7 +792,8 @@ fn terminal_to_tag(term: &Terminal<DescriptorPublicKey, Tap>) -> Option<Tag> {
 /// Emit a `DescriptorPublicKey` as a placeholder reference.
 ///
 /// Looks up `self` in `placeholder_map` and writes `Tag::Placeholder`
-/// (`0x32`) followed by the LEB128-encoded index. Returns
+/// (v0.6 byte `0x33`; was `0x32` in v0.5) followed by the LEB128-encoded
+/// index. Returns
 /// [`Error::PolicyScopeViolation`] if the key is not present in the map
 /// (v0.1 forbids inline keys; every leaf key must come through the
 /// wallet-policy key information vector).
