@@ -1760,9 +1760,18 @@ fn build_negative_n2_taptree_three_inners_under_tr() -> NegativeVector {
 }
 
 /// Helper for N3-N7: build `[Tr][Placeholder][0][TapTree][<offender>][pk leaf]`
-/// where `<offender>` is one of the off-subset tags. The decoder enters the
-/// multi-leaf path, reads the left leaf, and `validate_tap_leaf_subset` fires
-/// at `leaf_index = 0` with the offending operator's name.
+/// where `<offender>` is one of the off-subset tags (top-level descriptor
+/// wrappers like `Wpkh`/`Sh`/`Wsh`/`Tr`/`Pkh`). The decoder enters the
+/// multi-leaf path, reads the left leaf via `decode_tap_terminal`, and the
+/// v0.6 catch-all arm emits `Error::InvalidBytecode { kind:
+/// BytecodeErrorKind::TagInvalidContext { tag, context: "tap-leaf-inner" } }`
+/// for any tag that lacks a tap-context Terminal counterpart.
+///
+/// (v0.5 raised `SubsetViolation` here via the now-removed
+/// `validate_tap_leaf_subset` call. The strip-Layer-3 design pivot replaces
+/// the per-leaf subset gate with a structural catch-all that diagnoses
+/// "tag valid in some context but not as a tap-leaf inner". See
+/// `design/MD_SCOPE_DECISION_2026-04-28.md` for rationale.)
 fn build_negative_taptree_inner_off_subset(
     id: &str,
     offender_tag: crate::bytecode::Tag,
@@ -1775,21 +1784,20 @@ fn build_negative_taptree_inner_off_subset(
     // shape for each (`<tag>[Placeholder][0]` for unary operators that wrap a
     // single key; for `Tag::Tr` we also need a placeholder reference).
     //
-    // All five offending tags (Wpkh, Sh, Wsh, Tr, Pkh) are leaf-position tags
-    // that take exactly one placeholder argument in their minimal encoding,
-    // which is sufficient for the decoder to attempt to construct a leaf
-    // miniscript and trip the per-leaf subset validator.
+    // All five offending tags (Wpkh, Sh, Wsh, Tr, Pkh) are top-level
+    // descriptor tags with no tap-context Terminal counterpart, so the v0.6
+    // decoder catch-all in `decode_tap_terminal` rejects them with
+    // `InvalidBytecode { kind: TagInvalidContext { ... } }`. Sufficient
+    // bytes are provided after each so the cursor doesn't trip a different
+    // structural error first.
     bytecode.extend_from_slice(&[offender_tag.as_byte(), Tag::Placeholder.as_byte(), 0u8]);
     // Right leaf — legal pk fragment.
     bytecode.extend_from_slice(&[Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 1u8]);
     let s = encode_singlestring_around(&bytecode);
     // Each variant's expected behaviour: decode_tap_terminal hits the
-    // unrecognised-leaf-tag arm or per-leaf subset check. The exact variant
-    // depends on whether the tag is recognised in tap-leaf position.
-    //
-    // We assert at the variant family level (`SubsetViolation` for
-    // recognised-but-off-subset tags; the v0.5 spec calls all five out as
-    // `SubsetViolation { operator: <name>, leaf_index: Some(0) }`).
+    // catch-all arm and emits `InvalidBytecode { kind: TagInvalidContext }`.
+    // (v0.5 raised `SubsetViolation` here via the now-removed
+    // `validate_tap_leaf_subset` call.)
     // Sanity: confirm decode produces *some* error so the fixture is not
     // accidentally exercising the success path.
     if cfg!(debug_assertions) {

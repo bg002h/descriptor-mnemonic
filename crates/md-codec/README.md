@@ -8,6 +8,16 @@ engravable backup format. A 24-word BIP 39 phrase restores a wallet's keys; an
 MD string restores a wallet's spending policy — the miniscript template, the
 shared derivation path, and (in future versions) cosigner xpubs.
 
+> **Scope note (v0.6+):** MD is *neutral* on hardware-signer compatibility.
+> An MD-encoded backup is structurally well-formed if and only if the policy
+> parses under BIP 388 + BIP 379; whether the policy is signable on a
+> particular hardware signer is a separate concern handled by your wallet
+> software and your signer's firmware. **You are responsible for ensuring
+> your policy is signable on your target signer.** Callers who want
+> opt-in signer-aware validation can invoke `validate_tap_leaf_subset`
+> explicitly (retained as a `pub fn` in `bytecode::encode`); see the BIP
+> draft §"Signer compatibility (informational)" for the full framing.
+
 See the [BIP draft](../../bip/bip-mnemonic-descriptor.mediawiki) for
 the format specification and the
 [design notes](../../design/POLICY_BACKUP.md) for the rationale.

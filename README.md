@@ -22,6 +22,18 @@ restores a wallet's keys, an MD string restores a wallet's spending
 policy — the miniscript template, derivation paths, and (in future
 versions) cosigners' extended public keys.
 
+> **Scope note (v0.6+):** MD is *neutral* on hardware-signer compatibility.
+> An MD-encoded backup is structurally well-formed if and only if the
+> policy parses under BIP 388 + BIP 379; whether the policy is signable
+> on a particular hardware signer is a separate concern handled by
+> wallet software (above MD) and by signer firmware (below MD). The
+> responsibility chain is: wallet software constructs a signer-compatible
+> policy → MD encodes it losslessly → user recovers → recovery wallet
+> pairs with matching signer to spend. **You are responsible for
+> ensuring your policy is signable on your target signer.** See the
+> BIP draft §"Signer compatibility (informational)" for the full
+> framing.
+
 ## What this repository contains
 
 ```
