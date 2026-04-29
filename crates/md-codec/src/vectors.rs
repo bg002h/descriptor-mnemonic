@@ -1963,23 +1963,9 @@ fn build_negative_v0_4_sh_matrix() -> Vec<NegativeVector> {
                 ),
             }
         },
-        {
-            // n_sh_bare: Sh -> Bare (rejected by restriction matrix)
-            let bytecode = make_sh_inner(Tag::Bare.as_byte());
-            let s = encode_singlestring_around(&bytecode);
-            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
-            NegativeVector {
-                id: "n_sh_bare".to_string(),
-                description: "sh(bare(...)) nested bare script inside Sh → PolicyScopeViolation (decode side)".to_string(),
-                input_strings: vec![s],
-                expected_error_variant: "PolicyScopeViolation".to_string(),
-                provenance: Some(
-                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Sh, Bare, Placeholder, 0x00]`; \
-                     `WalletPolicy::from_bytecode` rejects Sh→Bare via peek-before-recurse restriction matrix \
-                     (PolicyScopeViolation)".to_string(),
-                ),
-            }
-        },
+        // n_sh_bare DELETED in v0.6: Tag::Bare no longer exists; byte 0x07 is now
+        // Tag::TapTree. Equivalent test ("Sh-inner accepts only Wsh/Wpkh; rejects
+        // structurally invalid bytes") is covered by n_sh_inner_script + n_sh_key_slot.
         {
             // n_sh_inner_script: Sh -> AndV (inner-script tag, not allowed directly under Sh)
             let bytecode = make_sh_inner(Tag::AndV.as_byte());
@@ -2031,23 +2017,10 @@ fn build_negative_v0_4_sh_matrix() -> Vec<NegativeVector> {
                 ),
             }
         },
-        {
-            // n_top_bare: Bare at top level (legacy non-segwit out of scope)
-            let bytecode = make_top_level(Tag::Bare.as_byte());
-            let s = encode_singlestring_around(&bytecode);
-            debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
-            NegativeVector {
-                id: "n_top_bare".to_string(),
-                description: "bare(...) at top level → PolicyScopeViolation (legacy non-segwit out of scope)".to_string(),
-                input_strings: vec![s],
-                expected_error_variant: "PolicyScopeViolation".to_string(),
-                provenance: Some(
-                    "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Bare, Placeholder, 0x00]`; \
-                     `WalletPolicy::from_bytecode` rejects top-level Bare as legacy non-segwit out of v0.4 scope \
-                     (PolicyScopeViolation)".to_string(),
-                ),
-            }
-        },
+        // n_top_bare DELETED in v0.6: Tag::Bare no longer exists; byte 0x07 is now
+        // Tag::TapTree. Equivalent test ("byte 0x07 rejected at top level in v0.6")
+        // is covered by n_taptree_at_top_level which explicitly tests TapTree
+        // top-level rejection.
     ]
 }
 

@@ -720,29 +720,31 @@ fn encode_tap_subtree(
     Ok(())
 }
 
-/// Human-readable name for a tap-context Terminal variant, used in error
-/// messages. Delegates to `decode::tag_to_bip388_name` via a
-/// `Terminal → Tag` adapter so encode-side and decode-side diagnostics
-/// for the same operator are guaranteed byte-identical.
+/// Human-readable name for a tap-context Terminal variant.
 ///
-/// `Terminal::SortedMultiA` has no `Tag` counterpart (the wire format does
-/// not encode `sortedmulti_a` — it would require a future Tag allocation),
-/// so its name is supplied directly here.
+/// **v0.6 note:** no longer the universal naming hook for tap-context
+/// errors — only used by the explicit-call validator path
+/// (`validate_tap_leaf_subset` / `validate_tap_leaf_terminal`). The
+/// default encoder/decoder paths no longer call into this function.
+///
+/// Delegates to `decode::tag_to_bip388_name` via a `Terminal → Tag`
+/// adapter so encode-side and decode-side diagnostics for the same
+/// operator are guaranteed byte-identical.
 fn tap_terminal_name(term: &Terminal<DescriptorPublicKey, Tap>) -> &'static str {
     if let Some(tag) = terminal_to_tag(term) {
         return super::decode::tag_to_bip388_name(tag);
     }
-    match term {
-        Terminal::SortedMultiA(_) => "sortedmulti_a",
-        // Defensive catch-all — Terminal isn't `#[non_exhaustive]` in the
-        // pinned miniscript v13, so this is unreachable today; kept against
-        // a future upgrade adding new variants.
-        _ => "<unknown-terminal>",
-    }
+    // Defensive catch-all — Terminal isn't `#[non_exhaustive]` in the
+    // pinned miniscript, so this is unreachable today; kept against
+    // a future upgrade adding new variants.
+    "<unknown-terminal>"
 }
 
 /// Map a tap-context `Terminal` to its corresponding wire-format `Tag`,
-/// or `None` for variants without a Tag allocation (`SortedMultiA`).
+/// or `None` for variants without a Tag allocation (none in v0.6 — every
+/// `Terminal` variant has a Tag). The `None` arm is retained for
+/// forward-compatibility with future miniscript variants that haven't
+/// been allocated a Tag yet.
 ///
 /// Used by `tap_terminal_name` to delegate operator naming to the
 /// single-source-of-truth `tag_to_bip388_name`. Not used in the encode
@@ -758,6 +760,7 @@ fn terminal_to_tag(term: &Terminal<DescriptorPublicKey, Tap>) -> Option<Tag> {
         Terminal::Multi(_) => Tag::Multi,
         Terminal::SortedMulti(_) => Tag::SortedMulti,
         Terminal::MultiA(_) => Tag::MultiA,
+        Terminal::SortedMultiA(_) => Tag::SortedMultiA, // v0.6 NEW
         Terminal::After(_) => Tag::After,
         Terminal::Older(_) => Tag::Older,
         Terminal::Sha256(_) => Tag::Sha256,
@@ -779,8 +782,7 @@ fn terminal_to_tag(term: &Terminal<DescriptorPublicKey, Tap>) -> Option<Tag> {
         Terminal::Verify(_) => Tag::Verify,
         Terminal::NonZero(_) => Tag::NonZero,
         Terminal::ZeroNotEqual(_) => Tag::ZeroNotEqual,
-        // No Tag variant — caller falls back to a string-only name.
-        Terminal::SortedMultiA(_) => return None,
+        // Forward-compatibility catch-all for future miniscript variants.
         #[allow(unreachable_patterns)]
         _ => return None,
     })
@@ -2056,13 +2058,16 @@ mod tests {
             );
         }
 
-        // SortedMultiA has no Tag counterpart (no wire-format byte allocated).
-        // Verify the explicit string fallback so a future Tag allocation
-        // doesn't silently change the diagnostic.
+        // SortedMultiA gets a Tag allocation in v0.6 (Tag::SortedMultiA = 0x0B).
+        // Verify the delegation works through the same name-table single-source.
         let sma: Terminal<DescriptorPublicKey, Tap> = Terminal::SortedMultiA(
             Threshold::new(1, vec![key_a.clone()]).unwrap(),
         );
         assert_eq!(tap_terminal_name(&sma), "sortedmulti_a");
-        assert!(terminal_to_tag(&sma).is_none());
+        assert_eq!(terminal_to_tag(&sma), Some(Tag::SortedMultiA));
+        assert_eq!(
+            tap_terminal_name(&sma),
+            tag_to_bip388_name(Tag::SortedMultiA),
+        );
     }
 }
