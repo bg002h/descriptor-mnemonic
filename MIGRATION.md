@@ -4,36 +4,106 @@ Migration steps for upgrading between major releases of `md-codec` (formerly `wd
 
 ## v0.5.x → v0.6.0
 
-v0.6.0 is wire-format-compatible with v0.5.x — no encoded MD strings change. The
-break is one removed public field on the `DecodedString` type returned by
-[`encoding::decode_string`].
+v0.6.0 strips MD's signer-compatibility curation layer. MD's scope is now
+encoding-only: it serializes any BIP 388 wallet policy losslessly, without
+enforcing a hardware-signer-specific operator subset. **Wire format breaks
+at the v0.5.x → v0.6.0 boundary** (different Tag bytes for almost every
+tap-leaf operator); v0.5.x-encoded MD strings are NOT decodable under v0.6.
 
-### What changed
+See [`design/MD_SCOPE_DECISION_2026-04-28.md`](./design/MD_SCOPE_DECISION_2026-04-28.md)
+for the full rationale.
 
-- `DecodedString.data` field has been removed. Use `DecodedString::data() -> &[u8]`
-  instead (a method that returns a slice into the existing `data_with_checksum`
-  buffer rather than a separately-allocated `Vec<u8>`).
-- The motivation is to eliminate the redundant per-`DecodedString` allocation:
-  before v0.6, the `data` field stored a copy of `data_with_checksum[..len-13/15]`
-  (a small ~26–30 byte prefix), wasting an allocation on every decode.
+### Breaking changes (8)
 
-### What didn't change
+#### 1. Tag enum reorganized — wire-format-breaking
 
-- Wire format (no MD-string content change).
-- All other `DecodedString` fields: `code`, `corrections_applied`,
-  `corrected_positions`, `data_with_checksum`.
-- `DecodedString::corrected_char_at(char_position)` (unchanged behaviour).
+Every tap-leaf-bearing bytecode regenerates. Consumers depending on specific
+Tag byte values (e.g., parsing MD bytecode in non-Rust tooling) need to
+update their Tag tables to the v0.6 layout. See the BIP draft §"Tree
+operators" tag table or `crates/md-codec/src/bytecode/tag.rs` for the
+authoritative mapping.
 
-### How to upgrade
+Notable byte changes:
+- `Tag::TapTree`: 0x08 → 0x07 (adjacent to `Tr=0x06`)
+- `Tag::Multi`: 0x19 → 0x08 (multisig family now contiguous)
+- `Tag::SortedMulti`: unchanged at 0x09
+- `Tag::MultiA`: 0x1A → 0x0A
+- **`Tag::SortedMultiA`** (NEW in v0.6): 0x0B
+- Wrappers and logical operators shift by 2 positions (0x0A→0x0C, etc.)
+- `Tag::Placeholder`: 0x32 → 0x33 (byte 0x32 left intentionally unallocated
+  to surface v0.5→v0.6 transcoder mistakes as `from_byte=None` rather than
+  data corruption)
+- `Tag::SharedPath`: 0x33 → 0x34
+- Constants/top-level descriptors/keys/timelocks/hashes/Fingerprints
+  byte-identical from v0.5.
 
-```bash
-cargo update -p md-codec --precise 0.6.0
-```
+#### 2. Validator default flip — encoder/decoder no longer enforce signer subset
 
-Pattern-match consumers that read `decoded.data` field-style:
+The default-path encoder no longer calls `validate_tap_leaf_subset`; the
+decoder no longer rejects out-of-subset operators by default. Callers
+depending on this rejection for safety must invoke `validate_tap_leaf_subset`
+explicitly:
 
 ```rust
-// BEFORE (v0.5.x and earlier)
+use md_codec::bytecode::encode::validate_tap_leaf_subset;
+
+let ms = /* parse a Miniscript<DescriptorPublicKey, Tap> */;
+validate_tap_leaf_subset(&ms, Some(0))?;  // explicit-call validation
+```
+
+The function and `validate_tap_leaf_terminal` helper remain `pub fn` for
+this use case. Named signer subsets (Coldcard, Ledger) are tracked
+separately as a future layered crate (`md-signer-compat`); see the v0.6
+FOLLOWUPS for status.
+
+#### 3. `Error::TapLeafSubsetViolation` renamed to `Error::SubsetViolation`
+
+Field shape unchanged: `{ operator: String, leaf_index: Option<usize> }`.
+Mechanical sed `s/TapLeafSubsetViolation/SubsetViolation/g` over consumer
+code is sufficient.
+
+#### 4. `Tag::Bare` variant removed
+
+Code matching on `Tag::Bare` will not compile under v0.6. The byte 0x07 is
+reused for `Tag::TapTree`. `Descriptor::Bare` continues to be rejected at
+the top-level encoder via `Error::PolicyScopeViolation` (unchanged
+behaviour); only the unused enum variant is gone.
+
+#### 5. `Reserved*` Tag variants removed (14 variants 0x24-0x31)
+
+Code matching on `Tag::ReservedOrigin`, `Tag::ReservedNoOrigin`, etc. will
+not compile under v0.6. `Tag::from_byte` returns `None` for these bytes
+in v0.6. Code that defensively matched these to error out can simply rely
+on the `None` arm; the compile error catches the safety concern.
+
+#### 6. New `BytecodeErrorKind::TagInvalidContext` variant
+
+The decoder catch-all (for "Tag valid in some context but not as a tap-leaf
+inner") now produces:
+
+```rust
+Error::InvalidBytecode {
+    offset,
+    kind: BytecodeErrorKind::TagInvalidContext {
+        tag: u8,
+        context: &'static str,
+    },
+}
+```
+
+Callers matching exhaustively on `BytecodeErrorKind` need to handle this
+new variant (or rely on `#[non_exhaustive]` to keep the catch-all arm).
+
+#### 7. `DecodedString.data` field removed
+
+(Already shipped in commit `d79125d` ahead of the v0.6.0 release.)
+
+The `DecodedString.data` field has been removed. Use `DecodedString::data() -> &[u8]`
+instead (a method that returns a slice into the existing `data_with_checksum`
+buffer rather than a separately-allocated `Vec<u8>`).
+
+```rust
+// BEFORE (v0.5.x)
 let data: &Vec<u8> = &decoded.data;
 let owned: Vec<u8> = decoded.data;
 
@@ -42,17 +112,50 @@ let data: &[u8] = decoded.data();
 let owned: Vec<u8> = decoded.data().to_vec();
 ```
 
-If you previously used `&decoded.data` as a slice (e.g., as input to
-`five_bit_to_bytes`), the rename is mechanical: `&decoded.data` →
-`decoded.data()`.
+Do **not** substitute `decoded.data_with_checksum` for the removed `data`
+field — `data_with_checksum` is longer (includes the trailing 13/15-symbol
+BCH checksum), so passing it to `five_bit_to_bytes` (or any other
+payload-processing path) silently emits extra bytes decoded from the
+checksum region.
 
-Note: do **not** substitute `decoded.data_with_checksum` for the removed
-`data` field. `data_with_checksum` is longer — it includes the trailing
-13- or 15-symbol BCH checksum that the old `data` field had stripped off.
-Passing `data_with_checksum` to `five_bit_to_bytes` (or any other
-payload processor) will silently emit extra bytes decoded from the
-checksum region. Always use `decoded.data()` or
-`decoded.data().to_vec()` for payload-processing contexts.
+#### 8. Wire format break — clean cut at v0.6.0
+
+v0.5.x-encoded MD strings are NOT decodable under v0.6 (different Tag
+bytes for almost every tap-leaf operator). v0.6 is a clean break; pre-1.0
++ no users yet means no deprecation cycle and no v0.5-compat decoder shim.
+v0.1.json and v0.2.json fully regenerate at the v0.5.x → v0.6.0 boundary;
+SHA pins update once. v0.6.x patch line stable thereafter (family-stable
+SHA promise applies again from v0.6.0).
+
+### What didn't change
+
+- HRP `md` (unchanged).
+- BCH error correction polynomial constants (unchanged).
+- Top-level descriptor admit set (`wsh`/`tr`/`wpkh`/`sh(wsh)`/`sh(wpkh)`).
+- Wallet-policy framing (`@i/<a;b>/*` placeholders, key-info-vector).
+- BIP 341 depth-128 ceiling enforcement on TapTree decode.
+- `DecodedString::corrected_char_at(char_position)` behaviour.
+- MSRV: 1.85.
+
+### How to upgrade
+
+```bash
+cargo update -p md-codec --precise 0.6.0
+```
+
+For consumers who only read decoded shapes (no Tag-byte parsing, no
+TapLeafSubsetViolation matches): the rename `TapLeafSubsetViolation` →
+`SubsetViolation` is mechanical via sed. No other action needed.
+
+For consumers who emit/parse MD bytecode directly: regenerate against the
+v0.6 Tag table.
+
+For consumers who depended on encoder default-validator rejection of
+out-of-subset operators: switch to explicit `validate_tap_leaf_subset(...)`
+calls per #2 above.
+
+For consumers who used `decoded.data` field-style: switch to `decoded.data()`
+method-style per #7 above.
 
 ## v0.4.x → v0.5.0
 
