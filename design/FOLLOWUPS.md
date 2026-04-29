@@ -201,7 +201,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** v0.4 spec brainstorming 2026-04-27; named in BIP §FAQ "Why is multi-leaf TapTree deferred (vs excluded)?"
 - **Where:** `crates/md-codec/src/bytecode/decode.rs` Tr handler; `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope" + §"Taproot tree"
 - **What:** Admit `tr(KEY, TREE)` with non-trivial multi-leaf TapTree (BIP 388 §"Taproot tree"). Required TapTree depth/balancing rules (BIP 341 depth-128 cap), per-leaf miniscript Tap-context validation, leaf-wrapper subset enforcement on every leaf, and recursive `[Tag::TapTree=0x08][LEFT][RIGHT]` framing. Delivered in v0.5.0 across 11 phases (spec ratification → type wiring → top-level dispatcher → encoder rewrite → tap_leaves population → 29 NEW + 1 RENAMED conformance vectors → BIP doc updates → CLI integration test → final cumulative review → CHANGELOG/MIGRATION → release prep).
-- **Status:** resolved <release-commit-sha>
+- **Status:** resolved 865f889 (PR #1 merge commit; release tag md-codec-v0.5.0)
 - **Tier:** v0.5 (planned admission, closed)
 
 ### `v0-5-stale-v0-4-message-strings-sweep` — sweep remaining "v0.4 does not support" / "reserved for v1+" stale strings
