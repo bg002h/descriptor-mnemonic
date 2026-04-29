@@ -230,9 +230,9 @@ The five original questions resolved (with my take), plus six surfaced:
 | Q6 | Interaction with Fingerprints | A — separate blocks | open |
 | Q7 | PolicyId impact | Route X (per-`@N` paths affect PolicyId) — coupled to Q9-A. mk1 BIP §"Naming and identifiers" prose needs minor update. | **LOCKED** (per Type 0 / Type 1 framing) |
 | Q8 | Path component count cap | (b) `MAX_PATH_COMPONENTS = 10` applied uniformly to both `Tag::SharedPath` and `Tag::OriginPaths`. Aligns with mk1's Q-3. Wire-format tightening (no real-world policy exceeds 10). | **LOCKED** |
-| Q9 | Encoder default | A — auto-detect emit per-`@N` | open |
-| Q10 | Migration story | Wire-additive at decoder; auto-detect at encoder per Q9 | open |
-| Q11 | Forward-compat hooks | Not in scope; leave room | open |
+| Q9 | Encoder default | A — auto-detect emit per-`@N` | **LOCKED** |
+| Q10 | Migration story | Wire-additive at decoder; auto-detect at encoder; v0.10 fixes silent path-divergence drop bug | **LOCKED** |
+| Q11 | Forward-compat hooks | A — no additional v0.10 work; existing slack (header bits 0/1, ~200 unused tag bytes, `#[non_exhaustive]`) is sufficient; allocate at landing time | **LOCKED** |
 | Q12 | Type 0 / Type 1 PolicyId typology | Light (BIP teaching subsection; no code rename) | **LOCKED** |
 | Q13 | PolicyId UX (engraving + fingerprint) | Light bundle: BIP softens "MAY engrave"; add `PolicyId::fingerprint() → [u8; 4]`; canonical stays 128 bits | **LOCKED** |
 

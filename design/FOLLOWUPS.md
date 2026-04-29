@@ -162,6 +162,16 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** phase 1 resolved md-codec-v0.9.1 (added `rust-toolchain.toml` pinning rustc 1.85.0 to match CI; added `.cargo/config.toml` with `[profile.release]` `codegen-units = 1` and `strip = "symbols"`). Phase 2 (hermetic Nix/Docker + repro-CI + verification recipe) remains open as a v1.0 milestone item.
 - **Tier:** phase 1 closed (v0.9.1); phase 2 open (v1.0 milestone)
 
+### `walletinstanceid-rendering-parity` — should `WalletInstanceId` (Type 0) get a BIP-39 word rendering parallel to `PolicyId`?
+
+- **Surfaced:** 2026-04-29 v0.10 brainstorm conversation (post-Q11). Asked while exploring the Type 0 / Type 1 PolicyId typology framing.
+- **Where:** `crates/md-codec/src/policy_id.rs` — `WalletInstanceId` currently has only `Display` (32 hex chars), no `to_words()`. `PolicyId` has both.
+- **What:** v0.8.0 added `WalletInstanceId` as a recovery-time derivation, deliberately omitting BIP-39 rendering because Type 0 has no engraving use case (it's derivable from inputs the user already has — bytecode from md1 + xpubs from mk1/seeds — so engraving the output is redundant). Adding `WalletInstanceId::to_words()` is technically trivial (~5 lines; same BIP-39 input shape as `PolicyId`) but would imply an engraving use case that doesn't currently exist, inviting users to engrave Type 0 phrases under false impressions.
+- **When this becomes load-bearing:** if a real workflow surfaces that wants Type 0 in 12-word form (e.g., "engrave the assembled-wallet instance fingerprint as a stronger anchor than just template fingerprint" — useful for foreign-xpub-multisig recovery where you want to verify the *complete* wallet, not just the template). At that point also reopen the type-tagging question (HRP-prefix codex32 vs BIP-39, since rendering Type 0 alongside Type 1 in the same encoding scheme would create user-confusion risk).
+- **Why deferred:** No current workflow requires it. Adding it speculatively reinforces the wrong mental model (suggesting Type 0 is engrave-worthy). YAGNI.
+- **Status:** open
+- **Tier:** v1+ (or wont-fix if no Type 0 engraving workflow ever surfaces)
+
 ### `v2-design-questions` — clean-slate questions to revisit at a major redesign
 
 - **Surfaced:** 2026-04-29 v0.10 brainstorm conversation. While locking Q6 (Tag::Fingerprints vs Tag::OriginPaths separation), the question came up: "if we were starting the format from scratch today, would we pick something different?" Yes — and the same question generalizes to other accumulated design choices.
