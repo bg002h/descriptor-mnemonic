@@ -9,7 +9,7 @@
 //! way external callers will encounter the variant) and verify its
 //! shape via destructure.
 
-use md_codec::{EncodeOptions, Error, WalletPolicy};
+use md_codec::Error;
 
 /// Trigger a `SubsetViolation` via the v0.6 opt-in validator
 /// `validate_tap_leaf_subset`. (`to_bytecode` itself is scope-agnostic

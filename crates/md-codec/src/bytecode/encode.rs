@@ -653,8 +653,8 @@ pub fn validate_tap_leaf_subset(
 /// supply their own allowlist (or use a named subset from the
 /// `md-signer-compat` crate).
 ///
-/// Names follow the desugared-AST convention emitted by
-/// [`super::decode::tag_to_bip388_name`].
+/// Names follow the desugared-AST convention emitted by md-codec's
+/// internal `tag_to_bip388_name` adapter (see `bytecode::decode`).
 pub const HISTORICAL_COLDCARD_TAP_OPERATORS: &[&str] = &[
     "pk_k", "pk_h", "multi_a", "or_d", "and_v", "older", "c:", "v:",
 ];
@@ -665,8 +665,9 @@ pub const HISTORICAL_COLDCARD_TAP_OPERATORS: &[&str] = &[
 /// current operator's name.
 ///
 /// Operator names follow rust-miniscript desugared AST node naming —
-/// the same convention emitted by [`super::decode::tag_to_bip388_name`]
-/// (e.g. `Terminal::Check` → `"c:"`, `Terminal::PkK` → `"pk_k"`).
+/// the same convention emitted by md-codec's internal
+/// `tag_to_bip388_name` adapter (e.g. `Terminal::Check` → `"c:"`,
+/// `Terminal::PkK` → `"pk_k"`).
 /// Admitting `pk(...)` therefore requires both `"c:"` and `"pk_k"` in
 /// the allowlist (BIP 388 source-form `pk(K)` desugars to `c:pk_k(K)`).
 ///

@@ -11,11 +11,7 @@
 //! - PR1-PR2: parser-roundtrip equivalence — re-parsing the recovered
 //!   policy's canonical string yields a structurally-identical descriptor.
 
-use md_codec::bytecode::tag::Tag;
-use md_codec::{
-    DecodeOptions, DecodeResult, EncodeOptions, Error, WalletPolicy, decode, decode_bytecode,
-    encode,
-};
+use md_codec::{DecodeOptions, DecodeResult, EncodeOptions, Error, WalletPolicy, decode, encode};
 
 // @-template form policy strings — preferred for round-trip equivalence
 // because the BIP 388 wallet-policy parser handles `multi_a` inside
