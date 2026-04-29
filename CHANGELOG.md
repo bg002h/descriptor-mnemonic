@@ -4,6 +4,80 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.8.0] — 2026-04-29
+
+Closes [`wallet-id-is-really-template-id`](design/FOLLOWUPS.md). Renames
+the 16-byte template-only hash from `WalletId` to `PolicyId` (and all
+related identifiers) to reflect what the value actually identifies, and
+introduces a new derived `WalletInstanceId` for per-wallet
+disambiguation in tools that need it. Wire format byte-identical to
+v0.7.x; vector files regenerate because `GENERATOR_FAMILY` rolls
+`"md-codec 0.7"` → `"md-codec 0.8"` and JSON schema field names change
+in lockstep with the code rename.
+
+### Changed (renames)
+
+The 16-byte hash `SHA-256(canonical_bytecode)[0..16]` covers the BIP
+388 wallet-policy ''template'' only — no concrete cosigner xpubs — so
+two distinct wallets that share an identical policy template (same
+multisig shape and shared path, different cosigner sets) collide on
+this value. The "wallet ID" name treated a one-to-many relationship as
+one-to-one. Renamed to "Policy ID" to make the template-level scope
+explicit.
+
+Identifier renames:
+
+- `WalletId` → `PolicyId`
+- `WalletIdSeed` → `PolicyIdSeed`
+- `WalletIdWords` → `PolicyIdWords`
+- `ChunkWalletId` → `ChunkPolicyId`
+- `compute_wallet_id` → `compute_policy_id`
+- `compute_wallet_id_for_policy` → `compute_policy_id_for_policy`
+- Module `wallet_id` → module `policy_id`
+- `Error::WalletIdMismatch` → `Error::PolicyIdMismatch`
+- `Error::ReservedWalletIdBitsSet` → `Error::ReservedPolicyIdBitsSet`
+- All `wallet_id*` field names → `policy_id*` (e.g.,
+  `Verifications::wallet_id_consistent` → `policy_id_consistent`,
+  `EncodeOptions::wallet_id_seed` → `policy_id_seed`)
+- All "Wallet ID" / "wallet ID" prose strings (CLI output, error
+  messages, rustdoc) → "Policy ID" / "policy ID"
+- BIP draft section `===Wallet identifier (Tier 3)===` → `===Policy identifier (Tier 3)===`
+
+### Added
+
+- `WalletInstanceId` — new 16-byte derived identifier defined as
+  `SHA-256(canonical_bytecode || canonical_xpub_serialization)[0..16]`,
+  where `canonical_xpub_serialization` is the concatenation of each
+  `@N`-resolved xpub's full 78-byte BIP 32 serialization in
+  placeholder-index order. Distinguishes wallets that share a policy
+  template but differ in cosigner xpub sets.
+- `pub fn compute_wallet_instance_id(canonical_bytecode: &[u8], xpubs: &[Xpub]) -> WalletInstanceId`
+  helper. Recovery tools, descriptor-backup verification flows, and
+  cross-implementation consistency checks all hash through this
+  function.
+- BIP draft `===Wallet Instance ID===` section defining the
+  computation. Wallet Instance IDs are not carried by any physical card
+  — they are recovery-time derivations.
+- Three unit tests on `compute_wallet_instance_id`: differs-when-xpubs-
+  differ, xpub-order-sensitive, deterministic.
+
+### Notes
+
+- Wire format byte-identical to v0.7.x. Existing MD chunks decode
+  unchanged.
+- `GENERATOR_FAMILY` rolls `"md-codec 0.7"` → `"md-codec 0.8"`.
+- `tests/vectors/v0.1.json` and `tests/vectors/v0.2.json` regenerate;
+  v0.2.json `V0_2_SHA256` pin updates:
+  - 0.7.3: `4f8afba0cb379e58b9b03cb9397c37a11b4a038a96698664798ab84985dbb8b9`
+  - 0.8.0: `b3f4138937a8f129d218c45d8732776c5d9942be72861a8f8a3eed1ddafcae7d`
+- `md-signer-compat` not bumped (no API surface changes; it didn't
+  reference any of the renamed types).
+- MSRV unchanged: 1.85.
+
+### Closes FOLLOWUPS
+
+- `wallet-id-is-really-template-id`
+
 ## [0.7.3] — 2026-04-29
 
 Patch release. Three v0.7.x cleanup items closed in one pass.

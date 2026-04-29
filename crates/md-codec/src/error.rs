@@ -9,9 +9,9 @@
 
 use thiserror::Error;
 
-// `ChunkWalletId` is defined in `wallet_id` and re-exported here so that
+// `ChunkPolicyId` is defined in `policy_id` and re-exported here so that
 // `Error` variants can reference it without a cross-module path.
-pub use crate::wallet_id::ChunkWalletId;
+pub use crate::policy_id::ChunkPolicyId;
 
 /// Every error md-codec can return.
 ///
@@ -28,12 +28,12 @@ pub use crate::wallet_id::ChunkWalletId;
 ///
 /// Stage 3 (header parse): [`Error::ChunkHeaderTruncated`],
 /// [`Error::UnsupportedVersion`], [`Error::UnsupportedCardType`],
-/// [`Error::ReservedWalletIdBitsSet`], [`Error::InvalidChunkCount`],
+/// [`Error::ReservedPolicyIdBitsSet`], [`Error::InvalidChunkCount`],
 /// [`Error::InvalidChunkIndex`].
 ///
 /// Stage 4 (reassembly): [`Error::EmptyChunkList`],
 /// [`Error::MixedChunkTypes`], [`Error::SingleStringWithMultipleChunks`],
-/// [`Error::WalletIdMismatch`], [`Error::TotalChunksMismatch`],
+/// [`Error::PolicyIdMismatch`], [`Error::TotalChunksMismatch`],
 /// [`Error::ChunkIndexOutOfRange`], [`Error::DuplicateChunkIndex`],
 /// [`Error::MissingChunkIndex`], [`Error::CrossChunkHashMismatch`].
 ///
@@ -153,14 +153,14 @@ pub enum Error {
     ///
     /// The user mixed chunks from two different wallets in one decode call.
     /// Compare the `expected` and `got` 20-bit fields against the Tier-3
-    /// [`crate::WalletId`] truncations to identify which chunk is foreign,
+    /// [`crate::PolicyId`] truncations to identify which chunk is foreign,
     /// then ask the user to retry with a single wallet's chunks.
     #[error("wallet identifier mismatch across chunks: expected {expected:?}, got {got:?}")]
-    WalletIdMismatch {
+    PolicyIdMismatch {
         /// The expected (first-seen) chunk wallet identifier.
-        expected: ChunkWalletId,
+        expected: ChunkPolicyId,
         /// The mismatched value seen on a later chunk.
-        got: ChunkWalletId,
+        got: ChunkPolicyId,
     },
 
     /// Two chunks reported different total chunk counts.
@@ -233,7 +233,7 @@ pub enum Error {
     /// big-endian encoding must be zero. Any non-zero high nibble in the
     /// first byte triggers this error and indicates a corrupted chunk header.
     #[error("reserved wallet-id bits set: top 4 bits of wallet-id field must be zero")]
-    ReservedWalletIdBitsSet,
+    ReservedPolicyIdBitsSet,
 
     /// The chunk header bytes were truncated (too short to contain a complete header).
     ///

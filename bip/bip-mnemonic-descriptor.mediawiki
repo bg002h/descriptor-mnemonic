@@ -62,7 +62,7 @@ An MD backup of a wallet consists of one or more cards, where each card is a str
 
 # '''Template Card''' (this BIP, v0): encodes the wallet's template, derivation paths, and optional master fingerprints. Always required. May span one or more chunks.
 # '''Xpub Card''' (deferred to v1+): encodes one foreign xpub with origin information. One per foreign xpub. Not specified in v0.
-# '''Wallet ID''' (optional): a short identifier derived from the canonical bytecode, used for cross-verifying digital copies of the policy against the engraved Template Card. May be stamped separately.
+# '''Policy ID''' (optional): a short identifier derived from the canonical bytecode, used for cross-verifying digital copies of the policy against the engraved Template Card. May be stamped separately.
 
 The v0 specification scope (this document) covers wallets where the user holds every seed referenced by the policy (no foreign xpubs) and all <code>@i</code> placeholders use a single shared derivation path. Wallets meeting these criteria require only a Template Card. Foreign xpubs and per-placeholder paths are deferred to a future version of this specification.
 
@@ -676,17 +676,42 @@ Decoders reassemble a chunked Template Card by:
 # Splitting off the trailing 4 bytes and verifying the cross-chunk hash; reject on mismatch.
 # Decoding the resulting canonical bytecode as a Template Card.
 
-===Wallet identifier (Tier 3)===
+===Policy identifier (Tier 3)===
 
-A Wallet ID is a derived identifier optionally engraved on a separate medium for cross-verifying a digital backup of the policy against the engraved Template Card. The Wallet ID is computed as:
+A Policy ID is a derived identifier optionally engraved on a separate medium for cross-verifying a digital backup of the policy against the engraved Template Card. The Policy ID is computed as:
 
 <pre>
-  wallet_id = SHA-256(canonical_bytecode)[0..16]
+  policy_id = SHA-256(canonical_bytecode)[0..16]
 </pre>
 
-The first 16 bytes of the SHA-256 of the canonical bytecode (the same bytecode that is encoded as the Template Card, ''without'' the cross-chunk hash). Wallet IDs are encoded as 12-word BIP 39 mnemonic phrases (128 bits, including a 4-bit checksum word).
+The first 16 bytes of the SHA-256 of the canonical bytecode (the same bytecode that is encoded as the Template Card, ''without'' the cross-chunk hash). Policy IDs are encoded as 12-word BIP 39 mnemonic phrases (128 bits, including a 4-bit checksum word).
 
-A Wallet ID is OPTIONAL and never required for recovery from the Template Card alone. It serves only as a cryptographic anchor for verifying that a supplemental digital copy of the policy is authentic.
+A Policy ID is OPTIONAL and never required for recovery from the Template Card alone. It serves only as a cryptographic anchor for verifying that a supplemental digital copy of the policy is authentic.
+
+'''Naming note:''' the value previously called "wallet ID" was renamed to "Policy ID" in v0.8 to reflect what it actually identifies. The 16-byte hash covers the BIP 388 wallet-policy ''template'' (with <code>@N</code> placeholders) but not the concrete cosigner xpubs that map placeholders to keys. Two distinct wallets that share an identical policy template (same multisig shape and shared path, different cosigner sets) therefore share a Policy ID. The Policy ID is a ''template-level'' identifier; the per-instance cryptographic identifier is the Wallet Instance ID defined below.
+
+===Wallet Instance ID===
+
+A Wallet Instance ID is a derived 16-byte identifier that distinguishes wallets sharing an identical policy template but differing in their cosigner xpub set. Unlike the Policy ID, the Wallet Instance ID is '''not''' carried by any physical card — it is a recovery-time computation. Tools that have the policy card (template) plus the cosigner xpubs (whether from a digital backup, the wallet itself, or — in foreign-xpub multisig — engraved <code>mk1</code> key cards) compute it on demand:
+
+<pre>
+  wallet_instance_id = SHA-256(canonical_bytecode || canonical_xpub_serialization)[0..16]
+</pre>
+
+where:
+
+<pre>
+  canonical_xpub_serialization = concat(
+      bip32_serialize(xpub_for_@0),
+      bip32_serialize(xpub_for_@1),
+      ...
+      bip32_serialize(xpub_for_@(N-1))
+  )
+</pre>
+
+<code>bip32_serialize</code> is the canonical 78-byte BIP 32 serialization of an extended public key (the binary form of a Base58Check-decoded xpub). Xpubs are concatenated in placeholder-index order (<code>@0</code>, then <code>@1</code>, ..., <code>@(N-1)</code>); ordering is significant. <code>canonical_bytecode</code> is the Template Card's bytecode, identical to the input of the Policy ID computation.
+
+Wallet Instance IDs are useful for recovery tools that need to disambiguate same-template wallets, for downstream consistency between cross-tool implementations, and for digital-backup verification at the per-instance level. The construction does not introduce any new Tier-3 anchor; the existing 12-word Policy ID mnemonic anchor remains the only physical-medium anchor in the spec.
 
 ===Decoder requirements===
 
@@ -747,7 +772,7 @@ The flow MUST proceed through these stages, in order:
 # '''Constrained candidate search.''' Encode the user's structural assertions as a partial bytecode template. Enumerate candidate codewords within an extended Hamming radius (up to ~12) that decode to valid MD bytecode AND match the user's assertions.
 # '''Candidate verification.''' For each surviving candidate, derive xpubs from available seeds at the candidate's declared paths, verify they map to the expected placeholders, verify cross-chunk hash if multi-chunk, and reject candidates failing any check.
 # '''Optional blockchain verification.''' With explicit user consent, derive the candidate's first N receive addresses and check on-chain history. Disclose privacy implications before this step.
-# '''Result presentation.''' Display the recovered wallet policy in BIP 388 form, the Wallet ID, derived xpubs, and the confidence level per "Decoder reporting".
+# '''Result presentation.''' Display the recovered wallet policy in BIP 388 form, the Policy ID, derived xpubs, and the confidence level per "Decoder reporting".
 
 Tools MUST disclose privacy implications before any blockchain query and SHOULD default to offline operation. Tools MUST NOT transmit recovered policy material to external services without explicit user consent.
 
@@ -921,7 +946,7 @@ Schema-2 adds three optional fields:
 
 ===Schema 1 (v0.1.0) contents===
 
-* '''10 positive vectors''' — encode/decode round-trips for the canonical example corpus: single-key (C1), 2-of-3 sortedmulti (C2), 2-of-3 with timelock recovery (C3), 6-key inheritance (C4), 5-of-9 with 2-key recovery (C5), Liana Simple Inheritance (E10), Liana Expanding Multisig (E12), HTLC with sha256 inline hash (E13), Decaying multisig with 6 distinct keys (E14), and a Coldcard-shape representative entry. Each vector pins the input policy, expected canonical bytecode (hex), expected encoded chunk strings, and expected 12-word Tier-3 Wallet ID.
+* '''10 positive vectors''' — encode/decode round-trips for the canonical example corpus: single-key (C1), 2-of-3 sortedmulti (C2), 2-of-3 with timelock recovery (C3), 6-key inheritance (C4), 5-of-9 with 2-key recovery (C5), Liana Simple Inheritance (E10), Liana Expanding Multisig (E12), HTLC with sha256 inline hash (E13), Decaying multisig with 6 distinct keys (E14), and a Coldcard-shape representative entry. Each vector pins the input policy, expected canonical bytecode (hex), expected encoded chunk strings, and expected 12-word Tier-3 Policy ID.
 * '''30 negative vectors''' — input strings or scenarios that must be rejected, one per <code>Error</code> variant in the reference implementation. Each vector pins the input plus the canonical name of the expected error variant for cross-implementation matching. (Two of the 30 are placeholder entries for variants whose triggers don't fit the MD-string input shape — <code>EmptyChunkList</code> requires an empty Vec; <code>PolicyTooLarge</code> requires bytecode > 1692 B; both are reachable through the library API but not through a single-string CLI input.) Schema-1 negative <code>input_strings</code> are representative placeholders, not byte-for-byte regenerable from the named error path; the <code>expected_error_variant</code> field is the authoritative cross-implementation contract.
 
 ===Schema 2 (v0.2.0 / extended through v0.5.0) contents===

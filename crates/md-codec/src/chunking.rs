@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use bitcoin::hashes::{Hash, sha256};
 
 use crate::error::{Error, Result};
-use crate::wallet_id::ChunkWalletId;
+use crate::policy_id::ChunkPolicyId;
 
 /// Maximum canonical bytecode length supported by any v0 chunking plan.
 ///
@@ -48,8 +48,8 @@ const CHUNKED_HEADER_LEN: usize = 7;
 ///
 /// Wire format (canonical byte-aligned form, before codex32 5-bit packing):
 /// - `SingleString`: `[version: u8, type=0: u8]` = 2 bytes
-/// - `Chunked`:      `[version: u8, type=1: u8, wallet_id_be: [u8; 3], count: u8, index: u8]`
-///   = 7 bytes; the `wallet_id` 20-bit value is stored big-endian with the top
+/// - `Chunked`:      `[version: u8, type=1: u8, policy_id_be: [u8; 3], count: u8, index: u8]`
+///   = 7 bytes; the `policy_id` 20-bit value is stored big-endian with the top
 ///   4 bits of the first byte set to zero.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +64,7 @@ pub enum ChunkHeader {
         /// Format version byte (currently `0`).
         version: u8,
         /// 20-bit wallet identifier shared by all chunks of a given wallet.
-        wallet_id: ChunkWalletId,
+        policy_id: ChunkPolicyId,
         /// Total number of chunks in this sequence (1–32).
         count: u8,
         /// Zero-based index of this chunk within the sequence (0..count-1).
@@ -84,11 +84,11 @@ impl ChunkHeader {
             }
             ChunkHeader::Chunked {
                 version,
-                wallet_id,
+                policy_id,
                 count,
                 index,
             } => {
-                let w = wallet_id.as_u32();
+                let w = policy_id.as_u32();
                 vec![
                     *version,
                     TYPE_CHUNKED,
@@ -113,7 +113,7 @@ impl ChunkHeader {
     /// - [`Error::ChunkHeaderTruncated`] — fewer bytes than the minimum header.
     /// - [`Error::UnsupportedVersion`] — version byte is not `0`.
     /// - [`Error::UnsupportedCardType`] — type byte is not `0` or `1`.
-    /// - [`Error::ReservedWalletIdBitsSet`] — top 4 bits of wallet-id are set.
+    /// - [`Error::ReservedPolicyIdBitsSet`] — top 4 bits of wallet-id are set.
     /// - [`Error::InvalidChunkCount`] — count is `0` or `> 32`.
     /// - [`Error::InvalidChunkIndex`] — `index >= count`.
     pub fn from_bytes(bytes: &[u8]) -> Result<(Self, usize)> {
@@ -145,11 +145,11 @@ impl ChunkHeader {
                 // Wallet-id: 3 bytes, top 4 bits of first byte must be zero.
                 let hi = bytes[2];
                 if hi & 0xF0 != 0 {
-                    return Err(Error::ReservedWalletIdBitsSet);
+                    return Err(Error::ReservedPolicyIdBitsSet);
                 }
                 let w = ((hi as u32) << 16) | ((bytes[3] as u32) << 8) | (bytes[4] as u32);
                 // Belt-and-suspenders: the high-bit check above ensures w <= MAX.
-                let wallet_id = ChunkWalletId::new(w);
+                let policy_id = ChunkPolicyId::new(w);
 
                 let count = bytes[5];
                 if count == 0 || count > MAX_CHUNK_COUNT {
@@ -164,7 +164,7 @@ impl ChunkHeader {
                 Ok((
                     ChunkHeader::Chunked {
                         version,
-                        wallet_id,
+                        policy_id,
                         count,
                         index,
                     },
@@ -521,7 +521,7 @@ pub struct Correction {
 ///   `fragment_size` bytes each (the last fragment may be shorter), and wraps
 ///   each in a [`Chunk`] with the appropriate header fields.
 ///
-/// All chunked chunks share the same `wallet_id`, `count`, and incremented
+/// All chunked chunks share the same `policy_id`, `count`, and incremented
 /// `index` (0-based).
 ///
 /// # Errors
@@ -534,7 +534,7 @@ pub struct Correction {
 pub fn chunk_bytes(
     canonical_bytecode: &[u8],
     plan: ChunkingPlan,
-    wallet_id: ChunkWalletId,
+    policy_id: ChunkPolicyId,
 ) -> Result<Vec<Chunk>> {
     match plan {
         ChunkingPlan::SingleString { code } => {
@@ -586,7 +586,7 @@ pub fn chunk_bytes(
                 let index_u8: u8 = i.try_into().expect("plan validated count <= 32, so i < 32");
                 let header = ChunkHeader::Chunked {
                     version: 0,
-                    wallet_id,
+                    policy_id,
                     count: count_u8,
                     index: index_u8,
                 };
@@ -617,7 +617,7 @@ pub fn chunk_bytes(
 /// 3. For `SingleString`: list must contain exactly one chunk; its fragment IS
 ///    the bytecode.
 /// 4. For `Chunked` chunks:
-///    a. All chunks share the same `wallet_id`.
+///    a. All chunks share the same `policy_id`.
 ///    b. All chunks declare the same `count`.
 ///    c. No duplicate `index` values.
 ///    d. No missing indexes in `0..count`.
@@ -630,7 +630,7 @@ pub fn chunk_bytes(
 ///
 /// Returns one of the following on failure:
 /// [`Error::EmptyChunkList`], [`Error::MixedChunkTypes`],
-/// [`Error::SingleStringWithMultipleChunks`], [`Error::WalletIdMismatch`],
+/// [`Error::SingleStringWithMultipleChunks`], [`Error::PolicyIdMismatch`],
 /// [`Error::TotalChunksMismatch`], [`Error::ChunkIndexOutOfRange`],
 /// [`Error::DuplicateChunkIndex`], [`Error::MissingChunkIndex`],
 /// [`Error::CrossChunkHashMismatch`].
@@ -657,11 +657,11 @@ pub fn reassemble_chunks(chunks: Vec<Chunk>) -> Result<Vec<u8>> {
         return Ok(chunks.into_iter().next().unwrap().fragment);
     }
 
-    // Chunked path: extract expected wallet_id and count from first chunk.
+    // Chunked path: extract expected policy_id and count from first chunk.
     let (expected_wallet_id, expected_count) = match &chunks[0].header {
         ChunkHeader::Chunked {
-            wallet_id, count, ..
-        } => (*wallet_id, *count),
+            policy_id, count, ..
+        } => (*policy_id, *count),
         ChunkHeader::SingleString { .. } => unreachable!("handled above"),
     };
 
@@ -674,15 +674,15 @@ pub fn reassemble_chunks(chunks: Vec<Chunk>) -> Result<Vec<u8>> {
                 return Err(Error::MixedChunkTypes);
             }
             ChunkHeader::Chunked {
-                wallet_id,
+                policy_id,
                 count,
                 index,
                 ..
             } => {
-                if wallet_id != expected_wallet_id {
-                    return Err(Error::WalletIdMismatch {
+                if policy_id != expected_wallet_id {
+                    return Err(Error::PolicyIdMismatch {
                         expected: expected_wallet_id,
-                        got: wallet_id,
+                        got: policy_id,
                     });
                 }
                 if count != expected_count {
@@ -760,7 +760,7 @@ mod tests {
     fn chunked_round_trip_minimal() {
         let hdr = ChunkHeader::Chunked {
             version: 0,
-            wallet_id: ChunkWalletId::new(0),
+            policy_id: ChunkPolicyId::new(0),
             count: 1,
             index: 0,
         };
@@ -773,15 +773,15 @@ mod tests {
 
     #[test]
     fn chunked_round_trip_max_wallet_id() {
-        // ChunkWalletId::MAX = 0xF_FFFF; encodes as [0x0F, 0xFF, 0xFF].
+        // ChunkPolicyId::MAX = 0xF_FFFF; encodes as [0x0F, 0xFF, 0xFF].
         let hdr = ChunkHeader::Chunked {
             version: 0,
-            wallet_id: ChunkWalletId::new(ChunkWalletId::MAX),
+            policy_id: ChunkPolicyId::new(ChunkPolicyId::MAX),
             count: 4,
             index: 0,
         };
         let bytes = hdr.to_bytes();
-        // wallet_id bytes: [(0xFFFFF >> 16)=0x0F, (0xFFFFF >> 8) & 0xFF=0xFF, 0xFF & 0xFF=0xFF]
+        // policy_id bytes: [(0xFFFFF >> 16)=0x0F, (0xFFFFF >> 8) & 0xFF=0xFF, 0xFF & 0xFF=0xFF]
         assert_eq!(bytes[2..5], [0x0F, 0xFF, 0xFF]);
         let (decoded, consumed) = ChunkHeader::from_bytes(&bytes).unwrap();
         assert_eq!(decoded, hdr);
@@ -792,7 +792,7 @@ mod tests {
     fn chunked_round_trip_max_count_and_index() {
         let hdr = ChunkHeader::Chunked {
             version: 0,
-            wallet_id: ChunkWalletId::new(0x1234),
+            policy_id: ChunkPolicyId::new(0x1234),
             count: 32,
             index: 31,
         };
@@ -827,7 +827,7 @@ mod tests {
         assert_eq!(
             ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: ChunkWalletId::new(0),
+                policy_id: ChunkPolicyId::new(0),
                 count: 1,
                 index: 0,
             }
@@ -842,7 +842,7 @@ mod tests {
         assert!(
             ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: ChunkWalletId::new(0),
+                policy_id: ChunkPolicyId::new(0),
                 count: 1,
                 index: 0,
             }
@@ -908,14 +908,14 @@ mod tests {
     }
 
     #[test]
-    fn reject_wallet_id_top_bits_set() {
-        // wallet_id first byte = 0x10 → bit 20 set (top nibble non-zero).
-        // Construct raw bytes without going through ChunkWalletId::new (which panics).
+    fn reject_policy_id_top_bits_set() {
+        // policy_id first byte = 0x10 → bit 20 set (top nibble non-zero).
+        // Construct raw bytes without going through ChunkPolicyId::new (which panics).
         let bytes = [0x00u8, 0x01, 0x10, 0x00, 0x00, 0x01, 0x00];
         let err = ChunkHeader::from_bytes(&bytes).unwrap_err();
         assert!(
-            matches!(err, Error::ReservedWalletIdBitsSet),
-            "expected ReservedWalletIdBitsSet, got {err:?}"
+            matches!(err, Error::ReservedPolicyIdBitsSet),
+            "expected ReservedPolicyIdBitsSet, got {err:?}"
         );
     }
 
@@ -950,7 +950,7 @@ mod tests {
 
     #[test]
     fn reject_truncated_chunked_two_bytes() {
-        // [0x00, 0x01]: version + type=Chunked, but no wallet_id/count/index.
+        // [0x00, 0x01]: version + type=Chunked, but no policy_id/count/index.
         let err = ChunkHeader::from_bytes(&[0x00, 0x01]).unwrap_err();
         assert!(
             matches!(err, Error::ChunkHeaderTruncated { have: 2, need: 7 }),
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn reject_truncated_chunked_five_bytes() {
-        // [0x00, 0x01, 0x00, 0x00, 0x00]: version + type + 3 wallet_id bytes, but no count/index.
+        // [0x00, 0x01, 0x00, 0x00, 0x00]: version + type + 3 policy_id bytes, but no count/index.
         let err = ChunkHeader::from_bytes(&[0x00, 0x01, 0x00, 0x00, 0x00]).unwrap_err();
         assert!(
             matches!(err, Error::ChunkHeaderTruncated { have: 5, need: 7 }),
@@ -1210,11 +1210,11 @@ mod tests {
 
     #[test]
     fn chunk_to_bytes_chunked() {
-        // wallet_id = 0x00001 (stored as [0x00, 0x00, 0x01]), count=3, index=1.
+        // policy_id = 0x00001 (stored as [0x00, 0x00, 0x01]), count=3, index=1.
         let chunk = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: ChunkWalletId::new(0x00001),
+                policy_id: ChunkPolicyId::new(0x00001),
                 count: 3,
                 index: 1,
             },
@@ -1244,7 +1244,7 @@ mod tests {
         let original = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: ChunkWalletId::new(0xABCDE),
+                policy_id: ChunkPolicyId::new(0xABCDE),
                 count: 5,
                 index: 2,
             },
@@ -1271,7 +1271,7 @@ mod tests {
         let chunk2 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: ChunkWalletId::new(0),
+                policy_id: ChunkPolicyId::new(0),
                 count: 1,
                 index: 0,
             },
@@ -1286,8 +1286,8 @@ mod tests {
     // chunk_bytes tests
     // -----------------------------------------------------------------------
 
-    fn test_wallet_id() -> ChunkWalletId {
-        ChunkWalletId::new(0x12345)
+    fn test_wallet_id() -> ChunkPolicyId {
+        ChunkPolicyId::new(0x12345)
     }
 
     #[test]
@@ -1324,12 +1324,12 @@ mod tests {
         for (i, chunk) in chunks.iter().enumerate() {
             match chunk.header {
                 ChunkHeader::Chunked {
-                    wallet_id,
+                    policy_id,
                     count,
                     index,
                     ..
                 } => {
-                    assert_eq!(wallet_id, wid);
+                    assert_eq!(policy_id, wid);
                     assert_eq!(count, 3);
                     assert_eq!(index, i as u8);
                 }
@@ -1471,7 +1471,7 @@ mod tests {
         let chunked = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: ChunkWalletId::new(0),
+                policy_id: ChunkPolicyId::new(0),
                 count: 2,
                 index: 0,
             },
@@ -1486,13 +1486,13 @@ mod tests {
     }
 
     #[test]
-    fn reassemble_wallet_id_mismatch() {
-        let wid_a = ChunkWalletId::new(0xAAAAA);
-        let wid_b = ChunkWalletId::new(0xBBBBB);
+    fn reassemble_policy_id_mismatch() {
+        let wid_a = ChunkPolicyId::new(0xAAAAA);
+        let wid_b = ChunkPolicyId::new(0xBBBBB);
         let c0 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid_a,
+                policy_id: wid_a,
                 count: 2,
                 index: 0,
             },
@@ -1501,7 +1501,7 @@ mod tests {
         let c1 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid_b,
+                policy_id: wid_b,
                 count: 2,
                 index: 1,
             },
@@ -1511,12 +1511,12 @@ mod tests {
         assert!(
             matches!(
                 err,
-                Error::WalletIdMismatch {
+                Error::PolicyIdMismatch {
                     expected,
                     got,
                 } if expected == wid_a && got == wid_b
             ),
-            "expected WalletIdMismatch, got {err:?}"
+            "expected PolicyIdMismatch, got {err:?}"
         );
     }
 
@@ -1526,7 +1526,7 @@ mod tests {
         let c0 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid,
+                policy_id: wid,
                 count: 2,
                 index: 0,
             },
@@ -1535,7 +1535,7 @@ mod tests {
         let c1 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid,
+                policy_id: wid,
                 count: 3, // mismatch: claims 3 chunks, first said 2
                 index: 1,
             },
@@ -1560,7 +1560,7 @@ mod tests {
         let c0 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid,
+                policy_id: wid,
                 count: 2,
                 index: 0,
             },
@@ -1569,7 +1569,7 @@ mod tests {
         let c1 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid,
+                policy_id: wid,
                 count: 2,
                 index: 0, // duplicate
             },
@@ -1589,7 +1589,7 @@ mod tests {
         let c0 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid,
+                policy_id: wid,
                 count: 3,
                 index: 0,
             },
@@ -1598,7 +1598,7 @@ mod tests {
         let c2 = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid,
+                policy_id: wid,
                 count: 3,
                 index: 2,
             },
@@ -1623,7 +1623,7 @@ mod tests {
         let c_bad = Chunk {
             header: ChunkHeader::Chunked {
                 version: 0,
-                wallet_id: wid,
+                policy_id: wid,
                 count: 2,
                 index: 5, // out of range: 5 >= 2
             },
@@ -1737,8 +1737,8 @@ mod tests {
             fragment_size: 45,
             count: 2,
         };
-        let wallet_id = ChunkWalletId::new(0xABC);
-        let mut chunks = chunk_bytes(&bytecode, plan, wallet_id).expect("encode");
+        let policy_id = ChunkPolicyId::new(0xABC);
+        let mut chunks = chunk_bytes(&bytecode, plan, policy_id).expect("encode");
 
         // Corrupt the LAST byte of the last fragment (a hash byte).
         let last = chunks.last_mut().unwrap();

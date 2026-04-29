@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "md-codec 0.7",
+  "generator": "md-codec 0.8",
   "vectors": [
     {
       "id": "c1",
@@ -10,7 +10,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq58pkvcqgj7ymm8tejhhz"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "sad",
         "swing",
         "border",
@@ -33,7 +33,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "rent",
         "lecture",
         "ghost",
@@ -56,7 +56,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "ginger",
         "rival",
         "verify",
@@ -79,7 +79,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq52suxenqq0gp86fryf3qrsuxvq3xyqwrsesyycspcwrxqclcq03xyqwrsesgycspcwrxpglszqqy5hntfd74wrc0jdk"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "hospital",
         "inject",
         "rifle",
@@ -103,7 +103,7 @@
         "md1qqqsjyhvqgqqqdqrq5vp5pgfpcdnxqqdpcdnxqgdpcdnxqsdpcdnxqcdpcdnxpqdpcdnxpgdpcdnxpsdpcdss5auap994w0l6ln",
         "md1qqqsjyhvqgqnxpcdpcdnxzqnzq06pdgxpqpqyvcfxv9fztkqqvuxscfp75hf2ew"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "muffin",
         "invite",
         "absorb",
@@ -126,7 +126,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vquxenqqf3qrsmxvq3l5y6qvmwjyf45jzsyje"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "delay",
         "box",
         "chief",
@@ -149,7 +149,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vqsqszxvqrxqgnzq0apxsrpcdnxqsx26wl0xgslkqc"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "ginger",
         "rival",
         "verify",
@@ -172,7 +172,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq52suxenqqstjnf8hxf560sg55h994760k4l43yyal3h55uqa6gg3aavuthum6gnzq8pkvcpr7gqzpv687uhcq22xrgn"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "agent",
         "eternal",
         "ordinary",
@@ -195,7 +195,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5vqsqcrxvqrxqfnqgf3q87sngpssqsrxvpnxppnq5ks0mr37t4l8v6"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "agent",
         "purse",
         "mystery",
@@ -218,7 +218,7 @@
       "expected_chunks": [
         "md1qqqqqdqrq5ysyqenqqeszvcz2888rpgf0pr6k"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "rent",
         "lecture",
         "ghost",
@@ -241,7 +241,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqmldukfmy72ktd"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "trim",
         "cricket",
         "stock",
@@ -264,7 +264,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqrsmxvqsy9v4v9emhgek5"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "addict",
         "protect",
         "fringe",
@@ -287,7 +287,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqzszqveszvczxvpshjp2kzmuz6ukw"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "huge",
         "tube",
         "become",
@@ -310,7 +310,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqpcwrveszrsmxvpqxxgas7vy0terx"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "rhythm",
         "risk",
         "load",
@@ -333,7 +333,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqpcwrveszpcwrvesyrsmxvps55sahama6sler"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "setup",
         "undo",
         "balcony",
@@ -356,7 +356,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqpc8pcdnxqgwrvesyrsmxvpsup8vzvqtzngru"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "present",
         "pill",
         "pumpkin",
@@ -379,7 +379,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqpcwrveszzszqgesyvcrxst2pn38fc6je"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "february",
         "advance",
         "fashion",
@@ -402,7 +402,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqpc8pcdnxqgwrvesypcwrvesxpcwrvesgpcwrves2rsmxvrqkrnxl39h368c0"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "crunch",
         "uncover",
         "vacant",
@@ -425,7 +425,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqzczqveszvczxvpsm5jn695esamr3"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "kangaroo",
         "snake",
         "rookie",
@@ -448,7 +448,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqpctqgprxqfnqg8pkvcrpdwaktd7rluvk"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "essence",
         "erosion",
         "toss",
@@ -471,7 +471,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqpcnzq8pcvcprl5qwrsmxvpqve753320zzd3u"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "raise",
         "lend",
         "bullet",
@@ -494,7 +494,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycspcwrxqgljqqs2fk89wdpcx5vk"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "toddler",
         "crane",
         "master",
@@ -517,7 +517,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycspgpqyvcpxvpplqvqsqpqdvf88aya260lx"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "violin",
         "thrive",
         "ordinary",
@@ -540,7 +540,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycspgpqyvcpxvppacxu9gnqaj4wa9xy9re"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "prize",
         "quick",
         "submit",
@@ -563,7 +563,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycspgpqyvcpxvppa5k03kasv6ve9d8uweuphv"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "garment",
         "umbrella",
         "apology",
@@ -586,7 +586,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqxszqv8pkvcpp58pkvczp58pkvcrvpeus966jhfw3"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "rubber",
         "hero",
         "shaft",
@@ -609,7 +609,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesq9swrveszrgwrvesyglezkmgm9vgfd"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "lumber",
         "prepare",
         "three",
@@ -632,7 +632,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesq9gwrveszrsmxvpquxenqvae9sf9kutg2l0"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "junior",
         "order",
         "wheel",
@@ -655,7 +655,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqxgwrveszrsmxvpq3wlmmrecdczqt"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "gun",
         "salad",
         "ladder",
@@ -678,7 +678,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycsyz424242424242424242424242424242424242424242424242425rsmxvqs7f30qctksqpsx"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "tomato",
         "slow",
         "clarify",
@@ -701,7 +701,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycsyxamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamkrsmxvqstl9me60cut0eh"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "wait",
         "middle",
         "such",
@@ -724,7 +724,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycsytxvenxvenxvenxvenxvenxvenxvenxves8pkvcp9x3ucgl6q5v94"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "clown",
         "banner",
         "magic",
@@ -747,7 +747,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesqycsy0wamhwamhwamhwamhwamhwamhwamhwam58pkvcpmffhe4exaez0c"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "aware",
         "top",
         "marriage",
@@ -770,7 +770,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqcesq9qwrveszrqwrvesy2ayycxwnamhlv"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "expand",
         "alley",
         "riot",
@@ -793,7 +793,7 @@
       "expected_chunks": [
         "md1qqqqgdqrx5pdatd7al90aw47q5yqyq3nqqeszs43qv3upgflqk"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "pony",
         "engine",
         "fresh",
@@ -834,7 +834,7 @@
       "expected_chunks": [
         "md1qqqqqdqrqsesqeyu6dc2l9j0gm"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "ship",
         "soccer",
         "mercy",
@@ -857,7 +857,7 @@
       "expected_chunks": [
         "md1qqqqqdqzqvzrxqqmd4phrt948h4t"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "outside",
         "topic",
         "brush",
@@ -880,7 +880,7 @@
       "expected_chunks": [
         "md1qqqqqdqxqvzsjqgzxvqrxqgslhh93t7fnn5n"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "elite",
         "special",
         "eye",
@@ -903,7 +903,7 @@
       "expected_chunks": [
         "md1qqqqqdqxqvzsjqsrxvqrxqfnqgjfwehe96fgagz"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "upset",
         "rebuild",
         "index",
@@ -926,7 +926,7 @@
       "expected_chunks": [
         "md1qqqqqdqxqvzsjqsrxvqrxqfnqgjfwehe96fgagz"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "upset",
         "rebuild",
         "index",
@@ -949,7 +949,7 @@
       "expected_chunks": [
         "md1qqqqgdqrx5qaatd7auzrxqqm5vtfk8y22jtl"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "clean",
         "whale",
         "pottery",
@@ -983,7 +983,7 @@
       "expected_chunks": [
         "md1qqqqgdqzx5qaatd7aupsgvcqfdtegan9pd3qw"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "salute",
         "slot",
         "reflect",
@@ -1017,7 +1017,7 @@
       "expected_chunks": [
         "md1qqqqgdqxx5paatd7al90aw476qxlqrgrq5ysyqenqqeszvczmf9hl5n6c9tgt"
       ],
-      "expected_wallet_id_words": [
+      "expected_policy_id_words": [
         "firm",
         "category",
         "green",
@@ -1124,11 +1124,11 @@
     },
     {
       "id": "n08",
-      "description": "Reserved wallet-id bits set → ReservedWalletIdBitsSet",
+      "description": "Reserved wallet-id bits set → ReservedPolicyIdBitsSet",
       "input_strings": [
         "md1qqq3qqqqqyqql7qh2w5zykaa8"
       ],
-      "expected_error_variant": "ReservedWalletIdBitsSet",
+      "expected_error_variant": "ReservedPolicyIdBitsSet",
       "provenance": "encoded chunked-header bytes with the wallet-id high nibble set (0x10 in the wid first byte); chunk-header parse rejects the reserved bits"
     },
     {
@@ -1187,13 +1187,13 @@
     },
     {
       "id": "n15",
-      "description": "Wallet-id mismatch across chunks → WalletIdMismatch",
+      "description": "Wallet-id mismatch across chunks → PolicyIdMismatch",
       "input_strings": [
         "md1qqqs4242qgqqqdqrq5vp5pgfpcdnxqqdpcdnxqgdpcdnxqsdpcdnxqcdpcdnxpqdpcdnxpgdpcdnxpsdpcdsw9vfm8d6ypy4qx7",
         "md1qqqshwamqgqnxpcdpcdnxzqnzq06pdgxpqpqyvcfxv9fztkqqvsvxkppsqm5mam"
       ],
-      "expected_error_variant": "WalletIdMismatch",
-      "provenance": "encoded the C5 corpus policy twice with distinct `wallet_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
+      "expected_error_variant": "PolicyIdMismatch",
+      "provenance": "encoded the C5 corpus policy twice with distinct `policy_id_seed` overrides under `ChunkingMode::ForceChunked`, then submitted chunk 0 from encoding A together with chunk 1 from encoding B; reassembly rejects the wallet-id mismatch"
     },
     {
       "id": "n16",

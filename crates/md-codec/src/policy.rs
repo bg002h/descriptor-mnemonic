@@ -27,7 +27,7 @@ use crate::bytecode::encode::encode_template;
 use crate::bytecode::header::BytecodeHeader;
 use crate::bytecode::path::{decode_declaration, encode_declaration};
 use crate::chunking::EncodedChunk;
-use crate::wallet_id::{WalletId, WalletIdWords};
+use crate::policy_id::{PolicyId, PolicyIdWords};
 use crate::{EncodeOptions, Error};
 
 // ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ fn all_dummy_keys() -> Vec<DescriptorPublicKey> {
 /// [`Self::to_canonical_string`] returns the BIP 388 §"Round-trip canonical
 /// form" output (no whitespace, hardened-with-`'`, `/**` expanded to
 /// `/<0;1>/*`). This is the form the codec hashes for the Tier-3
-/// [`crate::WalletId`].
+/// [`crate::PolicyId`].
 ///
 /// # Bytecode encoding
 ///
@@ -658,7 +658,7 @@ fn default_path_for_v0_4_types(
 // ---------------------------------------------------------------------------
 
 /// The output of [`crate::encode()`]: chunks ready to engrave, plus the
-/// Tier-3 12-word Wallet ID for verification.
+/// Tier-3 12-word Policy ID for verification.
 ///
 /// # Invariants
 ///
@@ -673,10 +673,10 @@ fn default_path_for_v0_4_types(
 ///
 /// The `raw: String` field of each [`crate::EncodedChunk`] is the
 /// codex32-derived string starting with `md1…`. Engrave or print these
-/// strings on durable media. The 12-word [`crate::WalletIdWords`] is the
-/// human-friendly Tier-3 [`crate::WalletId`]; users can write this down
+/// strings on durable media. The 12-word [`crate::PolicyIdWords`] is the
+/// human-friendly Tier-3 [`crate::PolicyId`]; users can write this down
 /// alongside the engraved cards as a verifier — at decode time, comparing
-/// the 12-word form against the recovered policy's `WalletId` confirms
+/// the 12-word form against the recovered policy's `PolicyId` confirms
 /// "I have the right backup for this wallet".
 ///
 /// # Stability
@@ -688,9 +688,9 @@ fn default_path_for_v0_4_types(
 pub struct MdBackup {
     /// The encoded chunks ready to engrave.
     pub chunks: Vec<EncodedChunk>,
-    /// The 12-word BIP-39 representation of the Tier-3 Wallet ID, for
+    /// The 12-word BIP-39 representation of the Tier-3 Policy ID, for
     /// user verification.
-    pub wallet_id_words: WalletIdWords,
+    pub policy_id_words: PolicyIdWords,
     /// Master-key fingerprints associated with this backup, if any.
     ///
     /// Encode-side: mirrors [`crate::EncodeOptions::fingerprints`] supplied
@@ -707,24 +707,24 @@ pub struct MdBackup {
 }
 
 impl MdBackup {
-    /// Reconstruct the 16-byte [`WalletId`] from `wallet_id_words`.
+    /// Reconstruct the 16-byte [`PolicyId`] from `policy_id_words`.
     ///
     /// The 12-word form is the storage format; this method converts back to
     /// the binary representation that is the derivation source for
-    /// `truncate → ChunkWalletId`.
+    /// `truncate → ChunkPolicyId`.
     ///
     /// # Panics
     ///
-    /// Panics if the stored `wallet_id_words` do not form a valid BIP-39
+    /// Panics if the stored `policy_id_words` do not form a valid BIP-39
     /// mnemonic — this should never happen for correctly constructed
     /// `MdBackup` values.
-    pub fn wallet_id(&self) -> WalletId {
-        let mnemonic = bip39::Mnemonic::parse(self.wallet_id_words.to_string())
-            .expect("WalletIdWords must always form a valid BIP-39 mnemonic");
+    pub fn policy_id(&self) -> PolicyId {
+        let mnemonic = bip39::Mnemonic::parse(self.policy_id_words.to_string())
+            .expect("PolicyIdWords must always form a valid BIP-39 mnemonic");
         let entropy = mnemonic.to_entropy();
         let mut bytes = [0u8; 16];
         bytes.copy_from_slice(&entropy[..16]);
-        WalletId::new(bytes)
+        PolicyId::new(bytes)
     }
 }
 
@@ -732,7 +732,7 @@ impl MdBackup {
 mod tests {
     use super::*;
     use crate::bytecode::Tag;
-    use crate::wallet_id::compute_wallet_id;
+    use crate::policy_id::compute_policy_id;
 
     // -----------------------------------------------------------------------
     // Dummy-key table integrity
@@ -1042,18 +1042,18 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // compute_wallet_id_for_policy
+    // compute_policy_id_for_policy
     // -----------------------------------------------------------------------
 
     #[test]
-    fn compute_wallet_id_for_policy_matches_compute_wallet_id_of_to_bytecode() {
+    fn compute_policy_id_for_policy_matches_compute_policy_id_of_to_bytecode() {
         let p: WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
         let bytecode = p.to_bytecode(&EncodeOptions::default()).unwrap();
-        let direct = compute_wallet_id(&bytecode);
-        let via_policy = crate::wallet_id::compute_wallet_id_for_policy(&p).unwrap();
+        let direct = compute_policy_id(&bytecode);
+        let via_policy = crate::policy_id::compute_policy_id_for_policy(&p).unwrap();
         assert_eq!(
             direct, via_policy,
-            "compute_wallet_id_for_policy must equal compute_wallet_id(to_bytecode())"
+            "compute_policy_id_for_policy must equal compute_policy_id(to_bytecode())"
         );
     }
 
@@ -1269,18 +1269,18 @@ mod tests {
     // --- MdBackup ---
 
     #[test]
-    fn md_backup_wallet_id_round_trips_via_words() {
-        let original_id = WalletId::new([0xABu8; 16]);
+    fn md_backup_policy_id_round_trips_via_words() {
+        let original_id = PolicyId::new([0xABu8; 16]);
         let words = original_id.to_words();
         let backup = MdBackup {
             chunks: vec![],
-            wallet_id_words: words,
+            policy_id_words: words,
             fingerprints: None,
         };
-        let recovered_id = backup.wallet_id();
+        let recovered_id = backup.policy_id();
         assert_eq!(
             recovered_id, original_id,
-            "wallet_id() must recover the original WalletId"
+            "policy_id() must recover the original PolicyId"
         );
     }
 
@@ -1483,7 +1483,7 @@ mod tests {
         use crate::BchCode;
         use crate::chunking::EncodedChunk;
 
-        let id = WalletId::new([0x01u8; 16]);
+        let id = PolicyId::new([0x01u8; 16]);
         let words = id.to_words();
         let chunk = EncodedChunk {
             raw: "md10xsmoke".to_string(),
@@ -1493,7 +1493,7 @@ mod tests {
         };
         let backup = MdBackup {
             chunks: vec![chunk],
-            wallet_id_words: words,
+            policy_id_words: words,
             fingerprints: None,
         };
         assert_eq!(backup.chunks.len(), 1);

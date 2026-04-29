@@ -28,7 +28,7 @@
 //! let backup = encode(&policy, &EncodeOptions::default())?;
 //!
 //! // backup.chunks holds 1+ codex32-derived strings ready to engrave.
-//! // backup.wallet_id_words is the 12-word Tier-3 Wallet ID.
+//! // backup.policy_id_words is the 12-word Tier-3 Policy ID.
 //! let inputs: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
 //! let result = decode(&inputs, &DecodeOptions::new())?;
 //! assert_eq!(result.policy.to_canonical_string(), policy.to_canonical_string());
@@ -53,8 +53,8 @@
 //! 4. **Codex32 wrap** — each chunk's bytes are wrapped in a codex32-derived
 //!    string with HRP `md` and a BCH-encoded checksum (regular: 13 chars,
 //!    long: 15 chars). See [`encoding`].
-//! 5. **Tier-3 Wallet ID derivation** — `SHA-256(canonical_bytecode)[0..16]`,
-//!    rendered as 12 BIP-39 words for human verification (see [`wallet_id`]).
+//! 5. **Tier-3 Policy ID derivation** — `SHA-256(canonical_bytecode)[0..16]`,
+//!    rendered as 12 BIP-39 words for human verification (see [`policy_id`]).
 //! 6. **Output** — a [`MdBackup`] holds the encoded chunks + words; on the
 //!    decode side, a [`DecodeResult`] holds the recovered [`WalletPolicy`]
 //!    plus a [`DecodeReport`] summarizing BCH corrections and verifications.
@@ -74,33 +74,40 @@
 //! - Construct a [`WalletPolicy`] from a BIP 388 string with `FromStr`.
 //! - Configure encoding with [`EncodeOptions`] (defaults are usually correct).
 //! - Encode to a [`MdBackup`], whose `chunks: Vec<EncodedChunk>` is the
-//!   engrave-ready output and `wallet_id_words: WalletIdWords` is the Tier-3
+//!   engrave-ready output and `policy_id_words: PolicyIdWords` is the Tier-3
 //!   12-word verifier.
 //! - Decode by passing the raw strings as `&[&str]` to [`decode()`]; receive a
 //!   [`DecodeResult`] containing the recovered policy and a [`DecodeReport`]
 //!   that documents any BCH corrections, structural verifications, and the
 //!   resulting [`Confidence`] level.
 //!
-//! ## Wallet identifiers
+//! ## Identifiers
 //!
-//! MD uses **two distinct wallet identifiers** with different override
-//! semantics. The two-WalletId story is load-bearing for the format's
-//! verification story; see [`WalletId`], [`ChunkWalletId`], and
-//! [`WalletIdSeed`] for the full semantics. Short version:
+//! MD defines three identifier values with distinct scopes. See
+//! [`PolicyId`], [`ChunkPolicyId`], [`PolicyIdSeed`], and
+//! [`WalletInstanceId`] for the full semantics. Short version:
 //!
-//! - The **Tier-3 [`WalletId`]** (16 bytes, displayed as 12 BIP-39 words via
-//!   [`WalletIdWords`]) is **always** content-derived from
+//! - The **Tier-3 [`PolicyId`]** (16 bytes, displayed as 12 BIP-39 words via
+//!   [`PolicyIdWords`]) is **always** content-derived from
 //!   `SHA-256(canonical_bytecode)[0..16]`. It is **never** affected by
-//!   [`EncodeOptions::wallet_id_seed`]. A user holding only the 12-word
+//!   [`EncodeOptions::policy_id_seed`]. A user holding only the 12-word
 //!   mnemonic can verify which seed corresponds to which `@i` placeholder.
-//! - The **chunk-header [`ChunkWalletId`]** (20 bits embedded in every chunked
+//!   The PolicyId hashes the BIP 388 *template* only — two distinct
+//!   wallets that share a template share a PolicyId.
+//! - The **chunk-header [`ChunkPolicyId`]** (20 bits embedded in every chunked
 //!   string's header) is by default the first 20 bits of the same SHA-256
 //!   (so the Tier-3 mnemonic predicts it). It can be overridden by setting
-//!   [`EncodeOptions::wallet_id_seed`] for deterministic test-vector
+//!   [`EncodeOptions::policy_id_seed`] for deterministic test-vector
 //!   generation.
+//! - The **derived [`WalletInstanceId`]** (16 bytes, no engraving anchor)
+//!   distinguishes wallets that share a policy template but differ in their
+//!   cosigner xpub set. Computed at recovery time from
+//!   `SHA-256(canonical_bytecode || canonical_xpub_serialization)[0..16]` via
+//!   [`compute_wallet_instance_id`]. Not carried by any physical card or wire
+//!   structure — tools derive it on demand from policy + assembled xpubs.
 //!
-//! See `IMPLEMENTATION_PLAN_v0.1.md` §4 "Wallet ID semantics" and the BIP
-//! draft §"Wallet identifier" for the full rationale.
+//! See the BIP draft §"Policy identifier" and §"Wallet Instance ID" for the
+//! full rationale.
 //!
 //! ## Scope (v0.1)
 //!
@@ -120,7 +127,7 @@
 //! - [`chunking`] — multi-string chunk header, plan selection, assembly,
 //!   reassembly.
 //! - [`policy`] — [`WalletPolicy`] newtype + [`MdBackup`] struct.
-//! - [`wallet_id`] — Tier-3 [`WalletId`] / [`ChunkWalletId`] / [`WalletIdSeed`].
+//! - [`policy_id`] — Tier-3 [`PolicyId`] / [`ChunkPolicyId`] / [`PolicyIdSeed`].
 //! - [`options`] — [`EncodeOptions`] / [`DecodeOptions`] knobs.
 //! - [`decode_report`] — [`DecodeResult`] / [`DecodeReport`] / [`Confidence`].
 //! - [`error`] — [`Error`] enum (the public API contract for failures).
@@ -147,10 +154,10 @@ pub mod options;
 pub mod policy;
 #[cfg(feature = "compiler")]
 pub mod policy_compiler;
+pub mod policy_id;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
 pub mod vectors;
-pub mod wallet_id;
 
 pub use chunking::{
     Chunk, ChunkCode, ChunkHeader, ChunkingMode, ChunkingPlan, Correction, EncodedChunk,
@@ -169,10 +176,11 @@ pub use options::{DecodeOptions, EncodeOptions};
 pub use policy::{MdBackup, WalletPolicy};
 #[cfg(feature = "compiler")]
 pub use policy_compiler::{ScriptContext, policy_to_bytecode};
-pub use vectors::{NegativeVector, TestVectorFile, Vector};
-pub use wallet_id::{
-    ChunkWalletId, WalletId, WalletIdSeed, WalletIdWords, compute_wallet_id_for_policy,
+pub use policy_id::{
+    ChunkPolicyId, PolicyId, PolicyIdSeed, PolicyIdWords, WalletInstanceId,
+    compute_policy_id_for_policy, compute_wallet_instance_id,
 };
+pub use vectors::{NegativeVector, TestVectorFile, Vector};
 
 /// Encode a [`WalletPolicy`] as canonical MD bytecode.
 ///

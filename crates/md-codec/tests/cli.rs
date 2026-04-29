@@ -74,7 +74,7 @@ fn md_encode_json() {
 /// `md encode --json` output is stable and consumable: per-chunk objects
 /// expose the v0.1.1-contract field set (`raw`, `chunk_index`,
 /// `total_chunks`, `code`) with `code` rendered as a lowercase string
-/// (`"regular"` or `"long"`), and a top-level `wallet_id_words` string.
+/// (`"regular"` or `"long"`), and a top-level `policy_id_words` string.
 ///
 /// This guards the v0.2 wrapper-type refactor (closes FOLLOWUPS
 /// `7-serialize-derives`) against accidental shape drift — the wrappers
@@ -93,13 +93,13 @@ fn md_encode_json_shape_is_stable() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
 
     let words = v
-        .get("wallet_id_words")
+        .get("policy_id_words")
         .and_then(|w| w.as_str())
-        .expect("wallet_id_words string");
+        .expect("policy_id_words string");
     assert_eq!(
         words.split_whitespace().count(),
         12,
-        "wallet_id_words must be a 12-word BIP-39 mnemonic, got: {words:?}"
+        "policy_id_words must be a 12-word BIP-39 mnemonic, got: {words:?}"
     );
 
     let chunks = v
@@ -167,7 +167,7 @@ fn md_decode_json_shape_is_stable() {
         "cross_chunk_hash_ok",
         "total_chunks_consistent",
         "version_supported",
-        "wallet_id_consistent",
+        "policy_id_consistent",
     ] {
         assert!(
             verifications.get(flag).and_then(|f| f.as_bool()).is_some(),

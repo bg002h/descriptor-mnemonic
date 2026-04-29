@@ -76,7 +76,7 @@ BIP standardization.
 - **Integrity of structure:** ECC defends against transcription errors and
   metal damage. A corrupted backup either decodes correctly (within ECC
   tolerance), fails decode loudly, or signals "ambiguous; do not proceed."
-- **Authenticity:** the Wallet ID (Tier 3) lets a user verify a digital bulk
+- **Authenticity:** the Policy ID (Tier 3) lets a user verify a digital bulk
   copy against their steel-stamped ID.
 
 ### What the format does NOT protect
@@ -156,7 +156,7 @@ own small card.
 - v1+: each card is independent and can be re-supplied by the originating
   cosigner
 
-### Tier 3 — Wallet ID (derived, optional in v0)
+### Tier 3 — Policy ID (derived, optional in v0)
 
 A 12-word phrase derived from `hash(canonical Template Card || sorted Xpub Cards)`.
 Stamped separately as a "this is wallet X" identifier.
@@ -184,8 +184,8 @@ Format: bytes binary → codex32 chars (with ECC).
 
 **Tier 2 (Xpub Cards) is empty in v0.** All xpubs derive from owned seeds.
 
-**Tier 3 (Wallet ID) is optional in v0.** A user with all seeds + Template
-Card can recover without it; the Wallet ID is useful only if the user wants
+**Tier 3 (Policy ID) is optional in v0.** A user with all seeds + Template
+Card can recover without it; the Policy ID is useful only if the user wants
 to verify a digital bulk copy of the Template Card.
 
 ### Master fingerprint optionality
@@ -235,7 +235,7 @@ cryptographic primitives only.
 - **Header semantics:** codex32's threshold/identifier/share-index fields
   do not apply. Replace with:
   - Payload version byte (1 byte)
-  - Payload type tag (1 byte: Template Card v0, Wallet ID, etc.)
+  - Payload type tag (1 byte: Template Card v0, Policy ID, etc.)
   - **OPEN:** wallet name field — included or separate?
 - **Multi-string scheme:** required in v0. Single codex32 strings (with
   the 2-character slim header) cap at 48 bytes (regular) or 56 bytes
@@ -334,7 +334,7 @@ xpub (78 raw bytes) + origin info (fingerprint 4 bytes + path) → compact form.
 **OPEN:** whether to include the xpub's intended `@i` index in the card or
 require ordering at decode time.
 
-### 6.3 Wallet ID derivation
+### 6.3 Policy ID derivation
 
 Canonical hash of (template bytecode || sorted-by-`@i` xpub cards) → 16 bytes
 → 12 BIP-39 words.
@@ -376,7 +376,7 @@ Document precisely:
 - What a Template Card alone reveals
 - What a single Xpub Card alone reveals
 - What the combination reveals
-- What the Wallet ID alone reveals
+- What the Policy ID alone reveals
 - What recovery is possible from each subset of artifacts
 - Privacy implications for inheritance / coercion scenarios
 
@@ -386,7 +386,7 @@ A small library (language **DECIDE** but probably Rust or Python) with:
 - Encoder: BIP 388 wallet policy → bytecode → one or more codex32 strings
 - Decoder: codex32 string(s) → bytecode → BIP 388 wallet policy
 - Multi-string assembly + cross-chunk integrity verification
-- Wallet ID derivation
+- Policy ID derivation
 - Validator (catches malformed templates before encoding)
 - Test vectors (round-trip, decode error cases, ECC stress, chunk
   reassembly stress including out-of-order and missing chunks)
@@ -433,7 +433,7 @@ to the bytecode itself. This hash is part of the byte stream that gets
 chunked.
 
 **RESOLVED (2026-04-27):** Use SHA-256 truncated to 4 bytes
-(`SHA-256(canonical_bytecode)[0..4]`). Matches the Tier-3 Wallet ID hash
+(`SHA-256(canonical_bytecode)[0..4]`). Matches the Tier-3 Policy ID hash
 function (line 742 above) so the same `bitcoin::hashes::sha256` dependency
 covers both. The BIP §"Cross-chunk hash" already specifies SHA-256;
 documented here for symmetry. Implemented in Phase 4-E
@@ -583,7 +583,7 @@ steps (UI presentation may vary; semantic stages must be present):
    - Derivation path family (BIP 44/49/84/86/48/87 or custom)
    - Timelock values, if any (with common-value hints: "1 day = 144,
      1 month = 4380, 1 year = 52560")
-   - Wallet ID, if separately stamped
+   - Policy ID, if separately stamped
 5. **Constrained candidate search.** Encode the user's structural
    knowledge as a partial bytecode template. Enumerate candidate
    codewords within an extended Hamming radius (up to ~12) that:
@@ -601,7 +601,7 @@ steps (UI presentation may vary; semantic stages must be present):
    is the strongest available verification. Privacy implications MUST
    be disclosed before this step (see §6.10.6).
 8. **Result presentation.** Show the recovered policy in BIP 388
-   wallet-policy form, the wallet ID, derived xpubs, and a confidence
+   wallet-policy form, the policy ID, derived xpubs, and a confidence
    indicator based on which verification steps succeeded.
 
 #### Required decoder capabilities
@@ -746,7 +746,7 @@ of what was adopted vs. rejected:
   prevent re-litigation. See §6.9.
 - **RESOLVED:** Guided recovery — mandatory in conformant tools, not
   optional. See §6.10.
-- **RESOLVED (2026-04-26):** Hash function for Wallet ID derivation is **SHA-256 truncated to 16 bytes**. Decision matches `bitcoin::hashes::sha256` (already a transitive dependency); avoids adding BLAKE3 or HMAC.
+- **RESOLVED (2026-04-26):** Hash function for Policy ID derivation is **SHA-256 truncated to 16 bytes**. Decision matches `bitcoin::hashes::sha256` (already a transitive dependency); avoids adding BLAKE3 or HMAC.
 
 ### Resolved 2026-04-27 (Phase 5.5 spec reconciliation pass)
 
@@ -779,20 +779,20 @@ of what was adopted vs. rejected:
   `bytecode/encode.rs` and `bytecode/decode.rs`.
 - **RESOLVED:** Chunk-header field encoding — finalized in Phase 4-A
   (`ChunkHeader::to_bytes`/`from_bytes`): version 1 byte, type 1 byte
-  (0=SingleString, 1=Chunked), `wallet_id` 3 bytes BE (20 bits, top
+  (0=SingleString, 1=Chunked), `policy_id` 3 bytes BE (20 bits, top
   4 zero), count 1 byte (1..=32), index 1 byte (`< count`). Total 2
   bytes (SingleString) or 7 bytes (Chunked) before codex32 5-bit
   packing.
 - **RESOLVED:** Wallet-id is **content-derived by default**
   (`SHA-256(canonical_bytecode)[0..16]` for Tier-3, truncated to first
-  20 bits for the chunk-header `ChunkWalletId`). The `EncodeOptions`
-  field `wallet_id_seed` provides a deterministic override for the
+  20 bits for the chunk-header `ChunkPolicyId`). The `EncodeOptions`
+  field `policy_id_seed` provides a deterministic override for the
   chunk-header field only (Tier-3 stays content-derived). Single-string
-  cards carry no chunk-header `wallet_id`. Implemented across Phase
+  cards carry no chunk-header `policy_id`. Implemented across Phase
   4-B/4-C/5-D.
 - **RESOLVED:** Cross-chunk hash function is **SHA-256 truncated to 4
   bytes** — see §6.8 above and BIP §"Cross-chunk hash". Same hash
-  function as the Tier-3 Wallet ID derivation (different truncation).
+  function as the Tier-3 Policy ID derivation (different truncation).
 - **RESOLVED:** Interop / BIP candidacy — pursuing as a BIP from the
   start. Draft at `bip/bip-wallet-descriptor-mnemonic.mediawiki`,
   proposed BIP number 3993 or 3939 (line 2 of the draft). Reference
@@ -841,7 +841,7 @@ of what was adopted vs. rejected:
 - **Wallet policy** — BIP 388 (template + key information vector + name)
 - **Template Card** — engraved Tier 1 backup of the template + origin paths
 - **Xpub Card** — engraved Tier 2 backup of one foreign xpub + its origin
-- **Wallet ID** — Tier 3 derived 12-word identifier
+- **Policy ID** — Tier 3 derived 12-word identifier
 - **Foreign xpub** — an xpub that is *not* derivable from the user's own seed
   (typically belonging to a cosigner)
 - **Codex32** — BIP 93 encoding (bech32-style alphabet + BCH error correction)
@@ -877,7 +877,7 @@ Roughly in dependency order:
    opcodes, varint rules, single-path encoding, path dictionary entries.
    Defer per-`@i` paths and foreign-xpub support to v1+. Produce concrete
    byte counts for the corpus from (2) and verify the size table in §4.
-4. **Define Wallet ID derivation** (§6.3) — hash choice, word list choice.
+4. **Define Policy ID derivation** (§6.3) — hash choice, word list choice.
    Optional in v0 but worth specifying now.
 5. **Reference implementation** start — encoder/decoder for the bytecode
    layer, then wrap with codex32. Round-trip with BIP 388 wallet policy

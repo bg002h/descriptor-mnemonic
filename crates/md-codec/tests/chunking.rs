@@ -9,7 +9,7 @@
 mod common;
 
 use md_codec::{
-    BchCode, ChunkCode, ChunkHeader, ChunkWalletId, ChunkingPlan, DecodeOptions, EncodeOptions,
+    BchCode, ChunkCode, ChunkHeader, ChunkPolicyId, ChunkingPlan, DecodeOptions, EncodeOptions,
     Error, WalletPolicy, chunk_bytes, decode, encode, reassemble_chunks,
 };
 
@@ -55,7 +55,7 @@ fn chunk_hash_mismatch_rejects() {
         fragment_size: 45,
         count: 2,
     };
-    let wid = ChunkWalletId::new(0x12345);
+    let wid = ChunkPolicyId::new(0x12345);
     let mut chunks = chunk_bytes(&bytecode, plan, wid).expect("chunk_bytes should succeed");
 
     // Sanity: should have 2 chunks.

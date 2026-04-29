@@ -42,8 +42,8 @@ use md_codec::{
 pub(crate) struct EncodeJson {
     /// One JSON object per encoded chunk.
     pub chunks: Vec<EncodedChunkJson>,
-    /// 12-word BIP-39 representation of the Tier-3 Wallet ID.
-    pub wallet_id_words: String,
+    /// 12-word BIP-39 representation of the Tier-3 Policy ID.
+    pub policy_id_words: String,
 }
 
 /// One encoded chunk, mirroring `EncodedChunk`.
@@ -96,7 +96,7 @@ impl From<&MdBackup> for EncodeJson {
     fn from(b: &MdBackup) -> Self {
         EncodeJson {
             chunks: b.chunks.iter().map(EncodedChunkJson::from).collect(),
-            wallet_id_words: b.wallet_id_words.to_string(),
+            policy_id_words: b.policy_id_words.to_string(),
         }
     }
 }
@@ -154,8 +154,8 @@ pub(crate) struct VerificationsJson {
     pub total_chunks_consistent: bool,
     /// The bytecode header version is supported by this implementation.
     pub version_supported: bool,
-    /// All chunks declared the same `wallet_id`.
-    pub wallet_id_consistent: bool,
+    /// All chunks declared the same `policy_id`.
+    pub policy_id_consistent: bool,
 }
 
 impl From<&Correction> for CorrectionJson {
@@ -176,7 +176,7 @@ impl From<&Verifications> for VerificationsJson {
             cross_chunk_hash_ok: v.cross_chunk_hash_ok,
             total_chunks_consistent: v.total_chunks_consistent,
             version_supported: v.version_supported,
-            wallet_id_consistent: v.wallet_id_consistent,
+            policy_id_consistent: v.policy_id_consistent,
         }
     }
 }
@@ -269,7 +269,7 @@ mod tests {
         let round: EncodeJson = serde_json::from_str(&s).unwrap();
         assert_eq!(wrapper, round);
         assert!(!round.chunks.is_empty());
-        assert!(!round.wallet_id_words.is_empty());
+        assert!(!round.policy_id_words.is_empty());
     }
 
     #[test]
@@ -305,14 +305,14 @@ mod tests {
     fn verifications_from_library_type() {
         let v = Verifications {
             cross_chunk_hash_ok: true,
-            wallet_id_consistent: false,
+            policy_id_consistent: false,
             total_chunks_consistent: true,
             bytecode_well_formed: false,
             version_supported: true,
         };
         let j = VerificationsJson::from(&v);
         assert!(j.cross_chunk_hash_ok);
-        assert!(!j.wallet_id_consistent);
+        assert!(!j.policy_id_consistent);
         assert!(j.total_chunks_consistent);
         assert!(!j.bytecode_well_formed);
         assert!(j.version_supported);
