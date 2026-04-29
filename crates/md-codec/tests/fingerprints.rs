@@ -168,12 +168,12 @@ fn decoder_rejects_missing_fingerprints_tag() {
     let bytes = vec![
         0x04, // header v0, fingerprints flag set
         Tag::SharedPath.as_byte(),
-        0x03,                       // BIP 84 mainnet
-        Tag::Wsh.as_byte(),         // 0x05 — wrong tag here
-        Tag::Check.as_byte(),       // 0x0C
-        Tag::PkK.as_byte(),         // 0x1B
-        Tag::Placeholder.as_byte(), // 0x32
-        0x00,                       // index 0
+        0x03,               // BIP 84 mainnet
+        Tag::Wsh.as_byte(), // wrong tag here (no fingerprints block)
+        Tag::Check.as_byte(),
+        Tag::PkK.as_byte(),
+        Tag::Placeholder.as_byte(),
+        0x00, // index 0
     ];
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
     match err {

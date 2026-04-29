@@ -647,11 +647,11 @@ fn rejects_invalid_bytecode_unexpected_end() {
 
     let bytes: Vec<u8> = vec![
         0x00,                      // header
-        Tag::SharedPath.as_byte(), // 0x33
+        Tag::SharedPath.as_byte(), // path-declaration tag
         0x03,                      // BIP84 indicator
-        Tag::Wsh.as_byte(),        // 0x05
-                                   // Nothing follows — cursor hits end while reading the inner tag.
+        Tag::Wsh.as_byte(),        // outer descriptor (no inner follows)
     ];
+    // Nothing follows — cursor hits end while reading the inner tag.
 
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
     assert!(
@@ -761,17 +761,17 @@ fn rejects_invalid_bytecode_type_check_failed() {
 
     // multi(5, @0, @1): k=5, n=2, but keys only [@0, @1] → k > n → type-check failure.
     let bytes: Vec<u8> = vec![
-        0x00,                       // header
-        Tag::SharedPath.as_byte(),  // 0x33
-        0x03,                       // BIP84 indicator
-        Tag::Wsh.as_byte(),         // 0x05
-        Tag::Multi.as_byte(),       // 0x19
-        0x05,                       // k=5 (LEB128)
-        0x02,                       // n=2 (LEB128)
-        Tag::Placeholder.as_byte(), // 0x32
-        0x00,                       // index 0
-        Tag::Placeholder.as_byte(), // 0x32
-        0x01,                       // index 1
+        0x00, // header
+        Tag::SharedPath.as_byte(),
+        0x03, // BIP84 indicator
+        Tag::Wsh.as_byte(),
+        Tag::Multi.as_byte(),
+        0x05, // k=5 (LEB128)
+        0x02, // n=2 (LEB128)
+        Tag::Placeholder.as_byte(),
+        0x00, // index 0
+        Tag::Placeholder.as_byte(),
+        0x01, // index 1
     ];
 
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
@@ -842,10 +842,10 @@ fn rejects_policy_scope_violation() {
 
     // header=0x00 + SharedPath + Tr tag (not Wsh) at the top level.
     let bytes: Vec<u8> = vec![
-        0x00,                      // header
-        Tag::SharedPath.as_byte(), // 0x33
-        0x03,                      // BIP84 indicator
-        Tag::Tr.as_byte(),         // 0x06 — Tr is not allowed in v0.1
+        0x00, // header
+        Tag::SharedPath.as_byte(),
+        0x03,              // BIP84 indicator
+        Tag::Tr.as_byte(), // Tr is rejected at top level by the wsh-only scope check
         0x00,
     ];
 
@@ -1084,7 +1084,7 @@ fn rejects_sh_wpkh_non_placeholder() {
         0x03,
         Tag::Sh.as_byte(),
         Tag::Wpkh.as_byte(),
-        // Supply Tag::Wsh (0x05) where Tag::Placeholder (0x32) is expected.
+        // Supply Tag::Wsh where Tag::Placeholder is expected.
         Tag::Wsh.as_byte(),
         0x00,
     ];

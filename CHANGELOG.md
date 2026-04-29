@@ -4,6 +4,100 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.7.1] — 2026-04-29
+
+Patch release. 12 housekeeping items closing v0.7.x defensive-cleanup
+FOLLOWUPS plus the deferred signer-validate CLI. Wire format and
+public library API unchanged from v0.7.0.
+
+### Added
+
+- **NEW binary `md-signer-compat`** in the `md-signer-compat` crate
+  (gated behind that crate's default-on `cli` feature). Subcommands:
+  - `validate --signer <coldcard|ledger> --bytecode-hex <HEX>`
+  - `validate --signer <coldcard|ledger> --string <md1...>...`
+  - `list-signers`
+
+  Closes `v07-cli-validate-signer-subset`. The CLI ships in
+  md-signer-compat rather than as a `md validate --signer` subcommand
+  on the main `md` binary because md-signer-compat already depends on
+  md-codec; adding the reverse dep would cycle.
+- **NEW pub fn `bytecode::cursor::Cursor::remaining()`** (test-only,
+  `#[cfg(test)]`) — slice of unconsumed input. Used by the
+  decoder-arm tests' trailing-sentinel pattern.
+- **NEW `test-helpers` cargo feature** on md-codec (default-off):
+  exposes `pub mod test_helpers` with `dummy_key_a/b/c()` for
+  downstream crates' integration tests.
+- **NEW unit test `walker_reports_deepest_violation_first`** —
+  regression-pin for the v0.7.0 depth-first leaf-first walker
+  semantic refinement (`thresh(1, sha256(H))` with empty allowlist
+  rejects with `operator == "sha256"`, not `"thresh"`).
+
+### Changed
+
+- All six `decoder_arm_*` tests in `hand_ast_coverage.rs` now
+  assert exact byte consumption via a trailing `0xFF` sentinel
+  pattern instead of `cur.is_empty()` — catches under-consumption
+  bugs the prior pattern could not.
+- `Error::PolicyScopeViolation` rustdoc updated: removes the v0.1-only
+  framing, mentions the v0.7+ `policy_to_bytecode` use site.
+- `Error::PolicyScopeViolation` Display message: `"policy violates
+  v0.1 scope"` → `"policy violates MD encoding scope"`.
+- `decode_descriptor` `Tag::TapTree` arm diagnostic now formats the
+  byte at runtime (`Tag::TapTree.as_byte()`) so future Tag-byte rolls
+  don't desync the diagnostic from the enum.
+- `decode_rejects_sh_bare` test renamed to
+  `decode_rejects_sh_with_disallowed_inner_tag` and updated to
+  exercise `Tag::TapTree` (the v0.6 occupant of byte 0x07) — the
+  prior test name and inline byte comment dated to v0.5's `Tag::Bare`.
+- `LEDGER_TAP` rustdoc relabelled the variant list as
+  "representative subset" and notes the operator union remains
+  complete (the cited 7 variants are no longer the full 16, but the
+  operator set covers all admitted shapes).
+- `validate_tap_tree` rustdoc fixed: `TapTree::leaves()` yields a
+  `TapTreeIterItem` struct, not the previously-claimed
+  `(depth, leaf_ms)` tuple.
+- `or_c_unwrapped_tap_leaf_byte_form` docstring tightened to
+  "encoder wire-byte pin only" — the prior text promised a
+  decoder-rejection assertion the test body did not perform.
+- `md from-policy --context` error message now enumerates all four
+  accepted forms (`segwitv0`, `wsh`, `tap`, `tr`).
+- Sweep of stale `// 0x32` / `// 0x19` / etc. byte-value comments in
+  `tests/{conformance,fingerprints}.rs` (the symbolic refs were
+  correct; only the trailing comments dated to v0.5 byte values).
+- md-codec internal: `dummy_key_a/b` fixtures consolidated into
+  `test_helpers` (one source-of-truth across `hand_ast_coverage` and
+  the new shared module).
+
+### Spec
+
+- `design/SPEC_v0_6_strip_layer_3.md` §2.2.1 — new alphabetical
+  `Tag → byte` audit-convenience index. Authoritative grouping
+  remains §2.2.
+
+### Closes FOLLOWUPS (12)
+
+- `v07-cli-validate-signer-subset`
+- `v06-spec-tag-byte-display-table`
+- `v07-decode-rejects-sh-bare-rename`
+- `v07-stale-byte-annotation-comments`
+- `v07-phase2-or-c-unwrapped-test-docstring-drift`
+- `v07-ledger-rustdoc-variant-enumeration-incomplete`
+- `v07-phase5-policyscopeviolation-rustdoc`
+- `v07-phase5-cli-context-error-msg`
+- `v07-walker-deepest-violation-pin-test`
+- `v07-phase2-decoder-arm-cursor-sentinel-pattern`
+- `v07-md-signer-compat-shared-test-key-helpers`
+- `v07-taptree-diagnostic-runtime-byte`
+
+### Notes
+
+- Wire format byte-identical to v0.6.x and v0.7.0. Vector files
+  unchanged (`GENERATOR_FAMILY` stays `"md-codec 0.7"` since it
+  embeds only MAJOR.MINOR).
+- `md-signer-compat` crate also bumps from `0.1.0` → `0.1.1`
+  (independent versioning).
+
 ## [0.7.0] — 2026-04-29
 
 First post-strip-Layer-3 release. Bundles four tracks: test rebaseline,

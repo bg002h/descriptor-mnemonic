@@ -11,7 +11,6 @@
 //! registered as `#[cfg(test)] mod hand_ast_coverage;` in `bytecode/mod.rs`.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::hashes::Hash as _;
@@ -21,20 +20,7 @@ use crate::bytecode::Tag;
 use crate::bytecode::cursor::Cursor;
 use crate::bytecode::decode::{decode_tap_miniscript, decode_tap_terminal};
 use crate::bytecode::encode::EncodeTemplate;
-
-fn dummy_key_a() -> DescriptorPublicKey {
-    DescriptorPublicKey::from_str(
-        "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
-    )
-    .unwrap()
-}
-
-fn dummy_key_b() -> DescriptorPublicKey {
-    DescriptorPublicKey::from_str(
-        "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
-    )
-    .unwrap()
-}
+use crate::test_helpers::{dummy_key_a, dummy_key_b};
 
 fn map_ab() -> (HashMap<DescriptorPublicKey, u8>, Vec<DescriptorPublicKey>) {
     let key_a = dummy_key_a();
@@ -50,15 +36,10 @@ fn map_ab() -> (HashMap<DescriptorPublicKey, u8>, Vec<DescriptorPublicKey>) {
 // §3.1 — Hand-AST tests for typing-awkward operators
 // ---------------------------------------------------------------------------
 
-/// Phase 2.0 outcome: the v0.6 decoder constructs a Miniscript via
-/// `Miniscript::from_ast` (or equivalent typed constructor); for an
-/// unwrapped `or_c` at the top of a tap leaf, the result is K-typed (not
-/// B), which the typer will reject. This test pins the encoder's wire
-/// shape (which is what Phase 2.1 cares about) and verifies the
-/// decoder's behavior on the unwrapped form. If the decoder accepts
-/// (returning the K-typed leaf), the round-trip is byte-stable. If the
-/// decoder rejects, this test asserts the rejection diagnostic so a
-/// later contributor knows precisely how the parser surfaces it.
+/// Encoder wire-byte pin only. An unwrapped `or_c` at the top of a tap
+/// leaf is V-typed, which the parser/typer would reject at the leaf
+/// root; the decoder round-trip via `t:or_c` (= `and_v(or_c, True)`)
+/// is covered by `t_or_c_tap_leaf_round_trips` below.
 #[test]
 fn or_c_unwrapped_tap_leaf_byte_form() {
     let (map, _keys) = map_ab();
@@ -332,19 +313,20 @@ fn hash_terminals_encode_internal_byte_order_with_decode_round_trip() {
 fn decoder_arm_multi_a_consumes_correct_bytes() {
     let key_a = dummy_key_a();
     let key_b = dummy_key_b();
-    let key_c = DescriptorPublicKey::from_str(
-        "02e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
-    )
-    .unwrap();
+    let key_c = crate::test_helpers::dummy_key_c();
     let keys = vec![key_a, key_b, key_c];
 
-    // [k=2, n=3, Placeholder@0, Placeholder@1, Placeholder@2]
+    // [k=2, n=3, Placeholder@0, Placeholder@1, Placeholder@2, sentinel]
     let p = Tag::Placeholder.as_byte();
-    let bytes = vec![0x02, 0x03, p, 0, p, 1, p, 2];
+    let bytes = vec![0x02, 0x03, p, 0, p, 1, p, 2, 0xFF];
     let mut cur = Cursor::new(&bytes);
     let decoded =
         decode_tap_terminal(&mut cur, &keys, Tag::MultiA, 0, None).expect("multi_a decodes");
-    assert!(cur.is_empty(), "decoder must consume all input bytes");
+    assert_eq!(
+        cur.remaining(),
+        &[0xFF],
+        "decoder must consume exactly k+n+placeholders, leaving sentinel"
+    );
     match decoded.node {
         Terminal::MultiA(ref thresh) => {
             assert_eq!(thresh.k(), 2);
@@ -358,16 +340,21 @@ fn decoder_arm_multi_a_consumes_correct_bytes() {
 #[test]
 fn decoder_arm_andor_consumes_three_children() {
     let no_keys: Vec<DescriptorPublicKey> = Vec::new();
-    // [False, True, False]
+    // [False, True, False, sentinel]
     let bytes = vec![
         Tag::False.as_byte(),
         Tag::True.as_byte(),
         Tag::False.as_byte(),
+        0xFF,
     ];
     let mut cur = Cursor::new(&bytes);
     let decoded =
         decode_tap_terminal(&mut cur, &no_keys, Tag::AndOr, 0, None).expect("andor decodes");
-    assert!(cur.is_empty(), "decoder must consume all three children");
+    assert_eq!(
+        cur.remaining(),
+        &[0xFF],
+        "decoder must consume exactly three children, leaving sentinel"
+    );
     assert!(matches!(decoded.node, Terminal::AndOr(_, _, _)));
 }
 
@@ -380,24 +367,25 @@ fn decoder_arm_andor_consumes_three_children() {
 fn decoder_arm_thresh_consumes_k_and_children() {
     let key_a = dummy_key_a();
     let key_b = dummy_key_b();
-    let key_c = DescriptorPublicKey::from_str(
-        "02e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
-    )
-    .unwrap();
+    let key_c = crate::test_helpers::dummy_key_c();
     let keys = vec![key_a, key_b, key_c];
 
     let p = Tag::Placeholder.as_byte();
     let c = Tag::Check.as_byte();
     let s = Tag::Swap.as_byte();
     let pk_k = Tag::PkK.as_byte();
-    // [k=2, n=3, c:pk_k(@0), s:c:pk_k(@1), s:c:pk_k(@2)]
+    // [k=2, n=3, c:pk_k(@0), s:c:pk_k(@1), s:c:pk_k(@2), sentinel]
     let bytes = vec![
-        0x02, 0x03, c, pk_k, p, 0, s, c, pk_k, p, 1, s, c, pk_k, p, 2,
+        0x02, 0x03, c, pk_k, p, 0, s, c, pk_k, p, 1, s, c, pk_k, p, 2, 0xFF,
     ];
     let mut cur = Cursor::new(&bytes);
     let decoded =
         decode_tap_terminal(&mut cur, &keys, Tag::Thresh, 0, None).expect("thresh decodes");
-    assert!(cur.is_empty(), "decoder must consume k + n + 3 children");
+    assert_eq!(
+        cur.remaining(),
+        &[0xFF],
+        "decoder must consume exactly k + n + 3 children, leaving sentinel"
+    );
     match decoded.node {
         Terminal::Thresh(ref thresh) => {
             assert_eq!(thresh.k(), 2);
@@ -412,13 +400,14 @@ fn decoder_arm_thresh_consumes_k_and_children() {
 #[test]
 fn decoder_arm_after_consumes_varint_only() {
     let no_keys: Vec<DescriptorPublicKey> = Vec::new();
-    let bytes = vec![0xD2, 0x09];
+    let bytes = vec![0xD2, 0x09, 0xFF];
     let mut cur = Cursor::new(&bytes);
     let decoded =
         decode_tap_terminal(&mut cur, &no_keys, Tag::After, 0, None).expect("after decodes");
-    assert!(
-        cur.is_empty(),
-        "decoder must consume only the LEB128 varint"
+    assert_eq!(
+        cur.remaining(),
+        &[0xFF],
+        "decoder must consume only the LEB128 varint, leaving sentinel"
     );
     match decoded.node {
         Terminal::After(lock) => {
@@ -433,18 +422,19 @@ fn decoder_arm_after_consumes_varint_only() {
 fn decoder_arm_sortedmulti_a_consumes_correct_bytes() {
     let key_a = dummy_key_a();
     let key_b = dummy_key_b();
-    let key_c = DescriptorPublicKey::from_str(
-        "02e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
-    )
-    .unwrap();
+    let key_c = crate::test_helpers::dummy_key_c();
     let keys = vec![key_a, key_b, key_c];
 
     let p = Tag::Placeholder.as_byte();
-    let bytes = vec![0x02, 0x03, p, 0, p, 1, p, 2];
+    let bytes = vec![0x02, 0x03, p, 0, p, 1, p, 2, 0xFF];
     let mut cur = Cursor::new(&bytes);
     let decoded = decode_tap_terminal(&mut cur, &keys, Tag::SortedMultiA, 0, None)
         .expect("sortedmulti_a decodes");
-    assert!(cur.is_empty(), "decoder must consume all input bytes");
+    assert_eq!(
+        cur.remaining(),
+        &[0xFF],
+        "decoder must consume exactly k+n+placeholders, leaving sentinel"
+    );
     // SortedMultiA decodes to its own Terminal variant (the upstream
     // miniscript fork tracks sorted-vs-unsorted as distinct Terminals).
     match decoded.node {
@@ -460,13 +450,63 @@ fn decoder_arm_sortedmulti_a_consumes_correct_bytes() {
 #[test]
 fn decoder_arm_hash256_consumes_32_bytes() {
     let no_keys: Vec<DescriptorPublicKey> = Vec::new();
-    let payload = [0x42u8; 32];
-    let mut cur = Cursor::new(&payload);
+    let mut bytes = [0u8; 33];
+    bytes[..32].copy_from_slice(&[0x42u8; 32]);
+    bytes[32] = 0xFF; // sentinel
+    let mut cur = Cursor::new(&bytes);
     let decoded =
         decode_tap_terminal(&mut cur, &no_keys, Tag::Hash256, 0, None).expect("hash256 decodes");
-    assert!(cur.is_empty(), "decoder must consume exactly 32 bytes");
+    assert_eq!(
+        cur.remaining(),
+        &[0xFF],
+        "decoder must consume exactly 32 bytes, leaving sentinel"
+    );
+    let payload = [0x42u8; 32];
     match decoded.node {
         Terminal::Hash256(h) => assert_eq!(h.as_byte_array(), &payload),
         other => panic!("expected Hash256, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Walk-order regression pin (v0.7.1)
+// ---------------------------------------------------------------------------
+
+/// `validate_tap_leaf_subset_with_allowlist` walks operator-tree
+/// children depth-first leaf-first, so the deepest violation is
+/// reported. For a tree like `thresh(1, sha256(H))` with an empty
+/// allowlist (so neither `thresh` nor `sha256` is admitted), the
+/// walker must report `"sha256"` (the leaf) — a future regression
+/// flipping back to top-down rejection would report `"thresh"`.
+///
+/// Pins the contract documented in
+/// [`bytecode::encode::validate_tap_leaf_subset_with_allowlist`]'s
+/// rustdoc.
+#[test]
+fn walker_reports_deepest_violation_first() {
+    use bitcoin::hashes::sha256;
+    use miniscript::Threshold;
+
+    use crate::bytecode::encode::validate_tap_leaf_subset_with_allowlist;
+
+    let h = sha256::Hash::from_byte_array([0xAA; 32]);
+    let sha = Miniscript::<DescriptorPublicKey, Tap>::from_ast(Terminal::Sha256(h)).unwrap();
+    let thresh_term = Terminal::Thresh(Threshold::new(1, vec![Arc::new(sha)]).unwrap());
+    let ms = Miniscript::<DescriptorPublicKey, Tap>::from_ast(thresh_term).unwrap();
+
+    // Empty allowlist: every operator is out-of-subset.
+    let allowlist: &[&str] = &[];
+    let err = validate_tap_leaf_subset_with_allowlist(&ms, allowlist, Some(0))
+        .expect_err("empty allowlist must reject");
+    match err {
+        crate::Error::SubsetViolation { operator, .. } => {
+            assert_eq!(
+                operator, "sha256",
+                "depth-first walker must report the deepest violation \
+                 (got {operator:?}; if 'thresh', the walker reverted to \
+                 top-down rejection — see v07-walker-deepest-violation-pin-test)"
+            );
+        }
+        other => panic!("expected SubsetViolation, got {other:?}"),
     }
 }

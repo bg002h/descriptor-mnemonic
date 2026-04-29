@@ -1,6 +1,6 @@
 [package]
 name = "md-codec"
-version = "0.7.0"
+version = "0.7.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -38,6 +38,9 @@ cli = ["dep:clap", "dep:anyhow"]
 compiler = ["miniscript/compiler"]
 # CLI mode for `md encode --from-policy <expr> --context <tap|segwitv0>`.
 cli-compiler = ["cli", "compiler"]
+# Exposes the `test_helpers` module to downstream crates' test suites.
+# Off by default; enable only in `[dev-dependencies]` of consumer crates.
+test-helpers = []
 
 [dependencies]
 bitcoin = "0.32"

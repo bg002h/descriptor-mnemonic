@@ -1,26 +1,12 @@
 //! Unit tests for md-signer-compat.
 
-use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::hashes::Hash as _;
+use md_codec::test_helpers::{dummy_key_a, dummy_key_b};
 use miniscript::{DescriptorPublicKey, Miniscript, Tap, Terminal, Threshold};
 
 use crate::{COLDCARD_TAP, LEDGER_TAP, validate, validate_tap_tree};
-
-fn dummy_key_a() -> DescriptorPublicKey {
-    DescriptorPublicKey::from_str(
-        "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
-    )
-    .unwrap()
-}
-
-fn dummy_key_b() -> DescriptorPublicKey {
-    DescriptorPublicKey::from_str(
-        "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
-    )
-    .unwrap()
-}
 
 #[test]
 fn coldcard_admits_documented_pk_shape() {

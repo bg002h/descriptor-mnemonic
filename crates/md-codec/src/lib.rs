@@ -147,6 +147,8 @@ pub mod options;
 pub mod policy;
 #[cfg(feature = "compiler")]
 pub mod policy_compiler;
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod test_helpers;
 pub mod vectors;
 pub mod wallet_id;
 

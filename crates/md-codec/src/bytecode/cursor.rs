@@ -105,6 +105,14 @@ impl<'a> Cursor<'a> {
         self.offset >= self.bytes.len()
     }
 
+    /// Slice of bytes still unconsumed (from the current offset to the
+    /// end of the input). Used by tests that pin exact byte consumption
+    /// via a trailing sentinel pattern.
+    #[cfg(test)]
+    pub(crate) fn remaining(&self) -> &[u8] {
+        &self.bytes[self.offset..]
+    }
+
     /// Read the next byte without advancing the cursor. Returns
     /// `Err(InvalidBytecode { kind: UnexpectedEnd })` at EOF, mirroring
     /// `read_byte`'s contract.
