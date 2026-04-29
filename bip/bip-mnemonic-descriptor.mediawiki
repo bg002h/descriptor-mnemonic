@@ -359,6 +359,8 @@ The path encoding indicator selects between a dictionary of well-known paths and
 
 Indicators <code>0x08</code>–<code>0x10</code> and <code>0x18</code>–<code>0xFD</code> are reserved for future dictionary entries.
 
+'''Cross-format inheritance.''' The path dictionary is contractually shared with the sibling Mnemonic Key (MK) format ([https://github.com/bg002h/mnemonic-key]) byte-for-byte. Any allocation, deletion, or renumbering in this table requires a coordinated update of MK's specification and reference implementation in the same release window; see <code>design/RELEASE_PROCESS.md</code> in the reference implementation for the lockstep checklist.
+
 =====Explicit path encoding=====
 
 When the path encoding indicator is <code>0xFE</code>, the path is encoded explicitly:
