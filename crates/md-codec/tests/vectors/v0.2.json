@@ -395,8 +395,8 @@
       ]
     },
     {
-      "id": "tr_multi_leaf_chunking_boundary_md_v0_5",
-      "description": "Taproot multi-leaf at chunking boundary (7-leaf right-spine tree)",
+      "id": "tr_multi_leaf_right_spine_md_v0_5",
+      "description": "Taproot multi-leaf 6-leaf right-spine asymmetric tree",
       "policy": "tr(@0/**,{{pk(@1/**),pk(@2/**)},{pk(@3/**),{pk(@4/**),{pk(@5/**),pk(@6/**)}}}})",
       "expected_bytecode_hex": "00330306320008080c1b32010c1b3202080c1b3203080c1b3204080c1b32050c1b3206",
       "expected_chunks": [

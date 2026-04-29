@@ -574,46 +574,69 @@ fn encode_tap_subtree(
 }
 
 /// Human-readable name for a tap-context Terminal variant, used in error
-/// messages. Mirrors the operator names that appear in BIP 388 / miniscript
-/// source form so caller-facing diagnostics are precise.
+/// messages. Delegates to `decode::tag_to_bip388_name` via a
+/// `Terminal → Tag` adapter so encode-side and decode-side diagnostics
+/// for the same operator are guaranteed byte-identical.
+///
+/// `Terminal::SortedMultiA` has no `Tag` counterpart (the wire format does
+/// not encode `sortedmulti_a` — it would require a future Tag allocation),
+/// so its name is supplied directly here.
 fn tap_terminal_name(term: &Terminal<DescriptorPublicKey, Tap>) -> &'static str {
+    if let Some(tag) = terminal_to_tag(term) {
+        return super::decode::tag_to_bip388_name(tag);
+    }
     match term {
-        Terminal::True => "1",
-        Terminal::False => "0",
-        Terminal::PkK(_) => "pk_k",
-        Terminal::PkH(_) => "pk_h",
-        Terminal::RawPkH(_) => "raw_pk_h",
-        Terminal::Multi(_) => "multi",
-        Terminal::SortedMulti(_) => "sortedmulti",
-        Terminal::MultiA(_) => "multi_a",
         Terminal::SortedMultiA(_) => "sortedmulti_a",
-        Terminal::After(_) => "after",
-        Terminal::Older(_) => "older",
-        Terminal::Sha256(_) => "sha256",
-        Terminal::Hash256(_) => "hash256",
-        Terminal::Ripemd160(_) => "ripemd160",
-        Terminal::Hash160(_) => "hash160",
-        Terminal::AndV(..) => "and_v",
-        Terminal::AndB(..) => "and_b",
-        Terminal::AndOr(..) => "andor",
-        Terminal::OrB(..) => "or_b",
-        Terminal::OrC(..) => "or_c",
-        Terminal::OrD(..) => "or_d",
-        Terminal::OrI(..) => "or_i",
-        Terminal::Thresh(_) => "thresh",
-        Terminal::Alt(_) => "a:",
-        Terminal::Swap(_) => "s:",
-        Terminal::Check(_) => "c:",
-        Terminal::DupIf(_) => "d:",
-        Terminal::Verify(_) => "v:",
-        Terminal::NonZero(_) => "j:",
-        Terminal::ZeroNotEqual(_) => "n:",
         // Defensive catch-all — Terminal isn't `#[non_exhaustive]` in the
         // pinned miniscript v13, so this is unreachable today; kept against
         // a future upgrade adding new variants.
-        #[allow(unreachable_patterns)]
         _ => "<unknown-terminal>",
     }
+}
+
+/// Map a tap-context `Terminal` to its corresponding wire-format `Tag`,
+/// or `None` for variants without a Tag allocation (`SortedMultiA`).
+///
+/// Used by `tap_terminal_name` to delegate operator naming to the
+/// single-source-of-truth `tag_to_bip388_name`. Not used in the encode
+/// emit path (which hardcodes the mapping inline at each site for
+/// per-variant payload handling).
+fn terminal_to_tag(term: &Terminal<DescriptorPublicKey, Tap>) -> Option<Tag> {
+    Some(match term {
+        Terminal::True => Tag::True,
+        Terminal::False => Tag::False,
+        Terminal::PkK(_) => Tag::PkK,
+        Terminal::PkH(_) => Tag::PkH,
+        Terminal::RawPkH(_) => Tag::RawPkH,
+        Terminal::Multi(_) => Tag::Multi,
+        Terminal::SortedMulti(_) => Tag::SortedMulti,
+        Terminal::MultiA(_) => Tag::MultiA,
+        Terminal::After(_) => Tag::After,
+        Terminal::Older(_) => Tag::Older,
+        Terminal::Sha256(_) => Tag::Sha256,
+        Terminal::Hash256(_) => Tag::Hash256,
+        Terminal::Ripemd160(_) => Tag::Ripemd160,
+        Terminal::Hash160(_) => Tag::Hash160,
+        Terminal::AndV(..) => Tag::AndV,
+        Terminal::AndB(..) => Tag::AndB,
+        Terminal::AndOr(..) => Tag::AndOr,
+        Terminal::OrB(..) => Tag::OrB,
+        Terminal::OrC(..) => Tag::OrC,
+        Terminal::OrD(..) => Tag::OrD,
+        Terminal::OrI(..) => Tag::OrI,
+        Terminal::Thresh(_) => Tag::Thresh,
+        Terminal::Alt(_) => Tag::Alt,
+        Terminal::Swap(_) => Tag::Swap,
+        Terminal::Check(_) => Tag::Check,
+        Terminal::DupIf(_) => Tag::DupIf,
+        Terminal::Verify(_) => Tag::Verify,
+        Terminal::NonZero(_) => Tag::NonZero,
+        Terminal::ZeroNotEqual(_) => Tag::ZeroNotEqual,
+        // No Tag variant — caller falls back to a string-only name.
+        Terminal::SortedMultiA(_) => return None,
+        #[allow(unreachable_patterns)]
+        _ => return None,
+    })
 }
 
 /// Emit a `DescriptorPublicKey` as a placeholder reference.
@@ -1762,5 +1785,137 @@ mod tests {
             matches!(err, Error::PolicyScopeViolation(ref msg) if msg.contains("legacy P2SH")),
             "expected PolicyScopeViolation mentioning legacy P2SH, got: {err:?}"
         );
+    }
+
+    /// Locks the byte-identical encode/decode diagnostic guarantee:
+    /// `tap_terminal_name(t)` must equal `tag_to_bip388_name(tag)` for
+    /// every `Terminal` that maps to a `Tag`. A regression here means a
+    /// user sees one operator name on encode-side rejection and a
+    /// different name on decode-side rejection of the same operator.
+    #[test]
+    fn tap_terminal_name_delegates_to_tag_to_bip388_name() {
+        use crate::bytecode::decode::tag_to_bip388_name;
+        use bitcoin::hashes::{Hash, hash160, ripemd160, sha256};
+        use miniscript::hash256;
+
+        let key_a = DescriptorPublicKey::from_str(
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        )
+        .unwrap();
+        let key_b = DescriptorPublicKey::from_str(
+            "03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd",
+        )
+        .unwrap();
+        let dummy_child: Arc<Miniscript<DescriptorPublicKey, Tap>> =
+            Arc::new(Miniscript::from_ast(Terminal::True).unwrap());
+        let zero32 = [0u8; 32];
+        let zero20 = [0u8; 20];
+
+        let cases: Vec<(Terminal<DescriptorPublicKey, Tap>, Tag)> = vec![
+            // Constants
+            (Terminal::True, Tag::True),
+            (Terminal::False, Tag::False),
+            // Keys (subset operators)
+            (Terminal::PkK(key_a.clone()), Tag::PkK),
+            (Terminal::PkH(key_b.clone()), Tag::PkH),
+            (Terminal::RawPkH(hash160::Hash::from_byte_array(zero20)), Tag::RawPkH),
+            // Multisig family
+            (
+                Terminal::Multi(
+                    Threshold::new(1, vec![key_a.clone()]).unwrap(),
+                ),
+                Tag::Multi,
+            ),
+            (
+                Terminal::SortedMulti(
+                    Threshold::new(1, vec![key_a.clone()]).unwrap(),
+                ),
+                Tag::SortedMulti,
+            ),
+            (
+                Terminal::MultiA(
+                    Threshold::new(1, vec![key_a.clone()]).unwrap(),
+                ),
+                Tag::MultiA,
+            ),
+            // Timelocks
+            (
+                Terminal::After(miniscript::AbsLockTime::from_consensus(1).unwrap()),
+                Tag::After,
+            ),
+            (
+                Terminal::Older(miniscript::RelLockTime::from_consensus(1).unwrap()),
+                Tag::Older,
+            ),
+            // Hashes
+            (Terminal::Sha256(sha256::Hash::from_byte_array(zero32)), Tag::Sha256),
+            (Terminal::Hash256(hash256::Hash::from_byte_array(zero32)), Tag::Hash256),
+            (Terminal::Ripemd160(ripemd160::Hash::from_byte_array(zero20)), Tag::Ripemd160),
+            (Terminal::Hash160(hash160::Hash::from_byte_array(zero20)), Tag::Hash160),
+            // Wrappers (subset members c:/v: + others for breadth)
+            (Terminal::Alt(dummy_child.clone()), Tag::Alt),
+            (Terminal::Swap(dummy_child.clone()), Tag::Swap),
+            (Terminal::Check(dummy_child.clone()), Tag::Check),
+            (Terminal::DupIf(dummy_child.clone()), Tag::DupIf),
+            (Terminal::Verify(dummy_child.clone()), Tag::Verify),
+            (Terminal::NonZero(dummy_child.clone()), Tag::NonZero),
+            (Terminal::ZeroNotEqual(dummy_child.clone()), Tag::ZeroNotEqual),
+            // Logical operators
+            (
+                Terminal::AndV(dummy_child.clone(), dummy_child.clone()),
+                Tag::AndV,
+            ),
+            (
+                Terminal::AndB(dummy_child.clone(), dummy_child.clone()),
+                Tag::AndB,
+            ),
+            (
+                Terminal::AndOr(
+                    dummy_child.clone(),
+                    dummy_child.clone(),
+                    dummy_child.clone(),
+                ),
+                Tag::AndOr,
+            ),
+            (
+                Terminal::OrB(dummy_child.clone(), dummy_child.clone()),
+                Tag::OrB,
+            ),
+            (
+                Terminal::OrC(dummy_child.clone(), dummy_child.clone()),
+                Tag::OrC,
+            ),
+            (
+                Terminal::OrD(dummy_child.clone(), dummy_child.clone()),
+                Tag::OrD,
+            ),
+            (
+                Terminal::OrI(dummy_child.clone(), dummy_child.clone()),
+                Tag::OrI,
+            ),
+            (
+                Terminal::Thresh(
+                    Threshold::new(1, vec![dummy_child.clone()]).unwrap(),
+                ),
+                Tag::Thresh,
+            ),
+        ];
+
+        for (term, tag) in &cases {
+            assert_eq!(
+                tap_terminal_name(term),
+                tag_to_bip388_name(*tag),
+                "name mismatch: tap_terminal_name vs tag_to_bip388_name for tag {tag:?}"
+            );
+        }
+
+        // SortedMultiA has no Tag counterpart (no wire-format byte allocated).
+        // Verify the explicit string fallback so a future Tag allocation
+        // doesn't silently change the diagnostic.
+        let sma: Terminal<DescriptorPublicKey, Tap> = Terminal::SortedMultiA(
+            Threshold::new(1, vec![key_a.clone()]).unwrap(),
+        );
+        assert_eq!(tap_terminal_name(&sma), "sortedmulti_a");
+        assert!(terminal_to_tag(&sma).is_none());
     }
 }

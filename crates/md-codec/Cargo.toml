@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 description = "Reference implementation of the Mnemonic Descriptor (MD) format for engravable BIP 388 wallet policy backups"
 readme = "README.md"
+homepage = "https://github.com/bg002h/descriptor-mnemonic"
+documentation = "https://docs.rs/md-codec"
+keywords = ["bitcoin", "bip388", "wallet", "descriptor", "bech32"]
+categories = ["cryptography::cryptocurrencies", "encoding", "command-line-utilities"]
 
 [lints]
 workspace = true

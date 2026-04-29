@@ -221,8 +221,9 @@ const CORPUS_FIXTURES: &[(&str, &str, &str)] = &[
 /// - T4 (`tr_three_leaf_left_heavy_md_v0_5`): asymmetric depth 1/2/2.
 /// - T5 (`tr_three_leaf_right_heavy_md_v0_5`): mirror of T4 (depth 2/2/1; distinct bytecode).
 /// - T6 (`tr_multi_leaf_with_multi_md_v0_5`): mix of leaf script types.
-/// - T7 (`tr_multi_leaf_chunking_boundary_md_v0_5`): tree shape that pushes the
-///   regular-string single-chunk capacity boundary, forcing chunking.
+/// - T7 (`tr_multi_leaf_right_spine_md_v0_5`): 6-leaf right-spine asymmetric
+///   tree — distinct shape from T3-T5 for additional coverage of recursive
+///   `Tag::TapTree` framing on imbalanced trees.
 const TAPROOT_FIXTURES: &[(&str, &str, &str)] = &[
     // T1 (NEW): KeyOnly anchor — bytecode unchanged from v0.4.x.
     (
@@ -266,13 +267,15 @@ const TAPROOT_FIXTURES: &[(&str, &str, &str)] = &[
         "Taproot multi-leaf with multi_a in one leaf",
         "tr(@0/**,{pk(@1/**),multi_a(2,@2/**,@3/**)})",
     ),
-    // T7 (NEW): chunking-boundary tree — sized to push 1-string regular boundary.
-    // The 7-leaf right-spine asymmetric tree encodes to a payload large enough that
-    // chunking_decision selects a chunked plan (rather than SingleString); this
-    // exercises the multi-leaf TapTree path under the chunking layer.
+    // T7 (NEW): 6-leaf right-spine asymmetric tree — adds an imbalanced-shape
+    // regression anchor distinct from T3-T5 (which cover symmetric and
+    // 3-leaf shapes). NOTE: the original "chunking_boundary" name was a
+    // misnomer — the encoded payload (~35 bytes) is well under the 48-byte
+    // Regular single-string capacity, so this fixture does NOT exercise the
+    // chunking layer; it is a pure multi-leaf TapTree shape anchor.
     (
-        "tr_multi_leaf_chunking_boundary_md_v0_5",
-        "Taproot multi-leaf at chunking boundary (7-leaf right-spine tree)",
+        "tr_multi_leaf_right_spine_md_v0_5",
+        "Taproot multi-leaf 6-leaf right-spine asymmetric tree",
         "tr(@0/**,{{pk(@1/**),pk(@2/**)},{pk(@3/**),{pk(@4/**),{pk(@5/**),pk(@6/**)}}}})",
     ),
 ];

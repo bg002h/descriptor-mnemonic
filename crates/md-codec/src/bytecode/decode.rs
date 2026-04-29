@@ -804,12 +804,13 @@ fn decode_tap_subtree(
 }
 
 /// Map a `Tag` to its BIP 388 lowercase operator name for user-facing
-/// error messages. Mirrors `bytecode::encode::tap_terminal_name` so
-/// encode-side and decode-side rejections of the same out-of-subset
-/// operator surface identical diagnostics. Tags that don't correspond
+/// error messages. Single source of truth for operator-name diagnostics
+/// across encode-side and decode-side rejections — `bytecode::encode::
+/// tap_terminal_name` delegates here via a `Terminal → Tag` adapter so
+/// the two paths produce byte-identical names. Tags that don't correspond
 /// to a BIP 388 operator (framing tags, reserved-for-v1+ inline-key
 /// tags) fall back to a `<framing:0xNN>` or `<reserved:0xNN>` label.
-fn tag_to_bip388_name(tag: Tag) -> &'static str {
+pub(crate) fn tag_to_bip388_name(tag: Tag) -> &'static str {
     match tag {
         // Top-level descriptor wrappers
         Tag::Sh => "sh",
