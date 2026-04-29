@@ -109,6 +109,36 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.6 (next breaking release)
 
+### `tap-leaf-corpus-timelocked-multisig-shapes` — add positive corpus vectors for signer-canonical timelocked-multisig compound shapes
+
+- **Surfaced:** 2026-04-28 evidence-gathering session. Ledger's vanadium bitcoin app (`apps/bitcoin/common/src/bip388/cleartext.rs`) classifies 4 timelocked-multisig compound shapes as first-class wallet-policy variants for UX display: `RelativeHeightlockMultiSig` (`and_v(v:multi_a(...), older(n))` with `n < 65536`), `RelativeTimelockMultiSig` (`older` with `n >= 4194305 && n < 4259840` per BIP 112's relative-time encoding), `AbsoluteHeightlockMultiSig` (`after(n)` with `n < 500000000`), `AbsoluteTimelockMultiSig` (`after` with `n >= 500000000`). MD doesn't need first-class detection (we're a wire format, not a UI), but currently has zero positive corpus vectors exercising these compound shapes, so round-trip behaviour is not pinned by the conformance suite.
+- **Where:** `crates/md-codec/src/vectors.rs` (positive corpus fixtures); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" example list.
+- **What:** Add 2–4 positive corpus vectors capturing canonical timelocked-multisig shapes — e.g. `tr(@0/**, and_v(v:multi_a(2,@1/**,@2/**), older(144)))` for relative height, plus `after`-using variants once `tap-leaf-admit-after` lands. The relative-height/time variants (using `older`) work today with our current admit set; only the corpus coverage is missing. Absolute variants (using `after`) are blocked on `tap-leaf-admit-after`. Update BIP draft examples to mirror the Ledger compound-shape vocabulary so signer-aware tooling can recognize the patterns even though MD itself is shape-agnostic.
+- **Why deferred:** Pure corpus expansion + spec example growth. No validator changes; not blocking. Family-stable SHA promise means new corpus vectors cannot land in a v0.5.x patch — they'd change the v0.5.json SHA. v0.6 is the natural home alongside the other admit-set widenings.
+- **Status:** open
+- **Tier:** v0.6 (alongside `tap-leaf-admit-after`)
+
+### `tap-leaf-corpus-pkh-shape` — verify and lock in `pkh()` round-trip in tap leaves
+
+- **Surfaced:** 2026-04-28 evidence-gathering session. Coldcard's `docs/taproot.md` (edge branch) lists `tr(internal_key, {or_d(pk(@0), and_v(v:pkh(@1), older(1000))), pk(@2)})` as an admitted descriptor — uses `pkh()` inside a tap leaf. MD's current admit set already admits `Terminal::PkH` (`Tag::PkH = 0x1C`) and `Terminal::Check` (`Tag::Check = 0x0C`), so `pkh(K)` (BIP 379 sugar for `c:pk_h(K)`) is expected to round-trip via rust-miniscript's parse-time desugaring — but no positive corpus vector locks this in.
+- **Where:** `crates/md-codec/src/vectors.rs` (positive corpus fixture); `bip/bip-mnemonic-descriptor.mediawiki` §"Taproot tree" examples (mention `pkh()` as part of Coldcard's documented shape vocabulary).
+- **What:** First, verify `tr(@0/**, and_v(v:pkh(@1/**), older(144)))` round-trips through MD today. Expected: rust-miniscript desugars `pkh(K)` → `c:pk_h(K)` at parse time, both terminals already admitted, so round-trip succeeds. If verified, add a positive corpus vector capturing the shape so the round-trip is locked by conformance tests. If the round-trip unexpectedly fails (e.g., rust-miniscript preserves a distinct `Pkh` AST node we don't handle), reframe as an admit-set widening rather than a corpus addition.
+- **Why deferred:** Verification + corpus expansion. No validator changes expected; sub-day work. Family-stable SHA constraint pushes this to v0.6.
+- **Status:** open
+- **Tier:** v0.6 (alongside `tap-leaf-admit-after` and `tap-leaf-corpus-timelocked-multisig-shapes`)
+
+### `v0-6-release-prep` — coordinate the cross-cutting v0.6 release work
+
+- **Surfaced:** 2026-04-28. Several v0.6-tagged FOLLOWUPS entries have landed (`decoded-string-data-memory-microopt` already done in `d79125d`; `tap-leaf-admit-sortedmulti-a`, `tap-leaf-admit-after`, `tap-leaf-corpus-timelocked-multisig-shapes`, `tap-leaf-corpus-pkh-shape` queued). They share cross-cutting concerns that don't fit any single entry: a Tag-byte-allocation decision for `sortedmulti_a`, a coordinated CHANGELOG / MIGRATION pass at release time, the family-stable SHA reset (`"md-codec 0.5"` → `"md-codec 0.6"`), and the version bump itself. This entry coordinates the meta-work.
+- **Where:** `crates/md-codec/Cargo.toml` (version bump); `crates/md-codec/src/bytecode/tag.rs` (`Tag::SortedMultiA` allocation); `crates/md-codec/src/vectors.rs` (`GENERATOR_FAMILY` major.minor token); `crates/md-codec/tests/vectors_schema.rs` (v0.1.json + v0.2.json SHA pin updates after regen); `CHANGELOG.md` (`[Unreleased]` → `[0.6.0]` rename + consolidated entries); `MIGRATION.md` (rewrite or extend `v0.5.x → v0.6.0` section to cover all the breaking/widening changes); `bip/bip-mnemonic-descriptor.mediawiki` (admit-list updates).
+- **What:** Three coordinated tasks beyond the per-entry work:
+  1. **Tag-byte allocation decision for `sortedmulti_a`.** Candidates per the wire-format audit: `0x34` (currently the only "reserved-invalid" byte in the 0x00–0x33 range — would change `tag.rs:225-232` test gate semantics) or anywhere in `0x36+` (further from the existing operator block but cleaner). Decision affects `tap-leaf-admit-sortedmulti-a` only.
+  2. **Coordinated validator + corpus + BIP-draft pass.** Land the `validate_tap_leaf_subset` widening (covers `tap-leaf-admit-sortedmulti-a` and `tap-leaf-admit-after` together), regenerate corpus with the new positive vectors (covers `tap-leaf-corpus-timelocked-multisig-shapes` and `tap-leaf-corpus-pkh-shape`), update BIP draft §"Taproot tree" admit-list with vendor citations (Coldcard `docs/taproot.md` edge + Ledger `vanadium/apps/bitcoin/common/src/bip388/cleartext.rs`). Single PR or stacked PRs at controller's discretion.
+  3. **Release plumbing.** `Cargo.toml` version 0.5.0 → 0.6.0; `GENERATOR_FAMILY` token rolls `"md-codec 0.5"` → `"md-codec 0.6"`; v0.1.json and v0.2.json regenerated with the new family token (SHAs change once at the v0.5.x → v0.6.0 boundary, then stable across the v0.6.x patch line per the family-stable promise); `vectors_schema.rs` SHA pins updated; CHANGELOG `[Unreleased]` section renamed to `[0.6.0] — <date>` with entries from all v0.6 work consolidated; MIGRATION's `v0.5.x → v0.6.0` section extended to cover the admit-set widenings (currently only documents the `DecodedString.data` field removal).
+- **Why deferred:** Coordination only — no per-entry blocker. Lands at the v0.6 release cut, after the per-entry implementation work is done.
+- **Status:** open
+- **Tier:** v0.6 (release-prep meta-entry; closes only at the v0.6.0 tag)
+
 
 ### `cli-json-debug-formatted-enum-strings` — replace `format!("{:?}", enum_value)` with serde-typed enum mirrors in CLI JSON output
 
