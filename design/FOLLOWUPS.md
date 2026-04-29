@@ -70,15 +70,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** external
 
-### `decoded-string-data-memory-microopt` — drop `DecodedString.data`, replace with accessor backed by `data_with_checksum`
-
-- **Surfaced:** Phase B bucket A reviewer (Opus 4.7) on commit `5f13812`
-- **Where:** `crates/wdm-codec/src/encoding.rs::DecodedString`
-- **What:** With `data_with_checksum: Vec<u8>` added in Phase B (so `corrected_char_at` works for checksum-region positions), `data` and `data_with_checksum` redundantly store the same symbol array (data + a 13/15-char suffix). Memory cost is ~26 bytes for Regular / ~30 for Long per `DecodedString`, plus `Vec` overhead — negligible at v0.1 scale. An obvious micro-opt: drop the `data: Vec<u8>` field; replace with a `pub fn data(&self) -> &[u8]` accessor that returns `&self.data_with_checksum[..self.data_with_checksum.len() - checksum_len]`.
-- **Why deferred:** breaking API change (the `data` field is currently `pub`); v0.3 breaking-window candidate. Negligible at v0.1/v0.2 scale; not worth the breakage in v0.2.
-- **Status:** open
-- **Tier:** v0.3
-
 ### `phase-d-tap-leaf-wrapper-subset-clarification` — widen the tap-leaf wrapper subset if signers document broader safe support
 
 - **Surfaced:** Phase D implementer (Opus 4.7) on commit `6f6eae9`
@@ -593,6 +584,12 @@ See BIP §FAQ for rationale.
 - **Surfaced:** Phase 4 implementer (commit `bca2804`); Phase 4 reviewer confirmed independently
 - **Status:** resolved `75e22f2` (`chore(v0.5 m2): fix target_depth literal in spec + plan`, on the v0.5 feature branch; merged to main via `865f889`). Working code at `encode.rs:166` was already correct; the doc fix updated `design/SPEC_v0_5_multi_leaf_taptree.md` §4 and `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md` Phase 4 Task 4.3 to match.
 - **Tier:** v0.5-must-close-before-ship (closed)
+
+### `decoded-string-data-memory-microopt` — drop `DecodedString.data`, replace with accessor backed by `data_with_checksum`
+
+- **Surfaced:** Phase B bucket A reviewer (Opus 4.7) on commit `5f13812`
+- **Status:** resolved `d79125d` (Pass-3 batch) — `pub data: Vec<u8>` field removed from `DecodedString`; replaced with `pub fn data(&self) -> &[u8]` returning a slice into the existing `data_with_checksum` field (`&data_with_checksum[..len - checksum_len]`, where `checksum_len = 13` for `BchCode::Regular` and `15` for `BchCode::Long`). Internal `decoded_strings` buffer in `decode.rs` restructured from `Vec<(Vec<u8>, BchCode)>` to `Vec<DecodedString>` to preserve the single allocation produced by the BCH layer. CHANGELOG `[Unreleased]` (planned 0.6.0) and MIGRATION `v0.5.x → v0.6.0` sections added. Reviewed by feature-dev:code-reviewer subagent — DONE_WITH_CONCERNS; the reviewer's Important finding (a `data_with_checksum`-substitution trap in the migration docs) was addressed inline before commit. Report at `design/agent-reports/pass-3-item-2-review-decoded-string-data-accessor.md`.
+- **Tier:** v0.3 → 0.6.0 (closed; was originally filed as v0.3 breaking-window candidate but applied during Pass-3 cleanup for inclusion in the 0.6.0 breaking release)
 
 ---
 
