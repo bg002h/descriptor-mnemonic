@@ -52,3 +52,29 @@ The following sites in `/scratch/code/shibboleth/mnemonic-key` carry forward-ref
 - All edits are prose-only (no code, no test, no wire-format). Suitable for a single follow-up commit in mk1 pinned to md-codec-v0.9.0's tag.
 - mk1's `chunk-set-id-rename`, `md-path-dictionary-0x16-gap`, and `path-dictionary-mirror-stewardship` companion FOLLOWUPS entries all close in lockstep.
 - Optional: the `Error::ChunkSetIdMismatch` / `Error::ReservedChunkSetIdBitsSet` renames in md1 v0.9.0 are not referenced by mk1 docs at all, so no cross-repo cleanup obligation.
+
+## Post-merge note (added 2026-04-29 after md-codec-v0.9.0 ship)
+
+md-codec-v0.9.0 shipped (PR #10 → tag md-codec-v0.9.0 → GitHub release).
+Cross-update was deferred: the hedge sites enumerated above all live on
+mk1's in-flight `feature/v0.1.0-implementation` branch (along with
+`design/FOLLOWUPS.md`, `design/IMPLEMENTATION_PLAN_mk_v0_1.md`, and
+`docs/superpowers/specs/2026-04-29-mk1-open-questions-closure-design.md`).
+Origin/main of mk1 does not yet have the `chunk_set_id` terminology
+introduced, so there is nothing to de-hedge there.
+
+**Action:** when mk1's `feature/v0.1.0-implementation` branch (or its
+successor) merges to main, the parallel-session worker (or whoever
+finalizes that branch) should:
+
+1. Apply the de-hedges enumerated in this report to bip/, design/, and
+   docs/ files.
+2. Mark the three companion FOLLOWUPS entries
+   (`chunk-set-id-rename`, `md-path-dictionary-0x16-gap`,
+   `path-dictionary-mirror-stewardship`) as
+   `Status: resolved by md-codec-v0.9.0 (commit 9eeb9ab)`.
+3. Update mk1's `bip-cross-reference-completeness` audit gate (its hard
+   precondition is now met).
+
+Md-codec-v0.9.0's tag (and merge commit `9eeb9ab` on `bg002h/descriptor-mnemonic`)
+is the pinnable reference for those resolutions.
