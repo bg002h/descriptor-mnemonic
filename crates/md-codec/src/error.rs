@@ -437,6 +437,26 @@ pub enum BytecodeErrorKind {
         got: u8,
     },
 
+    /// A tag byte is valid in some context but not allowed in this context.
+    ///
+    /// For example, a top-level descriptor tag (`Tag::Wsh`) appearing where
+    /// a tap-leaf inner is expected. Distinct from
+    /// [`BytecodeErrorKind::UnknownTag`] (no Tag exists for that byte) and
+    /// [`Error::PolicyScopeViolation`] (top-level admit-set decision).
+    ///
+    /// Introduced in v0.6 alongside the strip-Layer-3 change so the decoder
+    /// catch-all in `decode_tap_terminal` can produce a structural diagnostic
+    /// rather than the now-removed `TapLeafSubsetViolation`.
+    ///
+    /// [`Error::PolicyScopeViolation`]: super::Error::PolicyScopeViolation
+    #[error("tag {tag:#04x} is invalid in context {context}")]
+    TagInvalidContext {
+        /// The tag byte that was structurally invalid in this context.
+        tag: u8,
+        /// Human-readable context name (e.g., "tap-leaf-inner", "wsh-inner").
+        context: &'static str,
+    },
+
     /// The Stage-3 5-bit→byte conversion of a BCH-validated payload failed
     /// because the payload's bit length is not a multiple of 8. This can
     /// happen for hostile inputs whose Long-code data part has 93 5-bit
