@@ -64,7 +64,7 @@ pub fn encode_template(
 /// unchanged on error. The public [`encode_template`] function shields
 /// callers by always allocating a fresh `Vec`, so the dirty-on-error state
 /// is only visible to internal recursive walkers.
-trait EncodeTemplate {
+pub(crate) trait EncodeTemplate {
     fn encode_template(
         &self,
         out: &mut Vec<u8>,

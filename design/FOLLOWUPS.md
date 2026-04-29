@@ -344,6 +344,47 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.6 (release-prep meta-entry; closes only at the v0.6.0 tag)
 
+### `v07-tap-leaf-iterator-with-index-coverage` — Phase 4 must include a multi-leaf DFS-pre-order leaf-index attribution test
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). The Phase 1 commit `de63db3` deleted MD-codec test `tap_leaf_subset_violation_carries_leaf_index` (LI2) on the rationale that "leaf-index attribution moves to md-signer-compat." LI2 was the only test exercising **multi-leaf DFS-pre-order** `leaf_index` correctness.
+- **Where:** `crates/md-signer-compat/src/tests.rs` (Phase 4, NEW).
+- **What:** at least one multi-leaf test where the offending operator's `leaf_index` in the resulting `Error::SubsetViolation` is *derived* from a tap-tree walker (the v0.7+ "iterate tap leaves and call `validate(...)` per leaf" primitive), **not** supplied as a constant. Plan §4.2.1 currently leaves the iterator API "refined during implementation"; pin it explicitly so this test can be written.
+- **Why deferred:** Phase 1 (test rebaseline) is the wrong layer. md-signer-compat (Phase 4) owns this layer in v0.7+.
+- **Status:** open
+- **Tier:** v0.7-blocker (must close before Phase 4 lands).
+
+### `v07-decode-rejects-sh-bare-rename` — rename or delete `decode_rejects_sh_bare` (mislabelled in v0.6)
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). `crates/md-codec/src/bytecode/decode.rs:2413-2423` defines `decode_rejects_sh_bare` whose inline comment says `// [Sh=0x03, Bare=0x07, ...]`, but in v0.6 byte 0x07 is `Tag::TapTree`. The test passes (assertion is `msg.contains("sh(")` — generic) but is misleadingly named.
+- **Where:** `crates/md-codec/src/bytecode/decode.rs::tests::decode_rejects_sh_bare`.
+- **What:** rename to `decode_rejects_sh_taptree` and update the inline byte comment, or delete as redundant with `decode_rejects_sh_inner_script_andv` + `decode_rejects_sh_key_slot`.
+- **Status:** open
+- **Tier:** v0.7.x (defensive cleanup; not blocking).
+
+### `v07-stale-byte-annotation-comments` — sweep stale v0.5 byte comments in integration tests
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). Several integration tests use symbolic `Tag::Foo.as_byte()` (correct) but trail with stale `// 0x32`, `// 0x19`, `// 0x33`, `// 0x05` annotations naming **v0.5** byte values. Tests function correctly; comments mislead future readers.
+- **Where:** `crates/md-codec/tests/fingerprints.rs:175`; `crates/md-codec/tests/conformance.rs:765, 768, 771, 773, 1083, 650`.
+- **What:** mechanical sed sweep — either remove the byte-value comment entirely or update to the v0.6 byte.
+- **Status:** open
+- **Tier:** v0.7.x (defensive cleanup; not blocking).
+
+### `v07-taptree-diagnostic-runtime-byte` — refactor TapTree-at-top diagnostic to format byte at runtime
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). Phase 1 added the literal `(0x07)` to `decode_descriptor`'s `Tag::TapTree` arm error message at `decode.rs:78-82` (test-driven; see `taptree_at_top_level_produces_specific_diagnostic`). Hardcoding the byte creates a Tag-byte-rolling drift liability — a future major release re-numbering TapTree must update both the production string AND test pin in lockstep.
+- **Where:** `crates/md-codec/src/bytecode/decode.rs:78-82` and the test at `decode.rs:2429-2447`.
+- **What:** refactor to `format!("TapTree (0x{:02X}) is not a valid top-level...", Tag::TapTree.as_byte())` so the byte tracks the enum.
+- **Status:** open
+- **Tier:** v0.7.x or later (cleanup; not blocking).
+
+### `v07-n_taptree_at_top_level-description-stale-v05-byte` — `n_taptree_at_top_level` description still says "0x08"
+
+- **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). `vectors.rs:1867-1895` — the in-source comment AND the public-facing `description` field of the negative vector say "Tag::TapTree (0x08)" (v0.5). The vector itself is correct (built via `Tag::TapTree.as_byte()` symbolic refs). The `description` ships in `tests/vectors/v0.2.json` and is part of the v0.2 schema-2 SHA pin; updating requires regenerating the SHA.
+- **Where:** `crates/md-codec/src/vectors.rs:1867-1895`.
+- **What:** update both the in-source comment and the `description` field to "(0x07)" when v0.7 regenerates `v0.2.json`.
+- **Status:** open
+- **Tier:** v0.7-Phase-6 (fold into vector regen at release plumbing).
+
 ---
 
 ## Resolved items

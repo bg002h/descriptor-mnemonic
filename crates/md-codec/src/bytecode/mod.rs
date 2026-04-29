@@ -9,6 +9,9 @@ pub mod path;
 pub mod tag;
 pub mod varint;
 
+#[cfg(test)]
+mod hand_ast_coverage;
+
 pub use header::BytecodeHeader;
 pub use key::MdKey;
 pub use tag::Tag;
