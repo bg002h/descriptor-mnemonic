@@ -80,6 +80,53 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** resolved md-codec-v0.8.0. All three steps of the proposed v0.8 shape landed atomically: (1) `WalletId` → `PolicyId` rename across ~720 references and ~40 files (code, rustdoc, spec, BIP draft, README, CHANGELOG, MIGRATION); (2) new `WalletInstanceId` 16-byte derived identifier with `pub fn compute_wallet_instance_id(canonical_bytecode, xpubs)` helper, three unit tests, and a new `===Wallet Instance ID===` BIP draft section; (3) the mk1 SPEC §5 recovery-flow step-4 update lands in the sibling `bg002h/mnemonic-key` repo (not in this commit; doc-only follow-up over there). Wire format byte-identical to v0.7.x; vector files regenerated under `"md-codec 0.8"` family token.
 - **Tier:** v0.8 (closed)
 
+### `chunk-set-id-rename` — rename "wallet identifier" → `chunk_set_id` in md1
+
+- **Surfaced:** 2026-04-29 mk1 v0.1 closure-design pass (Q-5 / D-15). Companion entry: `chunk-set-id-rename` in `bg002h/mnemonic-key` `design/FOLLOWUPS.md`.
+- **Where:**
+  - `bip/bip-mnemonic-descriptor.mediawiki` §"Header" line ~188 ("Wallet identifier (4 chars, 20 bits)…")
+  - `crates/md-codec/src/chunking/...` (chunked-header field name, getters, error messages)
+  - `crates/md-codec/src/...` (any other "wallet identifier" / `wallet_identifier` symbol references)
+  - `MIGRATION.md` and CHANGELOG (rename note for the docs-only release)
+- **What:** md-codec v0.8.x ships the chunked-string-header 20-bit per-encoding random tag under the name "wallet identifier." Per the closure-design naming review the name conflicts with `Policy ID` and `Wallet Instance ID` and means neither — it identifies the chunk-set assembly, nothing more. Rename to `chunk_set_id` across the BIP, code, and docs. Wire format unchanged; this is purely a documentation and code-symbol rename, suitable for a docs-and-symbols-only release (proposed: md-codec v0.9.0).
+- **Why deferred:** Surfaced after v0.8.0 ship; needs its own docs-only release. The mk1 BIP submission is gated on this rename landing first (mk1 cannot publish referencing a name md1 itself does not use).
+- **Sequencing requirement:** This rename is a hard precondition for mk1's formal BIP submission. Should be released before mk1's `bip-cross-reference-completeness` audit closes.
+- **Status:** open
+- **Tier:** v0.9 (docs-only release)
+
+### `md-per-at-N-path-tag-allocation` — allocate per-`@N` origin path tag in md1 bytecode
+
+- **Surfaced:** 2026-04-29 mk1 v0.1 closure-design pass (Q-4). Originally tracked in DECISIONS.md / mk1 closure as the open question that punted the wire-format decision to this repo. Companion: `md-per-N-path-tag-allocation` in `bg002h/mnemonic-key` `design/FOLLOWUPS.md`.
+- **Where:**
+  - `crates/md-codec/src/bytecode/path/` — Tag-table allocation
+  - `bip/bip-mnemonic-descriptor.mediawiki` §"Tag table" + §"Path declaration" — wire-format extension
+  - `design/SPEC_v0_X_*.md` — for the version that lands the change
+- **What:** BIP 388 wallet policies routinely use different origin paths per cosigner (e.g. `[fp1/48'/0'/0'/2']xpub_A` and `[fp2/48'/0'/0'/100']xpub_B` in the same multisig). md1 v0.x today carries one shared `Tag::SharedPath`; per-`@N` paths require a new tag in the unallocated 0x36+ range, or a backfill of the 0x24-0x32 range. The exact tag-byte allocation is the md1 wire-format question; mk1 has already declared the cross-format authority-precedence semantics on its side (mk1's `origin_path` is authoritative; md1's per-`@N` path is descriptive — see mk1 BIP §"Authority precedence"), so the only decision pending here is the byte allocation.
+- **Why deferred:** Wire-format change in md1 (semver-breaking). Not yet scheduled for a specific md-codec version; happens whenever per-`@N` paths become a planned md release feature.
+- **Coordination:** When this lands, the mk1 BIP §"Authority precedence" subsection is unchanged (semantics already capture the contract). The mk1 side needs no wire-format change; md1's BIP gains the tag-table entry and a §"Per-`@N` path declaration" subsection.
+- **Status:** open
+- **Tier:** v0.9 or v1+ (depends on when per-`@N` paths are scheduled)
+
+### `md-path-dictionary-0x16-gap` — add missing testnet 0x16 entry to path dictionary
+
+- **Surfaced:** 2026-04-29 mk1 v0.1 Phase 2 BIP review (commit `4728230` in `bg002h/mnemonic-key`). Companion: `md-path-dictionary-0x16-gap` in `bg002h/mnemonic-key` `design/FOLLOWUPS.md`.
+- **Where:**
+  - `bip/bip-mnemonic-descriptor.mediawiki` §"Path dictionary" lines ~339-349 — testnet rows list 0x11, 0x12, 0x13, 0x14, 0x15, 0x17 with no 0x16.
+  - `crates/md-codec/src/bytecode/path/` — `Tag::SharedPath` indicator dictionary in code (mirror).
+- **What:** Mainnet has indicator 0x06 (`m/48'/0'/0'/1'`, BIP 48 nested-segwit multisig) but the testnet companion 0x16 (`m/48'/1'/0'/1'`) is absent from md1's published BIP table and code. This is plausibly an oversight rather than a deliberate omission — every other mainnet path family has a testnet pair, and BIP 48 nested-segwit is the only one missing on the testnet side. mk1 v0.1 inherits the gap by its byte-for-byte mirror clause and currently documents `0x16` as reserved-pending-md1-update; closing the gap on the md1 side lets mk1 inherit cleanly.
+- **Why deferred:** Single-row dictionary addition, low complexity, but is technically a wire-format extension (existing decoders treat 0x16 as reserved). Suitable for the next md-codec release that touches the path dictionary.
+- **Status:** open
+- **Tier:** v0.9 (small wire-additive change)
+
+### `path-dictionary-mirror-stewardship` — formalize the md1↔mk1 path-dictionary inheritance contract
+
+- **Surfaced:** 2026-04-29 mk1 v0.1 Phase 2 BIP review open observation (commit `4728230` in `bg002h/mnemonic-key`). Companion: `path-dictionary-mirror-stewardship` in `bg002h/mnemonic-key` `design/FOLLOWUPS.md`.
+- **Where:** Process / cross-repo coordination. Likely lands as a one-paragraph note in `bip/bip-mnemonic-descriptor.mediawiki` §"Path dictionary" plus a parallel note in mk1's spec, plus a CHANGELOG / RELEASE_PROCESS checklist item.
+- **What:** mk1's path dictionary is contractually identical to md1's `Tag::SharedPath` table ("byte-for-byte mirror"). Today this is a prose statement in mk1's spec/BIP, not a tracked invariant. If md1 allocates new dictionary entries (e.g., closing the 0x16 gap or adding new BIP-style accounts in a future md1 release), mk1 inherits the allocation by the mirror clause — but a future md1 release could land a path-dictionary change without an mk1 spec amendment, producing silent drift. Formalize the inheritance contract: bidirectional release-checklist item that "if path dictionary changes, both repos must update in lockstep before either ships."
+- **Why deferred:** Process / stewardship concern, not blocking any specific release. Becomes load-bearing the next time either repo touches the path dictionary.
+- **Status:** open
+- **Tier:** external (process — not tied to a specific md-codec version)
+
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
 - **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
