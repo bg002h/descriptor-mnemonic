@@ -43,6 +43,42 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0-5-tap-terminal-name-and-tag-to-bip388-name-parallel-tables` — consolidate parallel hand-maintained operator-name tables
+
+- **Surfaced:** Phase 2 code-quality reviewer (mid-execution, returned to controller; not persisted to `design/agent-reports/` at the time). Reviewer flagged: `tap_terminal_name(term: &Terminal) -> &'static str` (encode.rs ~572) and `tag_to_bip388_name(tag: Tag) -> &'static str` (decode.rs ~805) maintain parallel operator-name tables. A typo in either silently produces divergent diagnostics (encode-side rejection vs. decode-side rejection of the same operator surface different strings to the user).
+- **Where:** `crates/md-codec/src/bytecode/encode.rs` (`tap_terminal_name`), `crates/md-codec/src/bytecode/decode.rs` (`tag_to_bip388_name`)
+- **What:** Unify around the `Tag` form: have `tap_terminal_name` first map `Terminal` → `Tag` (via existing helpers), then call `tag_to_bip388_name`. Single source of truth; encode/decode-side diagnostics guaranteed byte-identical.
+- **Why deferred:** Phase 2 reviewer marked nice-to-have-post-merge-OK; final cumulative reviewer (Phase 9) didn't independently flag.
+- **Status:** open
+- **Tier:** v0.5-nice-to-have (real maintenance hazard but not user-visible until a name typo lands)
+
+### `v0-5-spec-section-3-helper-snippet-missing-per-leaf-gate` — spec §3 decoder-helper snippet omits the leaf-subset validation call
+
+- **Surfaced:** Phase 2 spec compliance reviewer (mid-execution, returned to controller; not persisted). Reviewer noted that `design/SPEC_v0_5_multi_leaf_taptree.md` §3 helper code (lines ~115-124) shows the leaf arm calling only `decode_tap_miniscript`. The implementation correctly adds an immediately-following `validate_tap_leaf_subset(&leaf, Some(index))?;` call (verified at `decode.rs:789`) — without it, multi-leaf decode would accept out-of-subset operators that single-leaf decode rejects.
+- **Where:** `design/SPEC_v0_5_multi_leaf_taptree.md` §3 helper code block
+- **What:** Update the spec snippet to include the per-leaf subset gate so a future re-implementer reading just the spec doesn't regress this. Pure documentation correction; code is already correct.
+- **Why deferred:** Reviewer recommended filing a spec-erratum FOLLOWUP. Not blocking.
+- **Status:** open
+- **Tier:** v0.5-nice-to-have (resolve at next spec touch-up)
+
+### `v0-5-decode-rs-comment-stale-task-number-references` — code comments reference plan-task numbers that will rot
+
+- **Surfaced:** Phase 2 code-quality reviewer (mid-execution, not persisted). Reviewer flagged comments at `encode.rs:514` ("see Task 2.3") and `decode.rs:715` ("see Task 2.6+2.8") that reference transient plan task numbers from `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md`. Plan tasks are ephemeral; these comments will rot.
+- **Where:** `crates/md-codec/src/bytecode/encode.rs:514`, `crates/md-codec/src/bytecode/decode.rs:715` (line numbers may have drifted)
+- **What:** Replace task-number references with stable anchors (file:line or spec section reference).
+- **Why deferred:** Cosmetic; not user-visible.
+- **Status:** open
+- **Tier:** v0.5-nice-to-have (cosmetic)
+
+### `v0-5-decode-rs-module-doc-version-prefix-relax` — module-level rustdoc keeps "v0.5" prefixes that will read awkwardly post-release
+
+- **Surfaced:** Final cumulative reviewer (Phase 9) M4 — explicitly marked optional; controller chose to defer.
+- **Where:** `crates/md-codec/src/bytecode/decode.rs` module-level rustdoc (lines ~1-30)
+- **What:** Relax "v0.5" version prefixes in module-level rustdoc to version-agnostic phrasing (e.g., "Top-level descriptors accepted: `Tag::Wsh`..."). Same approach as the v0.4→v0.5 stale-strings sweep, but for descriptive (not error-message) rustdoc.
+- **Why deferred:** Not user-visible (rustdoc only); no production behavior implication. Reviewer marked "Not blocking" + "controller can choose to relax".
+- **Status:** open
+- **Tier:** v0.5-nice-to-have (cosmetic)
+
 ### `v0-5-t7-chunking-boundary-misnomer` — T7 fixture doesn't actually cross chunking boundary
 
 - **Surfaced:** Phase 6 reviewer (commit `7d6e278`). T7's 6-leaf right-spine fixture `tr_multi_leaf_chunking_boundary_md_v0_5` has a 35-byte bytecode that lands well under the 48-byte `ChunkCode::Regular` single-string capacity. The fixture does NOT exercise the chunked-plan path despite its name suggesting otherwise.
