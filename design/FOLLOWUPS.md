@@ -192,8 +192,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** Cross-cutting design pivot. See child entries for component-level work: `md-strip-validator-default-and-corpus`, `md-strip-spec-and-docs`, `md-tag-space-rework`, `md-signer-compat-checker-separate-library`, `md-policy-compiler-feature`, `v0-6-release-prep-revised`.
 - **What:** Reframe MD's scope to encoding-only (BIP 388 wallet-policy serialization with BCH error correction). Drop the implicit "MD-encoded backups are guaranteed signable on Coldcard" promise; replace with explicit responsibility-chain framing in BIP draft and READMEs. The Phase D `validate_tap_leaf_subset` infrastructure is retained as `pub fn` for explicit-call use but no longer gates encoding/decoding by default. Named signer subsets become a separately-versioned layer (`md-signer-compat-checker-separate-library`).
 - **Why deferred:** Master principle entry; no commits close it directly. Closes when all child entries close at the v0.6.0 tag.
-- **Status:** open
-- **Tier:** v0.6 (design pivot for the next breaking release)
+- **Status:** resolved md-codec-v0.6.0. All child entries closed. MD scope is now encoding-only; signer-compatibility moves to the layered `md-signer-compat` crate (shipped v0.7.0). BIP draft, READMEs, and rustdocs updated to reflect the responsibility-chain framing.
+- **Tier:** v0.6 (closed)
 
 ### `md-strip-validator-default-and-corpus` — flip encoder/decoder defaults; expand corpus
 
@@ -204,8 +204,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   (b) **Corpus**: add positive vectors for previously-rejected-but-now-admitted shapes — `sortedmulti_a` (once Tag allocated by `md-tag-space-rework`), `after` in tap context, `thresh`, `or_b`, hash terminals (`sha256`/`hash256`/`ripemd160`/`hash160`) in tap leaves, timelocked-multisig compounds (`and_v(v:multi_a(...), older(n))` and `after(n)` variants), `pkh()` round-trip via desugaring, and a representative wrapper-richer fixture (`s:`/`a:`/`d:`/`j:`/`n:` wrappers in legitimate compositions). Negative vectors that asserted rejection of these get flipped to positive or removed.
   (c) **`Error::TapLeafSubsetViolation` retained**: the variant stays in `error.rs` for use by the explicit-call validator path. Optional opt-in API design (`EncodeOptions::with_signer_subset(...)`) is deferred to `md-signer-compat-checker-separate-library` — not part of this v0.6 entry.
 - **Why deferred:** Wire-format-affecting (corpus changes regenerate v0.1.json + v0.2.json). v0.6 breaking release.
-- **Status:** open
-- **Tier:** v0.6
+- **Status:** resolved md-codec-v0.6.0. Encoder/decoder default validator gate removed; `validate_tap_leaf_subset` retained as `pub fn` (and refactored in v0.7.0 to accept a caller-supplied allowlist). Corpus expanded with 17 new positive fixtures for previously-rejected shapes; negative fixtures asserting rejection were flipped or removed. `Error::TapLeafSubsetViolation` renamed to `Error::SubsetViolation`.
+- **Tier:** v0.6 (closed)
 
 ### `md-strip-spec-and-docs` — rewrite BIP draft + README + CLI help for the new framing
 
@@ -215,8 +215,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   (a) **BIP draft**: rewrite §"Taproot tree" subset paragraph from MUST to MAY-informational. Cite BIP 388 §"Implementation guidelines" (line 216) allowing subsets. Add a §"Signer compatibility (informational)" section that (1) explains MD's scope is encoding/decoding, not signer curation; (2) frames the responsibility chain (wallet software → MD → signer); (3) provides vendor-citation pattern as an example (Coldcard `docs/taproot.md` edge, Ledger vanadium `apps/bitcoin/common/src/bip388/cleartext.rs`) without endorsing a specific subset; (4) points readers at the layered checker (`md-signer-compat-checker-separate-library`) once it exists.
   (b) **READMEs + CLI help**: add a "you are responsible for ensuring your policy is signable on your target signer" warning. Link to the BIP §"Signer compatibility" section. CLI help on `md encode`: brief one-liner pointer.
 - **Why deferred:** Spec text changes paired with the v0.6 code release.
-- **Status:** open
-- **Tier:** v0.6
+- **Status:** resolved md-codec-v0.6.0. BIP draft §"Taproot tree" rewrote MUST → MAY-informational; new §"Signer compatibility (informational)" section frames the responsibility chain. README and CLI help updated for the new framing. Note: a v0.7.x doc-sync pass (this commit) adds pointers to the v0.7.0 layered checker (`md-signer-compat`) and the policy-compiler wrapper.
+- **Tier:** v0.6 (closed)
 
 ### `md-tag-space-rework` — allocate `Tag::SortedMultiA`, reorganize Tag enum, drop Reserved\* range
 
@@ -229,8 +229,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   (d) **Reshuffle remaining tags** for clean blocks (constants / top-level descriptors / framing / wrappers / logical / multisig / keys / timelocks / hashes). Final layout documented in `tag.rs` and the BIP draft Tag table.
   (e) **Corpus regen**: every existing positive-vector `expected_bytecode_hex` changes. v0.1.json + v0.2.json fully regenerated; SHA pins in `tests/vectors_schema.rs` updated. `GENERATOR_FAMILY` token roll covered separately by `v0-6-release-prep-revised`.
 - **Why deferred:** Once-and-done opportunity — pre-1.0 + no users yet means we can reshape; after v0.6 ships and gets used, this freedom evaporates. v0.6 is the moment.
-- **Status:** open
-- **Tier:** v0.6
+- **Status:** resolved md-codec-v0.6.0. `Tag::SortedMultiA = 0x0B` allocated; multisig family contiguous (Multi 0x08, SortedMulti 0x09, MultiA 0x0A, SortedMultiA 0x0B); 14 `Reserved*` variants dropped (0x24–0x31 unallocated); wrappers/logical operators shifted by 2 for clean blocks; `Tag::Bare` dropped (byte 0x07 reused for `TapTree`); `Placeholder` 0x32→0x33 (byte 0x32 left unallocated to surface v0.5→v0.6 transcoder mistakes). Spec §2.2 documents the final layout; v0.7.1 added §2.2.1 alphabetical index.
+- **Tier:** v0.6 (closed)
 
 ### `md-signer-compat-checker-separate-library` — named signer subsets + opt-in validation API (aspirational)
 
@@ -341,8 +341,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
     - Tag-space reorganization (every Tag value changes; consumers depending on specific bytes break)
     - Spec changes (BIP MUST → MAY clause; new §"Signer compatibility (informational)")
 - **Why deferred:** Coordination only — no per-entry blocker. Lands at the v0.6 release cut.
-- **Status:** open
-- **Tier:** v0.6 (release-prep meta-entry; closes only at the v0.6.0 tag)
+- **Status:** resolved md-codec-v0.6.0 (commit `e8243fd`, tag `md-codec-v0.6.0`). Cargo.toml bumped 0.5.0 → 0.6.0; `GENERATOR_FAMILY` rolled to `"md-codec 0.6"`; vector files regenerated; SHA pins updated; CHANGELOG `[0.6.0]` and MIGRATION `v0.5.x → v0.6.0` sections shipped.
+- **Tier:** v0.6 (closed)
 
 ### `v07-tap-leaf-iterator-with-index-coverage` — Phase 4 must include a multi-leaf DFS-pre-order leaf-index attribution test
 
@@ -504,6 +504,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **What:** update both the in-source comment and the `description` field to "(0x07)" when v0.7 regenerates `v0.2.json`.
 - **Status:** open
 - **Tier:** v0.7-Phase-6 (fold into vector regen at release plumbing).
+
+### `v07-from-policy-internal-key-semantic-clarification` — `--internal-key` is upstream `unspendable_key`, not "force this internal key"
+
+- **Surfaced:** v0.7.x docs-sync smoke test (2026-04-29). The `md from-policy --context tap --internal-key K1` CLI flag is plumbed through to rust-miniscript's `Concrete::compile_tr(unspendable_key=Some(K1))`. Upstream `compile_tr` calls `extract_key(unspendable_key)` first, which extracts a key from the *policy itself* if it can serve as the internal key (single-key spend), and only falls back to `K1` if no such extraction is possible. So passing `--internal-key K1` with a policy like `pk(K2)` produces `tr(K2)` (the optimizer picks K2; K1 is unused), not `tr(K1, pk(K2))`. The behaviour is upstream-correct but easily surprises a CLI user who expects "force K1 as internal".
+- **Where:** `crates/md-codec/src/policy_compiler.rs::policy_to_bytecode` rustdoc + `crates/md-codec/src/bin/md/main.rs::cmd_from_policy` `--internal-key` argument doc string.
+- **What:** rename the CLI flag and parameter doc to clarify the fallback semantic — e.g., `--unspendable-key <KEY>` (mirroring upstream naming) — and update the rustdoc on `policy_to_bytecode` to spell out the precedence rule. Optionally add an example in the CLI help showing how to force a specific internal key (use a policy that doesn't contain a single extractable key, or pre-build the descriptor manually).
+- **Why deferred:** Doc + flag-rename only; not blocking. Surfaced by smoke testing not unit tests.
+- **Status:** open
+- **Tier:** v0.7.x
 
 ---
 
