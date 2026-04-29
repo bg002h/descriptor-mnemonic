@@ -14,9 +14,16 @@ shared derivation path, and (in future versions) cosigner xpubs.
 > particular hardware signer is a separate concern handled by your wallet
 > software and your signer's firmware. **You are responsible for ensuring
 > your policy is signable on your target signer.** Callers who want
-> opt-in signer-aware validation can invoke `validate_tap_leaf_subset`
-> explicitly (retained as a `pub fn` in `bytecode::encode`); see the BIP
-> draft §"Signer compatibility (informational)" for the full framing.
+> opt-in signer-aware validation can either:
+>
+> - call `bytecode::encode::validate_tap_leaf_subset_with_allowlist(ms, &allowlist, leaf_index)`
+>   directly with their own operator allowlist, or
+> - depend on the sibling [`md-signer-compat`](../md-signer-compat/) crate
+>   (v0.7.0+) for named hardware-signer subsets (`COLDCARD_TAP`, `LEDGER_TAP`)
+>   plus a `validate_tap_tree(subset, tap_tree)` walker that threads
+>   DFS-pre-order leaf indices through each per-leaf check.
+>
+> See the BIP draft §"Signer compatibility (informational)" for the full framing.
 
 See the [BIP draft](../../bip/bip-mnemonic-descriptor.mediawiki) for
 the format specification and the
@@ -30,7 +37,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-md-codec = "0.3"
+md-codec = "0.7"
 ```
 
 Encode a wallet policy and decode it back:
@@ -60,14 +67,22 @@ two-WalletId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 
 [rustdoc-crate]: https://docs.rs/md-codec
 
-## Library-only consumers
+## Cargo features
 
-The `cli` Cargo feature is enabled by default; disable it to avoid pulling
-`clap` and `anyhow`:
+| Feature | Default? | Purpose |
+|---|---|---|
+| `cli` | yes | Build the `md` binary; pulls in `clap` + `anyhow`. Library-only consumers can disable. |
+| `compiler` | no | Expose `policy_compiler::{ScriptContext, policy_to_bytecode}` wrapping rust-miniscript's policy compiler. Heavyweight (ILP-style enumeration in the Tap branch). |
+| `cli-compiler` | no | Enables the `md from-policy <expr> --context <tap\|segwitv0> [--internal-key <KEY>]` subcommand. Implies `cli` + `compiler`. |
+| `test-helpers` | no | Exposes `pub mod test_helpers` with `dummy_key_a/b/c()` for downstream crates' integration tests. Enable in `[dev-dependencies]`. |
 
 ```toml
+# Library-only:
 [dependencies]
-md-codec = { version = "0.3", default-features = false }
+md-codec = { version = "0.7", default-features = false }
+
+# With policy-compiler wrapper:
+md-codec = { version = "0.7", features = ["compiler"] }
 ```
 
 ## CLI
@@ -83,6 +98,15 @@ inspection:
 | `md inspect <string>` | Show parsed chunk header (no full decode) |
 | `md bytecode <policy>` | Hex-dump canonical bytecode for a policy |
 | `md vectors` | Print the test-vector JSON to stdout |
+| `md from-policy <expr> --context <tap\|segwitv0>` | Compile a Concrete-Policy via miniscript and emit MD bytecode hex (requires `cli-compiler` feature) |
+
+For named-signer-subset validation, see the sibling `md-signer-compat`
+crate's binary:
+
+```bash
+cargo run -p md-signer-compat -- validate --signer coldcard --bytecode-hex <HEX>
+cargo run -p md-signer-compat -- list-signers
+```
 
 Run as a one-shot from the workspace root:
 
@@ -119,20 +143,27 @@ cargo run -p md-codec --bin gen_vectors -- --verify crates/md-codec/tests/vector
 
 ## Status
 
-`v0.3.0`. Tracks BIP 388 segwit-v0 and taproot wallet policies. The current scope:
+`v0.7.1`. Tracks BIP 388 segwit-v0 and taproot wallet policies. The current scope:
 
 - Single user holding all seeds (no foreign xpubs)
 - All `@i` placeholders share one derivation path
 - `wsh()` segwit-v0 and `tr()` taproot top-level
+- v0.6+ encoder/decoder admit any well-typed BIP 388 / BIP 379 miniscript
+  shape; signer-compatibility curation is a layered concern (see
+  [`md-signer-compat`](../md-signer-compat/))
+- v0.7.0+ adds an opt-in `compiler` feature that wraps rust-miniscript's
+  policy compiler
 
 MuSig2, foreign xpubs, per-placeholder paths, and BIP 393 recovery
 annotations are deferred to v1+. See
 [`design/FOLLOWUPS.md`](../../design/FOLLOWUPS.md) for the full deferral
 catalog.
 
-565 unit + integration tests, BCH known-vectors verified against an
-independent Python implementation, corpus round-trips and negative
-conformance vectors locked in `tests/vectors/v0.1.json` and `tests/vectors/v0.2.json`.
+673+ unit + integration tests across the workspace (md-codec library +
+integration tests + md-signer-compat + doctests), BCH known-vectors
+verified against an independent Python implementation, corpus round-trips
+and negative conformance vectors locked in `tests/vectors/v0.1.json` and
+`tests/vectors/v0.2.json`.
 
 ## License
 

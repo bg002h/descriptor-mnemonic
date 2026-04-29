@@ -42,11 +42,14 @@ versions) cosigners' extended public keys.
 │   ├── README.md                                  ← BIP draft index
 │   └── bip-mnemonic-descriptor.mediawiki          ← the formal BIP draft
 ├── crates/
-│   └── md-codec/                                  ← Rust reference implementation
+│   ├── md-codec/                                  ← Rust reference implementation
+│   └── md-signer-compat/                          ← layered named-signer-subset validator (v0.7+)
 ├── design/
 │   ├── POLICY_BACKUP.md   ← design rationale, decisions log, open items
 │   ├── PRIOR_ART.md       ← survey of related encoding schemes
-│   └── CORPUS.md          ← reference miniscript test corpus
+│   ├── CORPUS.md          ← reference miniscript test corpus
+│   ├── FOLLOWUPS.md       ← deferred items + closure log
+│   └── agent-reports/     ← per-phase Opus review reports
 ├── LICENSE
 └── README.md
 ```
@@ -86,15 +89,16 @@ Foreign xpubs (multi-party multisig where you don't hold all seeds) and per-plac
 
 ## Status
 
-This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/md-codec/`](crates/md-codec/) with 565 tests passing and ~95% library line coverage. Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).
+This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/md-codec/`](crates/md-codec/) with 673+ tests passing across the workspace. Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).
 
-The Rust reference implementation in [`crates/md-codec/`](crates/md-codec/) implements the v0.1 scope:
+The Rust reference implementation implements the current scope:
 
 - Full encode → bytecode → chunking → codex32 → BCH-checksummed string round-trip.
 - Decode pipeline with per-stage diagnostics (`DecodeReport` + `Confidence`).
-- 565 unit + integration tests, including 12 corpus round-trips, 30+ negative conformance vectors, and BCH known-vectors cross-checked against an independent Python implementation.
-- v0.1 test vectors locked in `crates/md-codec/tests/vectors/v0.1.json` (schema in `src/vectors.rs`).
-- An `md` CLI for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations.
+- 673+ unit + integration tests across `md-codec` + `md-signer-compat`, including corpus round-trips, negative conformance vectors, hand-AST defensive coverage, and BCH known-vectors cross-checked against an independent Python implementation.
+- v0.1 + v0.2 test vectors locked in `crates/md-codec/tests/vectors/` (schemas in `src/vectors.rs`).
+- An `md` CLI for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations, plus a `from-policy` mode (behind opt-in `cli-compiler` feature) wrapping rust-miniscript's policy compiler.
+- A sibling [`md-signer-compat`](crates/md-signer-compat/) crate (v0.7.0+) shipping named hardware-signer subsets (`COLDCARD_TAP`, `LEDGER_TAP`) with a `validate_tap_tree` walker, plus a `md-signer-compat validate --signer <name> ...` CLI binary.
 
 The `Draft` status (the first formal BIP 2 status) will be claimed only after the spec has been reviewed by at least one human contributor end-to-end.
 

@@ -561,40 +561,40 @@ The responsibility chain is:
 
 If an MD-encoded backup contains operators a recovery-time signer will not sign, recovery may require either a different signer or manual signing infrastructure (Bitcoin Core, custom signing pipelines).
 
-Implementations MAY provide opt-in signer-subset validators as a layered concern. Such validators are tracked separately from this specification — see for example the named subsets maintained for Coldcard (firmware/edge <code>docs/taproot.md</code>) and Ledger (<code>LedgerHQ/vanadium</code> <code>apps/bitcoin/common/src/bip388/cleartext.rs</code>). A reference Rust implementation of the layered checker pattern is the proposed <code>md-signer-compat</code> crate.
+Implementations MAY provide opt-in signer-subset validators as a layered concern. Such validators are tracked separately from this specification — see for example the named subsets maintained for Coldcard (firmware/edge <code>docs/taproot.md</code>) and Ledger (<code>LedgerHQ/vanadium</code> <code>apps/bitcoin/common/src/bip388/cleartext.rs</code>). A reference Rust implementation of the layered checker pattern ships as the <code>md-signer-compat</code> crate (workspace member alongside <code>md-codec</code>; v0.7.0+) with <code>COLDCARD_TAP</code> and <code>LEDGER_TAP</code> subsets, a <code>validate_tap_tree</code> walker that threads DFS-pre-order leaf indices through each per-leaf check, and a <code>md-signer-compat validate --signer &lt;name&gt; ...</code> CLI binary.
 
 =====Byte-layout examples=====
 
-The byte sequences below are the operator-tree portion (everything after the format header byte and the shared-path declaration) for representative v0 taproot policies. The actual encoded policy is <code>[header byte] [shared-path declaration] [operator tree]</code>; the policies shown all use the default header (<code>0x00</code>) and a 2-byte explicit-path declaration <code>33 03</code> (<code>SharedPath</code> tag + length-zero declaration body).
+The byte sequences below are the operator-tree portion (everything after the format header byte and the shared-path declaration) for representative v0 taproot policies. The actual encoded policy is <code>[header byte] [shared-path declaration] [operator tree]</code>; the policies shown all use the default header (<code>0x00</code>) and a 2-byte explicit-path declaration <code>34 03</code> (<code>SharedPath</code> tag + BIP 84 mainnet indicator). All bytes below reflect the v0.6 wire format.
 
-Key-path-only <code>tr(@0/**)</code> — full bytecode <code>00 33 03 06 32 00</code>:
+Key-path-only <code>tr(@0/**)</code> — full bytecode <code>00 34 03 06 33 00</code>:
 
 <pre>
-  06 32 00
+  06 33 00
   ^  ^  ^
   |  |  +-- placeholder index 0
-  |  +----- Tag::Placeholder (0x32)
+  |  +----- Tag::Placeholder (0x33)
   +-------- Tag::Tr (0x06)
 </pre>
 
-Single-leaf <code>tr(@0/**, pk(@1/**))</code> — full bytecode <code>00 33 03 06 32 00 0c 1b 32 01</code>:
+Single-leaf <code>tr(@0/**, pk(@1/**))</code> — full bytecode <code>00 34 03 06 33 00 0e 1b 33 01</code>:
 
 <pre>
-  06 32 00       0c 1b 32 01
+  06 33 00       0e 1b 33 01
   -- internal key   -- leaf miniscript --
                  ^  ^  ^  ^
                  |  |  |  +-- placeholder index 1
-                 |  |  +----- Tag::Placeholder (0x32)
+                 |  |  +----- Tag::Placeholder (0x33)
                  |  +-------- Tag::PkK (0x1B)
-                 +----------- Tag::Check (0x0C)   ; the c: wrapper that BIP 388
+                 +----------- Tag::Check (0x0E)   ; the c: wrapper that BIP 388
                                                    ; emits when expanding pk(K)
                                                    ; under wsh()/tr()
 </pre>
 
-Single-leaf <code>tr(@0/**, multi_a(2, @1/**, @2/**, @3/**))</code> — full bytecode <code>00 33 03 06 32 00 1a 02 03 32 01 32 02 32 03</code>:
+Single-leaf <code>tr(@0/**, multi_a(2, @1/**, @2/**, @3/**))</code> — full bytecode <code>00 34 03 06 33 00 0a 02 03 33 01 33 02 33 03</code>:
 
 <pre>
-  06 32 00     1a 02 03 32 01 32 02 32 03
+  06 33 00     0a 02 03 33 01 33 02 33 03
   -- internal     -- multi_a(2, @1, @2, @3) --
                   ^  ^  ^  ^^^^^ ^^^^^ ^^^^^
                   |  |  |  |     |     +-- @3 placeholder
@@ -602,33 +602,33 @@ Single-leaf <code>tr(@0/**, multi_a(2, @1/**, @2/**, @3/**))</code> — full byt
                   |  |  |  +-------------- @1 placeholder
                   |  |  +-- count n=3 (single byte)
                   |  +----- threshold k=2 (single byte)
-                  +-------- Tag::MultiA (0x1A)
+                  +-------- Tag::MultiA (0x0A)
 </pre>
 
-A nested-allowed-operator example combining <code>or_d</code>, <code>and_v</code>, <code>v:</code>, and <code>older</code> — <code>tr(@0/**, or_d(pk(@1/**), and_v(v:older(144), pk(@2/**))))</code> — encodes to full bytecode <code>00 33 03 06 32 00 16 0c 1b 32 01 11 0e 1f 90 01 0c 1b 32 02</code>; the script-tree portion alone is <code>16 0c 1b 32 01 11 0e 1f 90 01 0c 1b 32 02</code>:
+A nested-allowed-operator example combining <code>or_d</code>, <code>and_v</code>, <code>v:</code>, and <code>older</code> — <code>tr(@0/**, or_d(pk(@1/**), and_v(v:older(144), pk(@2/**))))</code> — encodes to full bytecode <code>00 34 03 06 33 00 18 0e 1b 33 01 13 10 1f 90 01 0e 1b 33 02</code>; the script-tree portion alone is <code>18 0e 1b 33 01 13 10 1f 90 01 0e 1b 33 02</code>:
 
 <pre>
-  16 0c 1b 32 01            11 0e 1f 90 01 0c 1b 32 02
+  18 0e 1b 33 01            13 10 1f 90 01 0e 1b 33 02
   -- or_d ----              -- and_v -----------------
   ^  -- pk(@1) ---          ^  -- v:older(144) -- -- pk(@2) ---
   |                         |  ^  ^  ^^^^^
   |                         |  |  |  +-- LEB128(144) = 0x90 0x01
   |                         |  |  +----- Tag::Older (0x1F)
-  |                         |  +-------- Tag::Verify (0x0E) ; v: wrapper
-  +-- Tag::OrD (0x16)       +-- Tag::AndV (0x11)
+  |                         |  +-------- Tag::Verify (0x10) ; v: wrapper
+  +-- Tag::OrD (0x18)       +-- Tag::AndV (0x13)
 </pre>
 
-Two-leaf multi-leaf (v0.5) <code>tr(@0/**, {pk(@1/**), pk(@2/**)})</code> — operator-tree portion <code>06 32 00 08 0c 1b 32 01 0c 1b 32 02</code>:
+Two-leaf multi-leaf (v0.5+) <code>tr(@0/**, {pk(@1/**), pk(@2/**)})</code> — operator-tree portion <code>06 33 00 07 0e 1b 33 01 0e 1b 33 02</code>:
 
 <pre>
-  06 32 00  08  0c 1b 32 01   0c 1b 32 02
+  06 33 00  07  0e 1b 33 01   0e 1b 33 02
   -- int.   ^   -- left leaf   -- right leaf
   key       |
-            +-- Tag::TapTree (0x08) — inner-node framing;
+            +-- Tag::TapTree (0x07) — inner-node framing;
                 LEFT_SUBTREE and RIGHT_SUBTREE follow immediately
 </pre>
 
-The <code>TapTree (0x08)</code> tag introduces an inner node. Its two subtrees (left then right) follow immediately in bytecode order, each being either a leaf-script tag sequence or another <code>0x08</code>-prefixed inner node. Deeper trees nest additional <code>0x08</code> frames recursively, up to the BIP 341 depth-128 ceiling.
+The <code>TapTree (0x07)</code> tag introduces an inner node. Its two subtrees (left then right) follow immediately in bytecode order, each being either a leaf-script tag sequence or another <code>0x07</code>-prefixed inner node. Deeper trees nest additional <code>0x07</code> frames recursively, up to the BIP 341 depth-128 ceiling.
 
 ====Round-trip canonical form====
 
