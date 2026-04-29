@@ -43,6 +43,43 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `wallet-id-is-really-template-id` — current `WalletId` identifies a policy template, not a wallet instance
+
+- **Surfaced:** 2026-04-29 mk1 design discussion. While drafting `design/mk/SPEC_mk_v0_1.md` §5 (recovery-flow linkage between policy card and key cards), the user observed that md-encoded wallet descriptors are themselves reusable across wallets and may have zero-many actual wallet instances associated with them. The `WalletId = SHA-256(canonical_bytecode)[0..16]` is computed over the BIP 388 *template* (with `@N` placeholders), not over the assembled descriptor with concrete cosigner xpubs. Therefore two distinct wallets that share an identical policy template (same multisig shape + same shared path, different cosigner sets) produce identical md1 wallet IDs. The "wallet ID" name is misleading; what we have is really a "policy ID" or "template ID."
+
+- **Implications:**
+  - **md1 cards** have a many-to-many relationship with actual wallets: zero (engraved speculatively for "I might use this template"), one (instantiated for a single wallet), or many (re-used across multiple wallets that happen to share the template). The wallet-ID-as-anchor framing in the BIP draft and the `wallet_id` rustdoc treats this as one-to-one, which is wrong.
+  - **mk1 wallet-ID stubs** (per `design/mk/SPEC_mk_v0_1.md` §3.3) inherit the same naming. The stub on a key card identifies the *template* the xpub serves, not a unique wallet instance. The mk SPEC's §5 recovery flow already does the right thing (cryptographic match happens at descriptor reassembly, not at stub match), but the WORDING calls the stub a "wallet ID" which is misleading.
+  - **The "wallet ID anchor"** described in the MD BIP draft (the optional 12-word BIP 39 mnemonic engraved on a separate medium for cross-verifying a digital backup) is anchoring the *template*, not the wallet. Users who hold two wallets at the same template would have two physical anchor cards with identical 12-word phrases — confusing at best.
+
+- **Where:**
+  - `crates/md-codec/src/wallet_id.rs` (canonical computation: `compute_wallet_id`, `WalletId` type)
+  - `bip/bip-mnemonic-descriptor.mediawiki` §"Wallet identifier (Tier 3)" (line ~679 in current draft)
+  - `crates/md-codec/src/chunking/...` (chunk-header `wallet_id` stub field)
+  - `design/mk/SPEC_mk_v0_1.md` §3.3, §5 (mk1 wallet-ID stubs and recovery flow)
+  - `bip/bip-mnemonic-key.mediawiki` (TBD; mk1 BIP draft will inherit the rename)
+
+- **Proposed v0.8 shape** (agreed in 2026-04-29 design session):
+
+  1. **Rename** the existing 16-byte template-only hash from `WalletId` → `PolicyId` (or `TemplateId`; bikeshed at v0.8 implementation time). Pure naming change in code, rustdoc, spec text, and BIP draft. The 16-byte value, the 4-byte chunk-header stub, and the 12-word BIP 39 anchor encoding are all **unchanged**; only the name and the framing shift. No wire-format break.
+
+  2. **Define** a new derived quantity:
+
+     ```text
+     WalletInstanceId = SHA-256(canonical_bytecode || canonical_xpub_serialization)
+     ```
+
+     where `canonical_xpub_serialization` is the concatenation of each `@N`-placeholder's resolved xpub in placeholder-index order, in BIP 32 78-byte serialization form. The `WalletInstanceId` is **defined in the BIP** (so every tool computes it the same way) but is NOT carried by any physical card or wire structure. It's a recovery-time derivation: tools that have the policy card + the cosigners' xpubs (whether from md1 + mk1 cards, from a digital descriptor backup, or from the wallet itself) can compute it on demand.
+
+     No new physical Tier-3 anchor for `WalletInstanceId` is introduced. The existing BIP 39 12-word phrase anchor remains a `PolicyId` anchor, with renamed framing.
+
+  3. **Use `WalletInstanceId` in mk SPEC §5** recovery flow. The current mk1 spec recomputes the policy ID at step 4 to verify reassembly; the v0.8 update changes step 4 to compute and verify the `WalletInstanceId` — which is the actual cryptographic check that distinguishes "this xpub set, plugged into this template, produces this exact wallet" from "some other xpub set in the same template family." The stub-match in step 2 stays exactly as is (template-level filter, fast).
+
+- **Why deferred:** Naming change is mechanical but touches many surfaces (code identifiers, rustdoc, spec text, BIP draft, in-flight mk1 design). The new `WalletInstanceId` definition is small (one paragraph in the BIP, ~20 lines of derived helper in md-codec) but should land alongside the rename so the conceptual split is introduced atomically rather than across two releases.
+
+- **Status:** open
+- **Tier:** v0.8 (bundled rename + new derived quantity).
+
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
 - **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
