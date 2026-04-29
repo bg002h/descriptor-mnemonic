@@ -139,11 +139,17 @@ enum Command {
         #[arg(long, value_name = "tap|segwitv0", default_value = "segwitv0")]
         context: String,
 
-        /// Tap-context internal key. If omitted, rust-miniscript synthesises
-        /// an unspendable NUMS key for script-path-only spends. Ignored for
-        /// `segwitv0`.
+        /// Tap-context fallback (unspendable) internal key. Plumbed to
+        /// rust-miniscript's `Concrete::compile_tr(unspendable_key)`,
+        /// which prefers a key extracted from the policy itself and
+        /// only uses this parameter as a fallback when no extraction
+        /// is possible. NOT a "force this internal key" override —
+        /// see the `policy_compiler` module rustdoc for the full
+        /// precedence rule. If omitted, upstream synthesises an
+        /// unspendable NUMS key for script-path-only spends. Ignored
+        /// for `segwitv0`.
         #[arg(long, value_name = "DESCRIPTOR_PUBLIC_KEY")]
-        internal_key: Option<String>,
+        unspendable_key: Option<String>,
     },
 }
 
@@ -486,7 +492,7 @@ fn cmd_inspect(string: &str) -> Result<(), anyhow::Error> {
 fn cmd_from_policy(
     policy_str: &str,
     context_str: &str,
-    internal_key_str: Option<&str>,
+    unspendable_key_str: Option<&str>,
 ) -> Result<(), anyhow::Error> {
     use md_codec::{ScriptContext, policy_to_bytecode};
 
@@ -498,16 +504,21 @@ fn cmd_from_policy(
         }
     };
 
-    let internal_key = match internal_key_str {
+    let unspendable_key = match unspendable_key_str {
         Some(s) => Some(
             s.parse::<miniscript::DescriptorPublicKey>()
-                .map_err(|e| anyhow::anyhow!("--internal-key parse failed: {e}"))?,
+                .map_err(|e| anyhow::anyhow!("--unspendable-key parse failed: {e}"))?,
         ),
         None => None,
     };
 
-    let bytecode = policy_to_bytecode(policy_str, &EncodeOptions::default(), context, internal_key)
-        .map_err(|e| anyhow::anyhow!("policy compile/encode failed: {e}"))?;
+    let bytecode = policy_to_bytecode(
+        policy_str,
+        &EncodeOptions::default(),
+        context,
+        unspendable_key,
+    )
+    .map_err(|e| anyhow::anyhow!("policy compile/encode failed: {e}"))?;
 
     let hex: String =
         bytecode
@@ -596,8 +607,8 @@ fn main() {
         Command::FromPolicy {
             policy,
             context,
-            internal_key,
-        } => cmd_from_policy(&policy, &context, internal_key.as_deref()),
+            unspendable_key,
+        } => cmd_from_policy(&policy, &context, unspendable_key.as_deref()),
     };
 
     if let Err(e) = result {

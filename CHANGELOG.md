@@ -4,6 +4,48 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.7.2] — 2026-04-29
+
+Patch release. Renames the Tap-context fallback parameter on
+`policy_to_bytecode` and the corresponding CLI flag on `md from-policy`
+to mirror the upstream `Concrete::compile_tr` naming. Surfaced by v0.7.1
+real-world smoke testing — the prior `internal_key` name implied
+"force this internal key" but the parameter is actually a fallback
+hint that upstream uses only when no key can be extracted from the
+policy itself.
+
+### Changed (CLI-flag rename)
+
+- `md from-policy --internal-key <KEY>` → `md from-policy --unspendable-key <KEY>`.
+  The `cli-compiler` feature shipped 1 day ago in v0.7.0; impact is
+  expected to be zero in practice.
+
+### Changed (library — non-ABI-breaking in Rust; doc-only at the call site)
+
+- `policy_compiler::policy_to_bytecode` parameter `internal_key:
+  Option<DescriptorPublicKey>` renamed to `unspendable_key:
+  Option<DescriptorPublicKey>`. Rust positional arguments don't carry
+  the parameter name through the call site, so existing callers compile
+  unchanged. Rustdoc rewritten to explicitly describe the precedence
+  rule: `compile_tr` first calls `extract_key(unspendable_key)`, which
+  prefers a key extracted from the policy; the fallback parameter is
+  used only when no extraction is possible.
+
+### Changed (rustdoc)
+
+- `policy_compiler` module-level docs gain a "Tap-context internal key
+  — `unspendable_key` semantics" section explaining the upstream
+  precedence rule and noting the v0.7.2 rename rationale.
+- `Error::PolicyScopeViolation` rustdoc unchanged from v0.7.1; same
+  variant is re-used by `policy_to_bytecode` for compiler-output shapes
+  MD does not encode.
+
+### Notes
+
+- Wire format byte-identical to v0.7.x. Vector files unchanged.
+- `md-signer-compat` not bumped (no changes).
+- Closes `v07-from-policy-internal-key-semantic-clarification`.
+
 ## [0.7.1] — 2026-04-29
 
 Patch release. 12 housekeeping items closing v0.7.x defensive-cleanup
