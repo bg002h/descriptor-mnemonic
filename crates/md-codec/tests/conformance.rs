@@ -573,12 +573,14 @@ fn rejects_invalid_bytecode_truncated() {
 #[test]
 fn rejects_invalid_bytecode_varint_overflow() {
     // 11 bytes of LEB128 with continuation bits set = VarintOverflow.
+    use md_codec::bytecode::Tag;
+
     let leb128_overflow = [0x80u8; 11]; // 11 bytes, all continuation bits set, never terminates
     let mut bytes = vec![
-        0x00u8, // header
-        0x33,   // Tag::SharedPath
-        0xFE,   // explicit path marker
-        0x01,   // count = 1 component
+        0x00u8,                    // header
+        Tag::SharedPath.as_byte(), // path-declaration tag
+        0xFE,                      // explicit path marker
+        0x01,                      // count = 1 component
     ];
     bytes.extend_from_slice(&leb128_overflow);
 
@@ -709,35 +711,37 @@ fn rejects_invalid_bytecode_reserved_bits_set() {
 
 /// 28. Path indicator byte is a defined (but wrong) tag → `Error::InvalidBytecode { kind: UnexpectedTag { .. } }`
 ///
-/// The path-declaration slot expects Tag::SharedPath (0x33) as the first byte.
-/// Supplying a different but defined tag (Tag::Wsh = 0x05) triggers UnexpectedTag.
+/// The path-declaration slot expects Tag::SharedPath as the first byte.
+/// Supplying a different but defined tag (Tag::Wsh) triggers UnexpectedTag.
 #[test]
 fn rejects_invalid_bytecode_unexpected_tag() {
     use md_codec::bytecode::Tag;
 
-    // header=0x00, then Tag::Wsh (0x05) where Tag::SharedPath (0x33) is expected.
+    // header=0x00, then Tag::Wsh where Tag::SharedPath is expected.
     let bytes: Vec<u8> = vec![
-        0x00,               // header
-        Tag::Wsh.as_byte(), // 0x05 — wrong tag at the declaration slot
+        0x00,                       // header
+        Tag::Wsh.as_byte(),         // wrong tag at the declaration slot
         0x03,
-        0x05,
-        0x32,
+        Tag::Wsh.as_byte(),
+        Tag::Placeholder.as_byte(),
         0x00,
     ];
 
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    let expected_shared_path = Tag::SharedPath.as_byte();
+    let expected_wsh = Tag::Wsh.as_byte();
     assert!(
         matches!(
             err,
             Error::InvalidBytecode {
                 kind: BytecodeErrorKind::UnexpectedTag {
-                    expected: 0x33,
-                    got: 0x05
+                    expected,
+                    got,
                 },
                 ..
-            }
+            } if expected == expected_shared_path && got == expected_wsh
         ),
-        "expected InvalidBytecode {{ kind: UnexpectedTag {{ expected: 0x33, got: 0x05 }} }}, got {:?}",
+        "expected InvalidBytecode {{ kind: UnexpectedTag {{ expected: SharedPath, got: Wsh }} }}, got {:?}",
         err
     );
 }
@@ -792,13 +796,15 @@ fn rejects_invalid_bytecode_type_check_failed() {
 /// (LEB128: `[0x80, 0x80, 0x80, 0x80, 0x10]`).
 #[test]
 fn rejects_invalid_bytecode_invalid_path_component() {
+    use md_codec::bytecode::Tag;
+
     // Explicit path: 0xFE marker, count=1, then 2^32 in LEB128.
     // 2^32 = 0x100000000; LEB128 = [0x80, 0x80, 0x80, 0x80, 0x10].
     let bytes: Vec<u8> = vec![
-        0x00, // header
-        0x33, // Tag::SharedPath
-        0xFE, // explicit path marker
-        0x01, // count = 1
+        0x00,                      // header
+        Tag::SharedPath.as_byte(), // path-declaration tag
+        0xFE,                      // explicit path marker
+        0x01,                      // count = 1
         0x80, 0x80, 0x80, 0x80, 0x10, // LEB128(2^32) → InvalidPathComponent
     ];
 
@@ -913,22 +919,29 @@ fn rejects_policy_too_large() {
 
 // 32. Tap-leaf miniscript using an out-of-subset operator → `Error::SubsetViolation`
 //
-// The Coldcard subset (BIP §"Taproot tree") allows `pk_k`, `pk_h`,
-// `multi_a`, `or_d`, `and_v`, `older` and the safe `c:` / `v:` wrappers.
-// `sha256(...)` is NOT in the subset — emitting
-// `tr(@0/**, and_v(v:sha256(...), pk(@1/**)))` must be rejected at encode
-// time with a precise per-operator diagnostic. (We wrap sha256 inside an
-// and_v(v:..., pk()) so miniscript's "all spend paths must require a
-// signature" constraint is satisfied at parse time; the rejection then
-// comes from the MD subset check, not from the upstream miniscript
-// parser.)
+// v0.6 strip-Layer-3 made `to_bytecode` scope-agnostic. The opt-in helper
+// `bytecode::encode::validate_tap_leaf_subset` retains the historical
+// Coldcard-style subset diagnostic and is the canonical path for this
+// rejection in v0.6+. (md-signer-compat in v0.7+ will delegate through
+// the allowlist refactor.) `sha256(...)` is not in the leaf subset; we
+// drive the parser through `tr(@0/**, and_v(v:sha256(...), pk(@1/**)))`
+// to satisfy miniscript's "all spend paths must require a signature"
+// constraint, then assert the subset diagnostic on the inner tap leaf.
 #[test]
 fn rejects_subset_violation() {
-    let policy: WalletPolicy =
-        "tr(@0/**,and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),pk(@1/**)))"
-            .parse()
-            .expect("tap-leaf with sha256 inside and_v should parse syntactically");
-    let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
+    use md_codec::bytecode::encode::validate_tap_leaf_subset;
+    use miniscript::Miniscript;
+    use miniscript::Tap;
+
+    // Build a Tap-context miniscript whose body contains `sha256(...)` (out
+    // of subset). Wrap with `and_v(v:sha256, pk(K))` to satisfy the parser's
+    // "all spend paths must require a signature" constraint; the subset
+    // rejection comes from the MD opt-in validator, not from upstream parse.
+    let leaf_str = "and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),c:pk_k([6738736c/44'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*))";
+    let leaf_ms: Miniscript<miniscript::DescriptorPublicKey, Tap> =
+        leaf_str.parse().expect("tap-leaf miniscript parses");
+
+    let err = validate_tap_leaf_subset(&leaf_ms, Some(0)).unwrap_err();
     match err {
         Error::SubsetViolation { ref operator, .. } => {
             assert!(

@@ -114,41 +114,12 @@ fn decode_report_populates_leaf_index_dfs_preorder() {
     );
 }
 
-#[test]
-fn tap_leaf_subset_violation_carries_leaf_index() {
-    // LI2: hand-construct a multi-leaf TapTree with wpkh leaf at index 0
-    // (left leaf of a 2-leaf depth-1 tree); expect
-    // SubsetViolation { operator: "wpkh", leaf_index: Some(0) }.
-    //
-    // Build a valid `tr(@0/**)` bytecode and append the multi-leaf body
-    // with a Wpkh leaf in left position.
-    let policy: WalletPolicy = "tr(@0/**)".parse().unwrap();
-    let mut bytecode = policy
-        .to_bytecode(&EncodeOptions::default())
-        .expect("tr(@0/**) encodes");
-    bytecode.push(Tag::TapTree.as_byte());
-    // Left leaf: WPKH (out of subset for tap leaves) — fires at leaf_index 0.
-    bytecode.extend_from_slice(&[Tag::Wpkh.as_byte(), Tag::Placeholder.as_byte(), 1u8]);
-    // Right leaf: pk (legal).
-    bytecode.extend_from_slice(&[Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 1u8]);
-
-    let err = decode_bytecode(&bytecode).expect_err("wpkh tap leaf must reject");
-    match err {
-        Error::SubsetViolation {
-            operator,
-            leaf_index,
-            ..
-        } => {
-            assert_eq!(operator, "wpkh", "expected wpkh operator");
-            assert_eq!(
-                leaf_index,
-                Some(0),
-                "expected leaf_index=Some(0) (left leaf)"
-            );
-        }
-        other => panic!("expected SubsetViolation, got {other:?}"),
-    }
-}
+// LI2 — REMOVED in v0.6. The decode-side `SubsetViolation { leaf_index }`
+// attribution was a Layer-3 concern; v0.6 strip-Layer-3 made the decoder
+// reject out-of-context tap-leaf inner tags via a structural diagnostic
+// (`BytecodeErrorKind::TagInvalidContext { tag, context: "tap-leaf-inner" }`)
+// instead of `SubsetViolation`. The leaf-index attribution moves to
+// md-signer-compat (v0.7+) which calls `validate_tap_leaf_subset` per leaf.
 
 #[test]
 fn single_leaf_tr_uses_leaf_index_zero() {

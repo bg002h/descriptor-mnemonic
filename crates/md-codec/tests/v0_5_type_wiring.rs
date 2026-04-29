@@ -11,18 +11,20 @@
 
 use md_codec::{EncodeOptions, Error, WalletPolicy};
 
-/// Trigger a `SubsetViolation` via the public encode API. The
-/// `tr(K, sha256(...))` policy parses but contains an out-of-subset
-/// tap-leaf operator (`sha256`), so the encoder rejects it with the
-/// variant we want to inspect.
+/// Trigger a `SubsetViolation` via the v0.6 opt-in validator
+/// `validate_tap_leaf_subset`. (`to_bytecode` itself is scope-agnostic
+/// post-v0.6-strip and no longer rejects out-of-subset tap-leaf
+/// operators by default.) The leaf miniscript here uses `sha256(...)`,
+/// out of the historical Coldcard tap-leaf subset.
 fn trigger_tap_leaf_subset_violation() -> Error {
-    let policy: WalletPolicy =
-        "tr(@0/**,and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),pk(@1/**)))"
-            .parse()
-            .expect("policy should parse syntactically");
-    policy
-        .to_bytecode(&EncodeOptions::default())
-        .expect_err("encode should reject out-of-subset operator")
+    use md_codec::bytecode::encode::validate_tap_leaf_subset;
+    use miniscript::{Miniscript, Tap};
+
+    let leaf_str = "and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),c:pk_k([6738736c/44'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*))";
+    let leaf_ms: Miniscript<miniscript::DescriptorPublicKey, Tap> =
+        leaf_str.parse().expect("tap-leaf miniscript parses");
+    validate_tap_leaf_subset(&leaf_ms, Some(0))
+        .expect_err("validator should reject out-of-subset operator")
 }
 
 #[test]

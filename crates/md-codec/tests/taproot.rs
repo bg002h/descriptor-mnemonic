@@ -11,6 +11,7 @@
 //!
 //! See `design/PHASE_v0_2_D_DECISIONS.md` for the binding spec.
 
+use md_codec::bytecode::Tag;
 use md_codec::{EncodeOptions, Error, WalletPolicy};
 
 /// Round-trip a policy through `to_bytecode → from_bytecode → to_bytecode`
@@ -45,13 +46,14 @@ fn assert_roundtrips(policy_str: &str) -> Vec<u8> {
 fn taproot_key_path_only_round_trips() {
     // `tr(@0/**)` — key-spend-only taproot. Bytecode shape (with header
     // byte and shared-path declaration prefixed):
-    //   [header][shared-path declaration][Tag::Tr=0x06][Tag::Placeholder=0x32][0x00]
+    //   [header][shared-path declaration][Tag::Tr][Tag::Placeholder][0x00]
     let bytes = assert_roundtrips("tr(@0/**)");
     // Pin the trailing 3 bytes of the operator tree.
     let n = bytes.len();
+    let expected_tail: &[u8] = &[Tag::Tr.as_byte(), Tag::Placeholder.as_byte(), 0x00];
     assert_eq!(
         &bytes[n - 3..],
-        &[0x06, 0x32, 0x00],
+        expected_tail,
         "expected [Tr][Placeholder][idx=0] tail, got {:02x?}",
         &bytes[n - 3..]
     );
@@ -62,15 +64,24 @@ fn taproot_single_leaf_pk_round_trips() {
     // `tr(@0/**, pk(@1/**))` — single-leaf with a script path that uses a
     // distinct placeholder. The leaf miniscript `pk(K)` is parsed by the
     // BIP 388 frontend as `c:pk_k(K)`, so the leaf encoding is
-    //   [Tag::Check=0x0C][Tag::PkK=0x1B][Tag::Placeholder=0x32][idx=1]
+    //   [Tag::Check][Tag::PkK][Tag::Placeholder][idx=1]
     // and the full operator tree is
-    //   [Tag::Tr=0x06][Tag::Placeholder=0x32][0x00]
-    //   [Tag::Check=0x0C][Tag::PkK=0x1B][Tag::Placeholder=0x32][0x01]
+    //   [Tag::Tr][Tag::Placeholder][0x00]
+    //   [Tag::Check][Tag::PkK][Tag::Placeholder][0x01]
     let bytes = assert_roundtrips("tr(@0/**,pk(@1/**))");
     let n = bytes.len();
+    let expected_tail: &[u8] = &[
+        Tag::Tr.as_byte(),
+        Tag::Placeholder.as_byte(),
+        0x00,
+        Tag::Check.as_byte(),
+        Tag::PkK.as_byte(),
+        Tag::Placeholder.as_byte(),
+        0x01,
+    ];
     assert_eq!(
         &bytes[n - 7..],
-        &[0x06, 0x32, 0x00, 0x0C, 0x1B, 0x32, 0x01],
+        expected_tail,
         "expected [Tr][Plc][0][Check][PkK][Plc][1] tail, got {:02x?}",
         &bytes[n - 7..]
     );
@@ -83,10 +94,11 @@ fn taproot_single_leaf_multi_a_round_trips() {
     let bytes = assert_roundtrips("tr(@0/**,multi_a(2,@1/**,@2/**,@3/**))");
     // Pin: [Tr][Plc][0][MultiA][k=2][n=3][Plc][1][Plc][2][Plc][3]
     let n = bytes.len();
+    let p = Tag::Placeholder.as_byte();
     let expected_tail: &[u8] = &[
-        0x06, 0x32, 0x00, // Tr, Placeholder, idx 0 (internal key)
-        0x1A, 0x02, 0x03, // MultiA, k=2, n=3
-        0x32, 0x01, 0x32, 0x02, 0x32, 0x03, // 3 placeholder records
+        Tag::Tr.as_byte(), p, 0x00,        // Tr, Placeholder, idx 0 (internal key)
+        Tag::MultiA.as_byte(), 0x02, 0x03, // MultiA, k=2, n=3
+        p, 0x01, p, 0x02, p, 0x03,         // 3 placeholder records
     ];
     assert_eq!(
         &bytes[n - expected_tail.len()..],
@@ -109,16 +121,21 @@ fn taproot_nested_subset_round_trips() {
 // Subset rejections (D-2)
 // ---------------------------------------------------------------------------
 
+// v0.6 strip-Layer-3 made `to_bytecode` scope-agnostic. The opt-in helper
+// `bytecode::encode::validate_tap_leaf_subset` retains the historical
+// Coldcard-style subset diagnostic and is exercised here directly. The
+// driver builds a Tap-context miniscript leaf and calls the validator;
+// `to_bytecode` itself no longer rejects out-of-subset operators by default.
+
 #[test]
 fn taproot_rejects_out_of_subset_sha256() {
-    // sha256 is not in the Coldcard subset. Wrap inside and_v(v:..., pk(...))
-    // so the upstream miniscript parser doesn't reject for "all spend paths
-    // must require a signature".
-    let policy: WalletPolicy =
-        "tr(@0/**,and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),pk(@1/**)))"
-            .parse()
-            .expect("policy should parse");
-    let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
+    use md_codec::bytecode::encode::validate_tap_leaf_subset;
+    use miniscript::{Miniscript, Tap};
+
+    let leaf_str = "and_v(v:sha256(b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9),c:pk_k([6738736c/44'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*))";
+    let leaf_ms: Miniscript<miniscript::DescriptorPublicKey, Tap> =
+        leaf_str.parse().expect("tap-leaf miniscript parses");
+    let err = validate_tap_leaf_subset(&leaf_ms, Some(0)).unwrap_err();
     match err {
         Error::SubsetViolation { ref operator, .. } => {
             assert!(
@@ -132,20 +149,17 @@ fn taproot_rejects_out_of_subset_sha256() {
 
 #[test]
 fn taproot_rejects_wrapper_alt_outside_subset() {
-    // The `s:` wrapper is required by miniscript typing for `or_b` /
-    // `and_b` / `thresh` children, but `or_b` / `and_b` / `thresh` are
-    // themselves out-of-subset. Use a thresh fragment to drive the
-    // rejection — miniscript surfaces the outer operator name first.
-    let policy: WalletPolicy = "tr(@0/**,thresh(2,pk(@1/**),s:pk(@2/**),s:pk(@3/**)))"
-        .parse()
-        .expect("policy should parse");
-    let err = policy.to_bytecode(&EncodeOptions::default()).unwrap_err();
+    use md_codec::bytecode::encode::validate_tap_leaf_subset;
+    use miniscript::{Miniscript, Tap};
+
+    // `thresh` is out-of-subset; the inner `s:` wrappers are wired through
+    // it. Miniscript surfaces whichever operator the AST walk hits first.
+    let leaf_str = "thresh(2,c:pk_k([6738736c/44'/0'/0']xpub6Br37sWxruYfT8ASpCjVHKGwgdnYFEn98DwiN76i2oyY6fgH1LAPmmDcF46xjxJr22gw4jmVjTE2E3URMnRPEPYyo1zoPSUba563ESMXCeb/<0;1>/*),sc:pk_k([6738736c/48'/0'/0'/100']xpub6FC1fXFP1GXQpyRFfSE1vzzySqs3Vg63bzimYLeqtNUYbzA87kMNTcuy9ubr7MmavGRjW2FRYHP4WGKjwutbf1ghgkUW9H7e3ceaPLRcVwa/<0;1>/*),sc:pk_k([6738736c/48'/0'/0'/2']xpub6FC1fXFP1GXLX5TKtcjHGT4q89SDRehkQLtbKJ2PzWcvbBHtyDsJPLtpLtkGqYNYZdVVAjRQ5kug9CsapegmmeRutpP7PW4u4wVF9JfkDhw/<0;1>/*))";
+    let leaf_ms: Miniscript<miniscript::DescriptorPublicKey, Tap> =
+        leaf_str.parse().expect("tap-leaf miniscript parses");
+    let err = validate_tap_leaf_subset(&leaf_ms, Some(0)).unwrap_err();
     match err {
         Error::SubsetViolation { ref operator, .. } => {
-            // The outer operator (`thresh`) is what the validator hits
-            // first when walking the AST. We don't prescribe which is
-            // reported, but we do prescribe that *some* out-of-subset
-            // operator name is named.
             assert!(
                 operator == "thresh" || operator.starts_with("s:"),
                 "expected thresh or s: rejection, got {operator:?}"
@@ -173,7 +187,7 @@ fn taproot_decodes_tag_taptree_routes_into_subtree_helper() {
     // semantics; Phase 6 adds the canonical N1-N9 negative fixtures.)
     let policy: WalletPolicy = "tr(@0/**)".parse().unwrap();
     let mut bytes = policy.to_bytecode(&EncodeOptions::default()).unwrap();
-    bytes.push(0x08); // Tag::TapTree — multi-leaf inner-node framing
+    bytes.push(Tag::TapTree.as_byte()); // multi-leaf inner-node framing
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
     match err {
         Error::InvalidBytecode {
@@ -198,13 +212,13 @@ fn taproot_rejects_nested_tr_inside_wsh() {
     // Tr that doesn't exist syntactically through the parser.
     let wsh_pos = valid
         .iter()
-        .position(|&b| b == 0x05)
+        .position(|&b| b == Tag::Wsh.as_byte())
         .expect("encoded wsh must contain Tag::Wsh");
     // Synthesise: keep [..wsh_pos+1], then Tag::Tr+Placeholder+idx 0 to
     // simulate a nested tr() inside wsh. The decoder must reject without
     // panicking.
     let mut bytes = valid[..=wsh_pos].to_vec();
-    bytes.extend_from_slice(&[0x06, 0x32, 0x00]); // Tr, Placeholder, idx 0
+    bytes.extend_from_slice(&[Tag::Tr.as_byte(), Tag::Placeholder.as_byte(), 0x00]);
     let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
     match err {
         Error::PolicyScopeViolation(ref msg) => {

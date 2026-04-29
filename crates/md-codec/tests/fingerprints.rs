@@ -15,6 +15,7 @@
 
 use bitcoin::bip32::Fingerprint;
 
+use md_codec::bytecode::Tag;
 use md_codec::{
     BytecodeErrorKind, DecodeOptions, EncodeOptions, Error, WalletPolicy, decode, encode,
 };
@@ -53,13 +54,18 @@ fn round_trip_with_fingerprints_two_keys() {
         "header byte must be 0x04 when fingerprints are present"
     );
     // Immediately after path declaration (Tag::SharedPath + indicator)
-    // must be Tag::Fingerprints (0x35), then count byte 2, then 8 bytes.
+    // must be Tag::Fingerprints, then count byte 2, then 8 bytes.
     // Path declaration for a template-only policy default-falls-back to
-    // BIP 84 mainnet: [Tag::SharedPath=0x33][indicator=0x03], 2 bytes.
-    assert_eq!(bytecode[1], 0x33, "byte[1] must be Tag::SharedPath");
+    // BIP 84 mainnet: [Tag::SharedPath][indicator=0x03], 2 bytes.
+    assert_eq!(
+        bytecode[1],
+        Tag::SharedPath.as_byte(),
+        "byte[1] must be Tag::SharedPath"
+    );
     assert_eq!(bytecode[2], 0x03, "byte[2] must be BIP 84 indicator");
     assert_eq!(
-        bytecode[3], 0x35,
+        bytecode[3],
+        Tag::Fingerprints.as_byte(),
         "byte[3] must be Tag::Fingerprints right after the path declaration"
     );
     assert_eq!(bytecode[4], 0x02, "byte[4] must be count = 2");
@@ -306,18 +312,18 @@ fn fingerprints_block_byte_layout_matches_bip_example() {
             write!(acc, "{b:02x}").unwrap();
             acc
         });
-    // Byte-by-byte breakdown (matches the BIP example's annotation):
+    // Byte-by-byte breakdown (matches the BIP example's annotation, v0.6 codes):
     //   04        | header (v0, fingerprints bit set)
-    //   33 03     | path declaration: SharedPath, BIP 84 mainnet indicator
-    //   35 02     | fingerprints block: tag, count = 2
+    //   34 03     | path declaration: SharedPath (0x34), BIP 84 mainnet indicator
+    //   35 02     | fingerprints block: tag (0x35), count = 2
     //   deadbeef  | fps[0]
     //   cafebabe  | fps[1]
-    //   05 19     | wsh, multi
+    //   05 08     | wsh (0x05), multi (0x08)
     //   02 02     | k = 2, n = 2
-    //   32 00     | @0
-    //   32 01     | @1
+    //   33 00     | Placeholder (0x33), @0
+    //   33 01     | Placeholder (0x33), @1
     assert_eq!(
-        hex, "0433033502deadbeefcafebabe0519020232003201",
-        "bytecode hex must match the BIP §\"Fingerprints block\" example"
+        hex, "0434033502deadbeefcafebabe0508020233003301",
+        "bytecode hex must match the BIP §\"Fingerprints block\" example (v0.6 byte codes)"
     );
 }
