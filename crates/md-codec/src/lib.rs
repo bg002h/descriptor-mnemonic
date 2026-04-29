@@ -177,7 +177,7 @@ pub use policy::{MdBackup, WalletPolicy};
 #[cfg(feature = "compiler")]
 pub use policy_compiler::{ScriptContext, policy_to_bytecode};
 pub use policy_id::{
-    ChunkSetId, PolicyId, ChunkSetIdSeed, PolicyIdWords, WalletInstanceId,
+    ChunkSetId, ChunkSetIdSeed, PolicyId, PolicyIdWords, WalletInstanceId,
     compute_policy_id_for_policy, compute_wallet_instance_id,
 };
 pub use vectors::{NegativeVector, TestVectorFile, Vector};

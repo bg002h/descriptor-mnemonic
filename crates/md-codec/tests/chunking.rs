@@ -9,8 +9,8 @@
 mod common;
 
 use md_codec::{
-    BchCode, ChunkCode, ChunkHeader, ChunkSetId, ChunkingPlan, DecodeOptions, EncodeOptions,
-    Error, WalletPolicy, chunk_bytes, decode, encode, reassemble_chunks,
+    BchCode, ChunkCode, ChunkHeader, ChunkSetId, ChunkingPlan, DecodeOptions, EncodeOptions, Error,
+    WalletPolicy, chunk_bytes, decode, encode, reassemble_chunks,
 };
 
 // ---------------------------------------------------------------------------

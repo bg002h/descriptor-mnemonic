@@ -660,7 +660,9 @@ pub fn reassemble_chunks(chunks: Vec<Chunk>) -> Result<Vec<u8>> {
     // Chunked path: extract expected chunk_set_id and count from first chunk.
     let (expected_chunk_set_id, expected_count) = match &chunks[0].header {
         ChunkHeader::Chunked {
-            chunk_set_id, count, ..
+            chunk_set_id,
+            count,
+            ..
         } => (*chunk_set_id, *count),
         ChunkHeader::SingleString { .. } => unreachable!("handled above"),
     };

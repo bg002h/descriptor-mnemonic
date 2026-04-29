@@ -16,9 +16,8 @@ mod common;
 
 use bitcoin::bip32::Fingerprint;
 use md_codec::{
-    BytecodeErrorKind, Chunk, ChunkHeader, ChunkSetId, ChunkingMode, DecodeOptions,
-    EncodeOptions, Error, WalletPolicy, chunk_bytes, chunking_decision, decode, encode,
-    reassemble_chunks,
+    BytecodeErrorKind, Chunk, ChunkHeader, ChunkSetId, ChunkingMode, DecodeOptions, EncodeOptions,
+    Error, WalletPolicy, chunk_bytes, chunking_decision, decode, encode, reassemble_chunks,
 };
 
 // ---------------------------------------------------------------------------
