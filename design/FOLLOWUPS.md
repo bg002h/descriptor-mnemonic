@@ -200,15 +200,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v1+ (crates.io publish prep)
 
-### `phase-5-cli-wdm1-assertion-sweep` — sweep `"wdm1"` string literals in tests/cli.rs
-
-- **Surfaced:** Phase 4 (identifier mass-rename) code-quality reviewer (Important #1)
-- **Where:** `crates/md-codec/tests/cli.rs` lines 50, 113, 216-217, 253, 415 (currently `predicate::str::starts_with("wdm1")` and similar `.starts_with("wdm1")` assertions)
-- **What:** 6 test assertions still check the OLD bech32 HRP prefix `"wdm1"`. They pass today because the HRP constant in `encoding.rs:93` is still `"wdm"`. When Phase 5 flips the HRP to `"md"`, these assertions silently start failing — the failure cascade is obvious but the link back to Phase 4's deferred work is not. Phase 5 implementer must grep `tests/cli.rs` for `wdm1` and replace with `md1` AS PART OF the HRP flip.
-- **Why deferred:** These are wire-format string literals (Phase 5 territory per the plan), not doc comments (Phase 4). Adding inline `// TODO Phase 5` markers on every line was considered but rejected as noisy maintenance burden — this single FOLLOWUPS entry is sufficient since Phase 5 will grep for `wdm` across the whole crate anyway.
-- **Status:** open (will be resolved in Phase 5 of the rename)
-- **Tier:** v0.3-blocker (Phase 5 must address before final gate run)
-
 ### `rename-workflow-broad-sed-enumeration-lesson` — workflow doc should explicitly enumerate src/+tests/+bin/ for sed sweeps
 
 - **Surfaced:** Phase 4 (identifier mass-rename) code-quality reviewer (Minor); learnable lesson from 2 oversight-fix commits
@@ -217,14 +208,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** This is a meta-improvement to the workflow doc, not a current rename defect. Best applied next time `RENAME_WORKFLOW.md` is updated (e.g., during the next rename, or as a pre-emptive cleanup pass).
 - **Status:** open
 - **Tier:** v1+ (process improvement, not version-gating)
-
-### `slip-0173-register-md-hrp` — file SLIP-0173 PR registering `md` HRP
-
-- **Surfaced:** Pre-flight Gate 1 of the wdm→md rename (HRP collision vet)
-- **Where:** External — `satoshilabs/slips` repo, `slip-0173.md` registry table
-- **What:** Defensive registration of HRP `md` for the Mnemonic Descriptor format. The pre-flight collision vet (2026-04-27) confirmed `md` was clean across SLIP-0173 + Lightning HRPs + Liquid + codex32 + Nostr + Cosmos + web search. Filing the SLIP-0173 PR closes off future independent-project collision risk.
-- **Status:** resolved (PR filed). PR: https://github.com/satoshilabs/slips/pull/2011 — open and awaiting maintainer review at SatoshiLabs cadence. Merge state tracked separately; the requested action (FILE the PR) is complete.
-- **Tier:** v0.3-followup → external (now tracking maintainer review cadence)
 
 ---
 
@@ -621,6 +604,18 @@ See BIP §FAQ for rationale.
 - **Surfaced:** v0.2.1 release prep (2026-04-28); v0.2.json regen produced a different SHA only because `generator: "wdm-codec 0.2.0"` → `"wdm-codec 0.2.1"`, despite byte-identical wire format and corpus.
 - **Status:** resolved in v0.2.1 — `pub const GENERATOR_FAMILY: &str = "wdm-codec <major>.<minor>"` added to `vectors.rs` via `concat!` of `CARGO_PKG_VERSION_MAJOR` / `_MINOR`. Both v1 and v2 builders use this. `gen_vectors --output` logs the full crate version to stderr for traceability. v0.2.json regen now produces SHA `b403073b8a925bdda37adb92daa8521d527476aa7937450bd27fcbe0efdfd072` — stable across the entire 0.2.x patch line. (v0.2.0 SHA `3c208300...` remains correct for the v0.2.0 tag; consumers pinning it experience a one-time migration at v0.2.1 then no further churn.)
 - **Tier:** v0.2-nice-to-have (closed; was originally filed as v0.3 but applied during v0.2.1 prep per user direction)
+
+### `phase-5-cli-wdm1-assertion-sweep` — sweep `"wdm1"` string literals in tests/cli.rs
+
+- **Surfaced:** Phase 4 (identifier mass-rename) code-quality reviewer (Important #1)
+- **Status:** resolved `12da91f` (Phase 5 wire-format string literal sweep — HRP `wdm`→`md`); zero `wdm1` string literals remain in `crates/md-codec/tests/cli.rs` (verified post-rename).
+- **Tier:** v0.3-blocker (closed)
+
+### `slip-0173-register-md-hrp` — file SLIP-0173 PR registering `md` HRP
+
+- **Surfaced:** Pre-flight Gate 1 of the wdm→md rename (HRP collision vet)
+- **Status:** resolved 2026-04-28 — PR filed at https://github.com/satoshilabs/slips/pull/2011. The requested action (FILE the PR) is complete; merge state is now tracked externally on SatoshiLabs review cadence and is no longer an MD-side deferral.
+- **Tier:** external (closed; awaiting upstream merge tracked separately)
 
 ---
 

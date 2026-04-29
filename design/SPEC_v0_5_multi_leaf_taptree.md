@@ -120,6 +120,7 @@ fn decode_tap_subtree(
             let index = *leaf_counter;
             *leaf_counter += 1;
             let leaf = decode_tap_miniscript(cur, keys, Some(index))?;
+            validate_tap_leaf_subset(&leaf, Some(index))?;  // per-leaf subset gate; mirrors the single-leaf decode path so out-of-subset operators are rejected on every leaf, not just the first
             Ok(TapTree::leaf(leaf))
         }
         None => Err(Error::InvalidBytecode {

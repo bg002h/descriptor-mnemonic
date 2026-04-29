@@ -524,9 +524,9 @@ fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Resu
         // Everything else is out-of-subset for v0.2.
         other => Err(Error::TapLeafSubsetViolation {
             operator: tap_terminal_name(other).to_string(),
-            leaf_index: None, // Sub-helper of validate_tap_leaf_subset; outer caller
-                              // re-wraps the error with the correct leaf_index via
-                              // map_err in Task 2.3.
+            leaf_index: None, // Sub-helper of validate_tap_leaf_subset; the outer
+                              // caller re-wraps via map_err to attach the correct
+                              // leaf_index.
         }),
     }
 }

@@ -5,25 +5,20 @@
 //! substituting `Tag::Placeholder` references against a caller-supplied key
 //! information vector.
 //!
-//! v0.1 scope: only `Tag::Wsh` at the top level. The v1+ inline-key tags
-//! (0x24..=0x31, the `Reserved*` set in `Tag`) are rejected.
+//! Top-level descriptors accepted: `Tag::Wsh`, `Tag::Tr`, `Tag::Wpkh`, and
+//! `Tag::Sh`. `Sh` dispatches via peek-before-recurse to `sh(wpkh(...))`
+//! (P2SH-P2WPKH) or `sh(wsh(...))` (P2SH-P2WSH); all other inner tags are
+//! rejected with `PolicyScopeViolation`. Legacy non-segwit types (`pkh`,
+//! `bare`) are permanently excluded by design.
 //!
-//! v0.2 (Phase D) scope: `Tag::Tr` is also accepted at the top level and
-//! decodes to `Descriptor::Tr` with at most a single tap-leaf miniscript
-//! attached.
+//! Inside `Tr`, multi-leaf TapTrees are decoded via `Tag::TapTree` (0x08)
+//! inner-node framing; the decoder enforces a depth-128 ceiling matching
+//! BIP 341 (rust-miniscript's `TapTree::combine` enforces the same ceiling
+//! on reassembly).
 //!
-//! v0.5: multi-leaf TapTree decoding is admitted via `Tag::TapTree` (0x08)
-//! inner-node framing inside a `Tag::Tr` body. The decoder enforces a
-//! depth-128 ceiling to defend against pathological inputs (rust-miniscript's
-//! `TapTree::combine` enforces the same ceiling on reassembly).
-//!
-//! v0.4 scope: `Tag::Wpkh` and `Tag::Sh` are now accepted at the top level.
-//! `Wpkh` decodes to `Descriptor::Wpkh` (native segwit P2WPKH).
-//! `Sh` dispatches via peek-before-recurse to `sh(wpkh(...))` (P2SH-P2WPKH)
-//! or `sh(wsh(...))` (P2SH-P2WSH); all other inner tags are rejected with
-//! `PolicyScopeViolation`. Legacy non-segwit types (`pkh`, `bare`) remain
-//! rejected. See `design/IMPLEMENTATION_PLAN_v0_4_bip388_modern_segwit_surface.md`
-//! Phase 2 for the full restriction matrix.
+//! Inline-key tags `0x24..=0x31` (the `Reserved*` set in `Tag`) are reserved
+//! by descriptor-codec for inline-key forms outside MD's BIP-388 wallet-policy
+//! scope; they are rejected here.
 //!
 //! Architecture: cursor-style reader + per-tag dispatch. Each step returns
 //! `Result<T, crate::Error>` so decode failures surface a precise offset and
@@ -724,8 +719,7 @@ fn decode_tap_terminal(
         other => {
             return Err(Error::TapLeafSubsetViolation {
                 operator: tag_to_bip388_name(other).to_string(),
-                leaf_index, // Threaded from decode_tap_subtree / decode_tap_miniscript;
-                            // see Task 2.6+2.8 for the parameter wiring.
+                leaf_index, // Threaded from decode_tap_subtree / decode_tap_miniscript.
             });
         }
     };
