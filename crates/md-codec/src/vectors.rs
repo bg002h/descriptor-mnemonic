@@ -1866,11 +1866,12 @@ fn build_negative_n8_taptree_unknown_tag_inner() -> NegativeVector {
 
 fn build_negative_n9_taptree_at_top_level() -> NegativeVector {
     use crate::bytecode::Tag;
-    // N9: `Tag::TapTree` (0x08) as top-level descriptor (no `Tr` outer
-    // framing). decode_descriptor's match arm for `Tag::TapTree` emits
-    // PolicyScopeViolation with the v0.5 dispatcher message.
+    // N9: `Tag::TapTree` (v0.6 byte 0x07) as top-level descriptor (no `Tr`
+    // outer framing). decode_descriptor's match arm for `Tag::TapTree`
+    // emits PolicyScopeViolation noting the byte and that TapTree appears
+    // only inside `tr(KEY, TREE)`.
     //
-    // Bytecode: `[header(0x00)][SharedPath(0x33)][indicator(0x04)][TapTree(0x08)]`.
+    // Bytecode: `[header(0x00)][SharedPath][indicator(0x04)][TapTree]`.
     // We can't reuse `taptree_multi_leaf_prefix` because we need to drop the
     // trailing `[Tag::Tr][Placeholder][0]` and replace with bare TapTree.
     let bytecode: Vec<u8> = vec![
@@ -1884,12 +1885,12 @@ fn build_negative_n9_taptree_at_top_level() -> NegativeVector {
     NegativeVector {
         id: "n_taptree_at_top_level".to_string(),
         description:
-            "Tag::TapTree (0x08) as top-level descriptor — PolicyScopeViolation (TapTree only valid inside tr(KEY, TREE))"
+            "Tag::TapTree (0x07) as top-level descriptor — PolicyScopeViolation (TapTree only valid inside tr(KEY, TREE))"
                 .to_string(),
         input_strings: vec![s],
         expected_error_variant: "PolicyScopeViolation".to_string(),
         provenance: Some(
-            "synthesised bytecode `[0x00, Tag::SharedPath, 0x04, Tag::TapTree]`; top-level dispatcher rejects 0x08 with the v0.5 message about TapTree appearing only inside tr(KEY, TREE)"
+            "synthesised bytecode `[0x00, Tag::SharedPath, 0x04, Tag::TapTree]`; top-level dispatcher rejects 0x07 (v0.6 TapTree byte; was 0x08 in v0.5) noting TapTree appears only inside tr(KEY, TREE)"
                 .to_string(),
         ),
     }

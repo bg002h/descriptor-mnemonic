@@ -4,6 +4,56 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.7.3] — 2026-04-29
+
+Patch release. Three v0.7.x cleanup items closed in one pass.
+Wire format byte-identical to v0.7.x; the v0.2.json SHA pin churns
+because one negative-vector description string changed from
+"(0x08)" → "(0x07)" — the byte itself was already correct since v0.6.
+
+### Changed (visibility tightenings — pre-1.0 zero-users window)
+
+- `bytecode::encode::HISTORICAL_COLDCARD_TAP_OPERATORS`: `pub const`
+  → `pub(crate) const`. The only consumer is the same-module
+  `validate_tap_leaf_subset` back-compat shim. md-signer-compat
+  defines its own `COLDCARD_TAP.allowed_operators` (the canonical
+  "current" Coldcard subset); no cross-crate consumer references the
+  historical constant. Closes
+  `v07-historical-coldcard-const-visibility`.
+
+- `bytecode::decode::decode_tap_miniscript`: `pub(crate)` → `pub(super)`.
+- `bytecode::decode::decode_tap_terminal`: `pub(crate)` → `pub(super)`.
+
+  Both functions are exposed solely for the sibling
+  `bytecode::hand_ast_coverage` test sub-module. `pub(super)`
+  constrains visibility to the `bytecode::` parent (which is
+  sufficient) instead of the whole crate. Closes
+  `v07-phase2-decode-helpers-pub-super-tightening`.
+
+### Changed (vector description)
+
+- `n_taptree_at_top_level` description string: "Tag::TapTree (0x08)"
+  → "Tag::TapTree (0x07)". The byte itself was correct in code (v0.6
+  already shifted TapTree to 0x07); only the description and an
+  inline comment lagged the byte-shift rework. Vector files
+  regenerated; v0.2.json SHA pin updated:
+
+  - 0.7.2: `014006eaf870d4a853e49850f483fe7f884450033fddb443ef5be88aebf99628`
+  - 0.7.3: `4f8afba0cb379e58b9b03cb9397c37a11b4a038a96698664798ab84985dbb8b9`
+
+  Closes `v07-n_taptree_at_top_level-description-stale-v05-byte`.
+
+### Notes
+
+- `GENERATOR_FAMILY` stays `"md-codec 0.7"` (token tracks MAJOR.MINOR
+  only; patch bumps don't roll it).
+- `md-signer-compat` unchanged at `0.1.1`.
+- Library API is technically narrower (`pub` → `pub(crate)` is a
+  contraction). Pre-1.0 zero-users window makes this safe; the
+  reasonable strict-SemVer reading would push to v0.8, but the
+  contraction is cosmetic in practice (no consumers reference the
+  affected items via the public path).
+
 ## [0.7.2] — 2026-04-29
 
 Patch release. Renames the Tap-context fallback parameter on

@@ -655,7 +655,13 @@ pub fn validate_tap_leaf_subset(
 ///
 /// Names follow the desugared-AST convention emitted by md-codec's
 /// internal `tag_to_bip388_name` adapter (see `bytecode::decode`).
-pub const HISTORICAL_COLDCARD_TAP_OPERATORS: &[&str] = &[
+///
+/// `pub(crate)`: the only consumer is the same-module
+/// [`validate_tap_leaf_subset`] shim. md-signer-compat defines its own
+/// `COLDCARD_TAP.allowed_operators` array (the canonical "current"
+/// Coldcard subset) rather than referencing this historical constant,
+/// so there is no cross-crate need for `pub`.
+pub(crate) const HISTORICAL_COLDCARD_TAP_OPERATORS: &[&str] = &[
     "pk_k", "pk_h", "multi_a", "or_d", "and_v", "older", "c:", "v:",
 ];
 
