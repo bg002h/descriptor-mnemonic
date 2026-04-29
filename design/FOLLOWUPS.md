@@ -43,24 +43,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
-### `v0-5-tap-terminal-name-and-tag-to-bip388-name-parallel-tables` — consolidate parallel hand-maintained operator-name tables
-
-- **Surfaced:** Phase 2 code-quality reviewer (mid-execution, returned to controller; not persisted to `design/agent-reports/` at the time). Reviewer flagged: `tap_terminal_name(term: &Terminal) -> &'static str` (encode.rs ~572) and `tag_to_bip388_name(tag: Tag) -> &'static str` (decode.rs ~805) maintain parallel operator-name tables. A typo in either silently produces divergent diagnostics (encode-side rejection vs. decode-side rejection of the same operator surface different strings to the user).
-- **Where:** `crates/md-codec/src/bytecode/encode.rs` (`tap_terminal_name`), `crates/md-codec/src/bytecode/decode.rs` (`tag_to_bip388_name`)
-- **What:** Unify around the `Tag` form: have `tap_terminal_name` first map `Terminal` → `Tag` (via existing helpers), then call `tag_to_bip388_name`. Single source of truth; encode/decode-side diagnostics guaranteed byte-identical.
-- **Why deferred:** Phase 2 reviewer marked nice-to-have-post-merge-OK; final cumulative reviewer (Phase 9) didn't independently flag.
-- **Status:** open
-- **Tier:** v0.5-nice-to-have (real maintenance hazard but not user-visible until a name typo lands)
-
-### `v0-5-t7-chunking-boundary-misnomer` — T7 fixture doesn't actually cross chunking boundary
-
-- **Surfaced:** Phase 6 reviewer (commit `7d6e278`). T7's 6-leaf right-spine fixture `tr_multi_leaf_chunking_boundary_md_v0_5` has a 35-byte bytecode that lands well under the 48-byte `ChunkCode::Regular` single-string capacity. The fixture does NOT exercise the chunked-plan path despite its name suggesting otherwise.
-- **Where:** `crates/md-codec/src/vectors.rs` T7 entry; `crates/md-codec/tests/vectors/v0.2.json` `tr_multi_leaf_chunking_boundary_md_v0_5` fixture
-- **What:** Either (a) rename to a shape-descriptive identifier (e.g., `tr_multi_leaf_right_spine_md_v0_5`) — T7 still adds value as a 6-leaf right-spine asymmetric regression anchor distinct from T3-T5 — or (b) tune the tree shape to 49+ bytes (need explicit derivation paths or a 32-leaf max-fan tree) so it actually crosses the Regular capacity boundary AND the 56-byte Long capacity, forcing chunking. (b) is the "true to original spec intent" path; (a) is the pragmatic ship-now path. T7 still increases coverage in either case.
-- **Why deferred:** Not blocking. The fixture passes round-trip; the misnomer is documentation-only.
-- **Status:** open
-- **Tier:** v0.5-nice-to-have (resolve before v0.5.0 ship via rename, OR resolve in v0.5.x patch by tuning)
-
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
 - **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
@@ -163,15 +145,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** wont-fix — modern post-segwit only per design.
 - **Tier:** wont-fix
 
-
-### `cargo-toml-crates-io-metadata-fields` — add `keywords`, `categories`, `documentation`, `homepage` to crate manifest
-
-- **Surfaced:** Phase 3 (Cargo rename) code-quality reviewer
-- **Where:** `crates/md-codec/Cargo.toml`
-- **What:** The crate manifest has no `keywords = [...]`, `categories = [...]`, `documentation = "..."`, or `homepage = "..."` fields. Not a regression introduced by Phase 3 (these were absent in `wdm-codec` pre-rename too). The `repository` field is workspace-inherited and correct.
-- **Why deferred:** These fields are crates.io discoverability metadata. They're nice-to-have but not required for `cargo publish` to succeed. Adding them touches no code and can ship in any v0.3.x patch. Best done as part of a "publish to crates.io" prep pass, possibly in v1.0 stabilization.
-- **Status:** open
-- **Tier:** v1+ (crates.io publish prep)
 
 ### `rename-workflow-broad-sed-enumeration-lesson` — workflow doc should explicitly enumerate src/+tests/+bin/ for sed sweeps
 
@@ -607,6 +580,24 @@ See BIP §FAQ for rationale.
 - **Surfaced:** Final cumulative reviewer (Phase 9) M4 — explicitly marked optional
 - **Status:** resolved `6aef662` (Pass-1 housekeeping batch) — replaced four chronologically-tangled "v0.X scope:" paragraphs (v0.1, v0.2, v0.5, v0.4) in `crates/md-codec/src/bytecode/decode.rs` module rustdoc with a single version-agnostic description of accepted top-level descriptors and TapTree decoding. Same approach as the earlier v0.4→v0.5 stale-strings sweep.
 - **Tier:** v0.5-nice-to-have (closed)
+
+### `v0-5-tap-terminal-name-and-tag-to-bip388-name-parallel-tables` — consolidate parallel hand-maintained operator-name tables
+
+- **Surfaced:** Phase 2 code-quality reviewer (mid-execution, returned to controller; not persisted to `design/agent-reports/` at the time)
+- **Status:** resolved `aa318ea` (Pass-2 batch) — refactored `tap_terminal_name` to delegate to `tag_to_bip388_name` via a new `terminal_to_tag` (`Terminal → Option<Tag>`) adapter. `tag_to_bip388_name` is now `pub(crate)` and is the single source of truth for tap-context operator names; `tap_terminal_name` falls back to a literal `"sortedmulti_a"` for `Terminal::SortedMultiA` (no Tag counterpart exists). New regression test `tap_terminal_name_delegates_to_tag_to_bip388_name` enumerates 30 (Terminal, Tag) pairs and locks the byte-identical guarantee. Reviewed by feature-dev:code-reviewer subagent — DONE, no concerns; report at `design/agent-reports/pass-2-item-1-review-tap-terminal-name-refactor.md`.
+- **Tier:** v0.5-nice-to-have (closed)
+
+### `v0-5-t7-chunking-boundary-misnomer` — T7 fixture doesn't actually cross chunking boundary
+
+- **Surfaced:** Phase 6 reviewer (commit `7d6e278`)
+- **Status:** resolved `aa318ea` (Pass-2 batch) — lane (a) rename selected. Renamed `tr_multi_leaf_chunking_boundary_md_v0_5` → `tr_multi_leaf_right_spine_md_v0_5` in `crates/md-codec/src/vectors.rs` and regenerated `crates/md-codec/tests/vectors/v0.2.json` via `gen_vectors --output`. Also corrected the description's leaf count (claimed 7, actually 6). v0.2.json SHA pin in `tests/vectors_schema.rs` updated `4206cce1...e2ea9c230` → `39476f04...81a8de3eed`. T7 remains a useful 6-leaf right-spine asymmetric regression anchor distinct from T3-T5; chunking-boundary coverage is provided elsewhere in the corpus.
+- **Tier:** v0.5-nice-to-have (closed)
+
+### `cargo-toml-crates-io-metadata-fields` — add `keywords`, `categories`, `documentation`, `homepage` to crate manifest
+
+- **Surfaced:** Phase 3 (Cargo rename) code-quality reviewer
+- **Status:** resolved `aa318ea` (Pass-2 batch) — added `homepage = "https://github.com/bg002h/descriptor-mnemonic"`, `documentation = "https://docs.rs/md-codec"`, `keywords = ["bitcoin", "bip388", "wallet", "descriptor", "bech32"]`, and `categories = ["cryptography::cryptocurrencies", "encoding", "command-line-utilities"]` to `crates/md-codec/Cargo.toml`. Verified parsing via `cargo metadata --no-deps`. Note: `cargo publish` is still blocked separately by the `external-pr-1-hash-terminals` git-pin entry; this commit closes only the metadata-fields gap.
+- **Tier:** v1+ (closed; was originally v1+ publish-prep but applied during Pass-2 cleanup)
 
 ---
 
