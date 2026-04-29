@@ -2,24 +2,31 @@
 
 /// Single-byte tag identifying an operator in the canonical bytecode.
 ///
-/// Values 0x00–0x31 are vendored verbatim from the descriptor-codec project
-/// (joshdoman, CC0). Values 0x32–0x33 are MD-specific extensions for BIP 388
-/// placeholder framing and shared-path declarations.
+/// v0.6 layout: descriptor-codec-vendored allocations dropped in favor
+/// of a coherent grouping. `Reserved*` range 0x24-0x31 dropped entirely
+/// (MD's BIP-388 framing forbids inline keys; see
+/// `design/MD_SCOPE_DECISION_2026-04-28.md`). `Tag::Bare` dropped
+/// (never used as inner; encoder rejects `Descriptor::Bare` via
+/// `PolicyScopeViolation`). `Tag::SortedMultiA` (0x0B) NEW; needed for
+/// tap-context sorted multisig shapes documented by Coldcard and Ledger.
 ///
-/// Tag 0x35 (fingerprints block) is implemented in v0.2 (Phase E); the
-/// fingerprints block follows the path declaration when the bytecode header's
-/// fingerprints flag (bit 2 = 1) is set. See BIP §"Fingerprints block".
+/// Byte 0x32 is intentionally left unallocated to surface v0.5→v0.6
+/// transcoder mistakes as clean `from_byte=None` rather than data
+/// corruption (v0.5 emitted `Placeholder=0x32` in every encoded MD string).
 ///
-/// Marked `#[non_exhaustive]` so adding new variants in v0.2+ does not break
-/// downstream `match` consumers. See PHASE_2_DECISIONS.md.
+/// Marked `#[non_exhaustive]` so adding new variants in v0.7+ does not
+/// break downstream `match` consumers.
 #[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tag {
+    // Constants
     /// `0` — miniscript terminal always-false fragment.
     False = 0x00,
     /// `1` — miniscript terminal always-true fragment.
     True = 0x01,
+
+    // Top-level descriptor wrappers
     /// `pkh(K)` — pay-to-pubkey-hash top-level descriptor.
     Pkh = 0x02,
     /// `sh(...)` — pay-to-script-hash top-level descriptor.
@@ -30,56 +37,71 @@ pub enum Tag {
     Wsh = 0x05,
     /// `tr(...)` — taproot top-level descriptor.
     Tr = 0x06,
-    /// `bare(...)` — bare miniscript top-level descriptor.
-    Bare = 0x07,
-    /// Taproot script tree node.
-    TapTree = 0x08,
-    /// `sorted_multi(k, ...)` — sorted multisig.
+
+    // Tap-tree framing
+    /// Taproot script tree inner-node framing (inside `tr(KEY, TREE)`).
+    TapTree = 0x07,
+
+    // Multisig family
+    /// `multi(k, ...)` — k-of-n multisig (P2WSH-only by miniscript typing).
+    Multi = 0x08,
+    /// `sortedmulti(k, ...)` — sorted multisig (P2WSH-only by miniscript typing).
     SortedMulti = 0x09,
+    /// `multi_a(k, ...)` — taproot k-of-n multisig (Tapscript-only by miniscript typing).
+    MultiA = 0x0A,
+    /// `sortedmulti_a(k, ...)` — taproot sorted multisig (Tapscript-only).
+    /// NEW in v0.6.
+    SortedMultiA = 0x0B,
+
+    // Wrappers
     /// `a:` wrapper — toaltstack/fromaltstack.
-    Alt = 0x0A,
+    Alt = 0x0C,
     /// `s:` wrapper — swap.
-    Swap = 0x0B,
+    Swap = 0x0D,
     /// `c:` wrapper — checksig.
-    Check = 0x0C,
+    Check = 0x0E,
     /// `d:` wrapper — dup-if.
-    DupIf = 0x0D,
+    DupIf = 0x0F,
     /// `v:` wrapper — verify.
-    Verify = 0x0E,
+    Verify = 0x10,
     /// `j:` wrapper — non-zero.
-    NonZero = 0x0F,
+    NonZero = 0x11,
     /// `n:` wrapper — zero-not-equal.
-    ZeroNotEqual = 0x10,
+    ZeroNotEqual = 0x12,
+
+    // Logical operators
     /// `and_v(X, Y)` — verify-and conjunction.
-    AndV = 0x11,
+    AndV = 0x13,
     /// `and_b(X, Y)` — boolean-and conjunction.
-    AndB = 0x12,
+    AndB = 0x14,
     /// `andor(X, Y, Z)` — if X then Y else Z.
-    AndOr = 0x13,
+    AndOr = 0x15,
     /// `or_b(X, Z)` — boolean-or disjunction.
-    OrB = 0x14,
+    OrB = 0x16,
     /// `or_c(X, Z)` — or-continue disjunction.
-    OrC = 0x15,
+    OrC = 0x17,
     /// `or_d(X, Z)` — or-dup disjunction.
-    OrD = 0x16,
+    OrD = 0x18,
     /// `or_i(X, Z)` — or-if disjunction.
-    OrI = 0x17,
+    OrI = 0x19,
     /// `thresh(k, ...)` — k-of-n threshold over fragments.
-    Thresh = 0x18,
-    /// `multi(k, ...)` — k-of-n multisig.
-    Multi = 0x19,
-    /// `multi_a(k, ...)` — taproot k-of-n multisig.
-    MultiA = 0x1A,
+    Thresh = 0x1A,
+
+    // Keys (byte values unchanged from v0.5)
     /// `pk_k(K)` — bare-key key script.
     PkK = 0x1B,
     /// `pk_h(K)` — keyhash key script.
     PkH = 0x1C,
     /// `pk_h(<20-byte hash>)` — raw-pubkeyhash key script.
     RawPkH = 0x1D,
+
+    // Timelocks (byte values unchanged from v0.5)
     /// `after(n)` — absolute timelock.
     After = 0x1E,
     /// `older(n)` — relative timelock.
     Older = 0x1F,
+
+    // Hashes (byte values unchanged from v0.5)
     /// `sha256(h)` — SHA-256 preimage commitment.
     Sha256 = 0x20,
     /// `hash256(h)` — double-SHA-256 preimage commitment.
@@ -88,44 +110,20 @@ pub enum Tag {
     Ripemd160 = 0x22,
     /// `hash160(h)` — RIPEMD-160 of SHA-256 preimage commitment.
     Hash160 = 0x23,
-    /// Reserved (descriptor-codec): key with origin info. Unused in v0.1.
-    ReservedOrigin = 0x24,
-    /// Reserved (descriptor-codec): key without origin info. Unused in v0.1.
-    ReservedNoOrigin = 0x25,
-    /// Reserved (descriptor-codec): uncompressed full public key. Unused in v0.1.
-    ReservedUncompressedFullKey = 0x26,
-    /// Reserved (descriptor-codec): compressed full public key. Unused in v0.1.
-    ReservedCompressedFullKey = 0x27,
-    /// Reserved (descriptor-codec): x-only public key. Unused in v0.1.
-    ReservedXOnly = 0x28,
-    /// Reserved (descriptor-codec): xpub. Unused in v0.1.
-    ReservedXPub = 0x29,
-    /// Reserved (descriptor-codec): multipath xpub. Unused in v0.1.
-    ReservedMultiXPub = 0x2A,
-    /// Reserved (descriptor-codec): uncompressed single private key. Unused in v0.1.
-    ReservedUncompressedSinglePriv = 0x2B,
-    /// Reserved (descriptor-codec): compressed single private key. Unused in v0.1.
-    ReservedCompressedSinglePriv = 0x2C,
-    /// Reserved (descriptor-codec): xpriv. Unused in v0.1.
-    ReservedXPriv = 0x2D,
-    /// Reserved (descriptor-codec): multipath xpriv. Unused in v0.1.
-    ReservedMultiXPriv = 0x2E,
-    /// Reserved (descriptor-codec): no-wildcard derivation suffix. Unused in v0.1.
-    ReservedNoWildcard = 0x2F,
-    /// Reserved (descriptor-codec): unhardened wildcard `/*`. Unused in v0.1.
-    ReservedUnhardenedWildcard = 0x30,
-    /// Reserved (descriptor-codec): hardened wildcard `/*'`. Unused in v0.1.
-    ReservedHardenedWildcard = 0x31,
+
+    // Reserved (0x24-0x31): DROPPED in v0.6 — see crate-level rationale.
+    // Byte 0x32: DROPPED — was v0.5 Placeholder; intentionally unallocated.
+
+    // MD-specific framing (Placeholder + SharedPath bytes shifted +1 from v0.5
+    // to leave 0x32 unallocated; Fingerprints byte unchanged from v0.5)
     /// MD extension: BIP 388 key placeholder (`@i/<a;b>/*`).
-    Placeholder = 0x32,
+    Placeholder = 0x33,
     /// MD extension: shared-path declaration for placeholder framing.
-    SharedPath = 0x33,
-    /// MD extension: fingerprints block (Phase E, v0.2).
+    SharedPath = 0x34,
+    /// MD extension: fingerprints block (Phase E v0.2).
     ///
-    /// When the bytecode header's fingerprints flag (bit 2) is set, a
-    /// fingerprints block of the form `[Tag::Fingerprints][count][4*count
-    /// fingerprint bytes]` follows the path declaration and precedes the
-    /// tree operators. See BIP §"Fingerprints block".
+    /// Byte value preserved across v0.5→v0.6 for wire-format continuity
+    /// of the v0.2-shipped fingerprints framing.
     Fingerprints = 0x35,
 }
 
@@ -133,63 +131,60 @@ impl Tag {
     /// Convert a raw byte into a `Tag`. Returns `None` for unknown values.
     ///
     /// Implemented as an exhaustive `match` (rather than an unsafe transmute)
-    /// so adding a future non-contiguous variant cannot introduce UB. See
-    /// `design/PHASE_2_DECISIONS.md` D-1.
+    /// so adding a future non-contiguous variant cannot introduce UB.
     pub fn from_byte(b: u8) -> Option<Self> {
         match b {
+            // Constants
             0x00 => Some(Tag::False),
             0x01 => Some(Tag::True),
+            // Top-level descriptor wrappers
             0x02 => Some(Tag::Pkh),
             0x03 => Some(Tag::Sh),
             0x04 => Some(Tag::Wpkh),
             0x05 => Some(Tag::Wsh),
             0x06 => Some(Tag::Tr),
-            0x07 => Some(Tag::Bare),
-            0x08 => Some(Tag::TapTree),
+            // Tap-tree framing
+            0x07 => Some(Tag::TapTree),
+            // Multisig family
+            0x08 => Some(Tag::Multi),
             0x09 => Some(Tag::SortedMulti),
-            0x0A => Some(Tag::Alt),
-            0x0B => Some(Tag::Swap),
-            0x0C => Some(Tag::Check),
-            0x0D => Some(Tag::DupIf),
-            0x0E => Some(Tag::Verify),
-            0x0F => Some(Tag::NonZero),
-            0x10 => Some(Tag::ZeroNotEqual),
-            0x11 => Some(Tag::AndV),
-            0x12 => Some(Tag::AndB),
-            0x13 => Some(Tag::AndOr),
-            0x14 => Some(Tag::OrB),
-            0x15 => Some(Tag::OrC),
-            0x16 => Some(Tag::OrD),
-            0x17 => Some(Tag::OrI),
-            0x18 => Some(Tag::Thresh),
-            0x19 => Some(Tag::Multi),
-            0x1A => Some(Tag::MultiA),
+            0x0A => Some(Tag::MultiA),
+            0x0B => Some(Tag::SortedMultiA),
+            // Wrappers
+            0x0C => Some(Tag::Alt),
+            0x0D => Some(Tag::Swap),
+            0x0E => Some(Tag::Check),
+            0x0F => Some(Tag::DupIf),
+            0x10 => Some(Tag::Verify),
+            0x11 => Some(Tag::NonZero),
+            0x12 => Some(Tag::ZeroNotEqual),
+            // Logical operators
+            0x13 => Some(Tag::AndV),
+            0x14 => Some(Tag::AndB),
+            0x15 => Some(Tag::AndOr),
+            0x16 => Some(Tag::OrB),
+            0x17 => Some(Tag::OrC),
+            0x18 => Some(Tag::OrD),
+            0x19 => Some(Tag::OrI),
+            0x1A => Some(Tag::Thresh),
+            // Keys
             0x1B => Some(Tag::PkK),
             0x1C => Some(Tag::PkH),
             0x1D => Some(Tag::RawPkH),
+            // Timelocks
             0x1E => Some(Tag::After),
             0x1F => Some(Tag::Older),
+            // Hashes
             0x20 => Some(Tag::Sha256),
             0x21 => Some(Tag::Hash256),
             0x22 => Some(Tag::Ripemd160),
             0x23 => Some(Tag::Hash160),
-            0x24 => Some(Tag::ReservedOrigin),
-            0x25 => Some(Tag::ReservedNoOrigin),
-            0x26 => Some(Tag::ReservedUncompressedFullKey),
-            0x27 => Some(Tag::ReservedCompressedFullKey),
-            0x28 => Some(Tag::ReservedXOnly),
-            0x29 => Some(Tag::ReservedXPub),
-            0x2A => Some(Tag::ReservedMultiXPub),
-            0x2B => Some(Tag::ReservedUncompressedSinglePriv),
-            0x2C => Some(Tag::ReservedCompressedSinglePriv),
-            0x2D => Some(Tag::ReservedXPriv),
-            0x2E => Some(Tag::ReservedMultiXPriv),
-            0x2F => Some(Tag::ReservedNoWildcard),
-            0x30 => Some(Tag::ReservedUnhardenedWildcard),
-            0x31 => Some(Tag::ReservedHardenedWildcard),
-            0x32 => Some(Tag::Placeholder),
-            0x33 => Some(Tag::SharedPath),
+            // 0x24-0x32: unallocated (Reserved* dropped, Bare dropped, Placeholder moved)
+            // MD-specific framing
+            0x33 => Some(Tag::Placeholder),
+            0x34 => Some(Tag::SharedPath),
             0x35 => Some(Tag::Fingerprints),
+            // 0x36-0xFF: reserved
             _ => None,
         }
     }
@@ -205,33 +200,133 @@ mod tests {
     use super::*;
 
     #[test]
+    fn tag_v0_6_layout_top_level_descriptors() {
+        assert_eq!(Tag::False.as_byte(), 0x00);
+        assert_eq!(Tag::True.as_byte(), 0x01);
+        assert_eq!(Tag::Pkh.as_byte(), 0x02);
+        assert_eq!(Tag::Sh.as_byte(), 0x03);
+        assert_eq!(Tag::Wpkh.as_byte(), 0x04);
+        assert_eq!(Tag::Wsh.as_byte(), 0x05);
+        assert_eq!(Tag::Tr.as_byte(), 0x06);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_taptree_framing() {
+        assert_eq!(Tag::TapTree.as_byte(), 0x07);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_multisig_family_contiguous() {
+        assert_eq!(Tag::Multi.as_byte(), 0x08);
+        assert_eq!(Tag::SortedMulti.as_byte(), 0x09);
+        assert_eq!(Tag::MultiA.as_byte(), 0x0A);
+        assert_eq!(Tag::SortedMultiA.as_byte(), 0x0B);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_wrappers() {
+        assert_eq!(Tag::Alt.as_byte(), 0x0C);
+        assert_eq!(Tag::Swap.as_byte(), 0x0D);
+        assert_eq!(Tag::Check.as_byte(), 0x0E);
+        assert_eq!(Tag::DupIf.as_byte(), 0x0F);
+        assert_eq!(Tag::Verify.as_byte(), 0x10);
+        assert_eq!(Tag::NonZero.as_byte(), 0x11);
+        assert_eq!(Tag::ZeroNotEqual.as_byte(), 0x12);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_logical() {
+        assert_eq!(Tag::AndV.as_byte(), 0x13);
+        assert_eq!(Tag::AndB.as_byte(), 0x14);
+        assert_eq!(Tag::AndOr.as_byte(), 0x15);
+        assert_eq!(Tag::OrB.as_byte(), 0x16);
+        assert_eq!(Tag::OrC.as_byte(), 0x17);
+        assert_eq!(Tag::OrD.as_byte(), 0x18);
+        assert_eq!(Tag::OrI.as_byte(), 0x19);
+        assert_eq!(Tag::Thresh.as_byte(), 0x1A);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_keys_unchanged() {
+        assert_eq!(Tag::PkK.as_byte(), 0x1B);
+        assert_eq!(Tag::PkH.as_byte(), 0x1C);
+        assert_eq!(Tag::RawPkH.as_byte(), 0x1D);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_timelocks_unchanged() {
+        assert_eq!(Tag::After.as_byte(), 0x1E);
+        assert_eq!(Tag::Older.as_byte(), 0x1F);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_hashes_unchanged() {
+        assert_eq!(Tag::Sha256.as_byte(), 0x20);
+        assert_eq!(Tag::Hash256.as_byte(), 0x21);
+        assert_eq!(Tag::Ripemd160.as_byte(), 0x22);
+        assert_eq!(Tag::Hash160.as_byte(), 0x23);
+    }
+
+    #[test]
+    fn tag_v0_6_layout_framing() {
+        assert_eq!(Tag::Placeholder.as_byte(), 0x33);
+        assert_eq!(Tag::SharedPath.as_byte(), 0x34);
+        assert_eq!(Tag::Fingerprints.as_byte(), 0x35);
+    }
+
+    #[test]
+    fn tag_v0_6_unallocated_bytes() {
+        // Reserved* range dropped (was 0x24-0x31 in v0.5)
+        for b in 0x24u8..=0x31 {
+            assert!(
+                Tag::from_byte(b).is_none(),
+                "byte {b:#04x} should be unallocated in v0.6 (Reserved* range dropped)"
+            );
+        }
+        // Byte 0x32 (formerly Placeholder in v0.5) intentionally vacant
+        assert!(
+            Tag::from_byte(0x32).is_none(),
+            "byte 0x32 should be unallocated in v0.6 (formerly Placeholder, intentionally vacant per spec §2.2)"
+        );
+    }
+
+    #[test]
+    fn tag_v0_6_high_bytes_unallocated() {
+        // 0x36..=0xFF reserved (no change from v0.5)
+        for b in 0x36u8..=0xFF {
+            assert!(
+                Tag::from_byte(b).is_none(),
+                "byte {b:#04x} should be unallocated"
+            );
+        }
+    }
+
+    #[test]
     fn tag_round_trip_all_defined() {
-        // 0x00–0x33 plus 0x35 are defined; 0x34 is reserved.
-        for b in 0u8..=0x33 {
+        // v0.6 allocation: 0x00-0x23 contiguous, then 0x33-0x35.
+        // Gap: 0x24-0x32 (Reserved* dropped + Bare dropped + Placeholder moved up).
+        let v0_6_allocated: Vec<u8> = (0x00..=0x23).chain(0x33..=0x35).collect();
+        for b in v0_6_allocated {
             let t = Tag::from_byte(b);
-            assert!(t.is_some(), "byte {b:#04x} should be a valid tag");
+            assert!(t.is_some(), "byte {b:#04x} should be a valid v0.6 tag");
             assert_eq!(t.unwrap().as_byte(), b);
         }
-        let t = Tag::from_byte(0x35);
-        assert!(
-            t.is_some(),
-            "byte 0x35 should be a valid tag (Fingerprints)"
-        );
-        assert_eq!(t.unwrap().as_byte(), 0x35);
     }
 
     #[test]
     fn tag_rejects_unknown_bytes() {
-        // 0x34 is reserved; 0x35 is now Tag::Fingerprints (Phase E).
-        // 0x36..=0xFF are reserved.
-        assert!(
-            Tag::from_byte(0x34).is_none(),
-            "byte 0x34 should be rejected (reserved)"
-        );
+        // 0x24-0x32: dropped in v0.6 (Reserved* + Bare + Placeholder moved up)
+        for b in 0x24u8..=0x32 {
+            assert!(
+                Tag::from_byte(b).is_none(),
+                "byte {b:#04x} should be rejected (v0.6 unallocated)"
+            );
+        }
+        // 0x36-0xFF: high range reserved
         for b in 0x36u8..=0xFF {
             assert!(
                 Tag::from_byte(b).is_none(),
-                "byte {b:#04x} should be rejected"
+                "byte {b:#04x} should be rejected (high range reserved)"
             );
         }
     }
@@ -241,8 +336,11 @@ mod tests {
         assert_eq!(Tag::Wsh.as_byte(), 0x05);
         assert_eq!(Tag::PkK.as_byte(), 0x1B);
         assert_eq!(Tag::Sha256.as_byte(), 0x20);
-        assert_eq!(Tag::Placeholder.as_byte(), 0x32);
-        assert_eq!(Tag::SharedPath.as_byte(), 0x33);
+        assert_eq!(Tag::Placeholder.as_byte(), 0x33);
+        assert_eq!(Tag::SharedPath.as_byte(), 0x34);
         assert_eq!(Tag::Fingerprints.as_byte(), 0x35);
+        // v0.6 NEW
+        assert_eq!(Tag::SortedMultiA.as_byte(), 0x0B);
+        assert_eq!(Tag::TapTree.as_byte(), 0x07);
     }
 }
