@@ -956,7 +956,7 @@ Tag::Hash160 => {
 // as a tap-leaf inner (e.g., a top-level descriptor tag like
 // Tag::Wsh = 0x05 appearing where a tap-leaf inner is expected).
 // Use the new BytecodeErrorKind::TagInvalidContext variant introduced
-// for this purpose (see Step 3.0 below).
+// for this purpose (see Task 2.0 of Phase 2).
 _ => {
     return Err(Error::InvalidBytecode {
         offset: tag_offset,
@@ -968,7 +968,7 @@ _ => {
 }
 ```
 
-The new `BytecodeErrorKind::TagInvalidContext { tag: u8, context: &'static str }` variant is added in Step 3.0 (below) before adding the new tap-leaf arms. Decision pre-pinned per plan review IMP-7 to avoid cascading rework.
+The new `BytecodeErrorKind::TagInvalidContext { tag: u8, context: &'static str }` variant is added in Task 2.0 of Phase 2 before adding the new tap-leaf arms. Decision pre-pinned per plan review IMP-7 to avoid cascading rework.
 
 The exact `Threshold::new` error wrapping pattern is preserved from existing arms (look at the existing MultiA arm and copy its error-mapping shape).
 
