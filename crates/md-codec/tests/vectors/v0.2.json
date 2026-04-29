@@ -1404,12 +1404,12 @@
     },
     {
       "id": "n_taptree_at_top_level",
-      "description": "Tag::TapTree (0x08) as top-level descriptor — PolicyScopeViolation (TapTree only valid inside tr(KEY, TREE))",
+      "description": "Tag::TapTree (0x07) as top-level descriptor — PolicyScopeViolation (TapTree only valid inside tr(KEY, TREE))",
       "input_strings": [
         "md1qqqqqdqyquxrfmdk4z55gee"
       ],
       "expected_error_variant": "PolicyScopeViolation",
-      "provenance": "synthesised bytecode `[0x00, Tag::SharedPath, 0x04, Tag::TapTree]`; top-level dispatcher rejects 0x08 with the v0.5 message about TapTree appearing only inside tr(KEY, TREE)"
+      "provenance": "synthesised bytecode `[0x00, Tag::SharedPath, 0x04, Tag::TapTree]`; top-level dispatcher rejects 0x07 (v0.6 TapTree byte; was 0x08 in v0.5) noting TapTree appears only inside tr(KEY, TREE)"
     },
     {
       "id": "n_fingerprints_count_mismatch",

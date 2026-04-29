@@ -582,7 +582,7 @@ fn decode_terminal(
 /// leaf. Pass `Some(0)` for single-leaf `tr(KEY, leaf)`, `Some(n)` for the
 /// n-th leaf in DFS pre-order traversal of a multi-leaf tree, or `None`
 /// for callers that do not have leaf-index context.
-pub(crate) fn decode_tap_miniscript(
+pub(super) fn decode_tap_miniscript(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
     leaf_index: Option<usize>,
@@ -607,7 +607,7 @@ pub(crate) fn decode_tap_miniscript(
 /// exhaustive Tag coverage; reaching them via parsed input is impossible
 /// because miniscript's parser refuses to construct those Terminals in
 /// a Tap context.
-pub(crate) fn decode_tap_terminal(
+pub(super) fn decode_tap_terminal(
     cur: &mut Cursor<'_>,
     keys: &[DescriptorPublicKey],
     tag: Tag,

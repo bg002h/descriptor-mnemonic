@@ -442,8 +442,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bytecode/encode.rs` `pub const HISTORICAL_COLDCARD_TAP_OPERATORS`.
 - **What:** change `pub const` → `pub(crate) const`.
 - **Why deferred:** harmless as `pub`; modest auditor-facing value; not breaking.
-- **Status:** open
-- **Tier:** v0.7.x
+- **Status:** resolved md-codec-v0.7.3. Tightened to `pub(crate) const`. Added rustdoc note explaining the visibility choice (md-signer-compat defines its own `COLDCARD_TAP.allowed_operators` and does not reference the historical constant).
+- **Tier:** v0.7.x (closed)
 
 ### `v07-walker-deepest-violation-pin-test` — add regression test for depth-first leaf-first walker semantics
 
@@ -494,16 +494,16 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bytecode/decode.rs:583` (`decode_tap_miniscript`), `crates/md-codec/src/bytecode/decode.rs:608` (`decode_tap_terminal`).
 - **What:** change `pub(crate)` → `pub(super)` for both.
 - **Why deferred:** `pub(crate)` is already well-scoped (no public API leakage); tightening defensively guards against unintended future cross-module use, but no concrete risk today.
-- **Status:** open
-- **Tier:** v0.8 housekeeping
+- **Status:** resolved md-codec-v0.7.3. Both `decode_tap_miniscript` and `decode_tap_terminal` tightened to `pub(super)`. The only sibling consumer (`bytecode::hand_ast_coverage`) compiles unchanged.
+- **Tier:** v0.8 housekeeping (closed early; pulled into v0.7.3 cleanup pass)
 
 ### `v07-n_taptree_at_top_level-description-stale-v05-byte` — `n_taptree_at_top_level` description still says "0x08"
 
 - **Surfaced:** v0.7.0 Phase 1 reviewer (Opus). `vectors.rs:1867-1895` — the in-source comment AND the public-facing `description` field of the negative vector say "Tag::TapTree (0x08)" (v0.5). The vector itself is correct (built via `Tag::TapTree.as_byte()` symbolic refs). The `description` ships in `tests/vectors/v0.2.json` and is part of the v0.2 schema-2 SHA pin; updating requires regenerating the SHA.
 - **Where:** `crates/md-codec/src/vectors.rs:1867-1895`.
 - **What:** update both the in-source comment and the `description` field to "(0x07)" when v0.7 regenerates `v0.2.json`.
-- **Status:** open
-- **Tier:** v0.7-Phase-6 (fold into vector regen at release plumbing).
+- **Status:** resolved md-codec-v0.7.3. Description string updated to "(0x07)" in both the in-source comment and the negative-vector `description` field. Vector files regenerated; v0.2.json SHA pin updated `014006ea…f99628` → `4f8afba0…dbb8b9`.
+- **Tier:** v0.7-Phase-6 (closed)
 
 ### `v07-from-policy-internal-key-semantic-clarification` — `--internal-key` is upstream `unspendable_key`, not "force this internal key"
 
