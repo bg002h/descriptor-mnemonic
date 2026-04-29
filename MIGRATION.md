@@ -88,13 +88,16 @@ returning `PolicyScopeViolation("multi-leaf TapTree reserved for v1+")`. The
 ### Test vector SHAs
 
 `v0.2.json` SHA changed from `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770`
-to `7d801228ab3529f2df786c50ff269142fae2d8e896a7766fb8eb9fcf080e328d` (Phase 6
-regeneration added multi-leaf TapTree fixtures). `v0.1.json` SHA is UNCHANGED:
-`bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26`.
+to `4206cce1f1977347e795d4cc4033dca7780dbb39f5654560af60fbae2ea9c230` (Phase 6
+added multi-leaf TapTree fixtures and Phase 11 rolled the family generator
+token to `"md-codec 0.5"`). `v0.1.json` SHA changed from
+`bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26` to
+`6d5dd831d05ab0f02707af117cdd2df5f41cf08457c354c871eba8af719030aa` — vector
+content is byte-identical aside from the family generator string updating from
+`"md-codec 0.4"` → `"md-codec 0.5"`.
 
-Note: the family generator token remains `"md-codec 0.4"` in the v0.5.0 tagged
-build (Phase 11 re-bumps it); conformance suites pinning the token should expect
-the value to change again at the Phase 11 tag.
+The family-stable promise resets at v0.5.0: `"md-codec 0.5"` is the new family
+token, and future v0.5.x patch releases will produce byte-identical SHAs.
 
 ---
 

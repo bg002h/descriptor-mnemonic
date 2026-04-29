@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generator": "md-codec 0.4",
+  "generator": "md-codec 0.5",
   "vectors": [
     {
       "id": "c1",

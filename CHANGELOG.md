@@ -24,8 +24,9 @@ See [`MIGRATION.md`](./MIGRATION.md#v04x--v050) for upgrade steps.
 - `Error::TapLeafSubsetViolation` extended with `leaf_index: Option<usize>` field; variant now `#[non_exhaustive]` so destructure patterns must use `..` (additive — non-breaking for wildcard `match` arms; breaking for field-exhaustive destructures, but no known external consumers)
 - `validate_tap_leaf_subset(ms)` → `validate_tap_leaf_subset(ms, leaf_index: Option<usize>)` — public API additive but technically breaking (no known external callers)
 - Top-level dispatcher message for `0x08`-at-top-level updated to "TapTree (0x08) is not a valid top-level descriptor; it appears only inside `tr(KEY, TREE)`..."
-- `v0.1.json` SHA `bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26` UNCHANGED — v0.4.x family token still `"md-codec 0.4"` at this commit; Phase 11 will re-bump after version bump
-- `v0.2.json` SHA `7d801228ab3529f2df786c50ff269142fae2d8e896a7766fb8eb9fcf080e328d` (was `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770` at v0.4.1; Phase 6 regeneration added multi-leaf fixtures; family generator token still `"md-codec 0.4"` — Phase 11 will re-bump after version bump)
+- `v0.1.json` SHA `6d5dd831d05ab0f02707af117cdd2df5f41cf08457c354c871eba8af719030aa` (was `bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26` at v0.4.1; only the family generator string changed from `"md-codec 0.4"` → `"md-codec 0.5"` — vector content is byte-identical aside from that one field)
+- `v0.2.json` SHA `4206cce1f1977347e795d4cc4033dca7780dbb39f5654560af60fbae2ea9c230` (was `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770` at v0.4.1; Phase 6 added multi-leaf fixtures and Phase 11 rolled the family generator token from `"md-codec 0.4"` → `"md-codec 0.5"`)
+- Family-stable promise resets at v0.5.0: `"md-codec 0.5"` is the new family token. v0.5.x patches will produce byte-identical SHAs.
 
 ### Removed
 - v0.4 single-leaf-with-non-zero-depth `PolicyScopeViolation` rejection (subsumed by multi-leaf path; theoretical-only, no producer emits this shape)
