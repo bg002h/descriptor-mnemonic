@@ -2,6 +2,105 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.4.x → v0.5.0
+
+v0.5.0 is wire-format-additive over v0.4.x. Multi-leaf `tr(KEY, TREE)` descriptors
+are now admitted. v0.4.x-produced strings (`tr(KEY)` and single-leaf `tr(KEY, leaf)`)
+decode byte-identical under v0.5.0. v0.5.0-produced strings containing multi-leaf
+TapTree bytecode (`Tag::TapTree = 0x08`) are rejected by v0.4.x decoders with
+`PolicyScopeViolation`.
+
+### What changed
+
+- `tr(KEY, TREE)` admittance with non-trivial script trees (BIP 388 §"Taproot tree" subset)
+- New types: `TapLeafReport`; new field: `DecodeReport.tap_leaves: Vec<TapLeafReport>`
+- `Error::TapLeafSubsetViolation` gains `leaf_index: Option<usize>` field; variant marked `#[non_exhaustive]`
+- `validate_tap_leaf_subset` public signature gains `leaf_index: Option<usize>` parameter
+- BIP 341 depth-128 enforcement: trees exceeding 128 levels are now rejected at decode time
+
+### What didn't change
+
+- Wire format for v0.4.x-shaped inputs is byte-identical
+- KeyOnly `tr(KEY)` bytecode unchanged
+- Single-leaf `tr(KEY, leaf)` bytecode unchanged
+- Per-leaf miniscript subset unchanged (`validate_tap_leaf_subset` admissibility constants and call sites preserved)
+- MSRV: 1.85 (unchanged)
+
+### How to upgrade
+
+```bash
+cargo update -p md-codec --precise 0.5.0
+```
+
+For most callers, no code changes are required. Multi-leaf encoding now succeeds;
+multi-leaf decoding now produces a populated `tap_leaves` report.
+
+### If you destructure `Error::TapLeafSubsetViolation`
+
+Pattern-match consumers that wrote:
+
+```rust
+match err {
+    Error::TapLeafSubsetViolation { operator } => { /* ... */ }
+}
+```
+
+Must change to:
+
+```rust
+match err {
+    Error::TapLeafSubsetViolation { operator, .. } => { /* ... */ }
+}
+```
+
+The `..` future-proofs against further field additions. The variant is now
+`#[non_exhaustive]`, so the compiler will reject field-exhaustive destructures.
+
+### If you call `validate_tap_leaf_subset` directly
+
+Add a `leaf_index: Option<usize>` argument. Pass `None` if you don't have
+leaf-index context:
+
+```rust
+// Before (v0.4.x):
+validate_tap_leaf_subset(&ms)?;
+
+// After (v0.5.0):
+validate_tap_leaf_subset(&ms, None)?;
+// or, if you have per-leaf context:
+validate_tap_leaf_subset(&ms, Some(leaf_index))?;
+```
+
+### New encoder behavior
+
+`Descriptor::Tr` with non-trivial `TapTree` (anything other than `TapTree::leaf(ms)`
+or KeyOnly) now encodes successfully instead of returning `PolicyScopeViolation`.
+The emitted bytecode uses `[Tr=0x06][Placeholder][key_index][TapTree=0x08][LEFT][RIGHT]`
+recursive framing.
+
+### New decoder behavior
+
+Bytecode containing `Tag::TapTree (0x08)` now decodes successfully instead of
+returning `PolicyScopeViolation("multi-leaf TapTree reserved for v1+")`. The
+`decode_report.tap_leaves` field is populated for all `tr(...)` decodes (empty
+`Vec` for KeyOnly; one entry per leaf for single-leaf and multi-leaf trees).
+
+### Test vector SHAs
+
+`v0.2.json` SHA changed from `caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770`
+to `4206cce1f1977347e795d4cc4033dca7780dbb39f5654560af60fbae2ea9c230` (Phase 6
+added multi-leaf TapTree fixtures and Phase 11 rolled the family generator
+token to `"md-codec 0.5"`). `v0.1.json` SHA changed from
+`bb2bcc78835d519c7f7595994c6113ef62c379cee99e4d62288772834d4f1c26` to
+`6d5dd831d05ab0f02707af117cdd2df5f41cf08457c354c871eba8af719030aa` — vector
+content is byte-identical aside from the family generator string updating from
+`"md-codec 0.4"` → `"md-codec 0.5"`.
+
+The family-stable promise resets at v0.5.0: `"md-codec 0.5"` is the new family
+token, and future v0.5.x patch releases will produce byte-identical SHAs.
+
+---
+
 ## v0.3.x → v0.4.0
 
 v0.4.0 is wire-format-additive over v0.3.x. Three previously-rejected

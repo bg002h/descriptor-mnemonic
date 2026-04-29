@@ -40,8 +40,10 @@ fn build_test_vectors_is_deterministic() {
 ///   At least 18 negative scenarios (conformance.rs minimum).
 ///
 /// Schema-2 (build_test_vectors_v2):
-///   10 corpus + 3 taproot + 1 fingerprints + 5 v0.4 default + 3 v0.4 fingerprints = 22 total.
-///   Negatives: >= 39 (30 pre-v0.4 + 9 v0.4 Sh-matrix/top-level additions; minimum guard = 27).
+///     10 corpus + 8 taproot (v0.5: T1, T2, tr_multia_2of3, T3-T7) + 1 fingerprints
+///     + 5 v0.4 default + 3 v0.4 fingerprints = 27 total.
+///     Negatives: >= 47 (30 pre-v0.4 + 9 v0.4 Sh-matrix/top-level + 8 v0.5 N1-N8 +
+///     1 v0.5 N9 — the legacy `n_taptree_multi_leaf` is replaced by N1; minimum guard = 27).
 #[test]
 fn build_test_vectors_has_expected_corpus_count() {
     let v1 = md_codec::vectors::build_test_vectors();
@@ -64,9 +66,10 @@ fn build_test_vectors_has_expected_corpus_count() {
 
     assert_eq!(
         v2.vectors.len(),
-        22,
-        "expected exactly 22 positive corpus vectors in schema-2 \
-         (10 corpus + 3 taproot + 1 fingerprints + 5 v0.4-default + 3 v0.4-fingerprints = 22 total); \
+        27,
+        "expected exactly 27 positive corpus vectors in schema-2 \
+         (10 corpus + 8 taproot v0.5 [T1, T2, tr_multia_2of3, T3-T7] + 1 fingerprints \
+         + 5 v0.4-default + 3 v0.4-fingerprints = 27 total); \
          got {} — if this fails, update the expected count in tests/vectors_schema.rs",
         v2.vectors.len()
     );
@@ -246,7 +249,7 @@ fn v0_2_sha256_lock_matches_committed_file() {
 
     /// Lockfile SHA-256 (lowercase hex). Update when v0.2.json is
     /// intentionally regenerated.
-    const V0_2_SHA256: &str = "caddad36ecc3893e3aae87a6bb57ff1928ed9d8b8710d05a78a6501dbd1e5770";
+    const V0_2_SHA256: &str = "4206cce1f1977347e795d4cc4033dca7780dbb39f5654560af60fbae2ea9c230";
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/v0.2.json");
     if !path.exists() {
@@ -328,8 +331,8 @@ fn schema_2_contains_v0_2_corpus_additions() {
 
     let positive_ids: Vec<&str> = v2.vectors.iter().map(|v| v.id.as_str()).collect();
     for required in [
-        "tr_keypath",
-        "tr_pk",
+        "tr_keypath_only_md_v0_5",
+        "tr_single_leaf_pk_md_v0_5",
         "tr_multia_2of3",
         "multi_2of2_with_fingerprints",
     ] {
@@ -344,9 +347,12 @@ fn schema_2_contains_v0_2_corpus_additions() {
         .iter()
         .map(|nv| nv.id.as_str())
         .collect();
+    // v0.5 SPEC §5 renamed `n_taptree_multi_leaf` (the v0.4 reservation rejection)
+    // into the canonical N1-N9 negative set; `n_taptree_single_inner_under_tr`
+    // (N1) is the closest semantic match (truncated multi-leaf subtree → UnexpectedEnd).
     for required in [
         "n_tap_leaf_subset",
-        "n_taptree_multi_leaf",
+        "n_taptree_single_inner_under_tr",
         "n_fingerprints_count_mismatch",
         "n_fingerprints_missing_tag",
     ] {

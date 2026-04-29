@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "md-codec 0.4",
+  "generator": "md-codec 0.5",
   "vectors": [
     {
       "id": "c1",
@@ -234,8 +234,8 @@
       ]
     },
     {
-      "id": "tr_keypath",
-      "description": "Taproot key-path-only",
+      "id": "tr_keypath_only_md_v0_5",
+      "description": "Taproot key-path-only (v0.5 regression anchor)",
       "policy": "tr(@0/**)",
       "expected_bytecode_hex": "003303063200",
       "expected_chunks": [
@@ -257,8 +257,8 @@
       ]
     },
     {
-      "id": "tr_pk",
-      "description": "Taproot single-leaf pk script-path",
+      "id": "tr_single_leaf_pk_md_v0_5",
+      "description": "Taproot single-leaf pk (v0.5 regression anchor; bytecode == v0.4.x)",
       "policy": "tr(@0/**,pk(@1/**))",
       "expected_bytecode_hex": "0033030632000c1b3201",
       "expected_chunks": [
@@ -300,6 +300,121 @@
         "ignore",
         "arch",
         "discover"
+      ]
+    },
+    {
+      "id": "tr_two_leaf_symmetric_md_v0_5",
+      "description": "Taproot 2-leaf symmetric tree (smallest multi-leaf; depth 1/1)",
+      "policy": "tr(@0/**,{pk(@1/**),pk(@2/**)})",
+      "expected_bytecode_hex": "003303063200080c1b32010c1b3202",
+      "expected_chunks": [
+        "md1qqqqqvcrqceqqzqvrveqzrqmxgpq047xqk42r234a"
+      ],
+      "expected_wallet_id_words": [
+        "idea",
+        "defy",
+        "enrich",
+        "magnet",
+        "admit",
+        "involve",
+        "verify",
+        "poverty",
+        "sentence",
+        "vehicle",
+        "level",
+        "voyage"
+      ]
+    },
+    {
+      "id": "tr_three_leaf_left_heavy_md_v0_5",
+      "description": "Taproot 3-leaf left-heavy tree (depth 1/2/2)",
+      "policy": "tr(@0/**,{pk(@1/**),{pk(@2/**),pk(@3/**)}})",
+      "expected_bytecode_hex": "003303063200080c1b3201080c1b32020c1b3203",
+      "expected_chunks": [
+        "md1qqqqqvcrqceqqzqvrveqzzqvrveqyrqmxgpsmlqydgkqhe9wf"
+      ],
+      "expected_wallet_id_words": [
+        "town",
+        "stock",
+        "gesture",
+        "excite",
+        "labor",
+        "shoulder",
+        "emotion",
+        "bus",
+        "paper",
+        "dizzy",
+        "reduce",
+        "forward"
+      ]
+    },
+    {
+      "id": "tr_three_leaf_right_heavy_md_v0_5",
+      "description": "Taproot 3-leaf right-heavy tree (depth 2/2/1; mirror of T4)",
+      "policy": "tr(@0/**,{{pk(@1/**),pk(@2/**)},pk(@3/**)})",
+      "expected_bytecode_hex": "00330306320008080c1b32010c1b32020c1b3203",
+      "expected_chunks": [
+        "md1qqqqqvcrqceqqzqgpsdnyqgvrveqyrqmxgpstk5t47dfgstw9"
+      ],
+      "expected_wallet_id_words": [
+        "giant",
+        "vessel",
+        "jump",
+        "miracle",
+        "intact",
+        "coconut",
+        "food",
+        "noise",
+        "turtle",
+        "equal",
+        "eternal",
+        "demand"
+      ]
+    },
+    {
+      "id": "tr_multi_leaf_with_multi_md_v0_5",
+      "description": "Taproot multi-leaf with multi_a in one leaf",
+      "policy": "tr(@0/**,{pk(@1/**),multi_a(2,@2/**,@3/**)})",
+      "expected_bytecode_hex": "003303063200080c1b32011a020232023203",
+      "expected_chunks": [
+        "md1qqqqqvcrqceqqzqvrveqzxszqgeqyvsrgfxcsa2uq4dmr"
+      ],
+      "expected_wallet_id_words": [
+        "man",
+        "cause",
+        "surround",
+        "float",
+        "excess",
+        "wood",
+        "extra",
+        "wave",
+        "slight",
+        "run",
+        "sword",
+        "right"
+      ]
+    },
+    {
+      "id": "tr_multi_leaf_chunking_boundary_md_v0_5",
+      "description": "Taproot multi-leaf at chunking boundary (7-leaf right-spine tree)",
+      "policy": "tr(@0/**,{{pk(@1/**),pk(@2/**)},{pk(@3/**),{pk(@4/**),{pk(@5/**),pk(@6/**)}}}})",
+      "expected_bytecode_hex": "00330306320008080c1b32010c1b3202080c1b3203080c1b3204080c1b32050c1b3206",
+      "expected_chunks": [
+        "md1qqqqqvcrqceqqzqgpsdnyqgvrveqyzqvrveqxzqvrveqgzqvrveq2rqmxgrq9p3m8l26sry0v"
+      ],
+      "expected_wallet_id_words": [
+        "way",
+        "about",
+        "occur",
+        "about",
+        "verb",
+        "retreat",
+        "hello",
+        "nothing",
+        "brass",
+        "denial",
+        "switch",
+        "erosion"
       ]
     },
     {
@@ -855,13 +970,85 @@
       "provenance": "encode-side rejection; `input_strings` is empty because the policy never produces an MD string. Construct via `\"tr(@0/**,and_v(v:sha256(<32B>),pk(@1/**)))\".parse::<WalletPolicy>()` followed by `to_bytecode(&EncodeOptions::default())`; the encoder rejects the leaf operator `sha256`."
     },
     {
-      "id": "n_taptree_multi_leaf",
-      "description": "Bytecode embedding `Tag::TapTree=0x08` in leaf position → PolicyScopeViolation (multi-leaf reserved for v1+)",
+      "id": "n_taptree_single_inner_under_tr",
+      "description": "TapTree framing with only 1 child under tr → cursor runs out reading right child (InvalidBytecode/UnexpectedEnd)",
       "input_strings": [
-        "md1qqqqqvcrqceqqzqfnlk2cnh9syxz"
+        "md1qqqqqvcrqceqqzqmxgqqs03g4gw49jynp"
+      ],
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::PkK, Tag::Placeholder, 0]` (one left leaf, no right child); decode_tap_subtree reads left leaf then UnexpectedEnd reading right"
+    },
+    {
+      "id": "n_taptree_three_inners_under_tr",
+      "description": "TapTree framing with 3 children — trailing byte after right child (InvalidBytecode/TrailingBytes)",
+      "input_strings": [
+        "md1qqqqqvcrqceqqzqmxgqpkvsprveqylfypcjm2xranw"
+      ],
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, leaf, leaf, leaf]`; decode_tap_subtree consumes left+right leaves, then bytecode parse reports TrailingBytes for the third"
+    },
+    {
+      "id": "n_taptree_inner_wpkh",
+      "description": "Multi-leaf TapTree with `wpkh` leaf at index 0 — TapLeafSubsetViolation { operator: \"wpkh\", leaf_index: Some(0) }",
+      "input_strings": [
+        "md1qqqqqvcrqceqqzqyxgqpkvspazn6sj6auezrf"
+      ],
+      "expected_error_variant": "TapLeafSubsetViolation",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Wpkh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `wpkh`"
+    },
+    {
+      "id": "n_taptree_inner_sh",
+      "description": "Multi-leaf TapTree with `sh` leaf at index 0 — TapLeafSubsetViolation { operator: \"sh\", leaf_index: Some(0) }",
+      "input_strings": [
+        "md1qqqqqvcrqceqqzqrxgqpkvspf8rmh68lqgf9l"
+      ],
+      "expected_error_variant": "TapLeafSubsetViolation",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Sh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `sh`"
+    },
+    {
+      "id": "n_taptree_inner_wsh",
+      "description": "Multi-leaf TapTree with `wsh` leaf at index 0 — TapLeafSubsetViolation { operator: \"wsh\", leaf_index: Some(0) }",
+      "input_strings": [
+        "md1qqqqqvcrqceqqzq9xgqpkvsp8sx83vrwc3jlq"
+      ],
+      "expected_error_variant": "TapLeafSubsetViolation",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Wsh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `wsh`"
+    },
+    {
+      "id": "n_taptree_inner_tr",
+      "description": "Multi-leaf TapTree with `tr` leaf at index 0 — TapLeafSubsetViolation { operator: \"tr\", leaf_index: Some(0) }",
+      "input_strings": [
+        "md1qqqqqvcrqceqqzqxxgqpkvspq0sfj8pj5ftjm"
+      ],
+      "expected_error_variant": "TapLeafSubsetViolation",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Tr, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `tr`"
+    },
+    {
+      "id": "n_taptree_inner_pkh",
+      "description": "Multi-leaf TapTree with `pkh` leaf at index 0 — TapLeafSubsetViolation { operator: \"pkh\", leaf_index: Some(0) }",
+      "input_strings": [
+        "md1qqqqqvcrqceqqzqzxgqpkvspn4kxky7vyqeek"
+      ],
+      "expected_error_variant": "TapLeafSubsetViolation",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::Pkh, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `pkh`"
+    },
+    {
+      "id": "n_taptree_unknown_tag_inner",
+      "description": "TapTree framing with unallocated tag byte 0xC0 as inner — InvalidBytecode/UnknownTag",
+      "input_strings": [
+        "md1qqqqqvcrqceqqzxqhmlv4wedyfdt9"
+      ],
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "encoded `tr(@0/**)`, appended `[Tag::TapTree, 0xC0]`; decode_tap_subtree's Tag::from_byte(0xC0) returns None and emits InvalidBytecode { kind: UnknownTag(0xC0) }"
+    },
+    {
+      "id": "n_taptree_at_top_level",
+      "description": "Tag::TapTree (0x08) as top-level descriptor — PolicyScopeViolation (TapTree only valid inside tr(KEY, TREE))",
+      "input_strings": [
+        "md1qqqqqvcypqa9v7hcslflskv"
       ],
       "expected_error_variant": "PolicyScopeViolation",
-      "provenance": "encoded `tr(@0/**)` to bytecode, appended `Tag::TapTree=0x08`, wrapped in a SingleString chunk via `encoding::encode_string`; decode rejects multi-leaf TapTree as reserved for v1+"
+      "provenance": "synthesised bytecode `[0x00, Tag::SharedPath, 0x04, Tag::TapTree]`; top-level dispatcher rejects 0x08 with the v0.5 message about TapTree appearing only inside tr(KEY, TREE)"
     },
     {
       "id": "n_fingerprints_count_mismatch",

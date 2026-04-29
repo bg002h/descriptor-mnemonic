@@ -14,7 +14,12 @@
 //! accepted, with the per-leaf miniscript subset enforced per BIP §"Taproot
 //! tree" (Coldcard subset: `pk_k`, `pk_h`, `multi_a`, `or_d`, `and_v`,
 //! `older` plus the `c:` / `v:` wrappers required to spell them through the
-//! BIP 388 string form). Multi-leaf TapTree is reserved for v1+.
+//! BIP 388 string form).
+//!
+//! v0.5: multi-leaf TapTree `tr()` is admitted via DFS pre-order traversal of
+//! `TapTree::leaves()`, emitting `Tag::TapTree` (0x08) inner-node framings.
+//! KeyOnly `tr(KEY)` and single-leaf `tr(KEY, leaf)` paths are preserved
+//! byte-identically from v0.4.x.
 //!
 //! Architecture mirrors `joshdoman/descriptor-codec` (CC0) — see
 //! `design/PHASE_2_DECISIONS.md` D-4 for rationale.
@@ -113,51 +118,63 @@ impl EncodeTemplate for Descriptor<DescriptorPublicKey> {
                         wsh.encode_template(out, placeholder_map)
                     }
                     ShInner::Ms(_) => Err(Error::PolicyScopeViolation(
-                        "v0.4 does not support sh(<legacy P2SH>) including sh(multi/sortedmulti); \
-                         use sh(wsh(sortedmulti(...))) for modern nested-segwit multisig"
+                        "sh(<legacy P2SH>) including sh(multi/sortedmulti) is permanently \
+                         rejected (legacy non-segwit out of scope per design); use \
+                         sh(wsh(sortedmulti(...))) for modern nested-segwit multisig"
                             .to_string(),
                     )),
                 }
             }
             Descriptor::Pkh(_) => Err(Error::PolicyScopeViolation(
-                "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)"
+                "top-level pkh() is permanently rejected (legacy non-segwit out of scope per design)"
                     .to_string(),
             )),
             Descriptor::Tr(tr) => {
                 // BIP §"Taproot tree" + Phase D D-1: emit Tag::Tr (0x06)
                 // followed by the internal-key placeholder reference and an
-                // optional single-leaf miniscript. Multi-leaf TapTree
-                // encoding is reserved for v1+ (D-1).
+                // optional script-tree subtree. v0.5 admits multi-leaf trees
+                // via Tag::TapTree (0x08) inner-node framing; KeyOnly and
+                // single-leaf paths preserved byte-identically from v0.4.x.
                 out.push(Tag::Tr.as_byte());
                 tr.internal_key().encode_template(out, placeholder_map)?;
                 if let Some(tap_tree) = tr.tap_tree() {
-                    // Walk the leaves; require exactly one leaf at depth 0.
-                    let mut leaves = tap_tree.leaves();
-                    let first = leaves.next().ok_or_else(|| {
-                        Error::PolicyScopeViolation(
+                    let leaves: Vec<(u8, &Arc<Miniscript<DescriptorPublicKey, Tap>>)> = tap_tree
+                        .leaves()
+                        .map(|item| (item.depth(), item.miniscript()))
+                        .collect();
+                    if leaves.is_empty() {
+                        return Err(Error::PolicyScopeViolation(
                             "tap_tree present but contains no leaves".to_string(),
-                        )
-                    })?;
-                    if leaves.next().is_some() {
-                        return Err(Error::PolicyScopeViolation(
-                            "multi-leaf TapTree reserved for v1+".to_string(),
                         ));
                     }
-                    if first.depth() != 0 {
-                        return Err(Error::PolicyScopeViolation(
-                            "single-leaf TapTree must have depth 0 in v0.2; multi-leaf reserved for v1+"
-                                .to_string(),
-                        ));
+                    if leaves.len() == 1 && leaves[0].0 == 0 {
+                        // Single-leaf path — byte-identical to v0.4.x.
+                        let leaf_ms = leaves[0].1;
+                        validate_tap_leaf_subset(leaf_ms, Some(0))?;
+                        leaf_ms.encode_template(out, placeholder_map)?;
+                    } else {
+                        // Multi-leaf path — emit 0x08 framings.
+                        // (Encoder relies on rust-miniscript TapTree::combine's
+                        //  upstream depth-128 invariant; no defensive check needed.)
+                        //
+                        // Entry target_depth=0 (the implicit "tree root" level):
+                        // any leaf at depth >= 1 triggers a 0x08 framing and the
+                        // recursion descends until the leaf depths match the
+                        // target depth. Mirrors the decoder's depth==0 entry
+                        // into `decode_tap_subtree`.
+                        let mut cursor: usize = 0;
+                        encode_tap_subtree(&leaves, &mut cursor, 0, out, placeholder_map)?;
+                        debug_assert_eq!(
+                            cursor,
+                            leaves.len(),
+                            "encode_tap_subtree must consume all leaves"
+                        );
                     }
-                    let leaf_ms = first.miniscript();
-                    // D-2: enforce the Coldcard per-leaf miniscript subset.
-                    validate_tap_leaf_subset(leaf_ms)?;
-                    leaf_ms.encode_template(out, placeholder_map)?;
                 }
                 Ok(())
             }
             Descriptor::Bare(_) => Err(Error::PolicyScopeViolation(
-                "v0.4 does not support top-level pkh()/bare() (legacy non-segwit out of scope)"
+                "top-level bare() is permanently rejected (legacy non-segwit out of scope per design)"
                     .to_string(),
             )),
         }
@@ -442,6 +459,8 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
             // error rather than silently writing it.
             other => Err(Error::TapLeafSubsetViolation {
                 operator: tap_terminal_name(other).to_string(),
+                leaf_index: None, // Terminal-encoder catch-all has no leaf-index context;
+                                  // the outer validate_tap_leaf_subset call site supplies index.
             }),
         }
     }
@@ -465,8 +484,27 @@ impl EncodeTemplate for Terminal<DescriptorPublicKey, Tap> {
 /// vocabulary documented as of edge firmware. v0.3 may relax this if a
 /// signer documents a wider safe wrapper set; tracked as
 /// `phase-d-tap-leaf-wrapper-subset-clarification` in `FOLLOWUPS.md`.
-pub fn validate_tap_leaf_subset(ms: &Miniscript<DescriptorPublicKey, Tap>) -> Result<(), Error> {
-    validate_tap_leaf_terminal(&ms.node)
+///
+/// # Parameters
+///
+/// `leaf_index` is the DFS pre-order index of this leaf within the
+/// containing tap tree. The value is propagated into
+/// [`Error::TapLeafSubsetViolation`] to enrich diagnostics for multi-leaf
+/// decode/encode paths. Pass `Some(0)` for single-leaf `tr(KEY, leaf)`,
+/// `Some(n)` for the n-th leaf in DFS pre-order traversal of a multi-leaf
+/// tree, or `None` for callers without leaf-index context (currently no
+/// in-tree caller passes `None`; reserved for external callers).
+pub fn validate_tap_leaf_subset(
+    ms: &Miniscript<DescriptorPublicKey, Tap>,
+    leaf_index: Option<usize>,
+) -> Result<(), Error> {
+    validate_tap_leaf_terminal(&ms.node).map_err(|e| match e {
+        Error::TapLeafSubsetViolation { operator, .. } => Error::TapLeafSubsetViolation {
+            operator,
+            leaf_index,
+        },
+        other => other,
+    })
 }
 
 fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Result<(), Error> {
@@ -486,8 +524,53 @@ fn validate_tap_leaf_terminal(term: &Terminal<DescriptorPublicKey, Tap>) -> Resu
         // Everything else is out-of-subset for v0.2.
         other => Err(Error::TapLeafSubsetViolation {
             operator: tap_terminal_name(other).to_string(),
+            leaf_index: None, // Sub-helper of validate_tap_leaf_subset; outer caller
+                              // re-wraps the error with the correct leaf_index via
+                              // map_err in Task 2.3.
         }),
     }
+}
+
+/// Recursive encoder helper for v0.5 multi-leaf TapTree emission.
+///
+/// Walks a depth-annotated leaf slice (DFS pre-order, from
+/// `TapTree::leaves()`) and emits `Tag::TapTree (0x08)` framings as the
+/// target depth dictates. Leaves are encoded inline once the leaf's depth
+/// matches the current target depth; otherwise emit a `0x08` framing and
+/// recurse with `target_depth + 1` for both children.
+///
+/// **Invariant**: `leaves[*cursor].0 >= target_depth` is upheld by the DFS
+/// pre-order from upstream `TapTree::leaves()`. The `else` arm exists for
+/// completeness but is unreachable on inputs constructed via rust-miniscript
+/// `TapTree::combine`.
+fn encode_tap_subtree(
+    leaves: &[(u8, &Arc<Miniscript<DescriptorPublicKey, Tap>>)],
+    cursor: &mut usize,
+    target_depth: u8,
+    out: &mut Vec<u8>,
+    placeholder_map: &HashMap<DescriptorPublicKey, u8>,
+) -> Result<(), Error> {
+    use std::cmp::Ordering;
+    let leaf_depth = leaves[*cursor].0;
+    match leaf_depth.cmp(&target_depth) {
+        Ordering::Equal => {
+            let leaf_index = *cursor;
+            let ms = leaves[*cursor].1;
+            validate_tap_leaf_subset(ms, Some(leaf_index))?;
+            ms.encode_template(out, placeholder_map)?;
+            *cursor += 1;
+        }
+        Ordering::Greater => {
+            out.push(Tag::TapTree.as_byte());
+            encode_tap_subtree(leaves, cursor, target_depth + 1, out, placeholder_map)?;
+            encode_tap_subtree(leaves, cursor, target_depth + 1, out, placeholder_map)?;
+        }
+        // `leaf_depth < target_depth` is unreachable given DFS pre-order from
+        // upstream `TapTree::leaves()`; intentionally a no-op rather than panic
+        // (helper is internal; ill-formed input would surface elsewhere first).
+        Ordering::Less => {}
+    }
+    Ok(())
 }
 
 /// Human-readable name for a tap-context Terminal variant, used in error

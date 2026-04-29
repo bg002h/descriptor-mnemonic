@@ -43,6 +43,35 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0-5-t7-chunking-boundary-misnomer` — T7 fixture doesn't actually cross chunking boundary
+
+- **Surfaced:** Phase 6 reviewer (commit `7d6e278`). T7's 6-leaf right-spine fixture `tr_multi_leaf_chunking_boundary_md_v0_5` has a 35-byte bytecode that lands well under the 48-byte `ChunkCode::Regular` single-string capacity. The fixture does NOT exercise the chunked-plan path despite its name suggesting otherwise.
+- **Where:** `crates/md-codec/src/vectors.rs` T7 entry; `crates/md-codec/tests/vectors/v0.2.json` `tr_multi_leaf_chunking_boundary_md_v0_5` fixture
+- **What:** Either (a) rename to a shape-descriptive identifier (e.g., `tr_multi_leaf_right_spine_md_v0_5`) — T7 still adds value as a 6-leaf right-spine asymmetric regression anchor distinct from T3-T5 — or (b) tune the tree shape to 49+ bytes (need explicit derivation paths or a 32-leaf max-fan tree) so it actually crosses the Regular capacity boundary AND the 56-byte Long capacity, forcing chunking. (b) is the "true to original spec intent" path; (a) is the pragmatic ship-now path. T7 still increases coverage in either case.
+- **Why deferred:** Not blocking. The fixture passes round-trip; the misnomer is documentation-only.
+- **Status:** open
+- **Tier:** v0.5-nice-to-have (resolve before v0.5.0 ship via rename, OR resolve in v0.5.x patch by tuning)
+
+### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
+
+- **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
+- **Where:** rust-miniscript's wallet-policy parser; not a direct md-codec issue
+- **What:** Concrete-key form `tr(<concrete>, {pk(<concrete>), multi_a(2, <concrete>, <concrete>)})` fails; `@N`-template form `tr(@0/**, {pk(@1/**), multi_a(2, @2/**, @3/**)})` works. Possibly an upstream parser bug or a documented limitation.
+- **Why deferred:** Workaround is sound (use template form, which matches the rest of the corpus). Not blocking md-codec v0.5.
+- **Status:** open
+- **Tier:** v1+ (file as upstream issue if desired; not on md-codec critical path)
+
+### `v0-5-spec-plan-encode-tap-subtree-entry-depth-bug` — spec + plan say `target_depth=1` at outer entry; should be `0`
+
+- **Surfaced:** Phase 4 implementer (commit `bca2804`) caught this when the post-condition `debug_assert_eq!(cursor, leaves.len())` failed on a 2-leaf tree compiled per the literal spec text. Phase 4 reviewer (combined pass) confirmed independently with depth-trace analysis.
+- **Where:**
+  - `design/SPEC_v0_5_multi_leaf_taptree.md` §4 line 220: `encode_tap_subtree(&leaves, &mut cursor, 1, out, &placeholder_map)?;`
+  - `design/IMPLEMENTATION_PLAN_v0_5_multi_leaf_taptree.md` Phase 4 Task 4.3 line 1325: same literal `1`
+- **What:** The outer call to `encode_tap_subtree` must pass `target_depth=0` (the tree-root depth) so that for any `leaves[0].0 >= 1` the helper emits a `Tag::TapTree` framing before recursing into children with `target_depth=1`. Calling with `target_depth=1` short-circuits emission for symmetric depth-1 trees (matches the first leaf inline, drops the `0x08` framing, fails post-condition). Implementer's actual code at `encode.rs:166` correctly uses `0`; spec + plan text disagree with the working code.
+- **Why deferred:** Documentation-only fix; working code is already correct. Spec + plan live on `main` (separate from the feature branch).
+- **Status:** resolved (folded into release PR; see `chore(v0.5 m2): fix target_depth literal in spec + plan` commit on `feature/v0.5-multi-leaf-taptree`)
+- **Tier:** v0.5-must-close-before-ship (closed)
+
 ### `p2-inline-key-tags` — Reserved tags 0x24–0x31 (descriptor-codec inline-key forms)
 
 - **Surfaced:** Phase 2 D-2 (`design/PHASE_2_DECISIONS.md`)
@@ -97,15 +126,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** v0.2's JSON contract is "byte-identical to v0.1.1" — the `Debug` shortcut achieves that. Decoupling the JSON contract from `Debug` is a v1.0 stabilization concern (v1.0 will pin the JSON shape as a contract, at which point the indirection through `Debug` becomes a real liability).
 - **Status:** open
 - **Tier:** v1+
-
-### `v0-5-multi-leaf-taptree` — multi-leaf TapTree (`tr(KEY, TREE)`) admission
-
-- **Surfaced:** v0.4 spec brainstorming 2026-04-27; named in BIP §FAQ "Why is multi-leaf TapTree deferred (vs excluded)?"
-- **Where:** `crates/md-codec/src/bytecode/decode.rs` Tr handler; `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope" + §"Taproot tree"
-- **What:** Admit `tr(KEY, TREE)` with non-trivial multi-leaf TapTree (BIP 388 §"Taproot tree"). Requires TapTree depth/balancing rules, leaf-wrapper subset re-evaluation (current Coldcard tap-leaf subset is restrictive), per-leaf miniscript context validation. Deferred from v0.4 to keep that release focused.
-- **Why deferred:** Substantive feature requiring its own design pass.
-- **Status:** open
-- **Tier:** v0.5+ (planned admission, not exclusion)
 
 ### `legacy-pkh-permanent-exclusion` — `pkh(KEY)` is permanently excluded
 
@@ -175,6 +195,29 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 ## Resolved items
 
 (Closure log. Items move here from "Open items" when their `Status:` changes to `resolved <COMMIT>`. Useful for spec/audit reasons; not deleted to preserve provenance.)
+
+### `v0-5-multi-leaf-taptree` — multi-leaf TapTree (`tr(KEY, TREE)`) admission
+
+- **Surfaced:** v0.4 spec brainstorming 2026-04-27; named in BIP §FAQ "Why is multi-leaf TapTree deferred (vs excluded)?"
+- **Where:** `crates/md-codec/src/bytecode/decode.rs` Tr handler; `bip/bip-mnemonic-descriptor.mediawiki` §"Top-level descriptor scope" + §"Taproot tree"
+- **What:** Admit `tr(KEY, TREE)` with non-trivial multi-leaf TapTree (BIP 388 §"Taproot tree"). Required TapTree depth/balancing rules (BIP 341 depth-128 cap), per-leaf miniscript Tap-context validation, leaf-wrapper subset enforcement on every leaf, and recursive `[Tag::TapTree=0x08][LEFT][RIGHT]` framing. Delivered in v0.5.0 across 11 phases (spec ratification → type wiring → top-level dispatcher → encoder rewrite → tap_leaves population → 29 NEW + 1 RENAMED conformance vectors → BIP doc updates → CLI integration test → final cumulative review → CHANGELOG/MIGRATION → release prep).
+- **Status:** resolved <release-commit-sha>
+- **Tier:** v0.5 (planned admission, closed)
+
+### `v0-5-stale-v0-4-message-strings-sweep` — sweep remaining "v0.4 does not support" / "reserved for v1+" stale strings
+
+- **Surfaced:** Phase 3 review of v0.5 (commit `59797ef`). Phase 3 only updated the four `decode_descriptor` strings in scope; reviewer flagged additional stale "v0.4" / "v1+" strings in adjacent code that are now factually wrong at v0.5.
+- **Where (all closed in Phase 4):**
+  - `crates/md-codec/src/bytecode/encode.rs:116` — sh(legacy P2SH) error → "permanently rejected (legacy non-segwit out of scope per design)"
+  - `crates/md-codec/src/bytecode/encode.rs:123,163` — top-level pkh/bare → split into separate Pkh and Bare messages, both with "permanently rejected" framing
+  - `crates/md-codec/src/bytecode/encode.rs:13-17` — module doc rewritten: replaced "Multi-leaf TapTree is reserved for v1+" with v0.5 admission paragraph
+  - `crates/md-codec/src/bytecode/decode.rs:167` — `decode_sh_inner` catch-all → "permanently rejected"
+  - `crates/md-codec/src/bytecode/decode.rs:11-14` — module doc: replaced v1+ Tag::TapTree reservation with v0.5 admission paragraph + depth-128 mention
+  - `crates/md-codec/src/bytecode/decode.rs:255-257` — `decode_tr_inner` doc: replaced "reserved for v1+" with v0.5 multi-leaf admission note
+- **What:** Sweep all sites to version-agnostic / v0.5-correct text. Folded into Phase 4 encoder-rewrite commit; verified zero remaining "v0.4 does not support" / "reserved for v1+" strings in `encode.rs` and `decode.rs` post-commit.
+- **Why deferred:** Phase 3 scope was only the top-level dispatcher; the implementer correctly kept scope tight. Reviewer recommended folding the encoder messages into Phase 4 (which already touches `encode.rs:126-158`).
+- **Status:** resolved bca2804
+- **Tier:** v0.5-nice-to-have (closed before v0.5.0 ship)
 
 ### `p10-bip-header-status-string` — align BIP draft header with the ref-impl-aware status
 

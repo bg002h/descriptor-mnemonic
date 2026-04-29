@@ -211,18 +211,69 @@ const CORPUS_FIXTURES: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// Schema-2 additions: taproot positive corpus (Phase D — `phase-d-taproot-corpus-fixtures`).
+/// Schema-2 additions: taproot positive corpus (Phase D — `phase-d-taproot-corpus-fixtures`),
+/// extended in v0.5 with multi-leaf TapTree fixtures (T1, T3-T7 NEW; T2 RENAMED from `tr_pk`).
+///
+/// Per `design/SPEC_v0_5_multi_leaf_taptree.md` §5:
+/// - T1 (`tr_keypath_only_md_v0_5`): KeyOnly anchor — bytecode unchanged from v0.4.x.
+/// - T2 (`tr_single_leaf_pk_md_v0_5`): RENAMED from `tr_pk` — bytecode unchanged from v0.4.x.
+/// - T3 (`tr_two_leaf_symmetric_md_v0_5`): smallest multi-leaf case (depth 1/1).
+/// - T4 (`tr_three_leaf_left_heavy_md_v0_5`): asymmetric depth 1/2/2.
+/// - T5 (`tr_three_leaf_right_heavy_md_v0_5`): mirror of T4 (depth 2/2/1; distinct bytecode).
+/// - T6 (`tr_multi_leaf_with_multi_md_v0_5`): mix of leaf script types.
+/// - T7 (`tr_multi_leaf_chunking_boundary_md_v0_5`): tree shape that pushes the
+///   regular-string single-chunk capacity boundary, forcing chunking.
 const TAPROOT_FIXTURES: &[(&str, &str, &str)] = &[
-    ("tr_keypath", "Taproot key-path-only", "tr(@0/**)"),
+    // T1 (NEW): KeyOnly anchor — bytecode unchanged from v0.4.x.
     (
-        "tr_pk",
-        "Taproot single-leaf pk script-path",
+        "tr_keypath_only_md_v0_5",
+        "Taproot key-path-only (v0.5 regression anchor)",
+        "tr(@0/**)",
+    ),
+    // T2 (RENAMED from `tr_pk`): single-leaf — bytecode unchanged from v0.4.x.
+    (
+        "tr_single_leaf_pk_md_v0_5",
+        "Taproot single-leaf pk (v0.5 regression anchor; bytecode == v0.4.x)",
         "tr(@0/**,pk(@1/**))",
     ),
+    // Existing tr_multia_2of3 preserved as-is (single-leaf multi_a — orthogonal coverage).
     (
         "tr_multia_2of3",
         "Taproot single-leaf multi_a 2-of-3 script-path (4 distinct keys)",
         "tr(@0/**,multi_a(2,@1/**,@2/**,@3/**))",
+    ),
+    // T3 (NEW): smallest multi-leaf — symmetric depth-1 tree.
+    (
+        "tr_two_leaf_symmetric_md_v0_5",
+        "Taproot 2-leaf symmetric tree (smallest multi-leaf; depth 1/1)",
+        "tr(@0/**,{pk(@1/**),pk(@2/**)})",
+    ),
+    // T4 (NEW): asymmetric — left-heavy.
+    (
+        "tr_three_leaf_left_heavy_md_v0_5",
+        "Taproot 3-leaf left-heavy tree (depth 1/2/2)",
+        "tr(@0/**,{pk(@1/**),{pk(@2/**),pk(@3/**)}})",
+    ),
+    // T5 (NEW): asymmetric — right-heavy (mirror of T4; distinct bytecode by construction).
+    (
+        "tr_three_leaf_right_heavy_md_v0_5",
+        "Taproot 3-leaf right-heavy tree (depth 2/2/1; mirror of T4)",
+        "tr(@0/**,{{pk(@1/**),pk(@2/**)},pk(@3/**)})",
+    ),
+    // T6 (NEW): mix of leaf script types (pk + multi_a).
+    (
+        "tr_multi_leaf_with_multi_md_v0_5",
+        "Taproot multi-leaf with multi_a in one leaf",
+        "tr(@0/**,{pk(@1/**),multi_a(2,@2/**,@3/**)})",
+    ),
+    // T7 (NEW): chunking-boundary tree — sized to push 1-string regular boundary.
+    // The 7-leaf right-spine asymmetric tree encodes to a payload large enough that
+    // chunking_decision selects a chunked plan (rather than SingleString); this
+    // exercises the multi-leaf TapTree path under the chunking layer.
+    (
+        "tr_multi_leaf_chunking_boundary_md_v0_5",
+        "Taproot multi-leaf at chunking boundary (7-leaf right-spine tree)",
+        "tr(@0/**,{{pk(@1/**),pk(@2/**)},{pk(@3/**),{pk(@4/**),{pk(@5/**),pk(@6/**)}}}})",
     ),
 ];
 
@@ -708,7 +759,7 @@ fn build_positive_vectors_v2() -> Vec<Vector> {
 }
 
 fn build_negative_vectors_v2() -> Vec<NegativeVector> {
-    let mut out: Vec<NegativeVector> = Vec::with_capacity(NEGATIVE_FIXTURES.len() + 4 + 9);
+    let mut out: Vec<NegativeVector> = Vec::with_capacity(NEGATIVE_FIXTURES.len() + 3 + 9 + 9);
     for fixture in NEGATIVE_FIXTURES {
         let (input_strings, provenance) = generate_for_negative_variant(fixture.id);
         out.push(NegativeVector {
@@ -719,9 +770,21 @@ fn build_negative_vectors_v2() -> Vec<NegativeVector> {
             provenance: Some(provenance),
         });
     }
-    // v0.2 additions — taproot.
+    // v0.2 additions — taproot single-leaf subset violation.
     out.push(build_negative_n_tap_leaf_subset());
-    out.push(build_negative_n_taptree_multi_leaf());
+    // v0.5 additions — N1-N9 multi-leaf TapTree negative corpus per
+    // `design/SPEC_v0_5_multi_leaf_taptree.md` §5. Replaces the legacy
+    // `n_taptree_multi_leaf` (v0.4 reservation rejection) which is subsumed
+    // by N1 (`n_taptree_single_inner_under_tr`).
+    out.push(build_negative_n1_taptree_single_inner_under_tr());
+    out.push(build_negative_n2_taptree_three_inners_under_tr());
+    out.push(build_negative_n3_taptree_inner_wpkh());
+    out.push(build_negative_n4_taptree_inner_sh());
+    out.push(build_negative_n5_taptree_inner_wsh());
+    out.push(build_negative_n6_taptree_inner_tr());
+    out.push(build_negative_n7_taptree_inner_pkh());
+    out.push(build_negative_n8_taptree_unknown_tag_inner());
+    out.push(build_negative_n9_taptree_at_top_level());
     // v0.2 additions — fingerprints.
     out.push(build_negative_n_fingerprints_count_mismatch());
     out.push(build_negative_n_fingerprints_missing_tag());
@@ -1525,25 +1588,205 @@ fn build_negative_n_tap_leaf_subset() -> NegativeVector {
     }
 }
 
-fn build_negative_n_taptree_multi_leaf() -> NegativeVector {
-    use crate::bytecode::Tag;
-    // Encode `tr(@0/**)` to obtain a valid prefix, then append `Tag::TapTree`
-    // (0x08) at the leaf position. The decoder rejects multi-leaf TapTree as
-    // reserved for v1+.
+// ---------------------------------------------------------------------------
+// v0.5 — N1-N9 multi-leaf TapTree negative builders
+// (per `design/SPEC_v0_5_multi_leaf_taptree.md` §5)
+//
+// These replace the legacy `n_taptree_multi_leaf` (v0.4 reservation rejection).
+//
+// N3-N7 use the offending operator as the LEFT leaf of a 2-leaf depth-1 tree
+// (`{<offender>, pk(@1)}`), so the offending leaf is at `leaf_index = 0`.
+// All start from a valid `tr(@0/**)` to obtain the bytecode prefix
+// (`[header][SharedPath][indicator]`), then append the hostile shape.
+// ---------------------------------------------------------------------------
+
+/// Helper: produce the prefix `[header(0x00)][SharedPath][indicator]` plus
+/// `[Tag::Tr][Tag::Placeholder][0]` (the outer `tr(KEY)` framing) by encoding
+/// a real `tr(@0/**)` policy and stripping its trailing `[Tag::SharedPath]`
+/// dummy nothing. Returns the prefix bytes ready to receive a
+/// `[Tag::TapTree]…` multi-leaf body.
+fn taptree_multi_leaf_prefix() -> Vec<u8> {
     let policy: WalletPolicy = "tr(@0/**)".parse().unwrap();
-    let mut bytecode = policy.to_bytecode(&EncodeOptions::default()).unwrap();
+    policy.to_bytecode(&EncodeOptions::default()).unwrap()
+}
+
+fn build_negative_n1_taptree_single_inner_under_tr() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // N1: `[Tr][Placeholder][0][TapTree][LEFT_LEAF]` (only 1 child) — the
+    // multi-leaf decode helper reads the left child, then needs the right
+    // child but the cursor is empty.
+    let mut bytecode = taptree_multi_leaf_prefix();
     bytecode.push(Tag::TapTree.as_byte());
+    // One left leaf only; cursor runs out trying to read the right child.
+    bytecode.extend_from_slice(&[Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 0u8]);
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
+    NegativeVector {
+        id: "n_taptree_single_inner_under_tr".to_string(),
+        description:
+            "TapTree framing with only 1 child under tr → cursor runs out reading right child (InvalidBytecode/UnexpectedEnd)"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "InvalidBytecode".to_string(),
+        provenance: Some(
+            "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::PkK, Tag::Placeholder, 0]` (one left leaf, no right child); decode_tap_subtree reads left leaf then UnexpectedEnd reading right"
+                .to_string(),
+        ),
+    }
+}
+
+fn build_negative_n2_taptree_three_inners_under_tr() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // N2: `[TapTree][LEAF][LEAF][LEAF]` — after the 2-arity helper consumes
+    // left and right leaves, an excess byte trails. Surfaces as TrailingBytes.
+    let mut bytecode = taptree_multi_leaf_prefix();
+    bytecode.push(Tag::TapTree.as_byte());
+    bytecode.extend_from_slice(&[Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 0u8]);
+    bytecode.extend_from_slice(&[Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 1u8]);
+    // Third (excess) leaf:
+    bytecode.extend_from_slice(&[Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 2u8]);
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
+    NegativeVector {
+        id: "n_taptree_three_inners_under_tr".to_string(),
+        description:
+            "TapTree framing with 3 children — trailing byte after right child (InvalidBytecode/TrailingBytes)"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "InvalidBytecode".to_string(),
+        provenance: Some(
+            "encoded `tr(@0/**)`, appended `[Tag::TapTree, leaf, leaf, leaf]`; decode_tap_subtree consumes left+right leaves, then bytecode parse reports TrailingBytes for the third"
+                .to_string(),
+        ),
+    }
+}
+
+/// Helper for N3-N7: build `[Tr][Placeholder][0][TapTree][<offender>][pk leaf]`
+/// where `<offender>` is one of the off-subset tags. The decoder enters the
+/// multi-leaf path, reads the left leaf, and `validate_tap_leaf_subset` fires
+/// at `leaf_index = 0` with the offending operator's name.
+fn build_negative_taptree_inner_off_subset(
+    id: &str,
+    offender_tag: crate::bytecode::Tag,
+    operator_name: &str,
+) -> NegativeVector {
+    use crate::bytecode::Tag;
+    let mut bytecode = taptree_multi_leaf_prefix();
+    bytecode.push(Tag::TapTree.as_byte());
+    // Left leaf — the off-subset operator. We construct the minimal bytecode
+    // shape for each (`<tag>[Placeholder][0]` for unary operators that wrap a
+    // single key; for `Tag::Tr` we also need a placeholder reference).
+    //
+    // All five offending tags (Wpkh, Sh, Wsh, Tr, Pkh) are leaf-position tags
+    // that take exactly one placeholder argument in their minimal encoding,
+    // which is sufficient for the decoder to attempt to construct a leaf
+    // miniscript and trip the per-leaf subset validator.
+    bytecode.extend_from_slice(&[offender_tag.as_byte(), Tag::Placeholder.as_byte(), 0u8]);
+    // Right leaf — legal pk fragment.
+    bytecode.extend_from_slice(&[Tag::PkK.as_byte(), Tag::Placeholder.as_byte(), 1u8]);
+    let s = encode_singlestring_around(&bytecode);
+    // Each variant's expected behaviour: decode_tap_terminal hits the
+    // unrecognised-leaf-tag arm or per-leaf subset check. The exact variant
+    // depends on whether the tag is recognised in tap-leaf position.
+    //
+    // We assert at the variant family level (`TapLeafSubsetViolation` for
+    // recognised-but-off-subset tags; the v0.5 spec calls all five out as
+    // `TapLeafSubsetViolation { operator: <name>, leaf_index: Some(0) }`).
+    // Sanity: confirm decode produces *some* error so the fixture is not
+    // accidentally exercising the success path.
+    if cfg!(debug_assertions) {
+        use crate::{DecodeOptions, decode};
+        let _err = decode(&[s.as_str()], &DecodeOptions::new())
+            .expect_err("inner-leaf off-subset hostile bytecode must reject");
+    }
+    NegativeVector {
+        id: id.to_string(),
+        description: format!(
+            "Multi-leaf TapTree with `{operator_name}` leaf at index 0 — TapLeafSubsetViolation {{ operator: {operator_name:?}, leaf_index: Some(0) }}"
+        ),
+        input_strings: vec![s],
+        expected_error_variant: "TapLeafSubsetViolation".to_string(),
+        provenance: Some(format!(
+            "encoded `tr(@0/**)`, appended `[Tag::TapTree, Tag::{:?}, Tag::Placeholder, 0, Tag::PkK, Tag::Placeholder, 1]`; decode_tap_subtree routes to decode_tap_terminal which calls validate_tap_leaf_subset(leaf_index=Some(0)) and rejects `{operator_name}`",
+            offender_tag,
+        )),
+    }
+}
+
+fn build_negative_n3_taptree_inner_wpkh() -> NegativeVector {
+    build_negative_taptree_inner_off_subset(
+        "n_taptree_inner_wpkh",
+        crate::bytecode::Tag::Wpkh,
+        "wpkh",
+    )
+}
+
+fn build_negative_n4_taptree_inner_sh() -> NegativeVector {
+    build_negative_taptree_inner_off_subset("n_taptree_inner_sh", crate::bytecode::Tag::Sh, "sh")
+}
+
+fn build_negative_n5_taptree_inner_wsh() -> NegativeVector {
+    build_negative_taptree_inner_off_subset("n_taptree_inner_wsh", crate::bytecode::Tag::Wsh, "wsh")
+}
+
+fn build_negative_n6_taptree_inner_tr() -> NegativeVector {
+    build_negative_taptree_inner_off_subset("n_taptree_inner_tr", crate::bytecode::Tag::Tr, "tr")
+}
+
+fn build_negative_n7_taptree_inner_pkh() -> NegativeVector {
+    build_negative_taptree_inner_off_subset("n_taptree_inner_pkh", crate::bytecode::Tag::Pkh, "pkh")
+}
+
+fn build_negative_n8_taptree_unknown_tag_inner() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // N8: `[TapTree]` followed by an unallocated tag byte 0xC0 in leaf
+    // position. decode_tap_subtree's `Tag::from_byte` lookup returns None and
+    // the helper emits InvalidBytecode { kind: UnknownTag }.
+    let mut bytecode = taptree_multi_leaf_prefix();
+    bytecode.push(Tag::TapTree.as_byte());
+    bytecode.push(0xC0);
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
+    NegativeVector {
+        id: "n_taptree_unknown_tag_inner".to_string(),
+        description:
+            "TapTree framing with unallocated tag byte 0xC0 as inner — InvalidBytecode/UnknownTag"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "InvalidBytecode".to_string(),
+        provenance: Some(
+            "encoded `tr(@0/**)`, appended `[Tag::TapTree, 0xC0]`; decode_tap_subtree's Tag::from_byte(0xC0) returns None and emits InvalidBytecode { kind: UnknownTag(0xC0) }"
+                .to_string(),
+        ),
+    }
+}
+
+fn build_negative_n9_taptree_at_top_level() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // N9: `Tag::TapTree` (0x08) as top-level descriptor (no `Tr` outer
+    // framing). decode_descriptor's match arm for `Tag::TapTree` emits
+    // PolicyScopeViolation with the v0.5 dispatcher message.
+    //
+    // Bytecode: `[header(0x00)][SharedPath(0x33)][indicator(0x04)][TapTree(0x08)]`.
+    // We can't reuse `taptree_multi_leaf_prefix` because we need to drop the
+    // trailing `[Tag::Tr][Placeholder][0]` and replace with bare TapTree.
+    let bytecode: Vec<u8> = vec![
+        0x00, // bytecode header (no flags)
+        Tag::SharedPath.as_byte(),
+        0x04, // BIP 86 indicator
+        Tag::TapTree.as_byte(),
+    ];
     let s = encode_singlestring_around(&bytecode);
     debug_assert_decode_matches(&[s.as_str()], "PolicyScopeViolation");
     NegativeVector {
-        id: "n_taptree_multi_leaf".to_string(),
+        id: "n_taptree_at_top_level".to_string(),
         description:
-            "Bytecode embedding `Tag::TapTree=0x08` in leaf position → PolicyScopeViolation (multi-leaf reserved for v1+)"
+            "Tag::TapTree (0x08) as top-level descriptor — PolicyScopeViolation (TapTree only valid inside tr(KEY, TREE))"
                 .to_string(),
         input_strings: vec![s],
         expected_error_variant: "PolicyScopeViolation".to_string(),
         provenance: Some(
-            "encoded `tr(@0/**)` to bytecode, appended `Tag::TapTree=0x08`, wrapped in a SingleString chunk via `encoding::encode_string`; decode rejects multi-leaf TapTree as reserved for v1+"
+            "synthesised bytecode `[0x00, Tag::SharedPath, 0x04, Tag::TapTree]`; top-level dispatcher rejects 0x08 with the v0.5 message about TapTree appearing only inside tr(KEY, TREE)"
                 .to_string(),
         ),
     }

@@ -217,7 +217,7 @@ match desc.tap_tree() {
         } else {
             // multi-leaf — new 0x08 framing
             let mut cursor = 0;
-            encode_tap_subtree(&leaves, &mut cursor, 1, out, placeholder_map)?;
+            encode_tap_subtree(&leaves, &mut cursor, 0, out, placeholder_map)?;
             // post: cursor == leaves.len()
         }
     }

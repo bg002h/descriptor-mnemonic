@@ -316,11 +316,20 @@ pub enum Error {
     /// operator). The `operator` field names the rejected fragment so the
     /// caller can show the user a precise diagnostic. See
     /// `design/PHASE_v0_2_D_DECISIONS.md` D-2.
+    ///
+    /// `leaf_index` carries the DFS pre-order index of the offending leaf
+    /// when known (multi-leaf decode paths, multi-leaf encode paths, and
+    /// single-leaf paths populate it as `Some(idx)`; legacy paths that
+    /// don't yet plumb the index pass `None`).
     #[error("tap-leaf subset violation: operator '{operator}' not in Coldcard subset")]
+    #[non_exhaustive]
     TapLeafSubsetViolation {
         /// The miniscript operator name (e.g. `"sha256"`, `"thresh"`,
         /// `"or_b"`) that violated the subset.
         operator: String,
+        /// DFS pre-order index of the offending leaf within the tap tree,
+        /// when known. `None` for paths that do not plumb the index.
+        leaf_index: Option<usize>,
     },
 
     /// Fingerprints-block count mismatched the policy's placeholder count.
