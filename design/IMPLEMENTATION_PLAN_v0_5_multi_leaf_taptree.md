@@ -1322,7 +1322,7 @@ Replace the entire `Descriptor::Tr(tr) => { ... }` arm with:
                         // (Encoder relies on rust-miniscript TapTree::combine's
                         //  upstream depth-128 invariant; no defensive check needed.)
                         let mut cursor: usize = 0;
-                        encode_tap_subtree(&leaves, &mut cursor, 1, out, placeholder_map)?;
+                        encode_tap_subtree(&leaves, &mut cursor, 0, out, placeholder_map)?;
                         debug_assert_eq!(cursor, leaves.len(), "encode_tap_subtree must consume all leaves");
                     }
                 }
