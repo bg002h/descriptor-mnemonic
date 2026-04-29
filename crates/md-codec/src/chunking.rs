@@ -1486,7 +1486,7 @@ mod tests {
     }
 
     #[test]
-    fn reassemble_policy_id_mismatch() {
+    fn reassemble_chunk_set_id_mismatch() {
         let csid_a = ChunkSetId::new(0xAAAAA);
         let csid_b = ChunkSetId::new(0xBBBBB);
         let c0 = Chunk {

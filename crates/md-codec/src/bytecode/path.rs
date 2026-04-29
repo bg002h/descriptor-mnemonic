@@ -1,6 +1,6 @@
 //! v0 path dictionary: indicator ↔ derivation-path lookup.
 //!
-//! Maps the 13 well-known indicator bytes defined in BIP §"Path dictionary"
+//! Maps the 14 well-known indicator bytes defined in BIP §"Path dictionary"
 //! (lines 238–276) to their corresponding `DerivationPath` values and back.
 //! Special indicators `0xFE` (explicit path) and `0xFF` (no-path reserved)
 //! are *not* in this table; they are handled by the framing layer.
@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use bitcoin::bip32::DerivationPath;
 
-/// The 13 v0 dictionary entries, parsed once on first access.
+/// The 14 v0 dictionary entries, parsed once on first access.
 static DICT: LazyLock<[(u8, DerivationPath); 14]> = LazyLock::new(|| {
     [
         // Mainnet
