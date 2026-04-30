@@ -162,4 +162,31 @@ pub enum V11Error {
         /// The forbidden tag (debug-formatted name).
         tag: String,
     },
+
+    /// Chunk count out of range; v0.11 requires 1 ≤ count ≤ 64.
+    #[error("chunk count {count} out of range; v0.11 requires 1 ≤ count ≤ 64")]
+    ChunkCountOutOfRange {
+        /// Provided count.
+        count: u8,
+    },
+
+    /// Chunk index ≥ count; require index < count.
+    #[error("chunk index {index} ≥ count {count}")]
+    ChunkIndexOutOfRange {
+        /// Provided index.
+        index: u8,
+        /// Provided count.
+        count: u8,
+    },
+
+    /// Chunk-set-id exceeds 20-bit range.
+    #[error("chunk-set-id 0x{id:x} exceeds 20-bit range")]
+    ChunkSetIdOutOfRange {
+        /// Provided ID.
+        id: u32,
+    },
+
+    /// Chunk header missing chunked-flag (bit 3 must be 1).
+    #[error("chunk header chunked-flag missing; bit 3 must be 1 for chunk headers")]
+    ChunkHeaderChunkedFlagMissing,
 }
