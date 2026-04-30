@@ -80,6 +80,13 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                 write_node(w, c, key_index_width)?;
             }
         }
+        Body::Tr { key_index, tree } => {
+            w.write_bits(u64::from(*key_index), key_index_width as usize);
+            w.write_bits(u64::from(tree.is_some()), 1);
+            if let Some(t) = tree {
+                write_node(w, t, key_index_width)?;
+            }
+        }
         _ => unimplemented!("filled in later phases"),
     }
     Ok(())
@@ -135,6 +142,16 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, V11Erro
                 children.push(read_node(r, key_index_width)?);
             }
             Body::Variable { k, children }
+        }
+        Tag::Tr => {
+            let key_index = r.read_bits(key_index_width as usize)? as u8;
+            let has_tree = r.read_bits(1)? != 0;
+            let tree = if has_tree {
+                Some(Box::new(read_node(r, key_index_width)?))
+            } else {
+                None
+            };
+            Body::Tr { key_index, tree }
         }
         _ => unimplemented!("filled in later phases"),
     };
@@ -241,6 +258,21 @@ mod tests {
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 2).unwrap();
         assert_eq!(w.bit_len(), 36);
+    }
+
+    #[test]
+    fn tr_bip86_no_tree() {
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr { key_index: 0, tree: None },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        // Tr tag (5) + key-arg (0 bits, n=1) + has-tree=0 (1 bit) = 6 bits
+        assert_eq!(w.bit_len(), 6);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
     }
 
     #[test]
