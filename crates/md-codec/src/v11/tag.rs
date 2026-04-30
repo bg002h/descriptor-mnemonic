@@ -89,7 +89,7 @@ const EXTENSION_PREFIX: u8 = 0x1F;
 impl Tag {
     /// Returns `(primary_code, extension_code_opt)`. If `primary_code` is
     /// `0x1F`, the second value is the 5-bit extension code; else it is `None`.
-    pub fn codes(&self) -> (u8, Option<u8>) {
+    pub(crate) fn codes(&self) -> (u8, Option<u8>) {
         match self {
             Tag::Wpkh => (0x00, None),
             Tag::Tr => (0x01, None),

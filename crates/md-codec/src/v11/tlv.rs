@@ -185,10 +185,10 @@ fn read_use_site_overrides(
     key_index_width: u8,
     n: u8,
 ) -> Result<Vec<(u8, UseSitePath)>, V11Error> {
-    let start = r.bit_position_for_test();
+    let start = r.bit_position();
     let mut entries = Vec::new();
     let mut last_idx: Option<u8> = None;
-    while r.bit_position_for_test() - start < bit_len {
+    while r.bit_position() - start < bit_len {
         let idx = r.read_bits(key_index_width as usize)? as u8;
         if idx >= n {
             return Err(V11Error::PlaceholderIndexOutOfRange { idx, n });
@@ -214,10 +214,10 @@ fn read_fingerprints(
     key_index_width: u8,
     n: u8,
 ) -> Result<Vec<(u8, [u8; 4])>, V11Error> {
-    let start = r.bit_position_for_test();
+    let start = r.bit_position();
     let mut entries = Vec::new();
     let mut last_idx: Option<u8> = None;
-    while r.bit_position_for_test() - start < bit_len {
+    while r.bit_position() - start < bit_len {
         let idx = r.read_bits(key_index_width as usize)? as u8;
         if idx >= n {
             return Err(V11Error::PlaceholderIndexOutOfRange { idx, n });
@@ -270,7 +270,7 @@ mod tests {
         let mut r = BitReader::new(&bytes);
         let s2 = TlvSection::read(&mut r, 2, 3).unwrap();
         assert_eq!(s2, s);
-        assert_eq!(r.bit_position_for_test(), bit_len);
+        assert_eq!(r.bit_position(), bit_len);
     }
 
     #[test]

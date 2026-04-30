@@ -15,7 +15,7 @@ const CODEX32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 const HRP: &str = "md";
 
 /// Regular-BCH checksum length, in 5-bit symbols.
-const REGULAR_CHECKSUM_SYMBOLS: usize = 13;
+pub(crate) const REGULAR_CHECKSUM_SYMBOLS: usize = 13;
 
 /// Pack `bit_count` bits from `payload_bytes` into 5-bit symbols. Pads the
 /// final symbol with zeros if `bit_count` is not a multiple of 5. Returns

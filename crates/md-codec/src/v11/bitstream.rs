@@ -139,9 +139,9 @@ impl<'a> BitReader<'a> {
         Ok(result)
     }
 
-    /// Returns the current bit position within the stream. Test-only helper
-    /// used by TLV section parsing.
-    pub fn bit_position_for_test(&self) -> usize {
+    /// Returns the current bit position within the stream. Used by the TLV
+    /// decoder to measure consumed bits within a length-delimited region.
+    pub(crate) fn bit_position(&self) -> usize {
         self.bit_position
     }
 
