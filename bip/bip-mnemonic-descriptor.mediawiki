@@ -546,7 +546,7 @@ For operators with a fixed number of children, child sub-trees follow the operat
 In MD v0, every key position in the bytecode (i.e., a child slot of <code>pk_k</code>, <code>pk_h</code>, <code>pkh</code>, <code>wpkh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>tr</code>) MUST be a placeholder reference of the form:
 
 <pre>
-  0x32 <index>
+  0x33 <index>
 </pre>
 
 where <code>&lt;index&gt;</code> is a single byte (0–255) identifying which entry in the BIP 388 key information vector this position uses. Inline keys (raw xpubs, raw pubkeys) are NOT permitted in v0 bytecode. This guarantees that the Template Card encodes the wallet structure without containing any key material.
@@ -576,7 +576,7 @@ When the block is absent (the default in v0), recovery tools match seeds to plac
 The bytecode for the policy <code>wsh(multi(2, @0/**, @1/**))</code> with fingerprints block <code>[0xdeadbeef, 0xcafebabe]</code> and the BIP 84 mainnet shared path (<code>m/84'/0'/0'</code>, named indicator <code>0x03</code>) is:
 
 <pre>
-04 33 03 35 02 deadbeef cafebabe 05 19 02 02 32 00 32 01
+04 34 03 35 02 deadbeef cafebabe 05 08 02 02 33 00 33 01
 </pre>
 
 Annotated:
@@ -586,7 +586,7 @@ Annotated:
 |-
 | <code>04</code> || Header || v0; fingerprints flag set (bit 2 = 1)
 |-
-| <code>33 03</code> || Path declaration || <code>Tag::SharedPath</code> (<code>0x33</code>) + named indicator <code>0x03</code> (= <code>m/84'/0'/0'</code>)
+| <code>34 03</code> || Path declaration || <code>Tag::SharedPath</code> (<code>0x34</code>) + named indicator <code>0x03</code> (= <code>m/84'/0'/0'</code>)
 |-
 | <code>35 02</code> || Fingerprints block header || <code>Tag::Fingerprints</code> (<code>0x35</code>) + count <code>2</code>
 |-
@@ -594,13 +594,13 @@ Annotated:
 |-
 | <code>cafebabe</code> || fps[1] || Fingerprint for placeholder <code>@1</code>
 |-
-| <code>05 19</code> || Operator path || <code>Tag::Wsh</code> (<code>0x05</code>) + <code>Tag::Multi</code> (<code>0x19</code>)
+| <code>05 08</code> || Operator path || <code>Tag::Wsh</code> (<code>0x05</code>) + <code>Tag::Multi</code> (<code>0x08</code>)
 |-
 | <code>02 02</code> || Multi parameters || k = 2; n = 2
 |-
-| <code>32 00</code> || @0 || <code>Tag::Placeholder</code> (<code>0x32</code>) + index <code>0</code>
+| <code>33 00</code> || @0 || <code>Tag::Placeholder</code> (<code>0x33</code>) + index <code>0</code>
 |-
-| <code>32 01</code> || @1 || <code>Tag::Placeholder</code> (<code>0x32</code>) + index <code>1</code>
+| <code>33 01</code> || @1 || <code>Tag::Placeholder</code> (<code>0x33</code>) + index <code>1</code>
 |}
 
 The same policy without a fingerprints block (header byte <code>0x00</code>) omits the <code>35 02 deadbeef cafebabe</code> bytes; the surrounding bytes are identical.
