@@ -67,3 +67,42 @@ pub fn encode_payload(d: &Descriptor) -> Result<(Vec<u8>, usize), V11Error> {
     let total_bits = w.bit_len();
     Ok((w.into_bytes(), total_bits))
 }
+
+/// Render a codex32 string with optional N-char hyphen grouping for
+/// transcription aid. Per spec §10.2, every 4-5 chars optionally separated by
+/// `-` for human readability. `group_size = 0` returns the input unchanged
+/// (no grouping).
+pub fn render_codex32_grouped(s: &str, group_size: usize) -> String {
+    if group_size == 0 {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && i % group_size == 0 {
+            out.push('-');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+
+    #[test]
+    fn render_groups_at_4() {
+        assert_eq!(
+            render_codex32_grouped("md1qpz9r4cy7", 4),
+            "md1q-pz9r-4cy7"
+        );
+    }
+
+    #[test]
+    fn render_zero_group_size_no_grouping() {
+        assert_eq!(
+            render_codex32_grouped("md1qpz9r4cy7", 0),
+            "md1qpz9r4cy7"
+        );
+    }
+}
