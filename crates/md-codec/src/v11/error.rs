@@ -128,4 +128,38 @@ pub enum V11Error {
         /// Tag of the empty entry.
         tag: u8,
     },
+
+    /// Placeholder @i was not referenced anywhere in the tree (BIP 388 well-formedness).
+    #[error("placeholder @{idx} not referenced in tree; n={n}")]
+    PlaceholderNotReferenced {
+        /// The unreferenced placeholder index.
+        idx: u8,
+        /// Key count.
+        n: u8,
+    },
+
+    /// First-occurrence ordering violated (BIP 388 well-formedness).
+    #[error("placeholder first-occurrence ordering violated: expected first={expected_first}, got first={got_first}")]
+    PlaceholderFirstOccurrenceOutOfOrder {
+        /// Expected placeholder index in canonical first-occurrence position.
+        expected_first: u8,
+        /// Actual placeholder index encountered first.
+        got_first: u8,
+    },
+
+    /// All multipaths in a template must share the same alt-count.
+    #[error("multipath alt-count mismatch: expected {expected}, got {got}")]
+    MultipathAltCountMismatch {
+        /// Expected alt-count.
+        expected: usize,
+        /// Mismatched alt-count.
+        got: usize,
+    },
+
+    /// Tap-script-tree leaf has a tag that is forbidden per spec §6.3.1.
+    #[error("forbidden tap-script-tree leaf tag: {tag}")]
+    ForbiddenTapTreeLeaf {
+        /// The forbidden tag (debug-formatted name).
+        tag: String,
+    },
 }
