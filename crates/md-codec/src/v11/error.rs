@@ -20,4 +20,15 @@ pub enum V11Error {
         /// Number of bits actually available in the stream.
         available: usize,
     },
+
+    /// Header bit 3 (reserved) was set; v0.11 requires bit 3 = 0.
+    #[error("reserved header bit (bit 3) set; v0.11 requires bit 3 = 0")]
+    ReservedHeaderBitSet,
+
+    /// Wire-format version field doesn't match a supported version.
+    #[error("unsupported wire-format version: got {got}")]
+    UnsupportedVersion {
+        /// Version value parsed from bits 0..2.
+        got: u8,
+    },
 }

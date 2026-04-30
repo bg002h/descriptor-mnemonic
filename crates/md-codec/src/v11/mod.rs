@@ -8,3 +8,4 @@
 pub mod error;
 pub mod bitstream;
 pub mod varint;
+pub mod header;
