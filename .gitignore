@@ -1,6 +1,9 @@
 # Claude / agent metadata
 .claude/
 
+# Git worktrees (project-local)
+.worktrees/
+
 # OS / editor cruft
 .DS_Store
 *.swp
