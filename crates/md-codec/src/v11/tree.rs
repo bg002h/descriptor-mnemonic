@@ -100,7 +100,7 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                 w.write_bits(u64::from(*byte), 8);
             }
         }
-        _ => unimplemented!("filled in later phases"),
+        Body::Empty => {}
     }
     Ok(())
 }
@@ -198,7 +198,7 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, V11Erro
             }
             Body::Hash160Body(h)
         }
-        _ => unimplemented!("filled in later phases"),
+        Tag::False | Tag::True => Body::Empty,
     };
     Ok(Node { tag, body })
 }
@@ -425,6 +425,27 @@ mod tests {
     fn ripemd160_extension_round_trip() {
         let h = [0x42; 20];
         let n = Node { tag: Tag::Ripemd160, body: Body::Hash160Body(h) };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn false_round_trip() {
+        let n = Node { tag: Tag::False, body: Body::Empty };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        assert_eq!(w.bit_len(), 10);  // extension tag = 10 bits, no body
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn true_round_trip() {
+        let n = Node { tag: Tag::True, body: Body::Empty };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
         let bytes = w.into_bytes();
