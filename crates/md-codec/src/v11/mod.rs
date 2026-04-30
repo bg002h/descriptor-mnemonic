@@ -6,3 +6,4 @@
 //! existing v0.x byte-aligned codec. v0.11 is bit-aligned per spec D7.
 
 pub mod error;
+pub mod bitstream;
