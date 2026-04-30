@@ -84,12 +84,24 @@ pub struct BitReader<'a> {
     bytes: &'a [u8],
     /// Total bits consumed so far (counted from the MSB of `bytes[0]`).
     bit_position: usize,
+    /// Total bits available; defaults to `bytes.len() * 8`.
+    bit_limit: usize,
 }
 
 impl<'a> BitReader<'a> {
-    /// Create a `BitReader` over `bytes`, positioned at the start.
+    /// Reader that consumes exactly `bytes.len() * 8` bits (used by tests
+    /// where the bit count is byte-aligned).
     pub fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, bit_position: 0 }
+        Self { bytes, bit_position: 0, bit_limit: bytes.len() * 8 }
+    }
+
+    /// Reader that consumes at most `bit_limit` bits — required when the
+    /// payload's exact bit length is shorter than the byte buffer (zero-padding).
+    /// Per spec §3.7, the TLV section ends when total bits are exhausted; the
+    /// decoder must know `bit_limit` to avoid reading padding bits as TLV data.
+    pub fn with_bit_limit(bytes: &'a [u8], bit_limit: usize) -> Self {
+        debug_assert!(bit_limit <= bytes.len() * 8);
+        Self { bytes, bit_position: 0, bit_limit }
     }
 
     /// Read `count` bits MSB-first; returns the value LSB-aligned.
@@ -116,6 +128,7 @@ impl<'a> BitReader<'a> {
             // Extract `chunk` bits starting at bit_in_byte from the MSB side.
             let byte = self.bytes[byte_idx];
             let shift = (free_in_byte - chunk) as u32;
+            // Note: `1u8 << 8` overflows; guard explicitly.
             let mask: u8 = if chunk == 8 { 0xff } else { (1u8 << chunk) - 1 };
             let bits = (byte >> shift) & mask;
 
@@ -132,9 +145,9 @@ impl<'a> BitReader<'a> {
         self.bit_position
     }
 
-    /// Bits remaining unread.
+    /// Bits remaining unread (within the configured bit limit).
     pub fn remaining_bits(&self) -> usize {
-        self.bytes.len() * 8 - self.bit_position
+        self.bit_limit.saturating_sub(self.bit_position)
     }
 
     /// Whether the stream is exhausted.
@@ -206,5 +219,19 @@ mod tests {
         let mut r = BitReader::new(&bytes);
         assert_eq!(r.read_bits(8).unwrap(), 0xab);
         assert_eq!(r.read_bits(8).unwrap(), 0xcd);
+    }
+
+    #[test]
+    fn with_bit_limit_excludes_padding() {
+        // 5-bit payload + 3-bit zero padding = 1 byte
+        let mut w = BitWriter::new();
+        w.write_bits(0b10110, 5);
+        let bytes = w.into_bytes();  // [0b1011_0000]; padding is the trailing 000
+
+        let mut r = BitReader::with_bit_limit(&bytes, 5);
+        assert_eq!(r.read_bits(5).unwrap(), 0b10110);
+        assert!(r.is_exhausted());
+        // Attempting to read further (into the padding) errors.
+        assert!(r.read_bits(1).is_err());
     }
 }
