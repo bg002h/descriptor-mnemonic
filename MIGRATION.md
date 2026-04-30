@@ -2,6 +2,129 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.9.x → v0.10.0
+
+v0.10.0 is a **wire-format-breaking release** at the BIP 388 wallet-policy
+template level: header bit 3 was reserved-must-be-zero in v0.x ≤ 0.9; v0.10
+reclaims it as the `OriginPaths` flag. v0.x ≤ 0.9 SharedPath-only encodings
+are byte-identical under v0.10 (bit 3 stays `0`); new v0.10 OriginPaths-using
+encodings (header byte `0x08` or `0x0C`) need v0.10+ decoders — pre-v0.10
+decoders cleanly reject via `Error::ReservedBitsSet`.
+
+### Why a wire-format break?
+
+v0.x ≤ 0.9 silently flattened policies with divergent per-`@N` origin paths
+to a single shared path, losing information. `decode(encode(p))` could differ
+from `p` for any policy where cosigners derived xpubs from different paths.
+v0.10 fixes this with the new `Tag::OriginPaths = 0x36` block. See
+[`CHANGELOG.md`](CHANGELOG.md#0100--2026-04-29) for the full framing.
+
+### What renamed/added/changed
+
+Public-API break surface is small — two function signatures and one
+additional error variant family:
+
+| Before (v0.9.x) | After (v0.10.0) | Notes |
+| --- | --- | --- |
+| `BytecodeHeader::new_v0(fingerprints: bool)` | `BytecodeHeader::new_v0(fingerprints: bool, origin_paths: bool)` | Second arg defaults to `false` for typical pre-v0.10 use cases (no per-`@N` paths). |
+| `encode_path(&DerivationPath) -> Vec<u8>` | `encode_path(&DerivationPath) -> Result<Vec<u8>, Error>` | Surfaces `Error::PathComponentCountExceeded` when path > 10 components. Symmetric change on `encode_declaration`. |
+| (no field) | `WalletPolicy::decoded_origin_paths: Option<Vec<DerivationPath>>` | Round-trip stability when `from_bytecode` decoded `Tag::OriginPaths`. Additive. |
+| (no field) | `EncodeOptions::origin_paths: Option<Vec<DerivationPath>>` | Tier 0 override for deterministic test-vector generation. Additive. |
+| (no method) | `EncodeOptions::with_origin_paths(...)` | Builder for `origin_paths`. Additive. |
+| (no method) | `PolicyId::fingerprint() -> [u8; 4]` | Short-identifier API; top 32 bits. 8-char hex display alternative to the 12-word phrase. Additive. |
+
+New error variants (`Error` is `#[non_exhaustive]`; additive):
+
+- `Error::OriginPathsCountMismatch { expected: usize, got: usize }` — policy-layer semantic error.
+- `Error::PathComponentCountExceeded { got: usize, max: usize }` — applies to both `Tag::SharedPath` and `Tag::OriginPaths` explicit-form path-decls when component count > 10.
+- `BytecodeErrorKind::OriginPathsCountTooLarge { count: u8, max: u8 }` — bytecode-layer structural error.
+
+### Mechanical sed for consumer code
+
+```bash
+# Add false default for the new origin_paths arg in BytecodeHeader::new_v0:
+find . -type f -name '*.rs' -exec sed -i \
+    -e 's/BytecodeHeader::new_v0(\(true\|false\))/BytecodeHeader::new_v0(\1, false)/g' \
+    {} +
+```
+
+The literal-bool form covers most call sites (test code typically passes
+`true` or `false` directly). For variable-bool sites, inspect each:
+
+```bash
+# Find variable-bool BytecodeHeader::new_v0 call sites for hand-review:
+grep -rn 'BytecodeHeader::new_v0(' --include='*.rs'
+```
+
+### Hand-rename items — two API breaks requiring per-call-site review
+
+1. **`BytecodeHeader::new_v0(bool)` → `new_v0(bool, bool)`** — signature
+   gains an `origin_paths: bool` argument (parallel to the existing
+   `fingerprints: bool`). The sed above covers literal-bool call sites; for
+   variable-bool sites, inspect each and pass `false` for the
+   `origin_paths` argument unless the caller is explicitly emitting an
+   OriginPaths-using encoding.
+
+2. **`encode_path(&DerivationPath) -> Vec<u8>` becomes
+   `encode_path(&DerivationPath) -> Result<Vec<u8>, Error>`.** The
+   function may now surface `Error::PathComponentCountExceeded` when the
+   path declares more than `MAX_PATH_COMPONENTS = 10` components.
+   Consumer call-site updates:
+
+   - Append `?` to propagate the error if the caller is itself fallible.
+   - `.expect("validated upstream")` where the caller has already
+     pre-validated component count (e.g., test code with literal short
+     paths). Document the upstream invariant in the `expect` message.
+
+   `encode_declaration(...)` changes symmetrically.
+
+### Wire format
+
+- Header bit 3 reclaimed as the OriginPaths flag (`0x08`).
+- `RESERVED_MASK` narrows from `0x0B` (bits 3, 1, 0) to `0x03`
+  (bits 1, 0).
+- Valid v0.10 header bytes: `0x00`, `0x04`, `0x08`, `0x0C`.
+- v0.x ≤ 0.9 SharedPath-only encodings are byte-identical under v0.10
+  (regenerate with `md-codec 0.10` and you get identical bytes; the
+  `GENERATOR_FAMILY` family-token roll alone doesn't churn these
+  vectors).
+- New OriginPaths encodings (header bit 3 set) need v0.10+ decoders.
+  Pre-v0.10 decoders reject with `Error::ReservedBitsSet { byte: 0x08
+  | 0x0C, mask: 0x0B }` — intended forward-compat.
+- Test-vector corpora (`v0.1.json` and `v0.2.json`) regenerate;
+  family-token rolls `"md-codec 0.9"` → `"md-codec 0.10"`. New positive
+  vector `o1_sortedmulti_2of3_divergent_paths` (and optional `o2`/`o3`)
+  exercises the OriginPaths block. New negative vectors cover each new
+  error variant.
+
+### Test rewrite — multi-byte LEB128 in the child-index dimension
+
+The pre-existing `decode_path_round_trip_multi_byte_component_count`
+test in `crates/md-codec/src/bytecode/path.rs` exercised a 128-component
+path to validate multi-byte LEB128 round-trip in the count field. Under
+v0.10's `MAX_PATH_COMPONENTS = 10` cap, this test no longer compiles
+(the encoder rejects the 128-component path before the decoder ever
+sees it).
+
+The defensive value (multi-byte LEB128 round-trip exercise) survives by
+shifting the test from the **component-count dimension** to the
+**child-index dimension** (e.g., `m/16384`, where `16384 = 2 × 8192`
+requires a 2-byte LEB128 in the per-component bytes). Consumer code
+that copied this test pattern should rewrite analogously.
+
+### What consumer code does NOT need to change
+
+- BIP 388 wallet policies whose placeholders all share a single origin
+  path (the typical pre-v0.10 case): zero source changes beyond the
+  `BytecodeHeader::new_v0` signature change. The encoder auto-detects
+  path agreement and emits `Tag::SharedPath` as before; bytes are
+  byte-identical.
+- Decode of v0.x ≤ 0.9 strings: zero source changes; v0.10 decoders
+  accept all v0.x ≤ 0.9 SharedPath-only encodings without behavior
+  change.
+- Chunk-set identifier surface, `PolicyId` / `WalletInstanceId` types,
+  fingerprints block: unchanged.
+
 ## v0.8.x → v0.9.0
 
 v0.9.0 is a **chunk-header-naming-cleanup release**. v0.8.0's mechanical
