@@ -1153,7 +1153,7 @@
     },
     {
       "id": "o3_wsh_sortedmulti_2of4_divergent_paths",
-      "description": "O3 — wsh(sortedmulti(2,...)) 2-of-4 exercising count=4 boundary with multiple distinct dictionary indicators (0x05, 0x05, 0x04, explicit m/87'/0'/0')",
+      "description": "O3 — wsh(sortedmulti(2,...)) 2-of-4 exercising count=4 boundary with four distinct dictionary-form path indicators (0x05, 0x05, 0x06, 0x07)",
       "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**,@3/**))",
       "expected_bytecode_hex": "08360405050607050902043300330133023303",
       "expected_chunks": [

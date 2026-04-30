@@ -711,8 +711,9 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   spec-pinned at maximum strength. Phase 4 conformance vectors will
   also pin Example B's full byte sequence as a fixture, providing a
   second line of defense.
-- **Status:** open
-- **Tier:** v0.10-nice-to-have
+- **Status:** resolved by md-codec-v0.10.0 phase 4 (commit 2e61d38)
+- **Tier:** v0.10-nice-to-have (closed)
+- **Resolution:** Phase 4 added the `o2_vector_origin_paths_block_matches_spec_example_b` test in `crates/md-codec/src/vectors.rs:2693-2707`, which asserts the o2 corpus vector's `expected_bytecode_hex` contains the full 11-byte SPEC §2 Example B sequence `36030505fe04610101c901`. This is the "second line of defense" coverage the original entry pre-acknowledged. The `path.rs:1199` round-trip test itself remains prefix-pinned (still relies on the `assert_eq!(recovered, paths)` round-trip for the explicit-path tail), but the spec byte sequence is now durably pinned at the corpus layer; an encoder regression on the explicit-path tail would surface as a vector hex mismatch + corpus SHA delta.
 
 ### `v010-p3-tier-2-kiv-walk-deferred` — Tier 2 KIV walk in `placeholder_paths_in_index_order` is stubbed in v0.10.0
 

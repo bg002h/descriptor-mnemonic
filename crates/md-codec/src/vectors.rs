@@ -1146,8 +1146,9 @@ fn build_v0_9_testnet_p2sh_p2wsh_vector() -> Vector {
 ///   Header byte 0x0C (bits 2+3 set). Mirrors SPEC §2 Example B; the inline
 ///   test `o2_vector_origin_paths_block_matches_spec_example_b` pins the
 ///   OriginPaths block bytes to the spec.
-/// - o3: 2-of-4 sortedmulti exercising count=4 boundary with multiple distinct
-///   dictionary indicators (`0x05`, `0x05`, `0x04`, explicit `m/87'/0'/0'`).
+/// - o3: 2-of-4 sortedmulti exercising count=4 boundary with four distinct
+///   dictionary-form path indicators (`0x05`, `0x05`, `0x06`, `0x07`; paths
+///   `m/48'/0'/0'/2'`, `m/48'/0'/0'/2'`, `m/48'/0'/0'/1'`, `m/87'/0'/0'`).
 fn build_v0_10_origin_paths_vectors() -> Vec<Vector> {
     use bitcoin::bip32::DerivationPath;
     use std::str::FromStr;
@@ -1177,7 +1178,7 @@ fn build_v0_10_origin_paths_vectors() -> Vec<Vector> {
 
     let o3 = build_origin_paths_vector(
         "o3_wsh_sortedmulti_2of4_divergent_paths",
-        "O3 — wsh(sortedmulti(2,...)) 2-of-4 exercising count=4 boundary with multiple distinct dictionary indicators (0x05, 0x05, 0x04, explicit m/87'/0'/0')",
+        "O3 — wsh(sortedmulti(2,...)) 2-of-4 exercising count=4 boundary with four distinct dictionary-form path indicators (0x05, 0x05, 0x06, 0x07)",
         "wsh(sortedmulti(2,@0/**,@1/**,@2/**,@3/**))",
         vec![
             mainnet.clone(),
