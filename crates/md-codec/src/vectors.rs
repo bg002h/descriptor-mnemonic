@@ -852,7 +852,13 @@ fn build_negative_vectors_v1() -> Vec<NegativeVector> {
 
 fn build_positive_vectors_v2() -> Vec<Vector> {
     let mut out = Vec::with_capacity(
-        CORPUS_FIXTURES.len() + TAPROOT_FIXTURES.len() + V0_4_DEFAULT_FIXTURES.len() + 1 + 3 + 1,
+        CORPUS_FIXTURES.len()
+            + TAPROOT_FIXTURES.len()
+            + V0_4_DEFAULT_FIXTURES.len()
+            + 1
+            + 3
+            + 1
+            + 3,
     );
     for &(id, description, policy_str) in CORPUS_FIXTURES {
         out.push(build_default_positive_vector(id, description, policy_str));
@@ -869,6 +875,10 @@ fn build_positive_vectors_v2() -> Vec<Vector> {
     out.extend(build_v0_4_fingerprints_vectors());
     // v0.9 addition — testnet 0x16 path indicator.
     out.push(build_v0_9_testnet_p2sh_p2wsh_vector());
+    // v0.10 additions — OriginPaths block (header bit 3 + Tag::OriginPaths=0x36).
+    // Adds 3 vectors: o1 (no fps), o2 (with 3 fps; mirrors SPEC §2 Example B),
+    // o3 (count=4 boundary).
+    out.extend(build_v0_10_origin_paths_vectors());
     out
 }
 
@@ -907,6 +917,13 @@ fn build_negative_vectors_v2() -> Vec<NegativeVector> {
     out.push(build_negative_n_fingerprints_missing_tag());
     // v0.4 additions — Sh restriction matrix + layering invariant + top-level legacy.
     out.extend(build_negative_v0_4_sh_matrix());
+    // v0.10 additions — OriginPaths + path-component-cap negatives.
+    out.push(build_negative_n_orig_paths_count_zero());
+    out.push(build_negative_n_orig_paths_count_too_large());
+    out.push(build_negative_n_orig_paths_truncated());
+    out.push(build_negative_n_orig_paths_count_mismatch());
+    out.push(build_negative_n_path_components_too_long());
+    out.push(build_negative_n_conflicting_path_declarations_bit_set_tag_shared());
     out
 }
 
@@ -1108,6 +1125,124 @@ fn build_v0_9_testnet_p2sh_p2wsh_vector() -> Vector {
         expected_policy_id_words,
         expected_fingerprints_hex: None,
         encode_options_fingerprints: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v0.10 — OriginPaths positive vectors (o1, o2, o3)
+//
+// Per design/SPEC_v0_10_per_at_N_paths.md §2 examples B and C, exercising
+// header bit 3 (origin_paths) + Tag::OriginPaths=0x36 path declaration.
+// Encoded via EncodeOptions::with_origin_paths (Tier 0 explicit override).
+// ---------------------------------------------------------------------------
+
+/// Build the three v0.10 OriginPaths positive vectors (o1, o2, o3).
+///
+/// - o1: 2-of-3 sortedmulti with two cosigners on `m/48'/0'/0'/2'` (dictionary
+///   indicator 0x05) and one on `m/48'/0'/0'/100'` (explicit 7-byte path).
+///   No fingerprints. Header byte 0x08 (bit 3 set, bit 2 clear). Mirrors
+///   SPEC §2 Example C.
+/// - o2: same template + paths as o1, but with all 3 fingerprints present.
+///   Header byte 0x0C (bits 2+3 set). Mirrors SPEC §2 Example B; the inline
+///   test `o2_vector_origin_paths_block_matches_spec_example_b` pins the
+///   OriginPaths block bytes to the spec.
+/// - o3: 2-of-4 sortedmulti exercising count=4 boundary with four distinct
+///   dictionary-form path indicators (`0x05`, `0x05`, `0x06`, `0x07`; paths
+///   `m/48'/0'/0'/2'`, `m/48'/0'/0'/2'`, `m/48'/0'/0'/1'`, `m/87'/0'/0'`).
+fn build_v0_10_origin_paths_vectors() -> Vec<Vector> {
+    use bitcoin::bip32::DerivationPath;
+    use std::str::FromStr;
+
+    let mainnet = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
+    let custom = DerivationPath::from_str("m/48'/0'/0'/100'").unwrap();
+
+    let o1 = build_origin_paths_vector(
+        "o1_sortedmulti_2of3_divergent_paths",
+        "O1 — wsh(sortedmulti(2,...)) 2-of-3 with two cosigners on m/48'/0'/0'/2' and one on m/48'/0'/0'/100' (divergent path triggers Tag::OriginPaths; mirrors SPEC §2 Example C)",
+        "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
+        vec![mainnet.clone(), mainnet.clone(), custom.clone()],
+        None,
+    );
+
+    let o2 = build_origin_paths_vector(
+        "o2_sortedmulti_2of3_divergent_paths_with_fingerprints",
+        "O2 — same template as O1, with all 3 master-key fingerprints (header 0x0C exercises bits 2+3; mirrors SPEC §2 Example B)",
+        "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
+        vec![mainnet.clone(), mainnet.clone(), custom],
+        Some(vec![
+            [0xde, 0xad, 0xbe, 0xef],
+            [0xca, 0xfe, 0xba, 0xbe],
+            [0xd0, 0x0d, 0xf0, 0x0d],
+        ]),
+    );
+
+    let o3 = build_origin_paths_vector(
+        "o3_wsh_sortedmulti_2of4_divergent_paths",
+        "O3 — wsh(sortedmulti(2,...)) 2-of-4 exercising count=4 boundary with four distinct dictionary-form path indicators (0x05, 0x05, 0x06, 0x07)",
+        "wsh(sortedmulti(2,@0/**,@1/**,@2/**,@3/**))",
+        vec![
+            mainnet.clone(),
+            mainnet,
+            DerivationPath::from_str("m/48'/0'/0'/1'").unwrap(),
+            DerivationPath::from_str("m/87'/0'/0'").unwrap(),
+        ],
+        None,
+    );
+
+    vec![o1, o2, o3]
+}
+
+/// Helper for v0.10 OriginPaths positive vectors. Builds via `to_bytecode`
+/// with `EncodeOptions::with_origin_paths(...)` (Tier 0 override) and
+/// optionally `with_fingerprints(...)`.
+fn build_origin_paths_vector(
+    id: &str,
+    description: &str,
+    policy_str: &str,
+    paths: Vec<bitcoin::bip32::DerivationPath>,
+    fps: Option<Vec<[u8; 4]>>,
+) -> Vector {
+    let policy: WalletPolicy = policy_str.parse().unwrap_or_else(|e| {
+        panic!("v0.10 origin-paths vector builder: failed to parse policy {id:?}: {e}")
+    });
+
+    let mut opts = EncodeOptions::default().with_origin_paths(paths);
+    let fingerprints_for_opts: Option<Vec<Fingerprint>> = fps
+        .as_ref()
+        .map(|raws| raws.iter().copied().map(Fingerprint::from).collect());
+    if let Some(fingerprints) = fingerprints_for_opts.clone() {
+        opts = opts.with_fingerprints(fingerprints);
+    }
+
+    let bytecode = policy.to_bytecode(&opts).unwrap_or_else(|e| {
+        panic!("v0.10 origin-paths vector builder: to_bytecode failed for {id:?}: {e}")
+    });
+    let expected_bytecode_hex = bytes_to_lower_hex(&bytecode);
+
+    let backup = encode(&policy, &opts).unwrap_or_else(|e| {
+        panic!("v0.10 origin-paths vector builder: encode failed for {id:?}: {e}")
+    });
+    let expected_chunks: Vec<String> = backup.chunks.iter().map(|c| c.raw.clone()).collect();
+    let expected_policy_id_words: Vec<String> = backup
+        .policy_id_words
+        .to_string()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+
+    let expected_fingerprints_hex: Option<Vec<String>> = fps
+        .as_ref()
+        .map(|raws| raws.iter().map(bytes_to_lower_hex_4).collect());
+
+    Vector {
+        id: id.to_string(),
+        description: description.to_string(),
+        policy: policy_str.to_string(),
+        expected_bytecode_hex,
+        expected_chunks,
+        expected_policy_id_words,
+        expected_fingerprints_hex,
+        encode_options_fingerprints: fps,
     }
 }
 
@@ -2003,6 +2138,178 @@ fn build_negative_n_fingerprints_missing_tag() -> NegativeVector {
 }
 
 // ---------------------------------------------------------------------------
+// v0.10 — OriginPaths negative builders
+//
+// Cover all decode-side rejection paths newly introduced by the v0.10
+// OriginPaths block: count=0, count=33 (over MAX_ORIGIN_PATHS), truncation
+// mid-list, count vs. tree-placeholder mismatch, MAX_PATH_COMPONENTS exceeded,
+// and the conflicting-path-declarations case (header bit 3 set with
+// Tag::SharedPath in the path-decl slot).
+// ---------------------------------------------------------------------------
+
+/// `n_orig_paths_count_zero`: header 0x08, Tag::OriginPaths, count=0 →
+/// `BytecodeErrorKind::OriginPathsCountTooLarge { count: 0, max: 32 }`.
+fn build_negative_n_orig_paths_count_zero() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // [header(0x08) | Tag::OriginPaths | 0x00 (count=0)] — decode_origin_paths
+    // reads count and rejects on count == 0 before any path-decl is parsed.
+    let bytecode: Vec<u8> = vec![0x08, Tag::OriginPaths.as_byte(), 0x00];
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
+    NegativeVector {
+        id: "n_orig_paths_count_zero".to_string(),
+        description:
+            "OriginPaths block declares count=0 → InvalidBytecode { kind: OriginPathsCountTooLarge { count: 0, max: 32 } } (count must be 1..=32)"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "InvalidBytecode".to_string(),
+        provenance: Some(
+            "synthesised bytecode `[0x08, Tag::OriginPaths, 0x00]`: header bit 3 set + OriginPaths tag + count=0; decode_origin_paths rejects count==0 with InvalidBytecode { kind: OriginPathsCountTooLarge { count: 0, max: 32 } }"
+                .to_string(),
+        ),
+    }
+}
+
+/// `n_orig_paths_count_too_large`: header 0x08, Tag::OriginPaths, count=33 →
+/// `BytecodeErrorKind::OriginPathsCountTooLarge { count: 33, max: 32 }`.
+fn build_negative_n_orig_paths_count_too_large() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // [header(0x08) | Tag::OriginPaths | 33 (count > MAX_ORIGIN_PATHS)] —
+    // decode_origin_paths rejects on the count byte alone, before any
+    // path-decl bytes are parsed (so the trailing buffer can be empty).
+    let bytecode: Vec<u8> = vec![0x08, Tag::OriginPaths.as_byte(), 33];
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
+    NegativeVector {
+        id: "n_orig_paths_count_too_large".to_string(),
+        description:
+            "OriginPaths block declares count=33 (> MAX_ORIGIN_PATHS=32) → InvalidBytecode { kind: OriginPathsCountTooLarge { count: 33, max: 32 } }"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "InvalidBytecode".to_string(),
+        provenance: Some(
+            "synthesised bytecode `[0x08, Tag::OriginPaths, 33]`: header bit 3 set + OriginPaths tag + count=33 (one over MAX_ORIGIN_PATHS); decode_origin_paths rejects with InvalidBytecode { kind: OriginPathsCountTooLarge { count: 33, max: 32 } }"
+                .to_string(),
+        ),
+    }
+}
+
+/// `n_orig_paths_truncated`: header 0x08, Tag::OriginPaths, count=3, but only
+/// 2 path-decls follow → `BytecodeErrorKind::UnexpectedEnd` (cursor exhausted
+/// while reading the third path-decl).
+fn build_negative_n_orig_paths_truncated() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // [header(0x08) | OriginPaths | 0x03 | 0x05 | 0x05]: count=3 but only 2
+    // dictionary-indicator path-decls. decode_path on the third call hits
+    // UnexpectedEnd reading the indicator byte.
+    let bytecode: Vec<u8> = vec![0x08, Tag::OriginPaths.as_byte(), 0x03, 0x05, 0x05];
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
+    NegativeVector {
+        id: "n_orig_paths_truncated".to_string(),
+        description:
+            "OriginPaths declares count=3 but only 2 path-decls follow → InvalidBytecode { kind: UnexpectedEnd } (cursor exhausted reading the third path-decl)"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "InvalidBytecode".to_string(),
+        provenance: Some(
+            "synthesised bytecode `[0x08, Tag::OriginPaths, 0x03, 0x05, 0x05]`: header bit 3 set, OriginPaths tag, count=3, only 2 dictionary-indicator path-decls present; decode_origin_paths reads count then loops decode_path which hits UnexpectedEnd on the third iteration"
+                .to_string(),
+        ),
+    }
+}
+
+/// `n_orig_paths_count_mismatch`: header 0x08, Tag::OriginPaths count=4, but
+/// the tree has only 3 placeholders (`wsh(sortedmulti(2,@0,@1,@2))`) →
+/// `Error::OriginPathsCountMismatch { expected: 3, got: 4 }`.
+fn build_negative_n_orig_paths_count_mismatch() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // Build a valid tree (3 placeholders) by encoding the policy with a
+    // shared path, then strip the leading [header, SharedPath, indicator]
+    // prefix and replace with [header(0x08), OriginPaths, count=4, 4×0x05].
+    let policy: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))".parse().unwrap();
+    let valid = policy.to_bytecode(&EncodeOptions::default()).unwrap();
+    // valid begins with [0x00, Tag::SharedPath, indicator_byte, ...tree...].
+    // Drop the first 3 bytes to extract the tree-only suffix.
+    let tree_bytes = &valid[3..];
+    let mut bytecode: Vec<u8> = vec![0x08, Tag::OriginPaths.as_byte(), 0x04];
+    // 4 dictionary indicators — count=4, but tree below has 3 placeholders.
+    bytecode.extend_from_slice(&[0x05, 0x05, 0x05, 0x05]);
+    bytecode.extend_from_slice(tree_bytes);
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "OriginPathsCountMismatch");
+    NegativeVector {
+        id: "n_orig_paths_count_mismatch".to_string(),
+        description:
+            "OriginPaths declares count=4 but tree has 3 placeholders (wsh(sortedmulti(2,@0,@1,@2))) → OriginPathsCountMismatch { expected: 3, got: 4 }"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "OriginPathsCountMismatch".to_string(),
+        provenance: Some(
+            "encoded `wsh(sortedmulti(2,@0/**,@1/**,@2/**))` to extract the 3-placeholder tree suffix, prepended `[0x08, Tag::OriginPaths, 0x04, 0x05, 0x05, 0x05, 0x05]`; decoder parses 4 origin paths then mismatches the 3-placeholder tree, raising OriginPathsCountMismatch { expected: 3, got: 4 }"
+                .to_string(),
+        ),
+    }
+}
+
+/// `n_path_components_too_long`: header 0x00, Tag::SharedPath, explicit-form
+/// path with 11 hardened components → `Error::PathComponentCountExceeded
+/// { got: 11, max: 10 }`.
+fn build_negative_n_path_components_too_long() -> NegativeVector {
+    use crate::bytecode::Tag;
+    // [header(0x00) | Tag::SharedPath | 0xFE (explicit) | 0x0B (count=11) |
+    //  11 × 0x01 (hardened idx 0)] — decode_path enforces MAX_PATH_COMPONENTS=10.
+    let mut bytecode: Vec<u8> = vec![
+        0x00,
+        Tag::SharedPath.as_byte(),
+        0xFE, // explicit-path marker
+        0x0B, // 11 components
+    ];
+    bytecode.extend_from_slice(&[0x01u8; 11]); // 11× hardened-idx-0 (each fits in 1 LEB128 byte)
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "PathComponentCountExceeded");
+    NegativeVector {
+        id: "n_path_components_too_long".to_string(),
+        description:
+            "Explicit-form SharedPath with 11 components → PathComponentCountExceeded { got: 11, max: 10 }"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "PathComponentCountExceeded".to_string(),
+        provenance: Some(
+            "synthesised bytecode `[0x00, Tag::SharedPath, 0xFE, 0x0B, 0x01×11]`: explicit-form path with 11 hardened components (idx 0); decode_path rejects on count > MAX_PATH_COMPONENTS=10 with PathComponentCountExceeded { got: 11, max: 10 }"
+                .to_string(),
+        ),
+    }
+}
+
+/// `n_conflicting_path_declarations_bit_set_tag_shared`: header 0x08 (bit 3
+/// set, advertising OriginPaths) but the path-decl slot carries
+/// `Tag::SharedPath` (0x34) instead of `Tag::OriginPaths` (0x36) →
+/// `BytecodeErrorKind::UnexpectedTag { expected: 0x36, got: 0x34 }`.
+fn build_negative_n_conflicting_path_declarations_bit_set_tag_shared() -> NegativeVector {
+    use crate::bytecode::Tag;
+    let bytecode: Vec<u8> = vec![
+        0x08,                      // header bit 3 set ⇒ decoder expects OriginPaths
+        Tag::SharedPath.as_byte(), // wrong tag (got 0x34, expected 0x36)
+        0x05,                      // dictionary indicator (filler so cursor reaches the tag check)
+    ];
+    let s = encode_singlestring_around(&bytecode);
+    debug_assert_decode_matches(&[s.as_str()], "InvalidBytecode");
+    NegativeVector {
+        id: "n_conflicting_path_declarations_bit_set_tag_shared".to_string(),
+        description:
+            "Header bit 3 set but Tag::SharedPath (0x34) appears in path-decl slot instead of Tag::OriginPaths (0x36) → InvalidBytecode { kind: UnexpectedTag { expected: 0x36, got: 0x34 } }"
+                .to_string(),
+        input_strings: vec![s],
+        expected_error_variant: "InvalidBytecode".to_string(),
+        provenance: Some(
+            "synthesised bytecode `[0x08, Tag::SharedPath, 0x05]`: header bit 3 (origin_paths) set ⇒ from_bytecode dispatches to the OriginPaths branch and verifies the next byte is Tag::OriginPaths=0x36; got Tag::SharedPath=0x34 instead, raising InvalidBytecode { kind: UnexpectedTag { expected: 0x36, got: 0x34 } }"
+                .to_string(),
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // v0.4 Phase 6 — Sh restriction matrix + layering invariant negative builders
 // ---------------------------------------------------------------------------
 
@@ -2331,6 +2638,8 @@ fn error_variant_name(e: &crate::Error) -> &'static str {
         Error::Miniscript(_) => "Miniscript",
         Error::SubsetViolation { .. } => "SubsetViolation",
         Error::FingerprintsCountMismatch { .. } => "FingerprintsCountMismatch",
+        Error::OriginPathsCountMismatch { .. } => "OriginPathsCountMismatch",
+        Error::PathComponentCountExceeded { .. } => "PathComponentCountExceeded",
     }
 }
 
@@ -2371,5 +2680,30 @@ mod tests {
                 ),
             }
         }
+    }
+
+    // ── Spec ↔ corpus mutual validation pin ──────────────────────────────────
+
+    /// Pin SPEC §2 Example B's OriginPaths block byte sequence to the o2
+    /// vector. If this fires, either the spec example or the corpus drifted —
+    /// fix one of the two before continuing.
+    ///
+    /// SPEC bytes: `36 03 05 05 FE 04 61 01 01 C9 01` (Tag::OriginPaths,
+    /// count=3, two dictionary `0x05` indicators, one explicit 7-byte path
+    /// for `m/48'/0'/0'/100'`).
+    #[test]
+    fn o2_vector_origin_paths_block_matches_spec_example_b() {
+        const EXPECTED_ORIGIN_PATHS_BYTES_HEX: &str = "36030505fe046101 01c901";
+        let expected = EXPECTED_ORIGIN_PATHS_BYTES_HEX.replace(' ', "");
+        let vectors = build_v0_10_origin_paths_vectors();
+        let o2 = vectors
+            .iter()
+            .find(|v| v.id == "o2_sortedmulti_2of3_divergent_paths_with_fingerprints")
+            .expect("v0.10 origin-paths vectors must include o2");
+        assert!(
+            o2.expected_bytecode_hex.contains(&expected),
+            "o2 expected_bytecode_hex must contain SPEC §2 Example B's OriginPaths bytes — got {}",
+            o2.expected_bytecode_hex
+        );
     }
 }

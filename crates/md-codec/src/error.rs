@@ -362,6 +362,37 @@ pub enum Error {
         /// bytecode (decoder).
         got: usize,
     },
+
+    /// The OriginPaths bytecode count doesn't match the tree's actual
+    /// placeholder count after parse.
+    ///
+    /// NEW in v0.10. Surfaces as a semantic, policy-layer error rather
+    /// than a structural bytecode-layer error: the bytecode parsed cleanly
+    /// (count byte ≤ 32, each path ≤ MAX_PATH_COMPONENTS), but the
+    /// declared count did not equal the placeholder count derived from
+    /// the parsed template.
+    #[error(
+        "OriginPaths count mismatch: tree has {expected} placeholders, OriginPaths declares {got}"
+    )]
+    OriginPathsCountMismatch {
+        /// The expected count (placeholder count of the policy template).
+        expected: usize,
+        /// The count declared in the OriginPaths block.
+        got: usize,
+    },
+
+    /// An explicit-form path declaration exceeded `MAX_PATH_COMPONENTS = 10`.
+    ///
+    /// NEW in v0.10. Applies to both `Tag::SharedPath` and
+    /// `Tag::OriginPaths`. The cap mirrors BIP 388's policy-template
+    /// limit on per-key path-component counts.
+    #[error("path component count {got} exceeds maximum {max}")]
+    PathComponentCountExceeded {
+        /// The component count that was rejected.
+        got: usize,
+        /// The maximum allowed component count (`MAX_PATH_COMPONENTS = 10`).
+        max: usize,
+    },
 }
 
 /// Kind of bytecode parse error, used inside [`Error::InvalidBytecode`].
@@ -479,6 +510,24 @@ pub enum BytecodeErrorKind {
     /// implementation panicked with `expect()` on this code path.
     #[error("malformed payload padding: 5-bit data does not byte-align")]
     MalformedPayloadPadding,
+
+    /// The OriginPaths count byte is structurally invalid (zero or exceeds
+    /// the BIP 388 placeholder cap of 32).
+    ///
+    /// NEW in v0.10. Surfaces as a structural, bytecode-layer error
+    /// because it can be detected from the OriginPaths header bytes
+    /// alone, before any tree-side comparison. A semantic mismatch
+    /// between the count and the parsed template's placeholder count is
+    /// reported via [`Error::OriginPathsCountMismatch`] instead.
+    ///
+    /// [`Error::OriginPathsCountMismatch`]: super::Error::OriginPathsCountMismatch
+    #[error("OriginPaths count {count} is out of range (must be 1..={max})")]
+    OriginPathsCountTooLarge {
+        /// The structurally invalid count byte.
+        count: u8,
+        /// The maximum allowed count (32, mirroring the BIP 388 placeholder cap).
+        max: u8,
+    },
 }
 
 /// Result type used throughout md-codec.

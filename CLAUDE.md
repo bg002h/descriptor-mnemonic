@@ -15,9 +15,12 @@ mk1 is a sibling format (HRP `mk`, codex32-derived xpub backup) developed in `/s
 
 **Currently open mk1-surfaced items affecting md1** (see `design/FOLLOWUPS.md` for full entries):
 
-- `md-per-at-N-path-tag-allocation` — Q-4 from mk1 closure design; allocate per-`@N` origin path tag in md1 bytecode (deferred to v1+ pending per-cosigner-path scheduling).
+- (none — `md-per-at-N-path-tag-allocation` resolved in v0.10.0)
 
-**Recently resolved (md-codec v0.9.0):** `chunk-set-id-rename`, `md-path-dictionary-0x16-gap`, `path-dictionary-mirror-stewardship`. mk1's BIP-submission gate is now cleared.
+**Recently resolved:**
+
+- **md-codec v0.10.0:** `md-per-at-N-path-tag-allocation` (Tag::OriginPaths = 0x36; header bit 3 reclaimed; per-`@N` divergent-path encoding shipped). mk1's companion `md-per-N-path-tag-allocation` closes in lockstep.
+- **md-codec v0.9.0:** `chunk-set-id-rename`, `md-path-dictionary-0x16-gap`, `path-dictionary-mirror-stewardship`. mk1's BIP-submission gate was cleared in v0.9.0.
 
 ## Other repo-specific notes
 

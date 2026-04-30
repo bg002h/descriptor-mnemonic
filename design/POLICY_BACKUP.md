@@ -825,8 +825,9 @@ of what was adopted vs. rejected:
   v1+ design hook: allocate a new bytecode section — analogous to the
   existing fingerprints block (`Tag::Fingerprints = 0x35`, gated by
   bit 2 of the bytecode header) — for recovery hints. A natural slot is
-  `Tag::RecoveryHints = 0x36` (currently reserved per the tag table) gated
-  by a new header flag bit. The keys can be encoded as a small TLV
+  `Tag::RecoveryHints = 0x37` (currently reserved per the tag table; the
+  adjacent `0x36` slot was reclaimed in v0.10 as `Tag::OriginPaths` for
+  per-`@N` path declarations) gated by a new header flag bit. The keys can be encoded as a small TLV
   (one-byte key id + LEB128 value), since `bh`/`gl`/`ml` are all
   unsigned integers; this avoids re-implementing URL-style key/value
   parsing inside the bytecode layer. Decision deferred to v1+ scoping;

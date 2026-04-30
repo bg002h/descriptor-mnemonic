@@ -67,6 +67,21 @@ pub struct EncodeOptions {
     /// See [`crate::WalletPolicy::to_bytecode`] for the full precedence
     /// rule.
     pub shared_path: Option<DerivationPath>,
+    /// Optional per-`@N` origin path override for deterministic encoding.
+    /// Tier 0 in the encoder's per-`@N`-path precedence chain (spec §4).
+    ///
+    /// When `Some(paths)`, the encoder uses `paths[i]` as the origin path for
+    /// placeholder `@i` and emits either `Tag::SharedPath` (when all paths
+    /// agree) or `Tag::OriginPaths` (when any diverge), per Q9-A's auto-detect
+    /// rule. Tier 0 takes absolute precedence over `decoded_origin_paths`
+    /// (Tier 1), the key-information-vector walk (Tier 2), and the
+    /// shared-path fallback chain (Tier 3 / [`EncodeOptions::shared_path`]).
+    ///
+    /// Used by test-vector generation; production callers leave this `None`.
+    /// Length must equal the policy's placeholder count; otherwise the
+    /// encoder will produce malformed bytecode (length-mismatch errors are
+    /// caught at decode time via [`crate::Error::OriginPathsCountMismatch`]).
+    pub origin_paths: Option<Vec<DerivationPath>>,
     /// Optional master-key fingerprints to embed in a bytecode fingerprints
     /// block (BIP §"Fingerprints block"). Indexed by placeholder position:
     /// `fingerprints[i]` is the master-key fingerprint for placeholder `@i`.
@@ -149,6 +164,14 @@ impl EncodeOptions {
         self.fingerprints = Some(fps);
         self
     }
+
+    /// Set the per-`@N` origin paths used by the encoder (Tier 0 override).
+    /// See [`EncodeOptions::origin_paths`] for full semantics, including the
+    /// 4-tier precedence rule applied by [`crate::WalletPolicy::to_bytecode`].
+    pub fn with_origin_paths(mut self, paths: Vec<DerivationPath>) -> Self {
+        self.origin_paths = Some(paths);
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +229,22 @@ mod tests {
     #[test]
     fn encode_options_default_is_all_off() {
         let opts = EncodeOptions::default();
+        assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
+        assert!(!opts.force_long_code);
+        assert!(opts.chunk_set_id_seed.is_none());
+        assert!(opts.shared_path.is_none());
+        assert!(opts.fingerprints.is_none());
+        assert!(opts.origin_paths.is_none());
+    }
+
+    #[test]
+    fn encode_options_with_origin_paths_sets_field() {
+        use std::str::FromStr;
+        let p0 = DerivationPath::from_str("m/48'/0'/0'/2'").unwrap();
+        let p1 = DerivationPath::from_str("m/48'/0'/0'/100'").unwrap();
+        let opts = EncodeOptions::default().with_origin_paths(vec![p0.clone(), p1.clone()]);
+        assert_eq!(opts.origin_paths.as_deref(), Some([p0, p1].as_slice()));
+        // Other fields remain at defaults.
         assert_eq!(opts.chunking_mode, ChunkingMode::Auto);
         assert!(!opts.force_long_code);
         assert!(opts.chunk_set_id_seed.is_none());

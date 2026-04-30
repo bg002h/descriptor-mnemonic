@@ -290,7 +290,7 @@ The first byte of the bytecode is the bytecode header, structured as follows:
 |-
 | 7–4 || Bytecode version || Currently <code>0x0</code>. Decoders MUST reject unknown versions.
 |-
-| 3 || Reserved || MUST be <code>0</code> in v0.
+| 3 || OriginPaths flag (v0.10+) || <code>1</code> if a per-<code>@N</code> origin-path block (<code>Tag::OriginPaths = 0x36</code>) is present in the path-declaration slot; <code>0</code> if a shared-path declaration (<code>Tag::SharedPath = 0x34</code>) is present. In v0.x ≤ 0.9 this bit was reserved-must-be-zero. See §"Per-<code>@N</code> path declaration", below.
 |-
 | 2 || Fingerprints flag || <code>1</code> if a fingerprints block is present (see below); <code>0</code> otherwise.
 |-
@@ -299,18 +299,23 @@ The first byte of the bytecode is the bytecode header, structured as follows:
 | 0 || Reserved || MUST be <code>0</code> in v0.
 |}
 
-In v0, valid bytecode header values are <code>0x00</code> (no fingerprints) and <code>0x04</code> (fingerprints present).
+In v0.10+, valid bytecode header values are <code>0x00</code>, <code>0x04</code>, <code>0x08</code>, and <code>0x0C</code>. (In v0.x ≤ 0.9 only <code>0x00</code> and <code>0x04</code> were valid; bit 3 was reserved-must-be-zero. The reserved-bits mask narrowed from <code>0x0B</code> to <code>0x03</code> with the v0.10 reclamation of bit 3.) Pre-v0.10 decoders confronted with v0.10 OriginPaths-using encodings (header bit 3 set) reject cleanly via <code>Error::ReservedBitsSet</code> — the intended forward-compat behavior.
 
 ====Path declaration====
 
-Following the bytecode header is a path declaration, which specifies the derivation path used by all <code>@i</code> placeholders in the template. (The v0 specification scope assumes a single shared path for all placeholders.)
+Following the bytecode header is a path declaration, which specifies the derivation path(s) used by the <code>@i</code> placeholders in the template. Two variants exist:
 
-Path declaration format:
+* '''Shared-path declaration''' (<code>Tag::SharedPath = 0x34</code>, header bit 3 = <code>0</code>): a single path applies to every <code>@i</code> placeholder. This is the original v0.x ≤ 0.9 form and remains the canonical encoding for any policy whose placeholders all derive from the same path.
+* '''Per-<code>@N</code> path declaration''' (<code>Tag::OriginPaths = 0x36</code>, header bit 3 = <code>1</code>): one path per placeholder, in placeholder-index order. Introduced in v0.10 to admit multisig wallets where each cosigner derives an xpub from a distinct origin path (e.g., distinct BIP 48 accounts per cosigner). See §"Per-<code>@N</code> path declaration" below.
+
+The two variants are '''mutually exclusive''': header bit 3 dispatches the path-decl tag, and the byte at offset 1 MUST agree with the bit. A v0.10 decoder seeing <code>Tag::OriginPaths (0x36)</code> at offset 1 with header bit 3 = <code>0</code>, or <code>Tag::SharedPath (0x34)</code> with header bit 3 = <code>1</code>, MUST reject the bytecode (as <code>UnexpectedTag</code> with <code>expected</code> set to the tag the header bit predicted).
+
+=====Shared-path declaration format (<code>Tag::SharedPath = 0x34</code>)=====
 
 {| class="wikitable"
 ! Byte !! Field !! Notes
 |-
-| 0 || Path declaration tag || <code>0x33</code> (shared-path declaration)
+| 0 || Path declaration tag || <code>0x34</code> (shared-path declaration)
 |-
 | 1 || Path encoding indicator || See "Path dictionary", below
 |-
@@ -369,6 +374,70 @@ When the path encoding indicator is <code>0xFE</code>, the path is encoded expli
 # For each path component: a LEB128-encoded child number, where hardened components encode <code>2c + 1</code> for child index <code>c</code> and unhardened components encode <code>2c</code>.
 
 This convention follows the path encoding used by <code>descriptor-codec</code>.
+
+'''Component-count cap (v0.10+).''' Explicit-form paths (<code>0xFE</code>) MUST NOT exceed '''10 components'''. Decoders MUST reject longer paths with <code>Error::PathComponentCountExceeded { got, max: 10 }</code>. The cap applies uniformly to <code>Tag::SharedPath</code> and <code>Tag::OriginPaths</code> declarations; encoders MUST symmetrically reject longer paths before serialization. The cap is defense-in-depth — no real-world BIP path family exceeds 6 components (BIP 48 + change/index = 6); 10 leaves generous headroom — and aligns with the sibling MK format's matching SPEC §3.5 cap.
+
+=====Per-<code>@N</code> path declaration (v0.10+)=====
+
+When the wallet policy's <code>@N</code> placeholders use ''different'' origin paths (e.g., a multisig where each cosigner derives from a distinct BIP 48 account), the encoder emits a <code>Tag::OriginPaths</code> block in place of <code>Tag::SharedPath</code>. The block is gated by header bit 3 (<code>0x08</code>):
+
+{| class="wikitable"
+! Byte !! Field !! Notes
+|-
+| 0 || OriginPaths tag || <code>0x36</code> (<code>Tag::OriginPaths</code>); header bit 3 MUST be <code>1</code>
+|-
+| 1 || Count || <code>u8</code>; number of path declarations. MUST be in <code>1..=32</code> (BIP 388 placeholder cap) AND MUST equal the placeholder count derivable from the tree (i.e., <code>max(@i) + 1</code>).
+|-
+| 2…n || <code>path_decl_0</code>, <code>path_decl_1</code>, …, <code>path_decl_{N-1}</code> || Each is encoded with the same single-path format used by <code>Tag::SharedPath</code>: a 1-byte dictionary indicator (<code>0x01</code>–<code>0x07</code>, <code>0x11</code>–<code>0x17</code>) for well-known paths, or <code>0xFE</code> followed by the LEB128 component count and per-component bytes for explicit paths (subject to the <code>MAX_PATH_COMPONENTS = 10</code> cap above).
+|}
+
+Path-decls appear in placeholder-index order: <code>path_decl_0</code> is <code>@0</code>'s path, <code>path_decl_1</code> is <code>@1</code>'s, etc. There is no per-entry index — the position in the list IS the index.
+
+'''No deduplication.''' Path-decls are written densely, even if multiple placeholders share the same path. This optimizes for the common case of dictionary-form paths (1 byte each) and sidesteps the indirection complexity of a per-entry path-table reference. Encoders MAY emit <code>Tag::OriginPaths</code> with all-equal paths (e.g., a debugging encoder that asserts a particular layout), but the canonical encoder rule below produces <code>Tag::SharedPath</code> in that case.
+
+'''Encoder auto-detection.''' Conforming encoders MUST examine the placeholder paths in placeholder-index order and emit <code>Tag::SharedPath</code> if all paths are equal, <code>Tag::OriginPaths</code> otherwise. This rule is a pure function of policy state; <code>encode(decode(encode(p))) == encode(p)</code> byte-identically for any policy <code>p</code>. Decoder rejection paths for malformed <code>Tag::OriginPaths</code> blocks:
+
+* '''Structural''' (count zero or count > 32): rejected at the bytecode layer with <code>BytecodeErrorKind::OriginPathsCountTooLarge { count, max: 32 }</code>, independent of the tree.
+* '''Semantic''' (count != tree placeholder count): rejected at the policy layer with <code>Error::OriginPathsCountMismatch { expected, got }</code>, after tree-walk yields the actual placeholder count.
+* '''Cursor exhaustion mid-list''' (e.g., <code>count=3</code> with only 2 path-decls' worth of bytes before the tree): surfaces as <code>BytecodeErrorKind::UnexpectedEnd</code> from the inner <code>decode_path</code> call.
+
+'''Wire-format examples.'''
+
+Example A — 3-cosigner shared-path multisig, no fingerprints. Policy <code>wsh(sortedmulti(2, @0/**, @1/**, @2/**))</code> with all keys on <code>m/48'/0'/0'/2'</code> (dictionary <code>0x05</code>). v0.10 byte-identical to v0.9:
+
+<pre>
+  00                              ← header: bit 3 clear, bit 2 clear
+  | 34 05                         ← Tag::SharedPath (0x34) + indicator 0x05
+  | <wsh sortedmulti 2 @0 @1 @2>  ← tree bytes
+</pre>
+
+Example B — 3-cosigner divergent-path multisig with fingerprints. Same shape, but cosigner C has explicit path <code>m/48'/0'/0'/100'</code> (not in dictionary). Component-count = 4; <code>48'</code> → <code>0x61</code>; <code>0'</code> → <code>0x01</code>; <code>0'</code> → <code>0x01</code>; <code>100'</code> = <code>2*100 + 1 = 201</code>, LEB128 <code>0xC9 0x01</code> (two bytes — high-bit continuation). Full explicit-path bytes: <code>FE 04 61 01 01 C9 01</code> (7 bytes including the <code>0xFE</code> indicator):
+
+<pre>
+  0C                                              ← header: bit 3 set + bit 2 set
+  | 36 03 05 05 FE 04 61 01 01 C9 01              ← Tag::OriginPaths: count=3,
+  |                                                  paths={0x05, 0x05, explicit-7B}
+  | 35 03 deadbeef cafebabe d00df00d              ← Tag::Fingerprints: count=3, 4 bytes each
+  | <wsh sortedmulti 2 @0 @1 @2>                  ← tree bytes
+</pre>
+
+Decoder reads header byte <code>0x0C</code> → bit 3 set + bit 2 set. Dispatches: read <code>Tag::OriginPaths</code> block, then <code>Tag::Fingerprints</code> block, then tree. OriginPaths block size: 11 bytes (1 tag + 1 count + 1 + 1 + 7 explicit). Fingerprints block size: 14 bytes (1 + 1 + 12). Header: 1 byte. Total prefix before tree: 26 bytes.
+
+Example C — 3-cosigner divergent-path, no fingerprints. Same as B but without the fingerprints block:
+
+<pre>
+  08                                              ← header: bit 3 set, bit 2 clear
+  | 36 03 05 05 FE 04 61 01 01 C9 01              ← Tag::OriginPaths
+  | <wsh sortedmulti 2 @0 @1 @2>                  ← tree bytes
+</pre>
+
+Header byte <code>0x08</code> was previously a <code>ReservedBitsSet</code> violation in v0.x ≤ 0.9; in v0.10+ it is a valid header. Pre-v0.10 decoders confronted with v0.10 OriginPaths-using encodings reject cleanly via <code>Error::ReservedBitsSet</code> — the intended forward-compat behavior.
+
+'''Header byte values.''' v0.10 valid header bytes are exactly: <code>0x00</code> (no fingerprints, no origin paths), <code>0x04</code> (fingerprints only), <code>0x08</code> (origin paths only), <code>0x0C</code> (fingerprints + origin paths). Any other value is rejected with <code>Error::UnsupportedVersion(nibble)</code> (high nibble) or <code>BytecodeErrorKind::ReservedBitsSet { byte, mask: 0x03 }</code> (low bits 0–1).
+
+=====Authority precedence with MK=====
+
+When an MD card with per-<code>@N</code> paths participates in recovery alongside one or more MK cards (xpub backups; see [https://github.com/bg002h/mnemonic-key bg002h/mnemonic-key]), MK's <code>origin_path</code> is '''authoritative''' for the xpub's derivation; MD's per-<code>@N</code> path is '''descriptive''' — the policy's expected path layout. Per-format decoders are not required to be aware of cross-format context; consistency-checking is the recovery orchestrator's responsibility, and mismatch MUST cause the orchestrator to reject the assembly. See MK's BIP §"Authority precedence (MK ↔ MD path information)" for the full normative semantics.
 
 ====Tree operators====
 
@@ -456,13 +525,15 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 | <code>0x34</code> || Shared-path declaration || See "Path declaration", above || 0 || Renumbered from 0x33 in v0.6
 |-
 | <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0 || Byte preserved across v0.5→v0.6 for wire-format continuity
+|-
+| <code>0x36</code> || OriginPaths block (implemented v0.10) || See "Per-<code>@N</code> path declaration", above || 0 || Reclaimed in v0.10 from the previously reserved range; gated by header bit 3
 |}
 
 Tags <code>0x24</code>–<code>0x31</code> are unallocated. (In MD v0.5 and earlier, these bytes were reserved for descriptor-codec inline-key compatibility; MD v0.6 dropped them since MD's BIP-388 wallet-policy framing forbids inline keys. See the project's <code>MD_SCOPE_DECISION_2026-04-28.md</code> design document for rationale.)
 
 Tag <code>0x32</code> is unallocated in v0.6. (In v0.5 it was the Placeholder framing tag; v0.6 moves Placeholder to <code>0x33</code> and intentionally leaves <code>0x32</code> vacant so any v0.5→v0.6 transcoding mistake surfaces as a clean <code>from_byte=None</code> error rather than data corruption.)
 
-Tags <code>0x36</code>–<code>0xFF</code> are reserved.
+Tags <code>0x37</code>–<code>0xFF</code> are reserved.
 
 In v0.6 MD's BIP-388 wallet-policy framing additionally drops the legacy v0.5 <code>bare()</code> tag (was 0x07) — <code>Descriptor::Bare</code> is permanently rejected by the encoder via <code>PolicyScopeViolation</code>; no Tag is allocated for it in v0.6.
 
@@ -475,7 +546,7 @@ For operators with a fixed number of children, child sub-trees follow the operat
 In MD v0, every key position in the bytecode (i.e., a child slot of <code>pk_k</code>, <code>pk_h</code>, <code>pkh</code>, <code>wpkh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>tr</code>) MUST be a placeholder reference of the form:
 
 <pre>
-  0x32 <index>
+  0x33 <index>
 </pre>
 
 where <code>&lt;index&gt;</code> is a single byte (0–255) identifying which entry in the BIP 388 key information vector this position uses. Inline keys (raw xpubs, raw pubkeys) are NOT permitted in v0 bytecode. This guarantees that the Template Card encodes the wallet structure without containing any key material.
@@ -505,7 +576,7 @@ When the block is absent (the default in v0), recovery tools match seeds to plac
 The bytecode for the policy <code>wsh(multi(2, @0/**, @1/**))</code> with fingerprints block <code>[0xdeadbeef, 0xcafebabe]</code> and the BIP 84 mainnet shared path (<code>m/84'/0'/0'</code>, named indicator <code>0x03</code>) is:
 
 <pre>
-04 33 03 35 02 deadbeef cafebabe 05 19 02 02 32 00 32 01
+04 34 03 35 02 deadbeef cafebabe 05 08 02 02 33 00 33 01
 </pre>
 
 Annotated:
@@ -515,7 +586,7 @@ Annotated:
 |-
 | <code>04</code> || Header || v0; fingerprints flag set (bit 2 = 1)
 |-
-| <code>33 03</code> || Path declaration || <code>Tag::SharedPath</code> (<code>0x33</code>) + named indicator <code>0x03</code> (= <code>m/84'/0'/0'</code>)
+| <code>34 03</code> || Path declaration || <code>Tag::SharedPath</code> (<code>0x34</code>) + named indicator <code>0x03</code> (= <code>m/84'/0'/0'</code>)
 |-
 | <code>35 02</code> || Fingerprints block header || <code>Tag::Fingerprints</code> (<code>0x35</code>) + count <code>2</code>
 |-
@@ -523,13 +594,13 @@ Annotated:
 |-
 | <code>cafebabe</code> || fps[1] || Fingerprint for placeholder <code>@1</code>
 |-
-| <code>05 19</code> || Operator path || <code>Tag::Wsh</code> (<code>0x05</code>) + <code>Tag::Multi</code> (<code>0x19</code>)
+| <code>05 08</code> || Operator path || <code>Tag::Wsh</code> (<code>0x05</code>) + <code>Tag::Multi</code> (<code>0x08</code>)
 |-
 | <code>02 02</code> || Multi parameters || k = 2; n = 2
 |-
-| <code>32 00</code> || @0 || <code>Tag::Placeholder</code> (<code>0x32</code>) + index <code>0</code>
+| <code>33 00</code> || @0 || <code>Tag::Placeholder</code> (<code>0x33</code>) + index <code>0</code>
 |-
-| <code>32 01</code> || @1 || <code>Tag::Placeholder</code> (<code>0x32</code>) + index <code>1</code>
+| <code>33 01</code> || @1 || <code>Tag::Placeholder</code> (<code>0x33</code>) + index <code>1</code>
 |}
 
 The same policy without a fingerprints block (header byte <code>0x00</code>) omits the <code>35 02 deadbeef cafebabe</code> bytes; the surrounding bytes are identical.
@@ -684,7 +755,7 @@ Decoders reassemble a chunked Template Card by:
 
 ===Policy identifier (Tier 3)===
 
-A Policy ID is a derived identifier optionally engraved on a separate medium for cross-verifying a digital backup of the policy against the engraved Template Card. The Policy ID is computed as:
+A Policy ID is a derived identifier MAY be engraved on a separate medium for offline cross-verification of a digital backup of the policy against the engraved Template Card. The Policy ID is computed as:
 
 <pre>
   policy_id = SHA-256(canonical_bytecode)[0..16]
@@ -694,7 +765,20 @@ The first 16 bytes of the SHA-256 of the canonical bytecode (the same bytecode t
 
 A Policy ID is OPTIONAL and never required for recovery from the Template Card alone. It serves only as a cryptographic anchor for verifying that a supplemental digital copy of the policy is authentic.
 
+'''Engraving — MAY, not SHOULD.''' The 12-word PolicyId phrase MAY be engraved on a separate metal anchor for offline cross-verification with a digital backup of the codex32 string. Users who maintain only the codex32 Template Card itself need not engrave the phrase — the codex32 string carries the policy directly with BCH error correction; the phrase is a redundant integrity check rather than a recovery primitive. For users who want a minimal-cost identifier, the '''PolicyId fingerprint''' (top 4 bytes of <code>PolicyId</code>, rendered as 8 lowercase hex characters, parallel to BIP 32 master-key fingerprints) is offered as an 8-character display form. The reference implementation exposes this as <code>PolicyId::fingerprint() -> [u8; 4]</code> (v0.10+).
+
 '''Naming note:''' the value previously called "wallet ID" was renamed to "Policy ID" in v0.8 to reflect what it actually identifies. The 16-byte hash covers the BIP 388 wallet-policy ''template'' (with <code>@N</code> placeholders) but not the concrete cosigner xpubs that map placeholders to keys. Two distinct wallets that share an identical policy template (same multisig shape and shared path, different cosigner sets) therefore share a Policy ID. The Policy ID is a ''template-level'' identifier; the per-instance cryptographic identifier is the Wallet Instance ID defined below.
+
+====PolicyId types (Type 0 / Type 1)====
+
+MD defines two cryptographic wallet-identifying hashes at different levels of specificity. We refer to them as '''types of PolicyId''' for ease of reference:
+
+* '''Type 1 — <code>PolicyId</code>.''' <code>SHA-256(canonical_bytecode)[0..16]</code>. Identifies the wallet ''template + path layout'': the BIP 388 script structure plus the per-<code>@N</code> origin paths (which for v0.x ≤ 0.9 was a single shared path; for v0.10+ admits per-<code>@N</code> paths). Two wallets with the same template and same path layout but ''different'' concrete cosigner xpubs share a Type-1 <code>PolicyId</code>. Engraved as the optional 12-word BIP 39 phrase (see "Engraving — MAY, not SHOULD" above).
+* '''Type 0 — <code>WalletInstanceId</code>.''' <code>SHA-256(canonical_bytecode || canonical_xpub_serialization)[0..16]</code>. Identifies the wallet ''instance'': template + paths + concrete cosigner xpubs. Two wallets are distinct even if they share a template and path layout, as long as their cosigner xpub sets differ. Computed at recovery time from policy + assembled xpubs; not engraved on any physical card. See §"Wallet Instance ID" below.
+
+Type 1 answers "what shape of wallet is this?"; Type 0 answers "which specific wallet instance is this?" Type 1 is the engraved anchor (Tier 3, MAY-engrave). Type 0 is the cryptographic check at recovery time. The two are not interchangeable: a Type-1 collision is expected and acceptable (two cosigners' wallets sharing a multisig shape); a Type-0 collision would indicate identical wallet instances. The reference implementation's <code>PolicyId</code> Rust type carries the Type-1 semantics; <code>WalletInstanceId</code> the Type-0; the names carry the type so no separate <code>Type1PolicyId</code> / <code>Type0PolicyId</code> aliases are introduced.
+
+'''v0.10 effect on Type 1.''' Two policies with same script template but different per-cosigner accounts (e.g., one cosigner on BIP 48 account 0' vs the same wallet on account 1') hash to ''different'' Type-1 <code>PolicyId</code>s in v0.10 — they are different wallet shapes. In v0.x ≤ 0.9 such policies silently collided on Type-1 <code>PolicyId</code> because the canonical bytecode lossily flattened them to a single shared path. v0.10's addition of <code>Tag::OriginPaths</code> closes that collision; the divergent-path Type-1 <code>PolicyId</code> for such wallets in v0.10 differs from the (incorrect, lossily-computed) v0.9 <code>PolicyId</code>. Users who computed PolicyIds on divergent-path policies under v0.x ≤ 0.9 SHOULD re-engrave under v0.10.
 
 ===Wallet Instance ID===
 
@@ -717,7 +801,7 @@ where:
 
 <code>bip32_serialize</code> is the canonical 78-byte BIP 32 serialization of an extended public key (the binary form of a Base58Check-decoded xpub). Xpubs are concatenated in placeholder-index order (<code>@0</code>, then <code>@1</code>, ..., <code>@(N-1)</code>); ordering is significant. <code>canonical_bytecode</code> is the Template Card's bytecode, identical to the input of the Policy ID computation.
 
-Wallet Instance IDs are useful for recovery tools that need to disambiguate same-template wallets, for downstream consistency between cross-tool implementations, and for digital-backup verification at the per-instance level. The construction does not introduce any new Tier-3 anchor; the existing 12-word Policy ID mnemonic anchor remains the only physical-medium anchor in the spec.
+Wallet Instance IDs are useful for recovery tools that need to disambiguate same-template wallets, for downstream consistency between cross-tool implementations, and for digital-backup verification at the per-instance level. The construction does not introduce any new Tier-3 anchor; the existing 12-word Policy ID mnemonic anchor remains the only optional physical-medium anchor in the spec (and even that anchor is MAY-engrave, not SHOULD-engrave; see §"Policy identifier (Tier 3)").
 
 ===Decoder requirements===
 
@@ -926,6 +1010,13 @@ MD does not conflict with existing standards:
 * '''BIP 388 (wallet policies):''' MD ''encodes'' BIP 388 wallet policies. Round-trip with BIP 388 canonical form is a stated invariant.
 
 MD v0 readers MUST reject MD strings with newer format-version bytes (loud failure; recommend the user obtain a newer MD tool). v1+ readers MUST accept v0 strings (graceful upgrade).
+
+'''v0.x ≤ 0.9 ↔ v0.10 wire-format break (header bit 3 reclamation).''' v0.x ≤ 0.9 reserved bit 3 of the bytecode header (mask <code>0x0B</code>); v0.10 reclaims it as the OriginPaths flag (mask narrows to <code>0x03</code>). Forward and backward compatibility behave as designed:
+
+* Existing v0.x ≤ 0.9 SharedPath-only encodings remain '''byte-identical''' under v0.10: header bit 3 stays <code>0</code>; <code>0x00</code> and <code>0x04</code> remain valid v0.10 header bytes. v0.10 decoders accept all v0.x ≤ 0.9 encodings without behavior change.
+* New v0.10 OriginPaths-using encodings (header bit 3 = <code>1</code>; header byte <code>0x08</code> or <code>0x0C</code>) are rejected by v0.x ≤ 0.9 decoders via <code>Error::ReservedBitsSet</code> — the intended forward-compat behavior. Recovery tools encountering this rejection from a pre-v0.10 decoder SHOULD recommend the user upgrade to a v0.10+ tool.
+
+The break closes a v0.x ≤ 0.9 silent path-divergence drop bug: those versions lossily flattened policies with divergent per-<code>@N</code> origin paths to a single shared path, so <code>decode(encode(p))</code> could differ from <code>p</code> for any policy where cosigners derived xpubs from different paths. v0.10's <code>Tag::OriginPaths</code> block closes that bug.
 
 ==Test Vectors==
 

@@ -4,6 +4,152 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.10.0] — 2026-04-29
+
+Closes the headline mk1-surfaced FOLLOWUPS item
+[`md-per-at-N-path-tag-allocation`](design/FOLLOWUPS.md). v0.10 admits
+**per-`@N` divergent origin paths** in BIP 388 wallet policies via a new
+`Tag::OriginPaths = 0x36` block, gated by header bit 3 (reclaimed from
+the v0.x ≤ 0.9 reserved range). v0.x ≤ 0.9 SharedPath-only encodings
+remain byte-identical; new OriginPaths-using encodings need v0.10+
+decoders. Test-vector corpora regenerate under family token
+`"md-codec 0.10"`.
+
+### Why a wire-format break?
+
+v0.x ≤ 0.9 silently flattened policies with divergent per-`@N` origin
+paths to a single shared path, losing information. The result was that
+`decode(encode(p))` could differ from `p` for any policy where cosigners
+derived xpubs from different paths — a real-world case for any multisig
+with cosigners using distinct BIP 48 accounts. v0.10 fixes this with a
+new `Tag::OriginPaths` block. Existing shared-path encodings remain
+byte-identical (header `0x00` and `0x04` valid; bit 3 stays `0` for the
+shared-path case); divergent-path policies now round-trip correctly and
+produce correct (different) `PolicyId`s. The cost of the break is
+bounded — header bit 3 reclaim narrows the reserved-bits mask from
+`0x0B` to `0x03`, and the only API surfaces that change are
+`BytecodeHeader::new_v0(bool)` → `new_v0(bool, bool)` and `encode_path`
+gaining a `Result` return — and the value is high (correct encoding of
+divergent-path policies, closing a silent path-divergence drop).
+
+### Added
+
+- `Tag::OriginPaths = 0x36` block for per-`@N` divergent path
+  declarations. Dense encoding (count-prefixed; one path-decl per `@N`
+  in placeholder-index order; no deduplication). See BIP draft
+  §"Per-`@N` path declaration".
+- Header bit 3 (`0x08`) reclaimed as the OriginPaths flag (parallel to
+  bit 2 = Fingerprints). `RESERVED_MASK` narrows from `0x0B` to `0x03`.
+- `MAX_PATH_COMPONENTS = 10` cap enforced uniformly on `Tag::SharedPath`
+  and `Tag::OriginPaths` explicit-form path declarations. Defense-in-
+  depth; aligns with mk1 SPEC §3.5; no real-world BIP path family
+  exceeds 6 components.
+- `WalletPolicy::decoded_origin_paths: Option<Vec<DerivationPath>>`
+  field for round-trip stability when `from_bytecode` decoded a
+  `Tag::OriginPaths` block.
+- `EncodeOptions::origin_paths: Option<Vec<DerivationPath>>` Tier 0
+  override for deterministic test-vector generation.
+- `EncodeOptions::with_origin_paths(...)` builder method.
+- `PolicyId::fingerprint() -> [u8; 4]` short-identifier API. Top 32
+  bits as a 4-byte array, parallel to BIP 32 master-key fingerprints.
+  Renders as 8 lowercase hex characters; offered as a minimal-cost
+  display alternative to the 12-word PolicyId phrase.
+- `md encode --policy-id-fingerprint` CLI flag. Additive: prints the
+  freshly-computed PolicyId in its 4-byte / 8-hex-char short form
+  (`0x{:08x}`, via `PolicyId::fingerprint()`) on a second line after
+  the existing 12-word phrase. Use cases: CLI scripts, log lines, and
+  minimal-cost engraving anchors for users who don't want the full
+  phrase.
+- BIP draft §"Per-`@N` path declaration", §"PolicyId types"
+  (Type 0/Type 1 typology), §"Authority precedence with MK"
+  (cross-reference to mk1 BIP).
+- BIP draft path-component-cap statement under §"Explicit path
+  encoding".
+- BIP draft §"Policy identifier (Tier 3)" engraving language softened
+  from "optionally engraved" to MAY-engrave with explicit fingerprint
+  alternative.
+
+### Changed
+
+- `BytecodeHeader::new_v0(bool)` → `new_v0(bool, bool)` — gains
+  `origin_paths: bool` argument. **Public-API break.** See
+  `MIGRATION.md` for sed snippet.
+- `encode_path(&DerivationPath) -> Vec<u8>` →
+  `encode_path(&DerivationPath) -> Result<Vec<u8>, Error>` — surfaces
+  `Error::PathComponentCountExceeded` when the path exceeds
+  `MAX_PATH_COMPONENTS = 10`. **Public-API break.** Symmetric change
+  on `encode_declaration`.
+- `md encode --fingerprint <@INDEX=HEX>` →
+  `md encode --master-key-fingerprint <@INDEX=HEX>`. **CLI break.**
+  The renamed flag still embeds BIP 32 master-key fingerprints into
+  the bytecode's fingerprints block; the more explicit name
+  disambiguates from the new `--policy-id-fingerprint` output flag.
+  No deprecation alias — pre-v1.0 break freedom.
+- BIP draft tag table: `0x36` no longer in the reserved range; reserved
+  range narrows to `0x37`–`0xFF`.
+- BIP draft bytecode header table: bit 3 documented as the
+  v0.10+ OriginPaths flag.
+
+### New error variants
+
+- `BytecodeErrorKind::OriginPathsCountTooLarge { count, max: 32 }` —
+  bytecode-layer structural error: count byte is zero or exceeds the
+  BIP 388 placeholder cap of 32.
+- `Error::OriginPathsCountMismatch { expected, got }` — policy-layer
+  semantic error: bytecode count doesn't match the tree's actual
+  placeholder count after parse.
+- `Error::PathComponentCountExceeded { got, max: 10 }` — applies to
+  both `Tag::SharedPath` and `Tag::OriginPaths` when an explicit-form
+  path-decl declares more than 10 components.
+
+(`Error` is `#[non_exhaustive]`; adding variants is API-additive, not
+breaking.)
+
+### Wire format
+
+- v0.10+ valid header bytes: `0x00`, `0x04`, `0x08`, `0x0C`. (v0.x ≤
+  0.9 was `0x00`, `0x04`.)
+- v0.x ≤ 0.9 SharedPath-only encodings remain byte-identical (header
+  bit 3 stays `0`; family token roll alone doesn't churn the bytes for
+  these vectors).
+- v0.10 OriginPaths-using encodings are NEW; v0.x ≤ 0.9 decoders
+  reject them via `Error::ReservedBitsSet` (intended forward-compat).
+- Encoder rule: emit `Tag::SharedPath` if all `@N` paths agree, emit
+  `Tag::OriginPaths` otherwise. Pure function of policy state;
+  round-trip stable.
+- Test-vector corpora (`v0.1.json` + `v0.2.json`) regenerated;
+  family-token rolls `"md-codec 0.9"` → `"md-codec 0.10"`. New positive
+  vector `o1_sortedmulti_2of3_divergent_paths` (and optional `o2`/`o3`)
+  exercising `Tag::OriginPaths`. New negative vectors covering each
+  new error variant.
+
+### FOLLOWUPS closed
+
+- `md-per-at-N-path-tag-allocation` — the headline mk1-surfaced item;
+  closed by allocating `Tag::OriginPaths = 0x36` and the per-`@N`
+  encoder/decoder pipeline.
+- `cli-policy-id-fingerprint-flag` — closed in-cycle by adding the
+  `md encode --policy-id-fingerprint` flag and renaming the existing
+  `md encode --fingerprint` to `--master-key-fingerprint` (the naming
+  conflict the deferral cited).
+- `bip-byte-layout-examples-stale-v0_6-renumber` — closed in-cycle by
+  sweeping stale `Tag::Placeholder = 0x32` and `Tag::SharedPath = 0x33`
+  references in the BIP byte-layout examples (correct values for v0.6+:
+  `0x33` and `0x34`); also fixed a stale `Tag::Multi = 0x19` reference
+  (correct: `0x08`) in the same example.
+
+### FOLLOWUPS deferred
+
+- `v010-p3-tier-2-kiv-walk-deferred` — the Tier 2 KIV walk in the
+  encoder per-`@N`-path precedence chain is currently stubbed; the
+  Tier 0 (`opts.origin_paths` override) and Tier 1
+  (`decoded_origin_paths` round-trip) cover all current use cases. v0.11
+  follow-up.
+
+### MSRV
+
+Unchanged: 1.85.
+
 ## [0.9.1] — 2026-04-29
 
 Patch-level housekeeping. Three small pre-existing items closed; no

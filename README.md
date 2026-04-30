@@ -80,12 +80,12 @@ MD addresses this with:
 The v0 specification scope targets the most common self-custody case:
 
 - A single user holding all seeds referenced by the policy (no foreign xpubs)
-- All `@i` placeholders share one derivation path
+- Shared paths (all `@i` placeholders on one derivation path) **and per-`@N` divergent paths** (one path per placeholder, in placeholder-index order) — v0.10+
 - `wsh()` segwit v0 or `tr()` taproot script types
 
-This covers single-key wallets, all common multisig configurations, decaying multisig, simple inheritance, and timelock-based recovery — every Liana wallet template plus typical Coldcard self-custody setups.
+This covers single-key wallets, all common multisig configurations (including those where each cosigner derives from a distinct BIP 48 account), decaying multisig, simple inheritance, and timelock-based recovery — every Liana wallet template plus typical Coldcard self-custody setups.
 
-Foreign xpubs (multi-party multisig where you don't hold all seeds) and per-placeholder paths are deferred to v1+.
+Foreign xpubs (multi-party multisig where you don't hold all seeds) are deferred to v1+. Per-`@N` divergent paths shipped in v0.10 (header bit 3 reclaimed; `Tag::OriginPaths = 0x36`); see [`CHANGELOG.md`](CHANGELOG.md) and [`MIGRATION.md`](MIGRATION.md) for the v0.10 wire-format break.
 
 ## Status
 

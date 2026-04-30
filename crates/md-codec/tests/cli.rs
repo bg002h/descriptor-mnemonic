@@ -443,20 +443,22 @@ fn md_unknown_subcommand_exits_nonzero() {
 }
 
 // ---------------------------------------------------------------------------
-// v0.2.1 — `--fingerprint` flag (phase-e-cli-fingerprint-flag)
+// v0.2.1 — `--master-key-fingerprint` flag (phase-e-cli-fingerprint-flag).
+// Renamed from `--fingerprint` in v0.10 to disambiguate from the new
+// `--policy-id-fingerprint` output flag.
 // ---------------------------------------------------------------------------
 
-/// Two `--fingerprint @i=hex` args for a 2-key policy → encoder accepts;
-/// stderr carries the privacy warning; stdout has the encoded chunk.
+/// Two `--master-key-fingerprint @i=hex` args for a 2-key policy → encoder
+/// accepts; stderr carries the privacy warning; stdout has the encoded chunk.
 #[test]
-fn md_encode_fingerprint_flag_accepts_two_placeholders() {
+fn md_encode_master_key_fingerprint_flag_accepts_two_placeholders() {
     Command::cargo_bin("md")
         .expect("binary built")
         .args([
             "encode",
-            "--fingerprint",
+            "--master-key-fingerprint",
             "@0=deadbeef",
-            "--fingerprint",
+            "--master-key-fingerprint",
             "@1=cafebabe",
             "wsh(multi(2,@0/**,@1/**))",
         ])
@@ -464,18 +466,19 @@ fn md_encode_fingerprint_flag_accepts_two_placeholders() {
         .success()
         .stdout(predicate::str::starts_with("md1"))
         .stderr(predicate::str::contains(
-            "--fingerprint embeds master-key fingerprints",
+            "--master-key-fingerprint embeds master-key fingerprints",
         ));
 }
 
-/// Missing index in the `--fingerprint` set → exits nonzero with a clear error.
+/// Missing index in the `--master-key-fingerprint` set → exits nonzero with a
+/// clear error.
 #[test]
-fn md_encode_fingerprint_flag_rejects_index_gap() {
+fn md_encode_master_key_fingerprint_flag_rejects_index_gap() {
     Command::cargo_bin("md")
         .expect("binary built")
         .args([
             "encode",
-            "--fingerprint",
+            "--master-key-fingerprint",
             "@0=deadbeef",
             // Missing @1 for a 2-key policy.
             "wsh(multi(2,@0/**,@1/**))",
@@ -490,18 +493,103 @@ fn md_encode_fingerprint_flag_rejects_index_gap() {
 
 /// Wrong-length hex (4 chars, not 8) → exits nonzero with a parse error.
 #[test]
-fn md_encode_fingerprint_flag_rejects_short_hex() {
+fn md_encode_master_key_fingerprint_flag_rejects_short_hex() {
     Command::cargo_bin("md")
         .expect("binary built")
         .args([
             "encode",
-            "--fingerprint",
+            "--master-key-fingerprint",
             "@0=dead", // 4 chars, not 8
             "wsh(pk(@0/**))",
         ])
         .assert()
         .failure()
         .stderr(predicate::str::contains("8 hex chars"));
+}
+
+/// Pre-v0.10 `--fingerprint` flag is gone — no deprecation alias. Pre-v1.0
+/// break freedom; the FOLLOWUPS entry that motivated this rename
+/// (`cli-policy-id-fingerprint-flag`) explicitly contemplated a hard rename.
+#[test]
+fn md_encode_old_fingerprint_flag_is_rejected() {
+    Command::cargo_bin("md")
+        .expect("binary built")
+        .args(["encode", "--fingerprint", "@0=deadbeef", "wsh(pk(@0/**))"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("unexpected").or(predicate::str::contains("--fingerprint")),
+        );
+}
+
+// ---------------------------------------------------------------------------
+// v0.10 — `--policy-id-fingerprint` flag
+// ---------------------------------------------------------------------------
+
+/// `--policy-id-fingerprint` adds a `Policy ID fingerprint: 0xXXXXXXXX` line
+/// to the human-readable output (additive — the 12-word phrase is still
+/// printed). The hex render is exactly 8 lowercase chars with `0x` prefix.
+#[test]
+fn md_encode_policy_id_fingerprint_emits_8_hex_char_line() {
+    let output = Command::cargo_bin("md")
+        .expect("binary built")
+        .args(["encode", "--policy-id-fingerprint", POLICY])
+        .output()
+        .expect("encode ran");
+    assert!(output.status.success(), "encode must succeed");
+    let stdout = String::from_utf8(output.stdout).expect("utf-8");
+
+    // Find the fingerprint line and validate its exact shape.
+    let fp_line = stdout
+        .lines()
+        .find(|l| l.starts_with("Policy ID fingerprint:"))
+        .expect("--policy-id-fingerprint must produce a 'Policy ID fingerprint:' line");
+
+    // Format: "Policy ID fingerprint: 0xXXXXXXXX" — 8 lowercase hex digits.
+    let hex_part = fp_line
+        .strip_prefix("Policy ID fingerprint: 0x")
+        .expect("expected '0x' prefix on fingerprint hex");
+    assert_eq!(hex_part.len(), 8, "fingerprint hex must be exactly 8 chars");
+    assert!(
+        hex_part
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "fingerprint hex must be lowercase: {hex_part:?}"
+    );
+
+    // The 12-word "Policy ID:" line is still present (additive semantic).
+    assert!(
+        stdout.lines().any(|l| l.starts_with("Policy ID:")),
+        "12-word 'Policy ID:' line must still be printed when --policy-id-fingerprint is set"
+    );
+}
+
+/// `--policy-id-fingerprint` is deterministic: encoding the same policy with
+/// the same options yields the same fingerprint bytes (PolicyId is a pure
+/// function of the canonical bytecode).
+#[test]
+fn md_encode_policy_id_fingerprint_is_deterministic() {
+    let extract_fp = || -> String {
+        let output = Command::cargo_bin("md")
+            .expect("binary built")
+            .args(["encode", "--policy-id-fingerprint", POLICY])
+            .output()
+            .expect("encode ran");
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("utf-8");
+        stdout
+            .lines()
+            .find(|l| l.starts_with("Policy ID fingerprint:"))
+            .expect("fingerprint line present")
+            .to_owned()
+    };
+
+    let first = extract_fp();
+    let second = extract_fp();
+    assert_eq!(
+        first, second,
+        "same policy + options must yield same Policy ID fingerprint across runs"
+    );
 }
 
 /// `md from-policy` — only available under the `cli-compiler` feature.

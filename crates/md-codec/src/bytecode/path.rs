@@ -32,6 +32,16 @@ static DICT: LazyLock<[(u8, DerivationPath); 14]> = LazyLock::new(|| {
     ]
 });
 
+/// Maximum derivation-path component count.
+///
+/// Aligns with BIP §3.5: no real-world BIP-32 path approaches 10 components
+/// (the deepest standard shape, BIP 48 keyorigin + change/index, is 6).
+/// Applied uniformly to both `Tag::SharedPath` and `Tag::OriginPaths` paths
+/// (per v0.10 design Q8). Capping at the encode/decode boundary in
+/// `bytecode/path.rs` ensures that no path-bearing layer above can produce
+/// or accept an oversized path.
+pub const MAX_PATH_COMPONENTS: usize = 10;
+
 /// Look up the derivation path for a known indicator byte.
 ///
 /// Returns `None` for reserved, unknown, or special (`0xFE`/`0xFF`) indicators.
@@ -62,17 +72,33 @@ pub fn path_to_indicator(path: &DerivationPath) -> Option<u8> {
 ///
 /// This function does **not** prepend `Tag::SharedPath` (0x34); that is the
 /// path-declaration framing layer's responsibility.
-pub fn encode_path(path: &DerivationPath) -> Vec<u8> {
+///
+/// # Errors
+///
+/// Returns [`crate::Error::PathComponentCountExceeded`] when the path has more than
+/// [`MAX_PATH_COMPONENTS`] components. Pre-v0.10 this function was infallible;
+/// the cap was added in v0.10 to bound the explicit-form path size uniformly
+/// across `Tag::SharedPath` and `Tag::OriginPaths`. Dictionary paths are
+/// always within the cap by construction (the deepest entry is 4 components).
+pub fn encode_path(path: &DerivationPath) -> Result<Vec<u8>, crate::Error> {
     use crate::bytecode::varint::encode_u64;
     use bitcoin::bip32::ChildNumber;
 
+    let len = path.len();
+    if len > MAX_PATH_COMPONENTS {
+        return Err(crate::Error::PathComponentCountExceeded {
+            got: len,
+            max: MAX_PATH_COMPONENTS,
+        });
+    }
+
     if let Some(indicator) = path_to_indicator(path) {
-        return vec![indicator];
+        return Ok(vec![indicator]);
     }
 
     let mut out = Vec::new();
     out.push(0xFE);
-    encode_u64(path.len() as u64, &mut out);
+    encode_u64(len as u64, &mut out);
     for child in path {
         let encoded = match child {
             ChildNumber::Normal { index } => 2u64 * u64::from(*index),
@@ -80,7 +106,7 @@ pub fn encode_path(path: &DerivationPath) -> Vec<u8> {
         };
         encode_u64(encoded, &mut out);
     }
-    out
+    Ok(out)
 }
 
 /// Deserialize a derivation path from its wire form.
@@ -123,6 +149,17 @@ pub(crate) fn decode_path(
             offset: count_offset,
             kind: crate::error::BytecodeErrorKind::VarintOverflow,
         })?;
+        // F5 error-priority: enforce the cap BEFORE decoding any components.
+        // This ensures a malicious or buggy stream that declares an oversized
+        // count surfaces `PathComponentCountExceeded` rather than the
+        // downstream `UnexpectedEnd` we'd otherwise hit when components run
+        // out. Mirrors the encode-side check.
+        if count > MAX_PATH_COMPONENTS {
+            return Err(crate::Error::PathComponentCountExceeded {
+                got: count,
+                max: MAX_PATH_COMPONENTS,
+            });
+        }
         let mut components = Vec::with_capacity(count);
         for _ in 0..count {
             let comp_offset = cur.offset();
@@ -175,12 +212,17 @@ pub(crate) fn decode_path(
 ///
 /// Intended to be called from the Phase 5 `encode_bytecode` wrapper, which
 /// concatenates `[header_byte] ++ encode_declaration(path) ++ encode_template(…)`.
-pub fn encode_declaration(path: &DerivationPath) -> Vec<u8> {
+///
+/// # Errors
+///
+/// Propagates [`crate::Error::PathComponentCountExceeded`] from [`encode_path`] when
+/// the path has more than [`MAX_PATH_COMPONENTS`] components.
+pub fn encode_declaration(path: &DerivationPath) -> Result<Vec<u8>, crate::Error> {
     use crate::bytecode::Tag;
     let mut out = Vec::new();
     out.push(Tag::SharedPath.as_byte());
-    out.extend_from_slice(&encode_path(path));
-    out
+    out.extend_from_slice(&encode_path(path)?);
+    Ok(out)
 }
 
 /// Deserialize a path declaration from a cursor-style byte stream.
@@ -270,6 +312,103 @@ pub fn decode_declaration_from_bytes(
     Ok((path, cur.offset()))
 }
 
+/// Maximum number of per-`@N` paths in an OriginPaths block.
+///
+/// Mirrors the BIP 388 placeholder cap of 32. Used as the structural
+/// upper bound by both [`encode_origin_paths`] and `decode_origin_paths`
+/// (the latter is `pub(crate)`-scoped).
+pub const MAX_ORIGIN_PATHS: u8 = 32;
+
+/// Serialize an OriginPaths block into its wire form.
+///
+/// The output is `[Tag::OriginPaths, count_byte, path_decl_0, path_decl_1, …]`
+/// where each `path_decl_i` is the [`encode_path`] output for that path
+/// (NOT prefixed with `Tag::SharedPath`; the OriginPaths block uses its own
+/// framing). The count byte is `paths.len() as u8` and is bounded by
+/// [`MAX_ORIGIN_PATHS`].
+///
+/// Standalone helper: Phase 3 wires this into `to_bytecode` after detecting
+/// path divergence among the per-`@N` origins.
+///
+/// # Errors
+///
+/// - [`Error::OriginPathsCountMismatch`] with `expected: 32, got: paths.len()`
+///   when `paths.len() > MAX_ORIGIN_PATHS`. Defense-in-depth: the BIP 388
+///   placeholder cap is enforced upstream, so reaching this is a bug.
+/// - [`Error::PathComponentCountExceeded`] propagated from [`encode_path`]
+///   when any individual path exceeds [`MAX_PATH_COMPONENTS`].
+///
+/// [`Error::OriginPathsCountMismatch`]: crate::Error::OriginPathsCountMismatch
+/// [`Error::PathComponentCountExceeded`]: crate::Error::PathComponentCountExceeded
+pub fn encode_origin_paths(paths: &[DerivationPath]) -> Result<Vec<u8>, crate::Error> {
+    use crate::bytecode::Tag;
+
+    if paths.len() > MAX_ORIGIN_PATHS as usize {
+        return Err(crate::Error::OriginPathsCountMismatch {
+            expected: MAX_ORIGIN_PATHS as usize,
+            got: paths.len(),
+        });
+    }
+
+    let mut out = Vec::new();
+    out.push(Tag::OriginPaths.as_byte());
+    // The bound check above guarantees paths.len() fits in u8 (≤ 32).
+    out.push(paths.len() as u8);
+    for path in paths {
+        out.extend_from_slice(&encode_path(path)?);
+    }
+    Ok(out)
+}
+
+/// Deserialize an OriginPaths block, given a cursor positioned just past the
+/// `Tag::OriginPaths` byte (the caller is expected to have consumed it
+/// already, mirroring `decode_path`'s contract relative to the path
+/// declaration framing).
+///
+/// Reads:
+/// - 1 byte: `count` (must be in `1..=MAX_ORIGIN_PATHS`)
+/// - `count` consecutive [`encode_path`] outputs
+///
+/// Returns the parsed paths in declaration order. The cursor is left
+/// positioned immediately past the last path's bytes.
+///
+/// # Errors
+///
+/// - [`BytecodeErrorKind::OriginPathsCountTooLarge`] when `count == 0` or
+///   `count > MAX_ORIGIN_PATHS`. Reported as a structural error because the
+///   condition is detectable from the count byte alone, before any
+///   tree-side comparison.
+/// - [`BytecodeErrorKind::UnexpectedEnd`] propagated from [`decode_path`]
+///   when the stream is truncated mid-list.
+/// - [`Error::PathComponentCountExceeded`] propagated from [`decode_path`]
+///   when an individual path declares more than [`MAX_PATH_COMPONENTS`].
+///
+/// [`BytecodeErrorKind::OriginPathsCountTooLarge`]: crate::error::BytecodeErrorKind::OriginPathsCountTooLarge
+/// [`BytecodeErrorKind::UnexpectedEnd`]: crate::error::BytecodeErrorKind::UnexpectedEnd
+/// [`Error::PathComponentCountExceeded`]: crate::Error::PathComponentCountExceeded
+pub(crate) fn decode_origin_paths(
+    cur: &mut crate::bytecode::cursor::Cursor<'_>,
+) -> Result<Vec<DerivationPath>, crate::Error> {
+    use crate::error::BytecodeErrorKind;
+
+    let count_offset = cur.offset();
+    let count = cur.read_byte()?;
+    if count == 0 || count > MAX_ORIGIN_PATHS {
+        return Err(crate::Error::InvalidBytecode {
+            offset: count_offset,
+            kind: BytecodeErrorKind::OriginPathsCountTooLarge {
+                count,
+                max: MAX_ORIGIN_PATHS,
+            },
+        });
+    }
+    let mut paths = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        paths.push(decode_path(cur)?);
+    }
+    Ok(paths)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,7 +438,7 @@ mod tests {
     fn decode_dictionary_round_trip() {
         for &(ind, _) in FIXTURE {
             let original = indicator_to_path(ind).expect("fixture entry must exist");
-            let encoded = encode_path(original);
+            let encoded = encode_path(original).expect("dictionary path within cap");
             let decoded = decode_all(&encoded)
                 .unwrap_or_else(|e| panic!("decode failed for indicator 0x{ind:02x}: {e}"));
             assert_eq!(
@@ -325,7 +464,7 @@ mod tests {
         ];
         for path_str in &cases {
             let original = DerivationPath::from_str(path_str).unwrap();
-            let encoded = encode_path(&original);
+            let encoded = encode_path(&original).expect("test path within cap");
             let decoded = decode_all(&encoded)
                 .unwrap_or_else(|e| panic!("decode failed for '{path_str}': {e}"));
             assert_eq!(decoded, original, "round-trip mismatch for '{path_str}'");
@@ -467,7 +606,7 @@ mod tests {
 
         // Test with a dictionary path (single-byte indicator).
         let path_dict = indicator_to_path(0x01).unwrap();
-        let mut encoded_dict = encode_path(path_dict);
+        let mut encoded_dict = encode_path(path_dict).expect("dictionary path within cap");
         encoded_dict.push(SENTINEL);
         let mut cur = Cursor::new(&encoded_dict);
         let _ = decode_path(&mut cur).unwrap();
@@ -479,7 +618,7 @@ mod tests {
 
         // Test with an explicit path (m/44'/0, 4 bytes: [0xFE, 0x02, 0x59, 0x00]).
         let path_explicit = DerivationPath::from_str("m/44'/0").unwrap();
-        let mut encoded_explicit = encode_path(&path_explicit);
+        let mut encoded_explicit = encode_path(&path_explicit).expect("test path within cap");
         encoded_explicit.push(SENTINEL);
         let mut cur = Cursor::new(&encoded_explicit);
         let _ = decode_path(&mut cur).unwrap();
@@ -591,7 +730,7 @@ mod tests {
     fn encode_dictionary_entry_uses_single_byte() {
         for &(ind, _) in FIXTURE {
             let path = indicator_to_path(ind).expect("fixture entry must exist");
-            let encoded = encode_path(path);
+            let encoded = encode_path(path).expect("dictionary path within cap");
             assert_eq!(
                 encoded,
                 vec![ind],
@@ -609,7 +748,7 @@ mod tests {
             path_to_indicator(&path).is_none(),
             "test path must not be in the dictionary"
         );
-        let encoded = encode_path(&path);
+        let encoded = encode_path(&path).expect("test path within cap");
         assert_eq!(encoded[0], 0xFE, "must start with explicit marker");
         assert_eq!(
             decode_all(&encoded).unwrap(),
@@ -622,14 +761,20 @@ mod tests {
     #[test]
     fn encode_explicit_hardened_marker() {
         let path = DerivationPath::from_str("m/0'").unwrap();
-        assert_eq!(encode_path(&path), vec![0xFE, 0x01, 0x01]);
+        assert_eq!(
+            encode_path(&path).expect("test path within cap"),
+            vec![0xFE, 0x01, 0x01]
+        );
     }
 
     /// m/0 (single unhardened component) → [0xFE, 0x01, 0x00].
     #[test]
     fn encode_explicit_unhardened() {
         let path = DerivationPath::from_str("m/0").unwrap();
-        assert_eq!(encode_path(&path), vec![0xFE, 0x01, 0x00]);
+        assert_eq!(
+            encode_path(&path).expect("test path within cap"),
+            vec![0xFE, 0x01, 0x00]
+        );
     }
 
     /// m/44'/0 → [0xFE, 0x02, 0x59, 0x00].
@@ -639,7 +784,10 @@ mod tests {
     #[test]
     fn encode_explicit_mixed() {
         let path = DerivationPath::from_str("m/44'/0").unwrap();
-        assert_eq!(encode_path(&path), vec![0xFE, 0x02, 0x59, 0x00]);
+        assert_eq!(
+            encode_path(&path).expect("test path within cap"),
+            vec![0xFE, 0x02, 0x59, 0x00]
+        );
     }
 
     /// m (empty path) → [0xFE, 0x00]. Empty path is not in the dictionary.
@@ -650,7 +798,10 @@ mod tests {
             path_to_indicator(&path).is_none(),
             "empty path must not be in the dictionary"
         );
-        assert_eq!(encode_path(&path), vec![0xFE, 0x00]);
+        assert_eq!(
+            encode_path(&path).expect("test path within cap"),
+            vec![0xFE, 0x00]
+        );
     }
 
     /// m/100 exercises multi-byte LEB128: 2*100 = 200 = 0xC8 > 127.
@@ -658,7 +809,10 @@ mod tests {
     #[test]
     fn encode_explicit_large_child_number() {
         let path = DerivationPath::from_str("m/100").unwrap();
-        assert_eq!(encode_path(&path), vec![0xFE, 0x01, 0xC8, 0x01]);
+        assert_eq!(
+            encode_path(&path).expect("test path within cap"),
+            vec![0xFE, 0x01, 0xC8, 0x01]
+        );
     }
 
     /// m/2147483647' (max BIP32 hardened index).
@@ -672,40 +826,46 @@ mod tests {
         crate::bytecode::varint::encode_u64(0xFFFF_FFFF_u64, &mut expected_leb);
         let mut expected = vec![0xFE, 0x01];
         expected.extend_from_slice(&expected_leb);
-        assert_eq!(encode_path(&path), expected);
+        assert_eq!(encode_path(&path).expect("test path within cap"), expected);
         // Also verify the LEB128 bytes themselves for documentation.
         assert_eq!(expected_leb, vec![0xFF, 0xFF, 0xFF, 0xFF, 0x0F]);
     }
 
-    /// 128 unhardened `0` children — the component *count* itself becomes a
-    /// 2-byte LEB128 (128 = 0x80, 0x01). Encodes as:
-    ///   [0xFE, 0x80, 0x01, <128 × 0x00>]
-    /// Verifies that neither encode_path nor decode_path hardcodes a single-byte
-    /// count. Round-trips through encode → decode and checks the byte prefix.
+    /// Exercise multi-byte LEB128 in the **child-index** dimension.
+    ///
+    /// Pre-v0.10 this test exercised multi-byte LEB128 in the
+    /// component-count dimension (128 components). v0.10's
+    /// `MAX_PATH_COMPONENTS = 10` cap makes that approach untenable, so
+    /// the test is rewritten (per F15 of the v0.10 design) to exercise
+    /// multi-byte LEB128 via a large child index instead.
+    ///
+    /// `m/16384` — encoded value `2 * 16384 = 32768 = 0x8000`. LEB128:
+    /// `[0x80, 0x80, 0x02]` (3 bytes), so the full output is
+    /// `[0xFE, 0x01, 0x80, 0x80, 0x02]`. Verifies that neither encode_path
+    /// nor decode_path hardcodes a single-byte child-index varint.
     #[test]
-    fn decode_path_round_trip_multi_byte_component_count() {
-        use bitcoin::bip32::ChildNumber;
+    fn decode_path_round_trip_multi_byte_child_index() {
+        let original = DerivationPath::from_str("m/16384").unwrap();
 
-        let components = vec![ChildNumber::Normal { index: 0 }; 128];
-        let original = DerivationPath::from(components);
+        let encoded = encode_path(&original).expect("multi-byte LEB128 child-index round-trip");
 
-        let encoded = encode_path(&original);
-
-        // Count of 128 in LEB128 = [0x80, 0x01].
+        // 1 (marker) + 1 (count=1) + 3 (LEB128 of 32768) = 5 bytes total.
         assert_eq!(encoded[0], 0xFE, "must start with explicit marker 0xFE");
-        assert_eq!(encoded[1], 0x80, "count LSB: LEB128(128) byte 0 = 0x80");
-        assert_eq!(encoded[2], 0x01, "count MSB: LEB128(128) byte 1 = 0x01");
-        // Total length: 1 (marker) + 2 (count) + 128 (components, each 0x00) = 131.
+        assert_eq!(encoded[1], 0x01, "count must be 1");
+        assert_eq!(encoded[2], 0x80, "LEB128(32768) byte 0 = 0x80");
+        assert_eq!(encoded[3], 0x80, "LEB128(32768) byte 1 = 0x80");
+        assert_eq!(encoded[4], 0x02, "LEB128(32768) byte 2 = 0x02");
         assert_eq!(
             encoded.len(),
-            131,
-            "encoded length must be 1 + 2 + 128 = 131 bytes"
+            5,
+            "encoded length must be 1 + 1 + 3 = 5 bytes"
         );
 
-        let decoded = decode_all(&encoded).expect("decode must succeed for 128-component path");
+        let decoded =
+            decode_all(&encoded).expect("decode must succeed for multi-byte LEB128 child index");
         assert_eq!(
             decoded, original,
-            "round-trip mismatch for 128-component path"
+            "round-trip mismatch for multi-byte child-index path"
         );
     }
 
@@ -723,7 +883,7 @@ mod tests {
     fn declaration_round_trip_dict() {
         for &(ind, _) in FIXTURE {
             let original = indicator_to_path(ind).expect("fixture entry must exist");
-            let encoded = encode_declaration(original);
+            let encoded = encode_declaration(original).expect("dictionary path within cap");
             assert_eq!(
                 encoded.len(),
                 2,
@@ -751,7 +911,7 @@ mod tests {
         let cases = ["m", "m/0'", "m/100", "m/44'/0", "m/44'/0'/1'"];
         for path_str in &cases {
             let original = DerivationPath::from_str(path_str).unwrap();
-            let encoded = encode_declaration(&original);
+            let encoded = encode_declaration(&original).expect("test path within cap");
             assert_eq!(
                 encoded[0],
                 Tag::SharedPath.as_byte(),
@@ -769,7 +929,7 @@ mod tests {
     fn encode_declaration_dictionary_byte_layout() {
         let path = DerivationPath::from_str("m/44'/0'/0'").unwrap();
         assert_eq!(
-            encode_declaration(&path),
+            encode_declaration(&path).expect("test path within cap"),
             vec![Tag::SharedPath.as_byte(), 0x01]
         );
     }
@@ -780,7 +940,7 @@ mod tests {
     fn encode_declaration_explicit_byte_layout() {
         let path = DerivationPath::from_str("m/44'/0").unwrap();
         assert_eq!(
-            encode_declaration(&path),
+            encode_declaration(&path).expect("test path within cap"),
             vec![Tag::SharedPath.as_byte(), 0xFE, 0x02, 0x59, 0x00]
         );
     }
@@ -835,7 +995,7 @@ mod tests {
 
         // Dictionary path: declaration is 2 bytes, sentinel at index 2.
         let path_dict = indicator_to_path(0x01).unwrap();
-        let mut buf = encode_declaration(path_dict);
+        let mut buf = encode_declaration(path_dict).expect("dictionary path within cap");
         buf.push(SENTINEL);
         let mut cur = Cursor::new(&buf);
         let _ = decode_declaration(&mut cur).unwrap();
@@ -847,7 +1007,7 @@ mod tests {
 
         // Explicit path: declaration is 5 bytes, sentinel at index 5.
         let path_explicit = DerivationPath::from_str("m/44'/0").unwrap();
-        let mut buf = encode_declaration(&path_explicit);
+        let mut buf = encode_declaration(&path_explicit).expect("test path within cap");
         buf.push(SENTINEL);
         let mut cur = Cursor::new(&buf);
         let _ = decode_declaration(&mut cur).unwrap();
@@ -882,7 +1042,7 @@ mod tests {
     #[test]
     fn from_bytes_dictionary_returns_path_and_length() {
         let path_dict = indicator_to_path(0x01).unwrap();
-        let buf = encode_declaration(path_dict);
+        let buf = encode_declaration(path_dict).expect("dictionary path within cap");
         let (decoded, consumed) = decode_declaration_from_bytes(&buf).unwrap();
         assert_eq!(&decoded, path_dict, "decoded path mismatch");
         assert_eq!(consumed, 2, "dictionary declaration should consume 2 bytes");
@@ -894,7 +1054,7 @@ mod tests {
     #[test]
     fn from_bytes_explicit_returns_path_and_length() {
         let path_explicit = DerivationPath::from_str("m/44'/0").unwrap();
-        let buf = encode_declaration(&path_explicit);
+        let buf = encode_declaration(&path_explicit).expect("test path within cap");
         let (decoded, consumed) = decode_declaration_from_bytes(&buf).unwrap();
         assert_eq!(decoded, path_explicit, "decoded path mismatch");
         assert_eq!(
@@ -910,7 +1070,7 @@ mod tests {
     #[test]
     fn from_bytes_does_not_consume_trailing_bytes() {
         let path_dict = indicator_to_path(0x01).unwrap();
-        let mut buf = encode_declaration(path_dict);
+        let mut buf = encode_declaration(path_dict).expect("dictionary path within cap");
         buf.extend_from_slice(&[0xAB, 0xCD, 0xEF]);
         let (decoded, consumed) = decode_declaration_from_bytes(&buf).unwrap();
         assert_eq!(&decoded, path_dict);
@@ -951,6 +1111,199 @@ mod tests {
                 }
             ),
             "expected UnexpectedEnd for truncated, got {err:?}"
+        );
+    }
+
+    // ── MAX_PATH_COMPONENTS cap (v0.10) ─────────────────────────────────────
+
+    /// 11 hardened components — one over the cap. `encode_path` must reject
+    /// with `Error::PathComponentCountExceeded { got: 11, max: 10 }` rather
+    /// than emit an oversized declaration.
+    #[test]
+    fn encode_path_rejects_11_components() {
+        let p = DerivationPath::from_str("m/0'/0'/0'/0'/0'/0'/0'/0'/0'/0'/0'").unwrap();
+        let err = encode_path(&p).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::PathComponentCountExceeded {
+                    got: 11,
+                    max: MAX_PATH_COMPONENTS
+                }
+            ),
+            "expected PathComponentCountExceeded {{ got: 11, max: 10 }}, got {err:?}"
+        );
+    }
+
+    /// 10 hardened components — exactly at the cap. Must encode and round-trip
+    /// successfully. Pins the cap as inclusive of `MAX_PATH_COMPONENTS`.
+    #[test]
+    fn encode_path_accepts_10_components() {
+        let p = DerivationPath::from_str("m/0'/0'/0'/0'/0'/0'/0'/0'/0'/0'").unwrap();
+        let encoded = encode_path(&p).expect("10 components must round-trip");
+        let decoded = decode_all(&encoded).expect("decode within cap");
+        assert_eq!(decoded, p, "round-trip mismatch at cap boundary");
+    }
+
+    /// Synthesize a 0xFE explicit-form declaration whose count byte declares
+    /// 11 components, with 11 valid component bytes following. `decode_path`
+    /// must reject with `PathComponentCountExceeded` before any tree-side
+    /// integration sees the path.
+    #[test]
+    fn decode_path_rejects_11_components_in_explicit_form() {
+        // 0xFE indicator + count=11 + 11 components, each m/0' (encoded value 1).
+        let mut bytes = vec![0xFE, 0x0B];
+        bytes.resize(bytes.len() + 11, 0x01);
+        let mut cur = Cursor::new(&bytes);
+        let err = decode_path(&mut cur).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::PathComponentCountExceeded {
+                    got: 11,
+                    max: MAX_PATH_COMPONENTS
+                }
+            ),
+            "expected PathComponentCountExceeded {{ got: 11, max: 10 }}, got {err:?}"
+        );
+    }
+
+    /// Per F5: pin error-priority ordering — the cap check MUST fire BEFORE
+    /// component decoding. Synthesize count=11 with NO component bytes after.
+    /// If the cap check is correctly placed, we get
+    /// `PathComponentCountExceeded`. If a future refactor moves the cap
+    /// check after component decoding, the test would fail with
+    /// `UnexpectedEnd` instead and surface the regression.
+    #[test]
+    fn decode_path_cap_check_fires_before_component_decode() {
+        let bytes = vec![0xFE, 0x0B]; // 0xFE indicator + count=11, no components
+        let mut cur = Cursor::new(&bytes);
+        let err = decode_path(&mut cur).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::PathComponentCountExceeded {
+                    got: 11,
+                    max: MAX_PATH_COMPONENTS
+                }
+            ),
+            "cap check must fire before component decode — got {err:?}"
+        );
+    }
+
+    // ── encode_origin_paths / decode_origin_paths (v0.10) ───────────────────
+
+    /// Round-trip three paths through `encode_origin_paths` →
+    /// `decode_origin_paths`. The encoded prefix bytes pin the wire format:
+    /// `[Tag::OriginPaths, count=3, …path-decls…]`.
+    #[test]
+    fn encode_origin_paths_round_trip_three_paths() {
+        let paths = vec![
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+        ];
+        let bytes = encode_origin_paths(&paths).expect("encode within bounds");
+
+        // Wire-format prefix: Tag::OriginPaths, then count.
+        assert_eq!(
+            bytes[0],
+            Tag::OriginPaths.as_byte(),
+            "first byte = Tag::OriginPaths"
+        );
+        assert_eq!(bytes[1], 0x03, "second byte = count (3)");
+
+        // The first two paths share dictionary indicator 0x05; the third is explicit.
+        // Layout: [0x36, 0x03, 0x05, 0x05, 0xFE, 0x04, 0x61, 0x01, 0x01, 0xC9, 0x01]
+        assert_eq!(bytes[2], 0x05, "first path = dict indicator 0x05");
+        assert_eq!(bytes[3], 0x05, "second path = dict indicator 0x05");
+        assert_eq!(bytes[4], 0xFE, "third path = explicit-form marker 0xFE");
+
+        // Decode (caller skips the Tag::OriginPaths byte; decode_origin_paths
+        // expects the count byte first, mirroring decode_path's contract).
+        let mut cur = Cursor::new(&bytes[1..]);
+        let recovered = decode_origin_paths(&mut cur).expect("decode within bounds");
+        assert_eq!(recovered.len(), 3, "should recover all three paths");
+        assert_eq!(recovered, paths, "round-trip mismatch");
+    }
+
+    /// `count == 0` must be rejected as a structural bytecode error (no
+    /// origin paths makes no semantic sense; `count: 1..=32`).
+    #[test]
+    fn decode_origin_paths_rejects_count_zero() {
+        let bytes = vec![0x00]; // count = 0 (Tag::OriginPaths byte already consumed)
+        let mut cur = Cursor::new(&bytes);
+        let err = decode_origin_paths(&mut cur).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::OriginPathsCountTooLarge { count: 0, max: 32 },
+                    ..
+                }
+            ),
+            "expected OriginPathsCountTooLarge {{ count: 0, max: 32 }}, got {err:?}"
+        );
+    }
+
+    /// `count == 33` (one over the BIP 388 cap) must be rejected as a
+    /// structural bytecode error.
+    #[test]
+    fn decode_origin_paths_rejects_count_33() {
+        let bytes = vec![33]; // count = 33 (one over BIP 388 cap)
+        let mut cur = Cursor::new(&bytes);
+        let err = decode_origin_paths(&mut cur).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::OriginPathsCountTooLarge { count: 33, max: 32 },
+                    ..
+                }
+            ),
+            "expected OriginPathsCountTooLarge {{ count: 33, max: 32 }}, got {err:?}"
+        );
+    }
+
+    /// Stream truncated mid-list: count declares 3 paths but only 2 dictionary
+    /// indicators follow. Decoder must surface `UnexpectedEnd` (propagated
+    /// from `decode_path`'s read of the missing third indicator).
+    #[test]
+    fn decode_origin_paths_truncated_mid_list() {
+        let bytes = vec![0x03, 0x05, 0x05]; // count=3 + 2 dictionary indicators
+        let mut cur = Cursor::new(&bytes);
+        let err = decode_origin_paths(&mut cur).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                crate::Error::InvalidBytecode {
+                    kind: BytecodeErrorKind::UnexpectedEnd,
+                    ..
+                }
+            ),
+            "expected UnexpectedEnd for truncated mid-list, got {err:?}"
+        );
+    }
+
+    /// Cursor-sentinel test: append a sentinel byte after a valid OriginPaths
+    /// block, decode, and verify the cursor is positioned at the sentinel —
+    /// proving `decode_origin_paths` consumes exactly its declared bytes and
+    /// neither under- nor over-reads.
+    #[test]
+    fn decode_origin_paths_consumes_exact_bytes() {
+        let paths = vec![
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+        ];
+        let mut bytes = encode_origin_paths(&paths).expect("encode within bounds");
+        bytes.push(0xFF); // trailing sentinel byte
+        let mut cur = Cursor::new(&bytes[1..]); // skip Tag::OriginPaths byte
+        decode_origin_paths(&mut cur).expect("decode within bounds");
+        // Cursor should be positioned at the sentinel.
+        assert_eq!(
+            cur.read_byte().unwrap(),
+            0xFF,
+            "decoder consumed wrong number of bytes"
         );
     }
 }

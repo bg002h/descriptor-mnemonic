@@ -94,19 +94,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** resolved md-codec-v0.9.0. Renamed `ChunkPolicyId → ChunkSetId`, `PolicyIdSeed → ChunkSetIdSeed`, `EncodeOptions::policy_id_seed → chunk_set_id_seed`, error variants `PolicyIdMismatch → ChunkSetIdMismatch` / `ReservedPolicyIdBitsSet → ReservedChunkSetIdBitsSet`, struct fields `ChunkHeader::Chunked.policy_id → chunk_set_id` / `Chunk.policy_id → chunk_set_id` / `Verifications.policy_id_consistent → chunk_set_id_consistent`, plus all related test helpers and prose (~85 sites; ~150 references). BIP §"Wallet identifier" → §"Chunk-set identifier" with v0.8→v0.9 naming-note. Wire format byte-identical to v0.8.x; test-vector corpora regenerate due to rename of `expected_error_variant` strings and family-token roll. mk1's BIP-submission gate is now cleared.
 - **Tier:** v0.9 (closed)
 
-### `md-per-at-N-path-tag-allocation` — allocate per-`@N` origin path tag in md1 bytecode
-
-- **Surfaced:** 2026-04-29 mk1 v0.1 closure-design pass (Q-4). Originally tracked in DECISIONS.md / mk1 closure as the open question that punted the wire-format decision to this repo. Companion: `md-per-N-path-tag-allocation` in `bg002h/mnemonic-key` `design/FOLLOWUPS.md`.
-- **Where:**
-  - `crates/md-codec/src/bytecode/path/` — Tag-table allocation
-  - `bip/bip-mnemonic-descriptor.mediawiki` §"Tag table" + §"Path declaration" — wire-format extension
-  - `design/SPEC_v0_X_*.md` — for the version that lands the change
-- **What:** BIP 388 wallet policies routinely use different origin paths per cosigner (e.g. `[fp1/48'/0'/0'/2']xpub_A` and `[fp2/48'/0'/0'/100']xpub_B` in the same multisig). md1 v0.x today carries one shared `Tag::SharedPath`; per-`@N` paths require a new tag in the unallocated 0x36+ range, or a backfill of the 0x24-0x32 range. The exact tag-byte allocation is the md1 wire-format question; mk1 has already declared the cross-format authority-precedence semantics on its side (mk1's `origin_path` is authoritative; md1's per-`@N` path is descriptive — see mk1 BIP §"Authority precedence"), so the only decision pending here is the byte allocation.
-- **Why deferred:** Wire-format change in md1 (semver-breaking). Not yet scheduled for a specific md-codec version; happens whenever per-`@N` paths become a planned md release feature.
-- **Coordination:** When this lands, the mk1 BIP §"Authority precedence" subsection is unchanged (semantics already capture the contract). The mk1 side needs no wire-format change; md1's BIP gains the tag-table entry and a §"Per-`@N` path declaration" subsection.
-- **Status:** open
-- **Tier:** v0.9 or v1+ (depends on when per-`@N` paths are scheduled)
-
 ### `md-path-dictionary-0x16-gap` — add missing testnet 0x16 entry to path dictionary
 
 - **Surfaced:** 2026-04-29 mk1 v0.1 Phase 2 BIP review (commit `4728230` in `bg002h/mnemonic-key`). Companion: `md-path-dictionary-0x16-gap` in `bg002h/mnemonic-key` `design/FOLLOWUPS.md`.
@@ -670,6 +657,113 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** resolved md-codec-v0.7.2. CLI flag renamed `--internal-key` → `--unspendable-key`; library parameter on `policy_to_bytecode` renamed `internal_key` → `unspendable_key` (Rust positional-args semantics: not ABI-breaking; existing callers compile unchanged). Module rustdoc gains a "Tap-context internal key — `unspendable_key` semantics" section that describes the upstream precedence rule (`extract_key` first, fallback parameter second). Workaround for "force this internal key" use case spelled out: build the `Tr` descriptor manually via `miniscript::Descriptor::new_tr` and pass through `WalletPolicy::from_descriptor`.
 - **Tier:** v0.7.x (closed)
 
+### `v010-p1-origin-paths-count-too-large-zero-message` — `OriginPathsCountTooLarge` Display message awkward when `count = 0`
+
+- **Surfaced:** v0.10.0 Phase 1 reviewer (commit `3b38242`). Spec §3 line 457 explicitly endorses one variant covering both bounds (`count == 0` and `count > 32`), and the implementer's docstring at `crates/md-codec/src/error.rs:514–530` documents this correctly. However, the `#[error("OriginPaths count {count} exceeds maximum {max}")]` template renders as "OriginPaths count 0 exceeds maximum 32" for the count-zero case — grammatical but semantically weak ("0 doesn't exceed 32 in arithmetic terms; it's just structurally invalid").
+- **Where:** `crates/md-codec/src/error.rs:524` (the `#[error(...)]` template on `BytecodeErrorKind::OriginPathsCountTooLarge`).
+- **What:** consider rewording the template to cover both bounds explicitly, e.g., `"OriginPaths count {count} is out of range (must be 1..={max})"`. Phase 2 introduces the actual `decode_origin_paths` callsite that surfaces this message; that's a natural revisit point.
+- **Why deferred:** the variant name + docstring already match the spec convention; the wording nit doesn't block Phase 2 and the actual check site lands in Phase 2, so any rewording is best done together with the implementation that exercises both bounds.
+- **Status:** resolved by Phase 2 inline-fix (per Phase 2 reviewer recommendation). Template reworded to `"OriginPaths count {count} is out of range (must be 1..={max})"`. Resolved in the Phase-2-followup commit alongside MAX_PATH_COMPONENTS cap + OriginPaths helpers.
+- **Tier:** v0.10-nice-to-have (closed)
+
+### `v010-p2-origin-paths-round-trip-spec-byte-pin` — Example B round-trip test pins prefix only
+
+- **Surfaced:** v0.10.0 Phase 2 reviewer (commit `1936b19`). The
+  `encode_origin_paths_round_trip_three_paths` test at
+  `crates/md-codec/src/bytecode/path.rs:1196–1227` asserts the first 5
+  bytes of the encoded output (`bytes[0..=4] = [0x36, 0x03, 0x05, 0x05, 0xFE]`)
+  but does not byte-pin the remaining 6 bytes (`04 61 01 01 C9 01`) of
+  the explicit-form third path. Spec §2 line 157 pins the full 11-byte
+  sequence `36 03 05 05 FE 04 61 01 01 C9 01`. The
+  `assert_eq!(recovered, paths)` round-trip provides indirect
+  verification but doesn't catch byte-level encoder drift in the
+  explicit-path tail.
+- **Where:** `crates/md-codec/src/bytecode/path.rs:1196–1227`
+  (`encode_origin_paths_round_trip_three_paths`).
+- **What:** strengthen the assertion to pin the full 11-byte sequence
+  per spec §2:
+  ```rust
+  assert_eq!(
+      bytes,
+      vec![0x36, 0x03, 0x05, 0x05, 0xFE, 0x04, 0x61, 0x01, 0x01, 0xC9, 0x01],
+      "must match spec §2 Example B byte sequence"
+  );
+  ```
+  Optionally keep the existing prefix-byte asserts as
+  documentation-of-layout, or replace them with the full-sequence
+  assert.
+- **Why deferred:** the round-trip eq-comparison provides indirect
+  verification of the explicit-path tail bytes (an encoder bug there
+  would cause decode mismatch), so the test is correct, just not
+  spec-pinned at maximum strength. Phase 4 conformance vectors will
+  also pin Example B's full byte sequence as a fixture, providing a
+  second line of defense.
+- **Status:** resolved by md-codec-v0.10.0 phase 4 (commit 2e61d38)
+- **Tier:** v0.10-nice-to-have (closed)
+- **Resolution:** Phase 4 added the `o2_vector_origin_paths_block_matches_spec_example_b` test in `crates/md-codec/src/vectors.rs:2693-2707`, which asserts the o2 corpus vector's `expected_bytecode_hex` contains the full 11-byte SPEC §2 Example B sequence `36030505fe04610101c901`. This is the "second line of defense" coverage the original entry pre-acknowledged. The `path.rs:1199` round-trip test itself remains prefix-pinned (still relies on the `assert_eq!(recovered, paths)` round-trip for the explicit-path tail), but the spec byte sequence is now durably pinned at the corpus layer; an encoder regression on the explicit-path tail would surface as a vector hex mismatch + corpus SHA delta.
+
+### `v010-p3-tier-2-kiv-walk-deferred` — Tier 2 KIV walk in `placeholder_paths_in_index_order` is stubbed in v0.10.0
+
+- **Surfaced:** v0.10.0 Phase 3 implementation. The 4-tier per-`@N`-path
+  precedence chain in `WalletPolicy::placeholder_paths_in_index_order`
+  (spec §4) defines Tier 2 as "walk the key-information vector for
+  concrete-key policies, extracting per-key origin paths in
+  placeholder-index order." Phase 3 ships this tier as a stub returning
+  `Ok(None)` (always falls through to Tier 3 shared-path fallback).
+- **Where:**
+  - `crates/md-codec/src/policy.rs` — `WalletPolicy::try_extract_paths_from_kiv` (TODO comment in body).
+  - `WalletPolicy::placeholder_paths_in_index_order` consults this method as Tier 2.
+- **What:** wire up Tier 2 to walk the policy's key-information vector
+  and extract `(fingerprint, origin_path)` for each placeholder in
+  placeholder-index order. The natural input is the materialized
+  `Descriptor<DescriptorPublicKey>` already built in `to_bytecode`, but
+  `descriptor.iter_pk()` traverses in AST order — for `sortedmulti(...)`
+  this yields lex-sorted-by-pubkey-bytes order, NOT placeholder-index
+  order. A correct implementation must either (a) walk the inner
+  `WalletPolicy.template` (a `Descriptor<KeyExpression>`) using each
+  `KeyExpression`'s `index` field to map AST position → placeholder
+  index — currently blocked because the fork's `WalletPolicy.template`
+  field is private (no public accessor), or (b) perform the walk at the
+  policy-construction layer (e.g., on `from_descriptor` ingestion) and
+  cache per-`@N` paths in a new `WalletPolicy` field — the
+  decoded-vs-source-of-truth state machine then mirrors
+  `decoded_origin_paths`. The implementation choice and surface impact
+  warrant a separate design pass.
+- **Why deferred:** v0.10.0's hot path for per-`@N` divergence is the
+  Tier 0 `EncodeOptions::origin_paths` override (test-vector generation)
+  and the Tier 1 `decoded_origin_paths` round-trip stability source
+  (any policy decoded from a `Tag::OriginPaths`-bearing bytecode). Both
+  are fully wired and tested in Phase 3. Tier 2 only matters for the
+  freshly-parsed concrete-key descriptor case — a path that exists in
+  v0.x ≤ 0.9 today and silently flattens to shared-path. Stubbing Tier
+  2 in v0.10.0 leaves that path's behavior IDENTICAL to v0.9 (Tier 3
+  shared-path fallback fires, encoder emits `Tag::SharedPath`),
+  preserving wire-format byte-equality for v0.9-shaped concrete-key
+  inputs. The known bug — losing per-`@N` divergence on
+  freshly-parsed-from-string concrete-key policies — is a known
+  v0.x limitation that v0.10.0 does not regress and does not fully
+  fix; v0.11 (or a v0.10.1) closes it with the API design above.
+- **Status:** open
+- **Tier:** v0.11
+
+### `cli-policy-id-fingerprint-flag` — CLI rendering of `PolicyId::fingerprint()` short form
+
+- **Surfaced:** v0.10 Phase 5 implementation 2026-04-29 (commit pending). Spec Q13 added the `PolicyId::fingerprint() -> [u8; 4]` API; the implementation plan suggested optional CLI integration for printing the short form via something like `md encode --fingerprint`.
+- **Where:** `crates/md-codec/src/bin/md/main.rs` — `cmd_encode` currently prints `Policy ID: {12 words}` unconditionally (line ~381); there is no toggle to switch to a short hex form. The natural rendering is `0x{:08x}`.
+- **What:** Add a CLI flag (or new subcommand) that renders the freshly-computed `PolicyId` as `fingerprint()` (8 hex chars / 4 bytes) instead of, or in addition to, the 12-word form. Use cases per Q13: log lines, CLI scripts, minimal-cost engraving anchor for users who don't want the full 12-word phrase. The library API ships in v0.10.0; only the CLI toggle is deferred.
+- **Why deferred:** The obvious flag name `--fingerprint` is already taken in `md encode` for embedding **master-key** fingerprints (`@INDEX=HEX` form, BIP §"Fingerprints block"). Adding an output-rendering `--fingerprint` flag to the same subcommand creates a flag-name conflict that cannot be resolved without either renaming the existing flag (wire-affecting CLI break) or picking a different name (e.g., `--policy-id-fingerprint`, `--short-id`) which then no longer matches the API method name. Either choice deserves a small design pass with the user — not in scope for Phase 5's "small additive change" criterion. Library API is sufficient for downstream tools to use immediately.
+- **Status:** resolved by commit `82af0ea` (folded into v0.10.0). User chose the rename path: existing `--fingerprint` renamed to `--master-key-fingerprint` (CLI break, no deprecation alias per pre-v1.0 break freedom); new `--policy-id-fingerprint` flag added as a boolean that additively prints `Policy ID fingerprint: 0x{:08x}` after the existing 12-word `Policy ID:` line. MIGRATION.md and CHANGELOG.md document the rename + addition.
+- **Tier:** v0.11 (closed; folded into v0.10.0)
+
+### `bip-byte-layout-examples-stale-v0_6-renumber` — BIP byte-layout examples reference pre-v0.6 tag values
+
+- **Surfaced:** v0.10.0 Phase 6 implementer (commit `b5f00f9`). While editing `bip/bip-mnemonic-descriptor.mediawiki` to insert the v0.10 OriginPaths sections, the implementer noticed that several byte-layout examples elsewhere in the BIP still reference `Tag::Placeholder (0x32)` and `Tag::SharedPath (0x33)` — both stale per the v0.6 tag-renumber. Correct values per the current tag table: `Placeholder = 0x33`, `SharedPath = 0x34`. The v0.9.1 CHANGELOG noted that the rustdoc sweep for the v0.5→v0.6 renumber missed some sites; the BIP byte-layout examples are an analogous unfixed sweep miss that pre-dates v0.10.
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — multiple inline byte-layout example blocks. Pre-edit-shift line numbers were 478, 519, 532, 582, 593; post-Phase-6 edits these have shifted but the stale references remain. Locate via `rg -n '0x32|0x33' bip/bip-mnemonic-descriptor.mediawiki` and check each occurrence against the v0.6+ tag table at the top of the file.
+- **What:** sweep all `0x32` references (should be `0x33` for Placeholder) and `0x33`-as-SharedPath references (should be `0x34`). The Phase-6 implementer fixed exactly one occurrence (the path-declaration tag-table location adjacent to the v0.10 insertion); the rest were left to avoid scope creep into a v0.5→v0.6 sweep that pre-dates v0.10.
+- **Why deferred:** stale references pre-date v0.10 (v0.5→v0.6 renumber sweep miss); not in Phase 6 scope; would balloon the v0.10 docs commit. Best done as a v0.10.0.1 patch cleanup after the v0.10.0 release ships.
+- **Status:** resolved by Phase-6-followup commit (folded into v0.10.0). Swept all 5 stale occurrences in the byte-layout example for `wsh(multi(2,@0/**,@1/**))`: the example bytecode line + 4 annotation rows now correctly reference `Tag::SharedPath = 0x34`, `Tag::Multi = 0x08`, `Tag::Placeholder = 0x33`. Also fixed the "Key references" section (`0x32 <index>` → `0x33 <index>`).
+- **Tier:** v0.10.0.1-cleanup (closed; folded into v0.10.0)
+
 ---
 
 ## Resolved items
@@ -1134,6 +1228,21 @@ See BIP §FAQ for rationale.
 - **Surfaced:** Phase B bucket A reviewer (Opus 4.7) on commit `5f13812`
 - **Status:** resolved `d79125d` (Pass-3 batch) — `pub data: Vec<u8>` field removed from `DecodedString`; replaced with `pub fn data(&self) -> &[u8]` returning a slice into the existing `data_with_checksum` field (`&data_with_checksum[..len - checksum_len]`, where `checksum_len = 13` for `BchCode::Regular` and `15` for `BchCode::Long`). Internal `decoded_strings` buffer in `decode.rs` restructured from `Vec<(Vec<u8>, BchCode)>` to `Vec<DecodedString>` to preserve the single allocation produced by the BCH layer. CHANGELOG `[Unreleased]` (planned 0.6.0) and MIGRATION `v0.5.x → v0.6.0` sections added. Reviewed by feature-dev:code-reviewer subagent — DONE_WITH_CONCERNS; the reviewer's Important finding (a `data_with_checksum`-substitution trap in the migration docs) was addressed inline before commit. Report at `design/agent-reports/pass-3-item-2-review-decoded-string-data-accessor.md`.
 - **Tier:** v0.3 → 0.6.0 (closed; was originally filed as v0.3 breaking-window candidate but applied during Pass-3 cleanup for inclusion in the 0.6.0 breaking release)
+
+### v0.10.0
+
+### `md-per-at-N-path-tag-allocation` — allocate per-`@N` origin path tag in md1 bytecode
+
+- **Surfaced:** 2026-04-29 mk1 v0.1 closure-design pass (Q-4). Originally tracked in DECISIONS.md / mk1 closure as the open question that punted the wire-format decision to this repo. Companion: `md-per-N-path-tag-allocation` in `bg002h/mnemonic-key` `design/FOLLOWUPS.md`.
+- **Where:**
+  - `crates/md-codec/src/bytecode/path/` — Tag-table allocation
+  - `bip/bip-mnemonic-descriptor.mediawiki` §"Tag table" + §"Path declaration" — wire-format extension
+  - `design/SPEC_v0_X_*.md` — for the version that lands the change
+- **What:** BIP 388 wallet policies routinely use different origin paths per cosigner (e.g. `[fp1/48'/0'/0'/2']xpub_A` and `[fp2/48'/0'/0'/100']xpub_B` in the same multisig). md1 v0.x today carries one shared `Tag::SharedPath`; per-`@N` paths require a new tag in the unallocated 0x36+ range, or a backfill of the 0x24-0x32 range. The exact tag-byte allocation is the md1 wire-format question; mk1 has already declared the cross-format authority-precedence semantics on its side (mk1's `origin_path` is authoritative; md1's per-`@N` path is descriptive — see mk1 BIP §"Authority precedence"), so the only decision pending here is the byte allocation.
+- **Why deferred:** Wire-format change in md1 (semver-breaking). Not yet scheduled for a specific md-codec version; happens whenever per-`@N` paths become a planned md release feature.
+- **Coordination:** When this lands, the mk1 BIP §"Authority precedence" subsection is unchanged (semantics already capture the contract). The mk1 side needs no wire-format change; md1's BIP gains the tag-table entry and a §"Per-`@N` path declaration" subsection.
+- **Status:** resolved md-codec-v0.10.0. Allocated `Tag::OriginPaths = 0x36` (new, unallocated 0x36+ range; not a 0x24-0x32 backfill) carrying a dense per-`@N` path block. Reclaimed header bit 3 (was reserved-must-be-zero in v0.x ≤ 0.9) as the OriginPaths-present flag. `MAX_PATH_COMPONENTS = 10` enforced uniformly on both `Tag::SharedPath` and `Tag::OriginPaths`. Encoder auto-detects divergent-path policies and emits `OriginPaths` when needed, falling back to `SharedPath` otherwise; new `decoded_origin_paths` field on `WalletPolicy` preserves round-trip byte-stability. New `PolicyId::fingerprint() → [u8; 4]` short-identifier API. BIP gains §"Per-`@N` path declaration" + §"PolicyId types" teaching subsection + §"Authority precedence with MK" cross-reference. Wire-format break: v0.x ≤ 0.9 decoders reject v0.10 OriginPaths-using encodings via `Error::ReservedBitsSet` (intended forward-compat behavior); shared-path encodings remain byte-identical to v0.9 modulo family-token roll. Companion `md-per-N-path-tag-allocation` in mk1 closes in lockstep (mk1 BIP §"Authority precedence" semantics unchanged; mk1 side needs no wire-format change).
+- **Tier:** v0.10 (closed)
 
 ---
 
