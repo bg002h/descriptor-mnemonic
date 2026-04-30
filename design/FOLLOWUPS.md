@@ -754,8 +754,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   freshly-parsed-from-string concrete-key policies — is a known
   v0.x limitation that v0.10.0 does not regress and does not fully
   fix; v0.11 (or a v0.10.1) closes it with the API design above.
-- **Status:** open
-- **Tier:** v0.11
+- **Status:** resolved by md-codec-v0.10.1 (commit pending). Wired up `try_extract_paths_from_kiv` to walk `inner.template().iter_pk()` + `inner.key_info()` in lockstep and extract per-`@N` origin paths in placeholder-index order, using the fork's new public `template()` and `key_info()` accessors (apoelstra/rust-miniscript#2, available via the workspace `[patch]` block). Tier 2 is gated to skip when `decoded_shared_path` is populated, preventing dummy-key origin leakage on `from_bytecode`-materialized policies. The headline behavior change — concrete-key descriptors with divergent origin paths now emit `Tag::OriginPaths` instead of being silently flattened to `Tag::SharedPath` via Tier 3 — is pinned by the new `tier_2_drives_encoder_dispatch_change_from_v0_10_0` test in `crates/md-codec/src/policy.rs`.
+- **Tier:** v0.11 → v0.10.1 (closed; folded into v0.10.1)
 
 ### `cli-policy-id-fingerprint-flag` — CLI rendering of `PolicyId::fingerprint()` short form
 
@@ -774,6 +774,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** stale references pre-date v0.10 (v0.5→v0.6 renumber sweep miss); not in Phase 6 scope; would balloon the v0.10 docs commit. Best done as a v0.10.0.1 patch cleanup after the v0.10.0 release ships.
 - **Status:** resolved by Phase-6-followup commit (folded into v0.10.0). Swept all 5 stale occurrences in the byte-layout example for `wsh(multi(2,@0/**,@1/**))`: the example bytecode line + 4 annotation rows now correctly reference `Tag::SharedPath = 0x34`, `Tag::Multi = 0x08`, `Tag::Placeholder = 0x33`. Also fixed the "Key references" section (`0x32 <index>` → `0x33 <index>`).
 - **Tier:** v0.10.0.1-cleanup (closed; folded into v0.10.0)
+
+### `to-bytecode-multipath-shared-at-n-set-key-info-mismatch` — `to_bytecode` fails for multipath-shared `@N` policies
+
+- **Surfaced:** v0.10.1 implementation 2026-04-29. Surfaced while writing the Tier 2 multipath-shared `@N` test (`tier_2_multipath_shared_at_n_collapses_to_single_path`): the Tier 2 walk itself works correctly (collapses 2 AST positions for `@0` into a single output slot), but `WalletPolicy::to_bytecode` fails with `PolicyScopeViolation("Invalid key information for WalletPolicy template")` because its dummy-key materialization step calls `set_key_info(&dummy_keys(count))` where `count == key_count()` (distinct placeholders) — but the fork's `set_key_info` requires `keys.len() == template.iter_pk().count()` (AST positions). For multipath-shared `@N` (e.g., `sh(multi(1,@0/<0;1>/*,@0/<2;3>/*))`), AST positions > distinct placeholders, so the count mismatch errors out.
+- **Where:** `crates/md-codec/src/policy.rs` — `to_bytecode`, the `dummies = dummy_keys(count)` / `inner_clone.set_key_info(&dummies)` block (~line 415-420). The `dummy_keys(count)` helper takes a placeholder count; need to broadcast the per-`@N` dummy across all AST positions referencing that placeholder.
+- **What:** rework the dummy-key materialization step to walk `inner.template().iter_pk()` and produce a `Vec<DescriptorPublicKey>` of length `iter_pk().count()`, picking dummy keys by `ke.index.0` (so multiple AST positions for the same `@N` get the same dummy). The placeholder map (`dummy_key[i] → i`) stays keyed by placeholder index. This is a pure encoder fix; no wire-format change. The Tier 2 multipath-shared test's end-to-end encode assertion was elided in v0.10.1 to defer this fix — the test currently asserts only the Tier 2 walk's output, with a comment pointing here.
+- **Why deferred:** v0.10.1's scope is narrowly Tier 2 KIV walk wire-up. Multipath-shared `@N` end-to-end encoding is a pre-existing gap (predates v0.10) — `to_bytecode` has likely always failed for these inputs because the BIP 388 syntax is unusual and the codec's test corpus didn't include them. Fixing it requires a small but distinct change in the dummy materialization path; better to land as its own commit with its own focused test (`to_bytecode_round_trip_multipath_shared_at_n`) than to bolt onto v0.10.1.
+- **Status:** open
+- **Tier:** v0.10.2 or v0.11
 
 ---
 

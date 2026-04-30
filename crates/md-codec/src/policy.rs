@@ -306,7 +306,28 @@ impl WalletPolicy {
     pub fn inner(&self) -> &InnerWalletPolicy {
         &self.inner
     }
+}
 
+/// Extract the BIP 32 origin derivation path of a `DescriptorPublicKey`.
+///
+/// Returns `Some(path)` for `XPub` / `MultiXPub` carrying an `[fp/path]`
+/// origin prefix; `None` for `Single` keys (which have no origin field) or
+/// for xpubs parsed without a leading origin block. Mirrors the per-variant
+/// match in [`WalletPolicy::shared_path`] but without materializing the
+/// descriptor — used by the Tier 2 KIV walk
+/// ([`WalletPolicy::try_extract_paths_from_kiv`]) where the caller already
+/// holds a `&DescriptorPublicKey`.
+fn origin_path_of(key: &DescriptorPublicKey) -> Option<DerivationPath> {
+    match key {
+        DescriptorPublicKey::XPub(xpub) => xpub.origin.as_ref().map(|(_, path)| path.clone()),
+        DescriptorPublicKey::MultiXPub(multi) => {
+            multi.origin.as_ref().map(|(_, path)| path.clone())
+        }
+        DescriptorPublicKey::Single(_) => None,
+    }
+}
+
+impl WalletPolicy {
     // -----------------------------------------------------------------------
     // Bytecode encoding / decoding (Task 5-B)
     // -----------------------------------------------------------------------
@@ -331,9 +352,11 @@ impl WalletPolicy {
     /// 1. `self.decoded_origin_paths` — populated by [`Self::from_bytecode`]
     ///    when the source bytecode carried a `Tag::OriginPaths` block, for
     ///    decode→encode round-trip stability.
-    /// 2. KIV walk — for concrete-key policies. **Stubbed in v0.10.0**; see
-    ///    FOLLOWUPS.md `v010-p3-tier-2-kiv-walk-deferred`. Stub returns
-    ///    `None`, falling through to Tier 3.
+    /// 2. KIV walk — for concrete-key policies. Walks `inner.template()`
+    ///    and `inner.key_info()` in lockstep to extract per-`@N` origin
+    ///    paths from the underlying descriptor (wired up in v0.10.1; see
+    ///    `try_extract_paths_from_kiv`). Returns `None` for template-only
+    ///    policies or keys without origin info, falling through to Tier 3.
     /// 3. Shared-path fallback — broadcast the existing Phase-B shared-path
     ///    chain (`opts.shared_path` → `decoded_shared_path` → `shared_path()`
     ///    → `default_path_for_v0_4_types` → BIP 84 mainnet) across all
@@ -475,11 +498,22 @@ impl WalletPolicy {
         if let Some(ref paths) = self.decoded_origin_paths {
             return Ok(paths.clone());
         }
-        // Tier 2: walk the key-information vector for concrete-key policies.
-        // STUBBED in v0.10.0 (returns Ok(None)); see FOLLOWUPS.md
-        // `v010-p3-tier-2-kiv-walk-deferred` for rationale and re-enable plan.
-        if let Some(paths) = self.try_extract_paths_from_kiv()? {
-            return Ok(paths);
+        // Tier 2: walk the key-information vector for concrete-key
+        // policies (wired in v0.10.1 via the fork's template() +
+        // key_info() accessors). Skipped when the policy was constructed
+        // via `from_bytecode` — its `key_info` holds dummy keys, not real
+        // ones, so a KIV walk would leak dummy-key origin paths into the
+        // re-encoding instead of preserving the on-wire path. Detection
+        // signal: `from_bytecode` always populates either
+        // `decoded_origin_paths` (handled above as Tier 1) or
+        // `decoded_shared_path` (consumed by Tier 3 below); presence of
+        // the latter is the marker that `key_info` is dummy-populated.
+        // Returns None for template-only policies or keys lacking origin
+        // info → falls through to Tier 3.
+        if self.decoded_shared_path.is_none() {
+            if let Some(paths) = self.try_extract_paths_from_kiv()? {
+                return Ok(paths);
+            }
         }
         // Tier 3: fall through to the existing shared-path tier chain
         // (v0.x behavior). Broadcast the resolved single shared path across
@@ -490,29 +524,84 @@ impl WalletPolicy {
     }
 
     /// Tier 2 of the per-`@N`-path precedence chain — extract origin paths
-    /// from the policy's key information vector in placeholder-index order.
+    /// from the policy's key-information vector in placeholder-index order.
     ///
-    /// **Stubbed in v0.10.0**: returns `Ok(None)`, falling through to Tier 3.
-    /// The walk has architectural ambiguity:
-    /// - The fork's `WalletPolicy::key_info` is private; no public accessor.
-    /// - `descriptor.iter_pk()` traverses in AST order, which for
-    ///   `sortedmulti(...)` produces lex-sorted-by-pubkey-bytes order — not
-    ///   placeholder-index order. Mapping AST order to placeholder index
-    ///   requires either a KeyExpression-based template walk or a
-    ///   round-trip via `from_descriptor` (which itself uses
-    ///   `descriptor.iter_pk()` and would reorder). Either approach is
-    ///   non-trivial and warrants a separate design pass.
+    /// Walks `inner.template().iter_pk()` and `inner.key_info()` in
+    /// lockstep (both yield in AST order; this is the documented invariant
+    /// of the fork's accessors). For each `KeyExpression`, the placeholder
+    /// index `ke.index.0` selects which slot in the output vector to fill
+    /// from the corresponding `DescriptorPublicKey`'s origin path.
     ///
-    /// See `design/FOLLOWUPS.md` entry
-    /// `v010-p3-tier-2-kiv-walk-deferred` for the deferral rationale and
-    /// the v0.11 follow-up plan. Production callers wanting per-`@N`
-    /// divergence today have the Tier 0 [`EncodeOptions::origin_paths`]
-    /// override; round-trip stability for previously-decoded
-    /// OriginPaths-bearing bytecode flows through Tier 1 unaffected.
-    // TODO(v0.10-followup): implement Tier 2 KIV walk; see
-    // FOLLOWUPS.md `v010-p3-tier-2-kiv-walk-deferred`.
+    /// Returns `Ok(None)` when the walk cannot extract a complete set of
+    /// per-`@N` paths and Tier 3 (shared-path fallback) should fire:
+    /// - `key_info` is empty (template-only policy);
+    /// - any concrete key lacks origin info (`Single(_)`, or `XPub` /
+    ///   `MultiXPub` with `origin == None`);
+    /// - a multipath-shared `@N` (same placeholder appearing at multiple
+    ///   AST positions, e.g. via `<2;3>` ranges) sees disagreeing origin
+    ///   paths across its occurrences (BIP 388 invariant violation that
+    ///   degrades silently to Tier 3 rather than erroring).
+    ///
+    /// Returns `Ok(Some(paths))` with `paths.len() == key_count` when the
+    /// walk completes successfully; the encoder's auto-detect then
+    /// dispatches between `Tag::SharedPath` (all equal) and
+    /// `Tag::OriginPaths` (any divergence).
+    ///
+    /// Wired up in v0.10.1 once the fork landed `WalletPolicy::template()`
+    /// and `WalletPolicy::key_info()` accessors (apoelstra/rust-miniscript#2).
     fn try_extract_paths_from_kiv(&self) -> Result<Option<Vec<DerivationPath>>, Error> {
-        Ok(None)
+        let inner = &self.inner;
+
+        // Template-only policy: no concrete keys to walk; fall through to
+        // Tier 3 (the existing shared-path fallback handles template-only
+        // inputs by broadcasting the resolved shared path across all `@N`).
+        if inner.key_info().is_empty() {
+            return Ok(None);
+        }
+
+        // Determine the number of distinct placeholders. BIP 388's
+        // `validate()` invariant (enforced in the fork) guarantees
+        // placeholder indices are `0..N-1` contiguously, so
+        // `max(index) + 1` is the placeholder count.
+        let key_count = inner
+            .template()
+            .iter_pk()
+            .map(|ke| ke.index.0 as usize)
+            .max()
+            .map(|m| m + 1)
+            .unwrap_or(0);
+
+        if key_count == 0 {
+            return Ok(None);
+        }
+
+        // Walk template + key_info in lockstep. Both iterate in AST order;
+        // `ke.index.0` indexes into the per-`@N` output slot.
+        let mut paths: Vec<Option<DerivationPath>> = vec![None; key_count];
+        for (ast_pos, ke) in inner.template().iter_pk().enumerate() {
+            let placeholder_idx = ke.index.0 as usize;
+            let key = &inner.key_info()[ast_pos];
+            let path = origin_path_of(key);
+            match (paths[placeholder_idx].as_ref(), path) {
+                // First time seeing this placeholder — record the path.
+                (None, Some(p)) => paths[placeholder_idx] = Some(p),
+                // Multipath-shared `@N`: subsequent AST positions for the
+                // same placeholder MUST agree on origin path (BIP 388
+                // invariant). Disagreement is a malformed input — degrade
+                // silently to Tier 3 rather than erroring out (the
+                // shared-path fallback still produces a sensible encoding).
+                (Some(prev), Some(new)) if prev == &new => {}
+                (Some(_), Some(_)) => return Ok(None),
+                // No origin info on this key (Single, or XPub/MultiXPub
+                // without `[fp/path]` prefix) — can't reconstruct paths.
+                (_, None) => return Ok(None),
+            }
+        }
+
+        // If any placeholder is still unfilled (shouldn't happen given the
+        // contiguous-index invariant + complete walk, but guarded), fall
+        // through to Tier 3.
+        Ok(paths.into_iter().collect())
     }
 
     /// Resolve the shared-path fallback per the v0.x Phase B chain
@@ -2113,6 +2202,245 @@ mod tests {
                 }
             ),
             "expected UnexpectedTag {{ expected: 0x34, got: 0x36 }}, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // v0.10.1 — Tier 2 KIV walk for concrete-key descriptors.
+    //
+    // These tests exercise `try_extract_paths_from_kiv` end-to-end via
+    // `to_bytecode`. The headline behavior change vs v0.10.0 is that
+    // freshly-parsed concrete-key descriptors with divergent origin paths
+    // now emit `Tag::OriginPaths` instead of silently flattening to
+    // `Tag::SharedPath` via the Tier 3 fallback.
+    // -----------------------------------------------------------------------
+
+    /// Concrete-key xpubs reused for the Tier 2 tests. Pulled from the
+    /// dummy-key table (which itself draws from the fork's test vectors)
+    /// so the strings are known-valid BIP 32 xpubs.
+    const TIER2_XPUB_A: &str = "xpub6FC1fXFP1GXLX5TKtcjHGT4q89SDRehkQLtbKJ2PzWcvbBHtyDsJPLtpLtkGqYNYZdVVAjRQ5kug9CsapegmmeRutpP7PW4u4wVF9JfkDhw";
+    const TIER2_XPUB_B: &str = "xpub6FC1fXFP1GXQpyRFfSE1vzzySqs3Vg63bzimYLeqtNUYbzA87kMNTcuy9ubr7MmavGRjW2FRYHP4WGKjwutbf1ghgkUW9H7e3ceaPLRcVwa";
+
+    /// Tier 2 emits `Tag::OriginPaths` for a concrete-key descriptor whose
+    /// per-`@N` origin paths diverge. This is the headline v0.10.1 fix:
+    /// v0.10.0's Tier 2 stub returned `None`, so this case fell through to
+    /// Tier 3 which silently flattened the divergent paths to a single
+    /// `Tag::SharedPath`. With Tier 2 wired up, the divergence is detected
+    /// from the policy's key-information vector and the encoder dispatches
+    /// to the OriginPaths wire form (header bit 3 = 1, byte[1] = 0x36).
+    ///
+    /// `wsh(sortedmulti(2, [fp/m/48'/0'/0'/2']xpubA/**, [fp/m/48'/0'/0'/100']xpubB/**))`:
+    /// `@0` is on `m/48'/0'/0'/2'`, `@1` is on `m/48'/0'/0'/100'`. The
+    /// emitted byte[2..] must contain the OriginPaths block in
+    /// placeholder-index order.
+    #[test]
+    fn tier_2_emits_origin_paths_for_concrete_divergent_descriptor() {
+        let desc = format!(
+            "wsh(sortedmulti(2,[6738736c/48'/0'/0'/2']{TIER2_XPUB_A}/<0;1>/*,\
+             [6738736c/48'/0'/0'/100']{TIER2_XPUB_B}/<0;1>/*))"
+        );
+        let p: WalletPolicy = desc.parse().expect("concrete-key sortedmulti must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode must succeed");
+        // Header bit 3 set → divergence detected.
+        assert_eq!(
+            bytes[0], 0x08,
+            "divergent paths must set header bit 3 (origin_paths flag); got 0x{:02x}",
+            bytes[0]
+        );
+        assert_eq!(
+            bytes[1],
+            Tag::OriginPaths.as_byte(),
+            "byte[1] must be Tag::OriginPaths (0x36); got 0x{:02x}",
+            bytes[1]
+        );
+
+        // Round-trip through decode populates `decoded_origin_paths` with
+        // entries in placeholder-index order. Use that to check the path
+        // ordering is `[m/48'/0'/0'/2', m/48'/0'/0'/100']`.
+        let recovered = WalletPolicy::from_bytecode(&bytes).expect("decode must succeed");
+        let decoded = recovered
+            .decoded_origin_paths
+            .as_ref()
+            .expect("decoded_origin_paths must be populated");
+        assert_eq!(decoded.len(), 2, "decoded_origin_paths must have 2 entries");
+        assert_eq!(
+            decoded[0],
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            "@0 origin path must round-trip as m/48'/0'/0'/2'"
+        );
+        assert_eq!(
+            decoded[1],
+            DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+            "@1 origin path must round-trip as m/48'/0'/0'/100'"
+        );
+    }
+
+    /// Tier 2 returns `None` for a template-only policy (no concrete keys
+    /// attached). The encoder must fall through to Tier 3 and emit
+    /// `Tag::SharedPath`. Pins the `key_info().is_empty()` early return.
+    #[test]
+    fn tier_2_falls_through_for_template_only_policy() {
+        let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**))"
+            .parse()
+            .expect("template must parse");
+        // Direct: the helper itself reports no walkable input.
+        assert!(
+            p.try_extract_paths_from_kiv()
+                .expect("helper must not error")
+                .is_none(),
+            "template-only policy must return None from try_extract_paths_from_kiv"
+        );
+        // Indirect: encoder dispatches to SharedPath via Tier 3.
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("encode must succeed");
+        assert_eq!(
+            bytes[0], 0x00,
+            "template-only must clear header bit 3 (SharedPath)"
+        );
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "template-only must emit Tag::SharedPath"
+        );
+    }
+
+    /// Tier 2 returns `None` when the concrete keys lack origin info (bare
+    /// xpubs without a `[fp/path]` prefix). The encoder must fall through
+    /// to Tier 3 and emit `Tag::SharedPath` (BIP 84 fallback indicator).
+    #[test]
+    fn tier_2_falls_through_for_keys_without_origin_info() {
+        // Bare xpubs (no `[fp/path]` prefix) → DescriptorPublicKey::XPub
+        // with `origin: None` → origin_path_of returns None.
+        let desc = format!("wsh(sortedmulti(2,{TIER2_XPUB_A}/<0;1>/*,{TIER2_XPUB_B}/<0;1>/*))");
+        let p: WalletPolicy = desc.parse().expect("bare-xpub sortedmulti must parse");
+        // Direct: helper signals incomplete walk.
+        assert!(
+            p.try_extract_paths_from_kiv()
+                .expect("helper must not error")
+                .is_none(),
+            "bare-xpub policy must return None from try_extract_paths_from_kiv"
+        );
+        // Indirect: encoder dispatches to SharedPath via Tier 3 fallback.
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("encode must succeed");
+        assert_eq!(
+            bytes[0], 0x00,
+            "bare-xpub must clear header bit 3 (Tier 3 fallback)"
+        );
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "bare-xpub must emit Tag::SharedPath via Tier 3"
+        );
+    }
+
+    /// Multipath-shared `@N`: the same placeholder appears at multiple
+    /// AST positions of the template (here, `sh(multi(1,@0/<0;1>/*,@0/<2;3>/*))`).
+    /// Constructed by parsing the template form and attaching key_info via
+    /// `set_key_info` with the same key supplied twice (one per AST
+    /// position). BIP 388's `validate()` allows the shared `@0` because the
+    /// multipath suffixes `<0;1>` and `<2;3>` are disjoint.
+    ///
+    /// Tier 2 must walk both AST positions, collapse them into the single
+    /// `paths[0]` slot (both yield the same origin path → no disagreement),
+    /// and return `Some(vec![path])` of length 1. The encoder's
+    /// auto-detect trivially selects `Tag::SharedPath` for length-1 paths.
+    #[test]
+    fn tier_2_multipath_shared_at_n_collapses_to_single_path() {
+        // Template form: shared @0 with disjoint multipath suffixes.
+        let template_only: WalletPolicy = "sh(multi(1,@0/<0;1>/*,@0/<2;3>/*))"
+            .parse()
+            .expect("multipath-shared template must parse");
+        // The shared @0 collapses to a single placeholder slot.
+        assert_eq!(
+            template_only.key_count(),
+            1,
+            "multipath-shared @N must yield key_count == 1"
+        );
+
+        // Construct the corresponding concrete-key policy by re-using the
+        // template's inner WalletPolicy and attaching key_info via
+        // `set_key_info` (one key per AST position; same logical key for
+        // the shared @0 slot, so origin paths agree by construction).
+        let key_with_origin: DescriptorPublicKey =
+            format!("[6738736c/48'/0'/0'/2']{TIER2_XPUB_A}/<0;1>/*")
+                .parse()
+                .expect("key with origin must parse");
+        let mut inner = template_only.inner.clone();
+        // The fork's set_key_info requires len == template.iter_pk().count();
+        // for shared @0 across 2 AST positions, that's 2 entries (both
+        // pointing at the same logical key — Tier 2 must merge them).
+        let ast_count = inner.template().iter_pk().count();
+        assert_eq!(ast_count, 2, "AST position count must be 2");
+        inner
+            .set_key_info(&vec![key_with_origin.clone(); ast_count])
+            .expect("set_key_info must succeed");
+        let p = WalletPolicy {
+            inner,
+            decoded_shared_path: None,
+            decoded_origin_paths: None,
+        };
+
+        // Tier 2 returns Some(vec![path]) with one entry. The two AST
+        // positions for the shared @0 are walked in lockstep with key_info
+        // (both yielding the same origin path), and the placeholder-index
+        // dedup collapses them into a single output slot.
+        let extracted = p
+            .try_extract_paths_from_kiv()
+            .expect("helper must not error");
+        let paths = extracted.expect("multipath-shared @N must yield Some(paths)");
+        assert_eq!(paths.len(), 1, "exactly one entry for the shared @0 slot");
+        assert_eq!(
+            paths[0],
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            "shared @0 origin path must be m/48'/0'/0'/2'"
+        );
+        // End-to-end encode would also exercise the encoder dispatch
+        // (length-1 paths trivially → SharedPath), but the encoder's
+        // dummy-key materialization path is pre-existing-broken for
+        // multipath-shared @N inputs (`set_key_info` expects one key per
+        // AST position, not per placeholder); that's outside v0.10.1's
+        // scope. The Tier 2 walk itself is the contract under test here.
+    }
+
+    /// Encoder-dispatch regression: a concrete-key divergent-path
+    /// descriptor that previously emitted `Tag::SharedPath` via Tier 3
+    /// fallback in v0.10.0 NOW emits `Tag::OriginPaths` via Tier 2 in
+    /// v0.10.1. This pin asserts the wire-format change byte-for-byte at
+    /// the path-decl slot and the count byte; the test also documents the
+    /// pre-v0.10.1 output for migration reference (commented).
+    ///
+    /// v0.10.0 behavior (Tier 2 stub): byte[0]=0x00, byte[1]=0x34
+    /// (Tag::SharedPath), byte[2]=indicator for the (lossy-flattened)
+    /// shared path.
+    /// v0.10.1 behavior (Tier 2 wired): byte[0]=0x08, byte[1]=0x36
+    /// (Tag::OriginPaths), byte[2]=count=2, then the per-`@N` path-decls.
+    #[test]
+    fn tier_2_drives_encoder_dispatch_change_from_v0_10_0() {
+        let desc = format!(
+            "wsh(sortedmulti(2,[6738736c/48'/0'/0'/2']{TIER2_XPUB_A}/<0;1>/*,\
+             [6738736c/48'/0'/0'/100']{TIER2_XPUB_B}/<0;1>/*))"
+        );
+        let p: WalletPolicy = desc.parse().expect("concrete-key sortedmulti must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("encode must succeed");
+        assert_eq!(
+            bytes[0], 0x08,
+            "v0.10.1 Tier 2 must set header bit 3; v0.10.0 Tier 3 fallback emitted 0x00"
+        );
+        assert_eq!(
+            bytes[1],
+            Tag::OriginPaths.as_byte(),
+            "v0.10.1 must emit Tag::OriginPaths (0x36); v0.10.0 emitted Tag::SharedPath (0x34)"
+        );
+        assert_eq!(
+            bytes[2], 0x02,
+            "OriginPaths count byte must be 2 (one path per placeholder)"
         );
     }
 }

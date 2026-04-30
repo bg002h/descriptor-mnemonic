@@ -4,6 +4,62 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.10.1] — 2026-04-29
+
+Closes the v0.10.0 Tier 2 KIV walk stub
+([`v010-p3-tier-2-kiv-walk-deferred`](design/FOLLOWUPS.md)). The 4-tier
+per-`@N`-path precedence chain in
+`WalletPolicy::placeholder_paths_in_index_order` now wires up Tier 2 to
+walk `inner.template().iter_pk()` and `inner.key_info()` in lockstep,
+extracting per-`@N` origin paths in placeholder-index order from the
+underlying descriptor.
+
+### Required
+
+This release depends on the fork accessors
+`WalletPolicy::template()` and `WalletPolicy::key_info()`, landed
+upstream as [apoelstra/rust-miniscript#2](https://github.com/apoelstra/rust-miniscript/pull/2)
+and consumed via the workspace `[patch]` block.
+
+### Behavior change
+
+Concrete-key descriptors with divergent per-`@N` origin paths now
+correctly emit `Tag::OriginPaths` (header bit 3 = 1, byte[1] = 0x36).
+v0.10.0 silently flattened these to `Tag::SharedPath` via the Tier 3
+fallback — a known v0.10.0 limitation that Tier 2 stubbing left intact.
+The flagship Tier 2 case is `wsh(sortedmulti(2,
+[fp1/m/48'/0'/0'/2']xpub_A/**, [fp2/m/48'/0'/0'/100']xpub_B/**))`-style
+inputs: parsing as a `WalletPolicy` and re-encoding now preserves the
+divergent origin paths instead of collapsing to a shared path.
+
+### Wire-format compatibility
+
+- v0.10.0 decoders can decode v0.10.1 encodings — the wire format does
+  not change; v0.10.1 only widens the set of inputs that flow through
+  the existing `Tag::OriginPaths` path.
+- v0.10.0 encodings remain byte-identical when their input policies
+  happen to fit Tier 0/1/3 (i.e., everything except the freshly-parsed
+  concrete-key divergent-path case the stub silently flattened).
+- Multipath-shared `@N` (same placeholder appearing at multiple AST
+  positions, e.g. via `<2;3>` ranges): subsequent AST positions for the
+  same placeholder MUST agree on origin path (BIP 388 invariant). If
+  they disagree or have missing origin info, Tier 2 falls through to
+  Tier 3.
+
+### Internal — Tier 2 dummy-key safety
+
+`from_bytecode` materializes its result with dummy keys whose own origin
+paths would otherwise leak into a re-encoding via the new Tier 2 walk.
+The chain skips Tier 2 when `decoded_shared_path` is `Some` (the marker
+that `key_info` is dummy-populated rather than holding real keys), which
+preserves the v0.10.0 round-trip behavior for SharedPath-decoded policies
+exactly. (`decoded_origin_paths == Some` short-circuits at Tier 1 above
+the Tier 2 check; both decode paths are therefore covered.)
+
+### FOLLOWUPS
+
+- `v010-p3-tier-2-kiv-walk-deferred` — closed.
+
 ## [0.10.0] — 2026-04-29
 
 Closes the headline mk1-surfaced FOLLOWUPS item
