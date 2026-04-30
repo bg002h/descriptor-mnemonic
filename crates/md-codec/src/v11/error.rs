@@ -5,13 +5,6 @@ use thiserror::Error;
 /// Errors produced by v0.11 wire-format codec components.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum V11Error {
-    /// The bit stream was exhausted at the given bit `position`.
-    #[error("bit stream exhausted at bit {position}")]
-    BitStreamExhausted {
-        /// Bit offset at which exhaustion was detected.
-        position: usize,
-    },
-
     /// A read of `requested` bits was attempted but only `available` bits remained.
     #[error("attempted to read {requested} bits with only {available} bits remaining")]
     BitStreamTruncated {
@@ -166,10 +159,10 @@ pub enum V11Error {
     },
 
     /// Tap-script-tree leaf has a tag that is forbidden per spec §6.3.1.
-    #[error("forbidden tap-script-tree leaf tag: {tag}")]
+    #[error("forbidden tap-script-tree leaf tag: 0x{tag:02x}")]
     ForbiddenTapTreeLeaf {
-        /// The forbidden tag (debug-formatted name).
-        tag: String,
+        /// Primary 5-bit tag code of the forbidden leaf.
+        tag: u8,
     },
 
     /// Chunk count out of range; v0.11 requires 1 ≤ count ≤ 64.

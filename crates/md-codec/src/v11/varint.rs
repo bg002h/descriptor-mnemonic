@@ -23,7 +23,7 @@ pub fn write_varint(writer: &mut BitWriter, value: u32) {
         // Extension form: L=15, then [L_high:4][payload_low:14][payload_high:L_high]
         writer.write_bits(15, 4);
         let l_high = bits_needed - 14;
-        debug_assert!(
+        assert!(
             l_high <= 15,
             "varint value exceeds single-extension range; recursion not implemented in v0.11"
         );
@@ -120,5 +120,19 @@ mod tests {
         let mut w = BitWriter::new();
         write_varint(&mut w, 84);
         assert_eq!(w.bit_len(), 11);
+    }
+
+    #[test]
+    fn varint_l_zero_decodes_to_zero_directly() {
+        // Hand-craft 4 bits of zero (L=0) directly in a byte stream;
+        // verify read_varint returns 0 without consuming additional bits.
+        let mut w = BitWriter::new();
+        w.write_bits(0b0000, 4); // L=0
+        w.write_bits(0b1010, 4); // arbitrary trailing bits to confirm we don't consume them
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_varint(&mut r).unwrap(), 0);
+        // Verify exactly 4 bits were consumed.
+        assert_eq!(r.read_bits(4).unwrap(), 0b1010);
     }
 }

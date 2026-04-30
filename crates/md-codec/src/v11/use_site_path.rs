@@ -65,6 +65,11 @@ impl UseSitePath {
     }
 
     /// Encode this use-site path onto the bit stream `w`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`V11Error::AltCountOutOfRange`] if `self.multipath` contains fewer
+    /// than [`MIN_ALT_COUNT`] or more than [`MAX_ALT_COUNT`] alternatives.
     pub fn write(&self, w: &mut BitWriter) -> Result<(), V11Error> {
         if let Some(alts) = &self.multipath {
             if !(MIN_ALT_COUNT..=MAX_ALT_COUNT).contains(&alts.len()) {

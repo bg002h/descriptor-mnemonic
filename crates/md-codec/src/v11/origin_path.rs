@@ -98,6 +98,14 @@ impl PathDecl {
     /// Encode this `PathDecl` into `w`. The mode (shared vs divergent) is
     /// determined by `self.paths`; the caller is responsible for setting
     /// header bit 4 to match.
+    ///
+    /// # Errors
+    ///
+    /// - [`V11Error::KeyCountOutOfRange`] if `self.n` is outside `1..=32`.
+    /// - [`V11Error::DivergentPathCountMismatch`] if `self.paths` is `Divergent`
+    ///   and the vector length does not equal `self.n`.
+    /// - [`V11Error::PathDepthExceeded`] propagated from a component's path encoder
+    ///   if any contained path exceeds [`MAX_PATH_COMPONENTS`].
     pub fn write(&self, w: &mut BitWriter) -> Result<(), V11Error> {
         if !(1..=32).contains(&(self.n as u32)) {
             return Err(V11Error::KeyCountOutOfRange { n: self.n });

@@ -40,6 +40,10 @@ fn walk_for_placeholders(
 ) -> Result<(), V11Error> {
     match &node.body {
         Body::KeyArg { index } => {
+            debug_assert!(
+                (*index as usize) < seen.len(),
+                "structural decode should have caught index >= n"
+            );
             if (*index as usize) < seen.len() && !seen[*index as usize] {
                 seen[*index as usize] = true;
                 first_occurrences.push(*index);
@@ -56,6 +60,10 @@ fn walk_for_placeholders(
             }
         }
         Body::Tr { key_index, tree } => {
+            debug_assert!(
+                (*key_index as usize) < seen.len(),
+                "structural decode should have caught index >= n"
+            );
             if (*key_index as usize) < seen.len() && !seen[*key_index as usize] {
                 seen[*key_index as usize] = true;
                 first_occurrences.push(*key_index);
@@ -114,7 +122,7 @@ fn walk_tap_tree_leaves(node: &Node) -> Result<(), V11Error> {
         // This is a leaf — validate per §6.3.1.
         if is_forbidden_leaf_tag(node.tag) {
             return Err(V11Error::ForbiddenTapTreeLeaf {
-                tag: format!("{:?}", node.tag),
+                tag: node.tag.codes().0,
             });
         }
         Ok(())

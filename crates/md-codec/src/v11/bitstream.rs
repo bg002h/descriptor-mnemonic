@@ -224,6 +224,8 @@ mod tests {
         let bytes = vec![0xff];
         let mut r = BitReader::new(&bytes);
         assert!(r.read_bits(9).is_err());
+        // State must be preserved on truncation error.
+        assert_eq!(r.remaining_bits(), 8);
     }
 
     #[test]
