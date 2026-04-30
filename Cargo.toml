@@ -15,12 +15,26 @@ missing_docs = "warn"
 all = "warn"
 
 # Temporary patch redirect: md-codec pins miniscript to a SHA on
-# apoelstra's `2026-04/followup-895` branch (see Phase 5 D-1). That SHA
-# panics in WalletPolicy::into_descriptor when a hash terminal is present
-# (sha256/hash256/ripemd160/hash160). We've fixed it locally in the
-# `rust-miniscript-fork` sibling clone on branch
-# `fix/wallet-policy-hash-terminals` and submitted a PR upstream. Once the
-# fix lands and we bump the SHA pin in md-codec/Cargo.toml, this patch
-# section can be removed.
+# apoelstra's `2026-04/followup-895` branch (see Phase 5 D-1). The patch
+# redirects to the `rust-miniscript-fork` sibling clone, currently on
+# branch `md-codec-local-stack` which carries two upstream-pending fixes
+# stacked on top of the base SHA:
+#
+#   1. `fix/wallet-policy-hash-terminals` (apoelstra/rust-miniscript#1) —
+#      WalletPolicy::into_descriptor panics on hash terminals
+#      (sha256/hash256/ripemd160/hash160). FOLLOWUPS:
+#      external-pr-1-hash-terminals.
+#   2. `feat/wallet-policy-template-accessor`
+#      (apoelstra/rust-miniscript#2) — adds `WalletPolicy::template()`
+#      and `key_info()` accessors so md-codec's per-`@N` divergent-path
+#      encoding can walk a policy in placeholder-index order. FOLLOWUPS:
+#      external-pr-2-template-accessor.
+#
+# `md-codec-local-stack` is local-only by design — pushing it would
+# pollute the per-PR branches that the upstream PRs track. When each
+# upstream PR merges, bump the SHA pin in `crates/md-codec/Cargo.toml`,
+# strip that PR's commit from `md-codec-local-stack`, and update this
+# rationale. When both have merged, this `[patch]` section can be
+# removed entirely.
 [patch."https://github.com/apoelstra/rust-miniscript"]
 miniscript = { path = "../rust-miniscript-fork" }
