@@ -12,3 +12,6 @@
 # Cargo build output
 /target/
 **/target/
+
+# Loose work-in-progress notes (not for the repo)
+debris/
