@@ -30,11 +30,14 @@ all = "warn"
 #      encoding can walk a policy in placeholder-index order. FOLLOWUPS:
 #      external-pr-2-template-accessor.
 #
-# `md-codec-local-stack` is local-only by design — pushing it would
-# pollute the per-PR branches that the upstream PRs track. When each
-# upstream PR merges, bump the SHA pin in `crates/md-codec/Cargo.toml`,
-# strip that PR's commit from `md-codec-local-stack`, and update this
-# rationale. When both have merged, this `[patch]` section can be
-# removed entirely.
+# `md-codec-local-stack` is a dedicated branch (not a per-PR branch) so
+# CI and local builds resolve [patch] consistently without polluting the
+# `fix/wallet-policy-hash-terminals` and
+# `feat/wallet-policy-template-accessor` branches that the upstream PRs
+# track. The branch is pushed to the fork remote so CI can clone it. When
+# each upstream PR merges, bump the SHA pin in
+# `crates/md-codec/Cargo.toml`, strip that PR's commit from
+# `md-codec-local-stack`, and update this rationale. When both have
+# merged, this `[patch]` section can be removed entirely.
 [patch."https://github.com/apoelstra/rust-miniscript"]
 miniscript = { path = "../rust-miniscript-fork" }
