@@ -129,6 +129,15 @@ pub enum V11Error {
         tag: u8,
     },
 
+    /// TLV length exceeds remaining bits in stream.
+    #[error("TLV length {length} exceeds remaining bits {remaining}")]
+    TlvLengthExceedsRemaining {
+        /// Declared length.
+        length: usize,
+        /// Available bits.
+        remaining: usize,
+    },
+
     /// Placeholder @i was not referenced anywhere in the tree (BIP 388 well-formedness).
     #[error("placeholder @{idx} not referenced in tree; n={n}")]
     PlaceholderNotReferenced {

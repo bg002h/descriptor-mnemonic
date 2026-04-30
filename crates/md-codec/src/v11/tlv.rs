@@ -93,40 +93,85 @@ impl TlvSection {
     pub fn read(r: &mut BitReader, key_index_width: u8, n: u8) -> Result<Self, V11Error> {
         let mut section = Self::new_empty();
         let mut last_tag: Option<u8> = None;
-        // NOTE: in Phase 12 standalone, the byte stream may contain trailing
-        // zero-pad bits (< 5) after the last TLV entry. Phase 14 will introduce
-        // BitReader::with_bit_limit to bound this precisely; for now we treat
-        // any remainder smaller than a tag (5 bits) as padding.
-        while r.remaining_bits() >= 5 {
-            let tag = r.read_bits(5)? as u8;
-            if let Some(prev) = last_tag {
-                if tag <= prev {
-                    return Err(V11Error::TlvOrderingViolation { prev, current: tag });
-                }
+        loop {
+            // Save position so we can roll back if this would-be TLV is
+            // actually trailing codex32-padding (≤7 bits of zeros).
+            let entry_start = r.save_position();
+            if r.remaining_bits() < 5 {
+                break;  // not enough bits for even a tag — clean end-of-stream
             }
-            last_tag = Some(tag);
-            let bit_len = read_varint(r)? as usize;
-            match tag {
-                TLV_USE_SITE_PATH_OVERRIDES => {
-                    let entry = read_use_site_overrides(r, bit_len, key_index_width, n)?;
-                    section.use_site_path_overrides = Some(entry);
-                }
-                TLV_FINGERPRINTS => {
-                    let entry = read_fingerprints(r, bit_len, key_index_width, n)?;
-                    section.fingerprints = Some(entry);
-                }
-                _ => {
-                    // Unknown — buffer and skip.
-                    let mut sub = BitWriter::new();
-                    let mut remaining = bit_len;
-                    while remaining > 0 {
-                        let chunk = remaining.min(8);
-                        let bits = r.read_bits(chunk)?;
-                        sub.write_bits(bits, chunk);
-                        remaining -= chunk;
+            // Try to parse a complete TLV entry. Any failure (truncated read,
+            // ordering violation, empty-entry-by-spec, length exceeds remaining)
+            // is treated as "trailing padding" if we can rollback cleanly. If
+            // rollback would consume <8 bits (consistent with codex32 padding)
+            // we accept it; otherwise the error propagates as a real malformed
+            // input.
+            let parse_result: Result<(), V11Error> = (|| {
+                let tag = r.read_bits(5)? as u8;
+                // Ordering check is INSIDE the closure so violations at end-of-
+                // stream (where padding bits form a phantom tag=0 after a real
+                // tag≥1 entry) become rollback-eligible.
+                if let Some(prev) = last_tag {
+                    if tag <= prev {
+                        return Err(V11Error::TlvOrderingViolation { prev, current: tag });
                     }
-                    let payload = sub.into_bytes();
-                    section.unknown.push((tag, payload, bit_len));
+                }
+                let bit_len = read_varint(r)? as usize;
+                if bit_len > r.remaining_bits() {
+                    return Err(V11Error::TlvLengthExceedsRemaining {
+                        length: bit_len,
+                        remaining: r.remaining_bits(),
+                    });
+                }
+                // Reject zero-length TLVs uniformly. Encoder MUST omit empty
+                // TLVs per spec §7.5; a zero-length entry at the end of stream
+                // is treated as padding via the rollback path.
+                if bit_len == 0 {
+                    return Err(V11Error::EmptyTlvEntry { tag });
+                }
+                match tag {
+                    TLV_USE_SITE_PATH_OVERRIDES => {
+                        let entry = read_use_site_overrides(r, bit_len, key_index_width, n)?;
+                        section.use_site_path_overrides = Some(entry);
+                    }
+                    TLV_FINGERPRINTS => {
+                        let entry = read_fingerprints(r, bit_len, key_index_width, n)?;
+                        section.fingerprints = Some(entry);
+                    }
+                    _ => {
+                        // Unknown — buffer and skip per D6 forward-compat.
+                        let mut sub = BitWriter::new();
+                        let mut remaining = bit_len;
+                        while remaining > 0 {
+                            let chunk = remaining.min(8);
+                            let bits = r.read_bits(chunk)?;
+                            sub.write_bits(bits, chunk);
+                            remaining -= chunk;
+                        }
+                        let payload = sub.into_bytes();
+                        section.unknown.push((tag, payload, bit_len));
+                    }
+                }
+                last_tag = Some(tag);
+                Ok(())
+            })();
+
+            match parse_result {
+                Ok(()) => continue,
+                Err(e) => {
+                    // Decide: rollback-as-padding or propagate error.
+                    // Rollback is acceptable iff the bits we'd be discarding
+                    // are ≤7 (consistent with codex32 padding boundary).
+                    r.restore_position(entry_start);
+                    let remaining_at_entry_start = r.remaining_bits();
+                    // Padding tolerance: ≤7 bits of trailing zeros after the
+                    // last real TLV (or after the tree if no TLVs were emitted).
+                    if remaining_at_entry_start <= 7 {
+                        break;
+                    }
+                    // More than 7 bits remained but the parse still failed —
+                    // this is genuinely malformed input. Propagate.
+                    return Err(e);
                 }
             }
         }

@@ -154,6 +154,19 @@ impl<'a> BitReader<'a> {
     pub fn is_exhausted(&self) -> bool {
         self.remaining_bits() == 0
     }
+
+    /// Snapshot the current bit position for rollback. Used by the TLV
+    /// decoder loop to handle graceful end-of-stream when trailing
+    /// codex32-padding bits look like a partial TLV.
+    pub fn save_position(&self) -> usize {
+        self.bit_position
+    }
+
+    /// Restore a previously saved bit position.
+    pub fn restore_position(&mut self, saved: usize) {
+        debug_assert!(saved <= self.bit_limit);
+        self.bit_position = saved;
+    }
 }
 
 #[cfg(test)]
@@ -219,6 +232,17 @@ mod tests {
         let mut r = BitReader::new(&bytes);
         assert_eq!(r.read_bits(8).unwrap(), 0xab);
         assert_eq!(r.read_bits(8).unwrap(), 0xcd);
+    }
+
+    #[test]
+    fn save_and_restore_position() {
+        let bytes = vec![0b1011_0010, 0b0100_0000];
+        let mut r = BitReader::new(&bytes);
+        let saved = r.save_position();
+        let _ = r.read_bits(5).unwrap();
+        assert_eq!(r.save_position(), 5);
+        r.restore_position(saved);
+        assert_eq!(r.read_bits(5).unwrap(), 0b10110);
     }
 
     #[test]
