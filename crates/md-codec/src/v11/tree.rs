@@ -184,6 +184,20 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, V11Erro
             }
             Body::Hash160Body(h)
         }
+        Tag::Hash256 => {
+            let mut h = [0u8; 32];
+            for byte in &mut h {
+                *byte = r.read_bits(8)? as u8;
+            }
+            Body::Hash256Body(h)
+        }
+        Tag::Ripemd160 | Tag::RawPkH => {
+            let mut h = [0u8; 20];
+            for byte in &mut h {
+                *byte = r.read_bits(8)? as u8;
+            }
+            Body::Hash160Body(h)
+        }
         _ => unimplemented!("filled in later phases"),
     };
     Ok(Node { tag, body })
@@ -389,6 +403,30 @@ mod tests {
         write_node(&mut w, &n, 0).unwrap();
         // Tag(5) + 160 = 165 bits
         assert_eq!(w.bit_len(), 165);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn hash256_extension_round_trip() {
+        let h = [0xef; 32];
+        let n = Node { tag: Tag::Hash256, body: Body::Hash256Body(h) };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        // Extension tag = 5+5 = 10 bits, then 256 = 266 total
+        assert_eq!(w.bit_len(), 266);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn ripemd160_extension_round_trip() {
+        let h = [0x42; 20];
+        let n = Node { tag: Tag::Ripemd160, body: Body::Hash160Body(h) };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
