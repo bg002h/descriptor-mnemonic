@@ -157,4 +157,24 @@ mod tests {
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 2).unwrap(), n);
     }
+
+    #[test]
+    fn wrapper_chain_v_c_pk_round_trip() {
+        // v:c:pk_k(@0) — three nested wrappers around PkK
+        let n = Node {
+            tag: Tag::Verify,
+            body: Body::Children(vec![Node {
+                tag: Tag::Check,
+                body: Body::Children(vec![Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: 0 },
+                }]),
+            }]),
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
 }
