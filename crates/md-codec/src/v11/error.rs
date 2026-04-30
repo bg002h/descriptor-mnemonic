@@ -94,4 +94,38 @@ pub enum V11Error {
         /// Child count n.
         n: usize,
     },
+
+    /// TLV ordering violation: a TLV tag was followed by a smaller-or-equal tag.
+    #[error("TLV ordering violation: tag 0x{prev:02x} followed by 0x{current:02x}; require ascending")]
+    TlvOrderingViolation {
+        /// Previous tag value.
+        prev: u8,
+        /// Current tag value.
+        current: u8,
+    },
+
+    /// Placeholder index in TLV entry exceeds key count n.
+    #[error("placeholder index {idx} out of range; require idx < n={n}")]
+    PlaceholderIndexOutOfRange {
+        /// Provided index.
+        idx: u8,
+        /// Key count n.
+        n: u8,
+    },
+
+    /// Per-`@N` override entries within a TLV must be in ascending `@N`-index order.
+    #[error("override ordering violation: @{prev} followed by @{current}; require ascending")]
+    OverrideOrderViolation {
+        /// Previous index.
+        prev: u8,
+        /// Current index.
+        current: u8,
+    },
+
+    /// TLV entry has zero entries; encoder MUST omit empty TLVs per spec §7.5.
+    #[error("TLV entry tag 0x{tag:02x} has empty payload; encoder MUST omit empty TLVs")]
+    EmptyTlvEntry {
+        /// Tag of the empty entry.
+        tag: u8,
+    },
 }
