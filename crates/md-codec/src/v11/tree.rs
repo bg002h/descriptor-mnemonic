@@ -90,6 +90,16 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
         Body::Timelock(v) => {
             w.write_bits(u64::from(*v), 32);
         }
+        Body::Hash256Body(h) => {
+            for byte in h {
+                w.write_bits(u64::from(*byte), 8);
+            }
+        }
+        Body::Hash160Body(h) => {
+            for byte in h {
+                w.write_bits(u64::from(*byte), 8);
+            }
+        }
         _ => unimplemented!("filled in later phases"),
     }
     Ok(())
@@ -159,6 +169,20 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, V11Erro
         Tag::After | Tag::Older => {
             let v = r.read_bits(32)? as u32;
             Body::Timelock(v)
+        }
+        Tag::Sha256 => {
+            let mut h = [0u8; 32];
+            for byte in &mut h {
+                *byte = r.read_bits(8)? as u8;
+            }
+            Body::Hash256Body(h)
+        }
+        Tag::Hash160 => {
+            let mut h = [0u8; 20];
+            for byte in &mut h {
+                *byte = r.read_bits(8)? as u8;
+            }
+            Body::Hash160Body(h)
         }
         _ => unimplemented!("filled in later phases"),
     };
@@ -339,6 +363,32 @@ mod tests {
         write_node(&mut w, &n, 0).unwrap();
         // Tag(5) + u32(32) = 37 bits
         assert_eq!(w.bit_len(), 37);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn sha256_round_trip() {
+        let h = [0xab; 32];
+        let n = Node { tag: Tag::Sha256, body: Body::Hash256Body(h) };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        // Tag(5) + 256 = 261 bits
+        assert_eq!(w.bit_len(), 261);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn hash160_round_trip() {
+        let h = [0xcd; 20];
+        let n = Node { tag: Tag::Hash160, body: Body::Hash160Body(h) };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        // Tag(5) + 160 = 165 bits
+        assert_eq!(w.bit_len(), 165);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
