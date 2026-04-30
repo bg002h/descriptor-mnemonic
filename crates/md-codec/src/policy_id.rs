@@ -91,6 +91,34 @@ impl PolicyId {
         PolicyIdWords(words)
     }
 
+    /// Return the first 32 bits of this `PolicyId` as a 4-byte array.
+    ///
+    /// Parallel to BIP 32 master-key fingerprints (4 bytes / 8 hex digits),
+    /// this is a short identifier suitable for CLI output, log lines, or as
+    /// a minimal-cost engraving anchor for users who don't want the full
+    /// 12-word [`PolicyIdWords`] phrase. The natural rendering is
+    /// `0x{:08x}`.
+    ///
+    /// The returned bytes are a strict prefix of [`PolicyId::as_bytes`];
+    /// ie. `id.fingerprint() == id.as_bytes()[0..4]`. As such this offers
+    /// only ~32-bit (4-billion) collision resistance — adequate as a short
+    /// disambiguator but NOT a substitute for the full 128-bit
+    /// [`PolicyIdWords`] when binding wallets to media.
+    ///
+    /// ```
+    /// use md_codec::PolicyId;
+    /// let id = PolicyId::from([
+    ///     0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18,
+    ///     0x29, 0x3a, 0x4b, 0x5c, 0x6d, 0x7e, 0x8f, 0x90,
+    /// ]);
+    /// assert_eq!(id.fingerprint(), [0xa1, 0xb2, 0xc3, 0xd4]);
+    /// ```
+    pub fn fingerprint(&self) -> [u8; 4] {
+        let mut fp = [0u8; 4];
+        fp.copy_from_slice(&self.0[0..4]);
+        fp
+    }
+
     /// Extract the first 20 bits of the policy ID for use in chunk headers.
     ///
     /// Bit-packing convention (big-endian / MSB-first):
@@ -527,6 +555,39 @@ mod tests {
         ];
         let id = PolicyId::from(bytes);
         assert_eq!(id.as_ref(), &bytes);
+    }
+
+    // --- PolicyId::fingerprint ---
+
+    #[test]
+    fn policy_id_fingerprint_is_first_4_bytes() {
+        let id = PolicyId::from([
+            0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18, 0x29, 0x3a, 0x4b, 0x5c, 0x6d, 0x7e,
+            0x8f, 0x90,
+        ]);
+        assert_eq!(id.fingerprint(), [0xa1, 0xb2, 0xc3, 0xd4]);
+        // The fingerprint must also be a strict prefix of as_bytes().
+        assert_eq!(&id.fingerprint()[..], &id.as_bytes()[0..4]);
+    }
+
+    #[test]
+    fn policy_id_fingerprint_deterministic_from_policy() {
+        // Round-trip via the canonical entry point compute_policy_id_for_policy:
+        // the same WalletPolicy must yield the same fingerprint twice.
+        let p: crate::WalletPolicy = "wsh(pk(@0/**))".parse().unwrap();
+        let id1 = compute_policy_id_for_policy(&p).unwrap();
+        let id2 = compute_policy_id_for_policy(&p).unwrap();
+        assert_eq!(id1.fingerprint(), id2.fingerprint());
+        // And distinct policies should (with overwhelming probability) yield
+        // distinct fingerprints — sanity-check non-trivially.
+        let q: crate::WalletPolicy = "wsh(multi(2,@0/**,@1/**))".parse().unwrap();
+        let id_q = compute_policy_id_for_policy(&q).unwrap();
+        assert_ne!(
+            id1.fingerprint(),
+            id_q.fingerprint(),
+            "distinct policies must yield distinct fingerprints (collision \
+             would be a 1-in-2^32 fluke)"
+        );
     }
 
     // --- PolicyId::truncate ---

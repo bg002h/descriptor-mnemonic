@@ -759,6 +759,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.11
 
+### `cli-policy-id-fingerprint-flag` — CLI rendering of `PolicyId::fingerprint()` short form
+
+- **Surfaced:** v0.10 Phase 5 implementation 2026-04-29 (commit pending). Spec Q13 added the `PolicyId::fingerprint() -> [u8; 4]` API; the implementation plan suggested optional CLI integration for printing the short form via something like `md encode --fingerprint`.
+- **Where:** `crates/md-codec/src/bin/md/main.rs` — `cmd_encode` currently prints `Policy ID: {12 words}` unconditionally (line ~381); there is no toggle to switch to a short hex form. The natural rendering is `0x{:08x}`.
+- **What:** Add a CLI flag (or new subcommand) that renders the freshly-computed `PolicyId` as `fingerprint()` (8 hex chars / 4 bytes) instead of, or in addition to, the 12-word form. Use cases per Q13: log lines, CLI scripts, minimal-cost engraving anchor for users who don't want the full 12-word phrase. The library API ships in v0.10.0; only the CLI toggle is deferred.
+- **Why deferred:** The obvious flag name `--fingerprint` is already taken in `md encode` for embedding **master-key** fingerprints (`@INDEX=HEX` form, BIP §"Fingerprints block"). Adding an output-rendering `--fingerprint` flag to the same subcommand creates a flag-name conflict that cannot be resolved without either renaming the existing flag (wire-affecting CLI break) or picking a different name (e.g., `--policy-id-fingerprint`, `--short-id`) which then no longer matches the API method name. Either choice deserves a small design pass with the user — not in scope for Phase 5's "small additive change" criterion. Library API is sufficient for downstream tools to use immediately.
+- **Status:** open
+- **Tier:** v0.11 (or wont-fix if no end-user-facing CLI demand surfaces; library API is the load-bearing surface)
+
 ---
 
 ## Resolved items
