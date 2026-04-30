@@ -63,4 +63,12 @@ pub enum V11Error {
         /// Provided alt-count.
         got: usize,
     },
+
+    /// Unknown primary tag value (0x00..0x1F unrecognized).
+    #[error("unknown primary tag value 0x{0:02x}")]
+    UnknownPrimaryTag(u8),
+
+    /// Unknown extension tag value (after 0x1F primary prefix).
+    #[error("unknown extension tag value 0x{0:02x}")]
+    UnknownExtensionTag(u8),
 }
