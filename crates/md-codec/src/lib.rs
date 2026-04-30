@@ -157,6 +157,7 @@ pub mod policy_compiler;
 pub mod policy_id;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
+pub mod v11;
 pub mod vectors;
 
 pub use chunking::{
