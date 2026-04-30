@@ -104,16 +104,24 @@ The Type 0 / Type 1 PolicyId typology shipped in v0.10 is dropped — it was md-
 
 ### Q5 — Header bit allocation
 
-⏸ **Deferred.** The mode flag set is identified — shape-vs-policy, all-keys-same-path — and the "5 bits = 1 codex32 char" target is preferred. But concrete bit allocation (3-bit version + 2 mode bits, vs 4-bit version + 1 mode flag, vs longer header) is deferred until later brainstorm passes have clarified:
-- Whether v0.11 admits wallet-policy encoding (with embedded key information vector) — affects whether the shape-vs-policy bit is needed
-- Whether other mode flags are useful (e.g., partial-wallet, wallet-collection, future modes)
-- Whether 8 version generations (3-bit version) is sufficient or 16 (4-bit) is preferred
+✅ **5-bit header = 3-bit version + 2 mode flags.**
 
-**Tentative placeholder:** 5-bit header = 3-bit version + 1-bit shape/policy + 1-bit all-keys-same-path. Common case `header = 0b00000` = `q` in codex32 alphabet.
+```
+bit 4   bit 3   bit 2   bit 1   bit 0
+[paths] [s/p]   [version (3 bits, 8 generations)]
+```
 
-**Mode flag rationale (provisional):**
-- **shape vs policy:** wallet descriptor template (placeholder-only) vs full wallet policy (template + embedded key information vector). The latter is much larger payload (xpubs are ~78 bytes each); affects encoding and engraving cost dramatically.
-- **all-keys-same-path:** common case (every `@N` shares one origin path) vs divergent (per-`@N` origin paths). The bit dispatches the path-declaration block format. Saves a tag in the common case.
+- **Bits 0-2 (3 bits, 8 values):** version field. v0.11=0, v1.0=1, etc. 8 generations is plenty for the foreseeable future — major format breaks should be rare.
+- **Bit 3:** shape vs policy. `0` = wallet descriptor template (placeholder-only); `1` = wallet policy (template + key information vector embedded).
+- **Bit 4:** all-keys-same-path. `0` = shared-path (one path applies to all `@N`); `1` = divergent paths (per-`@N` paths follow). Common case is `0` — saves one tag in the path-declaration position.
+
+**Common case** (BIP 84 single-sig, 2-of-3 BIP 48 shared, etc.): `header = 0b00000` (shape-encoding, shared path, version 0) — single 5-bit symbol = `q` in codex32. Predictable, recognizable.
+
+**Mode flag rationale:**
+- **shape vs policy:** wallet descriptor template (placeholder-only) vs full wallet policy (template + embedded key information vector). The latter is much larger payload (xpubs are ~78 bytes each); affects encoding and engraving cost dramatically. Whether v0.11 actually emits wallet-policy form (bit=1) is a Sub-area 4 question; allocating the bit now keeps the option open.
+- **all-keys-same-path:** common case (every `@N` shares one origin path) vs divergent (per-`@N` origin paths). The bit dispatches the path-declaration block format. Saves a tag in the common case (~1 byte / ~2 chars on every shared-path encoding).
+
+**Future mode bits** (e.g., partial-wallet, wallet-collection): would require a v1.0+ version bump + reallocation. 3-bit version space is the budget for major reformations.
 
 ---
 
@@ -171,8 +179,7 @@ The following are queued for future brainstorm passes once Foundation is fully n
 
 These are answered-in-principle but need concrete spec-time decisions:
 
-1. **Final header bit allocation.** Spec phase will lock 3-bit-vs-4-bit version, exact bit positions for mode flags.
-2. **Concrete 5-bit primary tag-space allocation.** Which ops get which 5-bit codes? Frequency analysis of expected wire output should drive this.
+1. **Concrete 5-bit primary tag-space allocation.** Which ops get which 5-bit codes? Frequency analysis of expected wire output should drive this.
 3. **TLV entry format details.** Tag width (5-bit primary + extension? own prefix?), length encoding (varint? fixed?), terminator vs section header.
 4. **Variable-length value encoding** in bit-aligned form. Bit-aligned varint (continuation-bit idiom)? Or different encoding?
 5. **Path-declaration block format(s).** Shared case (one path, dictionary indicator or explicit-form). Divergent case (per-`@N` paths). How they're distinguished structurally given the all-keys-same-path header bit.
@@ -205,9 +212,9 @@ These are answered-in-principle but need concrete spec-time decisions:
 | D6 | Extension model: hybrid hardwired mode bits + tail-TLV (D + D1 flavor) | ✅ | §3 Q2 |
 | D7 | Fully bit-aligned wire format | ✅ | §3 Q3 |
 | D8 | Tag space: 5-bit primary + 5-bit extension prefix (C-prefix) | ✅ | §3 Q4 |
-| D9 | Header layout (3-bit version + 2 mode flags vs alternatives) | ⏸ | §3 Q5 |
+| D9 | Header layout: 3-bit version + bit 3 shape/policy + bit 4 all-keys-same-path | ✅ | §3 Q5 |
 | D10 | HRP at front of codex32 string | ✅ | §5 |
 | D11 | Visual separator between payload and checksum (display convention) | ✅ | §5 |
-| D12 | Mode flags: shape vs policy + all-keys-same-path (provisional) | 🟡 | §3 Q5 |
+| D12 | Mode flags: shape vs policy + all-keys-same-path | ✅ | §3 Q5 |
 | D13 | RLE/compression deferred to future brainstorm | ⏸ | §6 |
 | D14 | Full BIP 388 grammar coverage (no deliberate scope cuts) | ✅ | §0 |
