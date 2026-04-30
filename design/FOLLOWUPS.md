@@ -768,6 +768,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.11 (or wont-fix if no end-user-facing CLI demand surfaces; library API is the load-bearing surface)
 
+### `bip-byte-layout-examples-stale-v0_6-renumber` — BIP byte-layout examples reference pre-v0.6 tag values
+
+- **Surfaced:** v0.10.0 Phase 6 implementer (commit `b5f00f9`). While editing `bip/bip-mnemonic-descriptor.mediawiki` to insert the v0.10 OriginPaths sections, the implementer noticed that several byte-layout examples elsewhere in the BIP still reference `Tag::Placeholder (0x32)` and `Tag::SharedPath (0x33)` — both stale per the v0.6 tag-renumber. Correct values per the current tag table: `Placeholder = 0x33`, `SharedPath = 0x34`. The v0.9.1 CHANGELOG noted that the rustdoc sweep for the v0.5→v0.6 renumber missed some sites; the BIP byte-layout examples are an analogous unfixed sweep miss that pre-dates v0.10.
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — multiple inline byte-layout example blocks. Pre-edit-shift line numbers were 478, 519, 532, 582, 593; post-Phase-6 edits these have shifted but the stale references remain. Locate via `rg -n '0x32|0x33' bip/bip-mnemonic-descriptor.mediawiki` and check each occurrence against the v0.6+ tag table at the top of the file.
+- **What:** sweep all `0x32` references (should be `0x33` for Placeholder) and `0x33`-as-SharedPath references (should be `0x34`). The Phase-6 implementer fixed exactly one occurrence (the path-declaration tag-table location adjacent to the v0.10 insertion); the rest were left to avoid scope creep into a v0.5→v0.6 sweep that pre-dates v0.10.
+- **Why deferred:** stale references pre-date v0.10 (v0.5→v0.6 renumber sweep miss); not in Phase 6 scope; would balloon the v0.10 docs commit. Best done as a v0.10.0.1 patch cleanup after the v0.10.0 release ships.
+- **Status:** open
+- **Tier:** v0.10.0.1-cleanup
+
 ---
 
 ## Resolved items

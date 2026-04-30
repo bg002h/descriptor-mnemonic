@@ -323,7 +323,8 @@ impl WalletPolicy {
     /// # Per-`@N` path precedence (v0.10 §4 4-tier chain)
     ///
     /// To choose the per-`@N` origin paths to emit, `to_bytecode` consults
-    /// [`Self::placeholder_paths_in_index_order`], which applies (in order):
+    /// the private `placeholder_paths_in_index_order` helper, which applies
+    /// (in order):
     ///
     /// 0. `opts.origin_paths` — explicit Tier 0 caller override (test-vector
     ///    generation; production callers leave this `None`).

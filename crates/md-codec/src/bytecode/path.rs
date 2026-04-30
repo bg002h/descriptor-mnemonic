@@ -75,7 +75,7 @@ pub fn path_to_indicator(path: &DerivationPath) -> Option<u8> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::PathComponentCountExceeded`] when the path has more than
+/// Returns [`crate::Error::PathComponentCountExceeded`] when the path has more than
 /// [`MAX_PATH_COMPONENTS`] components. Pre-v0.10 this function was infallible;
 /// the cap was added in v0.10 to bound the explicit-form path size uniformly
 /// across `Tag::SharedPath` and `Tag::OriginPaths`. Dictionary paths are
@@ -215,7 +215,7 @@ pub(crate) fn decode_path(
 ///
 /// # Errors
 ///
-/// Propagates [`Error::PathComponentCountExceeded`] from [`encode_path`] when
+/// Propagates [`crate::Error::PathComponentCountExceeded`] from [`encode_path`] when
 /// the path has more than [`MAX_PATH_COMPONENTS`] components.
 pub fn encode_declaration(path: &DerivationPath) -> Result<Vec<u8>, crate::Error> {
     use crate::bytecode::Tag;
@@ -315,7 +315,8 @@ pub fn decode_declaration_from_bytes(
 /// Maximum number of per-`@N` paths in an OriginPaths block.
 ///
 /// Mirrors the BIP 388 placeholder cap of 32. Used as the structural
-/// upper bound by both [`encode_origin_paths`] and [`decode_origin_paths`].
+/// upper bound by both [`encode_origin_paths`] and `decode_origin_paths`
+/// (the latter is `pub(crate)`-scoped).
 pub const MAX_ORIGIN_PATHS: u8 = 32;
 
 /// Serialize an OriginPaths block into its wire form.
