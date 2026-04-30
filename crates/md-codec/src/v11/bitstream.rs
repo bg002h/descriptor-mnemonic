@@ -4,7 +4,10 @@
 //! payload occupies the most-significant bit of the first byte. The final byte
 //! is zero-padded if needed.
 
+use crate::v11::error::V11Error;
+
 /// MSB-first bit packer.
+#[derive(Default)]
 pub struct BitWriter {
     /// Backing byte buffer; the last byte is the in-progress byte.
     bytes: Vec<u8>,
@@ -73,6 +76,67 @@ impl BitWriter {
     }
 }
 
+// --- BitReader ---
+
+/// MSB-first bit unpacker over a borrowed byte slice.
+pub struct BitReader<'a> {
+    /// Backing byte slice.
+    bytes: &'a [u8],
+    /// Total bits consumed so far (counted from the MSB of `bytes[0]`).
+    bit_position: usize,
+}
+
+impl<'a> BitReader<'a> {
+    /// Create a `BitReader` over `bytes`, positioned at the start.
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, bit_position: 0 }
+    }
+
+    /// Read `count` bits MSB-first; returns the value LSB-aligned.
+    pub fn read_bits(&mut self, count: usize) -> Result<u64, V11Error> {
+        if count == 0 {
+            return Ok(0);
+        }
+        debug_assert!(count <= 64, "read_bits count must be ≤ 64");
+        if self.remaining_bits() < count {
+            return Err(V11Error::BitStreamTruncated {
+                requested: count,
+                available: self.remaining_bits(),
+            });
+        }
+
+        let mut result: u64 = 0;
+        let mut remaining = count;
+        while remaining > 0 {
+            let byte_idx = self.bit_position / 8;
+            let bit_in_byte = self.bit_position % 8; // 0 = MSB
+            let free_in_byte = 8 - bit_in_byte;
+            let chunk = remaining.min(free_in_byte);
+
+            // Extract `chunk` bits starting at bit_in_byte from the MSB side.
+            let byte = self.bytes[byte_idx];
+            let shift = (free_in_byte - chunk) as u32;
+            let mask: u8 = if chunk == 8 { 0xff } else { (1u8 << chunk) - 1 };
+            let bits = (byte >> shift) & mask;
+
+            result = (result << chunk) | bits as u64;
+            self.bit_position += chunk;
+            remaining -= chunk;
+        }
+        Ok(result)
+    }
+
+    /// Bits remaining unread.
+    pub fn remaining_bits(&self) -> usize {
+        self.bytes.len() * 8 - self.bit_position
+    }
+
+    /// Whether the stream is exhausted.
+    pub fn is_exhausted(&self) -> bool {
+        self.remaining_bits() == 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,5 +173,32 @@ mod tests {
         w.write_bits(0xff, 0);
         assert_eq!(w.bit_len(), 0);
         assert_eq!(w.into_bytes(), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn round_trip_5_bit_values() {
+        let mut w = BitWriter::new();
+        w.write_bits(0b10110, 5);
+        w.write_bits(0b00001, 5);
+        let bytes = w.into_bytes();
+
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(r.read_bits(5).unwrap(), 0b10110);
+        assert_eq!(r.read_bits(5).unwrap(), 0b00001);
+    }
+
+    #[test]
+    fn read_past_end_errors() {
+        let bytes = vec![0xff];
+        let mut r = BitReader::new(&bytes);
+        assert!(r.read_bits(9).is_err());
+    }
+
+    #[test]
+    fn read_full_byte_aligned() {
+        let bytes = vec![0xab, 0xcd];
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(r.read_bits(8).unwrap(), 0xab);
+        assert_eq!(r.read_bits(8).unwrap(), 0xcd);
     }
 }
