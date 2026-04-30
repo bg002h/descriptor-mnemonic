@@ -67,15 +67,29 @@ enum Command {
         #[arg(long, value_name = "0xHEX")]
         seed: Option<String>,
 
-        /// Embed a master-key fingerprint for placeholder `@INDEX`, repeatable
-        /// for each placeholder. Format: `@0=deadbeef` (8 hex chars; 0x prefix
-        /// optional). All placeholders must be supplied (BIP §"Fingerprints
-        /// block" MUST clause). Indices must cover 0..N-1 with no gaps.
+        /// Embed a BIP 32 master-key fingerprint for placeholder `@INDEX`,
+        /// repeatable for each placeholder. Format: `@0=deadbeef` (8 hex
+        /// chars; 0x prefix optional). All placeholders must be supplied
+        /// (BIP §"Fingerprints block" MUST clause). Indices must cover
+        /// 0..N-1 with no gaps.
         ///
-        /// Privacy: fingerprints leak which seeds match which @i placeholders.
-        /// The CLI prints a stderr warning when this flag is used.
-        #[arg(long = "fingerprint", value_name = "@INDEX=HEX")]
+        /// Privacy: fingerprints leak which seeds match which @i
+        /// placeholders. The CLI prints a stderr warning when this flag is
+        /// used.
+        ///
+        /// (Renamed from `--fingerprint` in v0.10 to disambiguate from the
+        /// new `--policy-id-fingerprint` output flag.)
+        #[arg(long = "master-key-fingerprint", value_name = "@INDEX=HEX")]
         fingerprints: Vec<String>,
+
+        /// Also print the freshly-computed PolicyId in its 4-byte / 8-hex-
+        /// char short form (`0x{:08x}`, via `PolicyId::fingerprint()`) on a
+        /// new line after the 12-word phrase. Additive: the 12-word phrase
+        /// is always printed; this flag adds a second line for scripts /
+        /// log lines / minimal-cost engraving anchors that don't need the
+        /// full phrase.
+        #[arg(long)]
+        policy_id_fingerprint: bool,
 
         /// Emit JSON output.
         #[arg(long)]
@@ -225,10 +239,13 @@ fn indicator_to_derivation_path(indicator: u8) -> Option<DerivationPath> {
 }
 
 // ---------------------------------------------------------------------------
-// Fingerprint argument parser (v0.2.1 — `phase-e-cli-fingerprint-flag`)
+// Master-key-fingerprint argument parser (v0.2.1 — `phase-e-cli-fingerprint-flag`;
+// renamed `--fingerprint` → `--master-key-fingerprint` in v0.10 to disambiguate
+// from the new `--policy-id-fingerprint` output flag.)
 // ---------------------------------------------------------------------------
 
-/// Parse one `--fingerprint @INDEX=HEX` argument. Returns `(index, fp)`.
+/// Parse one `--master-key-fingerprint @INDEX=HEX` argument. Returns
+/// `(index, fp)`.
 ///
 /// Accepted forms:
 /// - `@0=deadbeef` (canonical)
@@ -236,22 +253,24 @@ fn indicator_to_derivation_path(indicator: u8) -> Option<DerivationPath> {
 /// - `@1=0xcafebabe` (0x prefix optional)
 ///
 /// `INDEX` must be a non-negative integer. `HEX` must be exactly 8 lowercase
-/// hex characters representing a 4-byte master-key fingerprint.
+/// hex characters representing a 4-byte BIP 32 master-key fingerprint.
 fn parse_fingerprint_arg(arg: &str) -> Result<(usize, Fingerprint), anyhow::Error> {
     let (idx_part, hex_part) = arg.split_once('=').ok_or_else(|| {
-        anyhow::anyhow!("--fingerprint: expected '@INDEX=HEX' (e.g. '@0=deadbeef'), got {arg:?}")
+        anyhow::anyhow!(
+            "--master-key-fingerprint: expected '@INDEX=HEX' (e.g. '@0=deadbeef'), got {arg:?}"
+        )
     })?;
     let idx_str = idx_part.strip_prefix('@').unwrap_or(idx_part);
     let index: usize = idx_str.parse().map_err(|_| {
         anyhow::anyhow!(
-            "--fingerprint: index {idx_str:?} must be a non-negative integer (e.g. '@0=...')"
+            "--master-key-fingerprint: index {idx_str:?} must be a non-negative integer (e.g. '@0=...')"
         )
     })?;
     let hex_clean = hex_part.to_ascii_lowercase();
     let hex_clean = hex_clean.strip_prefix("0x").unwrap_or(&hex_clean);
     if hex_clean.len() != 8 {
         anyhow::bail!(
-            "--fingerprint: hex {hex_part:?} must be exactly 8 hex chars (4 bytes); got {} chars",
+            "--master-key-fingerprint: hex {hex_part:?} must be exactly 8 hex chars (4 bytes); got {} chars",
             hex_clean.len()
         );
     }
@@ -259,13 +278,15 @@ fn parse_fingerprint_arg(arg: &str) -> Result<(usize, Fingerprint), anyhow::Erro
     for i in 0..4 {
         let byte_str = &hex_clean[i * 2..i * 2 + 2];
         bytes[i] = u8::from_str_radix(byte_str, 16).map_err(|_| {
-            anyhow::anyhow!("--fingerprint: invalid hex byte {byte_str:?} in {hex_part:?}")
+            anyhow::anyhow!(
+                "--master-key-fingerprint: invalid hex byte {byte_str:?} in {hex_part:?}"
+            )
         })?;
     }
     Ok((index, Fingerprint::from(bytes)))
 }
 
-/// Parse a `Vec<String>` of `--fingerprint` arguments into the
+/// Parse a `Vec<String>` of `--master-key-fingerprint` arguments into the
 /// `Vec<Fingerprint>` shape `EncodeOptions::fingerprints` expects.
 ///
 /// Validates that the supplied indices cover `0..N` with no gaps, no
@@ -279,7 +300,7 @@ fn parse_fingerprints_args(args: &[String]) -> Result<Vec<Fingerprint>, anyhow::
             by_index.resize(index + 1, None);
         }
         if by_index[index].is_some() {
-            anyhow::bail!("--fingerprint: duplicate entry for index {index}");
+            anyhow::bail!("--master-key-fingerprint: duplicate entry for index {index}");
         }
         by_index[index] = Some(fp);
     }
@@ -288,7 +309,7 @@ fn parse_fingerprints_args(args: &[String]) -> Result<Vec<Fingerprint>, anyhow::
         match slot {
             Some(fp) => out.push(fp),
             None => anyhow::bail!(
-                "--fingerprint: missing entry for index {i} (indices must cover 0..N with no gaps)"
+                "--master-key-fingerprint: missing entry for index {i} (indices must cover 0..N with no gaps)"
             ),
         }
     }
@@ -299,6 +320,7 @@ fn parse_fingerprints_args(args: &[String]) -> Result<Vec<Fingerprint>, anyhow::
 // Subcommand handlers
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_encode(
     policy_str: &str,
     path_arg: Option<&str>,
@@ -306,6 +328,7 @@ fn cmd_encode(
     force_long_code: bool,
     seed_arg: Option<&str>,
     fingerprint_args: &[String],
+    policy_id_fingerprint: bool,
     json: bool,
 ) -> Result<(), anyhow::Error> {
     // Parse the policy.
@@ -338,17 +361,18 @@ fn cmd_encode(
         }
     };
 
-    // Parse --fingerprint arguments. v0.2.1 (`phase-e-cli-fingerprint-flag`).
-    // Empty Vec → no fingerprints block (header byte 0x00, v0.1 wire output);
-    // non-empty → header bit 2 = 1, validated against the policy's placeholder
-    // count by the encoder per BIP §"Fingerprints block".
+    // Parse --master-key-fingerprint arguments. v0.2.1 (`phase-e-cli-
+    // fingerprint-flag`); flag renamed in v0.10. Empty Vec → no fingerprints
+    // block (header byte 0x00, v0.1 wire output); non-empty → header bit 2
+    // = 1, validated against the policy's placeholder count by the encoder
+    // per BIP §"Fingerprints block".
     let fingerprints: Option<Vec<Fingerprint>> = if fingerprint_args.is_empty() {
         None
     } else {
         // BIP MUST clause: privacy-warn before encoding. The CLI is a
         // recovery tool per the BIP; the warning is mandatory.
         eprintln!(
-            "warning: --fingerprint embeds master-key fingerprints into the backup. \
+            "warning: --master-key-fingerprint embeds master-key fingerprints into the backup. \
              This leaks which seeds match which @i placeholders. \
              Only use if recovery requires the disclosure."
         );
@@ -379,6 +403,15 @@ fn cmd_encode(
         }
         println!();
         println!("Policy ID: {}", backup.policy_id_words);
+        if policy_id_fingerprint {
+            // Additive: print the 4-byte short form on a second line. Uses
+            // `PolicyId::fingerprint()` (added in v0.10) — the top 32 bits
+            // of the 16-byte PolicyId, rendered as 8 lowercase hex chars
+            // with `0x` prefix. See `crates/md-codec/src/policy_id.rs`.
+            let fp = backup.policy_id().fingerprint();
+            let fp_u32 = u32::from_be_bytes(fp);
+            println!("Policy ID fingerprint: 0x{fp_u32:08x}");
+        }
     }
 
     Ok(())
@@ -547,7 +580,7 @@ fn cmd_bytecode(policy_str: &str) -> Result<(), anyhow::Error> {
     // Intentionally hardcoded `EncodeOptions::default()` — `bytecode` is a
     // debug-aid subcommand that prints the canonical default-options encoding
     // for spec/BIP cross-reference. Unlike `cmd_encode`, it deliberately does
-    // not expose `--path` / `--fingerprint` / etc. so the printed bytes always
+    // not expose `--path` / `--master-key-fingerprint` / etc. so the printed bytes always
     // reflect the BIP 84 mainnet fallback path with no fingerprints block.
     let bytecode = policy
         .to_bytecode(&EncodeOptions::default())
@@ -582,6 +615,7 @@ fn main() {
             force_long_code,
             seed,
             fingerprints,
+            policy_id_fingerprint,
             json,
         } => cmd_encode(
             &policy,
@@ -590,6 +624,7 @@ fn main() {
             force_long_code,
             seed.as_deref(),
             &fingerprints,
+            policy_id_fingerprint,
             json,
         ),
 

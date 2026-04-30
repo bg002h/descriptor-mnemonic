@@ -54,6 +54,12 @@ divergent-path policies, closing a silent path-divergence drop).
   bits as a 4-byte array, parallel to BIP 32 master-key fingerprints.
   Renders as 8 lowercase hex characters; offered as a minimal-cost
   display alternative to the 12-word PolicyId phrase.
+- `md encode --policy-id-fingerprint` CLI flag. Additive: prints the
+  freshly-computed PolicyId in its 4-byte / 8-hex-char short form
+  (`0x{:08x}`, via `PolicyId::fingerprint()`) on a second line after
+  the existing 12-word phrase. Use cases: CLI scripts, log lines, and
+  minimal-cost engraving anchors for users who don't want the full
+  phrase.
 - BIP draft §"Per-`@N` path declaration", §"PolicyId types"
   (Type 0/Type 1 typology), §"Authority precedence with MK"
   (cross-reference to mk1 BIP).
@@ -73,6 +79,12 @@ divergent-path policies, closing a silent path-divergence drop).
   `Error::PathComponentCountExceeded` when the path exceeds
   `MAX_PATH_COMPONENTS = 10`. **Public-API break.** Symmetric change
   on `encode_declaration`.
+- `md encode --fingerprint <@INDEX=HEX>` →
+  `md encode --master-key-fingerprint <@INDEX=HEX>`. **CLI break.**
+  The renamed flag still embeds BIP 32 master-key fingerprints into
+  the bytecode's fingerprints block; the more explicit name
+  disambiguates from the new `--policy-id-fingerprint` output flag.
+  No deprecation alias — pre-v1.0 break freedom.
 - BIP draft tag table: `0x36` no longer in the reserved range; reserved
   range narrows to `0x37`–`0xFF`.
 - BIP draft bytecode header table: bit 3 documented as the
@@ -116,6 +128,10 @@ breaking.)
 - `md-per-at-N-path-tag-allocation` — the headline mk1-surfaced item;
   closed by allocating `Tag::OriginPaths = 0x36` and the per-`@N`
   encoder/decoder pipeline.
+- `cli-policy-id-fingerprint-flag` — closed in-cycle by adding the
+  `md encode --policy-id-fingerprint` flag and renaming the existing
+  `md encode --fingerprint` to `--master-key-fingerprint` (the naming
+  conflict the deferral cited).
 
 ### FOLLOWUPS deferred
 
@@ -124,8 +140,6 @@ breaking.)
   Tier 0 (`opts.origin_paths` override) and Tier 1
   (`decoded_origin_paths` round-trip) cover all current use cases. v0.11
   follow-up.
-- `cli-policy-id-fingerprint-flag` — surface `PolicyId::fingerprint()`
-  as a CLI flag (e.g., `md decode --fingerprint`). v0.11 follow-up.
 
 ### MSRV
 

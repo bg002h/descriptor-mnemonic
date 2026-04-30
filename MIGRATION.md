@@ -56,7 +56,7 @@ The literal-bool form covers most call sites (test code typically passes
 grep -rn 'BytecodeHeader::new_v0(' --include='*.rs'
 ```
 
-### Hand-rename items — two API breaks requiring per-call-site review
+### Hand-rename items — three breaks requiring per-call-site review
 
 1. **`BytecodeHeader::new_v0(bool)` → `new_v0(bool, bool)`** — signature
    gains an `origin_paths: bool` argument (parallel to the existing
@@ -77,6 +77,35 @@ grep -rn 'BytecodeHeader::new_v0(' --include='*.rs'
      paths). Document the upstream invariant in the `expect` message.
 
    `encode_declaration(...)` changes symmetrically.
+
+3. **`md encode --fingerprint <@INDEX=HEX>` →
+   `md encode --master-key-fingerprint <@INDEX=HEX>`.** **CLI break.**
+   The flag still embeds BIP 32 master-key fingerprints into the
+   bytecode's fingerprints block; the more explicit name disambiguates
+   it from the new `--policy-id-fingerprint` output flag (see "Added"
+   below). No deprecation alias was added — pre-v1.0 break freedom.
+   Consumer scripts:
+
+   ```bash
+   # Sed for shell scripts that pass --fingerprint to `md encode`:
+   find . -type f \( -name '*.sh' -o -name '*.bash' -o -name 'Makefile' \) \
+     -exec sed -i 's/--fingerprint /--master-key-fingerprint /g' {} +
+   ```
+
+   Validate by running the script — the CLI rejects the old flag with
+   a clap "unexpected argument" error.
+
+### Added
+
+- **`md encode --policy-id-fingerprint`** — additive output flag.
+  When set, prints the freshly-computed PolicyId in its 4-byte /
+  8-hex-char short form (`0x{:08x}`, via the new
+  `PolicyId::fingerprint()` API) on a second line after the existing
+  12-word phrase. The 12-word phrase is always printed; this flag is
+  strictly additive. Use cases: CLI scripts, log lines, and minimal-
+  cost engraving anchors for users who don't want the full phrase.
+  Not on by default — opt-in to keep the default `md encode` output
+  minimal.
 
 ### Wire format
 
