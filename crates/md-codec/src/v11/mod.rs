@@ -18,3 +18,4 @@ pub mod validate;
 pub mod encode;
 pub mod decode;
 pub mod identity;
+pub mod phrase;
