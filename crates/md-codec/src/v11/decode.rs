@@ -42,3 +42,13 @@ pub fn decode_payload(bytes: &[u8], total_bits: usize) -> Result<Descriptor, V11
 
     Ok(descriptor)
 }
+
+/// Decode a Descriptor from a complete codex32 md1 string.
+///
+/// Uses the symbol-aligned bit count returned by `unwrap_string` (5 × symbol_count),
+/// which is exact at the codex32 layer with ≤4 bits of trailing zero-padding —
+/// well within the v11 decoder's TLV-rollback tolerance.
+pub fn decode_md1_string(s: &str) -> Result<Descriptor, V11Error> {
+    let (bytes, symbol_aligned_bit_count) = crate::v11::codex32::unwrap_string(s)?;
+    decode_payload(&bytes, symbol_aligned_bit_count)
+}

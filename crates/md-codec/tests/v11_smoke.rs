@@ -116,3 +116,23 @@ fn bip84_emit_md1_string() {
     let s = md_codec::v11::encode::encode_md1_string(&d).unwrap();
     assert!(s.starts_with("md1"));
 }
+
+#[test]
+fn bip84_md1_string_round_trip() {
+    let d = Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(bip84_path()),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: 0 },
+        },
+        tlv: TlvSection::new_empty(),
+    };
+    let s = md_codec::v11::encode::encode_md1_string(&d).unwrap();
+    let d2 = md_codec::v11::decode::decode_md1_string(&s).unwrap();
+    assert_eq!(d, d2);
+}
