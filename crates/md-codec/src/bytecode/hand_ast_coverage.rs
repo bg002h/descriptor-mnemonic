@@ -510,3 +510,128 @@ fn walker_reports_deepest_violation_first() {
         other => panic!("expected SubsetViolation, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// §3.4 — v0.10 hand-AST coverage for OriginPaths block
+//
+// Pin (a) header bit 3 round-trip through `BytecodeHeader::new_v0` /
+// `from_byte`, (b) encoder dispatch determinism (shared paths emit
+// `Tag::SharedPath=0x34`; divergent paths emit `Tag::OriginPaths=0x36`),
+// (c) `MAX_PATH_COMPONENTS=10` boundary at the `encode_path` API.
+// ---------------------------------------------------------------------------
+
+/// Header bit 3 round-trips through `BytecodeHeader::new_v0` and
+/// `BytecodeHeader::from_byte`. The encoded byte must equal `0x08`
+/// (origin_paths flag bit only) for `new_v0(false, true)`, and the
+/// origin_paths accessor must agree.
+#[test]
+fn header_origin_paths_flag_round_trip() {
+    use crate::bytecode::header::BytecodeHeader;
+
+    let h = BytecodeHeader::new_v0(false, true);
+    let b = h.as_byte();
+    assert_eq!(b, 0x08, "new_v0(false, true) must encode bit 3 only");
+
+    let h2 = BytecodeHeader::from_byte(b).expect("0x08 must round-trip");
+    assert_eq!(
+        h.origin_paths(),
+        h2.origin_paths(),
+        "origin_paths flag must survive round-trip through as_byte/from_byte"
+    );
+    assert!(
+        h2.origin_paths(),
+        "round-tripped header must report origin_paths == true"
+    );
+    assert!(
+        !h2.fingerprints(),
+        "fingerprints flag must remain clear when only bit 3 is set"
+    );
+}
+
+/// Encoder dispatch determinism — when all per-`@N` paths agree, the encoder
+/// MUST emit `Tag::SharedPath=0x34` (bit 3 clear), NOT `Tag::OriginPaths=0x36`.
+/// Pinned by inspecting bytecode[0] (header) and bytecode[1] (path-decl tag).
+#[test]
+fn encoder_emits_shared_path_when_all_paths_agree() {
+    use crate::policy::WalletPolicy;
+    use crate::{EncodeOptions, bytecode::Tag};
+
+    let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))".parse().unwrap();
+    let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
+    assert_eq!(
+        bytes[0] & 0x08,
+        0x00,
+        "header bit 3 must be clear for shared-path policy; got 0x{:02x}",
+        bytes[0]
+    );
+    assert_eq!(
+        bytes[1],
+        Tag::SharedPath.as_byte(),
+        "encoder must emit Tag::SharedPath (0x34) for shared-path policy; got 0x{:02x}",
+        bytes[1]
+    );
+    assert_ne!(
+        bytes[1],
+        Tag::OriginPaths.as_byte(),
+        "encoder must NOT emit Tag::OriginPaths (0x36) when all per-@N paths agree"
+    );
+}
+
+/// Encoder dispatch determinism — with divergent per-`@N` paths supplied via
+/// `EncodeOptions::with_origin_paths`, the encoder MUST emit
+/// `Tag::OriginPaths=0x36` and set header bit 3 (`0x08`).
+#[test]
+fn encoder_emits_origin_paths_when_paths_diverge() {
+    use bitcoin::bip32::DerivationPath;
+    use std::str::FromStr;
+
+    use crate::policy::WalletPolicy;
+    use crate::{EncodeOptions, bytecode::Tag};
+
+    let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))".parse().unwrap();
+    let opts = EncodeOptions::default().with_origin_paths(vec![
+        DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+        DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+        DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+    ]);
+    let bytes = p.to_bytecode(&opts).unwrap();
+    assert_eq!(
+        bytes[0], 0x08,
+        "header byte must be 0x08 (bit 3 set, no fingerprints) for divergent paths; got 0x{:02x}",
+        bytes[0]
+    );
+    assert_eq!(
+        bytes[1],
+        Tag::OriginPaths.as_byte(),
+        "encoder must emit Tag::OriginPaths (0x36) for divergent paths; got 0x{:02x}",
+        bytes[1]
+    );
+}
+
+/// `MAX_PATH_COMPONENTS=10` boundary — `encode_path` must accept exactly
+/// 10 components and reject 11 with
+/// `Error::PathComponentCountExceeded { got: 11, max: 10 }`.
+#[test]
+fn max_path_components_boundary_10_passes_11_rejects() {
+    use bitcoin::bip32::DerivationPath;
+    use std::str::FromStr;
+
+    use crate::bytecode::path::encode_path;
+
+    let path_10 =
+        DerivationPath::from_str("m/0'/0'/0'/0'/0'/0'/0'/0'/0'/0'").expect("10-component path");
+    let path_11 =
+        DerivationPath::from_str("m/0'/0'/0'/0'/0'/0'/0'/0'/0'/0'/0'").expect("11-component path");
+
+    encode_path(&path_10).expect("10 components must encode (boundary is inclusive)");
+
+    let err = encode_path(&path_11).expect_err("11 components must reject");
+    assert!(
+        matches!(
+            err,
+            crate::Error::PathComponentCountExceeded { got: 11, max: 10 }
+        ),
+        "expected PathComponentCountExceeded {{ got: 11, max: 10 }}, got {:?}",
+        err
+    );
+}

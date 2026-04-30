@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "md-codec 0.9",
+  "generator": "md-codec 0.10",
   "vectors": [
     {
       "id": "c1",
@@ -1079,6 +1079,100 @@
         "muscle",
         "depart"
       ]
+    },
+    {
+      "id": "o1_sortedmulti_2of3_divergent_paths",
+      "description": "O1 — wsh(sortedmulti(2,...)) 2-of-3 with two cosigners on m/48'/0'/0'/2' and one on m/48'/0'/0'/100' (divergent path triggers Tag::OriginPaths; mirrors SPEC §2 Example C)",
+      "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
+      "expected_bytecode_hex": "0836030505fe04610101c90105090203330033013302",
+      "expected_chunks": [
+        "md1qqqqsdsrq5zluprpqyqujqg9pypqxvcqxvqnxqsz8zeedqxf8rmk"
+      ],
+      "expected_policy_id_words": [
+        "deliver",
+        "solar",
+        "flock",
+        "amount",
+        "celery",
+        "invest",
+        "chalk",
+        "response",
+        "wink",
+        "drastic",
+        "fantasy",
+        "rifle"
+      ]
+    },
+    {
+      "id": "o2_sortedmulti_2of3_divergent_paths_with_fingerprints",
+      "description": "O2 — same template as O1, with all 3 master-key fingerprints (header 0x0C exercises bits 2+3; mirrors SPEC §2 Example B)",
+      "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**))",
+      "expected_bytecode_hex": "0c36030505fe04610101c9013503deadbeefcafebabed00df00d05090203330033013302",
+      "expected_chunks": [
+        "md1qqqqcdsrq5zluprpqyqujqf4q002m0h0etlt40ksphcq6pgfqgpnxqpnqyesyv33drlmqqk98s"
+      ],
+      "expected_policy_id_words": [
+        "hazard",
+        "arrest",
+        "whip",
+        "source",
+        "pond",
+        "pretty",
+        "eight",
+        "doll",
+        "lawn",
+        "modify",
+        "vocal",
+        "slush"
+      ],
+      "expected_fingerprints_hex": [
+        "deadbeef",
+        "cafebabe",
+        "d00df00d"
+      ],
+      "encode_options_fingerprints": [
+        [
+          222,
+          173,
+          190,
+          239
+        ],
+        [
+          202,
+          254,
+          186,
+          190
+        ],
+        [
+          208,
+          13,
+          240,
+          13
+        ]
+      ]
+    },
+    {
+      "id": "o3_wsh_sortedmulti_2of4_divergent_paths",
+      "description": "O3 — wsh(sortedmulti(2,...)) 2-of-4 exercising count=4 boundary with multiple distinct dictionary indicators (0x05, 0x05, 0x04, explicit m/87'/0'/0')",
+      "policy": "wsh(sortedmulti(2,@0/**,@1/**,@2/**,@3/**))",
+      "expected_bytecode_hex": "08360405050607050902043300330133023303",
+      "expected_chunks": [
+        "md1qqqqsdsyq5zsvpc9pypqgvcqxvqnxq3nqv9xh5vn3s04ewk"
+      ],
+      "expected_policy_id_words": [
+        "obvious",
+        "figure",
+        "annual",
+        "torch",
+        "giant",
+        "pottery",
+        "shock",
+        "private",
+        "limit",
+        "wide",
+        "betray",
+        "grow"
+      ]
     }
   ],
   "negative_vectors": [
@@ -1512,6 +1606,60 @@
       ],
       "expected_error_variant": "PolicyScopeViolation",
       "provenance": "lower-level API: hand-rolled bytecode buffer `[header, SharedPath, 0x03, Pkh, Placeholder, 0x00]`; `WalletPolicy::from_bytecode` rejects top-level Pkh as legacy non-segwit out of v0.4 scope (PolicyScopeViolation)"
+    },
+    {
+      "id": "n_orig_paths_count_zero",
+      "description": "OriginPaths block declares count=0 → InvalidBytecode { kind: OriginPathsCountTooLarge { count: 0, max: 32 } } (count must be 1..=32)",
+      "input_strings": [
+        "md1qqqqsdsqpv4jd5vkvxd0k"
+      ],
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "synthesised bytecode `[0x08, Tag::OriginPaths, 0x00]`: header bit 3 set + OriginPaths tag + count=0; decode_origin_paths rejects count==0 with InvalidBytecode { kind: OriginPathsCountTooLarge { count: 0, max: 32 } }"
+    },
+    {
+      "id": "n_orig_paths_count_too_large",
+      "description": "OriginPaths block declares count=33 (> MAX_ORIGIN_PATHS=32) → InvalidBytecode { kind: OriginPathsCountTooLarge { count: 33, max: 32 } }",
+      "input_strings": [
+        "md1qqqqsd3p25jd5a9e9h4gp"
+      ],
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "synthesised bytecode `[0x08, Tag::OriginPaths, 33]`: header bit 3 set + OriginPaths tag + count=33 (one over MAX_ORIGIN_PATHS); decode_origin_paths rejects with InvalidBytecode { kind: OriginPathsCountTooLarge { count: 33, max: 32 } }"
+    },
+    {
+      "id": "n_orig_paths_truncated",
+      "description": "OriginPaths declares count=3 but only 2 path-decls follow → InvalidBytecode { kind: UnexpectedEnd } (cursor exhausted reading the third path-decl)",
+      "input_strings": [
+        "md1qqqqsdsrq5zs5v7zgr8m0vj73"
+      ],
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "synthesised bytecode `[0x08, Tag::OriginPaths, 0x03, 0x05, 0x05]`: header bit 3 set, OriginPaths tag, count=3, only 2 dictionary-indicator path-decls present; decode_origin_paths reads count then loops decode_path which hits UnexpectedEnd on the third iteration"
+    },
+    {
+      "id": "n_orig_paths_count_mismatch",
+      "description": "OriginPaths declares count=4 but tree has 3 placeholders (wsh(sortedmulti(2,@0,@1,@2))) → OriginPathsCountMismatch { expected: 3, got: 4 }",
+      "input_strings": [
+        "md1qqqqsdsyq5zs2pg9pypqxvcqxvqnxqsanwy0dg4uq36w"
+      ],
+      "expected_error_variant": "OriginPathsCountMismatch",
+      "provenance": "encoded `wsh(sortedmulti(2,@0/**,@1/**,@2/**))` to extract the 3-placeholder tree suffix, prepended `[0x08, Tag::OriginPaths, 0x04, 0x05, 0x05, 0x05, 0x05]`; decoder parses 4 origin paths then mismatches the 3-placeholder tree, raising OriginPathsCountMismatch { expected: 3, got: 4 }"
+    },
+    {
+      "id": "n_path_components_too_long",
+      "description": "Explicit-form SharedPath with 11 components → PathComponentCountExceeded { got: 11, max: 10 }",
+      "input_strings": [
+        "md1qqqqqd87pvqszqgpqyqszqgpqyqsfgp5ehp0dtepg"
+      ],
+      "expected_error_variant": "PathComponentCountExceeded",
+      "provenance": "synthesised bytecode `[0x00, Tag::SharedPath, 0xFE, 0x0B, 0x01×11]`: explicit-form path with 11 hardened components (idx 0); decode_path rejects on count > MAX_PATH_COMPONENTS=10 with PathComponentCountExceeded { got: 11, max: 10 }"
+    },
+    {
+      "id": "n_conflicting_path_declarations_bit_set_tag_shared",
+      "description": "Header bit 3 set but Tag::SharedPath (0x34) appears in path-decl slot instead of Tag::OriginPaths (0x36) → InvalidBytecode { kind: UnexpectedTag { expected: 0x36, got: 0x34 } }",
+      "input_strings": [
+        "md1qqqqsdq95enz2gs34wwul"
+      ],
+      "expected_error_variant": "InvalidBytecode",
+      "provenance": "synthesised bytecode `[0x08, Tag::SharedPath, 0x05]`: header bit 3 (origin_paths) set ⇒ from_bytecode dispatches to the OriginPaths branch and verifies the next byte is Tag::OriginPaths=0x36; got Tag::SharedPath=0x34 instead, raising InvalidBytecode { kind: UnexpectedTag { expected: 0x36, got: 0x34 } }"
     }
   ]
 }

@@ -1249,3 +1249,114 @@ fn rejects_fingerprints_count_mismatch() {
         other => panic!("expected FingerprintsCountMismatch, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Layer 9: v0.10 OriginPaths-block + path-component-cap rejections
+// ---------------------------------------------------------------------------
+
+/// 34. OriginPaths block declares `count > MAX_ORIGIN_PATHS=32` →
+///     `BytecodeErrorKind::OriginPathsCountTooLarge { count: 33, max: 32 }`.
+///
+/// Synthesizes header `0x08` (bit 3 set) + `Tag::OriginPaths` + count `33`;
+/// `decode_origin_paths` rejects on the count byte alone, before any path-decl
+/// is parsed (so the trailing buffer can be empty).
+#[test]
+fn rejects_invalid_bytecode_origin_paths_count_too_large() {
+    use md_codec::bytecode::Tag;
+
+    let bytes: Vec<u8> = vec![0x08, Tag::OriginPaths.as_byte(), 33];
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::InvalidBytecode {
+                kind: BytecodeErrorKind::OriginPathsCountTooLarge { count: 33, max: 32 },
+                ..
+            }
+        ),
+        "expected InvalidBytecode {{ kind: OriginPathsCountTooLarge {{ count: 33, max: 32 }} }}, got {:?}",
+        err
+    );
+}
+
+/// 35. OriginPaths block declares `count == 0` → also
+///     `BytecodeErrorKind::OriginPathsCountTooLarge { count: 0, max: 32 }`
+///     (the same structural variant covers both the under- and over-bound
+///     cases).
+#[test]
+fn rejects_invalid_bytecode_origin_paths_count_zero() {
+    use md_codec::bytecode::Tag;
+
+    let bytes: Vec<u8> = vec![0x08, Tag::OriginPaths.as_byte(), 0x00];
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::InvalidBytecode {
+                kind: BytecodeErrorKind::OriginPathsCountTooLarge { count: 0, max: 32 },
+                ..
+            }
+        ),
+        "expected InvalidBytecode {{ kind: OriginPathsCountTooLarge {{ count: 0, max: 32 }} }}, got {:?}",
+        err
+    );
+}
+
+/// 36. OriginPaths declared count differs from the tree's placeholder count →
+///     `Error::OriginPathsCountMismatch { expected, got }`.
+///
+/// Encodes a valid 3-placeholder tree (`wsh(sortedmulti(2,@0,@1,@2))`),
+/// strips the `[header, SharedPath, indicator]` prefix, and prepends
+/// `[header(0x08), Tag::OriginPaths, count=4, 4×0x05]` so the encoded
+/// origin-paths count diverges from the tree's `key_count`.
+#[test]
+fn rejects_origin_paths_count_mismatch() {
+    use md_codec::bytecode::Tag;
+
+    let policy: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+        .parse()
+        .expect("3-of-3 sortedmulti template must parse");
+    let valid = policy.to_bytecode(&EncodeOptions::default()).unwrap();
+    // valid begins with [0x00, Tag::SharedPath, indicator, ...tree...].
+    let tree_bytes = &valid[3..];
+
+    let mut bytes: Vec<u8> = vec![0x08, Tag::OriginPaths.as_byte(), 0x04];
+    bytes.extend_from_slice(&[0x05, 0x05, 0x05, 0x05]); // 4 dictionary indicators
+    bytes.extend_from_slice(tree_bytes);
+
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::OriginPathsCountMismatch {
+                expected: 3,
+                got: 4
+            }
+        ),
+        "expected OriginPathsCountMismatch {{ expected: 3, got: 4 }}, got {:?}",
+        err
+    );
+}
+
+/// 37. Explicit-form path declaring more than `MAX_PATH_COMPONENTS=10`
+///     components → `Error::PathComponentCountExceeded { got: 11, max: 10 }`.
+#[test]
+fn rejects_path_component_count_exceeded() {
+    use md_codec::bytecode::Tag;
+
+    // [header, Tag::SharedPath, 0xFE (explicit), count=11, 11×0x01].
+    let mut bytes: Vec<u8> = vec![
+        0x00,
+        Tag::SharedPath.as_byte(),
+        0xFE,
+        0x0B, // count = 11
+    ];
+    bytes.extend_from_slice(&[0x01u8; 11]);
+
+    let err = WalletPolicy::from_bytecode(&bytes).unwrap_err();
+    assert!(
+        matches!(err, Error::PathComponentCountExceeded { got: 11, max: 10 }),
+        "expected PathComponentCountExceeded {{ got: 11, max: 10 }}, got {:?}",
+        err
+    );
+}
