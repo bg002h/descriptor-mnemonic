@@ -784,6 +784,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.10.2 or v0.11
 
+### `tier-2-gate-revisit-when-public-set-key-info-lands` — revisit Tier 2 gate if public key-info mutation API is added
+
+- **Surfaced:** v0.10.1 review 2026-04-29 (review report: `design/agent-reports/v0-10-1-tier-2-kiv-walk-review.md`, Finding 3 / §5).
+- **Where:** `crates/md-codec/src/policy.rs` — the gate at the start of Tier 2 in `placeholder_paths_in_index_order` (~line 513): `if self.decoded_shared_path.is_none() { ... }`. Also see the `from_bytecode` rustdoc at lines 633–634 mentioning a "restore flow via `set_key_info`" — currently aspirational since `WalletPolicy::inner()` returns `&` (immutable) and there is no public mutation API.
+- **What:** the v0.10.1 Tier 2 gate uses `decoded_shared_path == Some` as a proxy for "key_info is dummy-populated by `from_bytecode` and must not be Tier-2-walked." This is correct today because the only way to populate `decoded_shared_path` is via `from_bytecode`, which always sets `key_info` to dummies. **If a future md-codec release adds a public mutation API** (e.g., a `WalletPolicy::set_key_info(&mut self, keys: &[DescriptorPublicKey])` that lets callers replace the dummies with real keys after a `from_bytecode` round-trip — the natural restore-flow shape), then a policy could legitimately have `decoded_shared_path = Some` AND real (non-dummy) `key_info` simultaneously. In that scenario, today's gate would silently skip Tier 2 and re-emit the original on-wire shared path instead of the new real-key paths — a silent correctness bug.
+- **Why deferred:** no public mutation API exists today; the gate is airtight in practice for v0.10.1's API surface. This is a forward-looking tracking item: ensure the gate is reconsidered (e.g., replaced with an explicit `key_info_is_dummy: bool` flag set inside `from_bytecode` and cleared by any public mutator) **at the same time** any public set-key-info-on-decoded-policy API lands.
+- **Status:** open
+- **Tier:** vNext-API-expansion (block on whichever release introduces public key-info mutation).
+
 ---
 
 ## Resolved items

@@ -19,12 +19,12 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - name: Clone patched miniscript fork (fix/wallet-policy-hash-terminals)
+      - name: Clone patched miniscript fork (md-codec-local-stack)
         shell: bash
         run: |
-          git clone --depth 50 --branch fix/wallet-policy-hash-terminals https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
+          git clone --depth 50 --branch md-codec-local-stack https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
           cd ../rust-miniscript-fork
-          git checkout dbfe077
+          git checkout b308afd
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-targets
@@ -35,11 +35,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Clone patched miniscript fork (fix/wallet-policy-hash-terminals)
+      - name: Clone patched miniscript fork (md-codec-local-stack)
         run: |
-          git clone --depth 50 --branch fix/wallet-policy-hash-terminals https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
+          git clone --depth 50 --branch md-codec-local-stack https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
           cd ../rust-miniscript-fork
-          git checkout dbfe077
+          git checkout b308afd
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: clippy
@@ -63,11 +63,11 @@ jobs:
       RUSTDOCFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v4
-      - name: Clone patched miniscript fork (fix/wallet-policy-hash-terminals)
+      - name: Clone patched miniscript fork (md-codec-local-stack)
         run: |
-          git clone --depth 50 --branch fix/wallet-policy-hash-terminals https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
+          git clone --depth 50 --branch md-codec-local-stack https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
           cd ../rust-miniscript-fork
-          git checkout dbfe077
+          git checkout b308afd
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps --document-private-items
