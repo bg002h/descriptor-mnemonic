@@ -1,496 +1,115 @@
-//! Top-level encode pipeline: `WalletPolicy` → `MdBackup`.
-//!
-//! Wires together Phases 1–5C: bytecode encoding, chunking decision,
-//! chunk-set-ID derivation, chunk assembly, and codex32 string encoding.
+//! Top-level encoder per spec §13.3.
 
-use crate::{
-    BchCode, ChunkCode, ChunkingPlan, EncodeOptions, EncodedChunk, MdBackup, Result, WalletPolicy,
-    chunking::{ChunkHeader, chunk_bytes, chunking_decision},
-    encoding::encode_string,
-    policy_id::{ChunkSetId, compute_policy_id},
-};
+use crate::bitstream::BitWriter;
+use crate::error::Error;
+use crate::header::Header;
+use crate::origin_path::{PathDecl, PathDeclPaths};
+use crate::tlv::TlvSection;
+use crate::tree::{write_node, Body, Node};
+use crate::use_site_path::UseSitePath;
 
-/// Encode a wallet policy as a [`MdBackup`]: one or more codex32-derived
-/// strings ready to engrave, plus the Tier-3 12-word Policy ID.
+/// Top-level descriptor parsed/built from a v0.11 wire payload.
 ///
-/// # Pipeline
-///
-/// 1. **Bytecode** — `policy.to_bytecode()` produces canonical MD bytecode.
-/// 2. **Chunking plan** — [`chunking_decision`] selects single-string or
-///    chunked encoding. `force_long_code` can upgrade Regular → Long after
-///    the fact. `chunking_mode = ChunkingMode::ForceChunked` causes chunked
-///    encoding even for short input.
-/// 3. **Policy IDs** — the *chunk-header* 20-bit `chunk_set_id` is derived from
-///    `options.chunk_set_id_seed` (if present) or the content hash. The
-///    *Tier-3* 16-byte `PolicyId` is **always** content-derived, never
-///    affected by the seed.
-/// 4. **Chunks** — [`chunk_bytes`] assembles `Vec<Chunk>`.
-/// 5. **Codex32 strings** — each chunk's bytes are wrapped by [`encode_string`].
-/// 6. **Result** — a [`MdBackup`] containing the encoded chunks and the
-///    Tier-3 12-word policy ID.
-///
-/// # Errors
-///
-/// Returns [`crate::Error::PolicyTooLarge`] when the bytecode exceeds the maximum
-/// supported length (1692 bytes). Propagates any error from
-/// [`WalletPolicy::to_bytecode`] or [`encode_string`].
-pub fn encode(policy: &WalletPolicy, options: &EncodeOptions) -> Result<MdBackup> {
-    // Stage 2: encode policy to canonical bytecode. The encoder consults
-    // `options.shared_path` first per the Phase B precedence rule; see
-    // [`WalletPolicy::to_bytecode`].
-    let bytecode = policy.to_bytecode(options)?;
-
-    // Stage 3: decide chunking plan, then apply force_long_code override.
-    let mut plan = chunking_decision(bytecode.len(), options.chunking_mode)?;
-    if options.force_long_code {
-        plan = match plan {
-            // Regular single-string → Long single-string (long capacity ≥ regular, always fits).
-            ChunkingPlan::SingleString {
-                code: ChunkCode::Regular,
-            } => ChunkingPlan::SingleString {
-                code: ChunkCode::Long,
-            },
-            // Regular chunked → Long chunked; recompute count using long fragment capacity.
-            ChunkingPlan::Chunked {
-                code: ChunkCode::Regular,
-                ..
-            } => {
-                let stream_len = bytecode.len() + 4;
-                let count = stream_len.div_ceil(ChunkCode::Long.fragment_capacity());
-                // Long capacity is larger than regular, so count ≤ regular count ≤ 32.
-                ChunkingPlan::Chunked {
-                    code: ChunkCode::Long,
-                    fragment_size: ChunkCode::Long.fragment_capacity(),
-                    count,
-                }
-            }
-            // Already Long; leave as-is.
-            other => other,
-        };
-    }
-
-    // Stage 4: derive chunk-header chunk_set_id (affected by seed) and assemble chunks.
-    let chunk_set_id: ChunkSetId = match options.chunk_set_id_seed {
-        Some(seed) => seed.truncate(),
-        None => compute_policy_id(&bytecode).truncate(),
-    };
-    let chunks = chunk_bytes(&bytecode, plan, chunk_set_id)?;
-
-    // Stage 5: encode each chunk to a codex32 string.
-    // Hoist the BCH code lookup — it is plan-level, not per-chunk.
-    let bch_code: BchCode = match plan {
-        ChunkingPlan::SingleString { code } => code.into(),
-        ChunkingPlan::Chunked { code, .. } => code.into(),
-    };
-    let chunk_count = chunks.len();
-    let mut encoded_chunks: Vec<EncodedChunk> = Vec::with_capacity(chunk_count);
-    for chunk in chunks {
-        // Read chunk_index and total_chunks from the header — canonical source.
-        let (chunk_index, total_chunks) = match &chunk.header {
-            ChunkHeader::SingleString { .. } => (0u8, 1u8),
-            ChunkHeader::Chunked { index, count, .. } => (*index, *count),
-        };
-        let header_bytes = chunk.header.to_bytes();
-        let raw = encode_string(&header_bytes, &chunk.fragment)?;
-        // encode_string auto-selects the code from the data-part length, but
-        // we record it explicitly from the plan for structured output.
-        encoded_chunks.push(EncodedChunk {
-            raw,
-            chunk_index,
-            total_chunks,
-            code: bch_code,
-        });
-    }
-
-    // Stage 6: Tier-3 policy ID is ALWAYS content-derived, never affected by seed.
-    let tier3_policy_id = compute_policy_id(&bytecode);
-    let policy_id_words = tier3_policy_id.to_words();
-
-    // Surface the caller-supplied fingerprints on the backup so that an
-    // `encode → user-side state` round-trip is observable without re-decoding.
-    // The decoder populates `MdBackup.fingerprints` from the parsed bytecode
-    // independently — see `decode::decode`.
-    Ok(MdBackup {
-        chunks: encoded_chunks,
-        policy_id_words,
-        fingerprints: options.fingerprints.clone(),
-    })
+/// Each field corresponds to a spec section: Header (§3.2), origin
+/// `PathDecl` (§3.3), use-site `UseSitePath` (§3.4), descriptor `tree`
+/// (§3.5–3.6), and trailing `tlv` section (§3.7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Descriptor {
+    /// Number of placeholders (1-indexed key universe size).
+    pub n: u8,
+    /// Origin path declaration (single or per-`@N` divergent).
+    pub path_decl: PathDecl,
+    /// Use-site (post-key) path applied to every key by default.
+    pub use_site_path: UseSitePath,
+    /// Descriptor tree root node.
+    pub tree: Node,
+    /// Trailing TLV section (overrides, fingerprints, etc.).
+    pub tlv: TlvSection,
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+impl Descriptor {
+    /// Bit width for placeholder-index encoding: ⌈log₂(n)⌉ for n ≥ 2; 0 for n = 1.
+    pub fn key_index_width(&self) -> u8 {
+        if self.n <= 1 {
+            0
+        } else {
+            (32 - (self.n as u32 - 1).leading_zeros()) as u8
+        }
+    }
+}
+
+/// Encode a [`Descriptor`] into the canonical payload bit stream and return
+/// `(bytes, total_bit_count)`. The bytes are zero-padded; `total_bit_count`
+/// is the exact unpadded length needed for round-trip decoding (see §3.7's
+/// "TLV section ends when codex32 total-length is exhausted" rule).
+pub fn encode_payload(d: &Descriptor) -> Result<(Vec<u8>, usize), Error> {
+    crate::validate::validate_placeholder_usage(&d.tree, d.n)?;
+    if let Some(overrides) = &d.tlv.use_site_path_overrides {
+        crate::validate::validate_multipath_consistency(&d.use_site_path, overrides)?;
+    }
+    if matches!(d.tree.tag, crate::tag::Tag::Tr) {
+        if let Body::Tr { tree: Some(t), .. } = &d.tree.body {
+            crate::validate::validate_tap_script_tree(t)?;
+        }
+    }
+
+    let mut w = BitWriter::new();
+    let header = Header {
+        version: 0,
+        divergent_paths: matches!(d.path_decl.paths, PathDeclPaths::Divergent(_)),
+    };
+    header.write(&mut w);
+    d.path_decl.write(&mut w)?;
+    d.use_site_path.write(&mut w)?;
+    let kiw = d.key_index_width();
+    write_node(&mut w, &d.tree, kiw)?;
+    d.tlv.write(&mut w, kiw)?;
+    let total_bits = w.bit_len();
+    Ok((w.into_bytes(), total_bits))
+}
+
+/// Render a codex32 string with optional N-char hyphen grouping for
+/// transcription aid. Per spec §10.2, every 4-5 chars optionally separated by
+/// `-` for human readability. `group_size = 0` returns the input unchanged
+/// (no grouping).
+pub fn render_codex32_grouped(s: &str, group_size: usize) -> String {
+    if group_size == 0 {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && i % group_size == 0 {
+            out.push('-');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Encode a Descriptor into a complete codex32 md1 string (HRP + payload + BCH checksum).
+/// Returns the canonical single-string form.
+pub fn encode_md1_string(d: &Descriptor) -> Result<String, Error> {
+    let (bytes, bit_len) = encode_payload(d)?;
+    crate::codex32::wrap_payload(&bytes, bit_len)
+}
 
 #[cfg(test)]
-mod tests {
+mod render_tests {
     use super::*;
-    use crate::{
-        EncodeOptions, WalletPolicy,
-        chunking::{ChunkHeader, ChunkingMode},
-        policy_id::{ChunkSetIdSeed, compute_policy_id},
-    };
-
-    fn policy(s: &str) -> WalletPolicy {
-        s.parse().expect("should parse")
-    }
-
-    // -----------------------------------------------------------------------
-    // 1. encode_single_string_regular
-    // -----------------------------------------------------------------------
 
     #[test]
-    fn encode_single_string_regular() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions::default();
-        let backup = encode(&p, &opts).expect("encode should succeed");
-        assert_eq!(backup.chunks.len(), 1, "expected 1 chunk");
-        let chunk = &backup.chunks[0];
-        assert_eq!(chunk.chunk_index, 0);
-        assert_eq!(chunk.total_chunks, 1);
-        assert_eq!(chunk.code, BchCode::Regular);
-        assert!(
-            chunk.raw.starts_with("md1"),
-            "raw string should start with md1, got {}",
-            chunk.raw
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // 2. encode_single_string_long_via_force
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_single_string_long_via_force() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions {
-            force_long_code: true,
-            ..Default::default()
-        };
-        let backup = encode(&p, &opts).expect("encode should succeed");
-        assert_eq!(backup.chunks.len(), 1);
-        assert_eq!(backup.chunks[0].code, BchCode::Long);
-        assert!(backup.chunks[0].raw.starts_with("md1"));
-    }
-
-    // -----------------------------------------------------------------------
-    // 3. encode_single_string_long_naturally
-    //    Policy whose bytecode is between 49 and 56 bytes — fits Long single-
-    //    string but not Regular. We use a pkh with two keys in an `or_b`.
-    //    If this is hard to construct exactly, the test verifies the output code.
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_single_string_long_naturally() {
-        // Use a sortedmulti(1,@0,@1) wrapped in wsh — this produces enough
-        // bytecode to push past the 48-byte Regular capacity while staying
-        // within the 56-byte Long capacity. Check actual bytecode length first.
-        let p = policy("wsh(multi(2,@0/**,@1/**,@2/**,@3/**))");
-        let bytecode = p
-            .to_bytecode(&EncodeOptions::default())
-            .expect("bytecode encode");
-        // Only run this test if the bytecode falls in the Long-single-string range.
-        if bytecode.len() > 48 && bytecode.len() <= 56 {
-            let opts = EncodeOptions::default();
-            let backup = encode(&p, &opts).expect("encode should succeed");
-            assert_eq!(backup.chunks.len(), 1);
-            assert_eq!(backup.chunks[0].code, BchCode::Long);
-        }
-        // If bytecode doesn't fall in that range, the test passes trivially
-        // (construction of an exact-length policy is input-dependent).
-        // The important property (force_long_code) is tested in test #2.
-    }
-
-    // -----------------------------------------------------------------------
-    // 4. encode_chunked_regular_two_chunks
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_chunked_regular_two_chunks() {
-        // We need bytecode ~80 bytes. A multi(5,@0..@8) in wsh gives many keys.
-        // Use the known policy and check it forces chunking.
-        let p = policy("wsh(multi(5,@0/**,@1/**,@2/**,@3/**,@4/**,@5/**,@6/**,@7/**,@8/**))");
-        let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
-        let opts = EncodeOptions::default();
-        let backup = encode(&p, &opts).expect("encode");
-
-        // Verify chunking happened as expected (>48 bytes → chunked or long-single).
-        if bytecode.len() > 56 {
-            // Must be chunked.
-            assert!(
-                backup.chunks.len() >= 2,
-                "expected ≥2 chunks for {} bytecode bytes, got {}",
-                bytecode.len(),
-                backup.chunks.len()
-            );
-            for (i, chunk) in backup.chunks.iter().enumerate() {
-                assert_eq!(chunk.chunk_index, i as u8);
-                assert_eq!(chunk.total_chunks, backup.chunks.len() as u8);
-                assert_eq!(chunk.code, BchCode::Regular);
-            }
-        }
-        // If bytecode is ≤ 56 bytes, it fits single-string (Long).
-        // The test still passes — the exact byte count depends on the bytecode encoder.
-    }
-
-    // -----------------------------------------------------------------------
-    // 5. encode_force_chunked_with_short_input
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_force_chunked_with_short_input() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions {
-            chunking_mode: ChunkingMode::ForceChunked,
-            ..Default::default()
-        };
-        let backup = encode(&p, &opts).expect("encode");
-        // Short input: 1 chunk (stream < 45 bytes → count=1 for Regular).
-        assert_eq!(backup.chunks.len(), 1);
-        let chunk = &backup.chunks[0];
-        assert_eq!(chunk.chunk_index, 0);
-        assert_eq!(chunk.total_chunks, 1);
-        // Chunked type (even with 1 chunk): verify raw header is Chunked.
-        // Decode the raw string to check the header bytes.
-        let decoded = crate::decode_string(&chunk.raw).expect("should decode");
-        // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced MD string that we constructed two lines up; the
-        // encoder always pads to the byte boundary with zero bits so the
-        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
-        // inputs the same call returns None — see decode.rs:135's structured
-        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(decoded.data())
-            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
-        let (header, _consumed) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
-        assert!(header.is_chunked(), "expected Chunked header");
-    }
-
-    // -----------------------------------------------------------------------
-    // 6. encode_too_large_returns_error (skipped — cannot construct >1692 bytes
-    //    of canonical bytecode in a unit test without a synthetic path)
-    // -----------------------------------------------------------------------
-    // Covered by the existing chunking_decision unit tests.
-
-    // -----------------------------------------------------------------------
-    // 7. encode_tier3_policy_id_is_content_derived_without_seed
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_tier3_policy_id_is_content_derived_without_seed() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions::default();
-        let backup = encode(&p, &opts).expect("encode");
-
-        let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
-        let expected_chunk_set_id = compute_policy_id(&bytecode);
-
-        // Reconstruct PolicyId from the backup's words and compare.
-        let recovered = backup.policy_id();
+    fn render_groups_at_4() {
         assert_eq!(
-            recovered, expected_chunk_set_id,
-            "Tier-3 PolicyId must equal compute_policy_id(bytecode)"
+            render_codex32_grouped("md1qpz9r4cy7", 4),
+            "md1q-pz9r-4cy7"
         );
     }
 
-    // -----------------------------------------------------------------------
-    // 8. encode_tier3_policy_id_unaffected_by_seed
-    // -----------------------------------------------------------------------
-
     #[test]
-    fn encode_tier3_policy_id_unaffected_by_seed() {
-        let p = policy("wsh(pk(@0/**))");
-
-        let opts_no_seed = EncodeOptions::default();
-        let backup_no_seed = encode(&p, &opts_no_seed).expect("encode no seed");
-
-        let opts_with_seed = EncodeOptions {
-            chunk_set_id_seed: Some(ChunkSetIdSeed::from(0xDEAD_BEEFu32)),
-            ..Default::default()
-        };
-        let backup_with_seed = encode(&p, &opts_with_seed).expect("encode with seed");
-
+    fn render_zero_group_size_no_grouping() {
         assert_eq!(
-            backup_no_seed.policy_id_words, backup_with_seed.policy_id_words,
-            "Tier-3 policy_id_words must be identical regardless of seed"
+            render_codex32_grouped("md1qpz9r4cy7", 0),
+            "md1qpz9r4cy7"
         );
-    }
-
-    // -----------------------------------------------------------------------
-    // 9. encode_chunk_header_policy_id_uses_seed_when_present
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_chunk_header_policy_id_uses_seed_when_present() {
-        let p = policy("wsh(pk(@0/**))");
-        let seed_val: u32 = 0x1234_5678;
-        let opts = EncodeOptions {
-            chunking_mode: ChunkingMode::ForceChunked,
-            chunk_set_id_seed: Some(ChunkSetIdSeed::from(seed_val)),
-            ..Default::default()
-        };
-        let backup = encode(&p, &opts).expect("encode");
-        assert_eq!(backup.chunks.len(), 1);
-
-        // Decode the raw string to access chunk header bytes.
-        let raw = &backup.chunks[0].raw;
-        let decoded = crate::decode_string(raw).expect("decode_string");
-        // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced MD string that we constructed two lines up; the
-        // encoder always pads to the byte boundary with zero bits so the
-        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
-        // inputs the same call returns None — see decode.rs:135's structured
-        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(decoded.data())
-            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
-        let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
-
-        // The chunk header chunk_set_id should equal seed.truncate() = top 20 bits of seed.
-        let expected_chunk_set_id = ChunkSetIdSeed::from(seed_val).truncate();
-        match header {
-            ChunkHeader::Chunked { chunk_set_id, .. } => {
-                assert_eq!(
-                    chunk_set_id, expected_chunk_set_id,
-                    "chunk-header chunk_set_id must equal seed.truncate()"
-                );
-            }
-            ChunkHeader::SingleString { .. } => {
-                panic!("expected Chunked header when chunking_mode=ForceChunked");
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // 10. encode_chunk_header_policy_id_is_content_derived_without_seed
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_chunk_header_policy_id_is_content_derived_without_seed() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions {
-            chunking_mode: ChunkingMode::ForceChunked,
-            ..Default::default()
-        };
-        let backup = encode(&p, &opts).expect("encode");
-        assert_eq!(backup.chunks.len(), 1);
-
-        // Decode the raw string to access chunk header bytes.
-        let raw = &backup.chunks[0].raw;
-        let decoded = crate::decode_string(raw).expect("decode_string");
-        // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced MD string that we constructed two lines up; the
-        // encoder always pads to the byte boundary with zero bits so the
-        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
-        // inputs the same call returns None — see decode.rs:135's structured
-        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(decoded.data())
-            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
-        let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
-
-        // The chunk-header chunk_set_id should be compute_policy_id(bytecode).truncate().
-        let bytecode = p.to_bytecode(&EncodeOptions::default()).expect("bytecode");
-        let expected_chunk_set_id = compute_policy_id(&bytecode).truncate();
-        match header {
-            ChunkHeader::Chunked { chunk_set_id, .. } => {
-                assert_eq!(
-                    chunk_set_id, expected_chunk_set_id,
-                    "chunk-header chunk_set_id must equal compute_policy_id(bytecode).truncate()"
-                );
-            }
-            ChunkHeader::SingleString { .. } => {
-                panic!("expected Chunked header when chunking_mode=ForceChunked");
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // 11. encode_is_deterministic_with_fixed_seed
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_is_deterministic_with_fixed_seed() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions {
-            chunk_set_id_seed: Some(ChunkSetIdSeed::from(0xABCD_1234u32)),
-            ..Default::default()
-        };
-        let backup1 = encode(&p, &opts).expect("first encode");
-        let backup2 = encode(&p, &opts).expect("second encode");
-        assert_eq!(
-            backup1, backup2,
-            "encode with fixed seed must be deterministic"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // 12. encode_idempotent_under_default_options
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_idempotent_under_default_options() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions::default();
-        let backup1 = encode(&p, &opts).expect("first encode");
-        let backup2 = encode(&p, &opts).expect("second encode");
-        assert_eq!(
-            backup1, backup2,
-            "encode with default options must be idempotent"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Bonus: verify force_long_code with ChunkingMode::ForceChunked upgrades chunked Regular → Long
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_force_chunked_force_long_produces_long_code() {
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions {
-            chunking_mode: ChunkingMode::ForceChunked,
-            force_long_code: true,
-            ..Default::default()
-        };
-        let backup = encode(&p, &opts).expect("encode");
-        assert_eq!(backup.chunks[0].code, BchCode::Long);
-    }
-
-    // -----------------------------------------------------------------------
-    // Bonus: when seed is None, chunk-header chunk_set_id == Tier-3 truncation
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn encode_chunk_header_wid_is_truncation_of_tier3_without_seed() {
-        // When seed is None, chunk-header chunk_set_id = first 20 bits of Tier-3.
-        // The Tier-3 is compute_policy_id(bytecode); chunk-header = .truncate().
-        let p = policy("wsh(pk(@0/**))");
-        let opts = EncodeOptions {
-            chunking_mode: ChunkingMode::ForceChunked,
-            ..Default::default()
-        };
-        let backup = encode(&p, &opts).expect("encode");
-        let tier3 = backup.policy_id();
-        let expected_chunk_set_id = tier3.truncate();
-
-        let raw = &backup.chunks[0].raw;
-        let decoded = crate::decode_string(raw).expect("decode_string");
-        // `expect` is sound HERE because `decoded.data` came from an
-        // encoder-produced MD string that we constructed two lines up; the
-        // encoder always pads to the byte boundary with zero bits so the
-        // 5-bit→byte conversion cannot fail on its own output. For HOSTILE
-        // inputs the same call returns None — see decode.rs:135's structured
-        // error and `BytecodeErrorKind::MalformedPayloadPadding`.
-        let bytes = crate::five_bit_to_bytes(decoded.data())
-            .expect("test fixture: encoder-produced 5-bit data is byte-aligned by construction");
-        let (header, _) = crate::ChunkHeader::from_bytes(&bytes).expect("header parse");
-
-        match header {
-            ChunkHeader::Chunked { chunk_set_id, .. } => {
-                assert_eq!(
-                    chunk_set_id, expected_chunk_set_id,
-                    "chunk-header chunk_set_id must be the first 20 bits of the Tier-3 PolicyId"
-                );
-            }
-            ChunkHeader::SingleString { .. } => {
-                panic!("expected Chunked header");
-            }
-        }
     }
 }

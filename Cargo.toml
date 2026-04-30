@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/md-codec", "crates/md-signer-compat"]
+members = ["crates/md-codec"]
 
 [workspace.package]
 edition = "2024"
@@ -13,31 +13,3 @@ missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"
-
-# Temporary patch redirect: md-codec pins miniscript to a SHA on
-# apoelstra's `2026-04/followup-895` branch (see Phase 5 D-1). The patch
-# redirects to the `rust-miniscript-fork` sibling clone, currently on
-# branch `md-codec-local-stack` which carries two upstream-pending fixes
-# stacked on top of the base SHA:
-#
-#   1. `fix/wallet-policy-hash-terminals` (apoelstra/rust-miniscript#1) —
-#      WalletPolicy::into_descriptor panics on hash terminals
-#      (sha256/hash256/ripemd160/hash160). FOLLOWUPS:
-#      external-pr-1-hash-terminals.
-#   2. `feat/wallet-policy-template-accessor`
-#      (apoelstra/rust-miniscript#2) — adds `WalletPolicy::template()`
-#      and `key_info()` accessors so md-codec's per-`@N` divergent-path
-#      encoding can walk a policy in placeholder-index order. FOLLOWUPS:
-#      external-pr-2-template-accessor.
-#
-# `md-codec-local-stack` is a dedicated branch (not a per-PR branch) so
-# CI and local builds resolve [patch] consistently without polluting the
-# `fix/wallet-policy-hash-terminals` and
-# `feat/wallet-policy-template-accessor` branches that the upstream PRs
-# track. The branch is pushed to the fork remote so CI can clone it. When
-# each upstream PR merges, bump the SHA pin in
-# `crates/md-codec/Cargo.toml`, strip that PR's commit from
-# `md-codec-local-stack`, and update this rationale. When both have
-# merged, this `[patch]` section can be removed entirely.
-[patch."https://github.com/apoelstra/rust-miniscript"]
-miniscript = { path = "../rust-miniscript-fork" }
