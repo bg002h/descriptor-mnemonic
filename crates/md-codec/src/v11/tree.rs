@@ -55,14 +55,106 @@ pub enum Body {
 ///
 /// `key_index_width` is the bit width used for key-index fields, derived from
 /// the descriptor's path-decl head. Filled in across phases 7-11.
-pub fn write_node(_w: &mut BitWriter, _n: &Node, _key_index_width: u8) -> Result<(), V11Error> {
-    unimplemented!("filled in across phases 7-11")
+pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result<(), V11Error> {
+    node.tag.write(w);
+    match &node.body {
+        Body::KeyArg { index } => {
+            w.write_bits(u64::from(*index), key_index_width as usize);
+        }
+        Body::Children(children) => {
+            for c in children {
+                write_node(w, c, key_index_width)?;
+            }
+        }
+        _ => unimplemented!("filled in later phases"),
+    }
+    Ok(())
 }
 
 /// Decode a [`Node`] from the bit stream.
 ///
 /// `key_index_width` is the bit width used for key-index fields, derived from
 /// the descriptor's path-decl head. Filled in across phases 7-11.
-pub fn read_node(_r: &mut BitReader, _key_index_width: u8) -> Result<Node, V11Error> {
-    unimplemented!("filled in across phases 7-11")
+pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, V11Error> {
+    let tag = Tag::read(r)?;
+    let body = match tag {
+        Tag::PkK | Tag::PkH | Tag::Wpkh | Tag::Pkh => {
+            let index = r.read_bits(key_index_width as usize)? as u8;
+            Body::KeyArg { index }
+        }
+        Tag::Sh
+        | Tag::Wsh
+        | Tag::Check
+        | Tag::Verify
+        | Tag::Swap
+        | Tag::Alt
+        | Tag::DupIf
+        | Tag::NonZero
+        | Tag::ZeroNotEqual => {
+            let child = read_node(r, key_index_width)?;
+            Body::Children(vec![child])
+        }
+        Tag::AndV | Tag::AndB | Tag::OrB | Tag::OrC | Tag::OrD | Tag::OrI => {
+            let l = read_node(r, key_index_width)?;
+            let r2 = read_node(r, key_index_width)?;
+            Body::Children(vec![l, r2])
+        }
+        Tag::AndOr => {
+            let a = read_node(r, key_index_width)?;
+            let b = read_node(r, key_index_width)?;
+            let c = read_node(r, key_index_width)?;
+            Body::Children(vec![a, b, c])
+        }
+        Tag::TapTree => {
+            let l = read_node(r, key_index_width)?;
+            let r2 = read_node(r, key_index_width)?;
+            Body::Children(vec![l, r2])
+        }
+        _ => unimplemented!("filled in later phases"),
+    };
+    Ok(Node { tag, body })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::v11::bitstream::{BitReader, BitWriter};
+
+    #[test]
+    fn key_arg_n1_zero_bits() {
+        // n=1 ⇒ index_width = 0; key-arg emits zero bits
+        let n = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 0 },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        // Tag: 5 bits + key-arg: 0 bits = 5 bits total
+        assert_eq!(w.bit_len(), 5);
+    }
+
+    #[test]
+    fn key_arg_n3_two_bits() {
+        let n = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 2 },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        // Tag: 5 + key-arg: 2 = 7 bits
+        assert_eq!(w.bit_len(), 7);
+    }
+
+    #[test]
+    fn key_arg_round_trip() {
+        let n = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 1 },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
 }
