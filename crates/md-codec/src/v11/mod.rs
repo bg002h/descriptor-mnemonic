@@ -15,3 +15,4 @@ pub mod tag;
 pub mod tree;
 pub mod tlv;
 pub mod validate;
+pub mod encode;
