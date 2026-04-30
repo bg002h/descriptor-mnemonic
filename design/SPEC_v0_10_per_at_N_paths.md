@@ -94,7 +94,7 @@ Tag::SharedPath (0x34) | indicator | [explicit-bytes]?       ← header bit 3 = 
 Tag::OriginPaths (0x36) | count: u8 | path_decl_0 | ... | path_decl_{N-1}   ← header bit 3 = 1
 ```
 
-Strict mutual exclusion: header bit 3 dispatches the path-decl tag. Encountering `Tag::OriginPaths (0x36)` when bit 3 = 0 (or `Tag::SharedPath (0x34)` when bit 3 = 1) is `Error::ConflictingPathDeclarations`.
+Strict mutual exclusion: header bit 3 dispatches the path-decl tag. Encountering `Tag::OriginPaths (0x36)` when bit 3 = 0 (or `Tag::SharedPath (0x34)` when bit 3 = 1) surfaces as `Error::InvalidBytecode { offset: 1, kind: BytecodeErrorKind::UnexpectedTag { expected, got } }`, where `expected` is the tag the header bit predicted (`0x34` if bit 3 clear, `0x36` if set). See §3 "Path-decl dispatch" for the full match logic.
 
 Order is fixed: path-declaration MUST precede the optional fingerprints block, which MUST precede the tree bytes. This matches the v0.x convention.
 
@@ -309,14 +309,17 @@ if all_share {
     out.extend_from_slice(&encode_declaration(&placeholder_paths[0]));
 } else {
     out.push(Tag::OriginPaths.as_byte());
+    // BIP 388 caps placeholder count at 32 upstream of to_bytecode (validated
+    // when the WalletPolicy is constructed); the cast is infallible. expect()
+    // documents the upstream invariant rather than silently masking a real bug.
     let count_u8 = u8::try_from(placeholder_paths.len())
-        .map_err(|_| Error::OriginPathsCountMismatch { expected: ..., got: placeholder_paths.len() })?;
-    if count_u8 > 32 {
-        return Err(Error::OriginPathsCountMismatch { ... });
-    }
+        .expect("BIP 388 caps placeholder count at 32; upstream validation guarantees this");
     out.push(count_u8);
     for path in &placeholder_paths {
-        out.extend_from_slice(&encode_path(path));
+        out.extend_from_slice(&encode_path(path)?);
+        // encode_path enforces MAX_PATH_COMPONENTS = 10 and surfaces
+        // Error::PathComponentCountExceeded on violation (caught earlier
+        // at policy construction in well-formed cases).
     }
 }
 
@@ -489,7 +492,7 @@ Per `v07-decoder-arm-cursor-sentinel-pattern` (v0.7 P2 review): hand-AST coverag
 | `Tag::OriginPaths` exists | no | yes (`0x36`) |
 | `Error::OriginPathsCountMismatch` exists | no | yes |
 | `Error::PathComponentCountExceeded` exists | no | yes |
-| `Error::ConflictingPathDeclarations` exists | no | yes |
+| `BytecodeErrorKind::OriginPathsCountTooLarge` exists | no | yes |
 | `PolicyId::fingerprint()` exists | no | yes |
 | `MAX_PATH_COMPONENTS` constant | n/a | `10` |
 
