@@ -418,7 +418,7 @@ impl WalletPolicy {
         let header = BytecodeHeader::new_v0(opts.fingerprints.is_some(), false);
         let mut out = Vec::new();
         out.push(header.as_byte());
-        out.extend_from_slice(&encode_declaration(&shared_path));
+        out.extend_from_slice(&encode_declaration(&shared_path)?);
         if let Some(fps) = &opts.fingerprints {
             // Count was validated above; defense-in-depth try_from guards
             // against a future refactor that bypasses the validation funnel.
