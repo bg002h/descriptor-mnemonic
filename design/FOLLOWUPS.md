@@ -793,6 +793,18 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** vNext-API-expansion (block on whichever release introduces public key-info mutation).
 
+### `wdm-symbol-rename-md` — rename WDM_REGULAR_CONST / WDM_LONG_CONST to MD_REGULAR_CONST / MD_LONG_CONST
+
+- **Surfaced:** v1.0 wire-format brainstorm 2026-04-29.
+- **Where:**
+  - `crates/md-codec/src/encoding.rs:171, 218, 860, 864` — symbol definitions and `SHA-256("shibbolethnums")` derivation site. The constant identifiers (`WDM_REGULAR_CONST`, `WDM_LONG_CONST`) and surrounding rustdoc still use the pre-rename `WDM_*` prefix.
+  - `bip/bip-mnemonic-descriptor.mediawiki` §"Why new target constants?" — names the constants as `WDM_*` in shipped BIP prose.
+  - `design/IMPLEMENTATION_TASKS_v0.1.md` and other historical design docs — reference `WDM_REGULAR_CONST` / `WDM_LONG_CONST` extensively in shipped-state notes (immutable history; do not retroactively rename).
+- **What:** rename the symbols (and their rustdoc + BIP prose mentions in the *current* spec, not historical notes) from `WDM_*` to `MD_*` for consistency with the v0.3.0 `wdm` → `md` project rename. The constant VALUES (`0x0815c07747a3392e7` and `0x205701dd1e8ce4b9f47`) and their NUMS preimage (`SHA-256("shibbolethnums")`) are LOCKED — wire-format-affecting; renaming would regenerate vectors via `GENERATOR_FAMILY` family-token roll. Symbols-only rename has zero wire-format impact.
+- **Why deferred:** this is consistency cleanup, not a correctness bug. v0.10.0 + v0.10.1 shipped with `WDM_*` symbols; renaming them is a public-API rename for any external library consumer (currently zero per project-policy "user count is zero"), so cost is bounded. Best done as part of the v1.0 wire-format-redesign work where other API-shape changes are also batched, rather than a one-off rename.
+- **Status:** open
+- **Tier:** v1.0
+
 ---
 
 ## Resolved items
