@@ -25,7 +25,9 @@ use crate::bytecode::cursor::Cursor;
 use crate::bytecode::decode::decode_template;
 use crate::bytecode::encode::encode_template;
 use crate::bytecode::header::BytecodeHeader;
-use crate::bytecode::path::{decode_declaration, encode_declaration};
+use crate::bytecode::path::{
+    decode_declaration, decode_origin_paths, encode_declaration, encode_origin_paths,
+};
 use crate::chunking::EncodedChunk;
 use crate::policy_id::{PolicyId, PolicyIdWords};
 use crate::{EncodeOptions, Error};
@@ -195,6 +197,21 @@ pub struct WalletPolicy {
     /// identical. Callers that want construction-path-agnostic equality
     /// should compare via `.to_canonical_string()` instead of `==`.
     decoded_shared_path: Option<DerivationPath>,
+    /// Per-`@N` origin paths populated by [`Self::from_bytecode`] when the
+    /// source bytecode used `Tag::OriginPaths`. Tier 1 source for the
+    /// encoder's per-`@N`-path precedence chain (spec §4): consulted by
+    /// [`Self::to_bytecode`] so a `decode → encode` cycle is byte-stable on
+    /// the first pass for divergent-path policies.
+    ///
+    /// `Some(paths)` iff the policy was decoded from a wire form with
+    /// header bit 3 set; `None` otherwise (parsed from string, decoded from
+    /// a SharedPath wire form, or any other constructor).
+    ///
+    /// **Invariant:** at most one of `decoded_shared_path` and
+    /// `decoded_origin_paths` is `Some`; the two are wire-level mutually
+    /// exclusive (Q3-A). [`Self::from_bytecode`] populates exactly one,
+    /// based on the header bit 3 dispatch.
+    decoded_origin_paths: Option<Vec<DerivationPath>>,
 }
 
 impl FromStr for WalletPolicy {
@@ -205,6 +222,7 @@ impl FromStr for WalletPolicy {
             .map(|inner| WalletPolicy {
                 inner,
                 decoded_shared_path: None,
+                decoded_origin_paths: None,
             })
             .map_err(|e| crate::Error::PolicyParse(e.to_string()))
     }
@@ -295,28 +313,38 @@ impl WalletPolicy {
 
     /// Encode this policy as canonical MD bytecode.
     ///
-    /// Format: `[BytecodeHeader] [PathDeclaration] [TreeBytes]`
+    /// Format: `[BytecodeHeader] [PathDeclaration] [Fingerprints?] [TreeBytes]`
     ///
     /// Uses **Approach B** (dummy-key materialization): clones the inner
     /// policy, sets dummy keys via `set_key_info`, materializes a full
-    /// `Descriptor<DescriptorPublicKey>` **once**, extracts the shared path
-    /// from the descriptor's first key (for policies with real keys), encodes
-    /// the tree, then composes the three sections. See PHASE_5_DECISIONS.md D-7.
+    /// `Descriptor<DescriptorPublicKey>` **once**, encodes the tree, then
+    /// composes the sections. See PHASE_5_DECISIONS.md D-7.
     ///
-    /// # Shared-path precedence (Phase B)
+    /// # Per-`@N` path precedence (v0.10 §4 4-tier chain)
     ///
-    /// When choosing the path declaration to emit, `to_bytecode` consults
-    /// (in order):
+    /// To choose the per-`@N` origin paths to emit, `to_bytecode` consults
+    /// [`Self::placeholder_paths_in_index_order`], which applies (in order):
     ///
-    /// 0. `opts.shared_path` — explicit caller override (e.g. from CLI
-    ///    `--path`). When `Some`, takes precedence over every other source.
-    /// 1. `self.decoded_shared_path` — populated by [`Self::from_bytecode`]
-    ///    so a `decode → encode` cycle is byte-stable on the first pass.
-    /// 2. `self.shared_path()` — for policies parsed from full descriptor
-    ///    strings with real origin info.
-    /// 3. BIP 84 mainnet fallback (`m/84'/0'/0'`) — for template-only policies
-    ///    constructed via `parse()` with no decoded path and no override.
-    ///    This is the v0.1 behavior preserved as the final-tier fallback.
+    /// 0. `opts.origin_paths` — explicit Tier 0 caller override (test-vector
+    ///    generation; production callers leave this `None`).
+    /// 1. `self.decoded_origin_paths` — populated by [`Self::from_bytecode`]
+    ///    when the source bytecode carried a `Tag::OriginPaths` block, for
+    ///    decode→encode round-trip stability.
+    /// 2. KIV walk — for concrete-key policies. **Stubbed in v0.10.0**; see
+    ///    FOLLOWUPS.md `v010-p3-tier-2-kiv-walk-deferred`. Stub returns
+    ///    `None`, falling through to Tier 3.
+    /// 3. Shared-path fallback — broadcast the existing Phase-B shared-path
+    ///    chain (`opts.shared_path` → `decoded_shared_path` → `shared_path()`
+    ///    → `default_path_for_v0_4_types` → BIP 84 mainnet) across all
+    ///    placeholders. Preserves v0.9 wire format for shared-path inputs.
+    ///
+    /// # Path-decl tag dispatch (Q9-A auto-detect)
+    ///
+    /// After resolving per-`@N` paths, the encoder auto-detects path
+    /// divergence: if all paths are equal, it emits `Tag::SharedPath` (header
+    /// bit 3 = 0); if any differ, it emits `Tag::OriginPaths` (header bit 3 = 1).
+    /// This makes shared-path encodings byte-identical to v0.9 and admits
+    /// per-`@N` divergence losslessly when present.
     ///
     /// # Breaking change (v0.2)
     ///
@@ -369,56 +397,38 @@ impl WalletPolicy {
         // --- Step 3: encode the descriptor tree ---
         let tree_bytes = encode_template(&descriptor, &placeholder_map)?;
 
-        // --- Step 4: select shared path per the Phase B precedence rule ---
+        // --- Step 4: resolve per-`@N` paths via the v0.10 4-tier chain ---
         //
-        // Precedence: opts.shared_path > decoded_shared_path > shared_path() >
-        // default_path_for_v0_4_types > BIP 84 mainnet.
-        //
-        // Tier 0 (`opts.shared_path`) is the explicit caller override — for
-        // example from `md encode --path bip48`. It wins unconditionally.
-        //
-        // Tier 1 (`decoded_shared_path`) is populated by `from_bytecode` so a
-        // decode→encode cycle is byte-stable on the first pass. Without it the
-        // re-encode would otherwise reach `shared_path()` and surface the
-        // dummy-key origin (`m/44'/0'/0'`) that was attached during decode,
-        // breaking byte-identity.
-        //
-        // Tier 2 (`shared_path()`) handles the real-keys case (policy parsed
-        // from a full descriptor with origin info). One extra descriptor
-        // materialization is acceptable here; the hot template-only case
-        // avoids it via the fallback chain.
-        //
-        // Tier 3 (`default_path_for_v0_4_types`) fires ONLY for the new v0.4
-        // top-level types (wpkh, sh(wpkh), sh(wsh)). wsh and tr return None
-        // from this helper, falling through to the BIP 84 mainnet default
-        // below — preserving wire-format identity with v0.3.x-shaped inputs.
-        //
-        // Tier 4 (BIP 84 mainnet fallback) fires for wsh/tr template-only
-        // policies with no origin info — the pre-v0.4 behavior, preserved
-        // unchanged to avoid changing the bytecode of existing v0.3.x inputs.
-        let shared_path = opts.shared_path.clone().unwrap_or_else(|| {
-            self.decoded_shared_path.clone().unwrap_or_else(|| {
-                self.shared_path().unwrap_or_else(|| {
-                    default_path_for_v0_4_types(&descriptor).unwrap_or_else(|| {
-                        DerivationPath::from_str("m/84'/0'/0'")
-                            .expect("hardcoded BIP 84 path is always valid")
-                    })
-                })
-            })
-        });
+        // `placeholder_paths_in_index_order` consults Tier 0 → 3 in order.
+        // The descriptor is passed for Tier 3's shared-path fallback, which
+        // needs it for `default_path_for_v0_4_types` dispatch.
+        let placeholder_paths = self.placeholder_paths_in_index_order(opts, &descriptor)?;
+        // Defense-in-depth: the resolver always returns `count` entries.
+        debug_assert_eq!(
+            placeholder_paths.len(),
+            count,
+            "placeholder_paths_in_index_order must return key_count entries"
+        );
 
-        // --- Step 5: compose [header][path declaration][fingerprints?][tree bytes] ---
+        // --- Step 5: dispatch on path divergence (Q9-A auto-detect) ---
         //
-        // Per BIP §"Fingerprints block": the block, when present, follows the
-        // path declaration and precedes the tree operators. The header bit 2
-        // signals presence.
-        // v0.10: second argument is the OriginPaths flag. Phase 4 will update
-        // this to dispatch on real path-divergence detection; for now, always
-        // pass `false` to preserve v0.9 behavior (no per-`@N` paths).
-        let header = BytecodeHeader::new_v0(opts.fingerprints.is_some(), false);
+        // `windows(2).all(...)` returns `true` for any slice of length ≤ 1
+        // (no adjacent pair to compare). For `count == 1` this trivially
+        // selects SharedPath, which is correct: a single placeholder cannot
+        // diverge from itself.
+        let all_share = placeholder_paths.windows(2).all(|w| w[0] == w[1]);
+
+        // --- Step 6: compose [header][path declaration][fingerprints?][tree bytes] ---
+        //
+        // Header bit 3 reflects the path-decl tag actually emitted.
+        let header = BytecodeHeader::new_v0(opts.fingerprints.is_some(), !all_share);
         let mut out = Vec::new();
         out.push(header.as_byte());
-        out.extend_from_slice(&encode_declaration(&shared_path)?);
+        if all_share {
+            out.extend_from_slice(&encode_declaration(&placeholder_paths[0])?);
+        } else {
+            out.extend_from_slice(&encode_origin_paths(&placeholder_paths)?);
+        }
         if let Some(fps) = &opts.fingerprints {
             // Count was validated above; defense-in-depth try_from guards
             // against a future refactor that bypasses the validation funnel.
@@ -436,6 +446,94 @@ impl WalletPolicy {
         }
         out.extend_from_slice(&tree_bytes);
         Ok(out)
+    }
+
+    /// Resolve per-`@N` origin paths in placeholder-index order, applying the
+    /// v0.10 spec §4 4-tier precedence chain.
+    ///
+    /// Returns a `Vec<DerivationPath>` of length [`Self::key_count`]; entry
+    /// `i` is the origin path for placeholder `@i`.
+    ///
+    /// The `descriptor` argument is the dummy-key-materialized descriptor
+    /// produced by [`Self::to_bytecode`]; passed in to avoid re-materializing
+    /// it for the Tier 3 shared-path fallback (which needs it for
+    /// `default_path_for_v0_4_types` dispatch).
+    fn placeholder_paths_in_index_order(
+        &self,
+        opts: &EncodeOptions,
+        descriptor: &miniscript::Descriptor<DescriptorPublicKey>,
+    ) -> Result<Vec<DerivationPath>, Error> {
+        let count = self.key_count();
+
+        // Tier 0: explicit per-`@N` override from EncodeOptions::origin_paths.
+        if let Some(ref paths) = opts.origin_paths {
+            return Ok(paths.clone());
+        }
+        // Tier 1: round-trip stability — paths recovered from a previous
+        // decode of a Tag::OriginPaths-bearing bytecode.
+        if let Some(ref paths) = self.decoded_origin_paths {
+            return Ok(paths.clone());
+        }
+        // Tier 2: walk the key-information vector for concrete-key policies.
+        // STUBBED in v0.10.0 (returns Ok(None)); see FOLLOWUPS.md
+        // `v010-p3-tier-2-kiv-walk-deferred` for rationale and re-enable plan.
+        if let Some(paths) = self.try_extract_paths_from_kiv()? {
+            return Ok(paths);
+        }
+        // Tier 3: fall through to the existing shared-path tier chain
+        // (v0.x behavior). Broadcast the resolved single shared path across
+        // every placeholder so the divergence detector trivially selects
+        // SharedPath emission. Preserves v0.9 wire format byte-for-byte.
+        let shared = self.resolve_shared_path_fallback(opts, descriptor);
+        Ok(vec![shared; count])
+    }
+
+    /// Tier 2 of the per-`@N`-path precedence chain — extract origin paths
+    /// from the policy's key information vector in placeholder-index order.
+    ///
+    /// **Stubbed in v0.10.0**: returns `Ok(None)`, falling through to Tier 3.
+    /// The walk has architectural ambiguity:
+    /// - The fork's `WalletPolicy::key_info` is private; no public accessor.
+    /// - `descriptor.iter_pk()` traverses in AST order, which for
+    ///   `sortedmulti(...)` produces lex-sorted-by-pubkey-bytes order — not
+    ///   placeholder-index order. Mapping AST order to placeholder index
+    ///   requires either a KeyExpression-based template walk or a
+    ///   round-trip via `from_descriptor` (which itself uses
+    ///   `descriptor.iter_pk()` and would reorder). Either approach is
+    ///   non-trivial and warrants a separate design pass.
+    ///
+    /// See `design/FOLLOWUPS.md` entry
+    /// `v010-p3-tier-2-kiv-walk-deferred` for the deferral rationale and
+    /// the v0.11 follow-up plan. Production callers wanting per-`@N`
+    /// divergence today have the Tier 0 [`EncodeOptions::origin_paths`]
+    /// override; round-trip stability for previously-decoded
+    /// OriginPaths-bearing bytecode flows through Tier 1 unaffected.
+    // TODO(v0.10-followup): implement Tier 2 KIV walk; see
+    // FOLLOWUPS.md `v010-p3-tier-2-kiv-walk-deferred`.
+    fn try_extract_paths_from_kiv(&self) -> Result<Option<Vec<DerivationPath>>, Error> {
+        Ok(None)
+    }
+
+    /// Resolve the shared-path fallback per the v0.x Phase B chain
+    /// (`opts.shared_path` → `decoded_shared_path` → `shared_path()` →
+    /// `default_path_for_v0_4_types` → BIP 84 mainnet). This is Tier 3 of
+    /// the v0.10 4-tier per-`@N`-path chain, preserving v0.9 wire format
+    /// for shared-path inputs.
+    fn resolve_shared_path_fallback(
+        &self,
+        opts: &EncodeOptions,
+        descriptor: &miniscript::Descriptor<DescriptorPublicKey>,
+    ) -> DerivationPath {
+        opts.shared_path.clone().unwrap_or_else(|| {
+            self.decoded_shared_path.clone().unwrap_or_else(|| {
+                self.shared_path().unwrap_or_else(|| {
+                    default_path_for_v0_4_types(descriptor).unwrap_or_else(|| {
+                        DerivationPath::from_str("m/84'/0'/0'")
+                            .expect("hardcoded BIP 84 path is always valid")
+                    })
+                })
+            })
+        })
     }
 
     /// Decode canonical MD bytecode into a `WalletPolicy`.
@@ -488,9 +586,36 @@ impl WalletPolicy {
         // --- Step 1: parse and validate the header byte ---
         let header = BytecodeHeader::from_byte(bytes[0])?;
 
-        // --- Step 2: parse the path declaration ---
+        // --- Step 2: parse the path declaration (SharedPath or OriginPaths) ---
+        //
+        // Header bit 3 dispatches strict mutual exclusion: bit clear → SharedPath
+        // (0x34) tag is REQUIRED; bit set → OriginPaths (0x36) tag is REQUIRED.
+        // A mismatch surfaces as InvalidBytecode { kind: UnexpectedTag {…} } via
+        // `decode_declaration` (which already validates the tag byte) or via the
+        // explicit tag check on the OriginPaths branch below.
         let mut cursor = Cursor::new(&bytes[1..]);
-        let shared_path = decode_declaration(&mut cursor)?;
+        let (decoded_shared_path, decoded_origin_paths) = if header.origin_paths() {
+            // Header bit 3 = 1 ⇒ expect Tag::OriginPaths (0x36).
+            let tag_offset = cursor.offset();
+            let tag_byte = cursor.read_byte()?;
+            if tag_byte != crate::bytecode::Tag::OriginPaths.as_byte() {
+                return Err(Error::InvalidBytecode {
+                    offset: tag_offset,
+                    kind: crate::error::BytecodeErrorKind::UnexpectedTag {
+                        expected: crate::bytecode::Tag::OriginPaths.as_byte(),
+                        got: tag_byte,
+                    },
+                });
+            }
+            let paths = decode_origin_paths(&mut cursor)?;
+            (None, Some(paths))
+        } else {
+            // Header bit 3 = 0 ⇒ expect Tag::SharedPath (0x34).
+            // `decode_declaration` validates the tag and returns UnexpectedTag
+            // if a different defined tag (e.g. 0x36) appears.
+            let path = decode_declaration(&mut cursor)?;
+            (Some(path), None)
+        };
         let path_consumed = cursor.offset();
 
         // --- Step 3 (Phase E): parse the optional fingerprints block ---
@@ -596,7 +721,8 @@ impl WalletPolicy {
             .map_err(|e| Error::PolicyScopeViolation(e.to_string()))?;
         let policy = WalletPolicy {
             inner,
-            decoded_shared_path: Some(shared_path),
+            decoded_shared_path,
+            decoded_origin_paths,
         };
 
         // --- Step 6 (Phase E): validate fingerprint count against template ---
@@ -610,6 +736,23 @@ impl WalletPolicy {
                 return Err(Error::FingerprintsCountMismatch {
                     expected: derived,
                     got: declared,
+                });
+            }
+        }
+
+        // --- Step 7 (v0.10 Phase 3): validate OriginPaths count against template ---
+        //
+        // Semantic check (policy layer, post-tree-walk): the OriginPaths
+        // block's count byte MUST equal the placeholder count of the parsed
+        // tree (per spec §3 "Path-decl dispatch"). Structural bounds
+        // (count ≤ 32, count > 0) were already enforced by
+        // `decode_origin_paths` via `OriginPathsCountTooLarge`.
+        if let Some(ref paths) = policy.decoded_origin_paths {
+            let derived = policy.key_count();
+            if paths.len() != derived {
+                return Err(Error::OriginPathsCountMismatch {
+                    expected: derived,
+                    got: paths.len(),
                 });
             }
         }
@@ -1689,6 +1832,286 @@ mod tests {
              the v0.4 selector must NOT fire for wsh top-level type.\n\
              expected: {expected:?}\n\
              got:      {bytes:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 (v0.10) — per-`@N` origin paths: encoder dispatch, decoder
+    // round-trip, tier-precedence, and conflicting-path-decl rejection.
+    // -----------------------------------------------------------------------
+
+    /// A 2-of-3 sortedmulti template-only policy must encode with the
+    /// pre-v0.10 SharedPath wire form: header byte `0x00`, byte[1] = 0x34
+    /// (Tag::SharedPath). Tier 3 fallback fires (no Tier 0/1/2 inputs).
+    #[test]
+    fn round_trip_shared_path_byte_identical_to_v0_9() {
+        let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+            .parse()
+            .expect("sortedmulti template must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("to_bytecode must succeed");
+        // Header bit 3 clear → SharedPath wire form (byte-identical to v0.9).
+        assert_eq!(bytes[0], 0x00, "shared-path policy must emit header 0x00");
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "byte[1] must be Tag::SharedPath (0x34)"
+        );
+        // Round-trip back: decoded_origin_paths must be None,
+        // decoded_shared_path must be Some.
+        let recovered = WalletPolicy::from_bytecode(&bytes).expect("decode must succeed");
+        assert!(
+            recovered.decoded_origin_paths.is_none(),
+            "shared-path round-trip must leave decoded_origin_paths == None"
+        );
+        assert!(
+            recovered.decoded_shared_path.is_some(),
+            "shared-path round-trip must populate decoded_shared_path"
+        );
+    }
+
+    /// With `EncodeOptions::origin_paths` overriding to divergent paths,
+    /// the encoder must auto-detect divergence and emit the OriginPaths
+    /// wire form (header bit 3 = 1, byte[1] = 0x36). Decoding must
+    /// populate `decoded_origin_paths`, and re-encoding must be
+    /// byte-identical (round-trip stability via Tier 1).
+    #[test]
+    fn round_trip_divergent_paths_via_origin_paths_override() {
+        let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+            .parse()
+            .expect("sortedmulti template must parse");
+        let opts = EncodeOptions::default().with_origin_paths(vec![
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+        ]);
+        let bytes = p
+            .to_bytecode(&opts)
+            .expect("to_bytecode with divergent override must succeed");
+        assert_eq!(
+            bytes[0], 0x08,
+            "divergent paths must set header bit 3 (origin_paths flag)"
+        );
+        assert_eq!(
+            bytes[1],
+            Tag::OriginPaths.as_byte(),
+            "byte[1] must be Tag::OriginPaths (0x36)"
+        );
+
+        // First-pass round-trip: decode + re-encode → byte-identical.
+        let recovered = WalletPolicy::from_bytecode(&bytes).expect("decode must succeed");
+        assert!(
+            recovered.decoded_origin_paths.is_some(),
+            "decoded_origin_paths must be populated"
+        );
+        assert!(
+            recovered.decoded_shared_path.is_none(),
+            "decoded_shared_path must be None (mutual exclusion)"
+        );
+        let bytes2 = recovered
+            .to_bytecode(&EncodeOptions::default())
+            .expect("re-encode must succeed");
+        assert_eq!(
+            bytes, bytes2,
+            "decode→encode must be byte-identical (Tier 1 stability)"
+        );
+    }
+
+    /// Tier 0 (`EncodeOptions::origin_paths` override) must beat Tier 1
+    /// (`decoded_origin_paths`). After decoding an OriginPaths-bearing
+    /// bytecode (which populates Tier 1), supplying a different override
+    /// at re-encode time must produce different bytes — and if the
+    /// override paths all agree, the encoder must emit SharedPath even
+    /// though Tier 1 is divergent.
+    #[test]
+    fn tier_0_origin_paths_override_wins_over_tier_1() {
+        // Round 1: encode with divergent override, then decode to populate Tier 1.
+        let p_template: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**))".parse().unwrap();
+        let opts_a = EncodeOptions::default().with_origin_paths(vec![
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+        ]);
+        let bytes_a = p_template.to_bytecode(&opts_a).expect("encode A succeeds");
+        assert_eq!(bytes_a[0], 0x08, "round 1 must use OriginPaths");
+        let p_decoded = WalletPolicy::from_bytecode(&bytes_a).expect("decode succeeds");
+        assert!(
+            p_decoded.decoded_origin_paths.is_some(),
+            "Tier 1 source populated"
+        );
+
+        // Round 2: re-encode with an override whose paths AGREE. Tier 0 wins,
+        // override paths agree → all_share=true → emits SharedPath (NOT
+        // OriginPaths inherited from Tier 1).
+        let override_paths = vec![
+            DerivationPath::from_str("m/87'/0'/0'").unwrap(),
+            DerivationPath::from_str("m/87'/0'/0'").unwrap(),
+        ];
+        let opts_override = EncodeOptions::default().with_origin_paths(override_paths);
+        let bytes_b = p_decoded
+            .to_bytecode(&opts_override)
+            .expect("encode B (override) succeeds");
+        assert_eq!(
+            bytes_b[0], 0x00,
+            "Tier 0 all-shared override must clear header bit 3 (Tier 1 must NOT win)"
+        );
+        assert_eq!(
+            bytes_b[1],
+            Tag::SharedPath.as_byte(),
+            "Tier 0 all-shared override must emit Tag::SharedPath"
+        );
+    }
+
+    /// A bare BIP 388 template (no concrete keys, no decoded paths) must
+    /// fall through to Tier 3 — broadcast a single shared path across
+    /// every placeholder, auto-detect agreement, emit SharedPath. This
+    /// pins v0.9 wire-format preservation for shared-path inputs.
+    #[test]
+    fn tier_3_shared_fallback_for_template_only_policy() {
+        let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+            .parse()
+            .expect("template must parse");
+        let bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("encode must succeed");
+        assert_eq!(
+            bytes[0], 0x00,
+            "Tier 3 shared-path fallback must clear header bit 3"
+        );
+        assert_eq!(
+            bytes[1],
+            Tag::SharedPath.as_byte(),
+            "Tier 3 must emit Tag::SharedPath"
+        );
+    }
+
+    /// Double round-trip: encode → decode → encode → decode → encode is
+    /// byte-stable. The first round-trip is the typical happy path; the
+    /// second exercises Tier 1 ↔ Tier 0 priority asymmetries.
+    #[test]
+    fn double_round_trip_origin_paths_byte_identical() {
+        let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+            .parse()
+            .expect("template must parse");
+        let opts = EncodeOptions::default().with_origin_paths(vec![
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+        ]);
+        let bytes1 = p.to_bytecode(&opts).expect("encode 1 succeeds");
+        let p1 = WalletPolicy::from_bytecode(&bytes1).expect("decode 1 succeeds");
+        let bytes2 = p1
+            .to_bytecode(&EncodeOptions::default())
+            .expect("encode 2 succeeds");
+        let p2 = WalletPolicy::from_bytecode(&bytes2).expect("decode 2 succeeds");
+        let bytes3 = p2
+            .to_bytecode(&EncodeOptions::default())
+            .expect("encode 3 succeeds");
+        assert_eq!(bytes1, bytes2, "first round-trip byte-identical");
+        assert_eq!(
+            bytes2, bytes3,
+            "second round-trip byte-identical (Tier 1 stability)"
+        );
+    }
+
+    /// Mutual exclusion invariant: after `from_bytecode`, exactly one of
+    /// `decoded_shared_path` / `decoded_origin_paths` is `Some`. Verify
+    /// for both wire forms (SharedPath and OriginPaths).
+    #[test]
+    fn decoded_shared_path_and_decoded_origin_paths_mutually_exclusive_after_decode() {
+        // SharedPath case (no override): decoded_shared_path=Some, origin=None.
+        let p_shared: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+            .parse()
+            .expect("template must parse");
+        let shared_bytes = p_shared
+            .to_bytecode(&EncodeOptions::default())
+            .expect("shared encode succeeds");
+        let p_recovered_shared =
+            WalletPolicy::from_bytecode(&shared_bytes).expect("shared decode succeeds");
+        assert!(p_recovered_shared.decoded_shared_path.is_some());
+        assert!(p_recovered_shared.decoded_origin_paths.is_none());
+
+        // OriginPaths case (divergent override): origin=Some, shared=None.
+        let opts = EncodeOptions::default().with_origin_paths(vec![
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+        ]);
+        let origin_bytes = p_shared.to_bytecode(&opts).expect("origin encode succeeds");
+        let p_recovered_origin =
+            WalletPolicy::from_bytecode(&origin_bytes).expect("origin decode succeeds");
+        assert!(p_recovered_origin.decoded_shared_path.is_none());
+        assert!(p_recovered_origin.decoded_origin_paths.is_some());
+    }
+
+    /// A bytecode with header bit 3 SET but a SharedPath (0x34) tag at
+    /// the path-decl slot must reject as `InvalidBytecode { kind:
+    /// UnexpectedTag {…} }`. The decoder dispatches strictly on header
+    /// bit 3, so a tag mismatch surfaces immediately.
+    #[test]
+    fn from_bytecode_rejects_header_bit_3_set_with_shared_path_tag() {
+        let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+            .parse()
+            .expect("template must parse");
+        let mut bytes = p
+            .to_bytecode(&EncodeOptions::default())
+            .expect("encode succeeds");
+        // Sanity: encoding emitted SharedPath at byte[1].
+        assert_eq!(bytes[1], Tag::SharedPath.as_byte());
+        // Flip header bit 3 ON without changing the SharedPath tag.
+        bytes[0] = 0x08;
+        let err = WalletPolicy::from_bytecode(&bytes)
+            .expect_err("decode must reject conflicting header bit + tag");
+        assert!(
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: crate::error::BytecodeErrorKind::UnexpectedTag {
+                        expected: 0x36,
+                        got: 0x34,
+                    },
+                    ..
+                }
+            ),
+            "expected UnexpectedTag {{ expected: 0x36, got: 0x34 }}, got {err:?}"
+        );
+    }
+
+    /// A bytecode with header bit 3 CLEAR but an OriginPaths (0x36) tag
+    /// at the path-decl slot must reject as `InvalidBytecode { kind:
+    /// UnexpectedTag {…} }`. `decode_declaration` produces the
+    /// UnexpectedTag variant when it sees a defined tag that isn't
+    /// SharedPath.
+    #[test]
+    fn from_bytecode_rejects_header_bit_3_clear_with_origin_paths_tag() {
+        let p: WalletPolicy = "wsh(sortedmulti(2,@0/**,@1/**,@2/**))"
+            .parse()
+            .expect("template must parse");
+        let opts = EncodeOptions::default().with_origin_paths(vec![
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+            DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+        ]);
+        let mut bytes = p.to_bytecode(&opts).expect("encode succeeds");
+        // Sanity: encoding emitted OriginPaths at byte[1].
+        assert_eq!(bytes[1], Tag::OriginPaths.as_byte());
+        // Flip header bit 3 OFF without changing the OriginPaths tag.
+        bytes[0] = 0x00;
+        let err = WalletPolicy::from_bytecode(&bytes)
+            .expect_err("decode must reject conflicting header bit + tag");
+        // `decode_declaration` produces UnexpectedTag with expected=0x34, got=0x36.
+        assert!(
+            matches!(
+                err,
+                Error::InvalidBytecode {
+                    kind: crate::error::BytecodeErrorKind::UnexpectedTag {
+                        expected: 0x34,
+                        got: 0x36,
+                    },
+                    ..
+                }
+            ),
+            "expected UnexpectedTag {{ expected: 0x34, got: 0x36 }}, got {err:?}"
         );
     }
 }

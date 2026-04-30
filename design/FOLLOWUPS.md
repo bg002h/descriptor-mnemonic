@@ -714,6 +714,50 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.10-nice-to-have
 
+### `v010-p3-tier-2-kiv-walk-deferred` — Tier 2 KIV walk in `placeholder_paths_in_index_order` is stubbed in v0.10.0
+
+- **Surfaced:** v0.10.0 Phase 3 implementation. The 4-tier per-`@N`-path
+  precedence chain in `WalletPolicy::placeholder_paths_in_index_order`
+  (spec §4) defines Tier 2 as "walk the key-information vector for
+  concrete-key policies, extracting per-key origin paths in
+  placeholder-index order." Phase 3 ships this tier as a stub returning
+  `Ok(None)` (always falls through to Tier 3 shared-path fallback).
+- **Where:**
+  - `crates/md-codec/src/policy.rs` — `WalletPolicy::try_extract_paths_from_kiv` (TODO comment in body).
+  - `WalletPolicy::placeholder_paths_in_index_order` consults this method as Tier 2.
+- **What:** wire up Tier 2 to walk the policy's key-information vector
+  and extract `(fingerprint, origin_path)` for each placeholder in
+  placeholder-index order. The natural input is the materialized
+  `Descriptor<DescriptorPublicKey>` already built in `to_bytecode`, but
+  `descriptor.iter_pk()` traverses in AST order — for `sortedmulti(...)`
+  this yields lex-sorted-by-pubkey-bytes order, NOT placeholder-index
+  order. A correct implementation must either (a) walk the inner
+  `WalletPolicy.template` (a `Descriptor<KeyExpression>`) using each
+  `KeyExpression`'s `index` field to map AST position → placeholder
+  index — currently blocked because the fork's `WalletPolicy.template`
+  field is private (no public accessor), or (b) perform the walk at the
+  policy-construction layer (e.g., on `from_descriptor` ingestion) and
+  cache per-`@N` paths in a new `WalletPolicy` field — the
+  decoded-vs-source-of-truth state machine then mirrors
+  `decoded_origin_paths`. The implementation choice and surface impact
+  warrant a separate design pass.
+- **Why deferred:** v0.10.0's hot path for per-`@N` divergence is the
+  Tier 0 `EncodeOptions::origin_paths` override (test-vector generation)
+  and the Tier 1 `decoded_origin_paths` round-trip stability source
+  (any policy decoded from a `Tag::OriginPaths`-bearing bytecode). Both
+  are fully wired and tested in Phase 3. Tier 2 only matters for the
+  freshly-parsed concrete-key descriptor case — a path that exists in
+  v0.x ≤ 0.9 today and silently flattens to shared-path. Stubbing Tier
+  2 in v0.10.0 leaves that path's behavior IDENTICAL to v0.9 (Tier 3
+  shared-path fallback fires, encoder emits `Tag::SharedPath`),
+  preserving wire-format byte-equality for v0.9-shaped concrete-key
+  inputs. The known bug — losing per-`@N` divergence on
+  freshly-parsed-from-string concrete-key policies — is a known
+  v0.x limitation that v0.10.0 does not regress and does not fully
+  fix; v0.11 (or a v0.10.1) closes it with the API design above.
+- **Status:** open
+- **Tier:** v0.11
+
 ---
 
 ## Resolved items

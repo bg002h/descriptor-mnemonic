@@ -385,12 +385,6 @@ pub fn encode_origin_paths(paths: &[DerivationPath]) -> Result<Vec<u8>, crate::E
 /// [`BytecodeErrorKind::OriginPathsCountTooLarge`]: crate::error::BytecodeErrorKind::OriginPathsCountTooLarge
 /// [`BytecodeErrorKind::UnexpectedEnd`]: crate::error::BytecodeErrorKind::UnexpectedEnd
 /// [`Error::PathComponentCountExceeded`]: crate::Error::PathComponentCountExceeded
-//
-// `#[allow(dead_code)]`: standalone helper landed in Phase 2; Phase 3 wires
-// it into `WalletPolicy::from_bytecode`. Until then the only callers live
-// inside the test module, which doesn't satisfy the dead-code lint for
-// `pub(crate)` items in non-test builds.
-#[allow(dead_code)]
 pub(crate) fn decode_origin_paths(
     cur: &mut crate::bytecode::cursor::Cursor<'_>,
 ) -> Result<Vec<DerivationPath>, crate::Error> {
