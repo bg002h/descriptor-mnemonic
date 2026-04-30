@@ -74,8 +74,8 @@ git status   # clean working tree
 - [ ] **Step 3: Confirm v0.9.1 baseline tests pass**
 
 ```bash
-cargo test --workspace --all-features 2>&1 | tail -5
-# Expect: 678 tests pass (or whatever the v0.9.1 baseline is)
+cargo test --workspace --all-features 2>&1 | grep '^test result' | awk '{ok+=$4; failed+=$6} END {print "Total: ok="ok" failed="failed}'
+# Expect: ok=678 failed=0 (verified against main commit 2a9c969 on 2026-04-29; v0.9.1 baseline). Pin this number in Phase-end commit messages so post-v0.10 phase totals are diff-able.
 PATH="$HOME/.cargo/bin:$PATH" cargo +stable clippy --workspace --all-features --all-targets -- -D warnings 2>&1 | tail -3
 # Expect: clean
 PATH="$HOME/.cargo/bin:$PATH" cargo +stable fmt --all -- --check 2>&1 | head -3
@@ -83,6 +83,29 @@ PATH="$HOME/.cargo/bin:$PATH" cargo +stable fmt --all -- --check 2>&1 | head -3
 ```
 
 If anything fails, stop and investigate before proceeding.
+
+- [ ] **Step 4 (NEW per F15): Bump version to 0.10.0 at the foundation of the feature branch**
+
+Per F15: `GENERATOR_FAMILY` = `"md-codec ${MAJOR}.${MINOR}"` is computed from `Cargo.toml` at compile time. Vectors regenerated mid-plan must produce `"md-codec 0.10"` strings, not `"md-codec 0.9"`. Bumping the version at Pre-Phase-0 ensures all subsequent regens use the correct family token; final Phase 7 release commit doesn't re-bump.
+
+```toml
+# crates/md-codec/Cargo.toml
+version = "0.10.0"
+```
+
+```bash
+cargo build --workspace --all-features 2>&1 | tail -3   # confirm clean compile
+git add -A && git commit -m "chore(v0.10): bump version 0.9.1 → 0.10.0 (foundation commit)
+
+Pre-Phase-0 version bump per IMPLEMENTATION_PLAN_v0_10 F15: ensures
+GENERATOR_FAMILY = \"md-codec 0.10\" for all subsequent test-vector
+regenerations during the v0.10 implementation phases.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+"
+```
+
+This means Phase 7 Step 7.2 becomes a verification-only step ("confirm version is 0.10.0") rather than a fresh bump.
 
 ---
 
@@ -154,9 +177,15 @@ fn new_v0_signature_takes_origin_paths_bool() {
 cargo test --package md-codec bytecode::header 2>&1 | tail -20
 ```
 
-Expected: 5 new tests fail with the v0.9 implementation (signature mismatch on `new_v0`; reserved-bit rejections wrong byte values; `origin_paths()` method missing).
+Expected: 5 new tests fail (signature mismatch on `new_v0`; reserved-bit rejections wrong byte values; `origin_paths()` method missing).
 
-- [ ] **Step 1.3: Update `BytecodeHeader` struct + impl**
+Additionally, per F1: two existing tests will fail after Step 1.3 lands the new `RESERVED_MASK = 0x03`:
+- `reserved_bit_3_set` (line 194) — asserts `from_byte(0x08) → Err`. Under v0.10, `0x08` is valid (OriginPaths flag). **Action: delete this test in Step 1.3** (it's the inversion of the new behavior).
+- `all_reserved_bits_set_no_fingerprints` (line 209) — tests `0x0B` rejection with comment "bits 3, 1, 0 all set." Under the new mask `0x03`, bit 3 is no longer reserved. The test would coincidentally pass (bits 1+0 still reserved) but with stale prose. **Action: rewrite in Step 1.3** as `all_reserved_bits_set_in_v0_10` testing `0x03` (bits 1+0 set, no flags).
+
+Both edits land alongside the `RESERVED_MASK` change in Step 1.3. The TDD-discipline framing in Step 1.2 captures all 7 failures (5 new tests + 2 existing-test renames/deletions) so Step 1.3's pass-bar is unambiguous.
+
+- [ ] **Step 1.3: Update `BytecodeHeader` struct + impl, plus migrate the two existing tests**
 
 Edit `bytecode/header.rs`:
 
@@ -256,7 +285,13 @@ impl Tag {
 }
 ```
 
-Also update `tag_v0_6_high_bytes_unallocated` test (line ~296 in tag.rs) — `0x36` is no longer "unallocated"; the test's loop bound starts at `0x37`.
+Per F4: there are THREE existing tag-table-coverage tests, all needing update:
+
+- **`tag_v0_6_high_bytes_unallocated`** (line ~294): loop bound becomes `0x37..=0xFF`. Rename to `tag_v0_10_high_bytes_unallocated` per project convention (test names track the version that pinned the byte range).
+- **`tag_rejects_unknown_bytes`** (line ~317, second loop in same fn): same loop-bound update `0x37..=0xFF`.
+- **`tag_round_trip_all_defined`** (line ~305): the `v0_6_allocated` Vec needs `0x36` added to the chain — `(0x00..=0x23).chain(0x33..=0x36)`. Rename `v0_6_allocated` → `v0_10_allocated`.
+
+All three updates land in this step alongside the new `Tag::OriginPaths` variant.
 
 - [ ] **Step 1.7: Add Tag::OriginPaths byte-position test**
 
@@ -279,7 +314,7 @@ fn tag_v0_10_unallocated_starts_at_0x37() {
 cargo test --package md-codec bytecode::tag 2>&1 | tail -5
 ```
 
-- [ ] **Step 1.8: Add new error variants**
+- [ ] **Step 1.8: Add new error variants + extend `ErrorVariantName` mirror enum (F2)**
 
 Edit `error.rs`:
 
@@ -312,6 +347,22 @@ Also: `BytecodeErrorKind::OriginPathsCountTooLarge`'s `Display` is needed; add t
 ```bash
 rg -n 'BytecodeErrorKind::ReservedBitsSet' crates/md-codec/src/error.rs
 ```
+
+**Per F2 (blocker):** the conformance gate uses a hand-mirrored `ErrorVariantName` enum at `crates/md-codec/tests/error_coverage.rs` lines ~37-65. Without extending it for the two new top-level `Error` variants, the `every_error_variant_has_a_rejects_test_in_conformance` gate will pass spuriously (visible-to-conformance variants don't include `OriginPathsCountMismatch` / `PathComponentCountExceeded`).
+
+Add to `tests/error_coverage.rs::ErrorVariantName`:
+
+```rust
+pub enum ErrorVariantName {
+    // ... existing variants ...
+    OriginPathsCountMismatch,
+    PathComponentCountExceeded,
+}
+```
+
+Per the file header comment: the enum is hand-mirrored intentionally. Adding a new top-level `Error` variant requires extending this enum. `BytecodeErrorKind` sub-variants (e.g., `OriginPathsCountTooLarge`) do NOT need entries — they're covered by the wrapping `InvalidBytecode` variant via the `INVALID_BYTECODE_PREFIX` machinery.
+
+After this addition, Step 1.10's "Phase 4 will add: rejects_*" framing is correct: the gate genuinely fails until those rejection tests land in P4.
 
 - [ ] **Step 1.9: Verify all of Phase 1 builds + new tests pass**
 
@@ -396,6 +447,20 @@ fn decode_path_rejects_11_components_in_explicit_form() {
     let err = decode_path(&mut cur).unwrap_err();
     assert!(matches!(err, Error::PathComponentCountExceeded { got: 11, max: 10 }));
 }
+
+#[test]
+fn decode_path_cap_check_fires_before_component_decode() {
+    // Per F5: pin error-priority ordering — cap check must fire BEFORE
+    // attempting to decode components. Synthesize count=11 with NO component
+    // bytes after; if the cap check is correctly placed, we get
+    // PathComponentCountExceeded. If the cap check is moved after component
+    // decoding (a future refactor risk), we'd get UnexpectedEnd instead.
+    let bytes = vec![0xFE, 0x0B];   // 0xFE indicator + count=11, no components
+    let mut cur = Cursor::new(&bytes);
+    let err = decode_path(&mut cur).unwrap_err();
+    assert!(matches!(err, Error::PathComponentCountExceeded { got: 11, max: 10 }),
+            "cap check must fire before component decode — got {:?}", err);
+}
 ```
 
 - [ ] **Step 2.2: Run tests; verify they fail**
@@ -431,7 +496,19 @@ pub fn decode_path(cursor: &mut Cursor) -> Result<DerivationPath, Error> {
 }
 ```
 
-(Exact integration depends on existing function signatures; preserve `encode_path`'s previous return type if it's already `Result<Vec<u8>, Error>`. If it was infallible `-> Vec<u8>`, this becomes a signature change — update call sites.)
+**Per F6 (strong): `encode_path` is currently infallible (`pub fn encode_path(path: &DerivationPath) -> Vec<u8>` at `path.rs:65`).** This step changes it to `Result<Vec<u8>, Error>` to surface the cap rejection — a public-API break on a `pub` function.
+
+Decision: take the break (option B in F6). Reasoning: symmetric with `decode_path`'s already-fallible signature; cleaner invariants; fewer hidden footguns. Mechanical fix at every call site: add `?` propagation, or `.expect("validated upstream")` where the caller has already validated component count.
+
+Call sites to update (rg-able):
+
+```bash
+rg -n '\bencode_path\(' crates/md-codec/src/ crates/md-codec/tests/
+```
+
+Expected: ~6+ sites in `path.rs` test module + `bytecode/encode.rs` callers + `policy.rs::encode_declaration`. Update each with `?` (or `.expect()` if upstream guarantees).
+
+This API break MUST be added to MIGRATION.md (Phase 6 Step 6.9): "`encode_path(&DerivationPath) -> Vec<u8>` becomes `encode_path(&DerivationPath) -> Result<Vec<u8>, Error>`. Consumer updates: append `?` to call sites or `.expect()` if the path is known short."
 
 - [ ] **Step 2.4: Run cap tests; verify they pass**
 
@@ -790,6 +867,90 @@ fn round_trip_divergent_paths_via_origin_paths_override() {
 }
 ```
 
+- [ ] **Step 3.6.5 (NEW per F8 + F9): Tier-precedence and round-trip stability tests**
+
+Tier-collision coverage (Tier 0 > Tier 1 > Tier 2 > Tier 3):
+
+```rust
+#[test]
+fn tier_0_origin_paths_override_wins_over_tier_1() {
+    // Decode an OriginPaths-bearing bytecode (populates Tier 1 = decoded_origin_paths),
+    // then re-encode with EncodeOptions::with_origin_paths overriding to different paths.
+    // Expect the wire reflects the override, not the decoded.
+    let bytes_a = vec![0x08, 0x36, 0x02, 0x05, 0x06, /* tree */];
+    let p = WalletPolicy::from_bytecode(&bytes_a).unwrap();
+    let override_paths = vec![
+        DerivationPath::from_str("m/87'/0'/0'").unwrap(),
+        DerivationPath::from_str("m/87'/0'/0'").unwrap(),
+    ];
+    let opts = EncodeOptions::default().with_origin_paths(override_paths);
+    let bytes_b = p.to_bytecode(&opts).unwrap();
+    // Override paths agree → encoder emits SharedPath, NOT OriginPaths.
+    assert_eq!(bytes_b[0], 0x00, "all-shared override must clear bit 3");
+    assert_eq!(bytes_b[1], 0x34, "expected SharedPath after override");
+}
+
+#[test]
+fn tier_1_decoded_wins_over_tier_2_kiv_walk() {
+    // After from_bytecode, decoded_origin_paths is Tier 1. If the policy also has
+    // KIV data (Tier 2), Tier 1 must win on re-encode.
+    // (Implementation: synthesize a WalletPolicy with both fields populated;
+    // if the construction is impossible without unsafe access, document why
+    // and verify by inspection.)
+    // ...
+}
+
+#[test]
+fn tier_3_shared_fallback_for_template_only_policy() {
+    // A policy parsed from a bare BIP 388 template (no concrete keys, no
+    // decoded_origin_paths) falls through to Tier 3: shared-path fallback.
+    let p: WalletPolicy = "wsh(sortedmulti(2, @0/**, @1/**, @2/**))".parse().unwrap();
+    let bytes = p.to_bytecode(&EncodeOptions::default()).unwrap();
+    assert_eq!(bytes[0], 0x00, "Tier 3 shared-path fallback");
+    assert_eq!(bytes[1], 0x34, "Tier 3 emits SharedPath");
+}
+```
+
+Round-trip stability:
+
+```rust
+#[test]
+fn double_round_trip_origin_paths_byte_identical() {
+    // encode → decode → encode → decode → encode is byte-stable; first round-trip
+    // is the typical happy path, but second round-trip catches Tier 1 ↔ Tier 0
+    // priority asymmetries.
+    let p: WalletPolicy = "wsh(sortedmulti(2, @0/**, @1/**, @2/**))".parse().unwrap();
+    let opts = EncodeOptions::default().with_origin_paths(vec![
+        DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+        DerivationPath::from_str("m/48'/0'/0'/2'").unwrap(),
+        DerivationPath::from_str("m/48'/0'/0'/100'").unwrap(),
+    ]);
+    let bytes1 = p.to_bytecode(&opts).unwrap();
+    let p1 = WalletPolicy::from_bytecode(&bytes1).unwrap();
+    let bytes2 = p1.to_bytecode(&EncodeOptions::default()).unwrap();
+    let p2 = WalletPolicy::from_bytecode(&bytes2).unwrap();
+    let bytes3 = p2.to_bytecode(&EncodeOptions::default()).unwrap();
+    assert_eq!(bytes1, bytes2, "first round-trip");
+    assert_eq!(bytes2, bytes3, "second round-trip — Tier 1 stability");
+}
+
+#[test]
+fn decoded_shared_path_and_decoded_origin_paths_mutually_exclusive_after_decode() {
+    // After from_bytecode, exactly one of the two decoded-path fields is Some.
+    let shared_bytes = vec![0x00, 0x34, 0x05, /* tree */];
+    let p_shared = WalletPolicy::from_bytecode(&shared_bytes).unwrap();
+    assert!(p_shared.decoded_shared_path.is_some());
+    assert!(p_shared.decoded_origin_paths.is_none());
+
+    let origin_bytes = vec![0x08, 0x36, 0x02, 0x05, 0x06, /* tree */];
+    let p_origin = WalletPolicy::from_bytecode(&origin_bytes).unwrap();
+    assert!(p_origin.decoded_shared_path.is_none());
+    assert!(p_origin.decoded_origin_paths.is_some());
+}
+```
+
+(Synthetic-byte test inputs above are sketches — actual byte sequences need real tree bytes after the path-decl slot.)
+
 - [ ] **Step 3.7: Test conflicting-path-decl rejection**
 
 ```rust
@@ -877,6 +1038,11 @@ Persist to `design/agent-reports/v0-10-phase-3-review.md`. Address findings.
 In `vectors.rs`, parallel to `build_v0_9_testnet_p2sh_p2wsh_vector`:
 
 ```rust
+// Per F3: vectors o1 and o2 mirror SPEC §2 Example C (header 0x08, no fps)
+// and Example B (header 0x0C, fps {deadbeef, cafebabe, d00df00d}) respectively.
+// The OriginPaths block bytes `36 03 05 05 FE 04 61 01 01 C9 01` are pinned
+// in the spec; corpus regen MUST produce these same bytes. If the spec
+// example values change, both spec and corpus update in lockstep.
 fn build_v0_10_origin_paths_vectors() -> Vec<Vector> {
     use bitcoin::bip32::DerivationPath;
     use std::str::FromStr;
@@ -931,6 +1097,21 @@ Wire into `build_positive_vectors_v2`:
 
 ```rust
 out.extend(build_v0_10_origin_paths_vectors());   // adds 3
+```
+
+Add an inline test that pins the spec-corpus mutual validation:
+
+```rust
+#[test]
+fn o2_vector_origin_paths_block_matches_spec_example_b() {
+    // SPEC §2 Example B's OriginPaths block bytes (header + path-decl slot only).
+    // If this assertion ever fires, either the spec example or the corpus drifted.
+    const EXPECTED_ORIGIN_PATHS_BYTES: &str = "36030505fe046101 01c901".replace(' ', "");
+    let vectors = build_v0_10_origin_paths_vectors();
+    let o2 = vectors.iter().find(|v| v.id == "o2_sortedmulti_2of3_divergent_paths_with_fingerprints").unwrap();
+    assert!(o2.expected_bytecode_hex.contains(&EXPECTED_ORIGIN_PATHS_BYTES),
+            "o2 expected_bytecode_hex must contain SPEC §2 Example B's OriginPaths bytes");
+}
 ```
 
 - [ ] **Step 4.2: Add negative vectors**
@@ -1261,12 +1442,21 @@ rg 'BytecodeHeader|Tag::|MAX_PATH_COMPONENTS|OriginPaths|policy_id_seed' crates/
 
 If hits in public API surface: minor bump (e.g., `0.1.x → 0.2.0`). If only internal/test: patch bump (e.g., `0.1.1 → 0.1.2`). If zero hits: stays at current version.
 
-- [ ] **Step 7.2: Bump versions**
+- [ ] **Step 7.2: Confirm version is 0.10.0** (already bumped in Pre-Phase-0 Step 4 per F15)
+
+```bash
+grep '^version' crates/md-codec/Cargo.toml
+# Expect: version = "0.10.0"
+```
+
+If the version is still `0.9.1` (e.g., the Pre-Phase-0 commit was missed), bump now:
 
 ```toml
 # crates/md-codec/Cargo.toml
 version = "0.10.0"
 ```
+
+But note: this means mid-plan vector regenerations would have used the wrong family token. Phase 4 vectors must be regenerated again with the correct version. Easier path: ensure Pre-Phase-0 Step 4 lands first, as the plan instructs.
 
 - [ ] **Step 7.3: Mark FOLLOWUPS resolved**
 
@@ -1350,11 +1540,86 @@ awk '/^## \[0\.10\.0\]/{flag=1} /^## \[0\.9\.1\]/{flag=0} flag' CHANGELOG.md > /
 gh release create md-codec-v0.10.0 --title "md-codec v0.10.0" --notes-file /tmp/v010-release-notes.md
 ```
 
-- [ ] **Step 7.11: Cross-update sibling mnemonic-key (if applicable)**
+- [ ] **Step 7.11: Cross-update sibling mnemonic-key (per F7 + RELEASE_PROCESS.md)**
 
-Per `design/RELEASE_PROCESS.md` lockstep checklist: mk1 inherits the path-dictionary stability across v0.10 (the path dictionary itself doesn't change; only the path-component cap does, which mk1's own SPEC §3.5 already declares). Light cross-update may be a no-op or a one-line note. Audit `/scratch/code/shibboleth/mnemonic-key/` for any forward-references that resolve.
+Per `design/RELEASE_PROCESS.md` §"CLAUDE.md crosspointer maintenance":
+
+```bash
+cd /scratch/code/shibboleth/mnemonic-key
+git fetch origin && git checkout main && git pull --ff-only
+```
+
+a. **Audit forward-reference text** that becomes resolvable post-v0.10:
+
+```bash
+git grep -i 'md-per-at-N\|0x36\|OriginPaths\|md1.*path-tag\|md1 currently\|will land\|in flight'
+```
+
+If hits exist (likely in `bip/bip-mnemonic-key.mediawiki`, `design/SPEC_mk_v0_1.md`, `design/DECISIONS.md`, `design/IMPLEMENTATION_PLAN_mk_v0_1.md`, `docs/superpowers/specs/2026-04-29-mk1-open-questions-closure-design.md`), update them to point at the v0.10.0 release-tag prose and shipped state.
+
+b. **Update mk1's companion FOLLOWUPS entry**:
+
+```bash
+# In /scratch/code/shibboleth/mnemonic-key/design/FOLLOWUPS.md
+# Find the `md-per-N-path-tag-allocation` entry; flip Status to:
+#   Status: resolved by md-codec-v0.10.0 (commit <md1-merge-sha>)
+```
+
+c. **Audit mk1's BIP for post-brainstorm edits** that would break md1's §"Authority precedence with MK" cross-reference:
+
+```bash
+git log --oneline bip/bip-mnemonic-key.mediawiki | head -10
+```
+
+If mk1 BIP §"Authority precedence" prose has changed since brainstorm-time (2026-04-29), reconcile: either update md1's reference prose OR push back to user.
+
+d. **Open a small mk1 PR** for these updates (separate sibling-repo branch):
+
+```bash
+git checkout -b feature/md-codec-v0.10-shipped-cross-update
+# ... edit files ...
+git commit -m "docs(post-md-v0.10.0): de-hedge md1 path-tag references"
+git push -u origin feature/md-codec-v0.10-shipped-cross-update
+gh pr create --title "docs(post-md-v0.10.0): de-hedge md1 path-tag references" \
+  --body "Cross-update for md-codec v0.10.0 ship (md1 PR <md1-pr-#>). Resolves the md-per-N-path-tag-allocation companion FOLLOWUPS entry."
+```
+
+e. **Update CLAUDE.md** in the md1 repo to drop the resolved entry (already covered in Step 7.4 above, but verify the entry is gone).
+
+If mk1's main branch has unrelated in-flight work (per the v0.9.0 hedge audit pattern), use a worktree off `origin/main` to avoid disturbing parallel sessions:
+
+```bash
+cd /scratch/code/shibboleth/mnemonic-key
+git worktree add ../mk-v010-cross-update -b feature/md-codec-v0.10-shipped-cross-update origin/main
+cd ../mk-v010-cross-update
+# ... make edits + commit + push ...
+```
+
+Persist a hedge-audit report to `descriptor-mnemonic/design/agent-reports/v0-10-phase-7-mk1-hedge-audit.md` documenting what changed and pinning the md1 commit/tag — same pattern as v0.9's hedge audit at `v0-9-phase-0-mk1-hedge-audit.md`.
 
 ---
+
+## Plan review pass-1 status (opus, persisted to `design/agent-reports/v0-10-plan-review-1.md`)
+
+| F | Severity | Status |
+|---|---|---|
+| F1 | blocker | ✅ Step 1.2 + 1.3 explicitly handle existing `reserved_bit_3_set` deletion + `all_reserved_bits_set_no_fingerprints` rewrite. |
+| F2 | blocker | ✅ Step 1.8 includes `ErrorVariantName` mirror-enum extension. |
+| F3 | blocker | ✅ Step 4.1 includes spec-corpus pin doc comment + inline assertion test. |
+| F4 | strong | ✅ Step 1.6 lists all 3 affected tag.rs tests with line numbers + rename guidance. |
+| F5 | strong | ✅ Step 2.1 adds `decode_path_cap_check_fires_before_component_decode` defensive test. |
+| F6 | strong | ✅ Step 2.3 owns the `encode_path` API break explicitly; Phase 6 Step 6.9 will list it in MIGRATION.md. |
+| F7 | strong | ✅ Step 7.11 expanded with full sibling-repo coordination protocol (audit, FOLLOWUPS update, BIP review, hedge-audit-report persistence). |
+| F8 | strong | ✅ New Step 3.6.5 adds Tier-precedence collision tests (Tier 0 vs 1, Tier 1 vs 2, Tier 3 fallback). |
+| F9 | strong | ✅ New Step 3.6.5 adds double-round-trip + mutual-exclusion tests. |
+| F10 | nice-to-have | folded into Phase 6 implementer guidance — copy spec prose verbatim from §6 prose blocks. |
+| F11 | nice-to-have | not addressed inline; can fold into P5 by implementer if desired. |
+| F12 | confirmation | ✅ md-signer-compat audit pre-confirmed; no version bump needed. |
+| F13 | nice-to-have | folded into Step 4.2 — implementer maps each negative vector to its conformance test. |
+| F14 | nice-to-have | ✅ Pre-Phase-0 Step 3 baseline pinned to 678 tests. |
+| F15 | nice-to-have | ✅ Pre-Phase-0 Step 4 (NEW) bumps version to 0.10.0 before any vector regen. Phase 7 Step 7.2 becomes verification-only. |
+
+Open implementer questions (1-5 in pass-1 report) carried as plan-time decisions during phased implementation.
 
 ## Self-review checklist (pre-opus-review)
 
