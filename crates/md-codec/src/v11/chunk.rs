@@ -97,3 +97,45 @@ mod tests {
         ));
     }
 }
+
+use crate::v11::identity::Md1EncodingId;
+
+/// Derive the 20-bit chunk-set-id from a [`Md1EncodingId`] by taking the
+/// top 20 bits of the underlying 16-byte hash, MSB-first.
+///
+/// The chunk-set-id groups chunks belonging to the same encoded payload.
+/// Returned value is in the range `0..=0xFFFFF`.
+pub fn derive_chunk_set_id(id: &Md1EncodingId) -> u32 {
+    // First 20 bits of Md1EncodingId[0..16], MSB-first.
+    let bytes = id.as_bytes();
+    ((bytes[0] as u32) << 12) | ((bytes[1] as u32) << 4) | ((bytes[2] as u32) >> 4)
+}
+
+#[cfg(test)]
+mod chunk_set_id_tests {
+    use super::*;
+
+    #[test]
+    fn derive_chunk_set_id_deterministic() {
+        let mut bytes = [0u8; 16];
+        bytes[0] = 0xab;
+        bytes[1] = 0xcd;
+        bytes[2] = 0xe1;
+        bytes[3] = 0x23;
+        let id = Md1EncodingId::new(bytes);
+        let csid_a = derive_chunk_set_id(&id);
+        let csid_b = derive_chunk_set_id(&id);
+        assert_eq!(csid_a, csid_b);
+    }
+
+    #[test]
+    fn derive_chunk_set_id_msb_first_extraction() {
+        // bytes[0]=0xAB, [1]=0xCD, [2]=0xEF: top 20 bits = 0xABCDE
+        let mut bytes = [0u8; 16];
+        bytes[0] = 0xAB;
+        bytes[1] = 0xCD;
+        bytes[2] = 0xEF;
+        let id = Md1EncodingId::new(bytes);
+        assert_eq!(derive_chunk_set_id(&id), 0xABCDE);
+    }
+}
