@@ -31,4 +31,13 @@ pub enum V11Error {
         /// Version value parsed from bits 0..2.
         got: u8,
     },
+
+    /// Path depth exceeds MAX_PATH_COMPONENTS (15).
+    #[error("path depth {got} exceeds maximum {max}")]
+    PathDepthExceeded {
+        /// Actual depth of the path.
+        got: usize,
+        /// Maximum allowed depth (15).
+        max: usize,
+    },
 }
