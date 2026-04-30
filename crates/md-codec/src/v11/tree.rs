@@ -87,6 +87,9 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                 write_node(w, t, key_index_width)?;
             }
         }
+        Body::Timelock(v) => {
+            w.write_bits(u64::from(*v), 32);
+        }
         _ => unimplemented!("filled in later phases"),
     }
     Ok(())
@@ -152,6 +155,10 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, V11Erro
                 None
             };
             Body::Tr { key_index, tree }
+        }
+        Tag::After | Tag::Older => {
+            let v = r.read_bits(32)? as u32;
+            Body::Timelock(v)
         }
         _ => unimplemented!("filled in later phases"),
     };
@@ -320,5 +327,33 @@ mod tests {
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    #[test]
+    fn after_700_000_round_trip() {
+        let n = Node {
+            tag: Tag::After,
+            body: Body::Timelock(700_000),
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        // Tag(5) + u32(32) = 37 bits
+        assert_eq!(w.bit_len(), 37);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn older_144_round_trip() {
+        let n = Node {
+            tag: Tag::Older,
+            body: Body::Timelock(144),
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
     }
 }
