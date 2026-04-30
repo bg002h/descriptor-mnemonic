@@ -136,3 +136,32 @@ fn bip84_md1_string_round_trip() {
     let d2 = md_codec::v11::decode::decode_md1_string(&s).unwrap();
     assert_eq!(d, d2);
 }
+
+#[test]
+fn bip48_2of3_md1_string_round_trip() {
+    let d = Descriptor {
+        n: 3,
+        path_decl: PathDecl {
+            n: 3,
+            paths: PathDeclPaths::Shared(bip48_path()),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![Node {
+                tag: Tag::SortedMulti,
+                body: Body::Variable {
+                    k: 2,
+                    children: (0..3).map(|i| Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: i },
+                    }).collect(),
+                },
+            }]),
+        },
+        tlv: TlvSection::new_empty(),
+    };
+    let s = md_codec::v11::encode::encode_md1_string(&d).unwrap();
+    let d2 = md_codec::v11::decode::decode_md1_string(&s).unwrap();
+    assert_eq!(d, d2);
+}
