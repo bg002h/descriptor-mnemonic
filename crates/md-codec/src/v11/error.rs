@@ -189,4 +189,12 @@ pub enum V11Error {
     /// Chunk header missing chunked-flag (bit 3 must be 1).
     #[error("chunk header chunked-flag missing; bit 3 must be 1 for chunk headers")]
     ChunkHeaderChunkedFlagMissing,
+
+    /// Codex32 decode error (HRP mismatch, alphabet violation, BCH verification failure).
+    #[error("codex32 decode error: {0}")]
+    Codex32DecodeError(String),
+
+    /// Codex32 encode error (BCH layer failure).
+    #[error("codex32 encode error: {0}")]
+    Codex32EncodeError(String),
 }
