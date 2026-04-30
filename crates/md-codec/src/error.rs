@@ -521,7 +521,7 @@ pub enum BytecodeErrorKind {
     /// reported via [`Error::OriginPathsCountMismatch`] instead.
     ///
     /// [`Error::OriginPathsCountMismatch`]: super::Error::OriginPathsCountMismatch
-    #[error("OriginPaths count {count} exceeds maximum {max}")]
+    #[error("OriginPaths count {count} is out of range (must be 1..={max})")]
     OriginPathsCountTooLarge {
         /// The structurally invalid count byte.
         count: u8,

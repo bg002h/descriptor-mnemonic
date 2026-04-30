@@ -670,6 +670,50 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** resolved md-codec-v0.7.2. CLI flag renamed `--internal-key` → `--unspendable-key`; library parameter on `policy_to_bytecode` renamed `internal_key` → `unspendable_key` (Rust positional-args semantics: not ABI-breaking; existing callers compile unchanged). Module rustdoc gains a "Tap-context internal key — `unspendable_key` semantics" section that describes the upstream precedence rule (`extract_key` first, fallback parameter second). Workaround for "force this internal key" use case spelled out: build the `Tr` descriptor manually via `miniscript::Descriptor::new_tr` and pass through `WalletPolicy::from_descriptor`.
 - **Tier:** v0.7.x (closed)
 
+### `v010-p1-origin-paths-count-too-large-zero-message` — `OriginPathsCountTooLarge` Display message awkward when `count = 0`
+
+- **Surfaced:** v0.10.0 Phase 1 reviewer (commit `3b38242`). Spec §3 line 457 explicitly endorses one variant covering both bounds (`count == 0` and `count > 32`), and the implementer's docstring at `crates/md-codec/src/error.rs:514–530` documents this correctly. However, the `#[error("OriginPaths count {count} exceeds maximum {max}")]` template renders as "OriginPaths count 0 exceeds maximum 32" for the count-zero case — grammatical but semantically weak ("0 doesn't exceed 32 in arithmetic terms; it's just structurally invalid").
+- **Where:** `crates/md-codec/src/error.rs:524` (the `#[error(...)]` template on `BytecodeErrorKind::OriginPathsCountTooLarge`).
+- **What:** consider rewording the template to cover both bounds explicitly, e.g., `"OriginPaths count {count} is out of range (must be 1..={max})"`. Phase 2 introduces the actual `decode_origin_paths` callsite that surfaces this message; that's a natural revisit point.
+- **Why deferred:** the variant name + docstring already match the spec convention; the wording nit doesn't block Phase 2 and the actual check site lands in Phase 2, so any rewording is best done together with the implementation that exercises both bounds.
+- **Status:** resolved by Phase 2 inline-fix (per Phase 2 reviewer recommendation). Template reworded to `"OriginPaths count {count} is out of range (must be 1..={max})"`. Resolved in the Phase-2-followup commit alongside MAX_PATH_COMPONENTS cap + OriginPaths helpers.
+- **Tier:** v0.10-nice-to-have (closed)
+
+### `v010-p2-origin-paths-round-trip-spec-byte-pin` — Example B round-trip test pins prefix only
+
+- **Surfaced:** v0.10.0 Phase 2 reviewer (commit `1936b19`). The
+  `encode_origin_paths_round_trip_three_paths` test at
+  `crates/md-codec/src/bytecode/path.rs:1196–1227` asserts the first 5
+  bytes of the encoded output (`bytes[0..=4] = [0x36, 0x03, 0x05, 0x05, 0xFE]`)
+  but does not byte-pin the remaining 6 bytes (`04 61 01 01 C9 01`) of
+  the explicit-form third path. Spec §2 line 157 pins the full 11-byte
+  sequence `36 03 05 05 FE 04 61 01 01 C9 01`. The
+  `assert_eq!(recovered, paths)` round-trip provides indirect
+  verification but doesn't catch byte-level encoder drift in the
+  explicit-path tail.
+- **Where:** `crates/md-codec/src/bytecode/path.rs:1196–1227`
+  (`encode_origin_paths_round_trip_three_paths`).
+- **What:** strengthen the assertion to pin the full 11-byte sequence
+  per spec §2:
+  ```rust
+  assert_eq!(
+      bytes,
+      vec![0x36, 0x03, 0x05, 0x05, 0xFE, 0x04, 0x61, 0x01, 0x01, 0xC9, 0x01],
+      "must match spec §2 Example B byte sequence"
+  );
+  ```
+  Optionally keep the existing prefix-byte asserts as
+  documentation-of-layout, or replace them with the full-sequence
+  assert.
+- **Why deferred:** the round-trip eq-comparison provides indirect
+  verification of the explicit-path tail bytes (an encoder bug there
+  would cause decode mismatch), so the test is correct, just not
+  spec-pinned at maximum strength. Phase 4 conformance vectors will
+  also pin Example B's full byte sequence as a fixture, providing a
+  second line of defense.
+- **Status:** open
+- **Tier:** v0.10-nice-to-have
+
 ---
 
 ## Resolved items
