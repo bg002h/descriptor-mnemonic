@@ -412,7 +412,10 @@ impl WalletPolicy {
         // Per BIP §"Fingerprints block": the block, when present, follows the
         // path declaration and precedes the tree operators. The header bit 2
         // signals presence.
-        let header = BytecodeHeader::new_v0(opts.fingerprints.is_some());
+        // v0.10: second argument is the OriginPaths flag. Phase 4 will update
+        // this to dispatch on real path-divergence detection; for now, always
+        // pass `false` to preserve v0.9 behavior (no per-`@N` paths).
+        let header = BytecodeHeader::new_v0(opts.fingerprints.is_some(), false);
         let mut out = Vec::new();
         out.push(header.as_byte());
         out.extend_from_slice(&encode_declaration(&shared_path));

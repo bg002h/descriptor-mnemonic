@@ -2331,6 +2331,8 @@ fn error_variant_name(e: &crate::Error) -> &'static str {
         Error::Miniscript(_) => "Miniscript",
         Error::SubsetViolation { .. } => "SubsetViolation",
         Error::FingerprintsCountMismatch { .. } => "FingerprintsCountMismatch",
+        Error::OriginPathsCountMismatch { .. } => "OriginPathsCountMismatch",
+        Error::PathComponentCountExceeded { .. } => "PathComponentCountExceeded",
     }
 }
 

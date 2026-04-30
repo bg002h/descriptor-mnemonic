@@ -62,6 +62,8 @@ enum ErrorVariantName {
     SingleStringWithMultipleChunks,
     SubsetViolation,
     FingerprintsCountMismatch,
+    OriginPathsCountMismatch,
+    PathComponentCountExceeded,
 }
 
 /// For `InvalidBytecode` the expected substring is `rejects_invalid_bytecode_`

@@ -1065,6 +1065,7 @@ pub(crate) fn tag_to_bip388_name(tag: Tag) -> &'static str {
         Tag::Placeholder => "<framing:0x33>",
         Tag::SharedPath => "<framing:0x34>",
         Tag::Fingerprints => "<framing:0x35>",
+        Tag::OriginPaths => "<framing:0x36>",
     }
 }
 

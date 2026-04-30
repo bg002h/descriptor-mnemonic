@@ -125,6 +125,11 @@ pub enum Tag {
     /// Byte value preserved across v0.5→v0.6 for wire-format continuity
     /// of the v0.2-shipped fingerprints framing.
     Fingerprints = 0x35,
+    /// MD extension: per-`@N` origin paths block. NEW in v0.10.
+    ///
+    /// Present only when at least one placeholder's origin path diverges
+    /// from the implicit shared-path framing; signaled by header bit 3.
+    OriginPaths = 0x36,
 }
 
 impl Tag {
@@ -184,7 +189,8 @@ impl Tag {
             0x33 => Some(Tag::Placeholder),
             0x34 => Some(Tag::SharedPath),
             0x35 => Some(Tag::Fingerprints),
-            // 0x36-0xFF: reserved
+            0x36 => Some(Tag::OriginPaths),
+            // 0x37-0xFF: reserved
             _ => None,
         }
     }
@@ -275,6 +281,22 @@ mod tests {
     }
 
     #[test]
+    fn tag_origin_paths_byte_position() {
+        assert_eq!(Tag::OriginPaths.as_byte(), 0x36);
+        assert_eq!(Tag::from_byte(0x36), Some(Tag::OriginPaths));
+    }
+
+    #[test]
+    fn tag_v0_10_unallocated_starts_at_0x37() {
+        for b in 0x37..=0xFF_u8 {
+            assert!(
+                Tag::from_byte(b).is_none(),
+                "byte {b:#04x} should be unallocated"
+            );
+        }
+    }
+
+    #[test]
     fn tag_v0_6_unallocated_bytes() {
         // Reserved* range dropped (was 0x24-0x31 in v0.5)
         for b in 0x24u8..=0x31 {
@@ -291,9 +313,9 @@ mod tests {
     }
 
     #[test]
-    fn tag_v0_6_high_bytes_unallocated() {
-        // 0x36..=0xFF reserved (no change from v0.5)
-        for b in 0x36u8..=0xFF {
+    fn tag_v0_10_high_bytes_unallocated() {
+        // 0x37..=0xFF reserved (0x36 reclaimed in v0.10 as Tag::OriginPaths)
+        for b in 0x37u8..=0xFF {
             assert!(
                 Tag::from_byte(b).is_none(),
                 "byte {b:#04x} should be unallocated"
@@ -303,12 +325,12 @@ mod tests {
 
     #[test]
     fn tag_round_trip_all_defined() {
-        // v0.6 allocation: 0x00-0x23 contiguous, then 0x33-0x35.
+        // v0.10 allocation: 0x00-0x23 contiguous, then 0x33-0x36.
         // Gap: 0x24-0x32 (Reserved* dropped + Bare dropped + Placeholder moved up).
-        let v0_6_allocated: Vec<u8> = (0x00..=0x23).chain(0x33..=0x35).collect();
-        for b in v0_6_allocated {
+        let v0_10_allocated: Vec<u8> = (0x00..=0x23).chain(0x33..=0x36).collect();
+        for b in v0_10_allocated {
             let t = Tag::from_byte(b);
-            assert!(t.is_some(), "byte {b:#04x} should be a valid v0.6 tag");
+            assert!(t.is_some(), "byte {b:#04x} should be a valid v0.10 tag");
             assert_eq!(t.unwrap().as_byte(), b);
         }
     }
@@ -319,11 +341,11 @@ mod tests {
         for b in 0x24u8..=0x32 {
             assert!(
                 Tag::from_byte(b).is_none(),
-                "byte {b:#04x} should be rejected (v0.6 unallocated)"
+                "byte {b:#04x} should be rejected (v0.10 unallocated)"
             );
         }
-        // 0x36-0xFF: high range reserved
-        for b in 0x36u8..=0xFF {
+        // 0x37-0xFF: high range reserved (0x36 reclaimed in v0.10)
+        for b in 0x37u8..=0xFF {
             assert!(
                 Tag::from_byte(b).is_none(),
                 "byte {b:#04x} should be rejected (high range reserved)"
