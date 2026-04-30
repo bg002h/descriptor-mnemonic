@@ -45,7 +45,7 @@
 | `crates/md-codec/tests/conformance.rs` | Modify | New `rejects_origin_paths_count_too_large`, `rejects_path_component_count_exceeded`, `rejects_origin_paths_count_mismatch` tests |
 | `bip/bip-mnemonic-descriptor.mediawiki` | Modify | New §"Per-`@N` path declaration"; new §"Authority precedence with MK"; new §"PolicyId types"; soften 12-word phrase engraving language |
 | `README.md` | Modify | Update scope summary if it currently says "shared path only" |
-| `MIGRATION.md` | Modify | New `## v0.9.x → v0.10.0` section with `BytecodeHeader::new_v0` signature update + sed snippet |
+| `MIGRATION.md` | Modify | New `## v0.9.x → v0.10.0` section with: `BytecodeHeader::new_v0(bool)` → `new_v0(bool, bool)` signature update; `encode_path(&DerivationPath) -> Vec<u8>` → `Result<Vec<u8>, Error>` API break (per F6); sed snippet for the former; `?`-propagation guidance for the latter |
 | `CHANGELOG.md` | Modify | New `[0.10.0]` section with "Why a wire-format break?" callout |
 | `design/POLICY_BACKUP.md` | Modify | Update `Tag::RecoveryHints` slot from `0x36` → `0x37` |
 | `design/FOLLOWUPS.md` | Modify | Mark `md-per-at-N-path-tag-allocation` resolved |
@@ -1388,7 +1388,15 @@ Lead with "Why a wire-format break?" callout per spec §6 prose. Sections: Why a
 
 - [ ] **Step 6.9: Add MIGRATION `## v0.9.x → v0.10.0` section**
 
-Lead with brief "Why a wire-format break?" framing. Sections: What renamed/added/changed, Mechanical sed, Hand-rename items (`BytecodeHeader::new_v0` signature), Wire format, Test rewrite for `MAX_PATH_COMPONENTS`.
+Lead with brief "Why a wire-format break?" framing. Sections:
+
+- **What renamed/added/changed.**
+- **Mechanical sed** for `BytecodeHeader::new_v0(<flag>)` → `new_v0(<flag>, false)` (sets origin_paths default to false; callers wanting OriginPaths emission pass `true`).
+- **Hand-rename items** — two API breaks requiring per-call-site review:
+  - `BytecodeHeader::new_v0(bool)` → `new_v0(bool, bool)` (signature gains `origin_paths` arg).
+  - **`encode_path(&DerivationPath) -> Vec<u8>` becomes `encode_path(&DerivationPath) -> Result<Vec<u8>, Error>`** (per F6). Consumer call-site updates: append `?` to propagate `Error::PathComponentCountExceeded`, or `.expect("validated upstream")` where the caller has already pre-validated.
+- **Wire format** — header bit 3 reclaimed; old SharedPath-only encodings byte-identical; new OriginPaths encodings need v0.10+ decoders.
+- **Test rewrite** for the existing `decode_path_round_trip_multi_byte_component_count` (per F15): rewrite to exercise multi-byte LEB128 in the child-index dimension instead of the component-count dimension under the new cap.
 
 - [ ] **Step 6.10: Commit Phase 6**
 
@@ -1615,7 +1623,7 @@ Persist a hedge-audit report to `descriptor-mnemonic/design/agent-reports/v0-10-
 | F10 | nice-to-have | folded into Phase 6 implementer guidance — copy spec prose verbatim from §6 prose blocks. |
 | F11 | nice-to-have | not addressed inline; can fold into P5 by implementer if desired. |
 | F12 | confirmation | ✅ md-signer-compat audit pre-confirmed; no version bump needed. |
-| F13 | nice-to-have | folded into Step 4.2 — implementer maps each negative vector to its conformance test. |
+| F13 | nice-to-have | not inlined; implementer carries the negative-vector → conformance-test mapping (per pass-1 report) as guidance during Phase 4. |
 | F14 | nice-to-have | ✅ Pre-Phase-0 Step 3 baseline pinned to 678 tests. |
 | F15 | nice-to-have | ✅ Pre-Phase-0 Step 4 (NEW) bumps version to 0.10.0 before any vector regen. Phase 7 Step 7.2 becomes verification-only. |
 
