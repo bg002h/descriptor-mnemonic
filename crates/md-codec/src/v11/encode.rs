@@ -86,6 +86,13 @@ pub fn render_codex32_grouped(s: &str, group_size: usize) -> String {
     out
 }
 
+/// Encode a Descriptor into a complete codex32 md1 string (HRP + payload + BCH checksum).
+/// Returns the canonical single-string form.
+pub fn encode_md1_string(d: &Descriptor) -> Result<String, V11Error> {
+    let (bytes, bit_len) = encode_payload(d)?;
+    crate::v11::codex32::wrap_payload(&bytes, bit_len)
+}
+
 #[cfg(test)]
 mod render_tests {
     use super::*;
