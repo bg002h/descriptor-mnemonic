@@ -71,4 +71,27 @@ pub enum V11Error {
     /// Unknown extension tag value (after 0x1F primary prefix).
     #[error("unknown extension tag value 0x{0:02x}")]
     UnknownExtensionTag(u8),
+
+    /// Threshold k out of range; v0.11 requires 1 ≤ k ≤ 32.
+    #[error("threshold k={k} out of range; v0.11 requires 1 ≤ k ≤ 32")]
+    ThresholdOutOfRange {
+        /// Provided k value.
+        k: u8,
+    },
+
+    /// Variable-arity child count out of range.
+    #[error("child count {count} out of range; v0.11 requires 1 ≤ count ≤ 32")]
+    ChildCountOutOfRange {
+        /// Provided child count.
+        count: usize,
+    },
+
+    /// k > n in k-of-n threshold/multisig.
+    #[error("threshold k={k} exceeds child count n={n}; require k ≤ n")]
+    KGreaterThanN {
+        /// Threshold k.
+        k: u8,
+        /// Child count n.
+        n: usize,
+    },
 }

@@ -66,6 +66,20 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                 write_node(w, c, key_index_width)?;
             }
         }
+        Body::Variable { k, children } => {
+            // Encode k-1 in 5 bits per spec §4.2.
+            if !(1..=32).contains(&(*k as u32)) {
+                return Err(V11Error::ThresholdOutOfRange { k: *k });
+            }
+            if !(1..=32).contains(&(children.len() as u32)) {
+                return Err(V11Error::ChildCountOutOfRange { count: children.len() });
+            }
+            w.write_bits((*k - 1) as u64, 5);
+            w.write_bits((children.len() - 1) as u64, 5);
+            for c in children {
+                write_node(w, c, key_index_width)?;
+            }
+        }
         _ => unimplemented!("filled in later phases"),
     }
     Ok(())
@@ -109,6 +123,18 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, V11Erro
             let l = read_node(r, key_index_width)?;
             let r2 = read_node(r, key_index_width)?;
             Body::Children(vec![l, r2])
+        }
+        Tag::Multi | Tag::SortedMulti | Tag::MultiA | Tag::SortedMultiA | Tag::Thresh => {
+            let k = (r.read_bits(5)? + 1) as u8;
+            let count = (r.read_bits(5)? + 1) as usize;
+            if k as usize > count {
+                return Err(V11Error::KGreaterThanN { k, n: count });
+            }
+            let mut children = Vec::with_capacity(count);
+            for _ in 0..count {
+                children.push(read_node(r, key_index_width)?);
+            }
+            Body::Variable { k, children }
         }
         _ => unimplemented!("filled in later phases"),
     };
@@ -176,5 +202,44 @@ mod tests {
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    #[test]
+    fn sortedmulti_2of3_round_trip() {
+        let n = Node {
+            tag: Tag::SortedMulti,
+            body: Body::Variable {
+                k: 2,
+                children: vec![
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                ],
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    #[test]
+    fn sortedmulti_2of3_bit_cost() {
+        // Tag(5) + k=2 (5, encoded 1) + n=3 (5, encoded 2) + 3× PkK (5+2 each = 7) = 5+5+5+21 = 36
+        let n = Node {
+            tag: Tag::SortedMulti,
+            body: Body::Variable {
+                k: 2,
+                children: vec![
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                ],
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        assert_eq!(w.bit_len(), 36);
     }
 }
