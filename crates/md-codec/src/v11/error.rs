@@ -40,4 +40,20 @@ pub enum V11Error {
         /// Maximum allowed depth (15).
         max: usize,
     },
+
+    /// Key count n out of range; v0.11 requires 1 ≤ n ≤ 32.
+    #[error("key count {n} out of range; v0.11 requires 1 ≤ n ≤ 32")]
+    KeyCountOutOfRange {
+        /// Actual key count provided.
+        n: u8,
+    },
+
+    /// Divergent path count doesn't match key count.
+    #[error("divergent path count {got} does not match key count {n}")]
+    DivergentPathCountMismatch {
+        /// Expected key count.
+        n: u8,
+        /// Actual path count provided.
+        got: usize,
+    },
 }

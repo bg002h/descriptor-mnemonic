@@ -75,6 +75,68 @@ impl OriginPath {
     }
 }
 
+/// A path declaration: key count `n` plus either a shared origin path or
+/// `n` divergent origin paths (mode selected by header bit 4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathDecl {
+    /// Key count, 1..=32 (encoded on the wire as `n - 1` in 5 bits).
+    pub n: u8,
+    /// Path payload — shared (single path) or divergent (one per key).
+    pub paths: PathDeclPaths,
+}
+
+/// Path payload for a [`PathDecl`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathDeclPaths {
+    /// Single origin path shared by all `n` keys (header bit 4 = 0).
+    Shared(OriginPath),
+    /// `n` distinct origin paths, one per key (header bit 4 = 1).
+    Divergent(Vec<OriginPath>),
+}
+
+impl PathDecl {
+    /// Encode this `PathDecl` into `w`. The mode (shared vs divergent) is
+    /// determined by `self.paths`; the caller is responsible for setting
+    /// header bit 4 to match.
+    pub fn write(&self, w: &mut BitWriter) -> Result<(), V11Error> {
+        if !(1..=32).contains(&(self.n as u32)) {
+            return Err(V11Error::KeyCountOutOfRange { n: self.n });
+        }
+        // Encode n-1 in 5 bits per spec §4.2 (count - 1 offset).
+        w.write_bits((self.n - 1) as u64, 5);
+        match &self.paths {
+            PathDeclPaths::Shared(p) => p.write(w)?,
+            PathDeclPaths::Divergent(paths) => {
+                if paths.len() != self.n as usize {
+                    return Err(V11Error::DivergentPathCountMismatch {
+                        n: self.n,
+                        got: paths.len(),
+                    });
+                }
+                for p in paths {
+                    p.write(w)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Decode a `PathDecl` from `r` using `divergent_mode` (header bit 4).
+    pub fn read(r: &mut BitReader, divergent_mode: bool) -> Result<Self, V11Error> {
+        let n = (r.read_bits(5)? + 1) as u8;
+        let paths = if divergent_mode {
+            let mut paths = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                paths.push(OriginPath::read(r)?);
+            }
+            PathDeclPaths::Divergent(paths)
+        } else {
+            PathDeclPaths::Shared(OriginPath::read(r)?)
+        };
+        Ok(Self { n, paths })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +180,81 @@ mod tests {
         assert!(matches!(
             p.write(&mut w),
             Err(V11Error::PathDepthExceeded { got: 16, max: 15 })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod path_decl_tests {
+    use super::*;
+
+    #[test]
+    fn path_decl_shared_round_trip() {
+        let p = PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(OriginPath {
+                components: vec![
+                    PathComponent { hardened: true, value: 84 },
+                    PathComponent { hardened: true, value: 0 },
+                    PathComponent { hardened: true, value: 0 },
+                ],
+            }),
+        };
+        let mut w = BitWriter::new();
+        p.write(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(PathDecl::read(&mut r, false).unwrap(), p);
+    }
+
+    #[test]
+    fn path_decl_shared_bit_cost_bip84() {
+        // n(5) + depth(4) + 84' (1+11) + 0' (1+4) + 0' (1+4) = 31 bits
+        let p = PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(OriginPath {
+                components: vec![
+                    PathComponent { hardened: true, value: 84 },
+                    PathComponent { hardened: true, value: 0 },
+                    PathComponent { hardened: true, value: 0 },
+                ],
+            }),
+        };
+        let mut w = BitWriter::new();
+        p.write(&mut w).unwrap();
+        assert_eq!(w.bit_len(), 31);
+    }
+
+    #[test]
+    fn path_decl_divergent_round_trip() {
+        let p = PathDecl {
+            n: 2,
+            paths: PathDeclPaths::Divergent(vec![
+                OriginPath {
+                    components: vec![PathComponent { hardened: true, value: 84 }],
+                },
+                OriginPath {
+                    components: vec![PathComponent { hardened: true, value: 86 }],
+                },
+            ]),
+        };
+        let mut w = BitWriter::new();
+        p.write(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(PathDecl::read(&mut r, true).unwrap(), p);
+    }
+
+    #[test]
+    fn path_decl_n_zero_rejected() {
+        let p = PathDecl {
+            n: 0,
+            paths: PathDeclPaths::Shared(OriginPath { components: vec![] }),
+        };
+        let mut w = BitWriter::new();
+        assert!(matches!(
+            p.write(&mut w),
+            Err(V11Error::KeyCountOutOfRange { n: 0 })
         ));
     }
 }
