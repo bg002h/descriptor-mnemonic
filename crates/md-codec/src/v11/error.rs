@@ -56,4 +56,11 @@ pub enum V11Error {
         /// Actual path count provided.
         got: usize,
     },
+
+    /// Multipath alt-count out of range; v0.11 requires 2 ≤ count ≤ 9.
+    #[error("multipath alt-count {got} out of range; v0.11 requires 2 ≤ count ≤ 9")]
+    AltCountOutOfRange {
+        /// Provided alt-count.
+        got: usize,
+    },
 }
