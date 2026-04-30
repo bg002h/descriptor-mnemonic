@@ -176,15 +176,14 @@ pub fn split(d: &Descriptor) -> Result<Vec<String>, V11Error> {
     // Choose chunk count from payload byte count (≤7 bits of trailing
     // codex32-padding are tolerated by the reassembled-stream TLV-rollback).
     let payload_bit_count_for_sizing = payload_bytes.len() * 8;
-    let chunks_needed = (payload_bit_count_for_sizing + SINGLE_STRING_PAYLOAD_BIT_LIMIT - 1)
-        / SINGLE_STRING_PAYLOAD_BIT_LIMIT;
+    let chunks_needed = payload_bit_count_for_sizing.div_ceil(SINGLE_STRING_PAYLOAD_BIT_LIMIT);
     if chunks_needed > 64 {
         return Err(V11Error::ChunkCountExceedsMax { needed: chunks_needed });
     }
     let count: u8 = if chunks_needed == 0 { 1 } else { chunks_needed as u8 };
 
     // Split payload into `count` byte-boundary slices.
-    let bytes_per_chunk = (payload_bytes.len() + count as usize - 1) / count as usize;
+    let bytes_per_chunk = payload_bytes.len().div_ceil(count as usize);
 
     let mut chunks = Vec::with_capacity(count as usize);
     for index in 0..count {
