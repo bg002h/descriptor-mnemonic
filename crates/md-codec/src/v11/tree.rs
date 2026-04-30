@@ -242,4 +242,25 @@ mod tests {
         write_node(&mut w, &n, 2).unwrap();
         assert_eq!(w.bit_len(), 36);
     }
+
+    #[test]
+    fn thresh_2of3_with_pk_children() {
+        // thresh(2, pk_k(@0), pk_k(@1), pk_k(@2))
+        let n = Node {
+            tag: Tag::Thresh,
+            body: Body::Variable {
+                k: 2,
+                children: vec![
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                ],
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
 }
