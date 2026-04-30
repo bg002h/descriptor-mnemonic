@@ -132,6 +132,11 @@ breaking.)
   `md encode --policy-id-fingerprint` flag and renaming the existing
   `md encode --fingerprint` to `--master-key-fingerprint` (the naming
   conflict the deferral cited).
+- `bip-byte-layout-examples-stale-v0_6-renumber` — closed in-cycle by
+  sweeping stale `Tag::Placeholder = 0x32` and `Tag::SharedPath = 0x33`
+  references in the BIP byte-layout examples (correct values for v0.6+:
+  `0x33` and `0x34`); also fixed a stale `Tag::Multi = 0x19` reference
+  (correct: `0x08`) in the same example.
 
 ### FOLLOWUPS deferred
 
