@@ -213,4 +213,39 @@ pub enum V11Error {
     /// Codex32 encode error (BCH layer failure).
     #[error("codex32 encode error: {0}")]
     Codex32EncodeError(String),
+
+    /// Chunk set is empty (no strings provided to reassemble).
+    #[error("chunk set is empty (no strings provided)")]
+    ChunkSetEmpty,
+
+    /// Chunks in the set disagree on version, chunk-set-id, or count.
+    #[error("chunks in the set disagree on version, chunk-set-id, or count")]
+    ChunkSetInconsistent,
+
+    /// Chunk set incomplete: got fewer chunks than `expected`.
+    #[error("chunk set incomplete: got {got} chunks, expected {expected}")]
+    ChunkSetIncomplete {
+        /// Provided chunk count.
+        got: usize,
+        /// Expected chunk count.
+        expected: usize,
+    },
+
+    /// Chunk index gap: expected index N, got M.
+    #[error("chunk index gap: expected index {expected}, got {got}")]
+    ChunkIndexGap {
+        /// Expected index in the sequence.
+        expected: u8,
+        /// Actual index encountered.
+        got: u8,
+    },
+
+    /// Chunk-set-id mismatch between expected and reassembled-then-derived.
+    #[error("chunk-set-id mismatch: expected 0x{expected:x}, derived 0x{derived:x}")]
+    ChunkSetIdMismatch {
+        /// Expected (from chunks).
+        expected: u32,
+        /// Derived (from reassembled payload).
+        derived: u32,
+    },
 }

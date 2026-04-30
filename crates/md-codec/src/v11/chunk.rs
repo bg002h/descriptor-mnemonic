@@ -213,3 +213,102 @@ pub fn split(d: &Descriptor) -> Result<Vec<String>, V11Error> {
     }
     Ok(chunks)
 }
+
+use crate::v11::decode::decode_payload;
+
+/// Reassemble a [`Descriptor`] from N md1 codex32 strings.
+///
+/// Algorithm:
+/// 1. Unwrap each string via the codex32 layer (verifies BCH per chunk).
+/// 2. Parse the 37-bit chunk header from each.
+/// 3. Validate consistency: same version, chunk_set_id, count.
+/// 4. Sort by index; verify `0..count-1` with no gaps.
+/// 5. Concatenate per-chunk payload bytes.
+/// 6. Decode the reassembled payload via [`decode_payload`].
+/// 7. Verify the reassembled payload's derived chunk-set-id matches the
+///    chunk-set-id present in every chunk header (cross-chunk integrity).
+pub fn reassemble(strings: &[&str]) -> Result<Descriptor, V11Error> {
+    use crate::v11::bitstream::BitReader;
+    use crate::v11::codex32::unwrap_string;
+    use crate::v11::identity::compute_md1_encoding_id;
+
+    if strings.is_empty() {
+        return Err(V11Error::ChunkSetEmpty);
+    }
+
+    // Unwrap each, parse 37-bit chunk header, then read whole payload bytes.
+    // Use the symbol-aligned bit count returned by `unwrap_string` (NOT
+    // `bytes.len() * 8`, which would over-estimate by up to 7 bits and break
+    // round-trip for chunks where symbol-padding plus byte-padding crosses a
+    // byte boundary — e.g. N=3, N=8, etc.).
+    let mut parsed: Vec<(ChunkHeader, Vec<u8>)> = Vec::with_capacity(strings.len());
+    for s in strings {
+        let (bytes, symbol_aligned_bit_count) = unwrap_string(s)?;
+        let mut r = BitReader::with_bit_limit(&bytes, symbol_aligned_bit_count);
+        let header = ChunkHeader::read(&mut r)?;
+        // Per encoder contract: chunk wire is exactly 37 + 8N bits. The
+        // symbol-aligned bit count is `ceil((37+8N)/5) * 5`, which is in
+        // [37+8N, 37+8N+4]. So `(symbol_aligned_bit_count - 37) / 8`
+        // (floor) recovers exactly N.
+        let payload_byte_count = (symbol_aligned_bit_count - 37) / 8;
+        let mut chunk_payload_bytes = Vec::with_capacity(payload_byte_count);
+        for _ in 0..payload_byte_count {
+            let v = r.read_bits(8)? as u8;
+            chunk_payload_bytes.push(v);
+        }
+        // Trailing ≤4 symbol-padding bits remain in r; discard.
+        parsed.push((header, chunk_payload_bytes));
+    }
+
+    // Validate consistency.
+    let (h0, _) = &parsed[0];
+    let expected_count = h0.count;
+    let expected_csid = h0.chunk_set_id;
+    let expected_version = h0.version;
+    for (h, _) in &parsed {
+        if h.count != expected_count
+            || h.chunk_set_id != expected_csid
+            || h.version != expected_version
+        {
+            return Err(V11Error::ChunkSetInconsistent);
+        }
+    }
+    if parsed.len() != expected_count as usize {
+        return Err(V11Error::ChunkSetIncomplete {
+            got: parsed.len(),
+            expected: expected_count as usize,
+        });
+    }
+
+    // Sort by index; verify 0..count-1 with no gaps.
+    parsed.sort_by_key(|(h, _)| h.index);
+    for (i, (h, _)) in parsed.iter().enumerate() {
+        if h.index as usize != i {
+            return Err(V11Error::ChunkIndexGap {
+                expected: i as u8,
+                got: h.index,
+            });
+        }
+    }
+
+    // Concatenate chunk payload bytes.
+    let mut full_bytes = Vec::new();
+    for (_, chunk_bytes) in &parsed {
+        full_bytes.extend_from_slice(chunk_bytes);
+    }
+
+    // Decode payload. bit_len = bytes.len() * 8; TLV-rollback handles trailing padding.
+    let descriptor = decode_payload(&full_bytes, full_bytes.len() * 8)?;
+
+    // Cross-chunk integrity check.
+    let md1_id = compute_md1_encoding_id(&descriptor)?;
+    let derived_csid = derive_chunk_set_id(&md1_id);
+    if derived_csid != expected_csid {
+        return Err(V11Error::ChunkSetIdMismatch {
+            expected: expected_csid,
+            derived: derived_csid,
+        });
+    }
+
+    Ok(descriptor)
+}

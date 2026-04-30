@@ -50,3 +50,13 @@ fn chunk_set_id_matches_md1_encoding_id_top_20_bits() {
     let expected = ((bytes[0] as u32) << 12) | ((bytes[1] as u32) << 4) | ((bytes[2] as u32) >> 4);
     assert_eq!(derived, expected);
 }
+
+#[test]
+fn small_descriptor_split_then_reassemble() {
+    use md_codec::v11::chunk::reassemble;
+    let d = small_descriptor();
+    let chunks = split(&d).unwrap();
+    let chunk_refs: Vec<&str> = chunks.iter().map(|s| s.as_str()).collect();
+    let d2 = reassemble(&chunk_refs).unwrap();
+    assert_eq!(d, d2);
+}
