@@ -7,3 +7,4 @@
 
 pub mod error;
 pub mod bitstream;
+pub mod varint;
