@@ -157,6 +157,7 @@ pub mod policy_compiler;
 pub mod policy_id;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
+pub mod v11;
 pub mod vectors;
 
 pub use chunking::{
@@ -181,6 +182,22 @@ pub use policy_id::{
     compute_policy_id_for_policy, compute_wallet_instance_id,
 };
 pub use vectors::{NegativeVector, TestVectorFile, Vector};
+
+// v0.11 wire format (canonical going forward).
+pub use v11::chunk::{ChunkHeader as V11ChunkHeader, derive_chunk_set_id, reassemble, split};
+pub use v11::decode::{decode_md1_string, decode_payload};
+pub use v11::encode::{Descriptor, encode_md1_string, encode_payload};
+pub use v11::error::V11Error;
+pub use v11::identity::{
+    Md1EncodingId, WalletDescriptorTemplateId, compute_md1_encoding_id,
+    compute_wallet_descriptor_template_id,
+};
+pub use v11::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
+pub use v11::phrase::Phrase;
+pub use v11::tag::Tag as V11Tag;
+pub use v11::tlv::TlvSection;
+pub use v11::tree::{Body, Node};
+pub use v11::use_site_path::{Alternative, UseSitePath};
 
 /// Encode a [`WalletPolicy`] as canonical MD bytecode.
 ///
