@@ -205,22 +205,22 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** wont-fix — out of scope per design (2026-04-28 decision: drop the Reserved\* range entirely as part of `md-tag-space-rework`; MD's BIP 388 wallet-policy framing explicitly forbids inline keys, and the descriptor-codec inline-key-form vendoring is dead weight relative to MD's stated scope. Engravable steel backup is incompatible with raw-xpub or full-pubkey encoding by size alone — a separate format with its own HRP would be the right home if anyone ever wanted that, not a v1+ extension of MD)
 - **Tier:** v1+ → wont-fix
 
-### `external-pr-1-hash-terminals` — apoelstra/rust-miniscript PR #1
+### `external-pr-1-hash-terminals` — rust-bitcoin/rust-miniscript PR #935
 
-- **Surfaced:** Phase 5-B; submitted 2026-04-27
-- **Where:** https://github.com/apoelstra/rust-miniscript/pull/1
-- **What:** PR fixing `WalletPolicyTranslator` to support hash terminals (sha256/hash256/ripemd160/hash160). Until merged, our workspace `[patch]` redirects to a local clone of the patched fork.
-- **Why deferred:** waiting for upstream maintainer review.
+- **Surfaced:** Phase 5-B; submitted 2026-04-27 (originally as `apoelstra/rust-miniscript#1`); re-routed to true upstream as `rust-bitcoin/rust-miniscript#935` on 2026-04-29.
+- **Where:** https://github.com/rust-bitcoin/rust-miniscript/pull/935 (closed predecessor: https://github.com/apoelstra/rust-miniscript/pull/1)
+- **What:** PR replacing `translate_hash_fail!` with real translator implementations in `WalletPolicyTranslator` (both directions) so BIP 388 templates with hash terminals (`sha256`/`hash256`/`ripemd160`/`hash160`) round-trip through `WalletPolicy::from_descriptor` and `WalletPolicy::into_descriptor`. Adds a new `WalletPolicyError::TranslatorInvalidHashHex(&'static str, String)` variant. Without the fix, those templates return `WalletPolicyError` (graceful failure via `translate_hash_fail!`), so md-codec's hash-terminal test vectors (e.g. `wsh(andor(pk(@0/**),sha256(...),...))`) cannot encode/decode. Until merged, our workspace `[patch]` redirects to a local clone of the patched fork.
+- **Why deferred:** waiting for upstream maintainer review. Originally framed as a "panic fix" — that wording was inaccurate; the upstream behavior is graceful `WalletPolicyError` return, and our PR adds real hash-terminal SUPPORT (a feature) rather than fixing a panic.
 - **Status:** open
 - **Tier:** external
 
-### `external-pr-2-template-accessor` — apoelstra/rust-miniscript PR #2
+### `external-pr-2-template-accessor` — rust-bitcoin/rust-miniscript PR #936
 
-- **Surfaced:** v0.10 follow-up 2026-04-29; submitted same day
-- **Where:** https://github.com/apoelstra/rust-miniscript/pull/2
+- **Surfaced:** v0.10 follow-up 2026-04-29; originally as `apoelstra/rust-miniscript#2`; re-routed to true upstream as `rust-bitcoin/rust-miniscript#936` on 2026-04-29.
+- **Where:** https://github.com/rust-bitcoin/rust-miniscript/pull/936 (closed predecessor: https://github.com/apoelstra/rust-miniscript/pull/2)
 - **What:** PR adding `WalletPolicy::template() -> &Descriptor<KeyExpression>` and `WalletPolicy::key_info() -> &[DescriptorPublicKey]` accessors so external consumers (specifically md-codec's per-`@N` divergent-path encoder) can walk a policy in placeholder-index order without consuming it via `into_descriptor()`. Re-exports `KeyExpression`/`KeyIndex` at `miniscript::descriptor::*`. The motivating case is multipath-shared `@N` placeholders (e.g. `sh(multi(1,@0/**,@0/<2;3>/*))`) where `into_descriptor()` erases placeholder identity.
-- **Why deferred:** waiting for upstream maintainer review. Until merged, the workspace `[patch]` redirects to the local `md-codec-local-stack` branch in the `rust-miniscript-fork` sibling clone, which stacks this commit on top of `fix/wallet-policy-hash-terminals` (PR #1).
-- **Coordination:** PR #1 (`external-pr-1-hash-terminals`) and PR #2 are independent — either can land first. The `md-codec-local-stack` branch is local-only by design (pushing would pollute the per-PR branches). When PR #2 merges, strip its commit from `md-codec-local-stack` and update the workspace `[patch]` rationale; when both PRs merge, the `[patch]` block can be removed and the SHA pin bumped to upstream.
+- **Why deferred:** waiting for upstream maintainer review. Until merged, the workspace `[patch]` redirects to the local `md-codec-local-stack` branch in the `rust-miniscript-fork` sibling clone, which stacks this commit on top of `fix/wallet-policy-hash-terminals` (the PR #1 branch).
+- **Coordination:** PR #1 (`external-pr-1-hash-terminals`, at `rust-bitcoin/rust-miniscript#935`) and PR #2 (now at `rust-bitcoin/rust-miniscript#936`) are independent — either can land first. The `md-codec-local-stack` branch is a dedicated separate branch (pushed to the fork remote so CI can clone it) so neither PR's history is polluted. When PR #2 merges, strip its commit from `md-codec-local-stack` and update the workspace `[patch]` rationale; when both PRs merge, the `[patch]` block can be removed and the SHA pin bumped to upstream. Cross-linked from `rust-bitcoin/rust-miniscript#934` (the AST-order issue).
 - **Downstream value:** unblocks `v010-p3-tier-2-kiv-walk-deferred` (the v0.10.0 Tier 2 KIV walk stub), targeted for v0.10.1 or v0.11.
 - **Status:** open
 - **Tier:** external
