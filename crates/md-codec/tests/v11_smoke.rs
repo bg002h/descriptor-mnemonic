@@ -165,3 +165,74 @@ fn bip48_2of3_md1_string_round_trip() {
     let d2 = md_codec::v11::decode::decode_md1_string(&s).unwrap();
     assert_eq!(d, d2);
 }
+
+#[test]
+fn bip86_taproot_md1_string_round_trip() {
+    let d = Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(OriginPath {
+                components: vec![
+                    PathComponent { hardened: true, value: 86 },
+                    PathComponent { hardened: true, value: 0 },
+                    PathComponent { hardened: true, value: 0 },
+                ],
+            }),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Tr,
+            body: Body::Tr { key_index: 0, tree: None },
+        },
+        tlv: TlvSection::new_empty(),
+    };
+    let s = md_codec::v11::encode::encode_md1_string(&d).unwrap();
+    let d2 = md_codec::v11::decode::decode_md1_string(&s).unwrap();
+    assert_eq!(d, d2);
+}
+
+#[test]
+fn vault_or_d_pk_older_md1_string_round_trip() {
+    // wsh(or_d(pk(@0), and_v(v:older(144), pk(@1))))
+    let d = Descriptor {
+        n: 2,
+        path_decl: PathDecl {
+            n: 2,
+            paths: PathDeclPaths::Shared(OriginPath {
+                components: vec![
+                    PathComponent { hardened: true, value: 84 },
+                    PathComponent { hardened: true, value: 0 },
+                    PathComponent { hardened: true, value: 0 },
+                ],
+            }),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![Node {
+                tag: Tag::OrD,
+                body: Body::Children(vec![
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                    Node {
+                        tag: Tag::AndV,
+                        body: Body::Children(vec![
+                            Node {
+                                tag: Tag::Verify,
+                                body: Body::Children(vec![Node {
+                                    tag: Tag::Older,
+                                    body: Body::Timelock(144),
+                                }]),
+                            },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                        ]),
+                    },
+                ]),
+            }]),
+        },
+        tlv: TlvSection::new_empty(),
+    };
+    let s = md_codec::v11::encode::encode_md1_string(&d).unwrap();
+    let d2 = md_codec::v11::decode::decode_md1_string(&s).unwrap();
+    assert_eq!(d, d2);
+}
