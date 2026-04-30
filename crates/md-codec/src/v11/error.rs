@@ -199,6 +199,13 @@ pub enum V11Error {
     #[error("chunk header chunked-flag missing; bit 3 must be 1 for chunk headers")]
     ChunkHeaderChunkedFlagMissing,
 
+    /// Encoding requires more chunks than the spec maximum (64).
+    #[error("encoding requires {needed} chunks; max is 64 per spec §9.8")]
+    ChunkCountExceedsMax {
+        /// Number of chunks needed.
+        needed: usize,
+    },
+
     /// Codex32 decode error (HRP mismatch, alphabet violation, BCH verification failure).
     #[error("codex32 decode error: {0}")]
     Codex32DecodeError(String),
