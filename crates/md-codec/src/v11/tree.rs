@@ -295,4 +295,30 @@ mod tests {
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 2).unwrap(), n);
     }
+
+    #[test]
+    fn tr_with_single_leaf() {
+        // tr(@0, multi_a(2, @1, @2))
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::MultiA,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                        ],
+                    },
+                })),
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
 }
