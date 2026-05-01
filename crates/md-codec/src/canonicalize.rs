@@ -1,4 +1,5 @@
-//! BIP 388 placeholder-ordering canonicalization per spec v0.13 §6.1.
+//! BIP 388 placeholder-ordering canonicalization per spec v0.13 §6.1, plus
+//! per-`@N` canonical-fill expansion per §5.3 / §6.3.
 //!
 //! BIP 388 wallet policies require placeholder indices `@0..@{N-1}` to be
 //! introduced in the descriptor template in canonical first-occurrence order:
@@ -26,11 +27,17 @@
 //! [`crate::validate::validate_placeholder_usage`] rejects non-canonical
 //! wires up-front via
 //! [`Error::PlaceholderFirstOccurrenceOutOfOrder`].
+//!
+//! [`expand_per_at_n`] resolves each `@N` to a fully-populated
+//! [`ExpandedKey`] (origin, use-site, optional fp/xpub) by composing the
+//! per-`@N` TLV overrides with the descriptor-level baselines. Used by
+//! Phase 4's `WalletPolicyId` construction and Phase 5's decoder validation.
 
 use crate::encode::Descriptor;
 use crate::error::Error;
-use crate::origin_path::PathDeclPaths;
+use crate::origin_path::{OriginPath, PathDeclPaths};
 use crate::tree::{Body, Node};
+use crate::use_site_path::UseSitePath;
 
 /// Walk `node` in pre-order, recording the first occurrence of each
 /// placeholder index in `first_occurrences`. `seen[i]` toggles to `true`
@@ -261,6 +268,139 @@ fn tlv_indices_strictly_ascending_and_in_range(d: &Descriptor) -> bool {
         && check(&d.tlv.fingerprints, d.n)
         && check(&d.tlv.pubkeys, d.n)
         && check(&d.tlv.origin_path_overrides, d.n)
+}
+
+/// Fully-resolved per-`@N` key record produced by [`expand_per_at_n`].
+///
+/// Each field is populated via the canonical-fill / per-`@N` override
+/// composition rules (spec v0.13 §5.3 + §6.3, "Option A"):
+///
+/// - `origin_path`: `OriginPathOverrides[idx]` if present, else
+///   `path_decl` resolved per the `Shared` / `Divergent` variant.
+/// - `use_site_path`: `UseSitePathOverrides[idx]` if present, else
+///   `Descriptor::use_site_path` (the descriptor-level baseline).
+/// - `fingerprint`: `Fingerprints[idx]` if present, else `None`.
+/// - `xpub`: `Pubkeys[idx]` if present, else `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpandedKey {
+    /// Placeholder index `@N`; equals position in the returned `Vec`.
+    pub idx: u8,
+    /// Resolved origin path (per-`@N` override or `path_decl` baseline).
+    pub origin_path: OriginPath,
+    /// Resolved use-site path (per-`@N` override or descriptor baseline).
+    pub use_site_path: UseSitePath,
+    /// 4-byte master fingerprint, if a `Fingerprints` entry is present.
+    pub fingerprint: Option<[u8; 4]>,
+    /// 65-byte xpub (32 chain-code || 33 compressed pubkey), if a
+    /// `Pubkeys` entry is present.
+    pub xpub: Option<[u8; 65]>,
+}
+
+/// Linearly look up an `idx` key in a sparse, ascending `(idx, value)`
+/// vector. Returns the matching value by reference, or `None` if absent.
+///
+/// Sparse TLV maps are kept small (at most `d.n` entries, n ≤ 32), so a
+/// linear scan is the obvious choice over a binary search or BTreeMap.
+fn sparse_lookup<T>(v: &Option<Vec<(u8, T)>>, idx: u8) -> Option<&T> {
+    v.as_ref()
+        .and_then(|entries| entries.iter().find(|(i, _)| *i == idx).map(|(_, t)| t))
+}
+
+/// Expand a [`Descriptor`] into a vector of [`ExpandedKey`] records — one
+/// per `@N` in `0..d.n` — by composing per-`@N` TLV overrides with the
+/// descriptor-level baselines (spec v0.13 §5.3 / §6.3, "Option A").
+///
+/// Used by Phase 4's `WalletPolicyId` construction (the canonical-fill
+/// hash input is built from this vector) and Phase 5's decoder validation
+/// (the `MissingExplicitOrigin` check).
+///
+/// # Precondition
+///
+/// The caller MUST have already invoked
+/// [`canonicalize_placeholder_indices`] on `d`, or `d` must have been
+/// produced by the decoder (which rejects non-canonical wires up-front).
+/// Expansion does not re-canonicalize; passing a non-canonical descriptor
+/// produces semantically meaningful but `@N`-mis-aligned output.
+///
+/// # Resolution rules
+///
+/// Per `idx` in `0..d.n`:
+/// - **origin**: `OriginPathOverrides[idx]` if present; else
+///   `path_decl.paths` resolved by variant — `Shared(p)` returns `p` for
+///   every idx, `Divergent(v)` returns `v[idx]`.
+/// - **use-site**: `UseSitePathOverrides[idx]` if present; else
+///   `d.use_site_path` (the descriptor-level baseline that already
+///   carries the standard-multipath default when the wire elided it).
+/// - **fp**: `Fingerprints[idx]` if present, else `None`.
+/// - **xpub**: `Pubkeys[idx]` if present, else `None`.
+///
+/// # Errors
+///
+/// Returns [`Error::MissingExplicitOrigin`] when the resolved origin path
+/// for `idx` is empty (depth-0) AND `OriginPathOverrides[idx]` is absent
+/// AND [`crate::canonical_origin::canonical_origin`] returns `None` for
+/// `d.tree`. This is the structurally-rare "non-canonical wrapper without
+/// any user-supplied path" case; v0.11 wires already require `path_decl`
+/// to be populated, so this surfaces only when the shared-form path is
+/// itself empty.
+///
+/// Returns [`Error::DivergentPathCountMismatch`] if `path_decl.paths` is
+/// `Divergent(v)` and `v.len() != d.n` — a malformed descriptor that the
+/// v0.11 decoder would already reject; surfaced here defensively.
+pub fn expand_per_at_n(d: &Descriptor) -> Result<Vec<ExpandedKey>, Error> {
+    // Defensive: malformed descriptors with mismatched divergent path
+    // counts cannot be structurally exercised post-decode (v0.11 enforces
+    // n == divergent.len() during PathDecl::read), but check anyway so a
+    // hand-built Descriptor can't slip past.
+    if let PathDeclPaths::Divergent(paths) = &d.path_decl.paths {
+        if paths.len() != d.n as usize {
+            return Err(Error::DivergentPathCountMismatch {
+                n: d.n,
+                got: paths.len(),
+            });
+        }
+    }
+
+    let mut out = Vec::with_capacity(d.n as usize);
+    for idx in 0..d.n {
+        // Origin resolution: per-@N override beats path_decl baseline.
+        let origin_path = if let Some(p) = sparse_lookup(&d.tlv.origin_path_overrides, idx) {
+            p.clone()
+        } else {
+            match &d.path_decl.paths {
+                PathDeclPaths::Shared(p) => p.clone(),
+                PathDeclPaths::Divergent(v) => v[idx as usize].clone(),
+            }
+        };
+
+        // Structurally-rare: shared (or divergent) baseline path is empty
+        // AND no override present AND wrapper has no canonical default.
+        // This is the only path in v0.11+v0.13 where MissingExplicitOrigin
+        // can be raised.
+        if origin_path.components.is_empty()
+            && sparse_lookup(&d.tlv.origin_path_overrides, idx).is_none()
+            && crate::canonical_origin::canonical_origin(&d.tree).is_none()
+        {
+            return Err(Error::MissingExplicitOrigin { idx });
+        }
+
+        // Use-site resolution: per-@N override beats descriptor baseline.
+        let use_site_path = sparse_lookup(&d.tlv.use_site_path_overrides, idx)
+            .cloned()
+            .unwrap_or_else(|| d.use_site_path.clone());
+
+        let fingerprint = sparse_lookup(&d.tlv.fingerprints, idx).copied();
+        let xpub = sparse_lookup(&d.tlv.pubkeys, idx).copied();
+
+        out.push(ExpandedKey {
+            idx,
+            origin_path,
+            use_site_path,
+            fingerprint,
+            xpub,
+        });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -785,5 +925,325 @@ mod tests {
             canonicalize_placeholder_indices(&mut decoded_mut).unwrap();
             assert_eq!(canonical, decoded_mut);
         }
+    }
+}
+
+#[cfg(test)]
+mod expand_tests {
+    use super::*;
+    use crate::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
+    use crate::tag::Tag;
+    use crate::tlv::TlvSection;
+    use crate::tree::{Body, Node};
+    use crate::use_site_path::UseSitePath;
+
+    fn pkk(index: u8) -> Node {
+        Node { tag: Tag::PkK, body: Body::KeyArg { index } }
+    }
+
+    fn bip84() -> OriginPath {
+        OriginPath {
+            components: vec![
+                PathComponent { hardened: true, value: 84 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 0 },
+            ],
+        }
+    }
+
+    fn bip48_type_2() -> OriginPath {
+        OriginPath {
+            components: vec![
+                PathComponent { hardened: true, value: 48 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 2 },
+            ],
+        }
+    }
+
+    /// 1-of-1 wpkh, `path_decl: Shared(BIP84)`, no overrides → expanded
+    /// `@0` has BIP-84 origin, descriptor-level use-site, no fp/xpub.
+    #[test]
+    fn expand_full_elision_canonical_wpkh() {
+        let d = Descriptor {
+            n: 1,
+            path_decl: PathDecl { n: 1, paths: PathDeclPaths::Shared(bip84()) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+            tlv: TlvSection::new_empty(),
+        };
+        let expanded = expand_per_at_n(&d).unwrap();
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(expanded[0].idx, 0);
+        assert_eq!(expanded[0].origin_path, bip84());
+        assert_eq!(expanded[0].use_site_path, UseSitePath::standard_multipath());
+        assert!(expanded[0].fingerprint.is_none());
+        assert!(expanded[0].xpub.is_none());
+    }
+
+    /// 2-of-3 wsh-sortedmulti with `Shared(BIP48 type 2)` → all 3
+    /// expanded keys have the same shared origin path.
+    #[test]
+    fn expand_full_elision_canonical_wsh_multi() {
+        let d = Descriptor {
+            n: 3,
+            path_decl: PathDecl { n: 3, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![pkk(0), pkk(1), pkk(2)],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        let expanded = expand_per_at_n(&d).unwrap();
+        assert_eq!(expanded.len(), 3);
+        for ek in &expanded {
+            assert_eq!(ek.origin_path, bip48_type_2());
+            assert_eq!(ek.use_site_path, UseSitePath::standard_multipath());
+            assert!(ek.fingerprint.is_none());
+            assert!(ek.xpub.is_none());
+        }
+    }
+
+    /// 2-of-3 with `OriginPathOverrides[1] = m/84'/0'/5'` (account 5):
+    /// expanded `@1` gets the override; `@0` and `@2` use the shared
+    /// `path_decl` baseline.
+    #[test]
+    fn expand_per_idx_override_mix() {
+        let custom_path = OriginPath {
+            components: vec![
+                PathComponent { hardened: true, value: 84 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 5 },
+            ],
+        };
+        let d = Descriptor {
+            n: 3,
+            path_decl: PathDecl { n: 3, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![pkk(0), pkk(1), pkk(2)],
+                    },
+                }]),
+            },
+            tlv: {
+                let mut t = TlvSection::new_empty();
+                t.origin_path_overrides = Some(vec![(1, custom_path.clone())]);
+                t
+            },
+        };
+        let expanded = expand_per_at_n(&d).unwrap();
+        assert_eq!(expanded[0].origin_path, bip48_type_2());
+        assert_eq!(expanded[1].origin_path, custom_path);
+        assert_eq!(expanded[2].origin_path, bip48_type_2());
+    }
+
+    /// 2-of-2 with `Divergent([path_a, path_b])` → expanded keys carry
+    /// the per-`@N` divergent paths.
+    #[test]
+    fn expand_divergent_paths() {
+        let path_a = OriginPath {
+            components: vec![PathComponent { hardened: true, value: 84 }],
+        };
+        let path_b = OriginPath {
+            components: vec![PathComponent { hardened: true, value: 86 }],
+        };
+        let d = Descriptor {
+            n: 2,
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Divergent(vec![path_a.clone(), path_b.clone()]),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::Multi,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![pkk(0), pkk(1)],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        let expanded = expand_per_at_n(&d).unwrap();
+        assert_eq!(expanded[0].origin_path, path_a);
+        assert_eq!(expanded[1].origin_path, path_b);
+    }
+
+    /// Descriptor with `UseSitePathOverrides[0] = custom` → `@0` has
+    /// the override, `@1` uses `d.use_site_path`.
+    #[test]
+    fn expand_use_site_path_overrides() {
+        let baseline = UseSitePath::standard_multipath();
+        let custom = UseSitePath { multipath: None, wildcard_hardened: true };
+        let d = Descriptor {
+            n: 2,
+            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            use_site_path: baseline.clone(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::Multi,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![pkk(0), pkk(1)],
+                    },
+                }]),
+            },
+            tlv: {
+                let mut t = TlvSection::new_empty();
+                t.use_site_path_overrides = Some(vec![(0, custom.clone())]);
+                t
+            },
+        };
+        let expanded = expand_per_at_n(&d).unwrap();
+        assert_eq!(expanded[0].use_site_path, custom);
+        assert_eq!(expanded[1].use_site_path, baseline);
+    }
+
+    /// 2-of-3 with sparse `Fingerprints[0]` and `Pubkeys[2]` → only
+    /// those slots have `Some(...)`; others are `None`.
+    #[test]
+    fn expand_fingerprints_and_pubkeys() {
+        let fp = [0xaa, 0xbb, 0xcc, 0xdd];
+        let mut xpub = [0u8; 65];
+        for (i, b) in xpub.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        let d = Descriptor {
+            n: 3,
+            path_decl: PathDecl { n: 3, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![pkk(0), pkk(1), pkk(2)],
+                    },
+                }]),
+            },
+            tlv: {
+                let mut t = TlvSection::new_empty();
+                t.fingerprints = Some(vec![(0, fp)]);
+                t.pubkeys = Some(vec![(2, xpub)]);
+                t
+            },
+        };
+        let expanded = expand_per_at_n(&d).unwrap();
+        assert_eq!(expanded[0].fingerprint, Some(fp));
+        assert!(expanded[1].fingerprint.is_none());
+        assert!(expanded[2].fingerprint.is_none());
+        assert!(expanded[0].xpub.is_none());
+        assert!(expanded[1].xpub.is_none());
+        assert_eq!(expanded[2].xpub, Some(xpub));
+    }
+
+    /// `sh(sortedmulti(...))` with shared empty path AND no
+    /// `OriginPathOverrides` → `MissingExplicitOrigin { idx: 0 }`.
+    /// Construct an empty `OriginPath` (depth-0) to hit the structural
+    /// edge case.
+    #[test]
+    fn expand_non_canonical_wrapper_without_overrides_errors() {
+        let empty_path = OriginPath { components: vec![] };
+        let d = Descriptor {
+            n: 2,
+            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(empty_path) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Sh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![pkk(0), pkk(1)],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        let err = expand_per_at_n(&d).unwrap_err();
+        assert!(matches!(err, Error::MissingExplicitOrigin { idx: 0 }));
+    }
+
+    /// Determinism: encode `wpkh(@0)` two ways — once with `Shared(BIP84)`
+    /// in `path_decl` and no overrides; once with the same explicit path
+    /// supplied as an override on top of an unrelated baseline — and the
+    /// expansion is equal up to the origin_path. (The classic "elided vs
+    /// explicit" determinism gate from the plan.)
+    #[test]
+    fn expand_determinism_across_elision() {
+        // Wallet A: elided form. path_decl carries the canonical BIP-84.
+        let d_elided = Descriptor {
+            n: 1,
+            path_decl: PathDecl { n: 1, paths: PathDeclPaths::Shared(bip84()) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+            tlv: TlvSection::new_empty(),
+        };
+        // Wallet B: explicit form. Same canonical BIP-84 path placed into
+        // path_decl (Option A semantics — the encoder writes
+        // canonical_origin into path_decl when no overrides supplied).
+        let d_explicit = Descriptor {
+            n: 1,
+            path_decl: PathDecl { n: 1, paths: PathDeclPaths::Shared(bip84()) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+            tlv: TlvSection::new_empty(),
+        };
+        assert_eq!(
+            expand_per_at_n(&d_elided).unwrap(),
+            expand_per_at_n(&d_explicit).unwrap()
+        );
+    }
+
+    /// `tr(multi(2, @1, @0))` (non-canonical first-occurrence) →
+    /// canonicalize permutes to `[0, 1]` and shifts the per-`@N` pubkeys
+    /// in lockstep. After canonicalize+expand, expanded[0].xpub equals
+    /// the xpub originally wired to `@1` (the now-canonical first slot).
+    #[test]
+    fn expand_after_canonicalize_uses_canonical_indices() {
+        let xpub_a = [0xaa; 65];
+        let xpub_b = [0xbb; 65];
+        let mut d = Descriptor {
+            n: 2,
+            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Multi,
+                body: Body::Variable {
+                    k: 2,
+                    // first-occurrence: @1 then @0 → perm[0]=1, perm[1]=0.
+                    children: vec![pkk(1), pkk(0)],
+                },
+            },
+            tlv: {
+                let mut t = TlvSection::new_empty();
+                // Wired-in: @0 → A, @1 → B.
+                t.pubkeys = Some(vec![(0, xpub_a), (1, xpub_b)]);
+                t
+            },
+        };
+        canonicalize_placeholder_indices(&mut d).unwrap();
+        let expanded = expand_per_at_n(&d).unwrap();
+        // After permutation, original-@1 becomes new-@0, so expanded[0]
+        // carries the xpub originally wired to @1 (= xpub_b).
+        assert_eq!(expanded[0].xpub, Some(xpub_b));
+        assert_eq!(expanded[1].xpub, Some(xpub_a));
     }
 }

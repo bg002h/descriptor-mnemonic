@@ -248,4 +248,13 @@ pub enum Error {
         /// The offending value.
         value: u32,
     },
+
+    /// A non-canonical wrapper has no explicit origin path for some `@N`,
+    /// either via `OriginPathOverrides` or a populated `path_decl` entry,
+    /// and `canonical_origin(&d.tree)` is `None`. Per spec v0.13 §6.3.
+    #[error("non-canonical wrapper requires explicit origin for @{idx}, but none provided")]
+    MissingExplicitOrigin {
+        /// The placeholder index for which an explicit origin is required.
+        idx: u8,
+    },
 }
