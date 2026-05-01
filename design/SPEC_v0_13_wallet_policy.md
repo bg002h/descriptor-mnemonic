@@ -51,19 +51,29 @@ generations until the v1.0 stability commitment).
 |---|---|---|
 | `UseSitePathOverrides` | 0x00 | sparse `(idx, alts)` list (existing, v0.11) |
 | `Fingerprints` | 0x01 | sparse `(idx, 4-byte fp)` list (existing, v0.11) |
-| `OriginPathOverrides` | **0x02 (new)** | sparse `(idx, OriginPath)` list |
-| `Pubkeys` | **0x03 (new)** | sparse `(idx, 65-byte xpub)` list |
+| `Pubkeys` | **0x02** | sparse `(idx, 65-byte xpub)` list |
+| `OriginPathOverrides` | **0x03 (new)** | sparse `(idx, OriginPath)` list |
 
-Each TLV body is a length-prefixed concatenation of records. Each record
-begins with a 4-bit `idx` (BIP 388 bounds N ≤ 15) followed by the
-axis-specific value:
+`Pubkeys` claims tag 0x02, which v0.11 reserved as
+`TLV_XPUBS_RESERVED_V0_12`. The implementation must rename/retire that
+constant. `OriginPathOverrides` takes the next tag (0x03).
 
-- `OriginPathOverrides` value: v0.11 `OriginPath` / `PathComponent` types.
-  Variable-length, hardened-or-not flagged BIP 32 path components. Emitted
-  *only* when the encoded origin differs from the BIP-canonical for the
-  wrapper. A wpkh wallet at the canonical `m/84'/0'/0'` emits no entry; a
-  wpkh wallet at `m/84'/0'/5'` (account 5) emits the full path.
+Each TLV body is a length-prefixed concatenation of records (per v0.11's
+LP4-ext TLV framing). Each record begins with a `key_index_width`-bit
+`idx` (1–4 bits, derived from N per v0.11 convention) followed by the
+axis-specific value. Records pack until the TLV's bit-length is exhausted;
+the inner value type is self-delimiting (e.g., `OriginPath::read` returns
+when its own framing terminates). Within each TLV, idx values MUST be
+strictly ascending — matching v0.11's existing `OverrideOrderViolation`
+discipline for `UseSitePathOverrides`.
+
 - `Pubkeys` value: 65 bytes = 32 chain code || 33 compressed pubkey.
+- `OriginPathOverrides` value: v0.11 `OriginPath` / `PathComponent` types
+  (self-delimiting). Variable-length, hardened-or-not flagged BIP 32 path
+  components. Emitted *only* when the encoded origin differs from the
+  BIP-canonical for the wrapper. A wpkh wallet at the canonical
+  `m/84'/0'/0'` emits no entry; a wpkh wallet at `m/84'/0'/5'` (account 5)
+  emits the full path.
 - `Fingerprints` value: 4 raw bytes.
 
 ### 3.3 Mode dispatch
@@ -91,8 +101,8 @@ top-level wrapper.
 | `pkh(@N)` | `m/44'/0'/0'` |
 | `wpkh(@N)` | `m/84'/0'/0'` |
 | `tr(@N)` (key-path only) | `m/86'/0'/0'` |
-| `wsh(multi/sortedmulti)` | `m/48'/0'/0'/2'` |
-| `sh(wsh(multi/sortedmulti))` | `m/48'/0'/0'/1'` |
+| `wsh(multi/sortedmulti)` | `m/48'/0'/0'/2'` ¹ |
+| `sh(wsh(multi/sortedmulti))` | `m/48'/0'/0'/1'` ¹ |
 | `sh(sortedmulti)` | **none — must be explicit** |
 | `tr(@N, TapTree)` | **none — must be explicit** |
 
@@ -102,6 +112,10 @@ return means the encoder must emit `OriginPathOverrides` entries for all
 
 Coin (BIP 32 second component) = `0' / mainnet`; account = `0'`. Any
 deviation forces full explicit origin via `OriginPathOverrides`.
+
+¹ BIP 48 path layout is `m/48'/coin'/account'/script_type'`. The trailing
+component (`2'` for segwit-multi, `1'` for nested-segwit-multi) is the
+script-type field; account = `0'` is the third component.
 
 ## 5 Identity hashes
 
@@ -113,10 +127,11 @@ the existing `Phrase::from_id_bytes`.
 `SHA-256(full_wire_bytes)[0..16]`. Wire-level. Sensitive to TLV ordering,
 padding, and elision choices. Stable for a specific engraving.
 
-### 5.2 WalletDescriptorTemplateId (existing v0.11, γ-flavor)
+### 5.2 WalletDescriptorTemplateId (existing v0.11)
 
 Hashes use-site-path-decl + tree + `UseSitePathOverrides` TLV bits. Captures
-template + use-site shape only; ignores keys and origin.
+template + use-site shape only; ignores keys and origin. (See v0.11
+`identity::WalletDescriptorTemplateId` for the exact construction.)
 
 ### 5.3 WalletPolicyId (new, v0.13)
 
@@ -128,22 +143,50 @@ presence-significant on fp/xpub axes.
 ```
 canonical_template_tree_bytes
 ||
-for @N in placeholder_order(0..n):
-    canonical_record_for_@N
+for idx in 0..n (each unique placeholder index, ascending):
+    canonical_record_for_@idx
 ```
 
-where `canonical_record_for_@N` is:
+where `n` is the placeholder count derived from the tree (one record per
+unique `@N`, regardless of how many AST positions reference it), and each
+`canonical_record_for_@idx` is:
 
 ```
-[ presence_byte(1B)
-| path_len(varint) | path_bytes
-| use_site_len(varint) | use_site_bytes
+[ presence_byte(1 byte)
+| path_bit_len(LP4-ext varint) | path_bits  (zero-padded to byte boundary)
+| use_site_bit_len(LP4-ext varint) | use_site_bits  (zero-padded to byte boundary)
 | fp_4_bytes_if_present
 | xpub_65_bytes_if_present ]
 ```
 
 `presence_byte` bit 0 = `fp_present`, bit 1 = `xpub_present`, bits 2..7
-reserved (must be 0). The other
+reserved. Encoders MUST set reserved bits to 0; the hash is
+implementation-defined for inputs with non-zero reserved bits, since
+conforming encoders never produce them.
+
+`canonical_template_tree_bytes` is the bit-aligned `Tree::write` output
+of the placeholder-form template (no concrete keys), zero-padded to a
+whole-byte boundary. This includes the wrapper tag, so wrapper context is
+part of the hash and policies on different wrappers cannot collide on
+identical per-`@N` records.
+
+`path_bits` and `use_site_bits` are the bit-aligned `OriginPath::write` /
+`UseSitePath::write` outputs respectively. The preceding `path_bit_len` /
+`use_site_bit_len` LP4-ext varints (per v0.11 framing) are in *bits*, not
+bytes; the bit stream is zero-padded to a byte boundary before the next
+field. This makes the canonical record byte-aligned for hashing while
+preserving exact bit-stream content (no canonicalization of internal
+encoding choices within the BIP 32 path / multipath alternatives).
+
+Field omission rules:
+
+- `fp_present = 0` ⟹ `fp_4_bytes_if_present` is **omitted entirely** (zero
+  bytes contributed).
+- `xpub_present = 0` ⟹ `xpub_65_bytes_if_present` is **omitted entirely**.
+- `path_bits` and `use_site_bits` are always present in canonical form
+  (see below).
+
+The other
 two axes (path, use-site) are always present in canonical form because
 their elided cases have canonical defaults:
 
@@ -173,7 +216,7 @@ distinct from both "all keys present" and "all keys absent" cases.
 
 The encoder canonicalizes placeholder indices so `@i` first appears in
 the tree before `@j` for `j > i`. The decoder validates the same;
-violations → `Error::PlaceholderOrderingViolation`.
+violations → `Error::PlaceholderOrderingViolation { placeholder_index: u8 }`.
 
 This applies to v0.11 wires too (it was implicit in template-only mode),
 but is now explicit in the v0.13 spec because TLV-driven keys make
@@ -206,7 +249,8 @@ specification level via presence_byte.
 
 The v0.13 decoder reads in this order:
 
-1. Header (5 bits) → `version=0`, `divergent_paths`.
+1. Header per v0.11 §3.1 → `version=0`, `divergent_paths`, `n`,
+   `key_index_width`.
 2. Tree → `n` placeholders.
 3. TLV section → populates per-axis sparse maps.
 4. **Mode predicate**: wallet-policy mode = `!Pubkeys.is_empty()`.
@@ -223,7 +267,7 @@ Additive variants on `Error`:
 - `MissingExplicitOrigin { idx: u8 }`
 - `PlaceholderIndexOutOfRange { idx: u8, n: u8 }`
 - `InvalidXpubBytes { idx: u8 }`
-- `PlaceholderOrderingViolation { at_tag: Tag }`
+- `PlaceholderOrderingViolation { placeholder_index: u8 }`
 
 ## 9 Test coverage (informative)
 
@@ -239,7 +283,16 @@ Additive variants on `Error`:
   `OriginPathOverrides` as unknown blobs, round-trips back to identical
   bytes.
 - BIP 388 ordering: decoder rejects wires with placeholder ordering
-  violations at all tag positions where keys appear.
+  violations.
+- Divergent-paths × wallet-policy: a wpkh wallet with `divergent_paths=1`
+  AND per-`@N` `OriginPathOverrides` round-trips, and its WalletPolicyId
+  is stable when the same logical wallet is re-encoded with assumed paths
+  where canonical (where applicable).
+- Multi-chunk wallet-policy: a 2-of-3 cell-7 wallet (~5–7 codex32 chunks)
+  splits, reassembles, and round-trips end-to-end; ChunkSetId is derived
+  consistently across chunks.
+- v0.11 forward-compat byte-exactness: re-encoding a v0.13 wire through a
+  v0.11 decoder produces byte-identical output to the original wire.
 
 ## 10 References
 
