@@ -13,6 +13,7 @@
 mod bch;
 
 pub mod bitstream;
+pub mod canonical_origin;
 pub mod chunk;
 pub mod codex32;
 pub mod decode;
