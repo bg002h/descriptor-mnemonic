@@ -257,4 +257,19 @@ pub enum Error {
         /// The placeholder index for which an explicit origin is required.
         idx: u8,
     },
+
+    /// `presence_byte` had non-zero reserved bits (bits 2..7) inside a
+    /// `WalletPolicyId` canonical-record preimage. Per spec v0.13 §5.3:
+    /// encoders MUST set reserved bits to 0 and decoders MUST reject
+    /// inputs with non-zero reserved bits. The variant exists only for
+    /// future canonical-record parsers (v0.14+) — v0.13's
+    /// `WalletPolicyId` builder masks reserved bits explicitly so this
+    /// error is never raised on v0.13 wire today; it is reserved for
+    /// later canonical-record consumers.
+    #[allow(dead_code)]
+    #[error("WalletPolicyId presence_byte has non-zero reserved bits: 0x{reserved_bits:02x}")]
+    InvalidPresenceByte {
+        /// The reserved-bit field (bits 2..7) of the offending presence byte.
+        reserved_bits: u8,
+    },
 }

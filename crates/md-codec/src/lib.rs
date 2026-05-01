@@ -38,8 +38,8 @@ pub use encode::{Descriptor, encode_md1_string, encode_payload};
 pub use error::Error;
 pub use header::Header;
 pub use identity::{
-    Md1EncodingId, WalletDescriptorTemplateId, compute_md1_encoding_id,
-    compute_wallet_descriptor_template_id,
+    Md1EncodingId, WalletDescriptorTemplateId, WalletPolicyId, compute_md1_encoding_id,
+    compute_wallet_descriptor_template_id, compute_wallet_policy_id,
 };
 pub use origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 pub use phrase::Phrase;
