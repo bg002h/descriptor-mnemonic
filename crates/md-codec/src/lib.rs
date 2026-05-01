@@ -14,6 +14,7 @@ mod bch;
 
 pub mod bitstream;
 pub mod canonical_origin;
+pub mod canonicalize;
 pub mod chunk;
 pub mod codex32;
 pub mod decode;
@@ -30,6 +31,7 @@ pub mod use_site_path;
 pub mod validate;
 pub mod varint;
 
+pub use canonicalize::canonicalize_placeholder_indices;
 pub use chunk::{ChunkHeader, derive_chunk_set_id, reassemble, split};
 pub use decode::{decode_md1_string, decode_payload};
 pub use encode::{Descriptor, encode_md1_string, encode_payload};

@@ -42,7 +42,16 @@ impl Descriptor {
 /// `(bytes, total_bit_count)`. The bytes are zero-padded; `total_bit_count`
 /// is the exact unpadded length needed for round-trip decoding (see §3.7's
 /// "TLV section ends when codex32 total-length is exhausted" rule).
+///
+/// Per spec v0.13 §6.1, the encoder canonicalizes BIP 388 placeholder
+/// ordering before emitting bits: `@i` first appears in the tree before
+/// `@j` for `j > i`. Canonicalization permutes the tree indices,
+/// divergent path decl, and per-`@N` TLV maps atomically; if `d` is
+/// already canonical it is unchanged.
 pub fn encode_payload(d: &Descriptor) -> Result<(Vec<u8>, usize), Error> {
+    let mut d_canonical = d.clone();
+    crate::canonicalize::canonicalize_placeholder_indices(&mut d_canonical)?;
+    let d = &d_canonical;
     crate::validate::validate_placeholder_usage(&d.tree, d.n)?;
     if let Some(overrides) = &d.tlv.use_site_path_overrides {
         crate::validate::validate_multipath_consistency(&d.use_site_path, overrides)?;
