@@ -341,7 +341,7 @@ Additive variants on `Error`:
 ## 10 References
 
 - BIP 32, 380, 386, 388, 389
-- v0.11 SPEC: archived in `debris/SPEC_v0_11_wire_format.md`
+- v0.11 SPEC (historical, with v0.12.1 hot-fix appendix): `design/SPEC_v0_11_wire_format.md`
 - v0.11 BRAINSTORM: in-tree at `design/BRAINSTORM_v0_11_wire_format.md`
 - Pre-brainstorm: `design/PRE_BRAINSTORM_v0_13_wallet_policy.md`
 - Upstream miniscript blockers (gate downstream consumption if/when
