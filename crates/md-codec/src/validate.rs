@@ -40,11 +40,13 @@ fn walk_for_placeholders(
 ) -> Result<(), Error> {
     match &node.body {
         Body::KeyArg { index } => {
-            debug_assert!(
-                (*index as usize) < seen.len(),
-                "structural decode should have caught index >= n"
-            );
-            if (*index as usize) < seen.len() && !seen[*index as usize] {
+            if (*index as usize) >= seen.len() {
+                return Err(Error::PlaceholderIndexOutOfRange {
+                    idx: *index,
+                    n: seen.len() as u8,
+                });
+            }
+            if !seen[*index as usize] {
                 seen[*index as usize] = true;
                 first_occurrences.push(*index);
             }
@@ -60,11 +62,13 @@ fn walk_for_placeholders(
             }
         }
         Body::Tr { key_index, tree } => {
-            debug_assert!(
-                (*key_index as usize) < seen.len(),
-                "structural decode should have caught index >= n"
-            );
-            if (*key_index as usize) < seen.len() && !seen[*key_index as usize] {
+            if (*key_index as usize) >= seen.len() {
+                return Err(Error::PlaceholderIndexOutOfRange {
+                    idx: *key_index,
+                    n: seen.len() as u8,
+                });
+            }
+            if !seen[*key_index as usize] {
                 seen[*key_index as usize] = true;
                 first_occurrences.push(*key_index);
             }
@@ -239,5 +243,71 @@ mod tests {
             body: Body::KeyArg { index: 0 },
         };
         validate_tap_script_tree(&leaf).unwrap();
+    }
+
+    #[test]
+    fn placeholder_usage_rejects_index_out_of_range_n3() {
+        // n=3 → key_index_width=2 admits 0..=3 structurally. @3 is out of range.
+        let root = Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: 3 },
+        };
+        let err = validate_placeholder_usage(&root, 3).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::PlaceholderIndexOutOfRange { idx: 3, n: 3 }
+        ));
+    }
+
+    #[test]
+    fn placeholder_usage_rejects_index_out_of_range_n5() {
+        // n=5 → key_index_width=3 admits 0..=7. @5..=7 are out of range.
+        let root = Node {
+            tag: Tag::SortedMulti,
+            body: Body::Variable {
+                k: 1,
+                children: vec![
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 5 } },
+                ],
+            },
+        };
+        let err = validate_placeholder_usage(&root, 5).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::PlaceholderIndexOutOfRange { idx: 5, n: 5 }
+        ));
+    }
+
+    #[test]
+    fn placeholder_usage_rejects_index_out_of_range_n15() {
+        // n=15 → key_index_width=4 admits 0..=15. @15 just out of range.
+        let root = Node {
+            tag: Tag::SortedMulti,
+            body: Body::Variable {
+                k: 1,
+                children: vec![
+                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 15 } },
+                ],
+            },
+        };
+        let err = validate_placeholder_usage(&root, 15).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::PlaceholderIndexOutOfRange { idx: 15, n: 15 }
+        ));
+    }
+
+    #[test]
+    fn placeholder_usage_rejects_out_of_range_in_tr_key_index() {
+        // Tr's key_index path is a separate code path from KeyArg; verify it too.
+        let root = Node {
+            tag: Tag::Tr,
+            body: Body::Tr { key_index: 3, tree: None },
+        };
+        let err = validate_placeholder_usage(&root, 3).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::PlaceholderIndexOutOfRange { idx: 3, n: 3 }
+        ));
     }
 }

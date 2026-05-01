@@ -74,7 +74,7 @@ impl TlvSection {
 
         for (tag, payload, bit_len) in entries {
             w.write_bits(u64::from(tag), 5);
-            write_varint(w, bit_len as u32);
+            write_varint(w, bit_len as u32)?;
             // Re-emit payload bits MSB-first.
             let mut sub_reader = BitReader::new(&payload);
             let mut remaining = bit_len;

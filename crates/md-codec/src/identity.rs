@@ -82,7 +82,7 @@ pub fn compute_wallet_descriptor_template_id(
         }
         let bit_len = sub.bit_len();
         w.write_bits(u64::from(crate::tlv::TLV_USE_SITE_PATH_OVERRIDES), 5);
-        crate::varint::write_varint(&mut w, bit_len as u32);
+        crate::varint::write_varint(&mut w, bit_len as u32)?;
         let payload = sub.into_bytes();
         let mut subr = crate::bitstream::BitReader::new(&payload);
         let mut remaining = bit_len;

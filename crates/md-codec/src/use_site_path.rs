@@ -25,9 +25,10 @@ pub struct Alternative {
 
 impl Alternative {
     /// Encode this alternative onto the bit stream `w`.
-    pub fn write(&self, w: &mut BitWriter) {
+    pub fn write(&self, w: &mut BitWriter) -> Result<(), Error> {
         w.write_bits(u64::from(self.hardened), 1);
-        write_varint(w, self.value);
+        write_varint(w, self.value)?;
+        Ok(())
     }
 
     /// Decode a single alternative from the bit stream `r`.
@@ -79,7 +80,7 @@ impl UseSitePath {
             // Encode alt-count - 2 in 3 bits per spec §4.2.
             w.write_bits((alts.len() - MIN_ALT_COUNT) as u64, 3);
             for a in alts {
-                a.write(w);
+                a.write(w)?;
             }
         } else {
             w.write_bits(0, 1);

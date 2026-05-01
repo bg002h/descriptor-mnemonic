@@ -241,4 +241,11 @@ pub enum Error {
         /// Derived (from reassembled payload).
         derived: u32,
     },
+
+    /// LP4-ext varint value exceeds single-extension payload range (29 bits).
+    #[error("varint value {value} exceeds single-extension range (max 2^29 - 1)")]
+    VarintOverflow {
+        /// The offending value.
+        value: u32,
+    },
 }

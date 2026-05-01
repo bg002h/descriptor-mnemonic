@@ -8,7 +8,11 @@ use crate::bitstream::{BitReader, BitWriter};
 use crate::error::Error;
 
 /// Encode `value` as an LP4-ext varint into `writer`.
-pub fn write_varint(writer: &mut BitWriter, value: u32) {
+///
+/// Returns `Err(Error::VarintOverflow)` if `value` exceeds the single-extension
+/// payload range (max `2^29 - 1`). Recursive extension is not implemented;
+/// callers must ensure values fit within the supported range.
+pub fn write_varint(writer: &mut BitWriter, value: u32) -> Result<(), Error> {
     // Determine number of payload bits needed.
     let bits_needed = if value == 0 {
         0
@@ -19,20 +23,21 @@ pub fn write_varint(writer: &mut BitWriter, value: u32) {
     if bits_needed <= 14 {
         writer.write_bits(bits_needed as u64, 4);
         writer.write_bits(value as u64, bits_needed);
+        Ok(())
     } else {
         // Extension form: L=15, then [L_high:4][payload_low:14][payload_high:L_high]
-        writer.write_bits(15, 4);
         let l_high = bits_needed - 14;
-        assert!(
-            l_high <= 15,
-            "varint value exceeds single-extension range; recursion not implemented in v0.11"
-        );
+        if l_high > 15 {
+            return Err(Error::VarintOverflow { value });
+        }
+        writer.write_bits(15, 4);
         writer.write_bits(l_high as u64, 4);
         let low_mask = (1u64 << 14) - 1;
         let payload_low = (value as u64) & low_mask;
         let payload_high = (value as u64) >> 14;
         writer.write_bits(payload_low, 14);
         writer.write_bits(payload_high, l_high);
+        Ok(())
     }
 }
 
@@ -56,7 +61,7 @@ mod tests {
 
     fn round_trip(value: u32) {
         let mut w = BitWriter::new();
-        write_varint(&mut w, value);
+        write_varint(&mut w, value).unwrap();
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_varint(&mut r).unwrap(), value);
@@ -104,22 +109,37 @@ mod tests {
     #[test]
     fn varint_zero_costs_4_bits() {
         let mut w = BitWriter::new();
-        write_varint(&mut w, 0);
+        write_varint(&mut w, 0).unwrap();
         assert_eq!(w.bit_len(), 4);
     }
 
     #[test]
     fn varint_one_costs_5_bits() {
         let mut w = BitWriter::new();
-        write_varint(&mut w, 1);
+        write_varint(&mut w, 1).unwrap();
         assert_eq!(w.bit_len(), 5);
     }
 
     #[test]
     fn varint_84_costs_11_bits() {
         let mut w = BitWriter::new();
-        write_varint(&mut w, 84);
+        write_varint(&mut w, 84).unwrap();
         assert_eq!(w.bit_len(), 11);
+    }
+
+    #[test]
+    fn varint_overflow_returns_error_instead_of_panicking() {
+        // 1 << 30 needs 30 payload bits; single-extension caps at 29.
+        let mut w = BitWriter::new();
+        let result = write_varint(&mut w, 1u32 << 30);
+        assert!(matches!(result, Err(Error::VarintOverflow { value }) if value == 1u32 << 30));
+    }
+
+    #[test]
+    fn varint_max_single_extension_succeeds() {
+        // (1 << 29) - 1 needs exactly 29 payload bits = 14 + 15. Should succeed.
+        let mut w = BitWriter::new();
+        write_varint(&mut w, (1u32 << 29) - 1).unwrap();
     }
 
     #[test]

@@ -116,7 +116,7 @@ checksum = "3011d1213f159867b13cfd6ac92d2cd5f1345762c63be3554e84092d85a50bbd"
 
 [[package]]
 name = "md-codec"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "bip39",
  "bitcoin",

@@ -25,9 +25,10 @@ pub struct PathComponent {
 
 impl PathComponent {
     /// Encode this component into `w`: 1 hardened bit + LP4-ext varint value.
-    pub fn write(&self, w: &mut BitWriter) {
+    pub fn write(&self, w: &mut BitWriter) -> Result<(), Error> {
         w.write_bits(u64::from(self.hardened), 1);
-        write_varint(w, self.value);
+        write_varint(w, self.value)?;
+        Ok(())
     }
 
     /// Decode a `PathComponent` from `r`.
@@ -59,7 +60,7 @@ impl OriginPath {
         }
         w.write_bits(self.components.len() as u64, 4);
         for c in &self.components {
-            c.write(w);
+            c.write(w)?;
         }
         Ok(())
     }

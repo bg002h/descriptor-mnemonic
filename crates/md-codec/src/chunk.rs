@@ -143,12 +143,13 @@ mod chunk_set_id_tests {
 use crate::encode::Descriptor;
 
 /// Threshold (in payload bits) above which chunking is required. Derived from
-/// codex32 long-form's 75-symbol data limit (per BIP 93): 75 data symbols × 5
-/// bits = 375 bits total, of which the trailing 13 symbols (see
-/// `codex32::REGULAR_CHECKSUM_SYMBOLS`) are checksum.
+/// codex32 *regular*-form's 80-char data-part limit (per BIP 93): 3 HRP + 1
+/// separator + 64 data + 13 checksum (see `codex32::REGULAR_CHECKSUM_SYMBOLS`).
+/// Long-form codex32 was dropped in v0.12.0, so the legal data-symbol budget
+/// per chunk is 64 = 320 bits.
 /// Encoders attempt single-string emit first; if the codex32 wrapping reports
-/// "too long for long form", split into N chunks.
-pub const SINGLE_STRING_PAYLOAD_BIT_LIMIT: usize = 75 * 5;
+/// "too long", split into N chunks.
+pub const SINGLE_STRING_PAYLOAD_BIT_LIMIT: usize = 64 * 5;
 
 /// Split a [`Descriptor`] into N codex32 md1 strings, each carrying a chunk
 /// header and a slice of the canonical payload.

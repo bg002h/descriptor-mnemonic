@@ -60,3 +60,108 @@ fn small_descriptor_split_then_reassemble() {
     let d2 = reassemble(&chunk_refs).unwrap();
     assert_eq!(d, d2);
 }
+
+#[test]
+fn single_string_payload_bit_limit_matches_regular_form() {
+    // Sanity-check the F2 hot-fix: 64 data symbols × 5 bits = 320 (regular-form
+    // codex32). v0.11 originally set 75 × 5 = 375 (long-form), but long-form was
+    // dropped in v0.12.0.
+    assert_eq!(md_codec::chunk::SINGLE_STRING_PAYLOAD_BIT_LIMIT, 320);
+}
+
+fn deep_path_descriptor() -> Descriptor {
+    // Build a single-sig wpkh template with a maximally deep BIP 32 path.
+    // 15 hardened components, each costing 1 + 4 + 7 = 12 bits (LP4-ext for
+    // value < 128 takes 4-bit L + 7-bit payload), total path body ~180 bits.
+    // Plus header (5) + n (5) + path-depth (4) + use-site (16) + tree (5) + TLV (0)
+    // gives roughly 215 bits — still single-string under the new 320-bit limit.
+    let mut components = Vec::new();
+    for i in 0..15u32 {
+        components.push(PathComponent { hardened: true, value: i + 1 });
+    }
+    Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(OriginPath { components }),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+        tlv: TlvSection::new_empty(),
+    }
+}
+
+fn multi_chunk_descriptor() -> Descriptor {
+    // Build a divergent-path 4-cosigner wallet with 15 hardened path components per
+    // cosigner. Per-cosigner path body is ~180 bits; 4 cosigners → ~720 bits of
+    // path-decl alone, plus tree and TLV — comfortably above the 320-bit
+    // single-string limit, so chunking is required.
+    let mut paths = Vec::new();
+    for cosigner in 0..4u32 {
+        let mut components = Vec::new();
+        for i in 0..15u32 {
+            components.push(PathComponent { hardened: true, value: cosigner * 100 + i + 1 });
+        }
+        paths.push(OriginPath { components });
+    }
+    Descriptor {
+        n: 4,
+        path_decl: PathDecl {
+            n: 4,
+            paths: PathDeclPaths::Divergent(paths),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::SortedMulti,
+            body: Body::Variable {
+                k: 2,
+                children: (0..4)
+                    .map(|i| Node { tag: Tag::PkK, body: Body::KeyArg { index: i } })
+                    .collect(),
+            },
+        },
+        tlv: TlvSection::new_empty(),
+    }
+}
+
+#[test]
+fn deep_path_descriptor_still_single_string() {
+    // Sanity that the new 320-bit limit still accommodates a moderately-deep
+    // single-sig wallet.
+    let d = deep_path_descriptor();
+    let chunks = split(&d).unwrap();
+    assert_eq!(chunks.len(), 1, "deep single-sig should fit in one chunk");
+}
+
+#[test]
+fn multi_chunk_descriptor_splits_and_reassembles() {
+    use md_codec::chunk::reassemble;
+    let d = multi_chunk_descriptor();
+    let chunks = split(&d).unwrap();
+    assert!(chunks.len() >= 2, "expected multi-chunk emission, got {}", chunks.len());
+    for c in &chunks {
+        assert!(c.starts_with("md1"));
+    }
+    let chunk_refs: Vec<&str> = chunks.iter().map(|s| s.as_str()).collect();
+    let d2 = reassemble(&chunk_refs).unwrap();
+    assert_eq!(d, d2);
+}
+
+#[test]
+fn tampered_chunk_rejected_by_bch_verify() {
+    use md_codec::chunk::reassemble;
+    let d = multi_chunk_descriptor();
+    let chunks = split(&d).unwrap();
+    // Corrupt one symbol of the first chunk's body (skip past "md1" HRP+sep).
+    let mut tampered = chunks[0].clone().into_bytes();
+    let pos = "md1".len();
+    let original = tampered[pos];
+    // Swap to the next valid bech32 character (lookup-free: 'q' or 'p'); ensure
+    // it changes.
+    tampered[pos] = if original == b'q' { b'p' } else { b'q' };
+    let tampered_str = String::from_utf8(tampered).unwrap();
+    let mut chunk_refs: Vec<&str> = chunks.iter().map(|s| s.as_str()).collect();
+    chunk_refs[0] = tampered_str.as_str();
+    let result = reassemble(&chunk_refs);
+    assert!(result.is_err(), "tampered chunk should fail BCH verify");
+}
