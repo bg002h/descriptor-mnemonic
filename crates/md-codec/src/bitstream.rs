@@ -169,6 +169,31 @@ impl<'a> BitReader<'a> {
     }
 }
 
+/// Reads exactly `bit_len` MSB-first bits from `src_bytes` and appends them
+/// to `dst`. Bits are sourced as if `src_bytes` were the output of a
+/// `BitWriter` finalized with `into_bytes()` (so the trailing partial byte
+/// is in the high bits of the last source byte). The destination is
+/// extended in-place — no padding inserted.
+///
+/// Generalizes the read-bits-then-write-bits pattern used by the TLV
+/// encoder when re-emitting a sub-bitstream's bits into the outer wire
+/// without 1-bit drift on non-byte-aligned boundaries.
+pub fn re_emit_bits(
+    dst: &mut BitWriter,
+    src_bytes: &[u8],
+    bit_len: usize,
+) -> Result<(), Error> {
+    let mut src_reader = BitReader::with_bit_limit(src_bytes, bit_len);
+    let mut remaining = bit_len;
+    while remaining > 0 {
+        let chunk = remaining.min(8);
+        let bits = src_reader.read_bits(chunk)?;
+        dst.write_bits(bits, chunk);
+        remaining -= chunk;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,5 +284,90 @@ mod tests {
         assert!(r.is_exhausted());
         // Attempting to read further (into the padding) errors.
         assert!(r.read_bits(1).is_err());
+    }
+
+    #[test]
+    fn re_emit_bits_round_trip_byte_aligned() {
+        // Source bitstream: a single full byte 0xab.
+        let mut src = BitWriter::new();
+        src.write_bits(0xab, 8);
+        let src_bit_len = src.bit_len();
+        let src_bytes = src.into_bytes();
+
+        let mut dst = BitWriter::new();
+        re_emit_bits(&mut dst, &src_bytes, src_bit_len).unwrap();
+
+        assert_eq!(dst.bit_len(), 8);
+        let dst_bytes = dst.into_bytes();
+        assert_eq!(dst_bytes, vec![0xab]);
+    }
+
+    #[test]
+    fn re_emit_bits_round_trip_all_widths_1_through_23() {
+        // Sweep every bit-width in 1..=23. For each width, write a unique
+        // pattern as the source, re-emit it into a destination, then read it
+        // back from the destination and assert equality.
+        for width in 1..=23usize {
+            let pattern: u64 = if width == 64 {
+                0xffff_ffff_ffff_ffff
+            } else {
+                (1u64 << width) - 1
+            } & 0xa5_a5_a5_a5_a5_a5_a5_a5; // checkerboard, masked to width
+
+            let mut src = BitWriter::new();
+            src.write_bits(pattern, width);
+            let src_bit_len = src.bit_len();
+            let src_bytes = src.into_bytes();
+            assert_eq!(src_bit_len, width);
+
+            let mut dst = BitWriter::new();
+            re_emit_bits(&mut dst, &src_bytes, width).unwrap();
+            assert_eq!(dst.bit_len(), width);
+
+            let dst_bytes = dst.into_bytes();
+            let mut r = BitReader::with_bit_limit(&dst_bytes, width);
+            assert_eq!(r.read_bits(width).unwrap(), pattern, "width={width}");
+        }
+    }
+
+    #[test]
+    fn re_emit_bits_non_byte_aligned_source() {
+        // Source: 5 bits then 7 bits = 12-bit non-byte-aligned bitstream.
+        let mut src = BitWriter::new();
+        src.write_bits(0b10110, 5);
+        src.write_bits(0b1010101, 7);
+        let src_bit_len = src.bit_len();
+        assert_eq!(src_bit_len, 12);
+        let src_bytes = src.into_bytes();
+
+        let mut dst = BitWriter::new();
+        re_emit_bits(&mut dst, &src_bytes, src_bit_len).unwrap();
+        assert_eq!(dst.bit_len(), 12);
+
+        let dst_bytes = dst.into_bytes();
+        let mut r = BitReader::with_bit_limit(&dst_bytes, 12);
+        assert_eq!(r.read_bits(5).unwrap(), 0b10110);
+        assert_eq!(r.read_bits(7).unwrap(), 0b1010101);
+    }
+
+    #[test]
+    fn re_emit_bits_appends_to_existing_dst() {
+        // Pre-fill destination with 3 bits, then re-emit 9 bits from source.
+        // Verify total length is 12 and the bits are positioned correctly.
+        let mut dst = BitWriter::new();
+        dst.write_bits(0b101, 3);
+
+        let mut src = BitWriter::new();
+        src.write_bits(0b1_1110_0001, 9);
+        let src_bit_len = src.bit_len();
+        let src_bytes = src.into_bytes();
+
+        re_emit_bits(&mut dst, &src_bytes, src_bit_len).unwrap();
+        assert_eq!(dst.bit_len(), 12);
+
+        let dst_bytes = dst.into_bytes();
+        let mut r = BitReader::with_bit_limit(&dst_bytes, 12);
+        assert_eq!(r.read_bits(3).unwrap(), 0b101);
+        assert_eq!(r.read_bits(9).unwrap(), 0b1_1110_0001);
     }
 }

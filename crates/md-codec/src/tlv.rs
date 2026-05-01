@@ -1,7 +1,9 @@
-//! TLV section per spec §3.7.
+//! TLV section per spec §3.7 (extended in v0.13 §3.2 with `Pubkeys` and
+//! `OriginPathOverrides`).
 
-use crate::bitstream::{BitReader, BitWriter};
+use crate::bitstream::{BitReader, BitWriter, re_emit_bits};
 use crate::error::Error;
+use crate::origin_path::OriginPath;
 use crate::use_site_path::UseSitePath;
 use crate::varint::{read_varint, write_varint};
 
@@ -9,17 +11,28 @@ use crate::varint::{read_varint, write_varint};
 pub const TLV_USE_SITE_PATH_OVERRIDES: u8 = 0x00;
 /// TLV tag for per-`@N` xpub fingerprints (4 bytes each).
 pub const TLV_FINGERPRINTS: u8 = 0x01;
-/// Reserved TLV tag for v0.12 xpub payloads.
-pub const TLV_XPUBS_RESERVED_V0_12: u8 = 0x02;
+/// TLV tag for per-`@N` xpub bytes (chain-code || compressed pubkey, 65 bytes
+/// each). Per v0.13 §3.2; supersedes the v0.12 reservation `TLV_XPUBS_RESERVED_V0_12`.
+pub const TLV_PUBKEYS: u8 = 0x02;
+/// TLV tag for per-`@N` origin-path overrides (BIP-32 path differing from the
+/// canonical default for the wrapper). Per v0.13 §3.2.
+pub const TLV_ORIGIN_PATH_OVERRIDES: u8 = 0x03;
 
-/// Decoded TLV section: optional UseSitePathOverrides, optional Fingerprints,
-/// and any unknown TLVs preserved verbatim for forward-compatible round-trip.
+/// Decoded TLV section. Fields are populated from per-tag readers; unknown
+/// tags are preserved verbatim per D6 forward-compat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlvSection {
     /// Per-`@N` use-site path overrides, if present.
     pub use_site_path_overrides: Option<Vec<(u8, UseSitePath)>>,
     /// Per-`@N` xpub fingerprints (4 bytes each), if present.
     pub fingerprints: Option<Vec<(u8, [u8; 4])>>,
+    /// Per-`@N` xpub bytes (32-byte chain code || 33-byte compressed pubkey),
+    /// if present. Wallet-policy mode predicate is `pubkeys.is_some() &&
+    /// !pubkeys.unwrap().is_empty()`.
+    pub pubkeys: Option<Vec<(u8, [u8; 65])>>,
+    /// Per-`@N` origin-path overrides for wrappers whose canonical path is
+    /// either undefined or has been overridden, if present.
+    pub origin_path_overrides: Option<Vec<(u8, OriginPath)>>,
     /// Raw payload of unknown TLVs, keyed by tag, for forward-compat round-trip.
     /// Decoders preserve unknown TLVs verbatim through re-encoding.
     pub unknown: Vec<(u8, Vec<u8>, usize)>,
@@ -28,37 +41,93 @@ pub struct TlvSection {
 impl TlvSection {
     /// Create an empty TLV section (no entries).
     pub fn new_empty() -> Self {
+        // Exhaustive struct construction — every field listed by name. If a
+        // future field is added, this initializer fails to compile until the
+        // author decides on its empty value, preventing accidental drift.
         Self {
             use_site_path_overrides: None,
             fingerprints: None,
+            pubkeys: None,
+            origin_path_overrides: None,
             unknown: Vec::new(),
         }
     }
 
     /// Returns true if no TLV entries are present.
     pub fn is_empty(&self) -> bool {
-        self.use_site_path_overrides.is_none()
-            && self.fingerprints.is_none()
-            && self.unknown.is_empty()
+        // Exhaustive destructure — adding a new field forces this method to
+        // be updated (compile error on missing pattern).
+        let Self {
+            use_site_path_overrides,
+            fingerprints,
+            pubkeys,
+            origin_path_overrides,
+            unknown,
+        } = self;
+        use_site_path_overrides.is_none()
+            && fingerprints.is_none()
+            && pubkeys.is_none()
+            && origin_path_overrides.is_none()
+            && unknown.is_empty()
     }
 
     /// Encode this TLV section onto `w`. Entries are emitted in ascending tag order.
     /// `key_index_width` is the bit-width of the per-`@N` placeholder index field.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::EmptyTlvEntry`] if any of `use_site_path_overrides`,
+    ///   `fingerprints`, `pubkeys`, or `origin_path_overrides` is `Some(vec![])`.
+    ///   Empty TLVs violate the §7.5 omission discipline and are rejected at the
+    ///   encoder boundary.
+    /// - [`Error::OverrideOrderViolation`] if any entry vector is not strictly
+    ///   ascending in `idx`.
+    /// - Encoding errors from contained values (`OriginPath::write`, etc.).
     pub fn write(&self, w: &mut BitWriter, key_index_width: u8) -> Result<(), Error> {
+        // Exhaustive destructure — same drift-protection guarantee as is_empty.
+        let Self {
+            use_site_path_overrides,
+            fingerprints,
+            pubkeys,
+            origin_path_overrides,
+            unknown,
+        } = self;
+
         // Collect entries, sort by tag.
         let mut entries: Vec<(u8, Vec<u8>, usize)> = Vec::new();
-        if let Some(overrides) = &self.use_site_path_overrides {
+
+        if let Some(overrides) = use_site_path_overrides {
+            if overrides.is_empty() {
+                return Err(Error::EmptyTlvEntry { tag: TLV_USE_SITE_PATH_OVERRIDES });
+            }
             let mut sub = BitWriter::new();
+            let mut last_idx: Option<u8> = None;
             for (idx, path) in overrides {
+                if let Some(prev) = last_idx {
+                    if *idx <= prev {
+                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                    }
+                }
+                last_idx = Some(*idx);
                 sub.write_bits(u64::from(*idx), key_index_width as usize);
                 path.write(&mut sub)?;
             }
             let bit_len = sub.bit_len();
             entries.push((TLV_USE_SITE_PATH_OVERRIDES, sub.into_bytes(), bit_len));
         }
-        if let Some(fps) = &self.fingerprints {
+        if let Some(fps) = fingerprints {
+            if fps.is_empty() {
+                return Err(Error::EmptyTlvEntry { tag: TLV_FINGERPRINTS });
+            }
             let mut sub = BitWriter::new();
+            let mut last_idx: Option<u8> = None;
             for (idx, fp) in fps {
+                if let Some(prev) = last_idx {
+                    if *idx <= prev {
+                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                    }
+                }
+                last_idx = Some(*idx);
                 sub.write_bits(u64::from(*idx), key_index_width as usize);
                 for b in fp {
                     sub.write_bits(u64::from(*b), 8);
@@ -67,7 +136,47 @@ impl TlvSection {
             let bit_len = sub.bit_len();
             entries.push((TLV_FINGERPRINTS, sub.into_bytes(), bit_len));
         }
-        for (tag, payload, bit_len) in &self.unknown {
+        if let Some(pks) = pubkeys {
+            if pks.is_empty() {
+                return Err(Error::EmptyTlvEntry { tag: TLV_PUBKEYS });
+            }
+            let mut sub = BitWriter::new();
+            let mut last_idx: Option<u8> = None;
+            for (idx, xpub) in pks {
+                if let Some(prev) = last_idx {
+                    if *idx <= prev {
+                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                    }
+                }
+                last_idx = Some(*idx);
+                sub.write_bits(u64::from(*idx), key_index_width as usize);
+                for b in xpub {
+                    sub.write_bits(u64::from(*b), 8);
+                }
+            }
+            let bit_len = sub.bit_len();
+            entries.push((TLV_PUBKEYS, sub.into_bytes(), bit_len));
+        }
+        if let Some(paths) = origin_path_overrides {
+            if paths.is_empty() {
+                return Err(Error::EmptyTlvEntry { tag: TLV_ORIGIN_PATH_OVERRIDES });
+            }
+            let mut sub = BitWriter::new();
+            let mut last_idx: Option<u8> = None;
+            for (idx, path) in paths {
+                if let Some(prev) = last_idx {
+                    if *idx <= prev {
+                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                    }
+                }
+                last_idx = Some(*idx);
+                sub.write_bits(u64::from(*idx), key_index_width as usize);
+                path.write(&mut sub)?;
+            }
+            let bit_len = sub.bit_len();
+            entries.push((TLV_ORIGIN_PATH_OVERRIDES, sub.into_bytes(), bit_len));
+        }
+        for (tag, payload, bit_len) in unknown {
             entries.push((*tag, payload.clone(), *bit_len));
         }
         entries.sort_by_key(|(t, _, _)| *t);
@@ -75,15 +184,7 @@ impl TlvSection {
         for (tag, payload, bit_len) in entries {
             w.write_bits(u64::from(tag), 5);
             write_varint(w, bit_len as u32)?;
-            // Re-emit payload bits MSB-first.
-            let mut sub_reader = BitReader::new(&payload);
-            let mut remaining = bit_len;
-            while remaining > 0 {
-                let chunk = remaining.min(8);
-                let bits = sub_reader.read_bits(chunk)?;
-                w.write_bits(bits, chunk);
-                remaining -= chunk;
-            }
+            re_emit_bits(w, &payload, bit_len)?;
         }
         Ok(())
     }
@@ -138,6 +239,15 @@ impl TlvSection {
                         let entry = read_fingerprints(r, bit_len, key_index_width, n)?;
                         section.fingerprints = Some(entry);
                     }
+                    TLV_PUBKEYS => {
+                        let entry = read_pubkeys(r, bit_len, key_index_width, n)?;
+                        section.pubkeys = Some(entry);
+                    }
+                    TLV_ORIGIN_PATH_OVERRIDES => {
+                        let entry =
+                            read_origin_path_overrides(r, bit_len, key_index_width, n)?;
+                        section.origin_path_overrides = Some(entry);
+                    }
                     _ => {
                         // Unknown — buffer and skip per D6 forward-compat.
                         let mut sub = BitWriter::new();
@@ -179,6 +289,32 @@ impl TlvSection {
     }
 }
 
+/// Read one sparse `(idx, ...)` index header field: a `key_index_width`-bit
+/// `idx`, range-checked against `n`, and (if `last_idx.is_some()`) verified
+/// to be strictly greater than the previous idx. Returns the raw idx for
+/// the caller to thread into `last_idx` on the next call.
+///
+/// Used by every sparse-TLV reader (use-site-path overrides, fingerprints,
+/// pubkeys, origin-path overrides) so the range/ordering invariants are
+/// enforced uniformly in one place.
+fn read_sparse_tlv_idx(
+    r: &mut BitReader,
+    key_index_width: u8,
+    n: u8,
+    last_idx: Option<u8>,
+) -> Result<u8, Error> {
+    let idx = r.read_bits(key_index_width as usize)? as u8;
+    if idx >= n {
+        return Err(Error::PlaceholderIndexOutOfRange { idx, n });
+    }
+    if let Some(prev) = last_idx {
+        if idx <= prev {
+            return Err(Error::OverrideOrderViolation { prev, current: idx });
+        }
+    }
+    Ok(idx)
+}
+
 fn read_use_site_overrides(
     r: &mut BitReader,
     bit_len: usize,
@@ -189,15 +325,7 @@ fn read_use_site_overrides(
     let mut entries = Vec::new();
     let mut last_idx: Option<u8> = None;
     while r.bit_position() - start < bit_len {
-        let idx = r.read_bits(key_index_width as usize)? as u8;
-        if idx >= n {
-            return Err(Error::PlaceholderIndexOutOfRange { idx, n });
-        }
-        if let Some(prev) = last_idx {
-            if idx <= prev {
-                return Err(Error::OverrideOrderViolation { prev, current: idx });
-            }
-        }
+        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
         last_idx = Some(idx);
         let path = UseSitePath::read(r)?;
         entries.push((idx, path));
@@ -218,15 +346,7 @@ fn read_fingerprints(
     let mut entries = Vec::new();
     let mut last_idx: Option<u8> = None;
     while r.bit_position() - start < bit_len {
-        let idx = r.read_bits(key_index_width as usize)? as u8;
-        if idx >= n {
-            return Err(Error::PlaceholderIndexOutOfRange { idx, n });
-        }
-        if let Some(prev) = last_idx {
-            if idx <= prev {
-                return Err(Error::OverrideOrderViolation { prev, current: idx });
-            }
-        }
+        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
         last_idx = Some(idx);
         let mut fp = [0u8; 4];
         for byte in &mut fp {
@@ -240,9 +360,57 @@ fn read_fingerprints(
     Ok(entries)
 }
 
+fn read_pubkeys(
+    r: &mut BitReader,
+    bit_len: usize,
+    key_index_width: u8,
+    n: u8,
+) -> Result<Vec<(u8, [u8; 65])>, Error> {
+    let start = r.bit_position();
+    let mut entries = Vec::new();
+    let mut last_idx: Option<u8> = None;
+    while r.bit_position() - start < bit_len {
+        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
+        last_idx = Some(idx);
+        let mut xpub = [0u8; 65];
+        for byte in &mut xpub {
+            *byte = r.read_bits(8)? as u8;
+        }
+        entries.push((idx, xpub));
+    }
+    if entries.is_empty() {
+        return Err(Error::EmptyTlvEntry { tag: TLV_PUBKEYS });
+    }
+    Ok(entries)
+}
+
+fn read_origin_path_overrides(
+    r: &mut BitReader,
+    bit_len: usize,
+    key_index_width: u8,
+    n: u8,
+) -> Result<Vec<(u8, OriginPath)>, Error> {
+    let start = r.bit_position();
+    let mut entries = Vec::new();
+    let mut last_idx: Option<u8> = None;
+    while r.bit_position() - start < bit_len {
+        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
+        last_idx = Some(idx);
+        // OriginPath::read is self-delimiting (depth field + that-many
+        // components) — it terminates without needing an outer length cue.
+        let path = OriginPath::read(r)?;
+        entries.push((idx, path));
+    }
+    if entries.is_empty() {
+        return Err(Error::EmptyTlvEntry { tag: TLV_ORIGIN_PATH_OVERRIDES });
+    }
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::origin_path::PathComponent;
 
     #[test]
     fn empty_tlv_section_round_trip() {
@@ -289,14 +457,182 @@ mod tests {
     }
 
     #[test]
-    fn ascending_tag_order_enforced_in_encoder() {
+    fn pubkeys_round_trip() {
+        // Build two distinguishable 65-byte payloads.
+        let mut xpub_a = [0u8; 65];
+        for (i, b) in xpub_a.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        let mut xpub_b = [0u8; 65];
+        for (i, b) in xpub_b.iter_mut().enumerate() {
+            *b = (0xff - i as u8) ^ 0x5a;
+        }
         let mut s = TlvSection::new_empty();
+        s.pubkeys = Some(vec![(0u8, xpub_a), (2u8, xpub_b)]);
+
+        let mut w = BitWriter::new();
+        s.write(&mut w, 2).unwrap();
+        let bit_len = w.bit_len();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        let s2 = TlvSection::read(&mut r, 2, 3).unwrap();
+        assert_eq!(s2, s);
+        assert_eq!(r.bit_position(), bit_len);
+    }
+
+    #[test]
+    fn origin_path_overrides_round_trip() {
+        // Two distinct origin paths at idx 0 and idx 1.
+        let bip84 = OriginPath {
+            components: vec![
+                PathComponent { hardened: true, value: 84 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 5 },
+            ],
+        };
+        let bip48 = OriginPath {
+            components: vec![
+                PathComponent { hardened: true, value: 48 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 2 },
+            ],
+        };
+        let mut s = TlvSection::new_empty();
+        s.origin_path_overrides = Some(vec![(0u8, bip84), (1u8, bip48)]);
+
+        let mut w = BitWriter::new();
+        s.write(&mut w, 2).unwrap();
+        let bit_len = w.bit_len();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        let s2 = TlvSection::read(&mut r, 2, 3).unwrap();
+        assert_eq!(s2, s);
+        assert_eq!(r.bit_position(), bit_len);
+    }
+
+    #[test]
+    fn ascending_tag_order_enforced_in_encoder() {
+        // All four sparse TLVs populated; first-on-the-wire must be tag 0x00.
+        let mut s = TlvSection::new_empty();
+        s.use_site_path_overrides = Some(vec![(
+            0,
+            UseSitePath { multipath: None, wildcard_hardened: false },
+        )]);
         s.fingerprints = Some(vec![(0, [0u8; 4])]);
-        s.use_site_path_overrides = Some(vec![(0, UseSitePath { multipath: None, wildcard_hardened: false })]);
+        s.pubkeys = Some(vec![(0, [0u8; 65])]);
+        s.origin_path_overrides = Some(vec![(
+            0,
+            OriginPath {
+                components: vec![PathComponent { hardened: true, value: 84 }],
+            },
+        )]);
         let mut w = BitWriter::new();
         s.write(&mut w, 2).unwrap();
         let bytes = w.into_bytes();
         let first_tag = (bytes[0] >> 3) & 0x1F;
         assert_eq!(first_tag, TLV_USE_SITE_PATH_OVERRIDES);
+    }
+
+    #[test]
+    fn pubkeys_ordering_violation_rejected_at_encoder() {
+        // Non-ascending idx pair (1, 0) → encoder must reject.
+        let mut s = TlvSection::new_empty();
+        s.pubkeys = Some(vec![(1u8, [0u8; 65]), (0u8, [0u8; 65])]);
+        let mut w = BitWriter::new();
+        let result = s.write(&mut w, 2);
+        assert!(matches!(
+            result,
+            Err(Error::OverrideOrderViolation { prev: 1, current: 0 })
+        ));
+    }
+
+    #[test]
+    fn pubkeys_ordering_violation_rejected_at_decoder() {
+        // Encode (0, [0;65]) then a deliberately mis-ordered (0, [0;65]) by
+        // hand-building the bytes — exercises the read_sparse_tlv_idx
+        // helper's ascending check on the read side.
+        let mut sub = BitWriter::new();
+        // idx=1 (2-bit width) then 65 zero bytes.
+        sub.write_bits(1, 2);
+        for _ in 0..65 {
+            sub.write_bits(0, 8);
+        }
+        // idx=1 again → ordering violation (1 not > 1).
+        sub.write_bits(1, 2);
+        for _ in 0..65 {
+            sub.write_bits(0, 8);
+        }
+        let bit_len = sub.bit_len();
+        let payload_bytes = sub.into_bytes();
+
+        let mut w = BitWriter::new();
+        w.write_bits(u64::from(TLV_PUBKEYS), 5);
+        write_varint(&mut w, bit_len as u32).unwrap();
+        re_emit_bits(&mut w, &payload_bytes, bit_len).unwrap();
+        let total_bit_len = w.bit_len();
+        let bytes = w.into_bytes();
+
+        let mut r = BitReader::with_bit_limit(&bytes, total_bit_len);
+        let result = TlvSection::read(&mut r, 2, 3);
+        assert!(matches!(
+            result,
+            Err(Error::OverrideOrderViolation { prev: 1, current: 1 })
+        ));
+    }
+
+    #[test]
+    fn read_sparse_tlv_idx_out_of_range() {
+        // Build 2-bit idx=3 with n=2 → out of range.
+        let mut sub = BitWriter::new();
+        sub.write_bits(3, 2);
+        let bit_len = sub.bit_len();
+        let bytes = sub.into_bytes();
+        let mut r = BitReader::with_bit_limit(&bytes, bit_len);
+
+        let result = read_sparse_tlv_idx(&mut r, 2, 2, None);
+        assert!(matches!(
+            result,
+            Err(Error::PlaceholderIndexOutOfRange { idx: 3, n: 2 })
+        ));
+    }
+
+    #[test]
+    fn read_sparse_tlv_idx_non_ascending() {
+        let mut sub = BitWriter::new();
+        sub.write_bits(0, 2);
+        let bit_len = sub.bit_len();
+        let bytes = sub.into_bytes();
+        let mut r = BitReader::with_bit_limit(&bytes, bit_len);
+
+        let result = read_sparse_tlv_idx(&mut r, 2, 3, Some(1));
+        assert!(matches!(
+            result,
+            Err(Error::OverrideOrderViolation { prev: 1, current: 0 })
+        ));
+    }
+
+    #[test]
+    fn empty_pubkeys_vec_rejected_at_encoder() {
+        let mut s = TlvSection::new_empty();
+        s.pubkeys = Some(Vec::new());
+        let mut w = BitWriter::new();
+        let result = s.write(&mut w, 2);
+        assert!(matches!(
+            result,
+            Err(Error::EmptyTlvEntry { tag }) if tag == TLV_PUBKEYS
+        ));
+    }
+
+    #[test]
+    fn empty_origin_path_overrides_vec_rejected_at_encoder() {
+        let mut s = TlvSection::new_empty();
+        s.origin_path_overrides = Some(Vec::new());
+        let mut w = BitWriter::new();
+        let result = s.write(&mut w, 2);
+        assert!(matches!(
+            result,
+            Err(Error::EmptyTlvEntry { tag }) if tag == TLV_ORIGIN_PATH_OVERRIDES
+        ));
     }
 }

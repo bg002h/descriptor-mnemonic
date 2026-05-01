@@ -10,7 +10,10 @@ use md_codec::tree::{Body, Node};
 use md_codec::use_site_path::UseSitePath;
 
 fn bip84_descriptor_with_unknown_tlv() -> Descriptor {
-    // Synthesize a v0.12-style Xpubs TLV (tag 0x02) raw bytes, embed as unknown.
+    // Synthesize an unknown-tag TLV. Tags 0x00..0x03 are now claimed
+    // (UseSitePathOverrides, Fingerprints, Pubkeys, OriginPathOverrides), so
+    // 0x04 is the next free tag a future spec might allocate. A v0.13
+    // decoder must round-trip this opaque blob unchanged per D6.
     let mut sub = BitWriter::new();
     sub.write_bits(0x42, 8);  // arbitrary payload byte
     sub.write_bits(0x99, 8);
@@ -18,7 +21,7 @@ fn bip84_descriptor_with_unknown_tlv() -> Descriptor {
     let payload = sub.into_bytes();
 
     let mut tlv = TlvSection::new_empty();
-    tlv.unknown.push((0x02, payload, payload_bit_len));
+    tlv.unknown.push((0x04, payload, payload_bit_len));
 
     Descriptor {
         n: 1,
