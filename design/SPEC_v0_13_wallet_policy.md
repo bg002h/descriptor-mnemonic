@@ -96,15 +96,16 @@ and stay in template-only mode.
 For elided origin paths, the codec computes the canonical origin from the
 top-level wrapper.
 
-| Wrapper | Canonical `path-from-master` |
+| Wrapper shape | Canonical `path-from-master` |
 |---|---|
-| `pkh(@N)` | `m/44'/0'/0'` |
-| `wpkh(@N)` | `m/84'/0'/0'` |
-| `tr(@N)` (key-path only) | `m/86'/0'/0'` |
-| `wsh(multi/sortedmulti)` | `m/48'/0'/0'/2'` ¹ |
-| `sh(wsh(multi/sortedmulti))` | `m/48'/0'/0'/1'` ¹ |
-| `sh(sortedmulti)` | **none — must be explicit** |
-| `tr(@N, TapTree)` | **none — must be explicit** |
+| `pkh(@N)` (single-key) | `m/44'/0'/0'` |
+| `wpkh(@N)` (single-key) | `m/84'/0'/0'` |
+| `tr(@N)` (single-key, key-path only — no `TapTree` body) | `m/86'/0'/0'` |
+| `wsh` wrapping bare `multi` or `sortedmulti` | `m/48'/0'/0'/2'` ¹ |
+| `sh(wsh(...))` wrapping bare `multi` or `sortedmulti` | `m/48'/0'/0'/1'` ¹ |
+| `sh(sortedmulti)` (legacy P2SH multi) | **none — must be explicit** |
+| `tr(@N, TapTree)` (taproot with script tree) | **none — must be explicit** |
+| Any other shape — bare `sh(@N)`, bare `wsh(@N)`, `wsh(<miniscript>)`, `sh(<miniscript>)`, etc. | **none — must be explicit** |
 
 The codec exposes `canonical_origin(wrapper) -> Option<OriginPath>`. `None`
 return means the encoder must emit `OriginPathOverrides` entries for all
@@ -193,6 +194,14 @@ wrappers cannot collide on identical per-`@N` records.
 bytes), counting only the bits of the value field that immediately
 follows them.
 
+`OriginPath::write` and `UseSitePath::write` are required to be functions
+(one input value → one byte sequence). Where a path is elided on the
+wire, the canonical-fill happens *before* serialization: the encoder
+substitutes `canonical_origin(wrapper_shape).unwrap()` (or
+`UseSitePath::standard_multipath()` for use-site) and serializes that
+value. Two encoders implementing this spec produce byte-identical
+canonical-record bytes for the same logical wallet.
+
 Field omission rules:
 
 - `fp_present = 0` ⟹ `fp_4_bytes_if_present` is **omitted entirely** (zero
@@ -260,8 +269,11 @@ also non-canonical.
 
 ### 6.4 xpub validity
 
-`Pubkeys` xpub bytes that don't decode as a valid secp256k1 point fail
-with `Error::InvalidXpubBytes`.
+`Pubkeys` xpub bytes consist of a 32-byte chain code followed by a
+33-byte compressed pubkey. The chain code is unvalidated (chain codes
+are arbitrary 32-byte values per BIP 32). Only the 33-byte pubkey field
+is checked: failure to decode as a valid secp256k1 point fails with
+`Error::InvalidXpubBytes { idx: u8 }`.
 
 ### 6.5 Sparseness allowed
 
