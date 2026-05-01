@@ -160,23 +160,38 @@ unique `@N`, regardless of how many AST positions reference it), and each
 ```
 
 `presence_byte` bit 0 = `fp_present`, bit 1 = `xpub_present`, bits 2..7
-reserved. Encoders MUST set reserved bits to 0; the hash is
-implementation-defined for inputs with non-zero reserved bits, since
-conforming encoders never produce them.
+reserved. Encoders MUST set reserved bits to 0; **decoders MUST reject**
+inputs with non-zero reserved bits (`Error::InvalidPresenceByte`). This
+prevents future versions that define a reserved bit from producing
+WalletPolicyId collisions with the v0.13 hash on the same wire.
 
-`canonical_template_tree_bytes` is the bit-aligned `Tree::write` output
-of the placeholder-form template (no concrete keys), zero-padded to a
-whole-byte boundary. This includes the wrapper tag, so wrapper context is
-part of the hash and policies on different wrappers cannot collide on
-identical per-`@N` records.
+**Construction is precise to forbid encoder divergence.** The
+`canonical_record_for_@idx` is built as follows, in this exact order:
 
-`path_bits` and `use_site_bits` are the bit-aligned `OriginPath::write` /
-`UseSitePath::write` outputs respectively. The preceding `path_bit_len` /
-`use_site_bit_len` LP4-ext varints (per v0.11 framing) are in *bits*, not
-bytes; the bit stream is zero-padded to a byte boundary before the next
-field. This makes the canonical record byte-aligned for hashing while
-preserving exact bit-stream content (no canonicalization of internal
-encoding choices within the BIP 32 path / multipath alternatives).
+1. Allocate a fresh `BitWriter` for the record-bitstream.
+2. Write `path_bit_len` (LP4-ext varint), then `path_bits`
+   (`OriginPath::write` output) into the bitstream.
+3. Write `use_site_bit_len` (LP4-ext varint), then `use_site_bits`
+   (`UseSitePath::write` output) into the same bitstream.
+4. Finalize the bitstream via `BitWriter::into_bytes()`, which
+   zero-pads to a whole-byte boundary.
+5. Concatenate: `[ presence_byte ][ bitstream_bytes ][ fp_bytes? ][ xpub_bytes? ]`.
+
+`fp_bytes` and `xpub_bytes` are appended as raw bytes only when their
+respective presence bit is set; omitted entirely otherwise (no length
+prefix, no zero-padding). The single byte-boundary pad after step 4 is
+the only padding in the record.
+
+`canonical_template_tree_bytes` is constructed analogously: write the
+placeholder-form template's tree (no concrete keys, no TLV section) via
+`tree::write_node` into a fresh `BitWriter`, then `into_bytes()` to
+zero-pad to a whole-byte boundary. The output includes the wrapper tag,
+so wrapper context is part of the hash and policies on different
+wrappers cannot collide on identical per-`@N` records.
+
+`path_bit_len` / `use_site_bit_len` are LP4-ext varints in *bits* (not
+bytes), counting only the bits of the value field that immediately
+follows them.
 
 Field omission rules:
 
@@ -230,9 +245,18 @@ placeholder count derived from the tree. Out-of-range entries →
 
 ### 6.3 Required explicit origin
 
-If the wrapper is non-canonical (§4) and any `@N` has no
-`OriginPathOverrides` entry, decode fails with
-`Error::MissingExplicitOrigin { idx: u8 }`.
+A wrapper is "non-canonical" if `canonical_origin(wrapper_shape)` returns
+`None`. The wrapper *shape* is the relevant input — not just the
+top-level tag — because `tr` admits two shapes:
+
+- `tr(@N)` (key-path only, no `TapTree` body) → canonical `m/86'/0'/0'`.
+- `tr(@N, TapTree)` (script-path with `TapTree`) → no canonical, must be
+  explicit.
+
+For non-canonical shapes, if any `@N` has no `OriginPathOverrides` entry,
+decode fails with `Error::MissingExplicitOrigin { idx: u8 }`. Single-key
+wrappers without a BIP-canonical (e.g., bare `wsh(@N)` or `sh(@N)`) are
+also non-canonical.
 
 ### 6.4 xpub validity
 
@@ -268,6 +292,8 @@ Additive variants on `Error`:
 - `PlaceholderIndexOutOfRange { idx: u8, n: u8 }`
 - `InvalidXpubBytes { idx: u8 }`
 - `PlaceholderOrderingViolation { placeholder_index: u8 }`
+- `InvalidPresenceByte { reserved_bits: u8 }` (WalletPolicyId hash input
+  validation only — never appears on the wire itself)
 
 ## 9 Test coverage (informative)
 
@@ -293,6 +319,12 @@ Additive variants on `Error`:
   consistently across chunks.
 - v0.11 forward-compat byte-exactness: re-encoding a v0.13 wire through a
   v0.11 decoder produces byte-identical output to the original wire.
+- Bare-`wsh(@N)` / bare-`sh(@N)` forced explicit: encoder rejects
+  attempts to elide origin for single-key non-canonical wrappers; decoder
+  rejects wires without `OriginPathOverrides` for such wrappers.
+- `tr` shape disambiguation: `tr(@N)` round-trips with assumed BIP 86
+  origin; `tr(@N, TapTree)` requires explicit origin even with the same
+  outer tag.
 
 ## 10 References
 
