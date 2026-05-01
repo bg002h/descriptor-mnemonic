@@ -280,4 +280,39 @@ pub enum Error {
         /// The placeholder index whose xpub failed to parse.
         idx: u8,
     },
+    /// Address derivation requires a populated `Pubkeys` TLV entry for
+    /// every `@N`; this descriptor is missing one (template-only or
+    /// partial-keys mode). v0.14+ derivation surface only.
+    #[error("missing xpub for @{idx}; address derivation requires wallet-policy mode with all @N populated")]
+    MissingPubkey {
+        /// The placeholder index whose xpub is absent.
+        idx: u8,
+    },
+
+    /// `Descriptor::derive_address` was called with a `chain` index
+    /// outside the use-site multipath alt-count (or non-zero when no
+    /// multipath is present).
+    #[error("chain index {chain} out of range; use-site multipath alt-count is {alt_count}")]
+    ChainIndexOutOfRange {
+        /// The provided chain index.
+        chain: u32,
+        /// The number of alternatives in the use-site multipath (`0` when
+        /// no multipath component is present).
+        alt_count: usize,
+    },
+
+    /// Address derivation requires non-hardened use-site components,
+    /// but this descriptor's use-site path declares a hardened
+    /// alternative or hardened wildcard. BIP 32 forbids hardened
+    /// derivation from a public key, so an xpub-only restore cannot
+    /// produce addresses for this wallet.
+    #[error("hardened public-key derivation: use-site path requires hardened component, which BIP 32 forbids on xpub-only restore")]
+    HardenedPublicDerivation,
+
+    /// The descriptor's wrapper shape is not in the v0.14 supported set
+    /// (the five BIP 388 canonical shapes: `pkh(@0)`, `wpkh(@0)`,
+    /// `tr(@0)` keypath-only, `wsh(multi/sortedmulti)`,
+    /// `sh(wsh(multi/sortedmulti))`). Future versions may extend.
+    #[error("unsupported wrapper shape for address derivation; v0.14 supports pkh, wpkh, tr keypath-only, wsh-multi/sortedmulti, sh-wsh-multi/sortedmulti only")]
+    UnsupportedDerivationShape,
 }

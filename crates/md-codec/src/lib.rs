@@ -18,6 +18,7 @@ pub mod canonicalize;
 pub mod chunk;
 pub mod codex32;
 pub mod decode;
+pub mod derive;
 pub mod encode;
 pub mod error;
 pub mod header;

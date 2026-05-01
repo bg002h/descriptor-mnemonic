@@ -35,7 +35,7 @@ fn mk_origin(components: &[(bool, u32)]) -> OriginPath {
 /// Returns `true` if `tag` is one of the multisig variants permitted directly
 /// inside a canonical `wsh(...)` or `sh(wsh(...))` wrapper (`multi` or
 /// `sortedmulti`).
-fn is_wsh_inner_multi(tag: Tag) -> bool {
+pub (crate) fn is_wsh_inner_multi(tag: Tag) -> bool {
     matches!(tag, Tag::Multi | Tag::SortedMulti)
 }
 
