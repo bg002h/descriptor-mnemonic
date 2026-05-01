@@ -161,10 +161,15 @@ unique `@N`, regardless of how many AST positions reference it), and each
 ```
 
 `presence_byte` bit 0 = `fp_present`, bit 1 = `xpub_present`, bits 2..7
-reserved. Encoders MUST set reserved bits to 0; **decoders MUST reject**
-inputs with non-zero reserved bits (`Error::InvalidPresenceByte`). This
-prevents future versions that define a reserved bit from producing
-WalletPolicyId collisions with the v0.13 hash on the same wire.
+reserved. Encoders MUST set reserved bits to 0. The reserved-bit
+"decoders MUST reject" clause (`Error::InvalidPresenceByte`) is
+forward-looking: in v0.13 the canonical-record preimage is hash-internal
+(no parser ever consumes it from a wire), so the decoder rejection is
+unreachable. The variant is defined now and `#[allow(dead_code)]`-marked
+so future versions (v0.14+) that surface canonical-record bytes —
+e.g., for cross-implementation verification or a new TLV — inherit a
+ready validator and avoid `WalletPolicyId` collisions when reserved
+bits are reallocated.
 
 **Construction is precise to forbid encoder divergence.** The
 `canonical_record_for_@idx` is built as follows, in this exact order:
@@ -195,12 +200,18 @@ bytes), counting only the bits of the value field that immediately
 follows them.
 
 `OriginPath::write` and `UseSitePath::write` are required to be functions
-(one input value → one byte sequence). Where a path is elided on the
-wire, the canonical-fill happens *before* serialization: the encoder
-substitutes `canonical_origin(wrapper_shape).unwrap()` (or
-`UseSitePath::standard_multipath()` for use-site) and serializes that
-value. Two encoders implementing this spec produce byte-identical
-canonical-record bytes for the same logical wallet.
+(one input value → one byte sequence). Per Option A (§3, path_decl
+semantics), `path_decl` is always populated on the wire: encoders write
+`canonical_origin(wrapper_shape).unwrap()` into `path_decl` for canonical
+wrappers when the user supplies no per-`@N` path; non-canonical wrappers
+must be supplied explicitly per §6.3. `compute_wallet_policy_id` then
+reads `path_decl` (or `OriginPathOverrides[idx]` if present) at hash
+time — `canonical_origin` itself is *not* consulted during
+WalletPolicyId construction. Use-site path follows the same shape: the
+descriptor's `use_site_path` field carries the standard multipath default
+unless `UseSitePathOverrides[idx]` overrides it. Two encoders
+implementing this spec produce byte-identical canonical-record bytes for
+the same logical wallet.
 
 Field omission rules:
 
@@ -240,7 +251,7 @@ distinct from both "all keys present" and "all keys absent" cases.
 
 The encoder canonicalizes placeholder indices so `@i` first appears in
 the tree before `@j` for `j > i`. The decoder validates the same;
-violations → `Error::PlaceholderOrderingViolation { placeholder_index: u8 }`.
+violations → `Error::PlaceholderFirstOccurrenceOutOfOrder { expected_first: u8, got_first: u8 }` (inherited from v0.11; richer payload than the placeholder-spec name).
 
 This applies to v0.11 wires too (it was implicit in template-only mode),
 but is now explicit in the v0.13 spec because TLV-driven keys make
@@ -303,7 +314,7 @@ Additive variants on `Error`:
 - `MissingExplicitOrigin { idx: u8 }`
 - `PlaceholderIndexOutOfRange { idx: u8, n: u8 }`
 - `InvalidXpubBytes { idx: u8 }`
-- `PlaceholderOrderingViolation { placeholder_index: u8 }`
+- `PlaceholderFirstOccurrenceOutOfOrder { expected_first: u8, got_first: u8 }` (already shipped in v0.11; v0.13 inherits)
 - `InvalidPresenceByte { reserved_bits: u8 }` (WalletPolicyId hash input
   validation only — never appears on the wire itself)
 
@@ -316,7 +327,8 @@ Additive variants on `Error`:
 - Partial keys: 2-of-3 with `@0` cell-7, `@1` cell-1, `@2` cell-1 round
   trips; WalletPolicyId distinct from full cell-7 version.
 - Forced explicit: encode `sh(sortedmulti(...))` with assumed origin →
-  encoder error.
+  decoder error (`MissingExplicitOrigin`). Under Option A, the encoder
+  accepts but the decoder validates as defense in depth (per §6.3).
 - Cross-version: v0.11 decoder reads v0.13 wire, preserves `Pubkeys` and
   `OriginPathOverrides` as unknown blobs, round-trips back to identical
   bytes.

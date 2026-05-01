@@ -492,9 +492,12 @@ fn divergent_paths_wallet_policy_2of2_round_trip() {
 fn multi_chunk_2of3_cell_7_split_reassemble_round_trip() {
     let d = cell_7_wsh_2of3_full();
     let chunks = split(&d).unwrap();
+    // Spec §9 prose: 2-of-3 cell-7 lands at 5–7 codex32 chunks under the
+    // post-F2 320-bit single-string limit. Lock a tighter lower bound so
+    // a regression that drops chunk count would be caught.
     assert!(
-        chunks.len() >= 2,
-        "2-of-3 with full xpubs should require multiple chunks (got {})",
+        chunks.len() >= 5,
+        "2-of-3 with full xpubs should require ~5–7 chunks (got {})",
         chunks.len()
     );
     for c in &chunks {
