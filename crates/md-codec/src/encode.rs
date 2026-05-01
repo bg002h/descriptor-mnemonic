@@ -36,6 +36,17 @@ impl Descriptor {
             (32 - (self.n as u32 - 1).leading_zeros()) as u8
         }
     }
+
+    /// Returns `true` iff this descriptor is in **wallet-policy mode** per
+    /// spec v0.13 §3.3: the `Pubkeys` TLV is present *and* contains at
+    /// least one entry. Template-only mode (no `Pubkeys` TLV at all, or
+    /// `Pubkeys = Some(vec![])` after sparse-decode) returns `false`.
+    ///
+    /// The check is a post-TLV-decode predicate; mode dispatch never reads
+    /// a header bit.
+    pub fn is_wallet_policy(&self) -> bool {
+        matches!(&self.tlv.pubkeys, Some(v) if !v.is_empty())
+    }
 }
 
 /// Encode a [`Descriptor`] into the canonical payload bit stream and return
@@ -120,5 +131,53 @@ mod render_tests {
             render_codex32_grouped("md1qpz9r4cy7", 0),
             "md1qpz9r4cy7"
         );
+    }
+}
+
+#[cfg(test)]
+mod is_wallet_policy_tests {
+    use super::*;
+    use crate::origin_path::OriginPath;
+    use crate::tag::Tag;
+    use crate::tlv::TlvSection;
+
+    fn wpkh_template_only() -> Descriptor {
+        Descriptor {
+            n: 1,
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(OriginPath { components: vec![] }),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            },
+            tlv: TlvSection::new_empty(),
+        }
+    }
+
+    #[test]
+    fn is_wallet_policy_returns_false_for_template_only() {
+        // pubkeys = None → not wallet-policy mode.
+        let d = wpkh_template_only();
+        assert!(!d.is_wallet_policy());
+    }
+
+    #[test]
+    fn is_wallet_policy_returns_false_for_empty_pubkeys() {
+        // pubkeys = Some(vec![]) is impossible to encode (encoder rejects)
+        // but the decoder may shape this state in transit. Predicate must
+        // still report "not wallet-policy" so dispatch is presence-driven.
+        let mut d = wpkh_template_only();
+        d.tlv.pubkeys = Some(Vec::new());
+        assert!(!d.is_wallet_policy());
+    }
+
+    #[test]
+    fn is_wallet_policy_returns_true_for_populated_pubkeys() {
+        let mut d = wpkh_template_only();
+        d.tlv.pubkeys = Some(vec![(0u8, [0u8; 65])]);
+        assert!(d.is_wallet_policy());
     }
 }

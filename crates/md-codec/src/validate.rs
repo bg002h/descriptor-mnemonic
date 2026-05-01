@@ -1,6 +1,9 @@
 //! Decoder-side validation per spec §7.
 
+use crate::canonical_origin::canonical_origin;
+use crate::encode::Descriptor;
 use crate::error::Error;
+use crate::origin_path::PathDeclPaths;
 use crate::tag::Tag;
 use crate::tree::{Body, Node};
 use crate::use_site_path::UseSitePath;
@@ -138,6 +141,63 @@ fn is_forbidden_leaf_tag(tag: Tag) -> bool {
         tag,
         Tag::Wpkh | Tag::Tr | Tag::Wsh | Tag::Sh | Tag::Pkh | Tag::Multi | Tag::SortedMulti
     )
+}
+
+/// Validate that every `@N` in a non-canonical wrapper has an explicit
+/// origin path on the wire — either via `OriginPathOverrides[idx]` or
+/// via a non-empty entry in the `path_decl` (shared or divergent).
+///
+/// Per spec v0.13 §6.3: when `canonical_origin(&d.tree)` is `None`, the
+/// wrapper is "non-canonical" and the encoder must emit an explicit
+/// origin for every `@N`. The decoder enforces the same as defense in
+/// depth: failure → `Error::MissingExplicitOrigin { idx }`.
+///
+/// If `canonical_origin(&d.tree)` is `Some(_)`, this validator is a
+/// no-op — any origin spec (elided or explicit) is allowed.
+pub fn validate_explicit_origin_required(d: &Descriptor) -> Result<(), Error> {
+    if canonical_origin(&d.tree).is_some() {
+        return Ok(());
+    }
+    let overrides = d.tlv.origin_path_overrides.as_deref().unwrap_or(&[]);
+    for idx in 0..d.n {
+        // Override path takes precedence — if present and non-empty, OK.
+        if let Some((_, op)) = overrides.iter().find(|(i, _)| *i == idx) {
+            if !op.components.is_empty() {
+                continue;
+            }
+        }
+        // Otherwise consult the path_decl for this idx.
+        let decl_components_empty = match &d.path_decl.paths {
+            PathDeclPaths::Shared(p) => p.components.is_empty(),
+            PathDeclPaths::Divergent(v) => v
+                .get(idx as usize)
+                .map(|p| p.components.is_empty())
+                .unwrap_or(true),
+        };
+        if decl_components_empty {
+            return Err(Error::MissingExplicitOrigin { idx });
+        }
+    }
+    Ok(())
+}
+
+/// Validate that every `Pubkeys` TLV entry's 33-byte compressed pubkey
+/// field (bytes 32..65 of the 65-byte payload) parses as a valid
+/// secp256k1 point. The 32-byte chain code prefix is unvalidated (any
+/// 32 bytes are a structurally valid BIP 32 chain code).
+///
+/// Per spec v0.13 §6.4: failure → `Error::InvalidXpubBytes { idx }`.
+/// When `d.tlv.pubkeys` is `None` (template-only mode), this is a no-op.
+pub fn validate_xpub_bytes(d: &Descriptor) -> Result<(), Error> {
+    let Some(entries) = d.tlv.pubkeys.as_deref() else {
+        return Ok(());
+    };
+    for (idx, xpub) in entries {
+        if bitcoin::secp256k1::PublicKey::from_slice(&xpub[32..65]).is_err() {
+            return Err(Error::InvalidXpubBytes { idx: *idx });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -309,5 +369,341 @@ mod tests {
             err,
             Error::PlaceholderIndexOutOfRange { idx: 3, n: 3 }
         ));
+    }
+}
+
+#[cfg(test)]
+mod explicit_origin_required_tests {
+    use super::*;
+    use crate::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
+    use crate::tag::Tag;
+    use crate::tlv::TlvSection;
+    use crate::tree::{Body, Node};
+    use crate::use_site_path::UseSitePath;
+
+    fn empty_path() -> OriginPath {
+        OriginPath { components: vec![] }
+    }
+
+    fn bip84_path() -> OriginPath {
+        OriginPath {
+            components: vec![
+                PathComponent { hardened: true, value: 84 },
+                PathComponent { hardened: true, value: 0 },
+                PathComponent { hardened: true, value: 0 },
+            ],
+        }
+    }
+
+    /// Build a single-key descriptor with `n=1`, the given tree root, an
+    /// empty shared path_decl (origin elided on wire), and an empty TLV
+    /// section.
+    fn single_key_descriptor(tree: Node) -> Descriptor {
+        Descriptor {
+            n: 1,
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(empty_path()),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree,
+            tlv: TlvSection::new_empty(),
+        }
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_passes_canonical_wpkh() {
+        // wpkh(@0) has canonical BIP-84 origin → empty path_decl OK.
+        let d = single_key_descriptor(Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: 0 },
+        });
+        validate_explicit_origin_required(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_passes_with_overrides_for_non_canonical() {
+        // sh(sortedmulti(@0,@1,@2)) — non-canonical. Must have explicit
+        // origin per @N. Provide overrides for all three.
+        let mut d = Descriptor {
+            n: 3,
+            path_decl: PathDecl {
+                n: 3,
+                paths: PathDeclPaths::Shared(empty_path()),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Sh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                        ],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        d.tlv.origin_path_overrides = Some(vec![
+            (0u8, bip84_path()),
+            (1u8, bip84_path()),
+            (2u8, bip84_path()),
+        ]);
+        validate_explicit_origin_required(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_fails_sh_sortedmulti_with_empty_path_decl() {
+        // sh(sortedmulti(@0,@1,@2)) — non-canonical. Empty path_decl, no
+        // overrides → fails on idx=0.
+        let d = Descriptor {
+            n: 3,
+            path_decl: PathDecl {
+                n: 3,
+                paths: PathDeclPaths::Shared(empty_path()),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Sh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                        ],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        let err = validate_explicit_origin_required(&d).unwrap_err();
+        assert!(matches!(err, Error::MissingExplicitOrigin { idx: 0 }));
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_fails_bare_wsh_with_empty_path_decl() {
+        // bare wsh(@0) — non-canonical (no `multi`/`sortedmulti` inner).
+        let d = single_key_descriptor(Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![Node {
+                tag: Tag::PkK,
+                body: Body::KeyArg { index: 0 },
+            }]),
+        });
+        let err = validate_explicit_origin_required(&d).unwrap_err();
+        assert!(matches!(err, Error::MissingExplicitOrigin { idx: 0 }));
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_passes_tr_keypath_only_with_empty_path_decl() {
+        // tr(@0) key-path only → BIP 86 canonical exists → empty path_decl OK.
+        let d = single_key_descriptor(Node {
+            tag: Tag::Tr,
+            body: Body::Tr { key_index: 0, tree: None },
+        });
+        validate_explicit_origin_required(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_fails_tr_with_taptree_with_empty_path_decl() {
+        // tr(@0, TapTree) → no canonical → must be explicit.
+        let d = single_key_descriptor(Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: 0 },
+                })),
+            },
+        });
+        let err = validate_explicit_origin_required(&d).unwrap_err();
+        assert!(matches!(err, Error::MissingExplicitOrigin { idx: 0 }));
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_passes_with_populated_shared_path_decl() {
+        // Bare wsh(@0) with a populated shared path_decl — explicit origin
+        // is on the wire via path_decl, so the validator is satisfied even
+        // without an OriginPathOverrides entry.
+        let mut d = single_key_descriptor(Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![Node {
+                tag: Tag::PkK,
+                body: Body::KeyArg { index: 0 },
+            }]),
+        });
+        d.path_decl.paths = PathDeclPaths::Shared(bip84_path());
+        validate_explicit_origin_required(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_passes_divergent_when_all_populated() {
+        // sh(sortedmulti(...)) with divergent path_decl, all entries populated.
+        let d = Descriptor {
+            n: 2,
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Divergent(vec![bip84_path(), bip84_path()]),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Sh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 1,
+                        children: vec![
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                        ],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        validate_explicit_origin_required(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_explicit_origin_required_fails_divergent_when_one_idx_empty() {
+        // sh(sortedmulti(...)) with divergent path_decl; @1 has empty path,
+        // no override → fails on idx=1.
+        let d = Descriptor {
+            n: 2,
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Divergent(vec![bip84_path(), empty_path()]),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Sh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::SortedMulti,
+                    body: Body::Variable {
+                        k: 1,
+                        children: vec![
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                        ],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        let err = validate_explicit_origin_required(&d).unwrap_err();
+        assert!(matches!(err, Error::MissingExplicitOrigin { idx: 1 }));
+    }
+}
+
+#[cfg(test)]
+mod xpub_bytes_tests {
+    use super::*;
+    use crate::origin_path::{OriginPath, PathDecl, PathDeclPaths};
+    use crate::tag::Tag;
+    use crate::tlv::TlvSection;
+    use crate::tree::{Body, Node};
+    use crate::use_site_path::UseSitePath;
+
+    /// G (the secp256k1 generator) compressed: 0x02 || x(G).
+    /// Used for "valid pubkey" tests.
+    fn valid_compressed_g() -> [u8; 33] {
+        // x(G) = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+        let mut out = [0u8; 33];
+        out[0] = 0x02;
+        let x: [u8; 32] = [
+            0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
+            0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
+            0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9,
+            0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8, 0x17, 0x98,
+        ];
+        out[1..].copy_from_slice(&x);
+        out
+    }
+
+    fn descriptor_with_pubkeys(pks: Option<Vec<(u8, [u8; 65])>>) -> Descriptor {
+        let mut d = Descriptor {
+            n: 1,
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(OriginPath { components: vec![] }),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        d.tlv.pubkeys = pks;
+        d
+    }
+
+    #[test]
+    fn validate_xpub_bytes_template_only_no_op() {
+        let d = descriptor_with_pubkeys(None);
+        validate_xpub_bytes(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_xpub_bytes_passes_for_valid_compressed_pubkey() {
+        let mut xpub = [0u8; 65];
+        // Chain code 0..32 — arbitrary 32 bytes are valid.
+        for (i, b) in xpub[0..32].iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        // Compressed pubkey 32..65 = G.
+        xpub[32..65].copy_from_slice(&valid_compressed_g());
+        let d = descriptor_with_pubkeys(Some(vec![(0u8, xpub)]));
+        validate_xpub_bytes(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_xpub_bytes_fails_for_invalid_pubkey_prefix() {
+        // Prefix 0x04 is uncompressed-marker; not a valid 33-byte compressed
+        // pubkey prefix (only 0x02 / 0x03 are).
+        let mut xpub = [0u8; 65];
+        xpub[32] = 0x04;
+        let d = descriptor_with_pubkeys(Some(vec![(0u8, xpub)]));
+        let err = validate_xpub_bytes(&d).unwrap_err();
+        assert!(matches!(err, Error::InvalidXpubBytes { idx: 0 }));
+    }
+
+    #[test]
+    fn validate_xpub_bytes_fails_for_off_curve_x_coordinate() {
+        // 0x02 || all-0xFF x-coord. x = p-1 wraps to a non-curve x in
+        // most cases; in particular this exact value fails to lift in
+        // libsecp256k1's compressed-point parser. Verify via the same
+        // routine the validator uses.
+        let mut xpub = [0u8; 65];
+        xpub[32] = 0x02;
+        for b in xpub[33..65].iter_mut() {
+            *b = 0xFF;
+        }
+        // Sanity: confirm bitcoin's parser actually rejects this, so the
+        // test exercises the failure path in our validator.
+        assert!(bitcoin::secp256k1::PublicKey::from_slice(&xpub[32..65]).is_err());
+        let d = descriptor_with_pubkeys(Some(vec![(0u8, xpub)]));
+        let err = validate_xpub_bytes(&d).unwrap_err();
+        assert!(matches!(err, Error::InvalidXpubBytes { idx: 0 }));
+    }
+
+    #[test]
+    fn validate_xpub_bytes_reports_first_failing_idx() {
+        // Two entries: idx=0 valid, idx=2 invalid → error reports idx=2.
+        let mut good = [0u8; 65];
+        good[32..65].copy_from_slice(&valid_compressed_g());
+        let mut bad = [0u8; 65];
+        bad[32] = 0x04; // invalid prefix
+        let d = descriptor_with_pubkeys(Some(vec![(0u8, good), (2u8, bad)]));
+        let err = validate_xpub_bytes(&d).unwrap_err();
+        assert!(matches!(err, Error::InvalidXpubBytes { idx: 2 }));
     }
 }

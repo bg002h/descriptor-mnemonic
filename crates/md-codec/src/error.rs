@@ -272,4 +272,14 @@ pub enum Error {
         /// The reserved-bit field (bits 2..7) of the offending presence byte.
         reserved_bits: u8,
     },
+
+    /// A `Pubkeys` TLV entry's 33-byte compressed-pubkey field (bytes
+    /// 32..65 of the 65-byte xpub payload) failed to parse as a valid
+    /// secp256k1 point. The 32-byte chain code prefix is unvalidated.
+    /// Per spec v0.13 §6.4.
+    #[error("invalid xpub bytes for @{idx}: pubkey field is not a valid secp256k1 point")]
+    InvalidXpubBytes {
+        /// The placeholder index whose xpub failed to parse.
+        idx: u8,
+    },
 }

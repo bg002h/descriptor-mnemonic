@@ -39,6 +39,11 @@ pub fn decode_payload(bytes: &[u8], total_bits: usize) -> Result<Descriptor, Err
             crate::validate::validate_tap_script_tree(t)?;
         }
     }
+    // Spec v0.13 §6.3 + §6.4: enforce explicit-origin and xpub-validity
+    // after the v0.11 ordering / multipath / taptree checks. Order matters:
+    // ordering must run first so subsequent checks see canonical indices.
+    crate::validate::validate_explicit_origin_required(&descriptor)?;
+    crate::validate::validate_xpub_bytes(&descriptor)?;
 
     Ok(descriptor)
 }
