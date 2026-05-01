@@ -261,12 +261,10 @@ pub enum Error {
     /// `presence_byte` had non-zero reserved bits (bits 2..7) inside a
     /// `WalletPolicyId` canonical-record preimage. Per spec v0.13 §5.3:
     /// encoders MUST set reserved bits to 0 and decoders MUST reject
-    /// inputs with non-zero reserved bits. The variant exists only for
-    /// future canonical-record parsers (v0.14+) — v0.13's
-    /// `WalletPolicyId` builder masks reserved bits explicitly so this
-    /// error is never raised on v0.13 wire today; it is reserved for
-    /// later canonical-record consumers.
-    #[allow(dead_code)]
+    /// inputs with non-zero reserved bits. v0.13's encoder masks reserved
+    /// bits explicitly when building the hash preimage; the helper
+    /// [`crate::identity::validate_presence_byte`] enforces the
+    /// decoder-side contract for canonical-record consumers.
     #[error("WalletPolicyId presence_byte has non-zero reserved bits: 0x{reserved_bits:02x}")]
     InvalidPresenceByte {
         /// The reserved-bit field (bits 2..7) of the offending presence byte.

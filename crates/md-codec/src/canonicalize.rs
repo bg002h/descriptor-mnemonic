@@ -347,6 +347,23 @@ fn sparse_lookup<T>(v: &Option<Vec<(u8, T)>>, idx: u8) -> Option<&T> {
 /// Returns [`Error::DivergentPathCountMismatch`] if `path_decl.paths` is
 /// `Divergent(v)` and `v.len() != d.n` — a malformed descriptor that the
 /// v0.11 decoder would already reject; surfaced here defensively.
+///
+/// # INVARIANT (Option A, spec v0.13 §3 + §6.3)
+///
+/// `path_decl.paths` is always populated post-decode (v0.11 wire
+/// invariant). Canonical-fill into `path_decl` happens at *encode time*
+/// only (per spec §6.3) — by the time this function runs on a decoded
+/// `Descriptor`, the wire has already supplied either an explicit
+/// shared/divergent path or the encoder's canonical substitution.
+/// Consequently this function does NOT consult
+/// [`crate::canonical_origin::canonical_origin`] for the per-`@N` path
+/// (it only consults `canonical_origin` to decide whether the
+/// non-canonical-wrapper error gate applies).
+///
+/// Any future change that elides `path_decl` on the wire would require
+/// re-introducing `canonical_origin` lookups *here* and in
+/// [`crate::identity::compute_wallet_policy_id`] — both call sites
+/// share this invariant.
 pub fn expand_per_at_n(d: &Descriptor) -> Result<Vec<ExpandedKey>, Error> {
     // Defensive: malformed descriptors with mismatched divergent path
     // counts cannot be structurally exercised post-decode (v0.11 enforces

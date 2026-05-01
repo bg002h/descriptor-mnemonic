@@ -157,6 +157,18 @@ impl WalletPolicyId {
 /// Propagates [`Error::MissingExplicitOrigin`] from [`expand_per_at_n`]
 /// for non-canonical wrappers without an explicit origin path; other
 /// canonicalization or encoding errors as appropriate.
+///
+/// # INVARIANT (Option A, spec v0.13 §3 + §5.3)
+///
+/// `path_decl.paths` is always populated post-decode (v0.11 wire
+/// invariant). Canonical-fill into `path_decl` happens at encode time
+/// only (per spec §6.3). Consequently this function does NOT consult
+/// [`crate::canonical_origin::canonical_origin`] for path resolution at
+/// hash time — it reads `OriginPathOverrides[idx]` if present, else
+/// `path_decl.paths` resolved per the divergent_paths flag, via
+/// [`expand_per_at_n`]. Any future change that elides `path_decl` on
+/// the wire requires re-introducing `canonical_origin` lookups in both
+/// this function and [`expand_per_at_n`].
 pub fn compute_wallet_policy_id(d: &Descriptor) -> Result<WalletPolicyId, Error> {
     // Step 1: canonicalize on a clone so callers don't have to remember
     // the precondition and we never mutate the caller's descriptor.
@@ -226,6 +238,25 @@ pub fn compute_wallet_policy_id(d: &Descriptor) -> Result<WalletPolicyId, Error>
     let mut id = [0u8; 16];
     id.copy_from_slice(&hash.to_byte_array()[0..16]);
     Ok(WalletPolicyId(id))
+}
+
+/// Validate a `presence_byte` from a `WalletPolicyId` canonical-record
+/// preimage (spec v0.13 §5.3). Bit 0 = `fp_present`, bit 1 =
+/// `xpub_present`, bits 2..7 reserved (must be 0). Returns
+/// [`Error::InvalidPresenceByte`] with the offending reserved-bit
+/// field if any of bits 2..7 is set.
+///
+/// v0.13's encoder masks reserved bits when building the preimage, so
+/// this helper is unreachable on v0.13 wire today. It enforces the
+/// spec §5.3 "decoders MUST reject" clause for any future
+/// canonical-record consumer (e.g., a verification-mode tool that
+/// reconstructs the preimage to cross-check a `WalletPolicyId`).
+pub fn validate_presence_byte(byte: u8) -> Result<(), Error> {
+    let reserved_bits = byte & 0b1111_1100;
+    if reserved_bits != 0 {
+        return Err(Error::InvalidPresenceByte { reserved_bits });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -767,5 +798,43 @@ mod tests {
         let id_nc = compute_wallet_policy_id(&d_non_canonical).unwrap();
         let id_c = compute_wallet_policy_id(&d_canonical).unwrap();
         assert_eq!(id_nc, id_c);
+    }
+
+    // ─── validate_presence_byte (v0.13.1, spec §5.3) ─────────────────
+
+    #[test]
+    fn validate_presence_byte_accepts_all_four_legal_combinations() {
+        for byte in [0b00, 0b01, 0b10, 0b11] {
+            validate_presence_byte(byte).unwrap();
+        }
+    }
+
+    #[test]
+    fn validate_presence_byte_rejects_lowest_reserved_bit() {
+        // bit 2 set
+        let err = validate_presence_byte(0b0000_0100).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidPresenceByte { reserved_bits: 0b0000_0100 }
+        ));
+    }
+
+    #[test]
+    fn validate_presence_byte_rejects_high_reserved_bit_with_legal_low_bits() {
+        // bit 7 set + fp_present + xpub_present
+        let err = validate_presence_byte(0b1000_0011).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidPresenceByte { reserved_bits: 0b1000_0000 }
+        ));
+    }
+
+    #[test]
+    fn validate_presence_byte_rejects_all_bits_set() {
+        let err = validate_presence_byte(0xFF).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::InvalidPresenceByte { reserved_bits: 0b1111_1100 }
+        ));
     }
 }

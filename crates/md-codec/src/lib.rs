@@ -39,7 +39,7 @@ pub use error::Error;
 pub use header::Header;
 pub use identity::{
     Md1EncodingId, WalletDescriptorTemplateId, WalletPolicyId, compute_md1_encoding_id,
-    compute_wallet_descriptor_template_id, compute_wallet_policy_id,
+    compute_wallet_descriptor_template_id, compute_wallet_policy_id, validate_presence_byte,
 };
 pub use origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 pub use phrase::Phrase;

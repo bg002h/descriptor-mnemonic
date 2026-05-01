@@ -1,98 +1,48 @@
 # v0.14 follow-ups (carried from v0.13 post-ship audit)
 
-This file collects items the v0.13 post-ship audit (commit `280c679`,
-2026-04-30) flagged as latent issues or under-specifications that v0.14
-planning should pick up. Nothing here blocks v0.13.0 — these are forward-
-looking concerns.
+This file collected items the v0.13 post-ship audit (commit `280c679`,
+2026-04-30) flagged as latent issues or under-specifications. **All
+four items L1–L4 closed in md-codec-v0.13.1.** Future-version concerns
+that surface during v0.14 design will be added below as new sections.
 
-## L1 — `Error::InvalidPresenceByte` has no consumer
+## L1 — `Error::InvalidPresenceByte` consumer ✅ resolved in v0.13.1
 
-**State**: defined and `#[allow(dead_code)]`-marked in `crates/md-codec/src/error.rs`.
+`identity::validate_presence_byte(byte: u8) -> Result<(), Error>` added
+as the parser-side enforcement of spec §5.3 "decoders MUST reject"
+clause. Re-exported from `lib.rs`. Four unit tests cover legal
+combinations and three reserved-bit patterns (lowest, highest, all).
+The variant's `#[allow(dead_code)]` annotation was dropped; the helper
+sits unused outside its tests, ready for v0.14+ canonical-record
+consumers.
 
-**Why it exists**: spec v0.13 §5.3 mandates "decoders MUST reject inputs
-with non-zero reserved bits in `presence_byte`." But in v0.13 the
-canonical-record preimage is hash-internal — no parser ever consumes it
-from a wire — so the rejection path is unreachable. The variant is
-defined as forward scaffolding for v0.14+.
+## L2 — Multi-chunk reassemble at the chunk-count boundary ✅ resolved in v0.13.1
 
-**Risk for v0.14**: when canonical-record bytes become wire-visible
-(e.g., new TLV embedding the format, or a verification-mode that surfaces
-the preimage), the parser must rediscover the spec contract from
-scratch. There's no reachable test that exercises rejection today.
+`tests/chunking.rs` now exercises both ends of the chunk-count cap:
 
-**Action for v0.14 planning**:
-- Decide whether v0.14 surfaces canonical-record bytes. If not, drop the
-  variant; if yes, add (a) the parser, (b) a property test that mutates
-  a known-good preimage's reserved bits and asserts rejection.
-- The shipped `walletpolicyid_reserved_bits_masking_property` test
-  (`identity.rs`) proves SHA-256 is mask-stable but does not exercise a
-  rejection.
+- `near_cap_descriptor_splits_to_at_most_64_chunks_and_round_trips`
+  builds a single-sig descriptor with a ~2400-byte unknown TLV
+  payload, splits to multiple chunks under the cap, reassembles, and
+  asserts byte-identical round trip.
+- `over_cap_descriptor_rejected_with_chunk_count_exceeds_max` inflates
+  past the cap with a ~2700-byte unknown payload and asserts
+  `Error::ChunkCountExceedsMax`.
 
-## L2 — Multi-chunk reassemble at the chunk-count boundary
+## L3 — TLV bit_len strictness ✅ resolved in v0.13.1
 
-**State**: `chunk::reassemble` (chunk.rs:303) calls
-`decode_payload(&full_bytes, full_bytes.len() * 8)`, relying on TLV
-rollback to absorb trailing padding (≤7 bits per the v0.12.0 contract).
+The four sparse TLV body readers were consolidated into a generic
+`read_sparse_tlv_body` helper in `tlv.rs` that bounds the
+`BitReader`'s `bit_limit` to `start + bit_len` for the duration of
+the body loop. Any over-read past the declared body errors with the
+inner per-record validity variant rather than silently advancing the
+outer cursor. Spec §3.2 has new "Strict body bounding" prose and §3.5
+adds the broader invariant. Four hand-crafted-bad-wire tests assert
+rejection across all four sparse TLV tags.
 
-**Why benign in v0.13**: encoder contract is chunk wire = 37 + 8N bits
-(byte-boundary ends), so padding is only at the end of the final chunk.
+## L4 — `path_decl` always-populated invariant ✅ resolved in v0.13.1
 
-**Risk for v0.14**: extensions reshaping chunk payloads (e.g., a chunk
-header with non-byte payload size, or sub-chunk multiplexing) could
-produce inter-chunk padding that the rollback budget can't absorb.
-
-**Action for v0.14 planning**:
-- Add a test that exercises `count = 64` (the v0.11 chunk-count maximum
-  per BIP-93 long-form? actually count cap is per spec §9.8) so the
-  boundary case is locked.
-- If v0.14 reshapes chunk payloads, audit `reassemble` and `decode_payload`'s
-  trailing-bit tolerance jointly.
-
-## L3 — TLV bit_len strictness under-specified
-
-**State**: spec §3.2 says "records pack until the TLV's bit-length is
-exhausted; the inner value type is self-delimiting." For `Pubkeys`,
-each record is a fixed 65 bytes; for `OriginPathOverrides`, `OriginPath::read`
-self-terminates. But the spec doesn't say what happens when the declared
-`bit_len` doesn't exactly match the record-pack length.
-
-**Why benign today**: trailing slack inside a TLV body is benign — the
-loop exits and the next iteration's `read_sparse_tlv_idx` will return
-`BitStreamTruncated` if it tries to read past `bit_len`. The error
-message is misleading but the rejection happens.
-
-**Risk for v0.14**: malicious wires could declare `bit_len = N×65×8 + 2`
-to consume two trailing bits silently before the next TLV; some future
-parser that handles trailing slack as "ignore" instead of "reject" would
-diverge from existing behavior.
-
-**Action for v0.14 planning**:
-- Add to spec §3.2: "after the last record is fully consumed, the decoder
-  MUST verify `r.bit_position() - start == bit_len`; trailing slack
-  inside a TLV body is rejected."
-- Add the corresponding strict check in `tlv.rs` readers (one extra
-  check per reader; ~5 lines each).
-- Add a hand-crafted-bad-wire test for each sparse TLV.
-
-## L4 — `path_decl` always-populated invariant
-
-**State**: shipped Option A (v0.13 spec §3 Path-decl semantics) requires
-`path_decl` populated on every wire. `expand_per_at_n` and
-`compute_wallet_policy_id` rely on this — neither falls through to
-`canonical_origin` at hash time.
-
-**Risk for v0.14**: if some future version makes `path_decl` elidable
-(e.g., a "minimal-bytes" mode that drops it for canonical wrappers),
-`MissingExplicitOrigin` becomes the load-bearing gate, and
-`compute_wallet_policy_id`'s simplification breaks (it would need to
-re-add the `canonical_origin` lookup at hash time, regressing on the
-plan's clean Option A).
-
-**Action for v0.14 planning**:
-- If `path_decl` elision is contemplated, audit `expand_per_at_n` and
-  `compute_wallet_policy_id` jointly. Document the invariant they share.
-- Consider a wire-format check at decode time: assert `path_decl.paths`
-  resolves to a non-empty path for every `@N` whose canonical_origin is
-  None (this is what `validate_explicit_origin_required` already does;
-  the invariant is currently maintained by encoder discipline + decoder
-  validation, not a structural wire field).
+Doc comments added to `expand_per_at_n` and
+`compute_wallet_policy_id` capturing the Option A invariant — both
+sites share the assumption that `path_decl.paths` is always populated
+post-decode and never consult `canonical_origin` for path resolution
+at hash time. Spec §3.5 (new "Invariants" subsection) formalizes the
+contract and lists future-version tripwires.

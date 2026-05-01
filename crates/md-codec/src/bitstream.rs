@@ -167,6 +167,30 @@ impl<'a> BitReader<'a> {
         debug_assert!(saved <= self.bit_limit);
         self.bit_position = saved;
     }
+
+    /// Snapshot the current bit_limit for later restoration. Paired with
+    /// [`Self::set_bit_limit_for_scope`] when reading a length-delimited
+    /// sub-region (e.g., a TLV body).
+    pub(crate) fn save_bit_limit(&self) -> usize {
+        self.bit_limit
+    }
+
+    /// Tighten the bit_limit to bound the next read operations. The new
+    /// limit MUST be ≥ `bit_position` (callers already past the new
+    /// limit would see truncation immediately) and ≤ the previous
+    /// limit (cannot widen). Use [`Self::save_bit_limit`] to capture the
+    /// prior limit and [`Self::restore_bit_limit`] to restore.
+    pub(crate) fn set_bit_limit_for_scope(&mut self, new_limit: usize) {
+        debug_assert!(new_limit >= self.bit_position);
+        debug_assert!(new_limit <= self.bit_limit);
+        self.bit_limit = new_limit;
+    }
+
+    /// Restore a previously saved bit_limit.
+    pub(crate) fn restore_bit_limit(&mut self, saved: usize) {
+        debug_assert!(self.bit_position <= saved);
+        self.bit_limit = saved;
+    }
 }
 
 /// Reads exactly `bit_len` MSB-first bits from `src_bytes` and appends them

@@ -67,6 +67,14 @@ when its own framing terminates). Within each TLV, idx values MUST be
 strictly ascending — matching v0.11's existing `OverrideOrderViolation`
 discipline for `UseSitePathOverrides`.
 
+**Strict body bounding (v0.13.1, audit follow-up L3):** decoders MUST
+read each TLV body with the `BitReader`'s `bit_limit` tightened to
+`body_start + bit_len`. Any read that would advance past `bit_len`
+errors with `BitStreamTruncated` (or any of the per-record validity
+errors); silently consuming trailing slack past the declared body length
+is forbidden, since it would corrupt the outer reader's cursor when
+parsing the next TLV. See §3.5 for the broader invariant.
+
 - `Pubkeys` value: 65 bytes = 32 chain code || 33 compressed pubkey.
 - `OriginPathOverrides` value: v0.11 `OriginPath` / `PathComponent` types
   (self-delimiting). Variable-length, hardened-or-not flagged BIP 32 path
@@ -90,6 +98,44 @@ v0.11's D6 unknown-TLV-preservation property carries forward unchanged. A
 v0.14+ decoder reading v0.13 wire keeps unknown TLVs verbatim and emits
 them on re-encode. v0.13 decoders reading v0.11 wire see no `Pubkeys` TLV
 and stay in template-only mode.
+
+### 3.5 Invariants (Option A; tripwires for future versions)
+
+The following invariants are load-bearing for v0.13 wallet-policy mode.
+Future versions that change them MUST audit the listed call sites
+together — they share assumptions.
+
+- **`path_decl` always populated.** Every v0.13 wire carries a
+  `path_decl` whose `paths` resolves to a (possibly empty-component)
+  `OriginPath` for every `@N`. The encoder substitutes
+  `canonical_origin(wrapper_shape).unwrap()` into `path_decl` for
+  canonical wrappers when no per-`@N` user path is supplied; for
+  non-canonical wrappers, the encoder requires user-supplied paths
+  (rejected at encode time per §6.3). Consequently, decoders and
+  hash-input builders do **not** consult `canonical_origin` for path
+  resolution at hash time — they read `OriginPathOverrides[idx]` if
+  present, else `path_decl.paths` resolved per the `divergent_paths`
+  flag. Affected call sites: `expand_per_at_n` (encoder canonical-fill)
+  and `compute_wallet_policy_id` (hash input). Any change that elides
+  `path_decl` on the wire requires re-introducing `canonical_origin`
+  lookups at both sites.
+
+- **TLV body strict-bound.** Each TLV body's reader MUST run with the
+  `BitReader`'s `bit_limit` tightened to `start + bit_len` for the
+  duration of the body loop. This prevents a malformed wire from
+  silently advancing the outer reader's cursor past the declared body
+  boundary. The specific error variant raised on a malformed body
+  depends on the slack-bit pattern (`OverrideOrderViolation`,
+  `BitStreamTruncated`, `PlaceholderIndexOutOfRange`, etc.) — what's
+  normative is that rejection happens. Decoders MUST NOT silently
+  accept trailing slack inside a TLV body.
+
+- **`presence_byte` reserved bits.** The `WalletPolicyId`
+  canonical-record preimage's `presence_byte` reserves bits 2..7. v0.13
+  encoders MUST mask reserved bits to 0; v0.13 has no wire-side
+  canonical-record parser, so the rejection helper
+  `validate_presence_byte` is unreachable on v0.13 wire today and
+  exists for future canonical-record consumers.
 
 ## 4 Canonical-origin map
 

@@ -147,6 +147,94 @@ fn multi_chunk_descriptor_splits_and_reassembles() {
     assert_eq!(d, d2);
 }
 
+fn near_cap_descriptor() -> Descriptor {
+    // Push toward 64 chunks via a giant unknown TLV. The wire-format
+    // encoder preserves unknown TLVs verbatim, so we can synthesize a
+    // payload of arbitrary size by stuffing the unknown vec.
+    //
+    // 64 chunks × 320 bits = 20480 bits ≈ 2560 bytes. Account for the
+    // chunk-header overhead and the TLV framing — aim for ~2700 bytes
+    // of unknown payload to land just under the cap.
+    use md_codec::tlv::TlvSection;
+    let big_payload: Vec<u8> = (0..2400).map(|i| (i % 251) as u8).collect();
+    let big_bit_len = big_payload.len() * 8;
+    let mut tlv = TlvSection::new_empty();
+    // Tag 0x10 — unknown to v0.13 (well beyond 0x00..0x03 known tags).
+    tlv.unknown.push((0x10, big_payload, big_bit_len));
+    Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(OriginPath {
+                components: vec![PathComponent { hardened: true, value: 84 }],
+            }),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: 0 },
+        },
+        tlv,
+    }
+}
+
+fn over_cap_descriptor() -> Descriptor {
+    // Same shape as near-cap but inflated past 64 chunks.
+    // 64 × 320 = 20480 bits = 2560 bytes; add ~600 bytes to push over.
+    use md_codec::tlv::TlvSection;
+    let big_payload: Vec<u8> = (0..2700).map(|i| (i % 251) as u8).collect();
+    let big_bit_len = big_payload.len() * 8;
+    let mut tlv = TlvSection::new_empty();
+    tlv.unknown.push((0x10, big_payload, big_bit_len));
+    Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(OriginPath {
+                components: vec![PathComponent { hardened: true, value: 84 }],
+            }),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: 0 },
+        },
+        tlv,
+    }
+}
+
+#[test]
+fn near_cap_descriptor_splits_to_at_most_64_chunks_and_round_trips() {
+    use md_codec::chunk::reassemble;
+    let d = near_cap_descriptor();
+    let chunks = split(&d).unwrap();
+    assert!(
+        chunks.len() <= 64,
+        "near-cap descriptor must produce ≤64 chunks (got {})",
+        chunks.len()
+    );
+    assert!(
+        chunks.len() >= 8,
+        "near-cap descriptor should produce many chunks (got {})",
+        chunks.len()
+    );
+    let chunk_refs: Vec<&str> = chunks.iter().map(|s| s.as_str()).collect();
+    let d2 = reassemble(&chunk_refs).unwrap();
+    assert_eq!(d, d2);
+}
+
+#[test]
+fn over_cap_descriptor_rejected_with_chunk_count_exceeds_max() {
+    use md_codec::error::Error;
+    let d = over_cap_descriptor();
+    let err = split(&d).unwrap_err();
+    assert!(
+        matches!(err, Error::ChunkCountExceedsMax { needed } if needed > 64),
+        "expected ChunkCountExceedsMax with needed > 64, got {:?}",
+        err
+    );
+}
+
 #[test]
 fn tampered_chunk_rejected_by_bch_verify() {
     use md_codec::chunk::reassemble;

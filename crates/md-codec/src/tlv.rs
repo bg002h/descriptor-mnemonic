@@ -315,25 +315,65 @@ fn read_sparse_tlv_idx(
     Ok(idx)
 }
 
+/// Generic sparse-TLV body reader.
+///
+/// **Per spec v0.13 §3.2 + audit follow-up L3 (v0.13.1):** bounds the
+/// `BitReader`'s `bit_limit` to `start + bit_len` for the duration of
+/// the body loop. This prevents a malformed wire from silently
+/// advancing the outer reader's cursor past the declared body boundary
+/// — any over-read errors with `BitStreamTruncated` instead of
+/// quietly consuming bits from the next TLV. On error, the inner
+/// error variant is propagated as-is (no translation) since the same
+/// failure mode is meaningful regardless of whether the offending bits
+/// were intended as a real record or as trailing slack.
+///
+/// On success: empty-entries-vec → [`Error::EmptyTlvEntry`].
+fn read_sparse_tlv_body<T, F>(
+    r: &mut BitReader,
+    bit_len: usize,
+    tag: u8,
+    key_index_width: u8,
+    n: u8,
+    mut read_value: F,
+) -> Result<Vec<(u8, T)>, Error>
+where
+    F: FnMut(&mut BitReader) -> Result<T, Error>,
+{
+    let start = r.bit_position();
+    let saved_limit = r.save_bit_limit();
+    r.set_bit_limit_for_scope(start + bit_len);
+
+    let mut entries: Vec<(u8, T)> = Vec::new();
+    let mut last_idx: Option<u8> = None;
+
+    let result = (|| -> Result<(), Error> {
+        while r.bit_position() - start < bit_len {
+            let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
+            let value = read_value(r)?;
+            last_idx = Some(idx);
+            entries.push((idx, value));
+        }
+        Ok(())
+    })();
+
+    r.restore_bit_limit(saved_limit);
+    result?;
+
+    if entries.is_empty() {
+        return Err(Error::EmptyTlvEntry { tag });
+    }
+    Ok(entries)
+}
+
 fn read_use_site_overrides(
     r: &mut BitReader,
     bit_len: usize,
     key_index_width: u8,
     n: u8,
 ) -> Result<Vec<(u8, UseSitePath)>, Error> {
-    let start = r.bit_position();
-    let mut entries = Vec::new();
-    let mut last_idx: Option<u8> = None;
-    while r.bit_position() - start < bit_len {
-        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
-        last_idx = Some(idx);
-        let path = UseSitePath::read(r)?;
-        entries.push((idx, path));
-    }
-    if entries.is_empty() {
-        return Err(Error::EmptyTlvEntry { tag: TLV_USE_SITE_PATH_OVERRIDES });
-    }
-    Ok(entries)
+    read_sparse_tlv_body(r, bit_len, TLV_USE_SITE_PATH_OVERRIDES, key_index_width, n, |r| {
+        UseSitePath::read(r)
+    })
 }
 
 fn read_fingerprints(
@@ -342,22 +382,13 @@ fn read_fingerprints(
     key_index_width: u8,
     n: u8,
 ) -> Result<Vec<(u8, [u8; 4])>, Error> {
-    let start = r.bit_position();
-    let mut entries = Vec::new();
-    let mut last_idx: Option<u8> = None;
-    while r.bit_position() - start < bit_len {
-        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
-        last_idx = Some(idx);
+    read_sparse_tlv_body(r, bit_len, TLV_FINGERPRINTS, key_index_width, n, |r| {
         let mut fp = [0u8; 4];
         for byte in &mut fp {
             *byte = r.read_bits(8)? as u8;
         }
-        entries.push((idx, fp));
-    }
-    if entries.is_empty() {
-        return Err(Error::EmptyTlvEntry { tag: TLV_FINGERPRINTS });
-    }
-    Ok(entries)
+        Ok(fp)
+    })
 }
 
 fn read_pubkeys(
@@ -366,22 +397,13 @@ fn read_pubkeys(
     key_index_width: u8,
     n: u8,
 ) -> Result<Vec<(u8, [u8; 65])>, Error> {
-    let start = r.bit_position();
-    let mut entries = Vec::new();
-    let mut last_idx: Option<u8> = None;
-    while r.bit_position() - start < bit_len {
-        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
-        last_idx = Some(idx);
+    read_sparse_tlv_body(r, bit_len, TLV_PUBKEYS, key_index_width, n, |r| {
         let mut xpub = [0u8; 65];
         for byte in &mut xpub {
             *byte = r.read_bits(8)? as u8;
         }
-        entries.push((idx, xpub));
-    }
-    if entries.is_empty() {
-        return Err(Error::EmptyTlvEntry { tag: TLV_PUBKEYS });
-    }
-    Ok(entries)
+        Ok(xpub)
+    })
 }
 
 fn read_origin_path_overrides(
@@ -390,21 +412,11 @@ fn read_origin_path_overrides(
     key_index_width: u8,
     n: u8,
 ) -> Result<Vec<(u8, OriginPath)>, Error> {
-    let start = r.bit_position();
-    let mut entries = Vec::new();
-    let mut last_idx: Option<u8> = None;
-    while r.bit_position() - start < bit_len {
-        let idx = read_sparse_tlv_idx(r, key_index_width, n, last_idx)?;
-        last_idx = Some(idx);
-        // OriginPath::read is self-delimiting (depth field + that-many
-        // components) — it terminates without needing an outer length cue.
-        let path = OriginPath::read(r)?;
-        entries.push((idx, path));
-    }
-    if entries.is_empty() {
-        return Err(Error::EmptyTlvEntry { tag: TLV_ORIGIN_PATH_OVERRIDES });
-    }
-    Ok(entries)
+    // OriginPath::read is self-delimiting (depth field + that-many
+    // components) — it terminates without needing an outer length cue.
+    read_sparse_tlv_body(r, bit_len, TLV_ORIGIN_PATH_OVERRIDES, key_index_width, n, |r| {
+        OriginPath::read(r)
+    })
 }
 
 #[cfg(test)]
@@ -634,5 +646,97 @@ mod tests {
             result,
             Err(Error::EmptyTlvEntry { tag }) if tag == TLV_ORIGIN_PATH_OVERRIDES
         ));
+    }
+
+    // ─── Strict bit_len enforcement (v0.13.1, audit L3) ───────────────
+
+    /// Hand-craft a single-TLV wire with one inflated `bit_len`. Returns
+    /// the bytes and the total bit count for `BitReader::with_bit_limit`.
+    fn craft_inflated_tlv_wire(
+        tag: u8,
+        idx: u8,
+        idx_width: u8,
+        record_payload_bits: &[(u64, usize)],
+        slack_bits: usize,
+    ) -> (Vec<u8>, usize) {
+        let mut w = BitWriter::new();
+        // Tag (5 bits).
+        w.write_bits(u64::from(tag), 5);
+        // bit_len (LP4-ext varint) — declares the actual records' bits + slack.
+        let actual_record_bits: usize =
+            (idx_width as usize) + record_payload_bits.iter().map(|(_, n)| n).sum::<usize>();
+        let declared_bit_len = actual_record_bits + slack_bits;
+        write_varint(&mut w, declared_bit_len as u32).unwrap();
+        // Records: idx + payload.
+        w.write_bits(u64::from(idx), idx_width as usize);
+        for (val, bits) in record_payload_bits {
+            w.write_bits(*val, *bits);
+        }
+        // Append slack zero-bits.
+        for _ in 0..slack_bits {
+            w.write_bits(0, 1);
+        }
+        let bit_len = w.bit_len();
+        (w.into_bytes(), bit_len)
+    }
+
+    // The four tests below exercise the L3 audit concern: a wire that
+    // declares more `bit_len` than its records actually carry must be
+    // rejected, with no silent advancement of the outer reader's
+    // cursor past the declared body. The specific error variant depends
+    // on the slack-bit pattern (typically `OverrideOrderViolation` when
+    // slack starts with zero and the previous idx was 0, or
+    // `BitStreamTruncated` when slack is too short for a phantom idx).
+    // The contract under test is "rejection happens," not the variant
+    // name. The `bit_limit` bound inside `read_sparse_tlv_body` is the
+    // load-bearing fix.
+
+    #[test]
+    fn fingerprints_with_trailing_slack_rejected() {
+        let (bytes, total_bits) =
+            craft_inflated_tlv_wire(TLV_FINGERPRINTS, 0, 1, &[(0xDEAD_BEEF, 32)], 4);
+        let mut r = BitReader::with_bit_limit(&bytes, total_bits);
+        let result = TlvSection::read(&mut r, 1, 1);
+        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
+    }
+
+    #[test]
+    fn pubkeys_with_trailing_slack_rejected() {
+        let payload: Vec<(u64, usize)> = (0..65).map(|_i| (0x42u64, 8)).collect();
+        let (bytes, total_bits) =
+            craft_inflated_tlv_wire(TLV_PUBKEYS, 0, 1, &payload, 3);
+        let mut r = BitReader::with_bit_limit(&bytes, total_bits);
+        let result = TlvSection::read(&mut r, 1, 1);
+        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
+    }
+
+    #[test]
+    fn use_site_path_overrides_with_trailing_slack_rejected() {
+        let mut path_w = BitWriter::new();
+        UseSitePath::standard_multipath().write(&mut path_w).unwrap();
+        let path_bit_len = path_w.bit_len();
+        let path_bytes = path_w.into_bytes();
+        let mut path_record: Vec<(u64, usize)> = Vec::new();
+        let mut br = BitReader::new(&path_bytes);
+        let mut consumed = 0;
+        while consumed < path_bit_len {
+            let chunk = (path_bit_len - consumed).min(8);
+            path_record.push((br.read_bits(chunk).unwrap(), chunk));
+            consumed += chunk;
+        }
+        let (bytes, total_bits) =
+            craft_inflated_tlv_wire(TLV_USE_SITE_PATH_OVERRIDES, 0, 1, &path_record, 2);
+        let mut r = BitReader::with_bit_limit(&bytes, total_bits);
+        let result = TlvSection::read(&mut r, 1, 1);
+        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
+    }
+
+    #[test]
+    fn origin_path_overrides_with_trailing_slack_rejected() {
+        let (bytes, total_bits) =
+            craft_inflated_tlv_wire(TLV_ORIGIN_PATH_OVERRIDES, 0, 1, &[(0, 4)], 5);
+        let mut r = BitReader::with_bit_limit(&bytes, total_bits);
+        let result = TlvSection::read(&mut r, 1, 1);
+        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
     }
 }
