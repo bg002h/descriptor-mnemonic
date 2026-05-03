@@ -1,4 +1,5 @@
 mod error;
+mod parse;
 
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
