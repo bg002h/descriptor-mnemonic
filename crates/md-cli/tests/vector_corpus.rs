@@ -10,7 +10,7 @@ fn vectors_output_matches_committed_corpus() {
     Command::cargo_bin("md").unwrap()
         .args(["vectors", "--out", tmp.path().to_str().unwrap()])
         .assert().success();
-    let committed = format!("{}/tests/vectors", env!("CARGO_MANIFEST_DIR"));
+    let committed = format!("{}/../md-codec/tests/vectors", env!("CARGO_MANIFEST_DIR"));
     // Compare every committed corpus file against the freshly-generated tmp tree.
     // Use --exclude to skip the manifest (source-of-truth, not a generated artifact)
     // and the .gitkeep marker.

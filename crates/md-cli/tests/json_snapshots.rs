@@ -4,7 +4,7 @@
 use assert_cmd::Command;
 
 mod manifest {
-    include!("vectors/manifest.rs");
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../md-codec/tests/vectors/manifest.rs"));
 }
 
 fn encode(template: &str) -> String {
