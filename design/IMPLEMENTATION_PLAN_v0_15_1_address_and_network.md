@@ -111,6 +111,8 @@ EOF
 
 Phase goal: `parse_key` accepts a `bitcoin::Network` arg and routes the version-byte check between mainnet xpub and testnet/signet/regtest tpub. Existing call sites pass `Network::Bitcoin` so encode/verify behavior is unchanged externally.
 
+> **Test-count note:** SPEC §Testing estimated +3 parse/keys tests; this phase ships +5 because we cover signet and regtest acceptance explicitly (BIP 32 uses the same testnet version bytes for all three, but routing tests document the contract).
+
 ### Task 1.1: Add testnet xpub fixture helper to a shared test module
 
 The testnet xpub used in fixtures is derived from the abandon-mnemonic at `m/84'/1'/0'` (BIP 84 testnet account). Computing it once and pinning the literal string keeps tests fast and offline.
@@ -620,9 +622,26 @@ EOF
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `crates/md-codec/tests/cmd_encode.rs`:
+**Resolve the tpub literal first.** The same value appears in three independent
+test crates (`parse/keys.rs`, `tests/cmd_encode.rs`, `tests/cmd_address_json.rs`)
+because integration-test crates can't see `pub(crate)` consts inside the bin
+crate. Run this to recover the literal value derived in Phase 1 Task 1.1:
+
+```bash
+cargo test --features cli --bin md derive_abandon_tpub_for_fixtures -- --ignored --nocapture 2>&1 | grep "m/84"
+# Output line: m/84'/1'/0': tpubD...
+```
+
+Capture the `tpubD...` value. Use it verbatim in the snippets below (substitute
+for `TPUB_FIXTURE`). If the throwaway test was already deleted (per Phase 1
+Task 1.1 Step 2), re-derive it temporarily or copy the literal from
+`parse/keys.rs`'s `ABANDON_TPUB_DEPTH3_BIP84` const.
+
+Append to `crates/md-codec/tests/cmd_encode.rs` (substituting `TPUB_FIXTURE`):
 
 ```rust
+const TPUB_FIXTURE: &str = "<the tpub string from m/84'/1'/0' — same value as ABANDON_TPUB_DEPTH3_BIP84 in parse/keys.rs>";
+
 #[test]
 fn encode_json_network_field_default_mainnet() {
     Command::cargo_bin("md").unwrap()
@@ -633,27 +652,23 @@ fn encode_json_network_field_default_mainnet() {
 
 #[test]
 fn encode_json_network_field_testnet() {
-    // tpub for abandon-mnemonic at m/84'/1'/0' (BIP 84 testnet account).
-    // Mirrors the const in parse/keys.rs (kept in sync manually).
-    let tpub = "<paste ABANDON_TPUB_DEPTH3_BIP84 here, same value as in parse/keys.rs>";
     Command::cargo_bin("md").unwrap()
         .args(["encode", "wpkh(@0/<0;1>/*)", "--network", "testnet",
-               "--key", &format!("@0={tpub}"), "--json"])
+               "--key", &format!("@0={TPUB_FIXTURE}"), "--json"])
         .assert().success()
         .stdout(predicate::str::contains("\"network\": \"testnet\""));
 }
 
 #[test]
 fn encode_rejects_tpub_under_default_mainnet() {
-    let tpub = "<same tpub literal>";
     Command::cargo_bin("md").unwrap()
-        .args(["encode", "wpkh(@0/<0;1>/*)", "--key", &format!("@0={tpub}")])
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--key", &format!("@0={TPUB_FIXTURE}")])
         .assert().code(1)
         .stderr(predicate::str::contains("expected mainnet"));
 }
 ```
 
-(The tpub literal is repeated in three places: `parse/keys.rs` const + this test + the testnet snapshot in Phase 5. That's fine; pinning the exact bech58 string in each independently is the simplest way to keep tests offline.)
+(The tpub literal is repeated in three places — `parse/keys.rs` const, this test, the testnet snapshot in Phase 5 — because integration-test crates can't reach `pub(crate)` items in the bin. Pinning the exact base58 string in each is the simplest way to keep tests offline; if it ever drifts, the tests fail loudly.)
 
 - [ ] **Step 2: Run tests; expect pass (Task 2.2 already wired the behavior)**
 
@@ -1254,13 +1269,56 @@ fn address_change_and_chain_together_rejected() {
                "--change", "--chain", "1"])
         .assert().code(2);
 }
+
+#[test]
+fn address_mainnet_wsh_multi_2of2_receive_0() {
+    // Per SPEC §Testing: 2-of-2 wsh-multi at m/48'/0'/0'/2' from
+    // abandon-mnemonic xpubs; cross-check against rust-bitcoin's
+    // descriptor-derived address. Same xpub used twice for @0 and @1
+    // (degenerate but the codec doesn't reject it; the resulting
+    // descriptor is structurally a 2-of-2).
+    use bitcoin::Address;
+    use bitcoin::bip32::ChildNumber;
+    use bitcoin::CompressedPublicKey;
+    use miniscript::ScriptContext as _;
+    let xpub = account_xpub("m/48'/0'/0'/2'", Network::Bitcoin);
+    let key_arg = format!("@0={xpub}");
+    let key_arg_b = format!("@1={xpub}");
+
+    // Independently derive the expected wsh-multi address.
+    let secp = Secp256k1::new();
+    let leaf = xpub.derive_pub(&secp, &[
+        ChildNumber::Normal { index: 0 },
+        ChildNumber::Normal { index: 0 },
+    ]).unwrap();
+    let cpk = CompressedPublicKey(leaf.public_key);
+    let pk = bitcoin::PublicKey::new(cpk.0);
+    let script = bitcoin::blockdata::script::Builder::new()
+        .push_int(2)
+        .push_key(&pk).push_key(&pk)
+        .push_int(2)
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKMULTISIG)
+        .into_script();
+    let expected = Address::p2wsh(&script, Network::Bitcoin).to_string();
+
+    Command::cargo_bin("md").unwrap()
+        .args(["address", "--template", "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
+               "--key", &key_arg, "--key", &key_arg_b])
+        .assert().success()
+        .stdout(predicates::str::contains(&expected));
+}
 ```
+
+Note: the wsh-multi test uses the same xpub for both `@0` and `@1` to keep
+the fixture self-contained. The codec doesn't enforce key uniqueness; the
+resulting descriptor is structurally a 2-of-2 over two identical keys,
+which derives a deterministic address that we cross-check.
 
 - [ ] **Step 2 (run): Run tests**
 
 ```bash
 cargo test --features cli,json --test cmd_address 2>&1 | tail -15
-# Expect: 12 passed (5 from Phase 3 + 7 new)
+# Expect: 13 passed (5 from Phase 3 + 8 new — including wsh-multi)
 ```
 
 - [ ] **Step 3: Commit**
@@ -1288,7 +1346,7 @@ EOF
 
 ```bash
 cargo test --workspace --features cli,json,cli-compiler 2>&1 | grep -E '^test result' | awk '{ok+=$4} END {print "Total ok:", ok}'
-# Expect: Total ok: 360 (353 + 7 new cmd_address tests)
+# Expect: Total ok: 361 (353 + 8 new cmd_address tests including wsh-multi)
 cargo clippy --workspace --features cli,json,cli-compiler --all-targets -- -D warnings 2>&1 | tail -3
 # Expect: clean
 ```
@@ -1476,7 +1534,7 @@ EOF
 
 ```bash
 cargo test --workspace --features cli,json,cli-compiler 2>&1 | grep -E '^test result' | awk '{ok+=$4} END {print "Total ok:", ok}'
-# Expect: Total ok: 363 (360 + 3 snapshots)
+# Expect: Total ok: 364 (361 + 3 snapshots)
 cargo clippy --workspace --features cli,json,cli-compiler --all-targets -- -D warnings 2>&1 | tail -3
 # Expect: clean
 ```
@@ -1513,7 +1571,7 @@ In `crates/md-codec/Cargo.toml`, change `version = "0.15.0"` to `version = "0.15
 
 ```bash
 cargo test --workspace --features cli,json,cli-compiler 2>&1 | grep -E '^test result' | awk '{ok+=$4} END {print "Total ok:", ok}'
-# Expect: Total ok: 363
+# Expect: Total ok: 364
 ```
 
 - [ ] **Step 3: Commit**
@@ -1757,9 +1815,8 @@ git commit -m "$(cat <<'EOF'
 chore(v0.15.1): FOLLOWUPS — add v0.15.2 tier; append deferred LOW findings
 
 Adds the v0.15.2 tier definition matching the existing v0.X tier
-vocabulary (per Phase 9 plan-mode review HIGH-1). Lifts every LOW /
-NIT finding from the on-disk spec/plan/per-phase review reports under
-design/agent-reports/v0.15.1-*.md.
+vocabulary. Lifts every LOW / NIT finding from the on-disk
+spec/plan/per-phase review reports under design/agent-reports/v0.15.1-*.md.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -1882,4 +1939,4 @@ Placeholder scan: no `TBD`/`TODO`/`fill in details` outside the explicit `<paste
 
 Type consistency: `AddressArgs<'a>` field names match throughout Phase 3-5. `EncodeArgs.network` and `EncodeArgs.network_str` introduced together in Phase 2 Task 2.2 and used consistently. `CliNetwork::as_str()` defined in Phase 2 Task 2.1 used in Phase 2 Task 2.2 dispatch and Phase 3 Task 3.2 dispatch.
 
-Test count math: 340 baseline + 5 (Phase 1) + 3 (Phase 2) + 5 (Phase 3) + 7 (Phase 4) + 3 (Phase 5) = 363. Matches Phase 6 verification.
+Test count math: 340 baseline + 5 (Phase 1) + 3 (Phase 2) + 5 (Phase 3) + 8 (Phase 4 incl. wsh-multi) + 3 (Phase 5) = 364. Matches Phase 6 verification.
