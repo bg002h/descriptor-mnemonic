@@ -13,3 +13,6 @@ missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"
+
+[workspace.dependencies]
+miniscript = { version = "13.0.0", default-features = false, features = ["std"] }
