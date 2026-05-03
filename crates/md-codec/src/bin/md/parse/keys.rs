@@ -3,6 +3,7 @@ use bitcoin::base58;
 
 const XPUB_LEN: usize = 78;
 pub(crate) const MAINNET_XPUB_VERSION: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
+pub(crate) const TESTNET_XPUB_VERSION: [u8; 4] = [0x04, 0x35, 0x87, 0xCF];
 
 /// Script-context expectation for depth validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +21,7 @@ pub struct ParsedKey {
     pub payload: [u8; 65],
 }
 
-pub fn parse_key(arg: &str, ctx: ScriptCtx) -> Result<ParsedKey, CliError> {
+pub fn parse_key(arg: &str, ctx: ScriptCtx, network: bitcoin::Network) -> Result<ParsedKey, CliError> {
     let (i_str, xpub_str) = arg.split_once('=').ok_or_else(|| CliError::BadArg(
         format!("--key expects @i=XPUB, got: {arg}")
     ))?;
@@ -30,9 +31,15 @@ pub fn parse_key(arg: &str, ctx: ScriptCtx) -> Result<ParsedKey, CliError> {
     if bytes.len() != XPUB_LEN {
         return Err(CliError::BadXpub { i, why: format!("expected 78 bytes, got {}", bytes.len()) });
     }
-    if bytes[0..4] != MAINNET_XPUB_VERSION {
+    let (expected_version, network_label) = match network {
+        bitcoin::Network::Bitcoin => (MAINNET_XPUB_VERSION, "mainnet"),
+        // Testnet, Signet, Regtest all use the same testnet version bytes per BIP 32.
+        _ => (TESTNET_XPUB_VERSION, "testnet"),
+    };
+    if bytes[0..4] != expected_version {
         return Err(CliError::BadXpub { i, why: format!(
-            "expected mainnet xpub version 0488B21E, got {:02X}{:02X}{:02X}{:02X}",
+            "expected {network_label} xpub version {:02X}{:02X}{:02X}{:02X}, got {:02X}{:02X}{:02X}{:02X}",
+            expected_version[0], expected_version[1], expected_version[2], expected_version[3],
             bytes[0], bytes[1], bytes[2], bytes[3]
         )});
     }
@@ -64,32 +71,32 @@ mod tests {
 
     #[test]
     fn rejects_no_equals() {
-        let err = parse_key("@0xpub6...", ScriptCtx::MultiSig).unwrap_err();
+        let err = parse_key("@0xpub6...", ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
         assert!(matches!(err, CliError::BadArg(_)));
     }
 
     #[test]
     fn rejects_bad_index() {
-        let err = parse_key(format!("@notnum={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig).unwrap_err();
+        let err = parse_key(format!("@notnum={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
         assert!(matches!(err, CliError::BadArg(_)));
     }
 
     #[test]
     fn rejects_bad_checksum() {
-        let err = parse_key("@0=xpubBADCHECKSUMxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", ScriptCtx::MultiSig).unwrap_err();
+        let err = parse_key("@0=xpubBADCHECKSUMxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
         assert!(matches!(err, CliError::BadXpub { i: 0, .. }), "got: {err:?}");
     }
 
     #[test]
     fn accepts_valid_depth4_xpub() {
-        let parsed = parse_key(format!("@2={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig).unwrap();
+        let parsed = parse_key(format!("@2={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap();
         assert_eq!(parsed.i, 2);
         assert_eq!(parsed.payload.len(), 65);
     }
 
     #[test]
     fn rejects_depth4_xpub_in_singlesig_context() {
-        let err = parse_key(format!("@0={XPUB_DEPTH4}").as_str(), ScriptCtx::SingleSig).unwrap_err();
+        let err = parse_key(format!("@0={XPUB_DEPTH4}").as_str(), ScriptCtx::SingleSig, bitcoin::Network::Bitcoin).unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("depth 3"), "got: {msg}");
     }
@@ -103,10 +110,51 @@ mod tests {
     #[test]
     fn strips_optional_at_prefix() {
         // Both forms accepted.
-        let a = parse_key(format!("@1={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig).unwrap();
-        let b = parse_key(format!("1={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig).unwrap();
+        let a = parse_key(format!("@1={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap();
+        let b = parse_key(format!("1={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap();
         assert_eq!(a.i, b.i);
         assert_eq!(a.payload, b.payload);
+    }
+
+    // ─── Network-routing tests (Phase 1) ──────────────────────────────────
+
+    #[test]
+    fn accepts_tpub_under_testnet() {
+        let p = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+                          ScriptCtx::SingleSig, bitcoin::Network::Testnet).unwrap();
+        assert_eq!(p.i, 0);
+        assert_eq!(p.payload.len(), 65);
+    }
+
+    #[test]
+    fn accepts_tpub_under_signet() {
+        // Signet uses the same testnet version bytes per BIP 32.
+        let p = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+                          ScriptCtx::SingleSig, bitcoin::Network::Signet).unwrap();
+        assert_eq!(p.i, 0);
+    }
+
+    #[test]
+    fn accepts_tpub_under_regtest() {
+        let p = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+                          ScriptCtx::SingleSig, bitcoin::Network::Regtest).unwrap();
+        assert_eq!(p.i, 0);
+    }
+
+    #[test]
+    fn rejects_xpub_under_testnet() {
+        let err = parse_key(format!("@0={XPUB_DEPTH4}").as_str(),
+                            ScriptCtx::MultiSig, bitcoin::Network::Testnet).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("expected testnet"), "got: {msg}");
+    }
+
+    #[test]
+    fn rejects_tpub_under_mainnet() {
+        let err = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+                            ScriptCtx::SingleSig, bitcoin::Network::Bitcoin).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("expected mainnet"), "got: {msg}");
     }
 }
 
