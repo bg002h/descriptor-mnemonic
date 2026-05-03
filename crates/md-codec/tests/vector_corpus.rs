@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use assert_cmd::Command;
 use std::process::Command as StdCommand;
 use tempfile::tempdir;

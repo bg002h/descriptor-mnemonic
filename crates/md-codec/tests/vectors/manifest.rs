@@ -1,6 +1,8 @@
 // Vectors corpus source-of-truth. Used both by `md vectors` and by
 // `tests/template_roundtrip.rs`.
 
+#[allow(dead_code)]  // keys/fingerprints/force_chunked are read by cmd/vectors but
+                     // not by every includer of this manifest (e.g. snapshot tests).
 pub struct Vector {
     pub name: &'static str,
     pub template: &'static str,

@@ -15,7 +15,8 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
     #[cfg(feature = "json")]
     if json {
         use crate::format::json::SCHEMA;
-        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let mut hex = String::with_capacity(bytes.len() * 2);
+        for b in &bytes { use std::fmt::Write as _; write!(hex, "{b:02x}").unwrap(); }
         let v = serde_json::json!({
             "schema": SCHEMA,
             "payload_bits": bit_len,

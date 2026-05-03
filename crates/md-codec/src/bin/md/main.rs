@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod cmd;
 #[cfg(feature = "cli-compiler")]
 mod compile;

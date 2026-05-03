@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod manifest {
     include!("vectors/manifest.rs");
 }

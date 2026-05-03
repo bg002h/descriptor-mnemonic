@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 #![cfg(feature = "cli-compiler")]
 use assert_cmd::Command;
 

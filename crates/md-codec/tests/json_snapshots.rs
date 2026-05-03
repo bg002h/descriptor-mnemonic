@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 #![cfg(feature = "json")]
 use assert_cmd::Command;
 

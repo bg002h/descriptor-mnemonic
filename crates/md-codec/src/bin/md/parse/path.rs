@@ -1,3 +1,9 @@
+// The `--path` CLI flag is declared on `Encode` for forward-compat (BIP 388
+// non-canonical wrappers will need it once the codec accepts an explicit
+// override on encode). The plumbing is wired but not yet consumed; see
+// follow-up `cli-path-arg-routing` once the codec API surfaces it.
+#![allow(dead_code)]
+
 use crate::error::CliError;
 use bitcoin::bip32::DerivationPath;
 use std::str::FromStr;

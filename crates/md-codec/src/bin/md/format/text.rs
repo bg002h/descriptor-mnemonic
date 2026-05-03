@@ -195,6 +195,7 @@ pub fn fmt_policy_id_fingerprint(id: &WalletPolicyId) -> String {
     let b = id.as_bytes();
     format!("0x{:02x}{:02x}{:02x}{:02x}", b[0], b[1], b[2], b[3])
 }
+#[allow(dead_code)] // declared for future chunked-display callers; no current usage
 pub fn fmt_chunk_header(h: &ChunkHeader) -> String {
     format!("chunk-set-id=0x{:05x}, count={}, index={}", h.chunk_set_id, h.count, h.index)
 }

@@ -21,8 +21,9 @@ pub fn run(out: Option<String>) -> Result<(), CliError> {
         let (bytes, _bits) = md_codec::encode::encode_payload(&descriptor)?;
 
         write_lf(&out_dir.join(format!("{}.template", v.name)), v.template)?;
-        write_lf(&out_dir.join(format!("{}.bytes.hex", v.name)),
-            &bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())?;
+        let mut hex_str = String::with_capacity(bytes.len() * 2);
+        for b in &bytes { use std::fmt::Write as _; write!(hex_str, "{b:02x}").unwrap(); }
+        write_lf(&out_dir.join(format!("{}.bytes.hex", v.name)), &hex_str)?;
 
         let phrase_text = if v.force_chunked {
             use md_codec::chunk::{derive_chunk_set_id, split};

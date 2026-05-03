@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use assert_cmd::Command;
 
 fn long_help(sub: &str) -> String {
