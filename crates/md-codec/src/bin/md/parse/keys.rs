@@ -33,8 +33,11 @@ pub fn parse_key(arg: &str, ctx: ScriptCtx, network: bitcoin::Network) -> Result
     }
     let (expected_version, network_label) = match network {
         bitcoin::Network::Bitcoin => (MAINNET_XPUB_VERSION, "mainnet"),
-        // Testnet, Signet, Regtest all use the same testnet version bytes per BIP 32.
-        _ => (TESTNET_XPUB_VERSION, "testnet"),
+        // BIP 32 testnet bytes (0x043587CF) cover all testnet flavors.
+        bitcoin::Network::Testnet
+        | bitcoin::Network::Testnet4
+        | bitcoin::Network::Signet
+        | bitcoin::Network::Regtest => (TESTNET_XPUB_VERSION, "testnet"),
     };
     if bytes[0..4] != expected_version {
         return Err(CliError::BadXpub { i, why: format!(
