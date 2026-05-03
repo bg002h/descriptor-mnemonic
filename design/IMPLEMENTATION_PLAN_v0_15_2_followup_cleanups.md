@@ -139,18 +139,28 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **File:** `crates/md-codec/src/bin/md/parse/keys.rs`
 
-- [ ] Replace the wildcard arm in `parse_key`:
+- [ ] Replace the wildcard arm in `parse_key` with an exhaustive match:
 
 ```rust
     let (expected_version, network_label) = match network {
         bitcoin::Network::Bitcoin => (MAINNET_XPUB_VERSION, "mainnet"),
+        // BIP 32 testnet bytes cover testnet, testnet4, signet, and regtest.
         bitcoin::Network::Testnet
+        | bitcoin::Network::Testnet4
         | bitcoin::Network::Signet
         | bitcoin::Network::Regtest => (TESTNET_XPUB_VERSION, "testnet"),
     };
 ```
 
-This makes future bitcoin crate Network variants a compile error rather than silently routing to the testnet path.
+bitcoin 0.32.8's `Network` enum has 5 variants (Bitcoin, Testnet,
+**Testnet4**, Signet, Regtest) and is NOT `#[non_exhaustive]` (verified
+by reading `bitcoin-0.32.8/src/network.rs` lines 70-88). Exhaustive
+match makes any future bitcoin crate variant a compile error rather
+than silently routing to the testnet path.
+
+Note: `CliNetwork` only exposes 4 of the 5 variants on the CLI surface
+(no `Testnet4`), so this arm is unreachable in practice from the CLI
+today; it is exercised only if a future change adds `CliNetwork::Testnet4`.
 
 - [ ] Build + test to confirm no regression:
 
