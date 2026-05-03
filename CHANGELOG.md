@@ -17,9 +17,11 @@ carry over from md-codec verbatim:
 - `cli-compiler` (opt-in) — gates the `compile` subcommand and
   `encode --from-policy` via `miniscript/compiler`.
 
-No CLI behavior change vs. md-codec 0.15.2; `md --version` now reports
-`md-cli 0.1.0` instead of `md-codec 0.15.x` (clap derives `--version` from
-the producing crate's `CARGO_PKG_VERSION`).
+No CLI behavior change vs. md-codec 0.15.2. The binary still identifies as
+`md` (clap is configured with `#[command(name = "md")]` in `main.rs`); the
+`--version` output drops from `md 0.15.2` to `md 0.1.0` because clap derives
+the version number from the producing crate's `CARGO_PKG_VERSION`, which
+is now md-cli's `0.1.0`.
 
 ## md-codec [0.16.0] — 2026-05-03
 
