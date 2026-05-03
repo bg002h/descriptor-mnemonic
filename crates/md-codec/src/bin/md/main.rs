@@ -1,4 +1,5 @@
 mod error;
+mod format;
 mod parse;
 
 use clap::{Parser, Subcommand};
