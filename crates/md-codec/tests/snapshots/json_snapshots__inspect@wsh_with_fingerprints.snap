@@ -1,0 +1,81 @@
+---
+source: crates/md-codec/tests/json_snapshots.rs
+expression: body
+---
+{
+  "descriptor": {
+    "n": 2,
+    "path_decl": {
+      "data": "m",
+      "tag": "Shared"
+    },
+    "tlv": {
+      "fingerprints": null,
+      "origin_path_overrides": null,
+      "pubkeys": null,
+      "unknown": [],
+      "use_site_path_overrides": null
+    },
+    "tree": {
+      "body": {
+        "data": [
+          {
+            "body": {
+              "data": {
+                "children": [
+                  {
+                    "body": {
+                      "data": {
+                        "index": 0
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  },
+                  {
+                    "body": {
+                      "data": {
+                        "index": 1
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  }
+                ],
+                "k": 2
+              },
+              "kind": "Variable"
+            },
+            "tag": "Multi"
+          }
+        ],
+        "kind": "Children"
+      },
+      "tag": "Wsh"
+    },
+    "use_site_path": {
+      "multipath": [
+        {
+          "hardened": false,
+          "value": 0
+        },
+        {
+          "hardened": false,
+          "value": 1
+        }
+      ],
+      "wildcard_hardened": false
+    }
+  },
+  "md1_encoding_id": {
+    "hex": "8b4ef13748da52fa1904c349926c3d6c"
+  },
+  "schema": "md-cli/1",
+  "wallet_descriptor_template_id": {
+    "hex": "1c68cb9c6fef1bce8f8b5a65879d0f6f"
+  },
+  "wallet_policy_id": {
+    "fingerprint": "0xc321525d",
+    "hex": "c321525d859e44c03bc432917952279d"
+  }
+}

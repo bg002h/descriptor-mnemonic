@@ -1,0 +1,90 @@
+---
+source: crates/md-codec/tests/json_snapshots.rs
+expression: body
+---
+{
+  "descriptor": {
+    "n": 3,
+    "path_decl": {
+      "data": "m",
+      "tag": "Shared"
+    },
+    "tlv": {
+      "fingerprints": null,
+      "origin_path_overrides": null,
+      "pubkeys": null,
+      "unknown": [],
+      "use_site_path_overrides": null
+    },
+    "tree": {
+      "body": {
+        "data": [
+          {
+            "body": {
+              "data": {
+                "children": [
+                  {
+                    "body": {
+                      "data": {
+                        "index": 0
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  },
+                  {
+                    "body": {
+                      "data": {
+                        "index": 1
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  },
+                  {
+                    "body": {
+                      "data": {
+                        "index": 2
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  }
+                ],
+                "k": 2
+              },
+              "kind": "Variable"
+            },
+            "tag": "Multi"
+          }
+        ],
+        "kind": "Children"
+      },
+      "tag": "Wsh"
+    },
+    "use_site_path": {
+      "multipath": [
+        {
+          "hardened": false,
+          "value": 0
+        },
+        {
+          "hardened": false,
+          "value": 1
+        }
+      ],
+      "wildcard_hardened": false
+    }
+  },
+  "md1_encoding_id": {
+    "hex": "02e5dd2f3a13a0a206b6a6e93905a678"
+  },
+  "schema": "md-cli/1",
+  "wallet_descriptor_template_id": {
+    "hex": "bb4a357a3412a2a8f816f92bf0330cb3"
+  },
+  "wallet_policy_id": {
+    "fingerprint": "0x8efcf404",
+    "hex": "8efcf40419ffea337c7f3f9107a99fef"
+  }
+}

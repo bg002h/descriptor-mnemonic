@@ -1,0 +1,80 @@
+---
+source: crates/md-codec/tests/json_snapshots.rs
+expression: body
+---
+{
+  "descriptor": {
+    "n": 3,
+    "path_decl": {
+      "data": "m",
+      "tag": "Shared"
+    },
+    "tlv": {
+      "fingerprints": null,
+      "origin_path_overrides": null,
+      "pubkeys": null,
+      "unknown": [],
+      "use_site_path_overrides": null
+    },
+    "tree": {
+      "body": {
+        "data": [
+          {
+            "body": {
+              "data": {
+                "children": [
+                  {
+                    "body": {
+                      "data": {
+                        "index": 0
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  },
+                  {
+                    "body": {
+                      "data": {
+                        "index": 1
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  },
+                  {
+                    "body": {
+                      "data": {
+                        "index": 2
+                      },
+                      "kind": "KeyArg"
+                    },
+                    "tag": "PkK"
+                  }
+                ],
+                "k": 2
+              },
+              "kind": "Variable"
+            },
+            "tag": "SortedMulti"
+          }
+        ],
+        "kind": "Children"
+      },
+      "tag": "Wsh"
+    },
+    "use_site_path": {
+      "multipath": [
+        {
+          "hardened": false,
+          "value": 0
+        },
+        {
+          "hardened": false,
+          "value": 1
+        }
+      ],
+      "wildcard_hardened": false
+    }
+  },
+  "schema": "md-cli/1"
+}

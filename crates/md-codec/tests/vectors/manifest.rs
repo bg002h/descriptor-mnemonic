@@ -1,5 +1,5 @@
-//! Vectors corpus source-of-truth. Used both by `md vectors` and by
-//! `tests/template_roundtrip.rs`.
+// Vectors corpus source-of-truth. Used both by `md vectors` and by
+// `tests/template_roundtrip.rs`.
 
 pub struct Vector {
     pub name: &'static str,
