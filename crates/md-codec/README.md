@@ -31,26 +31,16 @@ the format specification and the
 
 ## CLI
 
-`cargo install md-codec` produces an `md` binary.
+The `md` CLI ships in the sibling [`md-cli`](../md-cli/) crate. As of
+md-codec v0.16.0, this crate is library-only — `cargo install md-codec`
+no longer produces a binary. To install the CLI:
 
-| Subcommand | Purpose |
-|---|---|
-| `md encode <TEMPLATE>` | Encode a BIP 388 wallet policy template into one or more MD backup strings. |
-| `md decode <STRING>...` | Decode one or more MD strings back to the template. |
-| `md verify <STRING>... --template <T>` | Re-encode the template and assert it matches the strings. Exit 0 on match, 1 on mismatch. |
-| `md inspect <STRING>...` | Pretty-print everything the codec sees: template, identity hashes, TLV blocks. |
-| `md bytecode <STRING>...` | Annotated dump of the raw payload bytes. |
-| `md address <STRING>...` (or `--template <T> --key @i=<XPUB>`) | Derive bitcoin addresses from a wallet-policy-mode descriptor. `--chain N` / `--change`, `--index N`, `--count K`, `--network mainnet\|testnet\|signet\|regtest`, `--json`. |
-| `md vectors [--out DIR]` | Regenerate the project's deterministic test-vector corpus (maintainer tool). |
-| `md compile <EXPR> --context tap\|segwitv0` | Compile a sub-Miniscript-Policy expression into a BIP 388 template. Requires `cli-compiler` feature. |
+```sh
+cargo install --path crates/md-cli
+```
 
-`encode`, `decode`, `inspect`, `bytecode`, `address`, and `compile` accept `--json` for structured output (schema versioned as `md-cli/1`). `verify` reports match/mismatch via exit code (0 = match, 1 = mismatch). Each subcommand's `--help` shows a worked example.
-
-To build without the CLI: `cargo build --no-default-features`.
-
-### Network selection
-
-`md encode`, `md verify`, and `md address` accept `--network mainnet|testnet|signet|regtest` (default `mainnet`). The wire format does not carry network — it's a CLI-side convenience for xpub/tpub validation and address rendering. `md decode`/`inspect`/`bytecode` are network-agnostic; pass `--network` to `md address` when rendering addresses from a phrase that was originally built with non-mainnet keys.
+See [`crates/md-cli/README.md`](../md-cli/README.md) for the subcommand
+reference, network-selection notes, and feature flags.
 
 [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
 
@@ -60,7 +50,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-md-codec = "0.7"
+md-codec = "0.16"
 ```
 
 Encode a wallet policy and decode it back:
@@ -92,17 +82,13 @@ two-PolicyId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 
 ## Cargo features
 
-| Feature | Default? | Purpose |
-|---|---|---|
-| `cli` | yes | Build the `md` binary; pulls in `clap`, `anyhow`, `regex`, `miniscript`. |
-| `json` | yes | Enable `--json` output on the CLI; pulls in `serde` + `serde_json`. |
-| `cli-compiler` | no | Enable `md compile` and `md encode --from-policy` (pulls `miniscript/compiler`). Implies `cli`. |
-
-Library-only consumers:
+None. md-codec is library-only as of v0.16.0; the previous `cli`,
+`cli-compiler`, and `json` features moved to `md-cli` along with the
+binary. Library consumers depend on the crate without a feature flag:
 
 ```toml
 [dependencies]
-md-codec = { version = "0.15", default-features = false }
+md-codec = "0.16"
 ```
 
 ## License

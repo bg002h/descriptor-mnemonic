@@ -2,6 +2,66 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.15.x → v0.16.0 + new `md-cli` v0.1.0
+
+The `md` binary moved from `md-codec` into a new `md-cli` crate. **No wire-format change. No library API change.** The migration is install-path-only for CLI users and feature-flag migration for downstream Cargo consumers.
+
+### CLI users
+
+Old:
+
+```sh
+cargo install md-codec
+```
+
+New:
+
+```sh
+# in-repo (md-cli is unpublished)
+cargo install --path crates/md-cli
+# with the policy compiler
+cargo install --path crates/md-cli --features cli-compiler
+```
+
+The resulting binary is still named `md`, the subcommand list is unchanged, exit codes are unchanged, and golden output is unchanged. Only `md --version` differs (`md 0.15.2` → `md 0.1.0`).
+
+### Library consumers
+
+No changes required. Continue depending on `md-codec`:
+
+```toml
+[dependencies]
+md-codec = "0.16"
+```
+
+`md-codec` is now library-only — no `[[bin]]`, no `[features]` block, no CLI optional deps. Pre-1.0 library API surface is unchanged from 0.15.2.
+
+### Cargo-feature consumers
+
+Downstream consumers using `md-codec`'s `cli`, `cli-compiler`, or `json` features must migrate to depending on `md-cli`:
+
+Old:
+
+```toml
+[dependencies]
+md-codec = { version = "0.15", default-features = false, features = ["cli", "json"] }
+```
+
+New (if you want the binary):
+
+```toml
+[dependencies]
+md-cli = { path = "../md-cli" }      # in-repo
+# or, once md-cli is published:
+# md-cli = "0.1"
+```
+
+The `json` and `cli-compiler` feature flags carry over verbatim; `default = ["json"]` is preserved on `md-cli`.
+
+### Optional deps removed from md-codec
+
+Optional dependencies dropped from `md-codec`'s graph in 0.16.0: `clap`, `anyhow`, `regex`, `serde`, `serde_json`, `miniscript`. They now live on `md-cli`.
+
 ## v0.15.1 → v0.15.2
 
 Pure cleanup release. **No migration steps required.** No behavior changes;

@@ -5,8 +5,10 @@
 > **Status: Pre-Draft, AI + reference implementation, awaiting human review.**
 > This specification was produced by an AI assistant in collaboration with
 > the author, and is shipped alongside a working reference implementation
-> at [`crates/md-codec/`](crates/md-codec/) (Rust, CC0-1.0) that locks
-> the v0.1 wire format with committed test vectors. The spec and impl have
+> split across two Rust crates (CC0-1.0): the codec library at
+> [`crates/md-codec/`](crates/md-codec/) and the `md` CLI at
+> [`crates/md-cli/`](crates/md-cli/), locking the v0.1 wire format with
+> committed test vectors. The spec and impl have
 > not yet been reviewed end-to-end by a human or by the broader bitcoin
 > community. Tag values, header layout, HRP, and structural decisions
 > remain subject to change pending that review. Treat as a working sketch
@@ -42,7 +44,8 @@ versions) cosigners' extended public keys.
 │   ├── README.md                                  ← BIP draft index
 │   └── bip-mnemonic-descriptor.mediawiki          ← the formal BIP draft
 ├── crates/
-│   ├── md-codec/                                  ← Rust reference implementation
+│   ├── md-codec/                                  ← Rust reference codec library (v0.16+: library-only)
+│   ├── md-cli/                                    ← `md` CLI binary (v0.1+; ships the binary extracted from md-codec 0.15.x)
 │   └── md-signer-compat/                          ← layered named-signer-subset validator (v0.7+)
 ├── design/
 │   ├── POLICY_BACKUP.md   ← design rationale, decisions log, open items
@@ -57,7 +60,8 @@ versions) cosigners' extended public keys.
 ## Where to start reading
 
 - **For format users / implementers:** `bip/bip-mnemonic-descriptor.mediawiki` is the canonical spec.
-- **For the reference implementation:** [`crates/md-codec/README.md`](crates/md-codec/README.md) — quickstart, CLI, library API.
+- **For the codec library:** [`crates/md-codec/README.md`](crates/md-codec/README.md) — quickstart and library API.
+- **For the `md` CLI:** [`crates/md-cli/README.md`](crates/md-cli/README.md) — install instructions, subcommand reference, network selection.
 - **For why the spec is the way it is:** `design/POLICY_BACKUP.md` documents the design decisions and tradeoffs in detail.
 - **For comparison with existing formats:** `design/PRIOR_ART.md`.
 - **For what real miniscripts look like under MD encoding:** `design/CORPUS.md` and the locked test vectors at `crates/md-codec/tests/vectors/v0.1.json`.
@@ -97,7 +101,7 @@ The Rust reference implementation implements the current scope:
 - Decode pipeline with per-stage diagnostics (`DecodeReport` + `Confidence`).
 - 673+ unit + integration tests across `md-codec` + `md-signer-compat`, including corpus round-trips, negative conformance vectors, hand-AST defensive coverage, and BCH known-vectors cross-checked against an independent Python implementation.
 - v0.1 + v0.2 test vectors locked in `crates/md-codec/tests/vectors/` (schemas in `src/vectors.rs`).
-- An `md` CLI for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations, plus a `from-policy` mode (behind opt-in `cli-compiler` feature) wrapping rust-miniscript's policy compiler.
+- An `md` CLI (in [`crates/md-cli/`](crates/md-cli/)) for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations, plus a `from-policy` mode (behind opt-in `cli-compiler` feature) wrapping rust-miniscript's policy compiler.
 - A sibling [`md-signer-compat`](crates/md-signer-compat/) crate (v0.7.0+) shipping named hardware-signer subsets (`COLDCARD_TAP`, `LEDGER_TAP`) with a `validate_tap_tree` walker, plus a `md-signer-compat validate --signer <name> ...` CLI binary.
 
 The `Draft` status (the first formal BIP 2 status) will be claimed only after the spec has been reviewed by at least one human contributor end-to-end.
