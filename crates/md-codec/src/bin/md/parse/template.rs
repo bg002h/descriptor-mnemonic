@@ -109,3 +109,134 @@ mod lex_tests {
         assert!(lex_placeholders("wpkh(xpubAAAAA)").is_err());
     }
 }
+
+use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
+use md_codec::use_site_path::{Alternative, UseSitePath};
+use bitcoin::bip32::ChildNumber;
+
+/// Resolved per-`@i` view after consistency checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedPlaceholders {
+    pub n: u8,
+    pub path_decl: PathDecl,
+    pub use_site_path: UseSitePath,
+    pub use_site_path_overrides: Vec<(u8, UseSitePath)>,
+}
+
+pub fn resolve_placeholders(occs: &[PlaceholderOccurrence]) -> Result<ResolvedPlaceholders, CliError> {
+    // Collapse same-@i occurrences; reject if conflicting.
+    let mut by_i: std::collections::BTreeMap<u8, &PlaceholderOccurrence> = std::collections::BTreeMap::new();
+    for occ in occs {
+        if let Some(prev) = by_i.get(&occ.i) {
+            if prev.multipath_alts != occ.multipath_alts
+                || prev.wildcard_hardened != occ.wildcard_hardened
+                || prev.origin_path != occ.origin_path
+            {
+                return Err(CliError::TemplateParse(format!(
+                    "@{} appears with inconsistent path/multipath/hardening", occ.i
+                )));
+            }
+        } else {
+            by_i.insert(occ.i, occ);
+        }
+    }
+    let n = (by_i.keys().max().copied().ok_or_else(|| CliError::TemplateParse("no placeholders".into()))? as usize + 1) as u8;
+    for i in 0..n {
+        if !by_i.contains_key(&i) {
+            return Err(CliError::TemplateParse(format!("@{i} not present; placeholders must be dense 0..n")));
+        }
+    }
+    let at0 = by_i[&0];
+    let use_site_path = make_use_site_path(at0)?;
+    let mut use_site_path_overrides = Vec::new();
+    for i in 1..n {
+        let occ = by_i[&i];
+        let usp_i = make_use_site_path(occ)?;
+        if usp_i != use_site_path {
+            use_site_path_overrides.push((i, usp_i));
+        }
+    }
+    let path_decl = make_path_decl(&by_i, n, at0)?;
+    Ok(ResolvedPlaceholders { n, path_decl, use_site_path, use_site_path_overrides })
+}
+
+fn make_use_site_path(occ: &PlaceholderOccurrence) -> Result<UseSitePath, CliError> {
+    let alts: Vec<Alternative> = occ.multipath_alts.iter()
+        .map(|v| Alternative { hardened: false, value: *v })
+        .collect();
+    Ok(UseSitePath {
+        multipath: if alts.is_empty() { None } else { Some(alts) },
+        wildcard_hardened: occ.wildcard_hardened,
+    })
+}
+
+/// Convert a `bitcoin::DerivationPath` (or absence-of-path) into an `OriginPath`.
+/// `None` becomes the empty origin (depth 0); otherwise each child becomes a
+/// `PathComponent { hardened, value }`.
+pub(crate) fn to_origin_path(p: Option<&bitcoin::bip32::DerivationPath>) -> OriginPath {
+    let components = match p {
+        None => Vec::new(),
+        Some(dp) => dp.into_iter().map(|c| match c {
+            ChildNumber::Normal { index }   => PathComponent { hardened: false, value: *index },
+            ChildNumber::Hardened { index } => PathComponent { hardened: true,  value: *index },
+        }).collect(),
+    };
+    OriginPath { components }
+}
+
+fn make_path_decl(
+    by_i: &std::collections::BTreeMap<u8, &PlaceholderOccurrence>,
+    n: u8,
+    at0: &PlaceholderOccurrence,
+) -> Result<PathDecl, CliError> {
+    let all_same = (0..n).all(|i| by_i[&i].origin_path == at0.origin_path);
+    let paths = if all_same {
+        PathDeclPaths::Shared(to_origin_path(at0.origin_path.as_ref()))
+    } else {
+        let v: Vec<OriginPath> = (0..n).map(|i| to_origin_path(by_i[&i].origin_path.as_ref())).collect();
+        PathDeclPaths::Divergent(v)
+    };
+    Ok(PathDecl { n, paths })
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+
+    #[test]
+    fn shared_use_site_path_when_all_match() {
+        let occs = lex_placeholders("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))").unwrap();
+        let r = resolve_placeholders(&occs).unwrap();
+        assert_eq!(r.n, 2);
+        assert!(r.use_site_path_overrides.is_empty());
+    }
+
+    #[test]
+    fn divergent_use_site_path_when_at1_differs() {
+        let occs = lex_placeholders("wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))").unwrap();
+        let r = resolve_placeholders(&occs).unwrap();
+        assert_eq!(r.n, 2);
+        assert_eq!(r.use_site_path_overrides.len(), 1);
+        assert_eq!(r.use_site_path_overrides[0].0, 1);
+    }
+
+    #[test]
+    fn rejects_nondense_placeholders() {
+        let occs = lex_placeholders("wsh(multi(2,@0/<0;1>/*,@2/<0;1>/*))").unwrap();
+        let err = resolve_placeholders(&occs).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("dense"), "got: {msg}");
+    }
+
+    #[test]
+    fn rejects_same_at_i_conflicting() {
+        // Synthesize directly, lexer would also accept these as separate occurrences.
+        let occs = vec![
+            PlaceholderOccurrence { i: 0, origin_path: None, multipath_alts: vec![0,1], wildcard_hardened: false },
+            PlaceholderOccurrence { i: 0, origin_path: None, multipath_alts: vec![2,3], wildcard_hardened: false },
+        ];
+        let err = resolve_placeholders(&occs).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("inconsistent"), "got: {msg}");
+    }
+}
