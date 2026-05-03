@@ -1,0 +1,25 @@
+---
+source: crates/md-codec/tests/cmd_address_json.rs
+expression: body
+---
+{
+  "addresses": [
+    {
+      "address": "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
+      "chain": 0,
+      "index": 0
+    },
+    {
+      "address": "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g",
+      "chain": 0,
+      "index": 1
+    },
+    {
+      "address": "bc1qp59yckz4ae5c4efgw2s5wfyvrz0ala7rgvuz8z",
+      "chain": 0,
+      "index": 2
+    }
+  ],
+  "network": "mainnet",
+  "schema": "md-cli/1"
+}
