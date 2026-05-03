@@ -33,8 +33,11 @@ pub fn parse_key(arg: &str, ctx: ScriptCtx, network: bitcoin::Network) -> Result
     }
     let (expected_version, network_label) = match network {
         bitcoin::Network::Bitcoin => (MAINNET_XPUB_VERSION, "mainnet"),
-        // Testnet, Signet, Regtest all use the same testnet version bytes per BIP 32.
-        _ => (TESTNET_XPUB_VERSION, "testnet"),
+        // BIP 32 testnet bytes (0x043587CF) cover all testnet flavors.
+        bitcoin::Network::Testnet
+        | bitcoin::Network::Testnet4
+        | bitcoin::Network::Signet
+        | bitcoin::Network::Regtest => (TESTNET_XPUB_VERSION, "testnet"),
     };
     if bytes[0..4] != expected_version {
         return Err(CliError::BadXpub { i, why: format!(
@@ -104,7 +107,11 @@ mod tests {
     /// Abandon-mnemonic tpub at m/84'/1'/0' (BIP 84 testnet account, depth 3).
     pub(crate) const ABANDON_TPUB_DEPTH3_BIP84: &str = "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M";
     /// Abandon-mnemonic tpub at m/48'/1'/0'/2' (BIP 48 testnet account, depth 4).
-    #[allow(dead_code)] // referenced by future Phase 4 wsh-multi testnet test if added
+    /// Reserved for a future wsh-multi testnet test fixture (currently unused).
+    /// `#[allow(dead_code)]` is required in test builds because the lint sees
+    /// the const compiled-in but unread; the v0.15.1 review claim that the
+    /// `#[cfg(test)]` enclosure made the allow redundant was a false positive.
+    #[allow(dead_code)]
     pub(crate) const ABANDON_TPUB_DEPTH4_BIP48: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
 
     #[test]

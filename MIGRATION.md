@@ -2,6 +2,13 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.15.1 → v0.15.2
+
+Pure cleanup release. **No migration steps required.** No behavior changes;
+library API and wire format unchanged from v0.15.1; CLI surface
+unchanged. Closes 7 LOW-severity findings deferred from v0.15.1
+reviews — see CHANGELOG.md for the per-finding disposition.
+
 ## v0.15.0 → v0.15.1
 
 Pure additive. **No source changes required for downstream library consumers.** Existing CLI invocations keep mainnet semantics by default.

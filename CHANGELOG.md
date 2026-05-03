@@ -4,6 +4,46 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.15.2] — 2026-05-03
+
+Pure cleanup release. No behavior changes; library API and wire format unchanged.
+
+### Fixed (deferred-LOW close-out from v0.15.1 reviews)
+
+- `parse_key`'s `bitcoin::Network` match is now exhaustive, including
+  `Testnet4` (added in bitcoin 0.32.x). Future bitcoin crate variants
+  become a compile error rather than silently routing to the testnet
+  xpub-version path. (`v0.15.1-phase-2-low-2`)
+- `cmd::address::build_descriptor` adds a defense-in-depth zero-arg
+  guard that returns `CliError::BadArg` (exit 2) if clap's
+  `ArgGroup::required(true)` ever fails to block invocation without
+  positional phrases or `--template`. (`v0.15.1-phase-3-low-1`)
+- `tests/cmd_address.rs` adds an `account_xpub_testnet(path)` wrapper
+  matching the v0.15.1 SPEC text. (`v0.15.1-phase-4-low-1`)
+- `cmd::address::run` adds a `let _ = args.network_str;` suppressor
+  alongside the existing `args.json` suppressor for the no-`json`-feature
+  build path. (`v0.15.1-phase-5-low-1`)
+
+### Closed as wont-fix
+
+- `--force-long-code` remains a documented no-op; long-code mode was
+  dropped in v0.12.0 and the flag is forward-compat scaffold. Intent
+  now annotated inline at the call site. (`v0.15.1-phase-2-low-1`)
+- `#[allow(dead_code)]` on `ABANDON_TPUB_DEPTH4_BIP48` is required in
+  test builds; the v0.15.1 review claim that the `#[cfg(test)]`
+  enclosure made it redundant was a false positive (verified by
+  removing the allow and observing the lint fire under
+  `cargo clippy --all-targets -D warnings`). Intent annotated inline.
+  (`v0.15.1-phase-1-low-1`)
+- The v0.15.1 `--json` arg row in the address arg-semantics SPEC table
+  was already present; the v0.15.1 spec-l2 finding was a false positive.
+  No code change. (`v0.15.1-spec-l2-address-json-arg-row`)
+
+### Unchanged
+
+- Library API. Wire format. Public `md_codec::*` exports. CLI behavior.
+- Test count (365 with-`cli-compiler`; 357 without).
+
 ## [0.15.1] — 2026-05-03
 
 ### Added

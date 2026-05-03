@@ -50,7 +50,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `design/SPEC_v0_15_1_address_and_network.md` §Subcommand surface
 - **What:** All other args have explicit rows; `--json` was only mentioned in the CLI synopsis. Cosmetic.
 - **Why deferred:** doesn't affect implementation correctness.
-- **Status:** `open`
+- **Status:** `wont-fix — false positive in r1 review; the `--json` row was already present in the SPEC at line 62 from the original commit. Confirmed by `grep "Emit JSON" design/SPEC_v0_15_1_address_and_network.md` on 2026-05-03.`
 - **Tier:** `v0.15.2`
 
 ### `v0.15.1-phase-1-low-1` — `#[allow(dead_code)]` on `ABANDON_TPUB_DEPTH4_BIP48` is redundant inside `#[cfg(test)]`
@@ -59,7 +59,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bin/md/parse/keys.rs` `ABANDON_TPUB_DEPTH4_BIP48` const
 - **What:** The `#[allow(dead_code)]` is inside a `#[cfg(test)]` block; outside test builds the compiler does not see it. Cosmetic.
 - **Why deferred:** harmless.
-- **Status:** `open`
+- **Status:** `wont-fix — false positive in Phase 1 review. Verified at v0.15.2 by removing the allow and observing clippy --features cli,json,cli-compiler --all-targets -D warnings fire dead_code (the const is compiled-in but unread in test builds). Allow IS necessary; intent now annotated inline at 94e739e.`
 - **Tier:** `v0.15.2`
 
 ### `v0.15.1-phase-2-low-1` — `let _ = args.force_long_code;` silently ignored in encode
@@ -68,7 +68,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bin/md/cmd/encode.rs:63`
 - **What:** Flag accepted by clap but discarded unconditionally. Pre-existing forward-compat stub.
 - **Why deferred:** intentional in v0.15.0 design; revisit if a real long-code mode lands.
-- **Status:** `open`
+- **Status:** `wont-fix — long-code mode dropped in v0.12.0; --force-long-code is forward-compat scaffold for unchanged scripts. Intent annotated inline at e2cb942. Removing the clap arg would break user scripts; deferred indefinitely until a real long-code mode lands.`
 - **Tier:** `v0.15.2`
 
 ### `v0.15.1-phase-2-low-2` — `parse_key` wildcard match on `bitcoin::Network`
@@ -77,7 +77,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bin/md/parse/keys.rs` `parse_key` (network match)
 - **What:** Uses `_ =>` to group Testnet/Signet/Regtest. Future bitcoin crate version adding a new Network variant would silently land in the testnet path.
 - **Why deferred:** idiomatic for non-exhaustive external enums; explicit by design.
-- **Status:** `open`
+- **Status:** `resolved 0711e3b — wildcard arm replaced with explicit Testnet | Testnet4 | Signet | Regtest =>. bitcoin 0.32.8's Network is NOT #[non_exhaustive] (verified by reading network.rs lines 70-88), so exhaustive matching is permitted. Future variants now compile-error.`
 - **Tier:** `v0.15.2`
 
 ### `v0.15.1-phase-3-low-1` — Latent fragility if clap's ArgGroup ever fails to block zero-arg `md address`
@@ -86,7 +86,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bin/md/cmd/address.rs` `build_descriptor`
 - **What:** If clap's `ArgGroup::required(true)` on a positional `num_args = 0..` ever fails to block zero-arg invocation, `build_descriptor` would call `reassemble(&[])` → exit 1 instead of 2. Suggested defensive guard: `if args.phrases.is_empty() && args.template.is_none() { return Err(BadArg(..)); }`.
 - **Why deferred:** `address_no_input_exits_2` integration test is the guard; not currently failing.
-- **Status:** `open`
+- **Status:** `resolved cdae427 — defense-in-depth guard added at the top of build_descriptor. Routes to clean exit-2 BadArg if clap ever fails to catch the zero-arg case.`
 - **Tier:** `v0.15.2`
 
 ### `v0.15.1-phase-4-low-1` — `account_xpub_testnet` wrapper specified in plan but inlined
@@ -95,7 +95,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/tests/cmd_address.rs`
 - **What:** Plan called for an `account_xpub_testnet(path)` convenience wrapper; the actual test inlines the call. Functionally equivalent.
 - **Why deferred:** cosmetic; arguably cleaner inlined.
-- **Status:** `open`
+- **Status:** `resolved ada560e — wrapper added matching v0.15.1 SPEC text; testnet test call site updated.`
 - **Tier:** `v0.15.2`
 
 ### `v0.15.1-phase-5-low-1` — `args.network_str` lacks unused-warning suppressor when `json` feature off
@@ -104,7 +104,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bin/md/cmd/address.rs`
 - **What:** `args.json` has an explicit `let _ = ...` suppressor for the no-`json`-feature case; `args.network_str` does not. May or may not trigger an unused-field lint depending on rustc/clippy version.
 - **Why deferred:** cosmetic; not currently triggering.
-- **Status:** `open`
+- **Status:** `resolved f54f486 — let _ = args.network_str; added next to the existing args.json suppressor.`
 - **Tier:** `v0.15.2`
 
 ### `wallet-id-is-really-template-id` — current `WalletId` identifies a policy template, not a wallet instance

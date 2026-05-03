@@ -60,6 +60,10 @@ pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
         println!("policy-id-fingerprint: {}", text::fmt_policy_id_fingerprint(&id));
     }
 
+    // --force-long-code: long-code mode was dropped in v0.12.0; the flag is
+    // accepted for forward-compat (so older scripts don't break) but has no
+    // effect. Status: wont-fix at v0.15.2 (FOLLOWUPS v0.15.1-phase-2-low-1).
+    // Revisit only if a real long-code mode is reintroduced.
     let _ = args.force_long_code;
     Ok(())
 }

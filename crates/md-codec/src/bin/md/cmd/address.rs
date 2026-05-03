@@ -51,6 +51,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
         return Ok(());
     }
     let _ = args.json;
+    let _ = args.network_str;
 
     for (_, _, addr) in &rows {
         println!("{addr}");
@@ -59,6 +60,16 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
 }
 
 fn build_descriptor(args: &AddressArgs<'_>) -> Result<Descriptor, CliError> {
+    // Defense in depth — clap's ArgGroup::required(true) is the primary
+    // guard; this catches the case where it ever fails (clap regression,
+    // custom invocation bypassing the parser, etc.) and routes the user
+    // to a clean exit-2 BadArg instead of a confusing exit-1 from
+    // reassemble(&[]).
+    if args.phrases.is_empty() && args.template.is_none() {
+        return Err(CliError::BadArg(
+            "address requires either positional <STRING>... or --template <T> --key @i=<XPUB>; clap should have caught this — please report a bug".into(),
+        ));
+    }
     if let Some(template) = args.template {
         if args.keys.is_empty() {
             return Err(CliError::BadArg(
