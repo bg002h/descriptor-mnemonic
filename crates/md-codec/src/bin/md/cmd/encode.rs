@@ -11,6 +11,8 @@ pub struct EncodeArgs<'a> {
     pub template: &'a str,
     pub keys: &'a [String],
     pub fingerprints: &'a [String],
+    pub network: bitcoin::Network,
+    pub network_str: &'static str,
     pub force_chunked: bool,
     pub force_long_code: bool,
     pub policy_id_fingerprint: bool,
@@ -19,7 +21,7 @@ pub struct EncodeArgs<'a> {
 
 pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
     let ctx = ctx_for_template(args.template);
-    let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx, bitcoin::Network::Bitcoin)).collect::<Result<Vec<_>, _>>()?;
+    let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx, args.network)).collect::<Result<Vec<_>, _>>()?;
     let parsed_fps = args.fingerprints.iter().map(|s| parse_fingerprint(s)).collect::<Result<Vec<_>, _>>()?;
     let descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
 
@@ -28,6 +30,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
         use crate::format::json::SCHEMA;
         let mut obj = serde_json::Map::new();
         obj.insert("schema".into(), SCHEMA.into());
+        obj.insert("network".into(), args.network_str.into());
         if args.force_chunked {
             let chunks = split(&descriptor)?;
             let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);

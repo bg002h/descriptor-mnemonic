@@ -75,6 +75,9 @@ enum Command {
         /// Master-key fingerprint for placeholder `@i`. Repeatable.
         #[arg(long = "fingerprint", value_name = "@i=HEX")]
         fingerprints: Vec<String>,
+        /// Network for xpub validation (and JSON output labeling).
+        #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
+        network: CliNetwork,
         /// Force chunked encoding even for short policies.
         #[arg(long)]
         force_chunked: bool,
@@ -106,6 +109,9 @@ enum Command {
         keys: Vec<String>,
         #[arg(long = "fingerprint", value_name = "@i=HEX")]
         fingerprints: Vec<String>,
+        /// Network for xpub validation.
+        #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
+        network: CliNetwork,
     },
     /// Decode + pretty-print everything the codec sees.
     Inspect {
@@ -155,7 +161,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
     match c {
         Command::Encode {
             template, from_policy, context, path: _,
-            keys, fingerprints, force_chunked, force_long_code,
+            keys, fingerprints, network, force_chunked, force_long_code,
             policy_id_fingerprint, json,
         } => {
             let template_str: String = if let Some(expr) = from_policy {
@@ -175,15 +181,17 @@ fn dispatch(c: Command) -> Result<(), CliError> {
             };
             cmd::encode::run(cmd::encode::EncodeArgs {
                 template: &template_str, keys: &keys, fingerprints: &fingerprints,
+                network: network.into(), network_str: network.as_str(),
                 force_chunked, force_long_code, policy_id_fingerprint, json,
             })
         }
         Command::Decode { strings, json } => cmd::decode::run(&strings, json),
-        Command::Verify { strings, template, keys, fingerprints } => cmd::verify::run(cmd::verify::VerifyArgs {
+        Command::Verify { strings, template, keys, fingerprints, network } => cmd::verify::run(cmd::verify::VerifyArgs {
             strings: &strings,
             template: &template,
             keys: &keys,
             fingerprints: &fingerprints,
+            network: network.into(),
         }),
         Command::Inspect { strings, json } => cmd::inspect::run(&strings, json),
         Command::Bytecode { strings, json } => cmd::bytecode::run(&strings, json),
