@@ -39,8 +39,20 @@ pub fn compile_policy_to_template(expr: &str, ctx: ScriptContext) -> Result<Stri
             Ok(format!("wsh({ms})"))
         }
         ScriptContext::Tap => {
+            // Tap requires either a key-path (`tr(KEY)`) or key-path + script-tree
+            // (`tr(KEY, TREE)`). v0.15 only supports the key-path form for single-key
+            // policies (e.g. `pk(@0)` → `tr(@0)`); multi-leaf trees would need a NUMS
+            // internal key, which is out of scope.
             let ms = policy.compile::<miniscript::Tap>().map_err(|e| CompileError::Compile(format!("{e}")))?;
-            Ok(format!("tr({ms})"))
+            let rendered = ms.to_string();
+            if let Some(inner) = rendered.strip_prefix("pk(").and_then(|s| s.strip_suffix(')')) {
+                Ok(format!("tr({inner})"))
+            } else {
+                Err(CompileError::Compile(format!(
+                    "v0.15 cli-compiler only supports single-key tap policies (got `{rendered}`); \
+                     multi-leaf policies need a NUMS internal key, which is not yet supported"
+                )))
+            }
         }
     }
 }
