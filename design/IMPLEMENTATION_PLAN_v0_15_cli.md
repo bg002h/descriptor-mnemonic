@@ -1598,30 +1598,38 @@ EOF
 
 Replace the stub `walk_tr` in `crates/md-codec/src/bin/md/parse/template.rs` with:
 
-v0.14 has no `TapTreeNode` type. Tap-tree branches are encoded as `Tag::TapTree` with `Body::Children(vec![left, right])`. Tap-tree leaves are plain miniscript nodes (no wrapper tag).
+v0.14 has no `TapTreeNode` type. The codec encodes tap-tree branches as `Tag::TapTree` with `Body::Children([left, right])`; leaves are plain miniscript nodes. miniscript 13.0.0's `TapTree` is an opaque struct (not a pattern-matchable enum) — we walk it via the public `leaves()` iterator, which yields `(depth, &Miniscript)` pairs in pre-order. We rebuild the binary tree bottom-up from a depth-stack.
+
+**v0.15 scope note:** the manifest only contains `tr(@0)` (no script tree) and `tr(@0, pk(@1))` (a single-leaf script tree). The `walk_tap_tree` function below handles 0 or 1 leaves directly. Multi-leaf or nested tap-trees are out of scope for v0.15 and will surface as `CliError::TemplateParse("tap-tree with N leaves not yet supported")`. A future task can extend the rebuilder; the manifest entries it would unblock can be added at the same time.
 
 ```rust
 fn walk_tr(t: &miniscript::descriptor::Tr<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
     let key_index = lookup_key(&t.internal_key().to_string(), km)?;
-    let tree: Option<Box<Node>> = if let Some(taptree) = t.tap_tree() {
-        Some(Box::new(walk_tap_tree(taptree, km)?))
-    } else { None };
+    let tree: Option<Box<Node>> = match t.tap_tree() {
+        None => None,
+        Some(tt) => Some(Box::new(walk_tap_tree_v0_15(tt, km)?)),
+    };
     Ok(Node { tag: Tag::Tr, body: Body::Tr { key_index, tree } })
 }
 
-/// Walk miniscript's `TapTree` recursively. Branches → `Tag::TapTree` with two
-/// children; leaves → plain miniscript node (no wrapper).
-fn walk_tap_tree(tt: &miniscript::descriptor::TapTree<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
-    use miniscript::descriptor::TapTree;
-    match tt {
-        TapTree::Leaf(ms) => walk_miniscript_node(ms, km, /*tap=*/true),
-        TapTree::Tree { left, right, .. } => Ok(Node {
-            tag: Tag::TapTree,
-            body: Body::Children(vec![
-                walk_tap_tree(left, km)?,
-                walk_tap_tree(right, km)?,
-            ]),
-        }),
+/// Walk miniscript 13's `TapTree` for the v0.15 supported subset (0 or 1 leaf).
+/// Returns the leaf node directly when there is exactly one leaf.
+fn walk_tap_tree_v0_15(
+    tt: &miniscript::descriptor::TapTree<DescriptorPublicKey>,
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
+    let leaves: Vec<_> = tt.leaves().collect();
+    match leaves.len() {
+        0 => Err(CliError::TemplateParse("tap tree present but contains no leaves".into())),
+        1 => {
+            // v0.15 supports a single leaf at any depth; we ignore depth here
+            // because there is no branching. The leaf becomes a plain Node.
+            let leaf = &leaves[0];
+            walk_miniscript_node(leaf.miniscript(), km, /*tap=*/true)
+        }
+        n => Err(CliError::TemplateParse(format!(
+            "tap tree with {n} leaves not yet supported in v0.15 (single-leaf only)"
+        ))),
     }
 }
 
@@ -2754,10 +2762,11 @@ impl From<&WalletDescriptorTemplateId> for JsonHash {
 }
 impl From<&WalletPolicyId> for JsonHash {
     fn from(id: &WalletPolicyId) -> Self {
-        let fp = id.fingerprint();
+        // v0.14 WalletPolicyId has no fingerprint() method — slice as_bytes().
+        let b = id.as_bytes();
         Self {
-            hex: hex(id.as_bytes()),
-            fingerprint: Some(format!("0x{:02x}{:02x}{:02x}{:02x}", fp[0], fp[1], fp[2], fp[3])),
+            hex: hex(b),
+            fingerprint: Some(format!("0x{:02x}{:02x}{:02x}{:02x}", b[0], b[1], b[2], b[3])),
         }
     }
 }
