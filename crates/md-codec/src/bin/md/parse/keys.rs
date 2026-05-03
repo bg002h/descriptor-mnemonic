@@ -2,7 +2,7 @@ use crate::error::CliError;
 use bitcoin::base58;
 
 const XPUB_LEN: usize = 78;
-const MAINNET_XPUB_VERSION: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
+pub(crate) const MAINNET_XPUB_VERSION: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
 
 /// Script-context expectation for depth validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

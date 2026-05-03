@@ -240,3 +240,80 @@ mod resolve_tests {
         assert!(msg.contains("inconsistent"), "got: {msg}");
     }
 }
+
+use crate::parse::keys::{ScriptCtx, MAINNET_XPUB_VERSION};
+
+/// A synthetic xpub keyed by placeholder index `i` and the outer script context.
+/// Depth tracks BIP 388 expectation: depth 3 for single-sig (wpkh/pkh), depth
+/// 4 for multisig/taproot. Deterministic, never emitted to wire.
+fn synthetic_xpub_for(i: u8, ctx: ScriptCtx) -> String {
+    use bitcoin::base58;
+    let mut bytes = [0u8; 78];
+    bytes[0..4].copy_from_slice(&MAINNET_XPUB_VERSION);
+    bytes[4] = match ctx { ScriptCtx::SingleSig => 3, ScriptCtx::MultiSig => 4 };
+    bytes[5..9].copy_from_slice(&[0;4]);   // parent fp (zeros)
+    bytes[9..13].copy_from_slice(&[0;4]);  // child number (zeros)
+    bytes[13] = i;                         // first chain-code byte = i (uniqueness)
+    bytes[45] = 0x02;                      // compressed pubkey prefix (even)
+    bytes[46..78].copy_from_slice(&[i; 32]); // pubkey body = 0x{ii} * 32
+    base58::encode_check(&bytes)
+}
+
+/// Substitute each `@i/...` with a synthetic xpub. Returns substituted template
+/// + map (synthetic-xpub-string → placeholder index).
+fn substitute_synthetic(template: &str, ctx: ScriptCtx)
+    -> Result<(String, std::collections::BTreeMap<String, u8>), CliError>
+{
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(
+        r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;]+>)?(?:/\*(?:'|h)?)?"
+    ).expect("static regex compiles"));
+    let mut key_map = std::collections::BTreeMap::new();
+    let mut keys_seen = std::collections::HashSet::new();
+    let out = re.replace_all(template, |caps: &regex::Captures| {
+        let i: u8 = caps[1].parse().unwrap_or(0);
+        let xpub = synthetic_xpub_for(i, ctx);
+        if keys_seen.insert(i) {
+            key_map.insert(xpub.clone(), i);
+        }
+        xpub
+    }).into_owned();
+    Ok((out, key_map))
+}
+
+#[cfg(test)]
+mod sub_tests {
+    use super::*;
+
+    #[test]
+    fn synthetic_for_0_and_1_differ() {
+        assert_ne!(synthetic_xpub_for(0, ScriptCtx::MultiSig), synthetic_xpub_for(1, ScriptCtx::MultiSig));
+    }
+
+    #[test]
+    fn synthetic_for_0_is_stable() {
+        assert_eq!(synthetic_xpub_for(0, ScriptCtx::MultiSig), synthetic_xpub_for(0, ScriptCtx::MultiSig));
+    }
+
+    #[test]
+    fn singlesig_synthetic_uses_depth_3() {
+        // Cross-context xpubs must differ — depth byte 4 is 3 vs 4.
+        assert_ne!(synthetic_xpub_for(0, ScriptCtx::SingleSig), synthetic_xpub_for(0, ScriptCtx::MultiSig));
+    }
+
+    #[test]
+    fn substitution_strips_at_i_suffix() {
+        let (s, _) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        assert!(!s.contains('@'));
+        assert!(!s.contains('<'));
+        assert!(!s.contains('*'));
+    }
+
+    #[test]
+    fn substitution_emits_consistent_keys_per_index() {
+        let (s, km) = substitute_synthetic("wsh(or_d(pk(@0/<0;1>/*),pk(@0/<0;1>/*)))", ScriptCtx::MultiSig).unwrap();
+        assert_eq!(km.len(), 1);
+        let key = synthetic_xpub_for(0, ScriptCtx::MultiSig);
+        assert_eq!(s.matches(&key).count(), 2);
+    }
+}
