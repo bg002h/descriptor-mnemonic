@@ -4,6 +4,53 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.1.1] — 2026-05-03
+
+Pure cleanup release. **No CLI behavior change.** Closes 11 v0.16.x-tier
+FOLLOWUPS opened by the md-cli extraction PR review cycle: 10 resolved
+with code/doc fixes, 1 closed as `wont-fix` (process-audit record only).
+
+### What's new
+
+- `md vectors` default `--out` directory is now CWD-independent. It
+  resolves from `concat!(env!("CARGO_MANIFEST_DIR"), "/../md-codec/tests/vectors")`
+  instead of the literal `"crates/md-codec/tests/vectors"`, so the
+  command works from any CWD, not just the workspace root.
+- `crates/md-cli/Cargo.toml` now declares `readme = "README.md"`,
+  `homepage`, and `documentation` publish-cycle fields.
+- `md-codec` path dep gains `version = "0.16.1"` so `cargo publish` will
+  accept the manifest (path-only deps are rejected at publish time).
+- Workspace deps `bitcoin` and `bip39` (the actually-shared deps between
+  md-codec and md-cli) are lifted to `[workspace.dependencies]`. Both
+  crates inherit via `workspace = true`. Eliminates version-drift risk.
+- New `crates/md-cli/README.md` with install instructions, subcommand
+  reference, network selection notes, and feature flags.
+
+### What didn't change
+
+- Library API (md-codec). Wire format. CLI behavior, exit codes, output
+  format. Test count. The `[[bin]] name = "md"` target.
+
+## md-codec [0.16.1] — 2026-05-03
+
+Pure cleanup release. **No library API or wire-format change.** Pairs
+with md-cli 0.1.1 above; closes the same FOLLOWUPS batch.
+
+### What's new
+
+- `description` no longer claims "with `md` CLI" — md-codec is
+  library-only as of 0.16.0; the trailing clause was misleading.
+- `categories` drops `"command-line-utilities"` for the same reason.
+- `bitcoin` and `bip39` direct deps now inherit from the workspace via
+  `workspace = true` (workspace `[workspace.dependencies]` block lifted
+  the version pins).
+
+### What didn't change
+
+- Library public API (`pub use`s and `pub mod`s in `lib.rs`).
+- v0.11 wire format and BCH primitives.
+- All format identity computations (PolicyId, EncodingId, TemplateId).
+
 ## md-cli [0.1.0] — 2026-05-03
 
 Initial release. The `md` binary and its source tree (`cmd/`, `format/`,
