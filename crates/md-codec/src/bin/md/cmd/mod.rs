@@ -1,4 +1,6 @@
 pub mod bytecode;
+#[cfg(feature = "cli-compiler")]
+pub mod compile;
 pub mod decode;
 pub mod encode;
 pub mod inspect;
