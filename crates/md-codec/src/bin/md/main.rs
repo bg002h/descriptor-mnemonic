@@ -116,21 +116,28 @@ fn main() -> ExitCode {
 fn dispatch(c: Command) -> Result<(), CliError> {
     match c {
         Command::Encode {
-            template, from_policy: _, context: _, path: _,
+            template, from_policy, context, path: _,
             keys, fingerprints, force_chunked, force_long_code,
             policy_id_fingerprint, json,
         } => {
-            let template = template.ok_or_else(|| CliError::BadArg(
-                "encode: TEMPLATE required (or use --from-policy with cli-compiler)".into()
-            ))?;
+            let template_str: String = if let Some(expr) = from_policy {
+                #[cfg(feature = "cli-compiler")]
+                {
+                    let ctx: compile::ScriptContext = context
+                        .ok_or_else(|| CliError::BadArg("--from-policy requires --context tap|segwitv0".into()))?
+                        .parse().map_err(|e: compile::CompileError| CliError::Compile(e.to_string()))?;
+                    compile::compile_policy_to_template(&expr, ctx).map_err(CliError::from)?
+                }
+                #[cfg(not(feature = "cli-compiler"))]
+                { let _ = (expr, context); return Err(CliError::BadArg(
+                    "--from-policy requires the cli-compiler feature".into())); }
+            } else {
+                template.ok_or_else(|| CliError::BadArg(
+                    "encode: TEMPLATE required (or use --from-policy with cli-compiler)".into()))?
+            };
             cmd::encode::run(cmd::encode::EncodeArgs {
-                template: &template,
-                keys: &keys,
-                fingerprints: &fingerprints,
-                force_chunked,
-                force_long_code,
-                policy_id_fingerprint,
-                json,
+                template: &template_str, keys: &keys, fingerprints: &fingerprints,
+                force_chunked, force_long_code, policy_id_fingerprint, json,
             })
         }
         Command::Decode { strings, json } => cmd::decode::run(&strings, json),

@@ -27,3 +27,12 @@ fn encode_json_has_schema_and_phrase() {
         .stdout(predicate::str::contains("\"schema\": \"md-cli/1\""))
         .stdout(predicate::str::contains("\"phrase\":"));
 }
+
+#[cfg(feature = "cli-compiler")]
+#[test]
+fn encode_from_policy_segwitv0() {
+    Command::cargo_bin("md").unwrap()
+        .args(["encode", "--from-policy", "pk(@0)", "--context", "segwitv0"])
+        .assert().success()
+        .stdout(predicate::str::starts_with("md1"));
+}
