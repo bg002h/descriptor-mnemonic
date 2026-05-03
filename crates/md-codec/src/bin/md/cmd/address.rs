@@ -68,7 +68,7 @@ fn build_descriptor(args: &AddressArgs<'_>) -> Result<Descriptor, CliError> {
         let ctx = ctx_for_template(template);
         let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx, args.network)).collect::<Result<Vec<_>, _>>()?;
         let parsed_fps: Vec<ParsedFingerprint> = args.fingerprints.iter().map(|s| parse_fingerprint(s)).collect::<Result<Vec<_>, _>>()?;
-        return Ok(parse_template(template, &parsed_keys, &parsed_fps)?);
+        return parse_template(template, &parsed_keys, &parsed_fps);
     }
     // Phrase path
     if args.phrases.len() == 1 {
