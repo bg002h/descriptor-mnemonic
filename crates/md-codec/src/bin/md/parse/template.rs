@@ -246,16 +246,25 @@ use crate::parse::keys::{ScriptCtx, MAINNET_XPUB_VERSION};
 /// A synthetic xpub keyed by placeholder index `i` and the outer script context.
 /// Depth tracks BIP 388 expectation: depth 3 for single-sig (wpkh/pkh), depth
 /// 4 for multisig/taproot. Deterministic, never emitted to wire.
+///
+/// The pubkey is a real secp256k1 point derived from a deterministic seed so
+/// that miniscript's parser (which validates curve membership) accepts it.
 fn synthetic_xpub_for(i: u8, ctx: ScriptCtx) -> String {
     use bitcoin::base58;
+    use bitcoin::hashes::{sha256, Hash};
+    use bitcoin::secp256k1::{Secp256k1, SecretKey};
+    let depth = match ctx { ScriptCtx::SingleSig => 3u8, ScriptCtx::MultiSig => 4u8 };
+    // Deterministic per (i, depth); domain-separated tag keeps test fixtures stable.
+    let seed = sha256::Hash::hash(&[b'm', b'd', b'-', b'v', b'0', b'.', b'1', b'5', i, depth]);
+    let chain_code = sha256::Hash::hash(&[b'c', b'c', i, depth]).to_byte_array();
+    let secret = SecretKey::from_slice(&seed.to_byte_array()).expect("hash is valid scalar");
+    let pubkey = secret.public_key(&Secp256k1::new()).serialize(); // 33-byte compressed
     let mut bytes = [0u8; 78];
     bytes[0..4].copy_from_slice(&MAINNET_XPUB_VERSION);
-    bytes[4] = match ctx { ScriptCtx::SingleSig => 3, ScriptCtx::MultiSig => 4 };
-    bytes[5..9].copy_from_slice(&[0;4]);   // parent fp (zeros)
-    bytes[9..13].copy_from_slice(&[0;4]);  // child number (zeros)
-    bytes[13] = i;                         // first chain-code byte = i (uniqueness)
-    bytes[45] = 0x02;                      // compressed pubkey prefix (even)
-    bytes[46..78].copy_from_slice(&[i; 32]); // pubkey body = 0x{ii} * 32
+    bytes[4] = depth;
+    // parent fp, child number left as zeros — bip32 has no cryptographic check on these.
+    bytes[13..45].copy_from_slice(&chain_code);
+    bytes[45..78].copy_from_slice(&pubkey);
     base58::encode_check(&bytes)
 }
 
@@ -315,5 +324,66 @@ mod sub_tests {
         assert_eq!(km.len(), 1);
         let key = synthetic_xpub_for(0, ScriptCtx::MultiSig);
         assert_eq!(s.matches(&key).count(), 2);
+    }
+}
+
+use md_codec::tag::Tag;
+use md_codec::tree::{Body, Node};
+use miniscript::{Descriptor as MsDescriptor, DescriptorPublicKey};
+
+/// Walk the miniscript Descriptor's outermost wrapper and emit a `Node`.
+fn walk_root(desc: &MsDescriptor<DescriptorPublicKey>, key_map: &std::collections::BTreeMap<String, u8>)
+    -> Result<Node, CliError>
+{
+    use miniscript::Descriptor::*;
+    match desc {
+        Wpkh(w) => Ok(Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: lookup_key(&w.as_inner().to_string(), key_map)? },
+        }),
+        Pkh(p) => Ok(Node {
+            tag: Tag::Pkh,
+            body: Body::KeyArg { index: lookup_key(&p.as_inner().to_string(), key_map)? },
+        }),
+        Wsh(w) => walk_wsh(w, key_map),
+        Sh(s) => walk_sh(s, key_map),
+        Tr(t) => walk_tr(t, key_map),
+        _ => Err(CliError::TemplateParse(format!("unsupported descriptor wrapper: {desc}"))),
+    }
+}
+
+fn lookup_key(key_str: &str, key_map: &std::collections::BTreeMap<String, u8>) -> Result<u8, CliError> {
+    // miniscript may render the key with derivation suffix; strip suffix for lookup.
+    let base = key_str.split('/').next().unwrap_or(key_str);
+    key_map.get(base).copied().ok_or_else(|| CliError::TemplateParse(
+        format!("internal: synthetic key {base} not found in key map (rendered: {key_str})")
+    ))
+}
+
+// Stubs filled in next tasks.
+fn walk_wsh(_w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, _km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> { unimplemented!("wsh in Task 2.3") }
+fn walk_sh(_s: &miniscript::descriptor::Sh<DescriptorPublicKey>, _km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> { unimplemented!("sh in Task 2.3") }
+fn walk_tr(_t: &miniscript::descriptor::Tr<DescriptorPublicKey>, _km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> { unimplemented!("tr in Task 2.4") }
+
+#[cfg(test)]
+mod root_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn wpkh_root() {
+        let (s, km) = substitute_synthetic("wpkh(@0/<0;1>/*)", ScriptCtx::SingleSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Wpkh);
+        assert!(matches!(root.body, Body::KeyArg { index: 0 }));
+    }
+
+    #[test]
+    fn pkh_root() {
+        let (s, km) = substitute_synthetic("pkh(@0/<0;1>/*)", ScriptCtx::SingleSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Pkh);
     }
 }
