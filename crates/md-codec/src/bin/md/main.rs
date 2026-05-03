@@ -130,7 +130,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                 policy_id_fingerprint,
             })
         }
-        Command::Decode { .. } => unimplemented!("decode"),
+        Command::Decode { strings, json: _ } => cmd::decode::run(&strings),
         Command::Verify { .. } => unimplemented!("verify"),
         Command::Inspect { .. } => unimplemented!("inspect"),
         Command::Bytecode { .. } => unimplemented!("bytecode"),
