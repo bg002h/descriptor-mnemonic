@@ -40,12 +40,17 @@ the format specification and the
 | `md verify <STRING>... --template <T>` | Re-encode the template and assert it matches the strings. Exit 0 on match, 1 on mismatch. |
 | `md inspect <STRING>...` | Pretty-print everything the codec sees: template, identity hashes, TLV blocks. |
 | `md bytecode <STRING>...` | Annotated dump of the raw payload bytes. |
+| `md address <STRING>...` (or `--template <T> --key @i=<XPUB>`) | Derive bitcoin addresses from a wallet-policy-mode descriptor. `--chain N` / `--change`, `--index N`, `--count K`, `--network mainnet\|testnet\|signet\|regtest`, `--json`. |
 | `md vectors [--out DIR]` | Regenerate the project's deterministic test-vector corpus (maintainer tool). |
 | `md compile <EXPR> --context tap\|segwitv0` | Compile a sub-Miniscript-Policy expression into a BIP 388 template. Requires `cli-compiler` feature. |
 
-`encode`, `decode`, `inspect`, `bytecode`, and `compile` accept `--json` for structured output (schema versioned as `md-cli/1`). `verify` reports match/mismatch via exit code (0 = match, 1 = mismatch). Each subcommand's `--help` shows a worked example.
+`encode`, `decode`, `inspect`, `bytecode`, `address`, and `compile` accept `--json` for structured output (schema versioned as `md-cli/1`). `verify` reports match/mismatch via exit code (0 = match, 1 = mismatch). Each subcommand's `--help` shows a worked example.
 
 To build without the CLI: `cargo build --no-default-features`.
+
+### Network selection
+
+`md encode`, `md verify`, and `md address` accept `--network mainnet|testnet|signet|regtest` (default `mainnet`). The wire format does not carry network — it's a CLI-side convenience for xpub/tpub validation and address rendering. `md decode`/`inspect`/`bytecode` are network-agnostic; pass `--network` to `md address` when rendering addresses from a phrase that was originally built with non-mainnet keys.
 
 [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
 
