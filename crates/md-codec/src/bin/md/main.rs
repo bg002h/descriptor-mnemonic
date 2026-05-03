@@ -1,4 +1,6 @@
 mod cmd;
+#[cfg(feature = "cli-compiler")]
+mod compile;
 mod error;
 mod format;
 mod parse;
