@@ -18,3 +18,13 @@ fn bytecode_prints_hex_and_lengths() {
         .stdout(predicates::str::contains("payload-bytes:"))
         .stdout(predicates::str::contains("hex:"));
 }
+
+#[test]
+fn bytecode_json_has_payload_fields() {
+    let phrase = encode("wpkh(@0/<0;1>/*)");
+    Command::cargo_bin("md").unwrap()
+        .args(["bytecode", &phrase, "--json"])
+        .assert().success()
+        .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicates::str::contains("\"payload_bytes\":"));
+}

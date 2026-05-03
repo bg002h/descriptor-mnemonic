@@ -18,3 +18,13 @@ fn inspect_prints_all_fields() {
         .stdout(predicates::str::contains("md1-encoding-id:"))
         .stdout(predicates::str::contains("wallet-policy-id-fingerprint: 0x"));
 }
+
+#[test]
+fn inspect_json_has_schema_and_descriptor() {
+    let phrase = encode("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))");
+    Command::cargo_bin("md").unwrap()
+        .args(["inspect", &phrase, "--json"])
+        .assert().success()
+        .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicates::str::contains("\"wallet_policy_id\":"));
+}

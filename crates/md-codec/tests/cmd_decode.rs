@@ -17,3 +17,13 @@ fn decode_round_trips_to_template() {
     let mut cmd = Command::cargo_bin("md").unwrap();
     cmd.args(["decode", &phrase]).assert().success().stdout(predicates::str::contains(template));
 }
+
+#[test]
+fn decode_json_emits_schema_and_descriptor() {
+    let phrase = encode("wpkh(@0/<0;1>/*)");
+    Command::cargo_bin("md").unwrap()
+        .args(["decode", &phrase, "--json"])
+        .assert().success()
+        .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicates::str::contains("\"descriptor\":"));
+}
