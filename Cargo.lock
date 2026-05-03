@@ -459,18 +459,8 @@ dependencies = [
 name = "md-codec"
 version = "0.15.2"
 dependencies = [
- "anyhow",
- "assert_cmd",
  "bip39",
  "bitcoin",
- "clap",
- "insta",
- "miniscript",
- "predicates",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
  "thiserror",
 ]
 

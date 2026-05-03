@@ -18,30 +18,7 @@ workspace = true
 [lib]
 name = "md_codec"
 
-[[bin]]
-name = "md"
-path = "src/bin/md/main.rs"
-required-features = ["cli"]
-
-[features]
-default = ["cli", "json"]
-cli = ["dep:clap", "dep:anyhow", "dep:miniscript", "dep:regex"]
-json = ["dep:serde", "dep:serde_json"]
-cli-compiler = ["cli", "miniscript/compiler"]
-
 [dependencies]
 bitcoin = "0.32"
 thiserror = "2.0"
 bip39 = "2.2.2"
-clap = { version = "4.5", features = ["derive"], optional = true }
-anyhow = { version = "1.0", optional = true }
-miniscript = { workspace = true, optional = true }
-regex = { version = "1.10", optional = true }
-serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
-
-[dev-dependencies]
-assert_cmd = "2.0"
-predicates = "3.1"
-insta = { version = "1.40", features = ["json"] }
-tempfile = "3.13"
