@@ -12,6 +12,7 @@ Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with brea
 | Field | Type | Always present? |
 |---|---|---|
 | `schema` | string | yes |
+| `network` | string — `"mainnet"`/`"testnet"`/`"signet"`/`"regtest"` | yes (always; defaults to `"mainnet"`) |
 | `phrase` | string | iff *not* `--force-chunked` |
 | `chunk_set_id` | string `0xXXXXX` | iff `--force-chunked` |
 | `chunks` | array of string | iff `--force-chunked` |
@@ -46,6 +47,25 @@ Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with brea
 | `schema` | string |
 | `template` | string |
 | `context` | `"tap"` or `"segwitv0"` |
+
+### `address --json`
+| Field | Type |
+|---|---|
+| `schema` | string |
+| `network` | string — `"mainnet"`/`"testnet"`/`"signet"`/`"regtest"` |
+| `addresses` | array of `{ "chain": u32, "index": u32, "address": string }` |
+
+Example:
+
+```json
+{
+  "schema": "md-cli/1",
+  "network": "mainnet",
+  "addresses": [
+    { "chain": 0, "index": 0, "address": "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu" }
+  ]
+}
+```
 
 ## Shadow types
 
