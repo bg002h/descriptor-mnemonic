@@ -634,11 +634,16 @@ pub fn parse_template(
         .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
     let tree = walk_root(&ms_desc, &key_map)?;
 
+    // TLV encoder (md_codec::tlv) requires strict ascending @i; sort before populating.
     let pubkeys = if keys.is_empty() { None } else {
-        Some(keys.iter().map(|k| (k.i, k.payload)).collect())
+        let mut v: Vec<_> = keys.iter().map(|k| (k.i, k.payload)).collect();
+        v.sort_by_key(|(i, _)| *i);
+        Some(v)
     };
     let fp_vec = if fingerprints.is_empty() { None } else {
-        Some(fingerprints.iter().map(|f| (f.i, f.fp)).collect())
+        let mut v: Vec<_> = fingerprints.iter().map(|f| (f.i, f.fp)).collect();
+        v.sort_by_key(|(i, _)| *i);
+        Some(v)
     };
     let use_site_path_overrides = if resolved.use_site_path_overrides.is_empty() { None } else {
         Some(resolved.use_site_path_overrides)
