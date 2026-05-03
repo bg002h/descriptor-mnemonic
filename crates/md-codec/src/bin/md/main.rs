@@ -140,6 +140,41 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Derive bitcoin addresses from a wallet-policy-mode descriptor.
+    #[command(after_long_help = "EXAMPLES:\n  $ md address md1qq...\n  bc1q...",
+              group = clap::ArgGroup::new("address_input").required(true).args(["phrases", "template"]))]
+    Address {
+        /// One or more md1 phrases. Mutually exclusive with --template.
+        #[arg(num_args = 0..)]
+        phrases: Vec<String>,
+        /// BIP 388 template. Requires at least one --key. Mutually exclusive with phrases.
+        #[arg(long, value_name = "TEMPLATE", conflicts_with = "phrases")]
+        template: Option<String>,
+        /// Concrete xpub for placeholder @i. Repeatable. Requires --template.
+        #[arg(long = "key", value_name = "@i=XPUB", requires = "template")]
+        keys: Vec<String>,
+        /// Master-key fingerprint for placeholder @i. Repeatable. Requires --template.
+        #[arg(long = "fingerprint", value_name = "@i=HEX", requires = "template")]
+        fingerprints: Vec<String>,
+        /// Network for xpub validation and address rendering.
+        #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
+        network: CliNetwork,
+        /// Multipath alternative selector (0 = receive, 1 = change for canonical <0;1>/*).
+        #[arg(long, default_value_t = 0)]
+        chain: u32,
+        /// Sugar for --chain 1.
+        #[arg(long, conflicts_with = "chain")]
+        change: bool,
+        /// Starting index along the wildcard.
+        #[arg(long, default_value_t = 0)]
+        index: u32,
+        /// Number of consecutive addresses to derive starting at --index.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        count: u32,
+        /// Emit JSON output.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -203,5 +238,23 @@ fn dispatch(c: Command) -> Result<(), CliError> {
             { let _ = (expr, context, json); Err(CliError::BadArg(
                 "compile requires the cli-compiler feature; rebuild with --features cli-compiler".into())) }
         },
+        Command::Address {
+            phrases, template, keys, fingerprints, network,
+            chain, change, index, count, json,
+        } => {
+            let chain = if change { 1 } else { chain };
+            cmd::address::run(cmd::address::AddressArgs {
+                phrases: &phrases,
+                template: template.as_deref(),
+                keys: &keys,
+                fingerprints: &fingerprints,
+                network: network.into(),
+                network_str: network.as_str(),
+                chain,
+                index,
+                count,
+                json,
+            })
+        }
     }
 }
