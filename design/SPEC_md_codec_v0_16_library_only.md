@@ -118,7 +118,7 @@ path = "src/main.rs"
 [features]
 default = ["json"]
 json = ["dep:serde", "dep:serde_json"]
-cli-compiler = ["dep:miniscript", "miniscript/compiler"]
+cli-compiler = ["miniscript/compiler"]
 
 [dependencies]
 md-codec = { path = "../md-codec" }
@@ -129,7 +129,7 @@ bitcoin = "0.32"
 bip39 = "2.2.2"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
-miniscript = { workspace = true, optional = true }
+miniscript = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = "2.0"
@@ -152,9 +152,14 @@ tempfile = "3.13"
 - **`serde`/`serde_json` are optional**, gated behind `json`. The bin's
   existing `#[cfg(feature = "json")]` gates (in `format/json.rs` consumers,
   `cmd/vectors.rs`, etc.) carry over unchanged.
-- **`miniscript`** is `workspace = true, optional = true` because
-  `cli-compiler = ["miniscript/compiler"]` only needs miniscript when the
-  compiler feature is on. Default-off matches today.
+- **`miniscript`** is `workspace = true` (unconditional). The bin source
+  uses `miniscript::*` in `parse/template.rs` for descriptor parsing across
+  every command path (encode, decode, verify, address, ...), not just the
+  policy compiler. The `cli-compiler` feature only adds the `compiler`
+  feature flag to miniscript (gating the policy → miniscript compilation
+  in `compile.rs`). This matches today's behavior — old md-codec had
+  `default = ["cli", "json"]` with `cli = ["dep:miniscript", ...]`, so
+  miniscript was always present in the default install.
 - **`bitcoin` and `bip39`** are direct deps of CLI code (e.g.
   `bitcoin::bip32::DerivationPath` in `parse/template.rs`).
 
