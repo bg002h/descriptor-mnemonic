@@ -138,7 +138,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
             fingerprints: &fingerprints,
         }),
         Command::Inspect { strings, json: _ } => cmd::inspect::run(&strings),
-        Command::Bytecode { .. } => unimplemented!("bytecode"),
+        Command::Bytecode { strings, json: _ } => cmd::bytecode::run(&strings),
         Command::Vectors { .. } => unimplemented!("vectors"),
         Command::Compile { .. } => unimplemented!("compile"),
     }
