@@ -28,12 +28,14 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
 
     let _ = args.json;             // Phase 5 wires --json
     let _ = args.network_str;      // Phase 5 uses for JSON
-    let _ = args.count;            // Phase 4 wires the loop
 
-    // Phase 3 baseline: derive exactly one address at (chain, index).
-    let addr = descriptor.derive_address(args.chain, args.index, args.network)?
-        .assume_checked();
-    println!("{addr}");
+    for k in 0..args.count {
+        let i = args.index.checked_add(k).ok_or_else(|| CliError::BadArg(
+            format!("--index + --count overflows u32: {} + {}", args.index, args.count)
+        ))?;
+        let addr = descriptor.derive_address(args.chain, i, args.network)?.assume_checked();
+        println!("{addr}");
+    }
     Ok(())
 }
 
