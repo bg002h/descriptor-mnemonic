@@ -140,7 +140,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
         }),
         Command::Inspect { strings, json } => cmd::inspect::run(&strings, json),
         Command::Bytecode { strings, json } => cmd::bytecode::run(&strings, json),
-        Command::Vectors { .. } => Err(CliError::BadArg("vectors: not yet implemented (lands in v0.15/phase-6)".into())),
+        Command::Vectors { out } => cmd::vectors::run(out),
         Command::Compile { .. } => Err(CliError::BadArg("compile: not yet implemented (lands in v0.15/phase-7)".into())),
     }
 }
