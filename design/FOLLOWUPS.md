@@ -107,6 +107,105 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `resolved f54f486 — let _ = args.network_str; added next to the existing args.json suppressor.`
 - **Tier:** `v0.15.2`
 
+### `v0.16-md-codec-cargo-toml-description-stale` — md-codec `description` still says "with `md` CLI"
+
+- **Surfaced:** Spec self-review + brainstorm-stage architect review of the md-cli extraction PR.
+- **Where:** `crates/md-codec/Cargo.toml` line 8 (`description = "Reference implementation of the Mnemonic Descriptor (MD) format for engravable BIP 388 wallet policy backups, with \`md\` CLI"`)
+- **What:** As of v0.16.0 md-codec is library-only; the trailing "with `md` CLI" clause is misleading. Update to library-only phrasing, e.g. drop the trailing clause: `"Reference implementation of the Mnemonic Descriptor (MD) format for engravable BIP 388 wallet policy backups"`.
+- **Why deferred:** Per spec § "Deferred to FOLLOWUPS" — not in scope for the v0.16.0 extraction PR; queued for v0.16.1 cleanup.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-md-codec-cargo-toml-categories-stale` — `command-line-utilities` category no longer applies to md-codec
+
+- **Surfaced:** Spec self-review + brainstorm-stage architect review of the md-cli extraction PR.
+- **Where:** `crates/md-codec/Cargo.toml` line ~13 (`categories = ["cryptography::cryptocurrencies", "encoding", "command-line-utilities"]`)
+- **What:** `"command-line-utilities"` is now md-cli-only. Remove from md-codec's categories list when shipping the description cleanup.
+- **Why deferred:** Same FOLLOWUPS deferral as the description cleanup; bundle them together in v0.16.1.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-md-cli-vectors-default-out-dir-cwd-relative` — `vectors --out` default path is CWD-relative
+
+- **Surfaced:** Spec-stage architect review of the md-cli extraction PR.
+- **Where:** `crates/md-cli/src/cmd/vectors.rs` line ~12 (`out_dir = PathBuf::from(out.unwrap_or_else(|| "crates/md-codec/tests/vectors".into()))`)
+- **What:** The default output directory is a CWD-relative path that only resolves correctly when the CLI is invoked from the workspace root. Pre-existing bug not introduced by the extraction PR. Either make `--out` a required arg, resolve from `CARGO_MANIFEST_DIR`, or document the CWD requirement explicitly in the subcommand's `--help`.
+- **Why deferred:** Pre-existing behavior; no behavior change in the v0.16.0 extraction.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-md-cli-md-codec-path-dep-needs-version-for-publish` — md-cli's path-only md-codec dep blocks `cargo publish`
+
+- **Surfaced:** Spec-stage architect review of the md-cli extraction PR (Q4).
+- **Where:** `crates/md-cli/Cargo.toml` (`md-codec = { path = "../md-codec" }`)
+- **What:** Cargo rejects path-only deps at `cargo publish` time. Before the C-state transplant (md-cli moves to a third sibling repo) or any direct `cargo publish md-cli`, the dep must gain a `version` field: `md-codec = { path = "../md-codec", version = "0.16.0" }`. Path-only is fine for in-repo development now.
+- **Why deferred:** No publish is happening at v0.16.0; the C-state cycle's brainstorm will own this transition.
+- **Status:** `open`
+- **Tier:** `external` (deferred to the C-state cycle)
+
+### `v0.16-cargo-bin-md-invocation-caveat` — smoke.rs doc-comment should note `-p md-cli` invocation requirement
+
+- **Surfaced:** Phase 1 architect review (`design/agent-reports/phase-1-review-md-cli-extraction.md` N1)
+- **Where:** `crates/md-cli/tests/smoke.rs` doc-comment
+- **What:** `assert_cmd::Command::cargo_bin("md")` resolves the binary by name. While md-codec retains a `[[bin]] name = "md"` (it doesn't post-Phase-2, but other crates in the workspace may add similar bins later), naive `cargo test --workspace` runs may pick up the wrong binary if multiple `md` targets exist. Recommend a comment in smoke.rs noting the `-p md-cli` invocation as the prescribed test command.
+- **Why deferred:** Documentation polish; today's workspace state has only one `md` bin, so the failure mode is theoretical.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-md-cli-manifest-publish-fields-missing` — md-cli omits `readme`, `homepage`, `documentation`
+
+- **Surfaced:** Phase 1 architect review (`design/agent-reports/phase-1-review-md-cli-extraction.md` N2)
+- **Where:** `crates/md-cli/Cargo.toml` `[package]` block
+- **What:** md-codec's manifest declares `readme`, `homepage`, and `documentation`; md-cli's does not. Appropriate for a v0.1.0 pre-release crate (no README exists yet, no docs.rs page), but these fields should be added when md-cli becomes a primary published crate.
+- **Why deferred:** No publish is happening at v0.16.0/v0.1.0; deferred to the publish cycle.
+- **Status:** `open`
+- **Tier:** `external` (publish-cycle prep)
+
+### `v0.16-plan-task4-step11-cargo-test-claim-incorrect` — Phase 2 commit-message body wrongly claims `cargo test --workspace` passes
+
+- **Surfaced:** Phase 2 architect review (`design/agent-reports/phase-2-review-md-cli-extraction.md` N1)
+- **Where:** `design/IMPLEMENTATION_PLAN_md_cli_extraction.md` Task 4 Step 11 commit-message-body explanatory note (~line 615)
+- **What:** The plan's Phase 2 commit-message template asserts `cargo test --workspace` passes after Phase 2 because `cargo_bin("md")` resolves uniquely once md-codec drops `[[bin]]`. That claim is wrong: md-codec/tests/cmd_*.rs files reference `assert_cmd`/`predicates`/`insta`/`tempfile`, but Phase 2 strips md-codec's `[dev-dependencies]`. Phase 2's commit leaves `cargo test --workspace` broken in a transient state; Phase 3's `git mv` resolves it. The plan-text claim should be corrected to "cargo test -p md-cli passes; cargo test --workspace is transiently broken until Phase 3 mechanically resolves it."
+- **Why deferred:** Plan-text correction has no functional impact; plan is a historical artifact at this point.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-insta-snap-source-headers-stale` — moved snapshot files retain `source: crates/md-codec/tests/...` metadata
+
+- **Surfaced:** Phase 3 architect review (`design/agent-reports/phase-3-review-md-cli-extraction.md` N1)
+- **Where:** `crates/md-cli/tests/snapshots/*.snap` (all 22 files)
+- **What:** All 22 moved `.snap` files contain insta-generated `source:` YAML headers that still reference `crates/md-codec/tests/...`. Snapshot matching is keyed on the snapshot name, not the source header, so the headers do not affect test correctness. The headers will auto-correct on the next `cargo insta review` or `cargo insta accept` cycle.
+- **Why deferred:** Cosmetic; resolves automatically on next snapshot review cycle.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-phase2-review-mis-confirmation-process-note` — Phase 2 architect review confirmed an unstaged edit as committed
+
+- **Surfaced:** Phase 3 architect review (`design/agent-reports/phase-3-review-md-cli-extraction.md` N2)
+- **Where:** `design/agent-reports/phase-2-review-md-cli-extraction.md` Confirmation #2 ("All three corpus-path pre-fixes are confirmed in 9e12253")
+- **What:** The Phase 2 review claimed the `cmd/vectors.rs` `include!` edit landed in commit `9e12253`. In fact the edit was performed in the working tree but never staged; the hotfix at `f9e01ee` committed it after Phase 2's review was written. The reviewer apparently read the working tree, not HEAD. The remediation is in place (hotfix + a feedback memory `feedback_verify_committed_content_not_working_tree.md`); this entry is a process audit trail.
+- **Why deferred:** No code action needed; the hotfix is on the branch and the review process now has a concrete example.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-workspace-deps-bitcoin-clap-anyhow-regex-bip39-not-centralized` — direct deps duplicated across md-codec and md-cli
+
+- **Surfaced:** Phase 1 code-quality review (minor finding)
+- **Where:** workspace root `Cargo.toml` `[workspace.dependencies]` and per-crate `[dependencies]`
+- **What:** `bitcoin = "0.32"` is declared in both `crates/md-codec/Cargo.toml` and `crates/md-cli/Cargo.toml` at the same version. Same applies to `clap`, `anyhow`, `regex`, `serde`, `serde_json`, `bip39` (md-codec uses bip39; md-cli reserves it for future use). The workspace already centralizes `miniscript`. Lift the duplicated deps to `[workspace.dependencies]` and have each crate inherit via `workspace = true`. Highest-value lift is `bitcoin` because version drift between the two crates would be a real bug. Out of scope for the v0.16.0 extraction PR.
+- **Why deferred:** Workspace refactor; no behavior change in the v0.16.0 extraction.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
+### `v0.16-smoke-rs-doc-comment-renamed-claim-mismatch` — Phase-1 smoke.rs claims "renamed in Phase 3" but Phase 3 keeps it
+
+- **Surfaced:** Phase 1 code-quality review (minor finding)
+- **Where:** `crates/md-cli/tests/smoke.rs` doc-comment line ~3 (`Renamed in Phase 3 once the moved CLI test suite arrives.`)
+- **What:** The Phase-1 spec template for smoke.rs included a doc-comment promising rename in Phase 3. The plan's Phase 3 task does not actually rename or remove smoke.rs (it stays as a CLI sanity canary alongside the 15 moved tests). The doc-comment is therefore misleading. Either rephrase the comment to match reality (e.g., "Retained as a canary smoke test after Phase 3 lands the full CLI suite") or remove the comment entirely.
+- **Why deferred:** Cosmetic; not a behavioral or correctness issue.
+- **Status:** `open`
+- **Tier:** `v0.16.1`
+
 ### `wallet-id-is-really-template-id` — current `WalletId` identifies a policy template, not a wallet instance
 
 - **Surfaced:** 2026-04-29 mk1 design discussion. While drafting `design/mk/SPEC_mk_v0_1.md` §5 (recovery-flow linkage between policy card and key cards), the user observed that md-encoded wallet descriptors are themselves reusable across wallets and may have zero-many actual wallet instances associated with them. The `WalletId = SHA-256(canonical_bytecode)[0..16]` is computed over the BIP 388 *template* (with `@N` placeholders), not over the assembled descriptor with concrete cosigner xpubs. Therefore two distinct wallets that share an identical policy template (same multisig shape + same shared path, different cosigner sets) produce identical md1 wallet IDs. The "wallet ID" name is misleading; what we have is really a "policy ID" or "template ID."
