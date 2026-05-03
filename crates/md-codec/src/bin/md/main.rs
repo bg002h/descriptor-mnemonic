@@ -1,3 +1,4 @@
+mod cmd;
 mod error;
 mod format;
 mod parse;
@@ -110,9 +111,25 @@ fn main() -> ExitCode {
     }
 }
 
-fn dispatch(cmd: Command) -> Result<(), CliError> {
-    match cmd {
-        Command::Encode { .. } => unimplemented!("encode"),
+fn dispatch(c: Command) -> Result<(), CliError> {
+    match c {
+        Command::Encode {
+            template, from_policy: _, context: _, path: _,
+            keys, fingerprints, force_chunked, force_long_code,
+            policy_id_fingerprint, json: _,
+        } => {
+            let template = template.ok_or_else(|| CliError::BadArg(
+                "encode: TEMPLATE required (or use --from-policy with cli-compiler)".into()
+            ))?;
+            cmd::encode::run(cmd::encode::EncodeArgs {
+                template: &template,
+                keys: &keys,
+                fingerprints: &fingerprints,
+                force_chunked,
+                force_long_code,
+                policy_id_fingerprint,
+            })
+        }
         Command::Decode { .. } => unimplemented!("decode"),
         Command::Verify { .. } => unimplemented!("verify"),
         Command::Inspect { .. } => unimplemented!("inspect"),
