@@ -18,6 +18,8 @@ fn account_xpub(path: &str, network: Network) -> Xpub {
     Xpub::from_priv(&secp, &xpriv)
 }
 
+fn account_xpub_testnet(path: &str) -> Xpub { account_xpub(path, Network::Testnet) }
+
 /// Independently derive the BIP 84 single-sig address using rust-bitcoin's
 /// own bip32 + Address builders. Used to pin testnet (and any non-published
 /// mainnet) golden vectors against a trusted secondary path.
@@ -119,7 +121,7 @@ fn address_mainnet_wpkh_first_change() {
 
 #[test]
 fn address_testnet_wpkh_receive_0_via_secondary_path() {
-    let xpub = account_xpub("m/84'/1'/0'", Network::Testnet);
+    let xpub = account_xpub_testnet("m/84'/1'/0'");
     let expected = expected_wpkh_address(&xpub, 0, 0, Network::Testnet);
     assert!(expected.starts_with("tb1q"), "expected tb1q... testnet address, got {expected}");
     let key_arg = format!("@0={xpub}");
