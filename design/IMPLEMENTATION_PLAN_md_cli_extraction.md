@@ -629,7 +629,7 @@ EOF
 )"
 ```
 
-Expected: commit lands; `cargo test --workspace` passes (the existing CLI integration tests in `md-codec/tests/` continue to work because md-codec's `Cargo.toml` no longer claims a `[[bin]]`, but the tests find `md` via workspace-binary resolution from md-cli; this is verified empirically because Phase 3 hasn't run yet but `cargo_bin("md")` resolves uniquely once md-codec drops `[[bin]]`).
+Expected: commit lands; `cargo build --workspace` and `cargo test -p md-cli` pass; `cargo test --workspace` is **transiently broken** until Phase 3 mechanically resolves it. The 15 CLI integration tests still in `md-codec/tests/` reference `assert_cmd`/`predicates`/`insta`/`tempfile`, but Phase 2's strip removes md-codec's `[dev-dependencies]` block — the test targets fail to compile against md-codec from this commit until Phase 3 `git mv`s them to `md-cli/tests/` where the dev-deps already live (set up in Phase 1). This is a known, expected, single-commit-window break; verified empirically against the `feat/md-cli-extraction` branch reality at v0.16.0.
 
 ### Task 5: Phase 2 architect review
 

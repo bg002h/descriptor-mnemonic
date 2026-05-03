@@ -10,7 +10,10 @@ mod manifest {
 use manifest::MANIFEST;
 
 pub fn run(out: Option<String>) -> Result<(), CliError> {
-    let out_dir = PathBuf::from(out.unwrap_or_else(|| "crates/md-codec/tests/vectors".into()));
+    let out_dir = match out {
+        Some(p) => PathBuf::from(p),
+        None => PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../md-codec/tests/vectors")),
+    };
     fs::create_dir_all(&out_dir).map_err(|e| CliError::BadArg(format!("mkdir {out_dir:?}: {e}")))?;
 
     let mut entries: Vec<&manifest::Vector> = MANIFEST.iter().collect();

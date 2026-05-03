@@ -16,3 +16,5 @@ all = "warn"
 
 [workspace.dependencies]
 miniscript = { version = "13.0.0", default-features = false, features = ["std"] }
+bitcoin = "0.32"
+bip39 = "2.2.2"

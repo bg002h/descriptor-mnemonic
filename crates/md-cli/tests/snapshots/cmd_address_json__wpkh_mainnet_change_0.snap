@@ -1,5 +1,5 @@
 ---
-source: crates/md-codec/tests/cmd_address_json.rs
+source: crates/md-cli/tests/cmd_address_json.rs
 expression: body
 ---
 {

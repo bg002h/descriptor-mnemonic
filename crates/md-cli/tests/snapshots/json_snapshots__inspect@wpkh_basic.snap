@@ -1,5 +1,5 @@
 ---
-source: crates/md-codec/tests/json_snapshots.rs
+source: crates/md-cli/tests/json_snapshots.rs
 expression: body
 ---
 {

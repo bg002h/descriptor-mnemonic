@@ -5,12 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Reference implementation of the Mnemonic Descriptor (MD) format for engravable BIP 388 wallet policy backups, with `md` CLI"
+description = "Reference implementation of the Mnemonic Descriptor (MD) format for engravable BIP 388 wallet policy backups"
 readme = "README.md"
 homepage = "https://github.com/bg002h/descriptor-mnemonic"
 documentation = "https://docs.rs/md-codec"
 keywords = ["bitcoin", "bip388", "wallet", "descriptor", "bech32"]
-categories = ["cryptography::cryptocurrencies", "encoding", "command-line-utilities"]
+categories = ["cryptography::cryptocurrencies", "encoding"]
 
 [lints]
 workspace = true
@@ -19,6 +19,6 @@ workspace = true
 name = "md_codec"
 
 [dependencies]
-bitcoin = "0.32"
+bitcoin = { workspace = true }
 thiserror = "2.0"
-bip39 = "2.2.2"
+bip39 = { workspace = true }
