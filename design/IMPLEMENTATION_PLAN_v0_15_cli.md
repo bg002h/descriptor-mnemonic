@@ -1044,9 +1044,9 @@ EOF
 Append to `crates/md-codec/src/bin/md/parse/template.rs`:
 
 ```rust
-use md_codec::origin_path::PathDecl;
-use md_codec::origin_path::PathDeclPaths;
-use md_codec::use_site_path::UseSitePath;
+use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
+use md_codec::use_site_path::{Alternative, UseSitePath};
+use bitcoin::bip32::ChildNumber;
 
 /// Resolved per-`@i` view after consistency checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1075,14 +1075,12 @@ pub fn resolve_placeholders(occs: &[PlaceholderOccurrence]) -> Result<ResolvedPl
         }
     }
     let n = (by_i.keys().max().copied().ok_or_else(|| CliError::TemplateParse("no placeholders".into()))? as usize + 1) as u8;
-    // Verify dense 0..n.
     for i in 0..n {
         if !by_i.contains_key(&i) {
             return Err(CliError::TemplateParse(format!("@{i} not present; placeholders must be dense 0..n")));
         }
     }
     let at0 = by_i[&0];
-    // Build use_site_path from @0.
     let use_site_path = make_use_site_path(at0)?;
     let mut use_site_path_overrides = Vec::new();
     for i in 1..n {
@@ -1097,7 +1095,6 @@ pub fn resolve_placeholders(occs: &[PlaceholderOccurrence]) -> Result<ResolvedPl
 }
 
 fn make_use_site_path(occ: &PlaceholderOccurrence) -> Result<UseSitePath, CliError> {
-    use md_codec::use_site_path::Alternative;
     let alts: Vec<Alternative> = occ.multipath_alts.iter()
         .map(|v| Alternative { hardened: false, value: *v })
         .collect();
@@ -1107,6 +1104,20 @@ fn make_use_site_path(occ: &PlaceholderOccurrence) -> Result<UseSitePath, CliErr
     })
 }
 
+/// Convert a `bitcoin::DerivationPath` (or absence-of-path) into an `OriginPath`.
+/// `None` becomes the empty origin (depth 0); otherwise each child becomes a
+/// `PathComponent { hardened, value }`.
+pub(crate) fn to_origin_path(p: Option<&bitcoin::bip32::DerivationPath>) -> OriginPath {
+    let components = match p {
+        None => Vec::new(),
+        Some(dp) => dp.into_iter().map(|c| match c {
+            ChildNumber::Normal { index }   => PathComponent { hardened: false, value: *index },
+            ChildNumber::Hardened { index } => PathComponent { hardened: true,  value: *index },
+        }).collect(),
+    };
+    OriginPath { components }
+}
+
 fn make_path_decl(
     by_i: &std::collections::BTreeMap<u8, &PlaceholderOccurrence>,
     n: u8,
@@ -1114,12 +1125,12 @@ fn make_path_decl(
 ) -> Result<PathDecl, CliError> {
     let all_same = (0..n).all(|i| by_i[&i].origin_path == at0.origin_path);
     let paths = if all_same {
-        PathDeclPaths::Single(at0.origin_path.clone().unwrap_or_else(|| DerivationPath::master()))
+        PathDeclPaths::Shared(to_origin_path(at0.origin_path.as_ref()))
     } else {
-        let v: Vec<DerivationPath> = (0..n).map(|i| by_i[&i].origin_path.clone().unwrap_or_else(|| DerivationPath::master())).collect();
+        let v: Vec<OriginPath> = (0..n).map(|i| to_origin_path(by_i[&i].origin_path.as_ref())).collect();
         PathDeclPaths::Divergent(v)
     };
-    Ok(PathDecl { paths })
+    Ok(PathDecl { n, paths })
 }
 
 #[cfg(test)]
@@ -1218,26 +1229,29 @@ Phase goal: `parse_template(s, &keys, &fingerprints)` returns a `Descriptor` for
 Append to `crates/md-codec/src/bin/md/parse/template.rs`:
 
 ```rust
-/// A synthetic xpub keyed by placeholder index `i`. Deterministic.
-/// Used only inside the parser; never emitted to wire.
-fn synthetic_xpub_for(i: u8) -> String {
-    // Use a fixed mainnet xpub at depth 4, varying byte 13 (start of chain code).
-    // The base58check string is regenerated from raw bytes each call (cheap; only at parse time).
+use crate::parse::keys::ScriptCtx;
+
+/// A synthetic xpub keyed by placeholder index `i` and the outer script context.
+/// Depth tracks BIP 388 expectation: depth 3 for single-sig (wpkh/pkh), depth
+/// 4 for multisig/taproot. Deterministic, never emitted to wire.
+fn synthetic_xpub_for(i: u8, ctx: ScriptCtx) -> String {
     use bitcoin::base58;
     let mut bytes = [0u8; 78];
     bytes[0..4].copy_from_slice(&MAINNET_XPUB_VERSION);
-    bytes[4] = 4;                         // depth
-    bytes[5..9].copy_from_slice(&[0;4]);  // parent fp (zeros)
-    bytes[9..13].copy_from_slice(&[0;4]); // child number (zeros)
-    bytes[13] = i;                        // first chain-code byte = i (uniqueness)
-    bytes[45] = 0x02;                     // compressed pubkey prefix (even)
+    bytes[4] = match ctx { ScriptCtx::SingleSig => 3, ScriptCtx::MultiSig => 4 };
+    bytes[5..9].copy_from_slice(&[0;4]);   // parent fp (zeros)
+    bytes[9..13].copy_from_slice(&[0;4]);  // child number (zeros)
+    bytes[13] = i;                         // first chain-code byte = i (uniqueness)
+    bytes[45] = 0x02;                      // compressed pubkey prefix (even)
     bytes[46..78].copy_from_slice(&[i; 32]); // pubkey body = 0x{ii} * 32
     base58::encode_check(&bytes)
 }
 
-/// Substitute each `@i/<M;N>/*` (or `@i/*` etc.) with a synthetic key reference
-/// suitable for miniscript parsing. Returns substituted template + key map.
-fn substitute_synthetic(template: &str) -> Result<(String, std::collections::BTreeMap<String, u8>), CliError> {
+/// Substitute each `@i/...` with a synthetic xpub. Returns substituted template
+/// + map (synthetic-xpub-string → placeholder index).
+fn substitute_synthetic(template: &str, ctx: ScriptCtx)
+    -> Result<(String, std::collections::BTreeMap<String, u8>), CliError>
+{
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(
         r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;]+>)?(?:/\*(?:'|h)?)?"
@@ -1246,7 +1260,7 @@ fn substitute_synthetic(template: &str) -> Result<(String, std::collections::BTr
     let mut keys_seen = std::collections::HashSet::new();
     let out = re.replace_all(template, |caps: &regex::Captures| {
         let i: u8 = caps[1].parse().unwrap_or(0);
-        let xpub = synthetic_xpub_for(i);
+        let xpub = synthetic_xpub_for(i, ctx);
         if keys_seen.insert(i) {
             key_map.insert(xpub.clone(), i);
         }
@@ -1261,17 +1275,23 @@ mod sub_tests {
 
     #[test]
     fn synthetic_for_0_and_1_differ() {
-        assert_ne!(synthetic_xpub_for(0), synthetic_xpub_for(1));
+        assert_ne!(synthetic_xpub_for(0, ScriptCtx::MultiSig), synthetic_xpub_for(1, ScriptCtx::MultiSig));
     }
 
     #[test]
     fn synthetic_for_0_is_stable() {
-        assert_eq!(synthetic_xpub_for(0), synthetic_xpub_for(0));
+        assert_eq!(synthetic_xpub_for(0, ScriptCtx::MultiSig), synthetic_xpub_for(0, ScriptCtx::MultiSig));
+    }
+
+    #[test]
+    fn singlesig_synthetic_uses_depth_3() {
+        // Cross-context xpubs must differ — depth byte 4 is 3 vs 4.
+        assert_ne!(synthetic_xpub_for(0, ScriptCtx::SingleSig), synthetic_xpub_for(0, ScriptCtx::MultiSig));
     }
 
     #[test]
     fn substitution_strips_at_i_suffix() {
-        let (s, _) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))").unwrap();
+        let (s, _) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
         assert!(!s.contains('@'));
         assert!(!s.contains('<'));
         assert!(!s.contains('*'));
@@ -1279,10 +1299,9 @@ mod sub_tests {
 
     #[test]
     fn substitution_emits_consistent_keys_per_index() {
-        let (s, km) = substitute_synthetic("wsh(or_d(pk(@0/<0;1>/*),pk(@0/<0;1>/*)))").unwrap();
+        let (s, km) = substitute_synthetic("wsh(or_d(pk(@0/<0;1>/*),pk(@0/<0;1>/*)))", ScriptCtx::MultiSig).unwrap();
         assert_eq!(km.len(), 1);
-        // Same key string appears twice in the output.
-        let key = synthetic_xpub_for(0);
+        let key = synthetic_xpub_for(0, ScriptCtx::MultiSig);
         assert_eq!(s.matches(&key).count(), 2);
     }
 }
@@ -1319,7 +1338,7 @@ use md_codec::tag::Tag;
 use md_codec::tree::{Body, Node};
 use miniscript::{Descriptor as MsDescriptor, DescriptorPublicKey};
 
-/// Walk the miniscript Descriptor's outermost wrapper and emit the root `Tag`.
+/// Walk the miniscript Descriptor's outermost wrapper and emit a `Node`.
 fn walk_root(desc: &MsDescriptor<DescriptorPublicKey>, key_map: &std::collections::BTreeMap<String, u8>)
     -> Result<Node, CliError>
 {
@@ -1327,11 +1346,11 @@ fn walk_root(desc: &MsDescriptor<DescriptorPublicKey>, key_map: &std::collection
     match desc {
         Wpkh(w) => Ok(Node {
             tag: Tag::Wpkh,
-            body: Body::SingleKey { idx: lookup_key(&w.as_inner().to_string(), key_map)? },
+            body: Body::KeyArg { index: lookup_key(&w.as_inner().to_string(), key_map)? },
         }),
         Pkh(p) => Ok(Node {
             tag: Tag::Pkh,
-            body: Body::SingleKey { idx: lookup_key(&p.as_inner().to_string(), key_map)? },
+            body: Body::KeyArg { index: lookup_key(&p.as_inner().to_string(), key_map)? },
         }),
         Wsh(w) => walk_wsh(w, key_map),
         Sh(s) => walk_sh(s, key_map),
@@ -1360,15 +1379,16 @@ mod root_tests {
 
     #[test]
     fn wpkh_root() {
-        let (s, km) = substitute_synthetic("wpkh(@0/<0;1>/*)").unwrap();
+        let (s, km) = substitute_synthetic("wpkh(@0/<0;1>/*)", ScriptCtx::SingleSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Wpkh);
+        assert!(matches!(root.body, Body::KeyArg { index: 0 }));
     }
 
     #[test]
     fn pkh_root() {
-        let (s, km) = substitute_synthetic("pkh(@0/<0;1>/*)").unwrap();
+        let (s, km) = substitute_synthetic("pkh(@0/<0;1>/*)", ScriptCtx::SingleSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Pkh);
@@ -1402,63 +1422,77 @@ EOF
 
 Replace the stub `walk_wsh` and `walk_sh` in `crates/md-codec/src/bin/md/parse/template.rs` with:
 
+v0.14's tag set has no `Tag::ShWpkh`/`ShWsh`/`TapLeaf`. `sh(wpkh(...))` is encoded as `Tag::Sh` wrapping a `Tag::Wpkh` child via `Body::Children`. Multi keys are wrapped as `PkK` child nodes inside `Body::Variable { k, children }`.
+
 ```rust
+/// Wrap an inner `Node` under a single-arity wrapper tag like `Wsh`/`Sh`.
+fn wrap_children(tag: Tag, inner: Node) -> Node {
+    Node { tag, body: Body::Children(vec![inner]) }
+}
+
+/// Build `multi`/`sortedmulti` style: `Tag::Multi` (or `SortedMulti`) wrapping
+/// each key as a `PkK` child. Use `MultiA`/`SortedMultiA` inside Tap context.
+fn build_multi_node(tag: Tag, k: usize, keys: &[&DescriptorPublicKey],
+                    km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+    let children: Vec<Node> = keys.iter().map(|kk| {
+        let index = lookup_key(&kk.to_string(), km)?;
+        Ok(Node { tag: Tag::PkK, body: Body::KeyArg { index } })
+    }).collect::<Result<_, CliError>>()?;
+    Ok(Node { tag, body: Body::Variable { k: k as u8, children } })
+}
+
 fn walk_wsh(w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
-    let body = walk_wsh_inner(w, km)?;
-    Ok(Node { tag: Tag::Wsh, body })
+    let inner = walk_wsh_inner(w, km)?;
+    Ok(wrap_children(Tag::Wsh, inner))
 }
 
 fn walk_sh(s: &miniscript::descriptor::Sh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
     use miniscript::descriptor::ShInner;
-    match s.as_inner() {
-        ShInner::Wsh(w) => {
-            let body = walk_wsh_inner(w, km)?;
-            Ok(Node { tag: Tag::ShWsh, body })
-        }
-        ShInner::Wpkh(wp) => Ok(Node {
-            tag: Tag::ShWpkh,
-            body: Body::SingleKey { idx: lookup_key(&wp.as_inner().to_string(), km)? },
-        }),
-        ShInner::Ms(ms) => {
-            let body = walk_miniscript_node(ms, km)?;
-            Ok(Node { tag: Tag::Sh, body })
-        }
-        ShInner::SortedMulti(sm) => Ok(Node {
-            tag: Tag::Sh,
-            body: build_multi_body(true, sm.k(), sm.pks().iter().collect::<Vec<_>>(), km)?,
-        }),
-    }
+    let inner = match s.as_inner() {
+        ShInner::Wsh(w) => Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![walk_wsh_inner(w, km)?]),
+        },
+        ShInner::Wpkh(wp) => Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: lookup_key(&wp.as_inner().to_string(), km)? },
+        },
+        ShInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/false)?,
+        ShInner::SortedMulti(sm) => build_multi_node(Tag::SortedMulti, sm.k(),
+            &sm.pks().iter().collect::<Vec<_>>(), km)?,
+    };
+    Ok(wrap_children(Tag::Sh, inner))
 }
 
-fn walk_wsh_inner(w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Body, CliError> {
+fn walk_wsh_inner(w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
     use miniscript::descriptor::WshInner;
     match w.as_inner() {
-        WshInner::Ms(ms) => walk_miniscript_node(ms, km).map(|body| body),
-        WshInner::SortedMulti(sm) => build_multi_body(true, sm.k(), sm.pks().iter().collect::<Vec<_>>(), km),
+        WshInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/false),
+        WshInner::SortedMulti(sm) => build_multi_node(Tag::SortedMulti, sm.k(),
+            &sm.pks().iter().collect::<Vec<_>>(), km),
     }
-}
-
-fn build_multi_body(sorted: bool, k: usize, keys: Vec<&DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Body, CliError> {
-    let indices = keys.iter().map(|kk| lookup_key(&kk.to_string(), km)).collect::<Result<Vec<u8>, _>>()?;
-    Ok(Body::Multi {
-        k: k as u8,
-        sorted,
-        indices,
-    })
 }
 
 fn walk_miniscript_node<C: miniscript::ScriptContext>(
     ms: &miniscript::Miniscript<DescriptorPublicKey, C>,
     km: &std::collections::BTreeMap<String, u8>,
-) -> Result<Body, CliError> {
+    tap_context: bool,
+) -> Result<Node, CliError> {
     use miniscript::miniscript::decode::Terminal;
     match &ms.node {
-        Terminal::PkK(k) | Terminal::PkH(k) => Ok(Body::SingleKey { idx: lookup_key(&k.to_string(), km)? }),
-        Terminal::Multi(threshold, keys) | Terminal::MultiA(threshold, keys) => {
-            build_multi_body(false, threshold.k(), keys.iter().collect(), km)
+        Terminal::PkK(k) => Ok(Node { tag: Tag::PkK,
+            body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } }),
+        Terminal::PkH(k) => Ok(Node { tag: Tag::PkH,
+            body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } }),
+        Terminal::Multi(threshold, keys) => build_multi_node(
+            Tag::Multi, threshold.k(), &keys.iter().collect::<Vec<_>>(), km),
+        Terminal::MultiA(threshold, keys) => build_multi_node(
+            Tag::MultiA, threshold.k(), &keys.iter().collect::<Vec<_>>(), km),
+        // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
+        _ => {
+            let _ = tap_context;
+            Err(CliError::TemplateParse(format!("unsupported miniscript fragment: {ms}")))
         }
-        // Other miniscript fragments — left as TemplateParse error until BIP 388 templates need them.
-        _ => Err(CliError::TemplateParse(format!("unsupported miniscript fragment: {ms}"))),
     }
 }
 
@@ -1469,50 +1503,71 @@ mod wsh_tests {
 
     #[test]
     fn wsh_multi_2of2() {
-        let (s, km) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))").unwrap();
+        let (s, km) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Wsh);
-        match root.body {
-            Body::Multi { k, sorted, indices } => {
-                assert_eq!(k, 2);
-                assert!(!sorted);
-                assert_eq!(indices, vec![0, 1]);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Wsh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::Multi);
+        match &inner.body {
+            Body::Variable { k, children } => {
+                assert_eq!(*k, 2);
+                assert_eq!(children.len(), 2);
+                assert!(matches!(children[0].body, Body::KeyArg { index: 0 }));
+                assert!(matches!(children[1].body, Body::KeyArg { index: 1 }));
             }
-            _ => panic!("expected Body::Multi"),
+            _ => panic!("expected Body::Variable"),
         }
     }
 
     #[test]
     fn wsh_sortedmulti_2of3() {
-        let (s, km) = substitute_synthetic("wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))").unwrap();
+        let (s, km) = substitute_synthetic("wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Wsh);
-        match root.body {
-            Body::Multi { k, sorted, indices } => {
-                assert_eq!(k, 2);
-                assert!(sorted);
-                assert_eq!(indices, vec![0, 1, 2]);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Wsh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::SortedMulti);
+        match &inner.body {
+            Body::Variable { k, children } => {
+                assert_eq!(*k, 2);
+                assert_eq!(children.len(), 3);
             }
-            _ => panic!("expected Body::Multi"),
+            _ => panic!("expected Body::Variable"),
         }
     }
 
     #[test]
-    fn sh_wpkh() {
-        let (s, km) = substitute_synthetic("sh(wpkh(@0/<0;1>/*))").unwrap();
+    fn sh_wpkh_nested() {
+        let (s, km) = substitute_synthetic("sh(wpkh(@0/<0;1>/*))", ScriptCtx::SingleSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
-        assert_eq!(root.tag, Tag::ShWpkh);
+        assert_eq!(root.tag, Tag::Sh);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Sh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::Wpkh);
+        assert!(matches!(inner.body, Body::KeyArg { index: 0 }));
     }
 
     #[test]
-    fn sh_wsh_multi() {
-        let (s, km) = substitute_synthetic("sh(wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)))").unwrap();
+    fn sh_wsh_multi_nested() {
+        let (s, km) = substitute_synthetic("sh(wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)))", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
-        assert_eq!(root.tag, Tag::ShWsh);
+        assert_eq!(root.tag, Tag::Sh);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Sh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::Wsh);
     }
 }
 ```
@@ -1543,30 +1598,29 @@ EOF
 
 Replace the stub `walk_tr` in `crates/md-codec/src/bin/md/parse/template.rs` with:
 
+v0.14 has no `TapTreeNode` type. Tap-tree branches are encoded as `Tag::TapTree` with `Body::Children(vec![left, right])`. Tap-tree leaves are plain miniscript nodes (no wrapper tag).
+
 ```rust
 fn walk_tr(t: &miniscript::descriptor::Tr<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
-    use miniscript::descriptor::TapTree;
-    let internal_idx = lookup_key(&t.internal_key().to_string(), km)?;
-    let tree = if let Some(taptree) = t.tap_tree() {
-        Some(walk_tap_tree(taptree, km)?)
+    let key_index = lookup_key(&t.internal_key().to_string(), km)?;
+    let tree: Option<Box<Node>> = if let Some(taptree) = t.tap_tree() {
+        Some(Box::new(walk_tap_tree(taptree, km)?))
     } else { None };
-    Ok(Node {
-        tag: Tag::Tr,
-        body: Body::Tr { internal_idx, tree },
-    })
+    Ok(Node { tag: Tag::Tr, body: Body::Tr { key_index, tree } })
 }
 
-fn walk_tap_tree(tt: &miniscript::descriptor::TapTree<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<md_codec::tree::TapTreeNode, CliError> {
+/// Walk miniscript's `TapTree` recursively. Branches → `Tag::TapTree` with two
+/// children; leaves → plain miniscript node (no wrapper).
+fn walk_tap_tree(tt: &miniscript::descriptor::TapTree<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
     use miniscript::descriptor::TapTree;
-    use md_codec::tree::TapTreeNode;
     match tt {
-        TapTree::Leaf(ms) => {
-            let body = walk_miniscript_node(ms, km)?;
-            Ok(TapTreeNode::Leaf(Node { tag: Tag::TapLeaf, body }))
-        }
-        TapTree::Tree { left, right, .. } => Ok(TapTreeNode::Branch {
-            left: Box::new(walk_tap_tree(left, km)?),
-            right: Box::new(walk_tap_tree(right, km)?),
+        TapTree::Leaf(ms) => walk_miniscript_node(ms, km, /*tap=*/true),
+        TapTree::Tree { left, right, .. } => Ok(Node {
+            tag: Tag::TapTree,
+            body: Body::Children(vec![
+                walk_tap_tree(left, km)?,
+                walk_tap_tree(right, km)?,
+            ]),
         }),
     }
 }
@@ -1578,13 +1632,13 @@ mod tr_tests {
 
     #[test]
     fn tr_key_only() {
-        let (s, km) = substitute_synthetic("tr(@0/<0;1>/*)").unwrap();
+        let (s, km) = substitute_synthetic("tr(@0/<0;1>/*)", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr { internal_idx, tree } => {
-                assert_eq!(internal_idx, 0);
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 0);
                 assert!(tree.is_none());
             }
             _ => panic!("expected Body::Tr"),
@@ -1593,14 +1647,16 @@ mod tr_tests {
 
     #[test]
     fn tr_with_one_leaf() {
-        let (s, km) = substitute_synthetic("tr(@0/<0;1>/*,pk(@1/<0;1>/*))").unwrap();
+        let (s, km) = substitute_synthetic("tr(@0/<0;1>/*,pk(@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr { internal_idx, tree } => {
-                assert_eq!(internal_idx, 0);
-                assert!(tree.is_some());
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 0);
+                let leaf = tree.unwrap();
+                assert_eq!(leaf.tag, Tag::PkK);
+                assert!(matches!(leaf.body, Body::KeyArg { index: 1 }));
             }
             _ => panic!("expected Body::Tr"),
         }
@@ -1611,7 +1667,7 @@ mod tr_tests {
 - [ ] **Step 2: Run tests**
 
 Run: `cargo test --features cli --bin md parse::template::tr_tests 2>&1 | tail -5`
-Expected: 2 tests pass. (If `md_codec::tree::TapTreeNode` has a different variant shape, adjust the construction; the plan task is "make these two tests pass against the actual `tree.rs` API." Read `crates/md-codec/src/tree.rs` once and align.)
+Expected: 2 tests pass.
 
 - [ ] **Step 3: Commit**
 
@@ -1644,10 +1700,11 @@ pub fn parse_template(
     keys: &[ParsedKey],
     fingerprints: &[ParsedFingerprint],
 ) -> Result<Descriptor, CliError> {
+    let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
     let resolved = resolve_placeholders(&occs)?;
 
-    let (substituted, key_map) = substitute_synthetic(template)?;
+    let (substituted, key_map) = substitute_synthetic(template, ctx)?;
     let ms_desc = MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
         .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
     let tree = walk_root(&ms_desc, &key_map)?;
@@ -1662,18 +1719,18 @@ pub fn parse_template(
         Some(resolved.use_site_path_overrides)
     };
 
+    // TlvSection has no Default derive; populate via new_empty + field assignment.
+    let mut tlv = TlvSection::new_empty();
+    tlv.use_site_path_overrides = use_site_path_overrides;
+    tlv.fingerprints = fp_vec;
+    tlv.pubkeys = pubkeys;
+
     Ok(Descriptor {
         n: resolved.n,
         path_decl: resolved.path_decl,
         use_site_path: resolved.use_site_path,
         tree,
-        tlv: TlvSection {
-            use_site_path_overrides,
-            fingerprints: fp_vec,
-            pubkeys,
-            // any other TLV fields default to None per the actual TlvSection definition.
-            ..Default::default()
-        },
+        tlv,
     })
 }
 
@@ -1784,115 +1841,122 @@ Create `crates/md-codec/src/bin/md/format/text.rs`:
 use crate::error::CliError;
 use md_codec::encode::Descriptor;
 use md_codec::tag::Tag;
-use md_codec::tree::{Body, Node, TapTreeNode};
+use md_codec::tree::{Body, Node};
 use md_codec::use_site_path::UseSitePath;
 use std::fmt::Write as _;
 
 /// Render a `Descriptor` back to a BIP 388 template string with `@i` placeholders.
 pub fn descriptor_to_template(d: &Descriptor) -> Result<String, CliError> {
     let mut out = String::new();
-    render_node(&d.tree, &d.use_site_path, &d.tlv.use_site_path_overrides.as_deref(), &mut out)?;
+    render_node(&d.tree, &d.use_site_path,
+                d.tlv.use_site_path_overrides.as_deref(), &mut out)?;
     Ok(out)
 }
 
 fn render_node(
     node: &Node,
     default_usp: &UseSitePath,
-    overrides: &Option<&[(u8, UseSitePath)]>,
+    overrides: Option<&[(u8, UseSitePath)]>,
     out: &mut String,
 ) -> Result<(), CliError> {
     match node.tag {
-        Tag::Wpkh => {
-            out.push_str("wpkh(");
-            render_body(&node.body, default_usp, overrides, out)?;
-            out.push(')');
-        }
-        Tag::Pkh => {
-            out.push_str("pkh(");
-            render_body(&node.body, default_usp, overrides, out)?;
-            out.push(')');
-        }
-        Tag::Wsh => {
-            out.push_str("wsh(");
-            render_body(&node.body, default_usp, overrides, out)?;
-            out.push(')');
-        }
-        Tag::Sh => {
-            out.push_str("sh(");
-            render_body(&node.body, default_usp, overrides, out)?;
-            out.push(')');
-        }
-        Tag::ShWpkh => {
-            out.push_str("sh(wpkh(");
-            render_body(&node.body, default_usp, overrides, out)?;
-            out.push_str("))");
-        }
-        Tag::ShWsh => {
-            out.push_str("sh(wsh(");
-            render_body(&node.body, default_usp, overrides, out)?;
-            out.push_str("))");
-        }
+        Tag::Wpkh => render_wrapper("wpkh", node, default_usp, overrides, out),
+        Tag::Pkh  => render_wrapper("pkh",  node, default_usp, overrides, out),
+        Tag::Wsh  => render_wrapper("wsh",  node, default_usp, overrides, out),
+        Tag::Sh   => render_wrapper("sh",   node, default_usp, overrides, out),
         Tag::Tr => {
             out.push_str("tr(");
-            render_body(&node.body, default_usp, overrides, out)?;
+            match &node.body {
+                Body::Tr { key_index, tree } => {
+                    render_key(*key_index, default_usp, overrides, out)?;
+                    if let Some(t) = tree {
+                        out.push(',');
+                        render_tap_node(t, default_usp, overrides, out)?;
+                    }
+                }
+                _ => return Err(CliError::TemplateParse("Tag::Tr without Body::Tr".into())),
+            }
             out.push(')');
+            Ok(())
         }
-        other => return Err(CliError::TemplateParse(format!("unsupported tag in render: {other:?}"))),
+        Tag::Multi       => render_multi("multi",       node, default_usp, overrides, out),
+        Tag::SortedMulti => render_multi("sortedmulti", node, default_usp, overrides, out),
+        Tag::MultiA       => render_multi("multi_a",       node, default_usp, overrides, out),
+        Tag::SortedMultiA => render_multi("sortedmulti_a", node, default_usp, overrides, out),
+        Tag::PkK | Tag::PkH => match node.body {
+            Body::KeyArg { index } => {
+                if matches!(node.tag, Tag::PkH) { out.push_str("pk_h("); } else { out.push_str("pk("); }
+                render_key(index, default_usp, overrides, out)?;
+                out.push(')');
+                Ok(())
+            }
+            _ => Err(CliError::TemplateParse("PkK/PkH without KeyArg body".into())),
+        },
+        other => Err(CliError::TemplateParse(format!("unsupported tag in render: {other:?}"))),
     }
+}
+
+/// Render a single-arity wrapper (wsh, sh, wpkh, pkh) — both `Children([inner])`
+/// and `KeyArg{index}` (Wpkh/Pkh leaf form) work.
+fn render_wrapper(
+    name: &str, node: &Node, default_usp: &UseSitePath,
+    overrides: Option<&[(u8, UseSitePath)]>, out: &mut String,
+) -> Result<(), CliError> {
+    out.push_str(name);
+    out.push('(');
+    match &node.body {
+        Body::KeyArg { index } => render_key(*index, default_usp, overrides, out)?,
+        Body::Children(v) if v.len() == 1 => render_node(&v[0], default_usp, overrides, out)?,
+        _ => return Err(CliError::TemplateParse(format!("{name} body must be KeyArg or Children([1])"))),
+    }
+    out.push(')');
     Ok(())
 }
 
-fn render_body(
-    body: &Body,
-    default_usp: &UseSitePath,
-    overrides: &Option<&[(u8, UseSitePath)]>,
-    out: &mut String,
+fn render_multi(
+    name: &str, node: &Node, default_usp: &UseSitePath,
+    overrides: Option<&[(u8, UseSitePath)]>, out: &mut String,
 ) -> Result<(), CliError> {
-    match body {
-        Body::SingleKey { idx } => render_key(*idx, default_usp, overrides, out),
-        Body::Multi { k, sorted, indices } => {
-            if *sorted { write!(out, "sortedmulti({k}").unwrap(); } else { write!(out, "multi({k}").unwrap(); }
-            for &idx in indices {
-                out.push(',');
-                render_key(idx, default_usp, overrides, out)?;
-            }
-            out.push(')');
-            Ok(())
-        }
-        Body::Tr { internal_idx, tree } => {
-            render_key(*internal_idx, default_usp, overrides, out)?;
-            if let Some(t) = tree {
-                out.push(',');
-                render_taptree(t, default_usp, overrides, out)?;
-            }
-            Ok(())
-        }
+    let (k, children) = match &node.body {
+        Body::Variable { k, children } => (*k, children),
+        _ => return Err(CliError::TemplateParse(format!("{name} body must be Variable"))),
+    };
+    write!(out, "{name}({k}").unwrap();
+    for child in children {
+        let idx = match child.body {
+            Body::KeyArg { index } => index,
+            _ => return Err(CliError::TemplateParse(format!("{name} child must be KeyArg"))),
+        };
+        out.push(',');
+        render_key(idx, default_usp, overrides, out)?;
+    }
+    out.push(')');
+    Ok(())
+}
+
+/// Render a tap-tree node. Branches → `{left,right}`; leaves → render their body
+/// directly (no wrapper around the leaf).
+fn render_tap_node(
+    node: &Node, default_usp: &UseSitePath,
+    overrides: Option<&[(u8, UseSitePath)]>, out: &mut String,
+) -> Result<(), CliError> {
+    if matches!(node.tag, Tag::TapTree) {
+        let children = match &node.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => return Err(CliError::TemplateParse("TapTree must have Children([2])".into())),
+        };
+        out.push('{');
+        render_tap_node(&children[0], default_usp, overrides, out)?;
+        out.push(',');
+        render_tap_node(&children[1], default_usp, overrides, out)?;
+        out.push('}');
+        Ok(())
+    } else {
+        render_node(node, default_usp, overrides, out)
     }
 }
 
-fn render_taptree(
-    tt: &TapTreeNode,
-    default_usp: &UseSitePath,
-    overrides: &Option<&[(u8, UseSitePath)]>,
-    out: &mut String,
-) -> Result<(), CliError> {
-    match tt {
-        TapTreeNode::Leaf(node) => {
-            // Render leaf body without a wrapper (it's already inside a tap-leaf position).
-            render_body(&node.body, default_usp, overrides, out)
-        }
-        TapTreeNode::Branch { left, right } => {
-            out.push('{');
-            render_taptree(left, default_usp, overrides, out)?;
-            out.push(',');
-            render_taptree(right, default_usp, overrides, out)?;
-            out.push('}');
-            Ok(())
-        }
-    }
-}
-
-fn render_key(idx: u8, default_usp: &UseSitePath, overrides: &Option<&[(u8, UseSitePath)]>, out: &mut String) -> Result<(), CliError> {
+fn render_key(idx: u8, default_usp: &UseSitePath, overrides: Option<&[(u8, UseSitePath)]>, out: &mut String) -> Result<(), CliError> {
     let usp = overrides.and_then(|v| v.iter().find(|(i, _)| *i == idx).map(|(_, u)| u)).unwrap_or(default_usp);
     write!(out, "@{idx}").unwrap();
     if let Some(alts) = &usp.multipath {
@@ -2001,9 +2065,11 @@ pub fn fmt_policy_id(id: &WalletPolicyId) -> String {
     for b in bytes { write!(s, "{b:02x}").unwrap(); }
     s
 }
+/// 4-byte fingerprint of a `WalletPolicyId`. v0.14's `WalletPolicyId` has
+/// no `fingerprint()` method; we slice the first 4 bytes directly.
 pub fn fmt_policy_id_fingerprint(id: &WalletPolicyId) -> String {
-    let fp = id.fingerprint();
-    format!("0x{:02x}{:02x}{:02x}{:02x}", fp[0], fp[1], fp[2], fp[3])
+    let b = id.as_bytes();
+    format!("0x{:02x}{:02x}{:02x}{:02x}", b[0], b[1], b[2], b[3])
 }
 pub fn fmt_chunk_header(h: &ChunkHeader) -> String {
     format!("chunk-set-id=0x{:05x}, count={}, index={}", h.chunk_set_id, h.count, h.index)
@@ -2016,13 +2082,11 @@ mod hash_tests {
     #[test]
     fn policy_id_fingerprint_format() {
         let bytes = [0x9E, 0x1D, 0x72, 0xB6, 0x00, 0,0,0, 0,0,0,0, 0,0,0,0];
-        let id = WalletPolicyId::from_bytes(bytes);
+        let id = WalletPolicyId::new(bytes);
         assert_eq!(fmt_policy_id_fingerprint(&id), "0x9e1d72b6");
     }
 }
 ```
-
-(If `WalletPolicyId::from_bytes` is `pub(crate)` or absent, the test should construct via `compute_wallet_policy_id` against a fixed `Descriptor`. Read `identity.rs` to find the right constructor; the test stays.)
 
 - [ ] **Step 2: Run tests**
 
@@ -2086,7 +2150,7 @@ use crate::parse::template::{ctx_for_template, parse_template};
 
 use md_codec::encode::encode_md1_string;
 use md_codec::chunk::{derive_chunk_set_id, split};
-use md_codec::identity::compute_wallet_policy_id;
+use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
 
 pub struct EncodeArgs<'a> {
     pub template: &'a str,
@@ -2098,25 +2162,24 @@ pub struct EncodeArgs<'a> {
 }
 
 pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
-    let ctx = match ctx_for_template(args.template) {
-        ScriptCtx::SingleSig => ScriptCtx::SingleSig,
-        ScriptCtx::MultiSig => ScriptCtx::MultiSig,
-    };
+    let ctx = ctx_for_template(args.template);
     let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx)).collect::<Result<Vec<_>, _>>()?;
     let parsed_fps = args.fingerprints.iter().map(|s| parse_fingerprint(s)).collect::<Result<Vec<_>, _>>()?;
     let descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
 
-    let phrase = encode_md1_string(&descriptor)?;
-    println!("{phrase}");
-
     if args.force_chunked {
-        // Split into chunks and emit one per line; print chunk-set-id header.
-        let chunks = split(&descriptor, /*max_chunk_bytes=*/ 32)?;
-        let csid = chunks.first().map(|c| c.header.chunk_set_id).unwrap_or(0);
+        // v0.14 `split` takes only &Descriptor (chunk size is determined
+        // internally) and returns Vec<String>, no per-chunk struct.
+        let chunks = split(&descriptor)?;
+        let md1_id = compute_md1_encoding_id(&descriptor)?;
+        let csid = derive_chunk_set_id(&md1_id);
         println!("chunk-set-id: 0x{csid:05x}");
-        for c in &chunks {
-            println!("{}", c.phrase);
+        for s in &chunks {
+            println!("{s}");
         }
+    } else {
+        let phrase = encode_md1_string(&descriptor)?;
+        println!("{phrase}");
     }
 
     if args.policy_id_fingerprint {
@@ -2124,6 +2187,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
         println!("policy-id-fingerprint: {}", text::fmt_policy_id_fingerprint(&id));
     }
 
+    let _ = args.force_long_code;  // long-code dropped in v0.12; arg accepted for forward-compat
     Ok(())
 }
 ```
@@ -2221,7 +2285,7 @@ pub fn run(strings: &[String]) -> Result<(), CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
-        reassemble(strings.iter().map(String::as_str))?
+        { let refs: Vec<&str> = strings.iter().map(String::as_str).collect(); reassemble(&refs)? }
     };
     let template = text::descriptor_to_template(&descriptor)?;
     println!("{template}");
@@ -2313,7 +2377,7 @@ pub fn run(args: VerifyArgs<'_>) -> Result<(), CliError> {
     let decoded = if args.strings.len() == 1 {
         decode_md1_string(&args.strings[0])?
     } else {
-        reassemble(args.strings.iter().map(String::as_str))?
+        { let refs: Vec<&str> = args.strings.iter().map(String::as_str).collect(); reassemble(&refs)? }
     };
     let ctx = ctx_for_template(args.template);
     let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx)).collect::<Result<Vec<_>, _>>()?;
@@ -2424,7 +2488,7 @@ pub fn run(strings: &[String]) -> Result<(), CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
-        reassemble(strings.iter().map(String::as_str))?
+        { let refs: Vec<&str> = strings.iter().map(String::as_str).collect(); reassemble(&refs)? }
     };
 
     println!("template: {}", text::descriptor_to_template(&descriptor)?);
@@ -2523,7 +2587,7 @@ pub fn run(strings: &[String]) -> Result<(), CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
-        reassemble(strings.iter().map(String::as_str))?
+        { let refs: Vec<&str> = strings.iter().map(String::as_str).collect(); reassemble(&refs)? }
     };
     let (bytes, bit_len) = encode_payload(&descriptor)?;
     println!("payload-bits: {bit_len}");
@@ -2758,12 +2822,13 @@ EOF
 
 Append to `crates/md-codec/src/bin/md/format/json.rs`:
 
+v0.14's `Body` variants are `KeyArg`/`Children`/`Variable`/`Tr`/`Hash256Body`/`Hash160Body`/`Timelock`/`Empty`. `JsonBody` mirrors all of them. Tap-tree branches/leaves are plain `Node`s (no separate `TapTreeNode` type). `PathDeclPaths::Shared(OriginPath)` not `Single(DerivationPath)`.
+
 ```rust
 use md_codec::encode::Descriptor;
-use md_codec::tag::Tag;
-use md_codec::tree::{Body, Node, TapTreeNode};
+use md_codec::tree::{Body, Node};
 use md_codec::tlv::TlvSection;
-use md_codec::origin_path::{PathDecl, PathDeclPaths};
+use md_codec::origin_path::{OriginPath, PathDecl, PathDeclPaths};
 use md_codec::use_site_path::UseSitePath;
 
 #[derive(Serialize)]
@@ -2789,16 +2854,28 @@ impl From<&Descriptor> for JsonDescriptor {
 #[derive(Serialize)]
 #[serde(tag = "tag", content = "data")]
 pub enum JsonPathDecl {
-    Single(String),
+    Shared(String),
     Divergent(Vec<String>),
 }
 impl From<&PathDecl> for JsonPathDecl {
     fn from(p: &PathDecl) -> Self {
         match &p.paths {
-            PathDeclPaths::Single(d) => JsonPathDecl::Single(d.to_string()),
-            PathDeclPaths::Divergent(v) => JsonPathDecl::Divergent(v.iter().map(|d| d.to_string()).collect()),
+            PathDeclPaths::Shared(op) => JsonPathDecl::Shared(format_origin_path(op)),
+            PathDeclPaths::Divergent(v) => JsonPathDecl::Divergent(v.iter().map(format_origin_path).collect()),
         }
     }
+}
+
+/// Render an `OriginPath` as `m/...` notation. v0.14's `OriginPath` does not
+/// implement `Display`, so we format it here.
+fn format_origin_path(p: &OriginPath) -> String {
+    let mut s = String::from("m");
+    for c in &p.components {
+        s.push('/');
+        s.push_str(&c.value.to_string());
+        if c.hardened { s.push('\''); }
+    }
+    s
 }
 
 #[derive(Serialize)]
@@ -2831,37 +2908,31 @@ impl From<&Node> for JsonNode {
 #[derive(Serialize)]
 #[serde(tag = "kind", content = "data")]
 pub enum JsonBody {
-    SingleKey { idx: u8 },
-    Multi { k: u8, sorted: bool, indices: Vec<u8> },
-    Tr { internal_idx: u8, tree: Option<JsonTapTree> },
+    KeyArg { index: u8 },
+    Children(Vec<JsonNode>),
+    Variable { k: u8, children: Vec<JsonNode> },
+    Tr { key_index: u8, tree: Option<Box<JsonNode>> },
+    Hash256Body(String),  // hex
+    Hash160Body(String),  // hex
+    Timelock(u32),
+    Empty,
 }
 impl From<&Body> for JsonBody {
     fn from(b: &Body) -> Self {
         match b {
-            Body::SingleKey { idx } => JsonBody::SingleKey { idx: *idx },
-            Body::Multi { k, sorted, indices } => JsonBody::Multi { k: *k, sorted: *sorted, indices: indices.clone() },
-            Body::Tr { internal_idx, tree } => JsonBody::Tr {
-                internal_idx: *internal_idx,
-                tree: tree.as_ref().map(|t| t.into()),
+            Body::KeyArg { index } => JsonBody::KeyArg { index: *index },
+            Body::Children(v) => JsonBody::Children(v.iter().map(JsonNode::from).collect()),
+            Body::Variable { k, children } => JsonBody::Variable {
+                k: *k, children: children.iter().map(JsonNode::from).collect()
             },
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(tag = "kind", content = "data")]
-pub enum JsonTapTree {
-    Leaf(JsonNode),
-    Branch { left: Box<JsonTapTree>, right: Box<JsonTapTree> },
-}
-impl From<&TapTreeNode> for JsonTapTree {
-    fn from(t: &TapTreeNode) -> Self {
-        match t {
-            TapTreeNode::Leaf(node) => JsonTapTree::Leaf(node.into()),
-            TapTreeNode::Branch { left, right } => JsonTapTree::Branch {
-                left: Box::new(left.as_ref().into()),
-                right: Box::new(right.as_ref().into()),
+            Body::Tr { key_index, tree } => JsonBody::Tr {
+                key_index: *key_index,
+                tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
             },
+            Body::Hash256Body(h) => JsonBody::Hash256Body(hex(h)),
+            Body::Hash160Body(h) => JsonBody::Hash160Body(hex(h)),
+            Body::Timelock(v) => JsonBody::Timelock(*v),
+            Body::Empty => JsonBody::Empty,
         }
     }
 }
@@ -2872,6 +2943,7 @@ pub struct JsonTlv {
     pub fingerprints: Option<Vec<(u8, String)>>,
     pub pubkeys: Option<Vec<(u8, String)>>,
     pub origin_path_overrides: Option<Vec<(u8, String)>>,
+    pub unknown: Vec<(u8, String, usize)>,  // (tag, hex(payload), bit_len)
 }
 impl From<&TlvSection> for JsonTlv {
     fn from(t: &TlvSection) -> Self {
@@ -2879,7 +2951,8 @@ impl From<&TlvSection> for JsonTlv {
             use_site_path_overrides: t.use_site_path_overrides.as_ref().map(|v| v.iter().map(|(i, u)| (*i, u.into())).collect()),
             fingerprints: t.fingerprints.as_ref().map(|v| v.iter().map(|(i, fp)| (*i, hex(fp))).collect()),
             pubkeys: t.pubkeys.as_ref().map(|v| v.iter().map(|(i, p)| (*i, hex(p))).collect()),
-            origin_path_overrides: t.origin_path_overrides.as_ref().map(|v| v.iter().map(|(i, d)| (*i, d.to_string())).collect()),
+            origin_path_overrides: t.origin_path_overrides.as_ref().map(|v| v.iter().map(|(i, op)| (*i, format_origin_path(op))).collect()),
+            unknown: t.unknown.iter().map(|(tag, payload, bits)| (*tag, hex(payload), *bits)).collect(),
         }
     }
 }
@@ -2895,7 +2968,10 @@ mod descriptor_json_tests {
         let j = serde_json::to_value(JsonDescriptor::from(&d)).unwrap();
         assert_eq!(j["n"], 2);
         assert_eq!(j["tree"]["tag"], "Wsh");
-        assert_eq!(j["tree"]["body"]["kind"], "Multi");
+        assert_eq!(j["tree"]["body"]["kind"], "Children");
+        // Inner Multi node:
+        assert_eq!(j["tree"]["body"]["data"][0]["tag"], "Multi");
+        assert_eq!(j["tree"]["body"]["data"][0]["body"]["kind"], "Variable");
     }
 }
 ```
@@ -2926,9 +3002,18 @@ EOF
 
 - [ ] **Step 1: Update encode to accept and emit JSON**
 
-Edit `crates/md-codec/src/bin/md/cmd/encode.rs`. Add field `json: bool` to `EncodeArgs` and add a JSON-emit branch:
+Replace `crates/md-codec/src/bin/md/cmd/encode.rs` in full to add the `json` field and the JSON branch (the chunked branch from Task 4.1 is preserved):
 
 ```rust
+use crate::error::CliError;
+use crate::format::text;
+use crate::parse::keys::{parse_fingerprint, parse_key};
+use crate::parse::template::{ctx_for_template, parse_template};
+
+use md_codec::encode::encode_md1_string;
+use md_codec::chunk::{derive_chunk_set_id, split};
+use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
+
 pub struct EncodeArgs<'a> {
     pub template: &'a str,
     pub keys: &'a [String],
@@ -2940,32 +3025,46 @@ pub struct EncodeArgs<'a> {
 }
 
 pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
-    // ... existing parsing ...
+    let ctx = ctx_for_template(args.template);
     let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx)).collect::<Result<Vec<_>, _>>()?;
     let parsed_fps = args.fingerprints.iter().map(|s| parse_fingerprint(s)).collect::<Result<Vec<_>, _>>()?;
     let descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
-    let phrase = encode_md1_string(&descriptor)?;
 
     #[cfg(feature = "json")]
     if args.json {
         use crate::format::json::SCHEMA;
-        let id = compute_wallet_policy_id(&descriptor)?;
         let mut obj = serde_json::Map::new();
         obj.insert("schema".into(), SCHEMA.into());
-        obj.insert("phrase".into(), phrase.into());
+        if args.force_chunked {
+            let chunks = split(&descriptor)?;
+            let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
+            obj.insert("chunk_set_id".into(), format!("0x{csid:05x}").into());
+            obj.insert("chunks".into(), serde_json::to_value(&chunks).unwrap());
+        } else {
+            obj.insert("phrase".into(), encode_md1_string(&descriptor)?.into());
+        }
         if args.policy_id_fingerprint {
-            obj.insert("policy_id_fingerprint".into(),
-                crate::format::text::fmt_policy_id_fingerprint(&id).into());
+            let id = compute_wallet_policy_id(&descriptor)?;
+            obj.insert("policy_id_fingerprint".into(), text::fmt_policy_id_fingerprint(&id).into());
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
         return Ok(());
     }
 
-    println!("{phrase}");
+    if args.force_chunked {
+        let chunks = split(&descriptor)?;
+        let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
+        println!("chunk-set-id: 0x{csid:05x}");
+        for s in &chunks { println!("{s}"); }
+    } else {
+        println!("{}", encode_md1_string(&descriptor)?);
+    }
     if args.policy_id_fingerprint {
         let id = compute_wallet_policy_id(&descriptor)?;
         println!("policy-id-fingerprint: {}", text::fmt_policy_id_fingerprint(&id));
     }
+
+    let _ = args.force_long_code;
     Ok(())
 }
 ```
@@ -3035,7 +3134,7 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
-        reassemble(strings.iter().map(String::as_str))?
+        { let refs: Vec<&str> = strings.iter().map(String::as_str).collect(); reassemble(&refs)? }
     };
 
     #[cfg(feature = "json")]
@@ -3116,7 +3215,7 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
-        reassemble(strings.iter().map(String::as_str))?
+        { let refs: Vec<&str> = strings.iter().map(String::as_str).collect(); reassemble(&refs)? }
     };
     let md1 = compute_md1_encoding_id(&descriptor)?;
     let tpl = compute_wallet_descriptor_template_id(&descriptor)?;
@@ -3159,7 +3258,7 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
-        reassemble(strings.iter().map(String::as_str))?
+        { let refs: Vec<&str> = strings.iter().map(String::as_str).collect(); reassemble(&refs)? }
     };
     let (bytes, bit_len) = encode_payload(&descriptor)?;
 
@@ -3993,11 +4092,17 @@ Create `crates/md-codec/tests/compile.rs`:
 #![cfg(feature = "cli-compiler")]
 use assert_cmd::Command;
 
+/// Goldens are deliberately conservative: rust-miniscript's compiler is
+/// heuristic for non-trivial policies (e.g. `thresh(...)` may emit
+/// `c:pk_k`/`c:pk_h` wrappers rather than a literal `multi`/`multi_a`).
+/// We pin only the trivial single-key cases here. To extend the table,
+/// run `md compile <expr> --context <ctx>` once, paste the literal
+/// output as the expected prefix, and document the miniscript revision
+/// in a comment alongside.
 const GOLDEN: &[(&str, &str, &str)] = &[
     // (policy, context, expected_template_starts_with)
-    ("pk(@0)",                                  "segwitv0", "wsh(pk(@0))"),
-    ("thresh(2,pk(@0),pk(@1),pk(@2))",          "segwitv0", "wsh(multi(2,@0,@1,@2))"),
-    ("pk(@0)",                                  "tap",       "tr(@0)"),
+    ("pk(@0)", "segwitv0", "wsh(pk(@0))"),
+    ("pk(@0)", "tap",      "tr(@0)"),
 ];
 
 #[test]
@@ -4014,12 +4119,27 @@ fn compiler_golden_table() {
         );
     }
 }
+
+#[test]
+fn threshold_compiles_to_some_template() {
+    // Sanity check only: thresh(2,pk,pk,pk) compiles to *some* well-formed
+    // template starting with `wsh(...)`. The exact AST shape depends on
+    // miniscript's heuristics; we don't pin it.
+    let out = Command::cargo_bin("md").unwrap()
+        .args(["compile", "thresh(2,pk(@0),pk(@1),pk(@2))", "--context", "segwitv0"])
+        .output().unwrap();
+    let s = String::from_utf8(out.stdout).unwrap();
+    let first = s.lines().next().unwrap();
+    assert!(first.starts_with("wsh("), "got: {first}");
+    assert!(first.contains("@0") && first.contains("@1") && first.contains("@2"),
+        "expected all three placeholders in {first}");
+}
 ```
 
 - [ ] **Step 2: Run tests**
 
 Run: `cargo test --features cli,json,cli-compiler --test compile 2>&1 | tail -5`
-Expected: 1 test passes.
+Expected: 2 tests pass.
 
 - [ ] **Step 3: Commit**
 
@@ -4224,7 +4344,7 @@ Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with brea
 | `tlv` | `JsonTlv` |
 
 ### `JsonPathDecl` (adjacent-tagged)
-- `{"tag": "Single", "data": "m/48'/0'/0'/2'"}`
+- `{"tag": "Shared", "data": "m/48'/0'/0'/2'"}`
 - `{"tag": "Divergent", "data": ["m/...", "m/..."]}`
 
 ### `JsonUseSitePath`
@@ -4236,17 +4356,19 @@ Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with brea
 ### `JsonNode`
 | Field | Type |
 |---|---|
-| `tag` | string (Tag variant name) |
+| `tag` | string (Tag variant name, e.g. `"Wsh"`, `"Multi"`, `"PkK"`, `"Tr"`, `"TapTree"`) |
 | `body` | `JsonBody` |
 
 ### `JsonBody` (adjacent-tagged on `kind`)
-- `{"kind": "SingleKey", "data": {"idx": u8}}`
-- `{"kind": "Multi", "data": {"k": u8, "sorted": bool, "indices": [u8, ...]}}`
-- `{"kind": "Tr", "data": {"internal_idx": u8, "tree": JsonTapTree | null}}`
-
-### `JsonTapTree` (adjacent-tagged on `kind`)
-- `{"kind": "Leaf", "data": JsonNode}`
-- `{"kind": "Branch", "data": {"left": JsonTapTree, "right": JsonTapTree}}`
+Mirrors v0.14's `tree::Body` variants exactly:
+- `{"kind": "KeyArg", "data": {"index": u8}}` — single key arg (Pkh, Wpkh, PkK, PkH, multi children)
+- `{"kind": "Children", "data": [JsonNode, ...]}` — wrapper nodes (Wsh, Sh, Check, Verify, AndV, AndOr, TapTree branches, …)
+- `{"kind": "Variable", "data": {"k": u8, "children": [JsonNode, ...]}}` — Multi/SortedMulti/MultiA/SortedMultiA/Thresh
+- `{"kind": "Tr", "data": {"key_index": u8, "tree": JsonNode | null}}` — Taproot root (the inner `tree`, when present, is a plain `JsonNode` whose tag is either a leaf miniscript tag or `TapTree` for a branch)
+- `{"kind": "Hash256Body", "data": "<hex64>"}` — 32-byte hash literal
+- `{"kind": "Hash160Body", "data": "<hex40>"}` — 20-byte hash literal
+- `{"kind": "Timelock", "data": u32}` — After/Older
+- `{"kind": "Empty"}` — False/True
 
 ### `JsonTlv`
 | Field | Type |
@@ -4255,6 +4377,7 @@ Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with brea
 | `fingerprints` | `[(u8, hex8), ...]` or `null` |
 | `pubkeys` | `[(u8, hex130), ...]` or `null` |
 | `origin_path_overrides` | `[(u8, "m/..."), ...]` or `null` |
+| `unknown` | `[(u8, hex, u32), ...]` — `(tag, payload-hex, bit-length)` tuples for forward-compat round-trip |
 
 ### `JsonHash`
 | Field | Type |
