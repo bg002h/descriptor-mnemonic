@@ -4,8 +4,9 @@ use crate::parse::template::parse_template;
 use std::path::PathBuf;
 use std::fs;
 
-#[path = "../../../../tests/vectors/manifest.rs"]
-mod manifest;
+mod manifest {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../md-codec/tests/vectors/manifest.rs"));
+}
 use manifest::MANIFEST;
 
 pub fn run(out: Option<String>) -> Result<(), CliError> {
