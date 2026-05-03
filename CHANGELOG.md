@@ -1,8 +1,47 @@
 # Changelog
 
-All notable changes to `md-codec` are documented in this file.
+All notable changes to `md-codec` and `md-cli` are documented in this file. Each release entry is prefixed with the crate name (`## md-codec [0.16.0]`, `## md-cli [0.1.0]`). Pre-split releases (md-codec ≤ 0.15.2) lack the prefix.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
+
+## md-cli [0.1.0] — 2026-05-03
+
+Initial release. The `md` binary and its source tree (`cmd/`, `format/`,
+`parse/`, `compile.rs`, `error.rs`, `main.rs`) were extracted from
+`md-codec` 0.15.2; see md-codec [0.16.0] entry below for the breaking
+change on the producing side. The `json` and `cli-compiler` feature flags
+carry over from md-codec verbatim:
+
+- `default = ["json"]` — `--json` output paths and JSON vector emission
+  build by default.
+- `cli-compiler` (opt-in) — gates the `compile` subcommand and
+  `encode --from-policy` via `miniscript/compiler`.
+
+No CLI behavior change vs. md-codec 0.15.2; `md --version` now reports
+`md-cli 0.1.0` instead of `md-codec 0.15.x` (clap derives `--version` from
+the producing crate's `CARGO_PKG_VERSION`).
+
+## md-codec [0.16.0] — 2026-05-03
+
+Library-only release. The `md` binary and the `cli`, `cli-compiler`, and
+`json` features have been extracted to a new `md-cli` crate (see md-cli
+[0.1.0] entry above). No wire-format change; no library API removal.
+
+### Breaking changes
+
+- `cargo install md-codec` no longer ships an `md` binary. Install
+  `md-cli` instead: `cargo install md-cli`.
+- The `cli`, `cli-compiler`, and `json` Cargo features are gone from
+  md-codec; downstream consumers using `default-features = false,
+  features = ["cli", ...]` must migrate to depending on `md-cli`.
+- Optional dependencies `clap`, `anyhow`, `miniscript`, `regex`, `serde`,
+  `serde_json` are no longer in md-codec's dependency graph.
+
+### Unchanged
+
+- Library public API (`pub use`s and `pub mod`s in `lib.rs`).
+- v0.11 wire format and BCH primitives.
+- All format identity computations (PolicyId, EncodingId, TemplateId).
 
 ## [0.15.2] — 2026-05-03
 
