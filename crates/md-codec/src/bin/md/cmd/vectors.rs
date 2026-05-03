@@ -19,12 +19,23 @@ pub fn run(out: Option<String>) -> Result<(), CliError> {
         let fps: Vec<ParsedFingerprint> = v.fingerprints.iter().map(|(i, fp)| ParsedFingerprint { i: *i, fp: *fp }).collect();
         let descriptor = parse_template(v.template, &[], &fps)?;
         let (bytes, _bits) = md_codec::encode::encode_payload(&descriptor)?;
-        let phrase = md_codec::encode::encode_md1_string(&descriptor)?;
 
         write_lf(&out_dir.join(format!("{}.template", v.name)), v.template)?;
         write_lf(&out_dir.join(format!("{}.bytes.hex", v.name)),
             &bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())?;
-        write_lf(&out_dir.join(format!("{}.phrase.txt", v.name)), &phrase)?;
+
+        let phrase_text = if v.force_chunked {
+            use md_codec::chunk::{derive_chunk_set_id, split};
+            use md_codec::identity::compute_md1_encoding_id;
+            let chunks = split(&descriptor)?;
+            let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
+            let mut s = format!("chunk-set-id: 0x{csid:05x}\n");
+            for c in &chunks { s.push_str(c); s.push('\n'); }
+            s.trim_end_matches('\n').to_string()
+        } else {
+            md_codec::encode::encode_md1_string(&descriptor)?
+        };
+        write_lf(&out_dir.join(format!("{}.phrase.txt", v.name)), &phrase_text)?;
 
         #[cfg(feature = "json")]
         {
