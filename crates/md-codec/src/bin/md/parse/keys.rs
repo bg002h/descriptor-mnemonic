@@ -104,7 +104,11 @@ mod tests {
     /// Abandon-mnemonic tpub at m/84'/1'/0' (BIP 84 testnet account, depth 3).
     pub(crate) const ABANDON_TPUB_DEPTH3_BIP84: &str = "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M";
     /// Abandon-mnemonic tpub at m/48'/1'/0'/2' (BIP 48 testnet account, depth 4).
-    #[allow(dead_code)] // referenced by future Phase 4 wsh-multi testnet test if added
+    /// Reserved for a future wsh-multi testnet test fixture (currently unused).
+    /// `#[allow(dead_code)]` is required in test builds because the lint sees
+    /// the const compiled-in but unread; the v0.15.1 review claim that the
+    /// `#[cfg(test)]` enclosure made the allow redundant was a false positive.
+    #[allow(dead_code)]
     pub(crate) const ABANDON_TPUB_DEPTH4_BIP48: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
 
     #[test]
