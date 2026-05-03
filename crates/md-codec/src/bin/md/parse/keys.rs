@@ -103,3 +103,62 @@ mod tests {
         assert_eq!(a.payload, b.payload);
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedFingerprint {
+    pub i: u8,
+    pub fp: [u8; 4],
+}
+
+pub fn parse_fingerprint(arg: &str) -> Result<ParsedFingerprint, CliError> {
+    let (i_str, hex_str) = arg.split_once('=').ok_or_else(|| CliError::BadArg(
+        format!("--fingerprint expects @i=HEX, got: {arg}")
+    ))?;
+    let i = parse_index(i_str)?;
+    let hex = hex_str.strip_prefix("0x").unwrap_or(hex_str);
+    if hex.len() != 8 {
+        return Err(CliError::BadFingerprint { i, why: format!(
+            "expected 8 hex chars (4 bytes), got {}", hex.len()
+        )});
+    }
+    let mut fp = [0u8; 4];
+    for (n, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).map_err(|_| CliError::BadFingerprint {
+            i, why: "non-utf8 hex".into()
+        })?;
+        fp[n] = u8::from_str_radix(s, 16).map_err(|_| CliError::BadFingerprint {
+            i, why: format!("invalid hex byte: {s}")
+        })?;
+    }
+    Ok(ParsedFingerprint { i, fp })
+}
+
+#[cfg(test)]
+mod fp_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_8_hex_chars() {
+        let p = parse_fingerprint("@0=deadbeef").unwrap();
+        assert_eq!(p.i, 0);
+        assert_eq!(p.fp, [0xDE, 0xAD, 0xBE, 0xEF]);
+    }
+
+    #[test]
+    fn accepts_0x_prefix() {
+        let p = parse_fingerprint("@1=0xCAFEBABE").unwrap();
+        assert_eq!(p.fp, [0xCA, 0xFE, 0xBA, 0xBE]);
+    }
+
+    #[test]
+    fn rejects_wrong_length() {
+        let err = parse_fingerprint("@0=dead").unwrap_err();
+        assert!(matches!(err, CliError::BadFingerprint { i: 0, .. }));
+    }
+
+    #[test]
+    fn rejects_non_hex() {
+        let err = parse_fingerprint("@0=zzzzzzzz").unwrap_err();
+        assert!(matches!(err, CliError::BadFingerprint { i: 0, .. }));
+    }
+}
