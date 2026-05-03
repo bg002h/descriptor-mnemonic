@@ -10,7 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - `md` CLI binary with seven subcommands: `encode`, `decode`, `verify`,
   `inspect`, `bytecode`, `vectors`, `compile`.
-- `--json` output on every read/write subcommand (schema `md-cli/1`).
+- `--json` output on `encode`, `decode`, `inspect`, `bytecode`, and `compile`
+  (schema `md-cli/1`). `verify` reports via exit code (0/1) instead.
 - Help-text drift harness (`tests/help_examples.rs`) — every subcommand's
   worked example is asserted byte-equal against actual stdout in CI.
 - Vectors corpus generator — `md vectors` regenerates 10 deterministic

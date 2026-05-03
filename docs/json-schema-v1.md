@@ -12,8 +12,9 @@ Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with brea
 | Field | Type | Always present? |
 |---|---|---|
 | `schema` | string | yes |
-| `phrase` | string | yes |
+| `phrase` | string | iff *not* `--force-chunked` |
 | `chunk_set_id` | string `0xXXXXX` | iff `--force-chunked` |
+| `chunks` | array of string | iff `--force-chunked` |
 | `policy_id_fingerprint` | string `0xXXXXXXXX` | iff `--policy-id-fingerprint` |
 
 ### `decode --json`
