@@ -30,7 +30,7 @@ crates/md-cli/src/cmd/{address,bytecode,compile,decode,encode,inspect,mod,vector
 crates/md-cli/src/format/{json,mod,text}.rs       # Phase 2 (git mv)
 crates/md-cli/src/parse/{keys,mod,path,template}.rs   # Phase 2 (git mv)
 crates/md-cli/tests/smoke.rs                      # Phase 1 (failing smoke → passes after Phase 2; same filename as md-codec's lib-only smoke.rs but distinct test target)
-crates/md-cli/tests/{cmd_address,cmd_address_json,cmd_bytecode,cmd_compile,cmd_decode,cmd_encode,cmd_inspect,cmd_verify,compile,exit_codes,help_examples,json_snapshots,scaffold,template_roundtrip}.rs   # Phase 3 (git mv from md-codec)
+crates/md-cli/tests/{cmd_address,cmd_address_json,cmd_bytecode,cmd_compile,cmd_decode,cmd_encode,cmd_inspect,cmd_verify,compile,exit_codes,help_examples,json_snapshots,scaffold,template_roundtrip,vector_corpus}.rs   # Phase 3 (git mv from md-codec)
 crates/md-cli/tests/snapshots/                    # Phase 3 (git mv from md-codec)
 design/agent-reports/phase-0-audit-md-cli-extraction.md          # Phase 0 audit deliverable
 design/agent-reports/phase-{1,2,3,4}-review-md-cli-extraction.md # per-phase agent reviews
@@ -55,18 +55,18 @@ design/FOLLOWUPS.md                               # Phase 4 (4 deferred entries)
 cmd_address.rs  cmd_address_json.rs  cmd_bytecode.rs  cmd_compile.rs
 cmd_decode.rs   cmd_encode.rs        cmd_inspect.rs   cmd_verify.rs
 compile.rs      exit_codes.rs        help_examples.rs json_snapshots.rs
-scaffold.rs     template_roundtrip.rs
+scaffold.rs     template_roundtrip.rs vector_corpus.rs
 ```
 
-(14 files. `template_roundtrip.rs` confirmed CLI by architect — uses `cargo_bin("md")` line 10.)
+(15 files. `template_roundtrip.rs` and `vector_corpus.rs` both use `cargo_bin("md")` — `vector_corpus.rs` reclassified from lib to CLI by the Phase 0 audit; the corpus directory still stays in md-codec, the test reaches it via `CARGO_MANIFEST_DIR/../md-codec/tests/vectors`.)
 
 **Stay in `md-codec/tests/`** (pure library tests):
 
 ```
-address_derivation.rs  chunking.rs  forward_compat.rs  smoke.rs  vector_corpus.rs  wallet_policy.rs
+address_derivation.rs  chunking.rs  forward_compat.rs  smoke.rs  wallet_policy.rs
 ```
 
-(6 files. `smoke.rs` confirmed lib-only by architect — pure `md_codec::*` calls, no `assert_cmd`.)
+(5 files. `smoke.rs` confirmed lib-only by architect — pure `md_codec::*` calls, no `assert_cmd`.)
 
 **Move with bin:** `crates/md-codec/tests/snapshots/` → `crates/md-cli/tests/snapshots/`.
 
@@ -472,9 +472,11 @@ use manifest::MANIFEST;
 
 The existing `#[cfg(feature = "json")]` block at line 41 is **preserved** (md-cli inherits the `json` feature flag).
 
-- [ ] **Step 4: Pre-fix `include!` paths in the two test files Phase 3 will move**
+- [ ] **Step 4: Pre-fix corpus paths in the three test files Phase 3 will move**
 
-Two files in `crates/md-codec/tests/` use `include!("vectors/manifest.rs")` — a relative path that resolves correctly while in `md-codec/tests/` but **breaks at compile time** the moment `git mv` lands them in `md-cli/tests/` (the `vectors/` corpus stays in `md-codec`). Phase 3 is a "no source edits" phase, so the path swap belongs in Phase 2's commit — and the `concat!(env!("CARGO_MANIFEST_DIR"), "/../md-codec/tests/vectors/manifest.rs")` form resolves correctly *both* in md-codec (`crates/md-codec/../md-codec/tests/vectors/manifest.rs` ⇒ `crates/md-codec/tests/vectors/manifest.rs`) *and* post-Phase-3 in md-cli (`crates/md-cli/../md-codec/tests/vectors/manifest.rs`). One form, both states correct.
+Three files in `crates/md-codec/tests/` reach the `vectors/` corpus by a path that breaks the moment `git mv` lands the file in `md-cli/tests/` (the `vectors/` directory stays in `md-codec`). Phase 3 is a "no source edits" phase, so the path swaps belong in Phase 2's commit. The `CARGO_MANIFEST_DIR/../md-codec/tests/vectors/...` form resolves correctly *both* in md-codec (`crates/md-codec/../md-codec/tests/vectors/...` ⇒ `crates/md-codec/tests/vectors/...`) *and* post-Phase-3 in md-cli (`crates/md-cli/../md-codec/tests/vectors/...`). One form, both states correct.
+
+**Files (a) and (b): `include!` form.**
 
 In `crates/md-codec/tests/template_roundtrip.rs` line 4, change:
 
@@ -494,7 +496,21 @@ mod manifest {
 
 Same change in `crates/md-codec/tests/json_snapshots.rs` line 7.
 
-(Sanity-check no other test file uses this pattern: `grep -rn "include!" /scratch/code/shibboleth/descriptor-mnemonic/crates/md-codec/tests/*.rs` should return only these two.)
+**File (c): `format!`/`env!` form.** `crates/md-codec/tests/vector_corpus.rs` line 13 currently reads:
+
+```rust
+let committed = format!("{}/tests/vectors", env!("CARGO_MANIFEST_DIR"));
+```
+
+Change to:
+
+```rust
+let committed = format!("{}/../md-codec/tests/vectors", env!("CARGO_MANIFEST_DIR"));
+```
+
+Same `CARGO_MANIFEST_DIR/..`-walk-back trick — resolves to `md-codec/tests/vectors` regardless of which crate the test target ends up in.
+
+(Sanity-check no other test file reaches the corpus by a path: `grep -rnE "tests/vectors|vectors/manifest" /scratch/code/shibboleth/descriptor-mnemonic/crates/md-codec/tests/*.rs` should return only these three.)
 
 - [ ] **Step 5: Strip `crates/md-codec/Cargo.toml`**
 
@@ -577,13 +593,14 @@ Expected: PASS. The TDD invariant from Phase 1 is satisfied.
 git add crates/md-codec/Cargo.toml \
         crates/md-cli/src/cmd/vectors.rs \
         crates/md-codec/tests/template_roundtrip.rs \
-        crates/md-codec/tests/json_snapshots.rs
+        crates/md-codec/tests/json_snapshots.rs \
+        crates/md-codec/tests/vector_corpus.rs
 git status
 ```
 
-Note: the `git mv` operations from Step 2 and `git rm` from Step 1 are already staged. Step 10 only adds the file edits (4 files).
+Note: the `git mv` operations from Step 2 and `git rm` from Step 1 are already staged. Step 10 only adds the file edits (5 files).
 
-Expected: ~29 changes staged (1 deletion of stub main.rs, ~25 renames, 4 file edits — md-codec manifest, cmd/vectors.rs, template_roundtrip.rs, json_snapshots.rs).
+Expected: ~30 changes staged (1 deletion of stub main.rs, ~25 renames, 5 file edits — md-codec manifest, cmd/vectors.rs, template_roundtrip.rs, json_snapshots.rs, vector_corpus.rs).
 
 - [ ] **Step 11: Commit Phase 2**
 
@@ -594,12 +611,12 @@ feat(md-cli): phase 2 — atomic source-move + manifest swap
 Moves crates/md-codec/src/bin/md/* to crates/md-cli/src/* (flattening the
 bin/md/ nesting). Replaces cmd/vectors.rs's cross-tree #[path] reach with a
 portable include!(concat!(env!("CARGO_MANIFEST_DIR"), ...)). Pre-fixes the
-same include! pattern in two test files (template_roundtrip.rs,
-json_snapshots.rs) so Phase 3's git mv doesn't break compile — the
-post-move-correct path resolves identically pre-move (CARGO_MANIFEST_DIR/..
-dance lands on md-codec/tests/vectors/manifest.rs from either crate's
-test harness). Strips md-codec's [[bin]], [features] block, and CLI
-optional deps. md-cli's manifest from Phase 1 carries the json +
+same CARGO_MANIFEST_DIR/.. trick in three test files (template_roundtrip.rs,
+json_snapshots.rs, vector_corpus.rs) so Phase 3's git mv doesn't break
+compile — the post-move-correct path resolves identically pre-move
+(CARGO_MANIFEST_DIR/.. dance lands on md-codec/tests/vectors/... from
+either crate's test harness). Strips md-codec's [[bin]], [features] block,
+and CLI optional deps. md-cli's manifest from Phase 1 carries the json +
 cli-compiler features verbatim.
 
 Workspace builds with default features and --all-features. The Phase-1
@@ -622,7 +639,7 @@ Expected: commit lands; `cargo test --workspace` passes (the existing CLI integr
 
 Brief the architect:
 
-> Review the Phase-2 commit on branch `feat/md-cli-extraction` of the md-cli extraction. Spec: `design/SPEC_md_codec_v0_16_library_only.md`. Plan: `design/IMPLEMENTATION_PLAN_md_cli_extraction.md` (Phase 2 starts at Task 4). The plan's Phase-1 already creates the full md-cli/Cargo.toml; Phase 2 only edits md-codec/Cargo.toml plus three source files (cmd/vectors.rs, template_roundtrip.rs, json_snapshots.rs). Critical concerns: (1) the `#[path]` → `include!(concat!(env!(...)))` substitution in `crates/md-cli/src/cmd/vectors.rs` builds correctly under both `default` and `--no-default-features`; (2) `crates/md-codec/Cargo.toml` no longer has `[[bin]]`, `[features]`, or any CLI-only dep; (3) the two `include!` pre-fixes in `template_roundtrip.rs` / `json_snapshots.rs` resolve correctly while the files are still in `md-codec/tests/` (CARGO_MANIFEST_DIR/.. trick) and will continue to resolve correctly post-Phase-3; (4) the existing `#[cfg(feature = "json")]` gate in `cmd/vectors.rs` is preserved; (5) the workspace lint `missing_docs` does not fire on md-cli (the `#![allow]` at main.rs line 1 covers the whole crate). Length cap: 1000 words.
+> Review the Phase-2 commit on branch `feat/md-cli-extraction` of the md-cli extraction. Spec: `design/SPEC_md_codec_v0_16_library_only.md`. Plan: `design/IMPLEMENTATION_PLAN_md_cli_extraction.md` (Phase 2 starts at Task 4). The plan's Phase-1 already creates the full md-cli/Cargo.toml; Phase 2 only edits md-codec/Cargo.toml plus four source files (cmd/vectors.rs, template_roundtrip.rs, json_snapshots.rs, vector_corpus.rs). Critical concerns: (1) the `#[path]` → `include!(concat!(env!(...)))` substitution in `crates/md-cli/src/cmd/vectors.rs` builds correctly under both `default` and `--no-default-features`; (2) `crates/md-codec/Cargo.toml` no longer has `[[bin]]`, `[features]`, or any CLI-only dep; (3) the three corpus-path pre-fixes in `template_roundtrip.rs` / `json_snapshots.rs` (`include!` form) and `vector_corpus.rs` (`format!`/`env!` form) resolve correctly while the files are still in `md-codec/tests/` (CARGO_MANIFEST_DIR/.. trick) and will continue to resolve correctly post-Phase-3; (4) the existing `#[cfg(feature = "json")]` gate in `cmd/vectors.rs` is preserved; (5) the workspace lint `missing_docs` does not fire on md-cli (the `#![allow]` at main.rs line 1 covers the whole crate). Length cap: 1000 words.
 
 - [ ] **Step 2: Persist the report to `design/agent-reports/phase-2-review-md-cli-extraction.md`**
 
@@ -646,12 +663,12 @@ git commit -m "docs(md-cli-extraction): phase 2 architect review report"
 ### Task 6: Move CLI integration tests
 
 **Files:**
-- Move (via `git mv`): 14 test files from `crates/md-codec/tests/` to `crates/md-cli/tests/`.
+- Move (via `git mv`): 15 test files from `crates/md-codec/tests/` to `crates/md-cli/tests/`.
 - Move (via `git mv`): `crates/md-codec/tests/snapshots/` to `crates/md-cli/tests/snapshots/`.
 
 The Phase-1 scaffold smoke test at `crates/md-cli/tests/smoke.rs` stays as-is. The existing `crates/md-codec/tests/smoke.rs` (pure library test) stays in md-codec. Same filename in two different crates' tests dirs — fine, distinct test targets.
 
-- [ ] **Step 1: `git mv` the 14 CLI integration tests**
+- [ ] **Step 1: `git mv` the 15 CLI integration tests**
 
 ```bash
 git mv crates/md-codec/tests/cmd_address.rs       crates/md-cli/tests/cmd_address.rs
@@ -668,6 +685,7 @@ git mv crates/md-codec/tests/help_examples.rs     crates/md-cli/tests/help_examp
 git mv crates/md-codec/tests/json_snapshots.rs    crates/md-cli/tests/json_snapshots.rs
 git mv crates/md-codec/tests/scaffold.rs          crates/md-cli/tests/scaffold.rs
 git mv crates/md-codec/tests/template_roundtrip.rs crates/md-cli/tests/template_roundtrip.rs
+git mv crates/md-codec/tests/vector_corpus.rs     crates/md-cli/tests/vector_corpus.rs
 ```
 
 - [ ] **Step 2: `git mv` the snapshots directory**
@@ -682,7 +700,7 @@ git mv crates/md-codec/tests/snapshots crates/md-cli/tests/snapshots
 cargo test --workspace
 ```
 
-Expected: all tests pass. The 14 moved files now build against md-cli's `[[bin]] md`; the 6 lib tests + the vector corpus continue against md-codec; `cargo_bin("md")` resolves uniquely.
+Expected: all tests pass. The 15 moved files now build against md-cli's `[[bin]] md`; the 5 lib tests continue against md-codec; the `tests/vectors/` corpus stays in md-codec (vector_corpus.rs reaches it via the Phase-2 pre-fixed `CARGO_MANIFEST_DIR/..` path); `cargo_bin("md")` resolves uniquely.
 
 - [ ] **Step 4: Sanity-check no test paths reach back into md-codec**
 
@@ -699,7 +717,7 @@ git status
 git add crates/md-codec/tests crates/md-cli/tests
 ```
 
-Expected: 14 file renames + 1 directory rename (snapshots).
+Expected: 15 file renames + 1 directory rename (snapshots).
 
 - [ ] **Step 6: Commit Phase 3**
 
@@ -707,12 +725,14 @@ Expected: 14 file renames + 1 directory rename (snapshots).
 git commit -m "$(cat <<'EOF'
 feat(md-cli): phase 3 — move CLI integration tests + snapshots
 
-Moves the 14 assert_cmd-based CLI integration tests and the tests/snapshots
-directory from crates/md-codec/tests/ to crates/md-cli/tests/. The 6
+Moves the 15 assert_cmd-based CLI integration tests and the tests/snapshots
+directory from crates/md-codec/tests/ to crates/md-cli/tests/. The 5
 remaining test files in crates/md-codec/tests/ (address_derivation,
-chunking, forward_compat, smoke, vector_corpus, wallet_policy) are pure
-library tests and stay. tests/vectors/ (the format reference corpus) also
-stays with md-codec.
+chunking, forward_compat, smoke, wallet_policy) are pure library tests
+and stay. tests/vectors/ (the format reference corpus) also stays with
+md-codec; vector_corpus.rs (CLI test that regenerates and diffs the
+corpus) moves with the other CLI tests and reaches the corpus via the
+Phase-2 pre-fixed CARGO_MANIFEST_DIR/.. path.
 
 The Phase-1 scaffold smoke at crates/md-cli/tests/smoke.rs is unchanged;
 the same-named smoke.rs in md-codec/tests/ is a different test in a
@@ -734,7 +754,7 @@ EOF
 
 Brief the architect:
 
-> Review the Phase-3 commit on branch `feat/md-cli-extraction`. Spec at `design/SPEC_md_codec_v0_16_library_only.md`; plan at `design/IMPLEMENTATION_PLAN_md_cli_extraction.md`. Verify: (1) all 14 listed CLI test files moved cleanly with no source edit; (2) snapshots directory moved; (3) the 6 lib tests stayed; (4) `tests/vectors/` corpus stayed in md-codec; (5) `cargo test --workspace` passes the same number of tests as on `main` pre-PR (architect will need to reconstruct the pre-PR count from the spec/git log). Surface any path or import that broke silently. Length cap: 800 words.
+> Review the Phase-3 commit on branch `feat/md-cli-extraction`. Spec at `design/SPEC_md_codec_v0_16_library_only.md`; plan at `design/IMPLEMENTATION_PLAN_md_cli_extraction.md`. Verify: (1) all 15 listed CLI test files moved cleanly with no source edit (the vector_corpus.rs source edit landed in Phase 2's pre-fix step, not Phase 3); (2) snapshots directory moved; (3) the 5 lib tests stayed; (4) `tests/vectors/` corpus stayed in md-codec; (5) `cargo test --workspace` passes the same number of tests as on `main` pre-PR (architect will need to reconstruct the pre-PR count from the spec/git log). Surface any path or import that broke silently. Length cap: 800 words.
 
 - [ ] **Step 2: Persist + commit the review report**
 

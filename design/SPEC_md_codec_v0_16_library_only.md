@@ -240,12 +240,16 @@ classifications below reflect ground truth.**
 - `compile.rs`, `exit_codes.rs`, `help_examples.rs`, `json_snapshots.rs`,
   `scaffold.rs`
 - `template_roundtrip.rs` (uses `cargo_bin("md")` on line 10)
+- `vector_corpus.rs` (uses `cargo_bin("md")` on line 10 to regenerate the
+  corpus and `diff -r` against the committed tree — Phase 0 audit
+  reclassified this from lib-only to CLI; corpus stays in md-codec but
+  the test reaches it via `CARGO_MANIFEST_DIR/../md-codec/tests/vectors`)
 
 **Stay in `md-codec/tests/`** (library tests; no `assert_cmd` / `cargo_bin`):
 
 - `address_derivation.rs`, `chunking.rs`, `wallet_policy.rs`,
-  `forward_compat.rs`, `vector_corpus.rs`, `smoke.rs` (architect verified:
-  pure library calls, no `assert_cmd`)
+  `forward_compat.rs`, `smoke.rs` (Phase 0 audit confirmed: pure library
+  calls, no `assert_cmd`)
 
 **Move with the bin:**
 
