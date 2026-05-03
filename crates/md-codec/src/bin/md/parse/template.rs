@@ -615,3 +615,94 @@ mod tr_tests {
         }
     }
 }
+
+use crate::parse::keys::{ParsedKey, ParsedFingerprint};
+use md_codec::encode::Descriptor;
+use md_codec::tlv::TlvSection;
+
+pub fn parse_template(
+    template: &str,
+    keys: &[ParsedKey],
+    fingerprints: &[ParsedFingerprint],
+) -> Result<Descriptor, CliError> {
+    let ctx = ctx_for_template(template);
+    let occs = lex_placeholders(template)?;
+    let resolved = resolve_placeholders(&occs)?;
+
+    let (substituted, key_map) = substitute_synthetic(template, ctx)?;
+    let ms_desc = MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
+        .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+    let tree = walk_root(&ms_desc, &key_map)?;
+
+    let pubkeys = if keys.is_empty() { None } else {
+        Some(keys.iter().map(|k| (k.i, k.payload)).collect())
+    };
+    let fp_vec = if fingerprints.is_empty() { None } else {
+        Some(fingerprints.iter().map(|f| (f.i, f.fp)).collect())
+    };
+    let use_site_path_overrides = if resolved.use_site_path_overrides.is_empty() { None } else {
+        Some(resolved.use_site_path_overrides)
+    };
+
+    // TlvSection has no Default derive; populate via new_empty + field assignment.
+    let mut tlv = TlvSection::new_empty();
+    tlv.use_site_path_overrides = use_site_path_overrides;
+    tlv.fingerprints = fp_vec;
+    tlv.pubkeys = pubkeys;
+
+    Ok(Descriptor {
+        n: resolved.n,
+        path_decl: resolved.path_decl,
+        use_site_path: resolved.use_site_path,
+        tree,
+        tlv,
+    })
+}
+
+/// Convenience: derive script-context expectation from the template's outer wrapper.
+pub fn ctx_for_template(template: &str) -> ScriptCtx {
+    let head = template.trim_start();
+    if head.starts_with("wpkh(") || head.starts_with("pkh(") || head.starts_with("sh(wpkh(") {
+        ScriptCtx::SingleSig
+    } else {
+        ScriptCtx::MultiSig
+    }
+}
+
+#[cfg(test)]
+mod entry_tests {
+    use super::*;
+
+    #[test]
+    fn end_to_end_wsh_multi_template_only() {
+        let d = parse_template(
+            "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
+            &[],
+            &[],
+        ).unwrap();
+        assert_eq!(d.n, 2);
+        assert_eq!(d.tree.tag, Tag::Wsh);
+        assert!(d.tlv.pubkeys.is_none());
+    }
+
+    #[test]
+    fn end_to_end_with_fingerprints() {
+        let fps = vec![
+            ParsedFingerprint { i: 0, fp: [0xDE, 0xAD, 0xBE, 0xEF] },
+            ParsedFingerprint { i: 1, fp: [0xCA, 0xFE, 0xBA, 0xBE] },
+        ];
+        let d = parse_template("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", &[], &fps).unwrap();
+        let v = d.tlv.fingerprints.unwrap();
+        assert_eq!(v.len(), 2);
+    }
+
+    #[test]
+    fn ctx_for_wpkh_is_singlesig() {
+        assert_eq!(ctx_for_template("wpkh(@0/<0;1>/*)"), ScriptCtx::SingleSig);
+    }
+
+    #[test]
+    fn ctx_for_wsh_is_multisig() {
+        assert_eq!(ctx_for_template("wsh(multi(2,...))"), ScriptCtx::MultiSig);
+    }
+}
