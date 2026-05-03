@@ -167,3 +167,46 @@ mod tests {
         assert_eq!(descriptor_to_template(&d).unwrap(), t);
     }
 }
+
+use md_codec::identity::{Md1EncodingId, WalletDescriptorTemplateId, WalletPolicyId};
+use md_codec::chunk::ChunkHeader;
+
+pub fn fmt_md1_id(id: &Md1EncodingId) -> String {
+    let bytes = id.as_bytes();
+    let mut s = String::with_capacity(64);
+    for b in bytes { write!(s, "{b:02x}").unwrap(); }
+    s
+}
+pub fn fmt_template_id(id: &WalletDescriptorTemplateId) -> String {
+    let bytes = id.as_bytes();
+    let mut s = String::with_capacity(64);
+    for b in bytes { write!(s, "{b:02x}").unwrap(); }
+    s
+}
+pub fn fmt_policy_id(id: &WalletPolicyId) -> String {
+    let bytes = id.as_bytes();
+    let mut s = String::with_capacity(32);
+    for b in bytes { write!(s, "{b:02x}").unwrap(); }
+    s
+}
+/// 4-byte fingerprint of a `WalletPolicyId`. v0.14's `WalletPolicyId` has
+/// no `fingerprint()` method; we slice the first 4 bytes directly.
+pub fn fmt_policy_id_fingerprint(id: &WalletPolicyId) -> String {
+    let b = id.as_bytes();
+    format!("0x{:02x}{:02x}{:02x}{:02x}", b[0], b[1], b[2], b[3])
+}
+pub fn fmt_chunk_header(h: &ChunkHeader) -> String {
+    format!("chunk-set-id=0x{:05x}, count={}, index={}", h.chunk_set_id, h.count, h.index)
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use super::*;
+
+    #[test]
+    fn policy_id_fingerprint_format() {
+        let bytes = [0x9E, 0x1D, 0x72, 0xB6, 0x00, 0,0,0, 0,0,0,0, 0,0,0,0];
+        let id = WalletPolicyId::new(bytes);
+        assert_eq!(fmt_policy_id_fingerprint(&id), "0x9e1d72b6");
+    }
+}
