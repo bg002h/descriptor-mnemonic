@@ -1,3 +1,4 @@
+pub mod address;
 pub mod bytecode;
 #[cfg(feature = "cli-compiler")]
 pub mod compile;

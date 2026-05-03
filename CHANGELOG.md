@@ -4,6 +4,31 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.15.1] — 2026-05-03
+
+### Added
+
+- `md address` subcommand: derive bitcoin addresses from a
+  wallet-policy-mode descriptor. Accepts either md1 phrases or a
+  template + `--key @i=XPUB` (same shape as `md encode`). Args:
+  `--chain N` / `--change`, `--index N`, `--count K` (clap-clamped to
+  `1..=1000`), `--network mainnet|testnet|signet|regtest`, `--json`.
+- `--network` flag on `md encode` and `md verify` accepting
+  `mainnet|testnet|signet|regtest` (default `mainnet`). Routes
+  xpub-version validation in `parse_key` between the BIP 32 mainnet
+  (`0488B21E`) and testnet (`043587CF`) version bytes; the testnet
+  bytes also cover signet and regtest per BIP 32.
+- `encode --json` always emits a top-level `network` field carrying
+  the CLI vocabulary string (`"mainnet"` / `"testnet"` / `"signet"` /
+  `"regtest"`). Lets a script piping `encode --json` into `address --json`
+  preserve the user's chosen network without a separate flag.
+- Insta snapshots for `address --json` mainnet receive 0..=2, mainnet
+  change/0, and testnet receive 0.
+
+### Unchanged
+
+- Library API. Wire format. Public `md_codec::*` exports.
+
 ## [0.15.0] — 2026-05-03
 
 ### Added

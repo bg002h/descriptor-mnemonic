@@ -2,6 +2,23 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.15.0 → v0.15.1
+
+Pure additive. **No source changes required for downstream library consumers.** Existing CLI invocations keep mainnet semantics by default.
+
+### What's new
+
+- `md address` subcommand and `--network` on `md encode` / `md verify` / `md address`.
+- `encode --json` always carries a `network` field (defaulting to `"mainnet"`).
+
+### What didn't change
+
+- Wire format. Library API surface. Public `md_codec::*` exports. Existing CLI subcommands' output (text or JSON), except for the new `network` field on `encode --json`.
+
+### Heads-up for JSON consumers
+
+`encode --json` previously had no `network` field; it now always does. Strict-schema JSON consumers that reject unknown fields must add `network` to their accepted set. Lenient consumers (the common case) need no change.
+
 ## v0.14.x → v0.15.0
 
 v0.15.0 reintroduces the `md` CLI binary stripped in v0.12.0. **Library API is
