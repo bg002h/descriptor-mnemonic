@@ -2,6 +2,38 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.14.x → v0.15.0
+
+v0.15.0 reintroduces the `md` CLI binary stripped in v0.12.0. **Library API is
+unchanged** — no source changes required for downstream library consumers.
+
+### What's new
+
+- New `md` binary: `cargo install md-codec` produces it.
+- Default features `cli` and `json` are on. Library-only consumers:
+
+  ```toml
+  md-codec = { version = "0.15", default-features = false }
+  ```
+
+- New opt-in `cli-compiler` feature pulls `miniscript/compiler` for the
+  `compile` subcommand and `encode --from-policy`.
+
+### What didn't change
+
+- Wire format (v0.13/v0.14 unchanged).
+- Library `Error` enum (CLI-specific errors live in the binary's own
+  `CliError`).
+- Public exports of `md_codec::*`.
+
+### What's not coming back
+
+- `--seed` flag for chunk-set-id override (v0.11 had it). The
+  `derive_chunk_set_id` function is fully deterministic from the payload;
+  if you need a known id for a test corpus, use `md vectors`.
+- Separate `gen_vectors` binary — folded into `md vectors`.
+- Testnet/regtest xpubs for `--key` — mainnet only in v0.15.0.
+
 ## v0.9.x → v0.10.0
 
 v0.10.0 is a **wire-format-breaking release** at the BIP 388 wallet-policy

@@ -1,0 +1,53 @@
+---
+source: crates/md-codec/tests/json_snapshots.rs
+expression: body
+---
+{
+  "descriptor": {
+    "n": 1,
+    "path_decl": {
+      "data": "m",
+      "tag": "Shared"
+    },
+    "tlv": {
+      "fingerprints": null,
+      "origin_path_overrides": null,
+      "pubkeys": null,
+      "unknown": [],
+      "use_site_path_overrides": null
+    },
+    "tree": {
+      "body": {
+        "data": {
+          "index": 0
+        },
+        "kind": "KeyArg"
+      },
+      "tag": "Pkh"
+    },
+    "use_site_path": {
+      "multipath": [
+        {
+          "hardened": false,
+          "value": 0
+        },
+        {
+          "hardened": false,
+          "value": 1
+        }
+      ],
+      "wildcard_hardened": false
+    }
+  },
+  "md1_encoding_id": {
+    "hex": "d6b2187e4c69c3e2c846bc4f586fdb51"
+  },
+  "schema": "md-cli/1",
+  "wallet_descriptor_template_id": {
+    "hex": "8dd2a2933a7333afc1bc17b918a24cac"
+  },
+  "wallet_policy_id": {
+    "fingerprint": "0xc7312987",
+    "hex": "c73129877b1949a6d2df51b5a8c37559"
+  }
+}

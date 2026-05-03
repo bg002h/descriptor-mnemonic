@@ -29,6 +29,24 @@ See the [BIP draft](../../bip/bip-mnemonic-descriptor.mediawiki) for
 the format specification and the
 [design notes](../../design/POLICY_BACKUP.md) for the rationale.
 
+## CLI
+
+`cargo install md-codec` produces an `md` binary.
+
+| Subcommand | Purpose |
+|---|---|
+| `md encode <TEMPLATE>` | Encode a BIP 388 wallet policy template into one or more MD backup strings. |
+| `md decode <STRING>...` | Decode one or more MD strings back to the template. |
+| `md verify <STRING>... --template <T>` | Re-encode the template and assert it matches the strings. Exit 0 on match, 1 on mismatch. |
+| `md inspect <STRING>...` | Pretty-print everything the codec sees: template, identity hashes, TLV blocks. |
+| `md bytecode <STRING>...` | Annotated dump of the raw payload bytes. |
+| `md vectors [--out DIR]` | Regenerate the project's deterministic test-vector corpus (maintainer tool). |
+| `md compile <EXPR> --context tap\|segwitv0` | Compile a sub-Miniscript-Policy expression into a BIP 388 template. Requires `cli-compiler` feature. |
+
+`encode`, `decode`, `inspect`, `bytecode`, and `compile` accept `--json` for structured output (schema versioned as `md-cli/1`). `verify` reports match/mismatch via exit code (0 = match, 1 = mismatch). Each subcommand's `--help` shows a worked example.
+
+To build without the CLI: `cargo build --no-default-features`.
+
 [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
 
 ## Quickstart
@@ -71,99 +89,16 @@ two-PolicyId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 
 | Feature | Default? | Purpose |
 |---|---|---|
-| `cli` | yes | Build the `md` binary; pulls in `clap` + `anyhow`. Library-only consumers can disable. |
-| `compiler` | no | Expose `policy_compiler::{ScriptContext, policy_to_bytecode}` wrapping rust-miniscript's policy compiler. Heavyweight (ILP-style enumeration in the Tap branch). |
-| `cli-compiler` | no | Enables the `md from-policy <expr> --context <tap\|segwitv0> [--unspendable-key <KEY>]` subcommand. Implies `cli` + `compiler`. |
-| `test-helpers` | no | Exposes `pub mod test_helpers` with `dummy_key_a/b/c()` for downstream crates' integration tests. Enable in `[dev-dependencies]`. |
+| `cli` | yes | Build the `md` binary; pulls in `clap`, `anyhow`, `regex`, `miniscript`. |
+| `json` | yes | Enable `--json` output on the CLI; pulls in `serde` + `serde_json`. |
+| `cli-compiler` | no | Enable `md compile` and `md encode --from-policy` (pulls `miniscript/compiler`). Implies `cli`. |
+
+Library-only consumers:
 
 ```toml
-# Library-only:
 [dependencies]
-md-codec = { version = "0.7", default-features = false }
-
-# With policy-compiler wrapper:
-md-codec = { version = "0.7", features = ["compiler"] }
+md-codec = { version = "0.15", default-features = false }
 ```
-
-## CLI
-
-This crate ships an `md` binary for ad-hoc encoding, decoding, and
-inspection:
-
-| Command | Purpose |
-|---|---|
-| `md encode <policy>` | Encode a BIP 388 wallet policy to one or more MD strings |
-| `md decode <string>...` | Decode MD strings back to a wallet policy + report |
-| `md verify <string>... --policy <policy>` | Verify decode matches expected policy |
-| `md inspect <string>` | Show parsed chunk header (no full decode) |
-| `md bytecode <policy>` | Hex-dump canonical bytecode for a policy |
-| `md vectors` | Print the test-vector JSON to stdout |
-| `md from-policy <expr> --context <tap\|segwitv0>` | Compile a Concrete-Policy via miniscript and emit MD bytecode hex (requires `cli-compiler` feature) |
-
-For named-signer-subset validation, see the sibling `md-signer-compat`
-crate's binary:
-
-```bash
-cargo run -p md-signer-compat -- validate --signer coldcard --bytecode-hex <HEX>
-cargo run -p md-signer-compat -- list-signers
-```
-
-Run as a one-shot from the workspace root:
-
-```bash
-cargo run -p md-codec --bin md -- encode 'wsh(pk(@0/**))'
-```
-
-…or install:
-
-```bash
-cargo install --path crates/md-codec
-md encode 'wsh(pk(@0/**))'
-```
-
-## Test vectors
-
-A reference test-vector file is committed at
-[`tests/vectors/v0.1.json`](tests/vectors/v0.1.json) — 10 positive
-round-trip vectors covering the canonical corpus plus 30 negative vectors
-covering each `Error` variant. Cross-implementations should consume this
-file directly; the schema lives in [`src/vectors.rs`](src/vectors.rs).
-
-Regenerate the file with:
-
-```bash
-cargo run -p md-codec --bin gen_vectors -- --output crates/md-codec/tests/vectors/v0.1.json
-```
-
-Verify a candidate file structurally with:
-
-```bash
-cargo run -p md-codec --bin gen_vectors -- --verify crates/md-codec/tests/vectors/v0.1.json
-```
-
-## Status
-
-`v0.7.1`. Tracks BIP 388 segwit-v0 and taproot wallet policies. The current scope:
-
-- Single user holding all seeds (no foreign xpubs)
-- All `@i` placeholders share one derivation path
-- `wsh()` segwit-v0 and `tr()` taproot top-level
-- v0.6+ encoder/decoder admit any well-typed BIP 388 / BIP 379 miniscript
-  shape; signer-compatibility curation is a layered concern (see
-  [`md-signer-compat`](../md-signer-compat/))
-- v0.7.0+ adds an opt-in `compiler` feature that wraps rust-miniscript's
-  policy compiler
-
-MuSig2, foreign xpubs, per-placeholder paths, and BIP 393 recovery
-annotations are deferred to v1+. See
-[`design/FOLLOWUPS.md`](../../design/FOLLOWUPS.md) for the full deferral
-catalog.
-
-673+ unit + integration tests across the workspace (md-codec library +
-integration tests + md-signer-compat + doctests), BCH known-vectors
-verified against an independent Python implementation, corpus round-trips
-and negative conformance vectors locked in `tests/vectors/v0.1.json` and
-`tests/vectors/v0.2.json`.
 
 ## License
 

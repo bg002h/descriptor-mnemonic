@@ -4,6 +4,27 @@ All notable changes to `md-codec` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [0.15.0] — 2026-05-03
+
+### Added
+
+- `md` CLI binary with seven subcommands: `encode`, `decode`, `verify`,
+  `inspect`, `bytecode`, `vectors`, `compile`.
+- `--json` output on `encode`, `decode`, `inspect`, `bytecode`, and `compile`
+  (schema `md-cli/1`). `verify` reports via exit code (0/1) instead.
+- Help-text drift harness (`tests/help_examples.rs`) — every subcommand's
+  worked example is asserted byte-equal against actual stdout in CI.
+- Vectors corpus generator — `md vectors` regenerates 10 deterministic
+  test fixtures; CI fails on drift.
+- New Cargo features: `cli` (default), `json` (default), `cli-compiler`
+  (opt-in).
+- New deps: `clap`, `anyhow`, `regex`, `miniscript = "13.0.0"` (gated on
+  `cli`); `serde`, `serde_json` (gated on `json`).
+
+### Unchanged
+
+- Wire format. Library `Error` enum. Public `md_codec::*` exports.
+
 ## [0.10.1] — 2026-04-29
 
 Closes the v0.10.0 Tier 2 KIV walk stub
