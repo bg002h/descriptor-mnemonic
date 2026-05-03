@@ -423,6 +423,25 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             Tag::Multi, thresh.k(), &thresh.data().iter().collect::<Vec<_>>(), km),
         Terminal::MultiA(thresh) => build_multi_node(
             Tag::MultiA, thresh.k(), &thresh.data().iter().collect::<Vec<_>>(), km),
+        // `c:` wrapper. In Tapscript leaves, miniscript desugars `pk(K)` to
+        // `c:pk_k(K)`; the BIP 388 wire form for that leaf is bare `PkK`, so
+        // collapse the wrapper there. In segwitv0 we keep `Check` explicit.
+        Terminal::Check(inner) => {
+            if tap_context {
+                if let Terminal::PkK(k) = &inner.node {
+                    return Ok(Node { tag: Tag::PkK,
+                        body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } });
+                }
+                if let Terminal::PkH(k) = &inner.node {
+                    return Ok(Node { tag: Tag::PkH,
+                        body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } });
+                }
+            }
+            Ok(Node {
+                tag: Tag::Check,
+                body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+            })
+        }
         // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
         _ => {
             let _ = tap_context;
@@ -431,7 +450,35 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
     }
 }
 
-fn walk_tr(_t: &miniscript::descriptor::Tr<DescriptorPublicKey>, _km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> { unimplemented!("tr in Task 2.4") }
+fn walk_tr(t: &miniscript::descriptor::Tr<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+    let key_index = lookup_key(&t.internal_key().to_string(), km)?;
+    let tree: Option<Box<Node>> = match t.tap_tree() {
+        None => None,
+        Some(tt) => Some(Box::new(walk_tap_tree_v0_15(tt, km)?)),
+    };
+    Ok(Node { tag: Tag::Tr, body: Body::Tr { key_index, tree } })
+}
+
+/// Walk miniscript 13's `TapTree` for the v0.15 supported subset (0 or 1 leaf).
+/// Returns the leaf node directly when there is exactly one leaf.
+fn walk_tap_tree_v0_15(
+    tt: &miniscript::descriptor::TapTree<DescriptorPublicKey>,
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
+    let leaves: Vec<_> = tt.leaves().collect();
+    match leaves.len() {
+        0 => Err(CliError::TemplateParse("tap tree present but contains no leaves".into())),
+        1 => {
+            // v0.15 supports a single leaf at any depth; we ignore depth here
+            // because there is no branching. The leaf becomes a plain Node.
+            let leaf = &leaves[0];
+            walk_miniscript_node(leaf.miniscript(), km, /*tap=*/true)
+        }
+        n => Err(CliError::TemplateParse(format!(
+            "tap tree with {n} leaves not yet supported in v0.15 (single-leaf only)"
+        ))),
+    }
+}
 
 #[cfg(test)]
 mod root_tests {
@@ -528,5 +575,43 @@ mod wsh_tests {
             _ => panic!("expected Sh.Children([inner])"),
         };
         assert_eq!(inner.tag, Tag::Wsh);
+    }
+}
+
+#[cfg(test)]
+mod tr_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn tr_key_only() {
+        let (s, km) = substitute_synthetic("tr(@0/<0;1>/*)", ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Tr);
+        match root.body {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 0);
+                assert!(tree.is_none());
+            }
+            _ => panic!("expected Body::Tr"),
+        }
+    }
+
+    #[test]
+    fn tr_with_one_leaf() {
+        let (s, km) = substitute_synthetic("tr(@0/<0;1>/*,pk(@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Tr);
+        match root.body {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 0);
+                let leaf = tree.unwrap();
+                assert_eq!(leaf.tag, Tag::PkK);
+                assert!(matches!(leaf.body, Body::KeyArg { index: 1 }));
+            }
+            _ => panic!("expected Body::Tr"),
+        }
     }
 }
