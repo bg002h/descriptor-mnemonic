@@ -51,6 +51,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
         return Ok(());
     }
     let _ = args.json;
+    let _ = args.network_str;
 
     for (_, _, addr) in &rows {
         println!("{addr}");
