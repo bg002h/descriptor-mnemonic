@@ -26,14 +26,33 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
         ));
     }
 
-    let _ = args.json;             // Phase 5 wires --json
-    let _ = args.network_str;      // Phase 5 uses for JSON
-
+    // Collect (chain, index, address) tuples first; then emit text or JSON.
+    let mut rows: Vec<(u32, u32, String)> = Vec::with_capacity(args.count as usize);
     for k in 0..args.count {
         let i = args.index.checked_add(k).ok_or_else(|| CliError::BadArg(
             format!("--index + --count overflows u32: {} + {}", args.index, args.count)
         ))?;
         let addr = descriptor.derive_address(args.chain, i, args.network)?.assume_checked();
+        rows.push((args.chain, i, addr.to_string()));
+    }
+
+    #[cfg(feature = "json")]
+    if args.json {
+        use crate::format::json::SCHEMA;
+        let addresses: Vec<serde_json::Value> = rows.iter().map(|(c, i, a)| {
+            serde_json::json!({ "chain": c, "index": i, "address": a })
+        }).collect();
+        let v = serde_json::json!({
+            "schema": SCHEMA,
+            "network": args.network_str,
+            "addresses": addresses,
+        });
+        println!("{}", serde_json::to_string_pretty(&v).unwrap());
+        return Ok(());
+    }
+    let _ = args.json;
+
+    for (_, _, addr) in &rows {
         println!("{addr}");
     }
     Ok(())
