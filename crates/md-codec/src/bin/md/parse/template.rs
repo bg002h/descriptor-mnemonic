@@ -360,9 +360,77 @@ fn lookup_key(key_str: &str, key_map: &std::collections::BTreeMap<String, u8>) -
     ))
 }
 
-// Stubs filled in next tasks.
-fn walk_wsh(_w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, _km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> { unimplemented!("wsh in Task 2.3") }
-fn walk_sh(_s: &miniscript::descriptor::Sh<DescriptorPublicKey>, _km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> { unimplemented!("sh in Task 2.3") }
+/// Wrap an inner `Node` under a single-arity wrapper tag like `Wsh`/`Sh`.
+fn wrap_children(tag: Tag, inner: Node) -> Node {
+    Node { tag, body: Body::Children(vec![inner]) }
+}
+
+/// Build `multi`/`sortedmulti` style: `Tag::Multi` (or `SortedMulti`) wrapping
+/// each key as a `PkK` child. Use `MultiA`/`SortedMultiA` inside Tap context.
+fn build_multi_node(tag: Tag, k: usize, keys: &[&DescriptorPublicKey],
+                    km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+    let children: Vec<Node> = keys.iter().map(|kk| {
+        let index = lookup_key(&kk.to_string(), km)?;
+        Ok(Node { tag: Tag::PkK, body: Body::KeyArg { index } })
+    }).collect::<Result<_, CliError>>()?;
+    Ok(Node { tag, body: Body::Variable { k: k as u8, children } })
+}
+
+fn walk_wsh(w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+    let inner = walk_wsh_inner(w, km)?;
+    Ok(wrap_children(Tag::Wsh, inner))
+}
+
+fn walk_sh(s: &miniscript::descriptor::Sh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+    use miniscript::descriptor::ShInner;
+    let inner = match s.as_inner() {
+        ShInner::Wsh(w) => Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![walk_wsh_inner(w, km)?]),
+        },
+        ShInner::Wpkh(wp) => Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: lookup_key(&wp.as_inner().to_string(), km)? },
+        },
+        ShInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/false)?,
+        ShInner::SortedMulti(sm) => build_multi_node(Tag::SortedMulti, sm.k(),
+            &sm.pks().iter().collect::<Vec<_>>(), km)?,
+    };
+    Ok(wrap_children(Tag::Sh, inner))
+}
+
+fn walk_wsh_inner(w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+    use miniscript::descriptor::WshInner;
+    match w.as_inner() {
+        WshInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/false),
+        WshInner::SortedMulti(sm) => build_multi_node(Tag::SortedMulti, sm.k(),
+            &sm.pks().iter().collect::<Vec<_>>(), km),
+    }
+}
+
+fn walk_miniscript_node<C: miniscript::ScriptContext>(
+    ms: &miniscript::Miniscript<DescriptorPublicKey, C>,
+    km: &std::collections::BTreeMap<String, u8>,
+    tap_context: bool,
+) -> Result<Node, CliError> {
+    use miniscript::miniscript::decode::Terminal;
+    match &ms.node {
+        Terminal::PkK(k) => Ok(Node { tag: Tag::PkK,
+            body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } }),
+        Terminal::PkH(k) => Ok(Node { tag: Tag::PkH,
+            body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } }),
+        Terminal::Multi(thresh) => build_multi_node(
+            Tag::Multi, thresh.k(), &thresh.data().iter().collect::<Vec<_>>(), km),
+        Terminal::MultiA(thresh) => build_multi_node(
+            Tag::MultiA, thresh.k(), &thresh.data().iter().collect::<Vec<_>>(), km),
+        // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
+        _ => {
+            let _ = tap_context;
+            Err(CliError::TemplateParse(format!("unsupported miniscript fragment: {ms}")))
+        }
+    }
+}
+
 fn walk_tr(_t: &miniscript::descriptor::Tr<DescriptorPublicKey>, _km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> { unimplemented!("tr in Task 2.4") }
 
 #[cfg(test)]
@@ -385,5 +453,80 @@ mod root_tests {
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Pkh);
+    }
+}
+
+#[cfg(test)]
+mod wsh_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn wsh_multi_2of2() {
+        let (s, km) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Wsh);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Wsh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::Multi);
+        match &inner.body {
+            Body::Variable { k, children } => {
+                assert_eq!(*k, 2);
+                assert_eq!(children.len(), 2);
+                assert!(matches!(children[0].body, Body::KeyArg { index: 0 }));
+                assert!(matches!(children[1].body, Body::KeyArg { index: 1 }));
+            }
+            _ => panic!("expected Body::Variable"),
+        }
+    }
+
+    #[test]
+    fn wsh_sortedmulti_2of3() {
+        let (s, km) = substitute_synthetic("wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Wsh);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Wsh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::SortedMulti);
+        match &inner.body {
+            Body::Variable { k, children } => {
+                assert_eq!(*k, 2);
+                assert_eq!(children.len(), 3);
+            }
+            _ => panic!("expected Body::Variable"),
+        }
+    }
+
+    #[test]
+    fn sh_wpkh_nested() {
+        let (s, km) = substitute_synthetic("sh(wpkh(@0/<0;1>/*))", ScriptCtx::SingleSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Sh);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Sh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::Wpkh);
+        assert!(matches!(inner.body, Body::KeyArg { index: 0 }));
+    }
+
+    #[test]
+    fn sh_wsh_multi_nested() {
+        let (s, km) = substitute_synthetic("sh(wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)))", ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Sh);
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Sh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::Wsh);
     }
 }
