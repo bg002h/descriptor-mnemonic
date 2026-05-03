@@ -1,9 +1,9 @@
 # SPEC — md-codec v0.16.0 (library-only) + new `md-cli` crate
 
 Date: 2026-05-03
-Status: design approved by user; brainstorm-stage and spec-stage architect reviews complete; awaiting user spec review before plan-writing
+Status: design approved by user; brainstorm-stage and spec-stage architect reviews complete; user revision (preserve `json` feature on md-cli) applied; awaiting user spec review before plan-writing
 Crates: `md-codec` v0.15.2 → v0.16.0 (breaking — `[[bin]]` and CLI features removed)
-        `md-cli` v0.1.0 (new crate; ships the `md` binary)
+        `md-cli` v0.1.0 (new crate; ships the `md` binary, inherits the `json` feature flag)
 
 ## Goal
 
@@ -116,7 +116,8 @@ name = "md"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["json"]
+json = ["dep:serde", "dep:serde_json"]
 cli-compiler = ["dep:miniscript", "miniscript/compiler"]
 
 [dependencies]
@@ -124,10 +125,10 @@ md-codec = { path = "../md-codec" }
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
 regex = "1.10"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 bitcoin = "0.32"
 bip39 = "2.2.2"
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
 miniscript = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -139,15 +140,32 @@ tempfile = "3.13"
 
 **Notes:**
 
-- `clap`/`anyhow`/`regex`/`serde`/`serde_json` are unconditional. Today's
-  `md-codec` has them gated behind `default = ["cli", "json"]`; since `md-cli`'s
-  reason for existing is to *be* the CLI, gating is removed. This preserves
-  today's `cargo install md-codec` behavior under `cargo install md-cli`.
-- `miniscript` is `workspace = true, optional = true` because `cli-compiler =
-  ["miniscript/compiler"]` only needs miniscript when the compiler feature is
-  on. Default-off matches today.
-- `bitcoin` and `bip39` are direct deps of CLI code (e.g.
+- **`clap`/`anyhow`/`regex`** are unconditional — `md-cli`'s reason for
+  existing is to *be* the CLI; arg parsing always compiles in.
+- **`json` feature carries over from md-codec** (per user direction; future
+  md-cli iterations will grow additional JSON-related capabilities atop this
+  flag). `default = ["json"]` preserves today's install-time behavior:
+  `cargo install md-cli` matches today's `cargo install md-codec` for users on
+  default features. `cargo install md-cli --no-default-features` builds the
+  binary without `serde`/`serde_json`, mirroring today's
+  `cargo install md-codec --no-default-features --features cli`.
+- **`serde`/`serde_json` are optional**, gated behind `json`. The bin's
+  existing `#[cfg(feature = "json")]` gates (in `format/json.rs` consumers,
+  `cmd/vectors.rs`, etc.) carry over unchanged.
+- **`miniscript`** is `workspace = true, optional = true` because
+  `cli-compiler = ["miniscript/compiler"]` only needs miniscript when the
+  compiler feature is on. Default-off matches today.
+- **`bitcoin` and `bip39`** are direct deps of CLI code (e.g.
   `bitcoin::bip32::DerivationPath` in `parse/template.rs`).
+
+**Feature mapping from today's md-codec:**
+
+| Today (md-codec)                                   | After (md-cli)             |
+|----------------------------------------------------|----------------------------|
+| `cli` (gates the binary itself)                    | (subsumed — md-cli *is* the CLI; `clap`/`anyhow`/`regex` unconditional) |
+| `json` (gates `--json` output via serde)           | `json` (preserved verbatim)|
+| `cli-compiler` (gates `compile`/`encode --from-policy`) | `cli-compiler` (preserved verbatim) |
+| `default = ["cli", "json"]`                        | `default = ["json"]`       |
 
 ### `Cargo.toml` (workspace)
 
@@ -174,10 +192,7 @@ The `bin/md/` nesting flattens; `crates/md-cli/src/main.rs` is the binary entry.
 
 ### Edit `cmd/vectors.rs`
 
-Two edits, in the same Phase 2 commit:
-
-**Edit 1 — manifest path.** Replace the cross-tree `#[path]` reach with a
-portable `include!`:
+One edit. Replace the cross-tree `#[path]` reach with a portable `include!`:
 
 ```rust
 // Before (in crates/md-codec/src/bin/md/cmd/vectors.rs):
@@ -195,37 +210,11 @@ use manifest::MANIFEST;
 The manifest itself stays at `crates/md-codec/tests/vectors/manifest.rs` —
 it's part of the format's reference corpus and belongs with the codec.
 
-**Edit 2 — strip the `#[cfg(feature = "json")]` guard.** Today's
-`cmd/vectors.rs` has a `#[cfg(feature = "json")]` block (around line 41) that
-emits `.descriptor.json` for each vector. The block is gated because today's
-`md-codec` lets `cargo install` users opt out of `serde` via
-`--no-default-features`. After the move, `md-cli` carries `serde`/`serde_json`
-unconditionally; the `json` feature does not exist on md-cli. The `#[cfg]`
-guard would silently evaluate false, dropping JSON vector emission — a
-behavioral regression that would break `md vectors`'s "pure code-move"
-guarantee.
-
-Phase 2 strips the guard. The block becomes unconditional:
-
-```rust
-// Before:
-#[cfg(feature = "json")]
-{
-    use crate::format::json::JsonDescriptor;
-    let json = serde_json::to_string_pretty(&JsonDescriptor::from(&descriptor)).unwrap();
-    write_lf(&out_dir.join(format!("{}.descriptor.json", v.name)), &json)?;
-}
-
-// After:
-{
-    use crate::format::json::JsonDescriptor;
-    let json = serde_json::to_string_pretty(&JsonDescriptor::from(&descriptor)).unwrap();
-    write_lf(&out_dir.join(format!("{}.descriptor.json", v.name)), &json)?;
-}
-```
-
-Behavior preserved: pre-PR users with `default-features` enabled (the install
-default) got `.descriptor.json` output; post-PR users always get it.
+The existing `#[cfg(feature = "json")]` guard on the `.descriptor.json`
+emission block (around line 41) is **preserved** — md-cli inherits the
+`json` feature flag, so the gate continues to mean what it meant before:
+"emit JSON when serde is available." Default install behavior unchanged
+(`default = ["json"]`).
 
 The runtime default `out_dir` of `"crates/md-codec/tests/vectors"` (currently a
 CWD-relative path) is **left unchanged** in this refactor; it was already a CWD
@@ -300,14 +289,23 @@ Phase 0's commit. Promotion is additive and does not on its own require the
 v0.16.0 bump (a v0.15.3 release would suffice). The breaking change driving
 v0.16.0 is the removal of `[[bin]]` and the `cli`/`cli-compiler`/`json` features.
 
-## `serde` / `json` policy on md-codec
+## `serde` / `json` policy
 
-Library types carry no `serde` derives by design at this stage. The pre-1.0
-format spec is still evolving, and exposing `serde` at the library layer would
-ossify field names and shapes that the wire format may yet revise. The `json`
-feature is removed entirely from `md-codec`; CLI JSON output remains a `md-cli`
-concern. If a downstream library consumer eventually wants `serde` on the
-public types, that's a separate discussion (likely deferred until v1.0).
+**md-codec (library):** library types carry no `serde` derives by design at
+this stage. The pre-1.0 format spec is still evolving, and exposing `serde`
+at the library layer would ossify field names and shapes that the wire format
+may yet revise. The `json` feature is removed from `md-codec` entirely (no
+optional deps, no feature flag). If a downstream library consumer eventually
+wants `serde` on the public types, that's a separate discussion (likely
+deferred until v1.0).
+
+**md-cli (binary):** the `json` feature flag survives, gating `serde` /
+`serde_json` and the `--json` CLI output paths. `default = ["json"]` matches
+today's md-codec default; future md-cli iterations will grow additional
+JSON-related capabilities atop this flag (per user direction). Users can
+build a serde-free binary via `cargo install md-cli --no-default-features`,
+mirroring today's `cargo install md-codec --no-default-features --features
+cli`.
 
 ## Phase plan
 
@@ -384,8 +382,10 @@ one go to avoid a broken intermediate build.
     been extracted to a new `md-cli` crate. Breaking change: `cargo install
     md-codec` no longer ships an `md` binary — install `md-cli` instead. No
     wire-format change; no library API removal."
-  - md-cli entry: `## md-cli [0.1.0]` initial-release block. Link forward to
-    the md-codec 0.16.0 entry as the source of the moved code.
+  - md-cli entry: `## md-cli [0.1.0]` initial-release block. Note that the
+    `json` and `cli-compiler` feature flags carry over from md-codec (`json`
+    in default features; `cli-compiler` opt-in). Link forward to the
+    md-codec 0.16.0 entry as the source of the moved code.
 
 ## Risks & mitigation
 
