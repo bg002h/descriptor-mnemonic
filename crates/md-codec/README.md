@@ -29,6 +29,24 @@ See the [BIP draft](../../bip/bip-mnemonic-descriptor.mediawiki) for
 the format specification and the
 [design notes](../../design/POLICY_BACKUP.md) for the rationale.
 
+## CLI
+
+`cargo install md-codec` produces an `md` binary.
+
+| Subcommand | Purpose |
+|---|---|
+| `md encode <TEMPLATE>` | Encode a BIP 388 wallet policy template into one or more MD backup strings. |
+| `md decode <STRING>...` | Decode one or more MD strings back to the template. |
+| `md verify <STRING>... --template <T>` | Re-encode the template and assert it matches the strings. Exit 0 on match, 1 on mismatch. |
+| `md inspect <STRING>...` | Pretty-print everything the codec sees: template, identity hashes, TLV blocks. |
+| `md bytecode <STRING>...` | Annotated dump of the raw payload bytes. |
+| `md vectors [--out DIR]` | Regenerate the project's deterministic test-vector corpus (maintainer tool). |
+| `md compile <EXPR> --context tap\|segwitv0` | Compile a sub-Miniscript-Policy expression into a BIP 388 template. Requires `cli-compiler` feature. |
+
+Every read/write subcommand accepts `--json` for structured output (schema versioned as `md-cli/1`). Each subcommand's `--help` shows a worked example.
+
+To build without the CLI: `cargo build --no-default-features`.
+
 [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
 
 ## Quickstart
