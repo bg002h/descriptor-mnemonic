@@ -131,7 +131,12 @@ fn dispatch(c: Command) -> Result<(), CliError> {
             })
         }
         Command::Decode { strings, json: _ } => cmd::decode::run(&strings),
-        Command::Verify { .. } => unimplemented!("verify"),
+        Command::Verify { strings, template, keys, fingerprints } => cmd::verify::run(cmd::verify::VerifyArgs {
+            strings: &strings,
+            template: &template,
+            keys: &keys,
+            fingerprints: &fingerprints,
+        }),
         Command::Inspect { .. } => unimplemented!("inspect"),
         Command::Bytecode { .. } => unimplemented!("bytecode"),
         Command::Vectors { .. } => unimplemented!("vectors"),
