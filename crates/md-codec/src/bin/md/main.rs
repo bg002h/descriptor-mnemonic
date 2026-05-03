@@ -12,6 +12,40 @@ use std::process::ExitCode;
 
 use error::CliError;
 
+/// CLI-facing network selector. Maps to `bitcoin::Network`.
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
+enum CliNetwork {
+    Mainnet,
+    Testnet,
+    Signet,
+    Regtest,
+}
+
+impl From<CliNetwork> for bitcoin::Network {
+    fn from(n: CliNetwork) -> Self {
+        match n {
+            CliNetwork::Mainnet => bitcoin::Network::Bitcoin,
+            CliNetwork::Testnet => bitcoin::Network::Testnet,
+            CliNetwork::Signet  => bitcoin::Network::Signet,
+            CliNetwork::Regtest => bitcoin::Network::Regtest,
+        }
+    }
+}
+
+impl CliNetwork {
+    /// Stable kebab-cased name for JSON output. Matches the clap
+    /// `value_enum` rendering, NOT `bitcoin::Network::Display` (which
+    /// emits "bitcoin" for mainnet — confusing for JSON consumers).
+    fn as_str(self) -> &'static str {
+        match self {
+            CliNetwork::Mainnet => "mainnet",
+            CliNetwork::Testnet => "testnet",
+            CliNetwork::Signet  => "signet",
+            CliNetwork::Regtest => "regtest",
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "md", version, about = "Mnemonic Descriptor (MD) — engravable BIP 388 wallet policy backups", long_about = None)]
 struct Cli {
