@@ -20,7 +20,7 @@ pub fn run(args: VerifyArgs<'_>) -> Result<(), CliError> {
         reassemble(&refs)?
     };
     let ctx = ctx_for_template(args.template);
-    let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx)).collect::<Result<Vec<_>, _>>()?;
+    let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx, bitcoin::Network::Bitcoin)).collect::<Result<Vec<_>, _>>()?;
     let parsed_fps = args.fingerprints.iter().map(|s| parse_fingerprint(s)).collect::<Result<Vec<_>, _>>()?;
     let expected = parse_template(args.template, &parsed_keys, &parsed_fps)?;
     let (decoded_bytes, decoded_bits) = encode_payload(&decoded)?;
