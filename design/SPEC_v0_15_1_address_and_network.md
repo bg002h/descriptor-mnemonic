@@ -112,12 +112,12 @@ JSON; no change there.
 - `1` — runtime error (codec error, derivation error, mismatch).
 - `2` — usage error (clap rejection, `CliError::BadArg`).
 
-New `CliError::BadArg` triggers introduced by `md address`:
+New `CliError::BadArg` triggers introduced by `md address` — two distinct
+checks at two distinct layers:
 
-- `"address requires wallet-policy mode (Pubkeys TLV); supply --key @i=XPUB or use a wallet-policy-mode phrase"` — descriptor has no pubkeys after construction.
-- `"--key @i=<XPUB> required when --template is supplied"` — template path with no keys (clap `requires` doesn't enforce non-empty Vec on its own; runtime check needed).
-- Clap-level: `--chain` + `--change` together → exit 2 with clap's standard conflict message.
-- Clap-level: `--count` outside `1..=1000` → exit 2.
+- **Runtime**, after descriptor construction: `"address requires wallet-policy mode (Pubkeys TLV); supply --key @i=XPUB or use a wallet-policy-mode phrase"`. Fires when the constructed descriptor has empty/absent `Pubkeys` TLV — typically because the user supplied a phrase that was encoded in template-only mode.
+- **Runtime**, after clap parse but before descriptor construction: `"--key @i=<XPUB> required when --template is supplied"`. Fires when `--template` is given but `--key` Vec is empty. (clap `requires` only enforces presence of the arg, not non-empty repetition; this is an explicit runtime check.)
+- **Clap-level** (exit 2 with clap's standard messages): `--chain` + `--change` together (`conflicts_with`); `--count` outside `1..=1000` (`value_parser` range); positional `<STRING>...` together with `--template` (`ArgGroup`); `--key`/`--fingerprint` without `--template` (`requires`).
 
 ## Implementation surface
 
@@ -129,9 +129,9 @@ New `CliError::BadArg` triggers introduced by `md address`:
 - **Modify** `crates/md-codec/src/bin/md/parse/template.rs`:
   - `parse_template` signature does **not** change. The synthetic xpub generator (`synthetic_xpub_for`) stays mainnet-only — it's miniscript-parseable scaffold, never emitted, and miniscript ignores xpub version bytes for curve membership. Network only flows through the call sites' `parse_key` invocations, which `parse_template` does not perform itself (callers do).
 - **Modify** `crates/md-codec/src/bin/md/cmd/encode.rs`:
-  - `EncodeArgs` gains `pub network: bitcoin::Network`.
+  - `EncodeArgs` gains `pub network: bitcoin::Network` and `pub network_str: &'static str`.
   - Pass `args.network` into `parse_key` calls.
-  - JSON output gains `"network": "<name>"` at top level (always present).
+  - JSON output gains `"network": args.network_str` at top level (always present). **Critical:** must serialize the CLI vocabulary string (`"mainnet"` for `bitcoin::Network::Bitcoin`), NOT `bitcoin::Network`'s `Display` (which emits `"bitcoin"`). The simplest implementation routes the kebab-cased `CliNetwork` variant string through `EncodeArgs::network_str`; an alternative is a `cli_network_str(bitcoin::Network) -> &'static str` helper in `main.rs`.
 - **Modify** `crates/md-codec/src/bin/md/cmd/verify.rs`:
   - `VerifyArgs` gains `pub network: bitcoin::Network`. Pass through to `parse_key`. No JSON output (verify reports via exit code).
 - **Create** `crates/md-codec/src/bin/md/cmd/address.rs`. Public surface:
@@ -142,6 +142,7 @@ New `CliError::BadArg` triggers introduced by `md address`:
       pub keys: &'a [String],
       pub fingerprints: &'a [String],
       pub network: bitcoin::Network,
+      pub network_str: &'static str,   // for JSON: kebab-cased CliNetwork name
       pub chain: u32,
       pub index: u32,
       pub count: u32,
@@ -149,8 +150,9 @@ New `CliError::BadArg` triggers introduced by `md address`:
   }
   pub fn run(args: AddressArgs<'_>) -> Result<(), CliError>;
   ```
+  - **Construction pattern**: identical to `EncodeArgs<'a>` — `AddressArgs<'a>` is constructed inline in `main.rs`'s dispatch arm, borrowing from the clap-parsed `Args` fields (no owned-field variant). Mirror the encode dispatch site verbatim.
   - Build `Descriptor` from either input mode (mirroring `cmd::decode::run` for phrases and `cmd::encode::run`'s template+key path).
-  - Reject if `!descriptor.is_wallet_policy()` with the wallet-policy `BadArg` message above.
+  - Reject if `!descriptor.is_wallet_policy()` with the runtime wallet-policy `BadArg` message (see §Exit codes for distinct text).
   - Loop `index..(index+count)`, calling `descriptor.derive_address(args.chain, idx, args.network)?.assume_checked()`. Print one per line (text mode) or accumulate into JSON.
 - **Modify** `crates/md-codec/src/bin/md/cmd/mod.rs`: `pub mod address;`.
 - **Modify** `crates/md-codec/src/bin/md/main.rs`:
@@ -159,7 +161,7 @@ New `CliError::BadArg` triggers introduced by `md address`:
   - Add `Address` variant with all args from the table above. Use `clap::ArgGroup::new("input").required(true).args(["phrases", "template"])` to enforce one-of-two.
   - Dispatch arm: collapse `change → chain = 1` once, then call `cmd::address::run`.
 - **Create** `crates/md-codec/tests/cmd_address.rs` (golden vectors at the CLI layer). See Testing.
-- **Modify** `Cargo.toml` (workspace + crate): version bump to `0.15.1`.
+- **Modify** `crates/md-codec/Cargo.toml`: version bump `0.15.0 → 0.15.1`. (Workspace `Cargo.toml` carries no `version` field; the crate manifest is the only place to bump.)
 - **Modify** `CHANGELOG.md`: new `## [0.15.1]` section.
 - **Modify** `MIGRATION.md`: short `v0.15.0 → v0.15.1` note (additive).
 - **Modify** `crates/md-codec/README.md`: add `md address` row to the CLI subcommand table; one-paragraph quickstart with mainnet + testnet examples.
@@ -170,7 +172,7 @@ New `CliError::BadArg` triggers introduced by `md address`:
 - `Descriptor::derive_address(chain: u32, index: u32, network: Network) -> Result<Address<NetworkUnchecked>, Error>` at `crates/md-codec/src/derive.rs:250`. Caller uses `.assume_checked()` (matches existing pattern at `tests/address_derivation.rs:87`).
 - `Descriptor::is_wallet_policy() -> bool` at `crates/md-codec/src/encode.rs:47`.
 - `decode_md1_string(s) / reassemble(refs)` fork pattern at `cmd/decode.rs:7-12` and `cmd/inspect.rs:8-13`.
-- `parse_template(template, &parsed_keys, &parsed_fps)` at `parse/template.rs:706` — populates `tlv.pubkeys` when `parsed_keys` non-empty.
+- `parse_template(template, &parsed_keys, &parsed_fps)` (defined in `parse/template.rs`; called from `cmd/encode.rs:24`) — populates `tlv.pubkeys` when `parsed_keys` non-empty.
 - JSON `SCHEMA = "md-cli/1"` at `format/json.rs:6`.
 
 ## Network handling — exhaustive table
@@ -199,12 +201,12 @@ on encode/verify/address but not decode/inspect/bytecode.
 ### Integration tests
 
 - `tests/cmd_address.rs` (new):
-  - **Mainnet wpkh receive 0..=2**: encode the abandon-mnemonic at `m/84'/0'/0'` via the CLI (template + `--key`), then `md address` against the resulting phrase. Pin BIP 84's published vectors:
-    - `bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu`
-    - `bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g`
-    - `bc1q...` (third address)
+  - **Mainnet wpkh receive 0 and 1**: encode the abandon-mnemonic at `m/84'/0'/0'` via the CLI (template + `--key`), then `md address` against the resulting phrase. Pin BIP 84's published vectors:
+    - `bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu` (receive/0)
+    - `bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g` (receive/1)
   - **Mainnet wpkh first change**: `--change --index 0` → `bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el` (BIP 84 published).
-  - **Testnet wpkh receive 0**: `--network testnet --key @0=<tpub at m/84'/1'/0'>`. If BIP 84 doesn't publish a testnet vector for the abandon-mnemonic, derive once via rust-bitcoin in-test and pin the resulting `tb1q...` string (still an end-to-end CLI assertion against a trusted secondary path).
+  - **Mainnet wpkh `--count 2 --index 0`**: assert exactly two newline-separated addresses matching receive/0 and receive/1.
+  - **Testnet wpkh receive 0**: `--network testnet --key @0=<tpub at m/84'/1'/0'>`. BIP 84 publishes only mainnet vectors for the abandon-mnemonic; derive the expected testnet address in-test via the same `bip32::Xpub::from_priv` recipe used in `tests/address_derivation.rs:32-44` and assert the CLI matches that independently-derived value (an end-to-end CLI assertion against a trusted secondary path; mirrors how `address_derivation.rs` cross-checks multisig vectors).
   - **wsh-multi receive 0**: 2-of-2 wsh-multi at `m/48'/0'/0'/2'` from two abandon-derivative xpubs; cross-check via rust-bitcoin's descriptor derivation.
   - **`--count 1000` succeeds; `--count 1001` exits 2** (clap rejection).
   - **Template-only without `--key`**: exits 2 with `"requires wallet-policy mode"` substring.
@@ -215,7 +217,9 @@ on encode/verify/address but not decode/inspect/bytecode.
 
 ### Test count expectation
 
-Baseline 340 (from v0.15.0). v0.15.1 adds approximately:
+Baseline 340 (re-confirmed in v0.15.1 worktree at branch creation:
+`cargo test --workspace --features cli,json,cli-compiler` → `Total ok: 340`).
+v0.15.1 adds approximately:
 
 - ~3 parse/keys network-routing unit tests
 - ~7 cmd_address integration tests
