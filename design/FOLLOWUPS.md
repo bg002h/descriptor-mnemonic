@@ -36,12 +36,76 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **`v0.1-blocker`**: must fix before tagging `wdm-codec-v0.1.0` (Phase 10). Failing to fix = ship blocked.
 - **`v0.1-nice-to-have`**: should fix before v0.1 if time permits, but won't block release. Document the deferral in v0.1's CHANGELOG/README if shipped.
 - **`v0.2`**: explicitly deferred to v0.2 by a phase decision or spec note. Tracked here for visibility; no v0.1 fix expected.
+- **`v0.15.2`**: low-severity findings deferred from v0.15.1 spec/plan/per-phase reviews. Targeted for the next patch release. Each entry cites the source review report under `design/agent-reports/v0.15.1-*.md`.
 - **`v1+`**: deferred indefinitely. May be revisited only as part of a major version revision.
 - **`external`**: depends on work outside this repo (e.g., upstream PR merging).
 
 ---
 
 ## Open items
+
+### `v0.15.1-spec-l2-address-json-arg-row` — `--json` arg row missing from address arg-semantics table
+
+- **Surfaced:** SPEC review r1 (`design/agent-reports/v0.15.1-spec-review-r1.md` finding L2)
+- **Where:** `design/SPEC_v0_15_1_address_and_network.md` §Subcommand surface
+- **What:** All other args have explicit rows; `--json` was only mentioned in the CLI synopsis. Cosmetic.
+- **Why deferred:** doesn't affect implementation correctness.
+- **Status:** `open`
+- **Tier:** `v0.15.2`
+
+### `v0.15.1-phase-1-low-1` — `#[allow(dead_code)]` on `ABANDON_TPUB_DEPTH4_BIP48` is redundant inside `#[cfg(test)]`
+
+- **Surfaced:** Phase 1 review (`design/agent-reports/v0.15.1-phase-1-review.md`)
+- **Where:** `crates/md-codec/src/bin/md/parse/keys.rs` `ABANDON_TPUB_DEPTH4_BIP48` const
+- **What:** The `#[allow(dead_code)]` is inside a `#[cfg(test)]` block; outside test builds the compiler does not see it. Cosmetic.
+- **Why deferred:** harmless.
+- **Status:** `open`
+- **Tier:** `v0.15.2`
+
+### `v0.15.1-phase-2-low-1` — `let _ = args.force_long_code;` silently ignored in encode
+
+- **Surfaced:** Phase 2 review (`design/agent-reports/v0.15.1-phase-2-review.md`); pre-existing from v0.15.0
+- **Where:** `crates/md-codec/src/bin/md/cmd/encode.rs:63`
+- **What:** Flag accepted by clap but discarded unconditionally. Pre-existing forward-compat stub.
+- **Why deferred:** intentional in v0.15.0 design; revisit if a real long-code mode lands.
+- **Status:** `open`
+- **Tier:** `v0.15.2`
+
+### `v0.15.1-phase-2-low-2` — `parse_key` wildcard match on `bitcoin::Network`
+
+- **Surfaced:** Phase 2 review
+- **Where:** `crates/md-codec/src/bin/md/parse/keys.rs` `parse_key` (network match)
+- **What:** Uses `_ =>` to group Testnet/Signet/Regtest. Future bitcoin crate version adding a new Network variant would silently land in the testnet path.
+- **Why deferred:** idiomatic for non-exhaustive external enums; explicit by design.
+- **Status:** `open`
+- **Tier:** `v0.15.2`
+
+### `v0.15.1-phase-3-low-1` — Latent fragility if clap's ArgGroup ever fails to block zero-arg `md address`
+
+- **Surfaced:** Phase 3 review (`design/agent-reports/v0.15.1-phase-3-review.md`)
+- **Where:** `crates/md-codec/src/bin/md/cmd/address.rs` `build_descriptor`
+- **What:** If clap's `ArgGroup::required(true)` on a positional `num_args = 0..` ever fails to block zero-arg invocation, `build_descriptor` would call `reassemble(&[])` → exit 1 instead of 2. Suggested defensive guard: `if args.phrases.is_empty() && args.template.is_none() { return Err(BadArg(..)); }`.
+- **Why deferred:** `address_no_input_exits_2` integration test is the guard; not currently failing.
+- **Status:** `open`
+- **Tier:** `v0.15.2`
+
+### `v0.15.1-phase-4-low-1` — `account_xpub_testnet` wrapper specified in plan but inlined
+
+- **Surfaced:** Phase 4 review (`design/agent-reports/v0.15.1-phase-4-review.md`)
+- **Where:** `crates/md-codec/tests/cmd_address.rs`
+- **What:** Plan called for an `account_xpub_testnet(path)` convenience wrapper; the actual test inlines the call. Functionally equivalent.
+- **Why deferred:** cosmetic; arguably cleaner inlined.
+- **Status:** `open`
+- **Tier:** `v0.15.2`
+
+### `v0.15.1-phase-5-low-1` — `args.network_str` lacks unused-warning suppressor when `json` feature off
+
+- **Surfaced:** Phase 5 review (`design/agent-reports/v0.15.1-phase-5-review.md`)
+- **Where:** `crates/md-codec/src/bin/md/cmd/address.rs`
+- **What:** `args.json` has an explicit `let _ = ...` suppressor for the no-`json`-feature case; `args.network_str` does not. May or may not trigger an unused-field lint depending on rustc/clippy version.
+- **Why deferred:** cosmetic; not currently triggering.
+- **Status:** `open`
+- **Tier:** `v0.15.2`
 
 ### `wallet-id-is-really-template-id` — current `WalletId` identifies a policy template, not a wallet instance
 
