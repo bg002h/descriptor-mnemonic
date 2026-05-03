@@ -116,7 +116,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
         Command::Encode {
             template, from_policy: _, context: _, path: _,
             keys, fingerprints, force_chunked, force_long_code,
-            policy_id_fingerprint, json: _,
+            policy_id_fingerprint, json,
         } => {
             let template = template.ok_or_else(|| CliError::BadArg(
                 "encode: TEMPLATE required (or use --from-policy with cli-compiler)".into()
@@ -128,6 +128,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                 force_chunked,
                 force_long_code,
                 policy_id_fingerprint,
+                json,
             })
         }
         Command::Decode { strings, json: _ } => cmd::decode::run(&strings),

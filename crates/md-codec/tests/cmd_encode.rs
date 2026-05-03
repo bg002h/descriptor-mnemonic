@@ -18,3 +18,12 @@ fn encode_with_policy_id_fingerprint_prints_two_lines() {
         .success()
         .stdout(predicate::str::contains("policy-id-fingerprint: 0x"));
 }
+
+#[test]
+fn encode_json_has_schema_and_phrase() {
+    Command::cargo_bin("md").unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--json"])
+        .assert().success()
+        .stdout(predicate::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicate::str::contains("\"phrase\":"));
+}

@@ -14,6 +14,7 @@ pub struct EncodeArgs<'a> {
     pub force_chunked: bool,
     pub force_long_code: bool,
     pub policy_id_fingerprint: bool,
+    pub json: bool,
 }
 
 pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
@@ -22,26 +23,40 @@ pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
     let parsed_fps = args.fingerprints.iter().map(|s| parse_fingerprint(s)).collect::<Result<Vec<_>, _>>()?;
     let descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
 
-    if args.force_chunked {
-        // v0.14 `split` takes only &Descriptor (chunk size is determined
-        // internally) and returns Vec<String>, no per-chunk struct.
-        let chunks = split(&descriptor)?;
-        let md1_id = compute_md1_encoding_id(&descriptor)?;
-        let csid = derive_chunk_set_id(&md1_id);
-        println!("chunk-set-id: 0x{csid:05x}");
-        for s in &chunks {
-            println!("{s}");
+    #[cfg(feature = "json")]
+    if args.json {
+        use crate::format::json::SCHEMA;
+        let mut obj = serde_json::Map::new();
+        obj.insert("schema".into(), SCHEMA.into());
+        if args.force_chunked {
+            let chunks = split(&descriptor)?;
+            let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
+            obj.insert("chunk_set_id".into(), format!("0x{csid:05x}").into());
+            obj.insert("chunks".into(), serde_json::to_value(&chunks).unwrap());
+        } else {
+            obj.insert("phrase".into(), encode_md1_string(&descriptor)?.into());
         }
-    } else {
-        let phrase = encode_md1_string(&descriptor)?;
-        println!("{phrase}");
+        if args.policy_id_fingerprint {
+            let id = compute_wallet_policy_id(&descriptor)?;
+            obj.insert("policy_id_fingerprint".into(), text::fmt_policy_id_fingerprint(&id).into());
+        }
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        return Ok(());
     }
 
+    if args.force_chunked {
+        let chunks = split(&descriptor)?;
+        let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
+        println!("chunk-set-id: 0x{csid:05x}");
+        for s in &chunks { println!("{s}"); }
+    } else {
+        println!("{}", encode_md1_string(&descriptor)?);
+    }
     if args.policy_id_fingerprint {
         let id = compute_wallet_policy_id(&descriptor)?;
         println!("policy-id-fingerprint: {}", text::fmt_policy_id_fingerprint(&id));
     }
 
-    let _ = args.force_long_code;  // long-code dropped in v0.12; arg accepted for forward-compat
+    let _ = args.force_long_code;
     Ok(())
 }
