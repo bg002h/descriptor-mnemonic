@@ -14,7 +14,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** 1–3 sentences describing the gap or improvement opportunity
 - **Why deferred:** the reason it didn't ship in the original commit
 - **Status:** `open` | `resolved <COMMIT>` | `wont-fix — <one-line reason>`
-- **Tier:** `v0.1-blocker` | `v0.1-nice-to-have` | `v0.2` | `v1+` | `external`
+- **Tier:** `v0.1-blocker` | `v0.1-nice-to-have` | `v0.2` | `cross-repo` | `v1+` | `external`
 ```
 
 The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correction-fallback`, `p10-miniscript-dep-audit`). Reference this id from commit messages when you close the item: `closes FOLLOWUPS.md 5d-from-impl`.
@@ -37,12 +37,22 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **`v0.1-nice-to-have`**: should fix before v0.1 if time permits, but won't block release. Document the deferral in v0.1's CHANGELOG/README if shipped.
 - **`v0.2`**: explicitly deferred to v0.2 by a phase decision or spec note. Tracked here for visibility; no v0.1 fix expected.
 - **`v0.15.2`**: low-severity findings deferred from v0.15.1 spec/plan/per-phase reviews. Targeted for the next patch release. Each entry cites the source review report under `design/agent-reports/v0.15.1-*.md`.
+- **`cross-repo`**: depends on coordination with sibling repo(s) (`mnemonic-key`, `mnemonic-secret`, future `mnemonic-toolkit`). Mirrored by a companion entry in the affected sibling's `design/FOLLOWUPS.md`; both entries cite each other.
 - **`v1+`**: deferred indefinitely. May be revisited only as part of a major version revision.
 - **`external`**: depends on work outside this repo (e.g., upstream PR merging).
 
 ---
 
 ## Open items
+
+### `mc-codex32-extraction-retired-2026-05-03` — original shared-crate plan retired in favor of ms1 adopting `rust-codex32` directly
+
+- **Surfaced:** 2026-05-03, ms1 plan-mode brainstorm in this repo (plan file: `/home/bcg/.claude/plans/c-ultimately-what-we-quirky-avalanche.md`). Companion: same-id entry in `mnemonic-key/design/FOLLOWUPS.md`.
+- **Where:** Cross-repo design / process. Affects `descriptor-mnemonic/CLAUDE.md` (cross-repo section already updated 2026-05-03 to retire the trigger language and add ms1 as a sibling), `mnemonic-key/CLAUDE.md` (mirrored), and the future cross-repo `PATTERNS.md` doc that will replace the shared-crate plan.
+- **What:** mk1's closure Q-9 originally specified that md1 and mk1 would extract their shared BIP-93 BCH plumbing into a third sibling crate `mc-codex32` once both formats hit v1.0 with cross-validated conformance vectors. With the addition of a third sibling format ms1 (HRP `ms`, repo `bg002h/mnemonic-secret`) that adopts BIP-93 codex32 *directly* via Andrew Poelstra's `rust-codex32` crate, the calculus changed: md1↔mk1 use HRP-mixed BCH with per-format target residues that are NOT upstreamable to `rust-codex32`'s vanilla BIP-93 implementation, and ms1 doesn't need them either. There is no longer shared code worth extracting — only a shared *pattern* (HRP-mixed BCH with per-format target residue) that is better captured as documentation. md1↔mk1 BCH plumbing stays forked indefinitely; the pattern will be documented in a future cross-repo `PATTERNS.md`.
+- **Why deferred:** Decision was locked during ms1 plan-mode r1..r5 review convergence on 2026-05-03; CLAUDE.md updates landed in lockstep. The `PATTERNS.md` doc itself is non-blocking and can be drafted opportunistically when the next BCH-plumbing concern surfaces in either repo.
+- **Status:** `wont-do — superseded by ms1 adopting rust-codex32 directly (2026-05-03 cross-repo decision)`. CLAUDE.md retirement language landed same day.
+- **Tier:** `cross-repo`
 
 ### `v0.15.1-spec-l2-address-json-arg-row` — `--json` arg row missing from address arg-semantics table
 
