@@ -51,7 +51,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** Cross-repo coordination only; no md1/mk1 wire-format change required. Affects: ms1 v0.1 SPEC (not yet drafted) and downstream `mnemonic-toolkit` (when it lands) — both will need to know which payload kinds ms1 v0.1 actually emits (currently locked as {seed, entr, xprv}, likely to narrow).
 - **What:** ms1 v0.1's `0x00` reserved-prefix byte (designed to make the v0.2 share-encoding migration non-breaking for v0.1 strings) pushes 64-B BIP-32 master seeds to 65-B payloads — one byte past BIP-93 codex32's long-code max (rust-codex32 v0.1.0 rejects with `InvalidLength(128)`). `xprv` (78 B) was never inside any BIP-93 bracket. Likely remediation: narrow ms1 v0.1 to `entr`-only payloads; defer `seed`/`xprv` to v0.2+ with their own framing. Awaiting user direction in the ms1 session.
 - **Why deferred:** ms1-internal SPEC decision; no md1 source change. Logged here so future sessions in this repo don't re-litigate the four-format-star payload assumptions when toolkit work begins.
-- **Status:** `open — awaiting ms1 v0.1 SPEC remediation choice`
+- **Status:** `resolved 2026-05-03 — ms1 v0.1 shipped with Option A remediation: v0.1 narrowed to entr-only; seed/xprv deferred to v0.2+ with own framing. ms-codec v0.1.0 release commit ab374ed in mnemonic-secret; primary FOLLOWUPS entry there records full mechanics. md1 source unchanged — this entry was a coordination flag only. Four-format-star payload assumptions for downstream toolkit work: ms1 emits entr only in v0.1.`
 - **Tier:** `cross-repo`
 
 ### `mc-codex32-extraction-retired-2026-05-03` — original shared-crate plan retired in favor of ms1 adopting `rust-codex32` directly
