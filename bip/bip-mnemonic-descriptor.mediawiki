@@ -185,11 +185,19 @@ For '''chunked Template Cards''', the header is eight bech32 characters:
 
 * Version (1 char): as above.
 * Type (1 char): value <code>1</code>.
-* Chunk-set identifier (4 chars, 20 bits): a per-wallet random identifier shared by all chunks of one Template Card. Generated at first encoding. Used to detect chunks from different wallets being mixed during reassembly.
+* Chunk-set identifier (4 chars, 20 bits): a deterministic per-encoding identifier shared by all chunks of one Template Card, derived from the encoding's <code>Md1EncodingId</code> (defined immediately below). Used to detect chunks from different Template Cards being mixed during reassembly.
 * Total chunk count (1 char, 5 bits): number of chunks comprising this Template Card. Range 1–32. Encoders SHOULD use the smallest count that fits the payload.
 * Chunk index (1 char, 5 bits): position of this chunk in the sequence, 0-indexed. Range 0 through (count − 1).
 
-The chunk-set identifier is opaque to the format; its only purpose is mismatch detection during reassembly. Encoders SHOULD generate it from a cryptographically secure random source at first encoding and use the same value for all subsequent re-encodings of the same wallet.
+The chunk-set identifier is normatively bound to the canonical encoding. Define <code>Md1EncodingId</code> as the leading 16 bytes of <code>SHA-256</code> over the canonical bit-packed payload bytecode of the Template Card — the bytecode produced by the encoder before the cross-chunk integrity hash is appended (see §"Payload" and §"Bytecode layer"). Encoders MUST derive <code>chunk_set_id</code> from <code>Md1EncodingId</code> by taking the leading 20 bits, MSB-first:
+
+<pre>
+  chunk_set_id = (Md1EncodingId[0] << 12) | (Md1EncodingId[1] << 4) | (Md1EncodingId[2] >> 4)
+</pre>
+
+This deterministic binding makes md1 encoding byte-reproducible — any two conforming encoders given the same canonical bytecode produce identical Template Card strings — and lets downstream toolchains SHA-pin regression corpora. Decoders MUST verify, after reassembly and bytecode decode, that the wire <code>chunk_set_id</code> matches the value derived from the reassembled encoding's <code>Md1EncodingId</code>; mismatch MUST be rejected with an error specifically identifying the chunk-set-id derivation check. The reference implementation surfaces this as <code>Error::ChunkSetIdMismatch { expected, derived }</code>.
+
+<code>Md1EncodingId</code> is distinct from the Tier-3 <code>PolicyId</code> (§"Policy identifier") and from <code>WalletInstanceId</code> (§"Wallet Instance ID"): it covers the full Template Card payload (including any TLV blocks present in wallet-policy mode), whereas <code>PolicyId</code> covers only the BIP 388 template + path layout. The two values coincide for template-only cards but diverge once wallet-policy mode adds concrete pubkeys.
 
 '''Naming note:''' the field was called "wallet identifier" in MD versions ≤ 0.8.x. The v0.8 rename (which renamed Tier-3 "wallet ID" → "Policy ID" — see §"Naming note" under "Policy ID" below for that rename's rationale) mechanically renamed this chunk-header field to ''ChunkPolicyId'' as collateral, but on review for the sibling Mnemonic Key (MK) format that name was misleading: the chunk-header field is neither a Policy ID (which lives at Tier 3 and identifies a policy template) nor a Wallet Instance ID (which identifies a template + xpub set); it identifies a chunk-set assembly and nothing more. v0.9 corrects the name to "chunk-set identifier" / <code>chunk_set_id</code>. Wire format and bit layout are unchanged across the v0.8 → v0.9 rename.
 
@@ -752,6 +760,7 @@ Decoders reassemble a chunked Template Card by:
 # Concatenating fragments in index order to reconstruct the canonical bytecode plus cross-chunk hash.
 # Splitting off the trailing 4 bytes and verifying the cross-chunk hash; reject on mismatch.
 # Decoding the resulting canonical bytecode as a Template Card.
+# Computing <code>Md1EncodingId</code> from the canonical bit-packed re-encoding of the decoded Template Card and verifying that the wire <code>chunk-set identifier</code> matches the value derived from <code>Md1EncodingId</code> per §"Header"; reject on mismatch with an error specifically identifying the derivation check (the reference implementation surfaces this as <code>Error::ChunkSetIdMismatch</code>). This ratifies that the encoder followed the deterministic-CSI contract; a non-conforming encoder that drew a random value would produce a string unreadable by conforming decoders.
 
 ===Policy identifier (Tier 3)===
 
@@ -943,6 +952,8 @@ A future revision MAY define an optional encrypted Template Card variant. v0 doe
 ===Why mandatory chunk-set identifier in chunked cards?===
 
 Without per-chunk-set identifiers, a user with multiple wallets risks mixing chunks from different Template Cards during reassembly. The 20-bit identifier provides ~1-in-1M discrimination against accidental cross-wallet contamination. Combined with the cross-chunk hash, the false-accept probability for accidental misassembly is approximately 2<sup>−52</sup>, which is negligible in practice.
+
+The 20-bit value is normatively derived from the encoding's <code>Md1EncodingId</code> (see §"Header") rather than drawn from a CSPRNG. This makes md1 byte-reproducible: two conforming encoders given the same canonical bytecode produce identical Template Card strings down to the wire bits, which lets downstream toolchains (engraving toolkits, regression-pinned vector corpora) SHA-pin md1 outputs without flake. Decoders verify the binding on reassembly, providing an additional integrity check beyond the cross-chunk hash — a non-conforming encoder that drew a random value would produce strings unreadable by conforming decoders, so the determinism contract is self-enforcing.
 
 For single-string Template Cards, no chunk-set identifier is needed because there are no chunks to confuse.
 
