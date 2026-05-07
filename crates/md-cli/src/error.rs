@@ -6,6 +6,10 @@ pub enum CliError {
     TemplateParse(String),
     BadXpub { i: u8, why: String },
     BadFingerprint { i: u8, why: String },
+    /// Reserved for `cli-compiler` feature paths (`compile` subcommand,
+    /// `encode --from-policy`). Constructed only when that feature is on;
+    /// `#[allow(dead_code)]` keeps default-features clippy clean.
+    #[allow(dead_code)]
     Compile(String),
     Mismatch(String),
     BadArg(String),

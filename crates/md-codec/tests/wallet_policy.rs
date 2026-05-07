@@ -55,6 +55,16 @@ fn bip86_path() -> OriginPath {
     }
 }
 
+fn bip49_path() -> OriginPath {
+    OriginPath {
+        components: vec![
+            PathComponent { hardened: true, value: 49 },
+            PathComponent { hardened: true, value: 0 },
+            PathComponent { hardened: true, value: 0 },
+        ],
+    }
+}
+
 fn empty_path() -> OriginPath {
     OriginPath { components: vec![] }
 }
@@ -684,6 +694,49 @@ fn tr_with_taptree_accepts_with_populated_path_decl() {
     let s = encode_md1_string(&d).unwrap();
     let d2 = decode_md1_string(&s).unwrap();
     assert_eq!(d, d2);
+}
+
+// ─── Test 12: BIP-388 §Test Vectors policy 388.2 — sh(wpkh) BIP-49 ───────
+
+/// BIP-388 §Test Vectors reference policy #2: nested-segwit single-sig.
+/// Spec: <https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki#test-vectors>
+///
+/// Template `sh(wpkh(@0/<0;1>/*))` with BIP-49 canonical origin
+/// `m/49'/0'/0'`. The spec quotes a concrete cosigner xpub
+/// `[6738736c/49'/0'/1']xpub6Bex1...` which is not re-derivable here
+/// (BIP-388 ships no seed); the matrix records that limitation. This
+/// test pins the *template-shape* round-trip — the encode→decode path
+/// preserves the wrapper stack, key index, and BIP-49 origin path.
+#[test]
+fn bip388_388_2_sh_wpkh_bip49_template_shape_round_trip() {
+    let d = Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(bip49_path()),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Sh,
+            body: Body::Children(vec![Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            }]),
+        },
+        tlv: TlvSection::new_empty(),
+    };
+    // Populated path_decl (BIP-49 canonical) satisfies the
+    // `validate_explicit_origin_required` gate for sh-wrapper.
+    validate_explicit_origin_required(&d).unwrap();
+    validate_placeholder_usage(&d.tree, d.n).unwrap();
+
+    let s = encode_md1_string(&d).unwrap();
+    let d2 = decode_md1_string(&s).unwrap();
+    assert_eq!(d, d2);
+    assert!(
+        !d2.is_wallet_policy(),
+        "template-only (no Pubkeys) must NOT be wallet-policy mode"
+    );
 }
 
 // ─── Test 11: encoder determinism ────────────────────────────────────────

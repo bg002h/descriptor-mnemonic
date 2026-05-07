@@ -35,10 +35,11 @@ asserted via `tests/wallet_policy.rs` integration tests against the
 | MV9 | wsh_with_fingerprints | with origin fp + xpubs | COVERED | `tests/wallet_policy.rs::smoke_2of3_cell_7_wsh_sortedmulti_round_trip` |
 | MV10 | wsh_divergent_paths | per-`@N` divergent origin paths | COVERED | `tests/wallet_policy.rs::divergent_paths_wallet_policy_2of2_round_trip` |
 
-Phase 11 deliverable: verify the SHA-256 pin of each corpus file is
-referenced from a test (cargo-checked) so corpus drift is caught at CI
-boundary, not silent. Currently `tests/vectors/manifest.rs` likely owns
-this; audit it.
+Phase 11 deliverable (resolved v0.16.2): verify corpus drift is caught
+at CI boundary. RESOLVED — see Discovery #4. There is no SHA-256 pin
+because the drift discipline is asserted via `diff -r` byte-identity
+over the regenerated tree (`md-cli/tests/vector_corpus.rs`), which is
+strictly stronger.
 
 ---
 
@@ -147,7 +148,7 @@ md-codec emits + parses BIP-380 descriptor strings via its own
 
 | # | Form | Status | Notes |
 |---|---|---|---|
-| 380.1 | `raw(deadbeef)#89f8spxm` (valid) | MISSING | Phase 11 — pin against `tests/vectors/wpkh_basic.descriptor.json` re-emitted descriptor; verifies our `#checksum` is BIP-380-conformant |
+| 380.1 | `raw(deadbeef)#89f8spxm` (valid) | OUT-OF-SCOPE-PER-LAYER | md-codec the *library* does not emit BIP-380 descriptor strings; descriptor-string emission lives in md-cli (rust-miniscript-backed). Transitively COVERED at the tree level: `md vectors` regenerates `tests/vectors/*.descriptor.json` (each with a BIP-380 `#checksum`) from `MANIFEST` and `md-cli/tests/vector_corpus.rs::vectors_output_matches_committed_corpus` `diff -r` asserts byte-identity vs. the committed tree. See Discovery #4. |
 | 380.2 | `raw(deadbeef)` (no checksum, REJECT) | OUT-OF-SCOPE-PER-SPEC | md-codec always emits the checksum form |
 | 380.3 | `raw(deadbeef)#` (empty, REJECT) | OUT-OF-SCOPE-PER-SPEC | rust-miniscript enforces |
 | 380.4 | 9-char checksum (REJECT) | OUT-OF-SCOPE-PER-SPEC | rust-miniscript enforces |
@@ -156,10 +157,15 @@ md-codec emits + parses BIP-380 descriptor strings via its own
 | 380.7 | checksum-error (REJECT) | OUT-OF-SCOPE-PER-SPEC | rust-miniscript enforces |
 | 380.8 | non-ASCII (REJECT) | OUT-OF-SCOPE-PER-SPEC | rust-miniscript enforces |
 
-Phase 11 deliverable: 1 new test in `tests/wallet_policy.rs` (or new
-`tests/test_bytecode_descriptor.rs`) pinning at least one round-trip
-where md-codec emits a descriptor and an independent BIP-380 checksum
-verifier accepts it.
+Phase 11 deliverable: RECLASSIFIED OUT-OF-SCOPE-PER-LAYER (resolved
+v0.16.2). md-codec the library has no descriptor-string emit surface,
+so the originally-framed "emit + verify" cycle is structurally
+impossible at this crate boundary. The transitive coverage chain is:
+md-cli `vectors` subcommand → rust-miniscript `Descriptor::to_string()`
+→ committed `*.descriptor.json` (with BIP-380 `#checksum`) →
+`vector_corpus.rs::vectors_output_matches_committed_corpus` `diff -r`
+gate. Any drift in BIP-380 checksum emission surfaces as a corpus diff
+failure at CI.
 
 ---
 
@@ -174,7 +180,7 @@ templates as follows:
 | # | BIP-388 template | md-codec coverage | Status | Notes |
 |---|---|---|---|---|
 | 388.1 | `pkh(@0/**)` BIP-44 | `tests/vectors/pkh_basic.template` | COVERED | round-trip pinned via `pkh_basic` fixture |
-| 388.2 | `sh(wpkh(@0/**))` BIP-49 | NOT in fixture corpus | MISSING | Phase 11 — add `sh_wpkh_basic` fixture (BIP-49 template) |
+| 388.2 | `sh(wpkh(@0/**))` BIP-49 | `tests/wallet_policy.rs::bip388_388_2_sh_wpkh_bip49_template_shape_round_trip` | COVERED | resolved v0.16.2: lib-level template-shape round-trip pins the wrapper stack + BIP-49 origin path. Spec xpub byte-pin remains OUT-OF-SCOPE-PER-SPEC (no published seed). Fixture-corpus omission is intentional per `manifest.rs` comment: codec asymmetry on canonical-default stripping at decode prevents `force_chunked: false` round-trip via the `MANIFEST → vectors regen → diff` channel. |
 | 388.3 | `wpkh(@0/**)` BIP-84 | `tests/vectors/wpkh_basic.template` | COVERED | |
 | 388.4 | `tr(@0/**)` BIP-86 | `tests/vectors/tr_keyonly.template` | COVERED | `tests/smoke.rs::bip86_taproot_md1_string_round_trip` |
 | 388.5 | `wsh(sortedmulti(2,@0/**,@1/**))` BIP-48 | `tests/vectors/wsh_sortedmulti.template` | COVERED | |
@@ -182,10 +188,13 @@ templates as follows:
 | 388.7 | `tr(@0/**,{sortedmulti_a(...),or_b(...)})` taproot tree | NOT in fixture corpus | OUT-OF-SCOPE-PER-USER | tap-tree multisig deferred to v0.17+ per CHANGELOG roadmap |
 | 388.8 | musig2 templates | NOT supported | OUT-OF-SCOPE-PER-USER | musig2 not in any md1 v0.x scope |
 
-Phase 11 deliverable: pin 388.2 (sh-wpkh nested-segwit). The spec's
-exact `[6738736c/49'/0'/1']xpub6Bex1...` xpub byte-pin is
-OUT-OF-SCOPE-PER-SPEC because BIP-388 doesn't publish the underlying
-seed; pin the *template-shape* round-trip instead.
+Phase 11 deliverable: pin 388.2 (sh-wpkh nested-segwit). RESOLVED in
+v0.16.2 — `tests/wallet_policy.rs::bip388_388_2_sh_wpkh_bip49_template_shape_round_trip`
+asserts that `Descriptor { tree: sh(wpkh(@0)), path_decl: m/49'/0'/0' }`
+round-trips through `encode_md1_string → decode_md1_string` with
+structural equality. The spec's exact `[6738736c/49'/0'/1']xpub6Bex1...`
+xpub byte-pin remains OUT-OF-SCOPE-PER-SPEC because BIP-388 doesn't
+publish the underlying seed.
 
 ---
 
@@ -213,13 +222,16 @@ asserts validator rejection of skipped/duplicated indices.
 | BIP-32 | 18 | 6 IMPLICIT | 0 | 0 | 18 (delegated to bitcoin v0.32) |
 | BIP-39 | 24 | — | 0 | 0 | 24 (delegated upstream) |
 | BIP-44/48/49/84/86/87 path dict | 14 | 14 (LOCKSTEP) | 0 | 0 | 0 |
-| BIP-380 | 8 | 0 | 1 (Phase 11) | 0 | 7 (rust-miniscript surface) |
-| BIP-388 | 8 | 5 | 1 (Phase 11) | 2 | 0 |
+| BIP-380 | 8 | 0 (transitive at md-cli) | 0 | 0 | 8 (md-cli surface + rust-miniscript) |
+| BIP-388 | 8 | 6 | 0 | 2 | 0 |
 | BIP-32 use-site | 3 | 2 | 0 | 1 | 0 |
-| **TOTAL** | **139** | **~37** | **~2** | **~3** | **~97** |
+| **TOTAL** | **139** | **~38** | **0** | **~3** | **~98** |
 
-Phase 11 target: ~2 net-new tests (BIP-380 emit-checksum + BIP-388
-sh-wpkh template).
+Phase 11 outcome (v0.16.2 — 2026-05-07):
+- 1 net-new test added: `wallet_policy.rs::bip388_388_2_sh_wpkh_bip49_template_shape_round_trip` (BIP-388 §Test Vectors policy 388.2 cite).
+- 380.1 reclassified OUT-OF-SCOPE-PER-LAYER for md-codec (transitive at md-cli).
+- Manifest SHA-pin discipline VERIFIED GREEN (see Discovery #4).
+- Test count delta: +1 (358 → 359 default-features workspace).
 
 ---
 
@@ -240,8 +252,48 @@ sh-wpkh template).
    `manifest.rs` first; pin is real → COVERED in this matrix; pin
    is hollow → discoveries-elevation + new test.
 
+   **RESOLVED v0.16.2 — see Discovery #4 below. NOT a Critical
+   finding.** The manifest is structurally a `&[Vector { name,
+   template, keys, fingerprints, force_chunked }]` constants table,
+   not a SHA-256-hash assertion list — but the drift-detection
+   discipline it powers is functionally equivalent to (and stronger
+   than) SHA pinning, so the audit-matrix conditional escalation does
+   not trigger.
+
 3. **No bug-shaped findings.** md-codec's vector posture is strong:
    custom-corpus round-trips are exhaustive; BIP-32 derivation is
    exercised end-to-end via address-pinning; BIP-388 templates are
    shape-pinned. The two MISSING items (BIP-380 emit-checksum +
    BIP-388 sh-wpkh) are coverage gaps, not impl bugs.
+
+4. **Corpus drift discipline GREEN (resolves Discovery #2).**
+   `crates/md-codec/tests/vectors/manifest.rs` is a constants table
+   of `(name, template, keys, fingerprints, force_chunked)`, not a
+   SHA-256 hash list. Drift detection happens via
+   `crates/md-cli/tests/vector_corpus.rs::vectors_output_matches_committed_corpus`,
+   which:
+
+   - shells out to `md vectors --out <tmpdir>` (regenerating every
+     `.template` / `.phrase.txt` / `.bytes.hex` / `.descriptor.json`
+     from `MANIFEST` + the encoder pipeline);
+   - runs `diff -r --exclude=manifest.rs --exclude=.gitkeep
+     <tmpdir> crates/md-codec/tests/vectors/`;
+   - asserts `status.success()`.
+
+   This is functionally equivalent to (and stronger than) SHA-256
+   pinning: the test asserts byte-identity over the entire corpus
+   tree on every CI run. Encoder-bug regressions, fixture file edits,
+   and template manifest drift all surface as a `diff -r` failure.
+
+   Two adjacent layers reinforce this:
+
+   - `template_roundtrip.rs::round_trip_each_manifest_entry` walks
+     every non-`force_chunked` MANIFEST entry through `md encode`
+     then `md decode`, asserting template-string round-trip.
+   - `json_snapshots.rs` (gated on `feature = "json"`) runs `insta`
+     snapshot tests on every MANIFEST entry's `decode --json` and
+     `inspect --json` output.
+
+   Net: no SHA pin is needed because the corpus's *structural*
+   fidelity is asserted at three independent layers. The audit
+   matrix's conditional Critical-escalation does NOT trigger.

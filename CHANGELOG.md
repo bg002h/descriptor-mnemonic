@@ -4,6 +4,59 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.16.2] — 2026-05-07
+
+Audit-cycle close-out release. **No library API or wire-format change.**
+Closes the v0.7.1 (toolkit-wide) audit-cycle for md-codec; pinned the
+single net-new BIP test vector identified by the Phase 0 audit matrix
+and reclassified the remainder.
+
+### What's new
+
+- `crates/md-codec/tests/wallet_policy.rs::bip388_388_2_sh_wpkh_bip49_template_shape_round_trip`:
+  one new test, citing [BIP-388 §Test Vectors][bip388-tv] policy 388.2
+  (`sh(wpkh(@0/<0;1>/*))`, BIP-49 nested-segwit single-sig). Pins the
+  template-shape encode→decode round-trip with a populated
+  `m/49'/0'/0'` `path_decl`. The spec's exact xpub byte-pin
+  (`[6738736c/49'/0'/1']xpub6Bex1...`) is OUT-OF-SCOPE-PER-SPEC at this
+  layer because BIP-388 ships no underlying seed.
+- `design/agent-reports/v0_7_1-bip-test-vector-audit-matrix.md`
+  Discoveries section updated: Discovery #4 records that corpus drift
+  discipline is GREEN (asserted via `diff -r` byte-identity in
+  `md-cli/tests/vector_corpus.rs`, functionally equivalent to and
+  stronger than SHA-256 pinning), resolving the Phase 0 AMBIGUOUS flag
+  on `tests/vectors/manifest.rs` SHA-pin posture without escalation.
+- BIP-380 §Test Vectors row 380.1 reclassified
+  OUT-OF-SCOPE-PER-LAYER for md-codec: the library has no
+  descriptor-string emit surface (descriptor-string emission lives in
+  md-cli, rust-miniscript-backed). Transitive coverage chain
+  documented in the matrix.
+
+### What didn't change
+
+- Library public API. v0.11 wire format. BCH primitives.
+- All format identity computations (PolicyId, EncodingId,
+  TemplateId, ChunkSetId).
+- The 9-fixture `tests/vectors/` corpus tree.
+
+### Audit-cycle byproduct (md-cli)
+
+- `md_cli::error::CliError::Compile` gains `#[allow(dead_code)]` with
+  a doc-comment explaining it's a feature-gated reserved variant
+  (constructed only under `cli-compiler`). Closes a latent
+  `-D dead-code` clippy regression that surfaced when clippy was run
+  with `-D warnings` on default features.
+
+### BIP conformance posture
+
+md1's BCH plumbing is BIP-93-derived but **not** BIP-93-bit-identical
+(distinct NUMS target residue + HRP-mixing per `crates/md-codec/src/bch.rs`).
+BIP-93 vectors MUST NOT be pinned as conformance vectors; this is
+spec-level by design and documented in the audit matrix
+(`design/agent-reports/v0_7_1-bip-test-vector-audit-matrix.md` §BIP-93).
+
+[bip388-tv]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki#test-vectors
+
 ## md-cli [0.1.1] — 2026-05-03
 
 Pure cleanup release. **No CLI behavior change.** Closes 11 v0.16.x-tier
