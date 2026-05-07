@@ -24,7 +24,11 @@ The previously-planned `mc-codex32` shared-crate extraction (originally gated on
 **Recently resolved:**
 
 - **md-codec v0.10.0:** `md-per-at-N-path-tag-allocation` (Tag::OriginPaths = 0x36; header bit 3 reclaimed; per-`@N` divergent-path encoding shipped). mk1's companion `md-per-N-path-tag-allocation` closes in lockstep.
-- **md-codec v0.9.0:** `chunk-set-id-rename`, `md-path-dictionary-0x16-gap`, `path-dictionary-mirror-stewardship`. mk1's BIP-submission gate was cleared in v0.9.0.
+- **md-codec v0.9.0:** `chunk-set-id-rename`, `md-path-dictionary-0x16-gap`. mk1's BIP-submission gate was cleared in v0.9.0.
+
+**Recently retired (invariants no longer in force):**
+
+- **Path-dictionary mirror invariant (RETIRED).** md-codec v0.10.0 carried `Tag::OriginPaths = 0x36` (and v0.10.x its predecessor `Tag::SharedPath`) as a path-dictionary table compatible byte-for-byte with mk1's. md-codec v0.11 dropped path dictionaries from md1 entirely as part of the v0.11 wire-format cleanup — paths are now encoded explicitly via `OriginPath` (see `design/SPEC_v0_11_wire_format.md` §1.4: "Wire-layer dictionaries (path, use-site-path, shape). Considered and rejected for architectural cleanliness"). mk-codec v0.2.2 mirrored that retirement on the mk1 side: the prose mirror clause was dropped from mk-codec's path-dictionary doc-comments, mk-codec's SPEC, and the mk1 BIP draft, and mk1's path dictionary is now documented as **mk1-internal** (standalone). The mk1↔md1 lockstep mirror invariant — formalized in v0.9.0's stewardship contract and tracked as `path-dictionary-mirror-stewardship` in mk1's FOLLOWUPS — is therefore RETIRED. No md1-side change ships in this cross-repo coordination event; this is documentation-only on both sides.
 
 ## Other repo-specific notes
 
