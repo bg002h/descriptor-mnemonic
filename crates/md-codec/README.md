@@ -93,4 +93,4 @@ md-codec = "0.16"
 
 ## License
 
-CC0-1.0 — see [`../../LICENSE`](../../LICENSE).
+MIT License — see [`../../LICENSE`](../../LICENSE).
