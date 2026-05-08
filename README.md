@@ -5,7 +5,7 @@
 > **Status: Pre-Draft, AI + reference implementation, awaiting human review.**
 > This specification was produced by an AI assistant in collaboration with
 > the author, and is shipped alongside a working reference implementation
-> split across two Rust crates (CC0-1.0): the codec library at
+> split across two Rust crates (MIT): the codec library at
 > [`crates/md-codec/`](crates/md-codec/) and the `md` CLI at
 > [`crates/md-cli/`](crates/md-cli/), locking the v0.1 wire format with
 > committed test vectors. The spec and impl have
@@ -116,9 +116,9 @@ The next development steps are tracked in `design/POLICY_BACKUP.md` §10:
 
 ## License
 
-The specification text in this repository is dedicated to the public
-domain under [CC0-1.0](LICENSE). The reference implementation in
-`crates/md-codec/` is released under the same CC0-1.0 license.
+The specification text in this repository and the reference implementation
+in `crates/md-codec/` and `crates/md-cli/` are released under the
+[MIT License](LICENSE).
 
 ## Contact
 
