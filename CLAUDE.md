@@ -30,6 +30,10 @@ The previously-planned `mc-codex32` shared-crate extraction (originally gated on
 
 - **Path-dictionary mirror invariant (RETIRED).** md-codec v0.10.0 carried `Tag::OriginPaths = 0x36` (and v0.10.x its predecessor `Tag::SharedPath`) as a path-dictionary table compatible byte-for-byte with mk1's. md-codec v0.11 dropped path dictionaries from md1 entirely as part of the v0.11 wire-format cleanup — paths are now encoded explicitly via `OriginPath` (see `design/SPEC_v0_11_wire_format.md` §1.4: "Wire-layer dictionaries (path, use-site-path, shape). Considered and rejected for architectural cleanliness"). mk-codec v0.2.2 mirrored that retirement on the mk1 side: the prose mirror clause was dropped from mk-codec's path-dictionary doc-comments, mk-codec's SPEC, and the mk1 BIP draft, and mk1's path dictionary is now documented as **mk1-internal** (standalone). The mk1↔md1 lockstep mirror invariant — formalized in v0.9.0's stewardship contract and tracked as `path-dictionary-mirror-stewardship` in mk1's FOLLOWUPS — is therefore RETIRED. No md1-side change ships in this cross-repo coordination event; this is documentation-only on both sides.
 
+## Manual coverage
+
+The end-user manual for the m-format star lives in the sibling `bg002h/mnemonic-toolkit` repo at `docs/manual/`. v0.1 of the manual mirrors `md-cli` verbatim under `docs/manual/src/40-cli-reference/42-md.md`. **Any flag/API change to `md-cli` in this repo must update that chapter in lockstep with the implementing PR.** The manual's `tests/lint.sh flag-coverage` step gates on missing flags. See `design/FOLLOWUPS.md` entry `manual-cli-surface-mirror` for the canonical record; primary entry lives in the toolkit repo.
+
 ## Other repo-specific notes
 
 - The reference implementation is in `crates/md-codec/`. Sibling crates: `crates/md-signer-compat/`.

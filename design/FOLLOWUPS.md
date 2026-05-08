@@ -45,6 +45,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `manual-cli-surface-mirror` — md-cli flag/API changes must mirror to the toolkit-side user manual
+
+- **Surfaced:** 2026-05-07, m-format-star user manual v0.1 release in `bg002h/mnemonic-toolkit` (`manual-v0.1.0` tag; toolkit PR #1).
+- **Where:** Cross-repo coordination only; no md-codec / md-cli source change required at filing time. Future md-cli flag additions must touch `mnemonic-toolkit/docs/manual/src/40-cli-reference/42-md.md` in lockstep.
+- **What:** v0.1 of the m-format-star user manual lives in the `mnemonic-toolkit` repo and mirrors `md-cli`'s 8 subcommands (~22 flags) verbatim against md-codec v0.16.2 / md-cli v0.16.x. The manual's `tests/lint.sh flag-coverage` CI step parses `--help` output for each `<binary, subcommand>` pair and asserts each flag appears in the manual chapter. Adding or removing a flag in `md-cli` without updating the manual will fail the manual-side CI on the next push to `docs/manual/`. **Companion:** primary entry `manual-cli-surface-mirror` in `mnemonic-toolkit/design/FOLLOWUPS.md`; sibling companions in `mnemonic-secret/design/FOLLOWUPS.md` and `mnemonic-key/design/FOLLOWUPS.md`.
+- **Why filed:** the manual is a separate artifact (its own `manual-v*` versioning); without an explicit mirror invariant, sibling-side flag changes would silently drift the manual.
+- **Status:** `open` (mirror invariant active for the lifetime of `mnemonic-toolkit/docs/manual/`)
+- **Tier:** `cross-repo`
+
 ### `ms1-v01-payload-bracket-overflow-prefix-byte-incompatibility` — ms1 v0.1 wire-format plan needs revision (BIP-93 codex32 length-bracket conflict with locked `0x00` prefix byte)
 
 - **Surfaced:** 2026-05-03 pre-SPEC spike in `mnemonic-secret` repo (in conversation; before ms1's SPEC drafted). Companion: primary entry of same id in `mnemonic-secret/design/FOLLOWUPS.md`; mirror in `mnemonic-key/design/FOLLOWUPS.md`.
