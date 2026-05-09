@@ -1,11 +1,17 @@
 use crate::error::CliError;
 use crate::compile::{compile_policy_to_template, ScriptContext};
 
-pub fn run(expr: &str, ctx_str: &str, json: bool) -> Result<(), CliError> {
+pub fn run(
+    expr: &str,
+    ctx_str: &str,
+    unspendable_key: Option<&str>,
+    json: bool,
+) -> Result<(), CliError> {
     let ctx: ScriptContext = ctx_str.parse().map_err(|e: crate::compile::CompileError| {
         CliError::Compile(e.to_string())
     })?;
-    let template = compile_policy_to_template(expr, ctx).map_err(CliError::from)?;
+    let template = compile_policy_to_template(expr, ctx, unspendable_key)
+        .map_err(CliError::from)?;
 
     #[cfg(feature = "json")]
     if json {

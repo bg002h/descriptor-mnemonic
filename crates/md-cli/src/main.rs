@@ -66,6 +66,12 @@ enum Command {
         /// Script context for `--from-policy`.
         #[arg(long, value_name = "CTX", value_parser = ["tap", "segwitv0"])]
         context: Option<String>,
+        /// Tap-context only: fallback unspendable internal key passed to
+        /// miniscript's `compile_tr`. Defaults to BIP-341 NUMS H-point when
+        /// omitted (auto-NUMS); supplying a value is rare and used to force
+        /// a specific NUMS-equivalent key. Rejected when --context segwitv0.
+        #[arg(long, value_name = "KEY")]
+        unspendable_key: Option<String>,
         /// Override the inferred shared derivation path.
         #[arg(long, value_name = "PATH")]
         path: Option<String>,
@@ -137,6 +143,12 @@ enum Command {
         expr: String,
         #[arg(long, value_name = "CTX", value_parser = ["tap", "segwitv0"], required = true)]
         context: String,
+        /// Tap-context only: fallback unspendable internal key passed to
+        /// miniscript's `compile_tr`. Defaults to BIP-341 NUMS H-point when
+        /// omitted (auto-NUMS); supplying a value is rare. Rejected when
+        /// --context segwitv0.
+        #[arg(long, value_name = "KEY")]
+        unspendable_key: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -195,22 +207,35 @@ fn main() -> ExitCode {
 fn dispatch(c: Command) -> Result<(), CliError> {
     match c {
         Command::Encode {
-            template, from_policy, context, path: _,
+            template, from_policy, context, unspendable_key, path: _,
             keys, fingerprints, network, force_chunked, force_long_code,
             policy_id_fingerprint, json,
         } => {
             let template_str: String = if let Some(expr) = from_policy {
                 #[cfg(feature = "cli-compiler")]
                 {
+                    if unspendable_key.as_deref() == Some("") {
+                        return Err(CliError::BadArg(
+                            "--unspendable-key must not be empty (omit the flag for auto-NUMS default)".into()));
+                    }
                     let ctx: compile::ScriptContext = context
                         .ok_or_else(|| CliError::BadArg("--from-policy requires --context tap|segwitv0".into()))?
                         .parse().map_err(|e: compile::CompileError| CliError::Compile(e.to_string()))?;
-                    compile::compile_policy_to_template(&expr, ctx).map_err(CliError::from)?
+                    if matches!(ctx, compile::ScriptContext::SegwitV0) && unspendable_key.is_some() {
+                        return Err(CliError::BadArg(
+                            "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
+                    }
+                    compile::compile_policy_to_template(&expr, ctx, unspendable_key.as_deref())
+                        .map_err(CliError::from)?
                 }
                 #[cfg(not(feature = "cli-compiler"))]
-                { let _ = (expr, context); return Err(CliError::BadArg(
+                { let _ = (expr, context, unspendable_key); return Err(CliError::BadArg(
                     "--from-policy requires the cli-compiler feature".into())); }
             } else {
+                if unspendable_key.is_some() {
+                    return Err(CliError::BadArg(
+                        "--unspendable-key is only meaningful with --from-policy".into()));
+                }
                 template.ok_or_else(|| CliError::BadArg(
                     "encode: TEMPLATE required (or use --from-policy with cli-compiler)".into()))?
             };
@@ -231,11 +256,21 @@ fn dispatch(c: Command) -> Result<(), CliError> {
         Command::Inspect { strings, json } => cmd::inspect::run(&strings, json),
         Command::Bytecode { strings, json } => cmd::bytecode::run(&strings, json),
         Command::Vectors { out } => cmd::vectors::run(out),
-        Command::Compile { expr, context, json } => {
+        Command::Compile { expr, context, unspendable_key, json } => {
             #[cfg(feature = "cli-compiler")]
-            { cmd::compile::run(&expr, &context, json) }
+            {
+                if unspendable_key.as_deref() == Some("") {
+                    return Err(CliError::BadArg(
+                        "--unspendable-key must not be empty (omit the flag for auto-NUMS default)".into()));
+                }
+                if context == "segwitv0" && unspendable_key.is_some() {
+                    return Err(CliError::BadArg(
+                        "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
+                }
+                cmd::compile::run(&expr, &context, unspendable_key.as_deref(), json)
+            }
             #[cfg(not(feature = "cli-compiler"))]
-            { let _ = (expr, context, json); Err(CliError::BadArg(
+            { let _ = (expr, context, unspendable_key, json); Err(CliError::BadArg(
                 "compile requires the cli-compiler feature; rebuild with --features cli-compiler".into())) }
         },
         Command::Address {
