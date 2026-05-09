@@ -1,8 +1,8 @@
 use crate::error::CliError;
-use crate::parse::keys::{parse_fingerprint, parse_key, ParsedFingerprint};
+use crate::parse::keys::{ParsedFingerprint, parse_fingerprint, parse_key};
 use crate::parse::template::{ctx_for_template, parse_template};
-use md_codec::decode::decode_md1_string;
 use md_codec::chunk::reassemble;
+use md_codec::decode::decode_md1_string;
 use md_codec::encode::Descriptor;
 
 pub struct AddressArgs<'a> {
@@ -29,19 +29,25 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
     // Collect (chain, index, address) tuples first; then emit text or JSON.
     let mut rows: Vec<(u32, u32, String)> = Vec::with_capacity(args.count as usize);
     for k in 0..args.count {
-        let i = args.index.checked_add(k).ok_or_else(|| CliError::BadArg(
-            format!("--index + --count overflows u32: {} + {}", args.index, args.count)
-        ))?;
-        let addr = descriptor.derive_address(args.chain, i, args.network)?.assume_checked();
+        let i = args.index.checked_add(k).ok_or_else(|| {
+            CliError::BadArg(format!(
+                "--index + --count overflows u32: {} + {}",
+                args.index, args.count
+            ))
+        })?;
+        let addr = descriptor
+            .derive_address(args.chain, i, args.network)?
+            .assume_checked();
         rows.push((args.chain, i, addr.to_string()));
     }
 
     #[cfg(feature = "json")]
     if args.json {
         use crate::format::json::SCHEMA;
-        let addresses: Vec<serde_json::Value> = rows.iter().map(|(c, i, a)| {
-            serde_json::json!({ "chain": c, "index": i, "address": a })
-        }).collect();
+        let addresses: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|(c, i, a)| serde_json::json!({ "chain": c, "index": i, "address": a }))
+            .collect();
         let v = serde_json::json!({
             "schema": SCHEMA,
             "network": args.network_str,
@@ -73,12 +79,20 @@ fn build_descriptor(args: &AddressArgs<'_>) -> Result<Descriptor, CliError> {
     if let Some(template) = args.template {
         if args.keys.is_empty() {
             return Err(CliError::BadArg(
-                "--key @i=<XPUB> required when --template is supplied".into()
+                "--key @i=<XPUB> required when --template is supplied".into(),
             ));
         }
         let ctx = ctx_for_template(template);
-        let parsed_keys = args.keys.iter().map(|k| parse_key(k, ctx, args.network)).collect::<Result<Vec<_>, _>>()?;
-        let parsed_fps: Vec<ParsedFingerprint> = args.fingerprints.iter().map(|s| parse_fingerprint(s)).collect::<Result<Vec<_>, _>>()?;
+        let parsed_keys = args
+            .keys
+            .iter()
+            .map(|k| parse_key(k, ctx, args.network))
+            .collect::<Result<Vec<_>, _>>()?;
+        let parsed_fps: Vec<ParsedFingerprint> = args
+            .fingerprints
+            .iter()
+            .map(|s| parse_fingerprint(s))
+            .collect::<Result<Vec<_>, _>>()?;
         return parse_template(template, &parsed_keys, &parsed_fps);
     }
     // Phrase path

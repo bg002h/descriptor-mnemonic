@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use md_codec::canonicalize::canonicalize_placeholder_indices;
 use md_codec::chunk::{reassemble, split};
 use md_codec::decode::{decode_md1_string, decode_payload};
-use md_codec::encode::{encode_md1_string, encode_payload, Descriptor};
+use md_codec::encode::{Descriptor, encode_md1_string, encode_payload};
 use md_codec::error::Error;
 use md_codec::identity::compute_wallet_policy_id;
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
@@ -27,9 +27,18 @@ use md_codec::validate::{validate_explicit_origin_required, validate_placeholder
 fn bip84_path() -> OriginPath {
     OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 84 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 0 },
+            PathComponent {
+                hardened: true,
+                value: 84,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
         ],
     }
 }
@@ -37,10 +46,22 @@ fn bip84_path() -> OriginPath {
 fn bip48_type_2_path() -> OriginPath {
     OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 48 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 2 },
+            PathComponent {
+                hardened: true,
+                value: 48,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 2,
+            },
         ],
     }
 }
@@ -48,9 +69,18 @@ fn bip48_type_2_path() -> OriginPath {
 fn bip86_path() -> OriginPath {
     OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 86 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 0 },
+            PathComponent {
+                hardened: true,
+                value: 86,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
         ],
     }
 }
@@ -58,9 +88,18 @@ fn bip86_path() -> OriginPath {
 fn bip49_path() -> OriginPath {
     OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 49 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 0 },
+            PathComponent {
+                hardened: true,
+                value: 49,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
         ],
     }
 }
@@ -70,7 +109,10 @@ fn empty_path() -> OriginPath {
 }
 
 fn pkk(index: u8) -> Node {
-    Node { tag: Tag::PkK, body: Body::KeyArg { index } }
+    Node {
+        tag: Tag::PkK,
+        body: Body::KeyArg { index },
+    }
 }
 
 /// 33-byte compressed secp256k1 generator point (G), suitable as the
@@ -80,10 +122,9 @@ fn valid_compressed_pubkey() -> [u8; 33] {
     let mut out = [0u8; 33];
     out[0] = 0x02;
     let x: [u8; 32] = [
-        0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
-        0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
-        0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9,
-        0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8, 0x17, 0x98,
+        0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC, 0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B,
+        0x07, 0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9, 0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8,
+        0x17, 0x98,
     ];
     out[1..].copy_from_slice(&x);
     out
@@ -102,13 +143,19 @@ fn make_xpub(seed: u8) -> [u8; 65] {
 }
 
 fn wpkh_at_0() -> Node {
-    Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } }
+    Node {
+        tag: Tag::Wpkh,
+        body: Body::KeyArg { index: 0 },
+    }
 }
 
 fn tr_keypath_at_0() -> Node {
     Node {
         tag: Tag::Tr,
-        body: Body::Tr { key_index: 0, tree: None },
+        body: Body::Tr {
+            key_index: 0,
+            tree: None,
+        },
     }
 }
 
@@ -168,11 +215,7 @@ fn cell_7_wsh_2of3_full() -> Descriptor {
         tree: wsh_sortedmulti_2of3(),
         tlv: TlvSection::new_empty(),
     };
-    d.tlv.fingerprints = Some(vec![
-        (0u8, [0x11; 4]),
-        (1u8, [0x22; 4]),
-        (2u8, [0x33; 4]),
-    ]);
+    d.tlv.fingerprints = Some(vec![(0u8, [0x11; 4]), (1u8, [0x22; 4]), (2u8, [0x33; 4])]);
     d.tlv.pubkeys = Some(vec![
         (0u8, make_xpub(0x10)),
         (1u8, make_xpub(0x20)),
@@ -272,16 +315,16 @@ fn partial_keys_2of2_at0_cell7_at1_cell1() {
     let s = encode_md1_string(&d_partial).unwrap();
     let d2 = decode_md1_string(&s).unwrap();
     assert_eq!(d_partial, d2);
-    assert!(d2.is_wallet_policy(), "any populated Pubkeys → wallet-policy");
+    assert!(
+        d2.is_wallet_policy(),
+        "any populated Pubkeys → wallet-policy"
+    );
 
     // The partial-keys identity must differ from a fully-populated cell-7
     // 2-of-2 — presence-significance gate.
     let mut d_full = d_partial.clone();
     d_full.tlv.fingerprints = Some(vec![(0u8, [0xAA; 4]), (1u8, [0xBB; 4])]);
-    d_full.tlv.pubkeys = Some(vec![
-        (0u8, make_xpub(0x55)),
-        (1u8, make_xpub(0x66)),
-    ]);
+    d_full.tlv.pubkeys = Some(vec![(0u8, make_xpub(0x55)), (1u8, make_xpub(0x66))]);
 
     let id_partial = compute_wallet_policy_id(&d_partial).unwrap();
     let id_full = compute_wallet_policy_id(&d_full).unwrap();
@@ -445,18 +488,42 @@ fn divergent_paths_wallet_policy_2of2_round_trip() {
     // origin paths), full TLVs (fp + xpub for each cosigner).
     let path_a = OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 48 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 2 },
+            PathComponent {
+                hardened: true,
+                value: 48,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 2,
+            },
         ],
     };
     let path_b = OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 48 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 1 },
-            PathComponent { hardened: true, value: 2 },
+            PathComponent {
+                hardened: true,
+                value: 48,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 1,
+            },
+            PathComponent {
+                hardened: true,
+                value: 2,
+            },
         ],
     };
     let mut d = Descriptor {
@@ -479,10 +546,7 @@ fn divergent_paths_wallet_policy_2of2_round_trip() {
         tlv: TlvSection::new_empty(),
     };
     d.tlv.fingerprints = Some(vec![(0u8, [0xAA; 4]), (1u8, [0xBB; 4])]);
-    d.tlv.pubkeys = Some(vec![
-        (0u8, make_xpub(0x77)),
-        (1u8, make_xpub(0x88)),
-    ]);
+    d.tlv.pubkeys = Some(vec![(0u8, make_xpub(0x77)), (1u8, make_xpub(0x88))]);
 
     // Round-trip.
     let s = encode_md1_string(&d).unwrap();

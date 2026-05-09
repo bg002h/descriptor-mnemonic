@@ -82,7 +82,9 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                 return Err(Error::ThresholdOutOfRange { k: *k });
             }
             if !(1..=32).contains(&(children.len() as u32)) {
-                return Err(Error::ChildCountOutOfRange { count: children.len() });
+                return Err(Error::ChildCountOutOfRange {
+                    count: children.len(),
+                });
             }
             w.write_bits((*k - 1) as u64, 5);
             w.write_bits((children.len() - 1) as u64, 5);
@@ -298,9 +300,18 @@ mod tests {
             body: Body::Variable {
                 k: 2,
                 children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 1 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 2 },
+                    },
                 ],
             },
         };
@@ -319,9 +330,18 @@ mod tests {
             body: Body::Variable {
                 k: 2,
                 children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 1 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 2 },
+                    },
                 ],
             },
         };
@@ -334,7 +354,10 @@ mod tests {
     fn tr_bip86_no_tree() {
         let n = Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 0, tree: None },
+            body: Body::Tr {
+                key_index: 0,
+                tree: None,
+            },
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
@@ -353,9 +376,18 @@ mod tests {
             body: Body::Variable {
                 k: 2,
                 children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 1 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 2 },
+                    },
                 ],
             },
         };
@@ -378,8 +410,14 @@ mod tests {
                     body: Body::Variable {
                         k: 2,
                         children: vec![
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 1 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 2 },
+                            },
                         ],
                     },
                 })),
@@ -410,7 +448,10 @@ mod tests {
     #[test]
     fn sha256_round_trip() {
         let h = [0xab; 32];
-        let n = Node { tag: Tag::Sha256, body: Body::Hash256Body(h) };
+        let n = Node {
+            tag: Tag::Sha256,
+            body: Body::Hash256Body(h),
+        };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
         // Tag(5) + 256 = 261 bits
@@ -423,7 +464,10 @@ mod tests {
     #[test]
     fn hash160_round_trip() {
         let h = [0xcd; 20];
-        let n = Node { tag: Tag::Hash160, body: Body::Hash160Body(h) };
+        let n = Node {
+            tag: Tag::Hash160,
+            body: Body::Hash160Body(h),
+        };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
         // Tag(5) + 160 = 165 bits
@@ -436,7 +480,10 @@ mod tests {
     #[test]
     fn hash256_extension_round_trip() {
         let h = [0xef; 32];
-        let n = Node { tag: Tag::Hash256, body: Body::Hash256Body(h) };
+        let n = Node {
+            tag: Tag::Hash256,
+            body: Body::Hash256Body(h),
+        };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
         // Extension tag = 5+5 = 10 bits, then 256 = 266 total
@@ -449,7 +496,10 @@ mod tests {
     #[test]
     fn ripemd160_extension_round_trip() {
         let h = [0x42; 20];
-        let n = Node { tag: Tag::Ripemd160, body: Body::Hash160Body(h) };
+        let n = Node {
+            tag: Tag::Ripemd160,
+            body: Body::Hash160Body(h),
+        };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
         let bytes = w.into_bytes();
@@ -459,10 +509,13 @@ mod tests {
 
     #[test]
     fn false_round_trip() {
-        let n = Node { tag: Tag::False, body: Body::Empty };
+        let n = Node {
+            tag: Tag::False,
+            body: Body::Empty,
+        };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
-        assert_eq!(w.bit_len(), 10);  // extension tag = 10 bits, no body
+        assert_eq!(w.bit_len(), 10); // extension tag = 10 bits, no body
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
@@ -470,7 +523,10 @@ mod tests {
 
     #[test]
     fn true_round_trip() {
-        let n = Node { tag: Tag::True, body: Body::Empty };
+        let n = Node {
+            tag: Tag::True,
+            body: Body::Empty,
+        };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
         let bytes = w.into_bytes();
@@ -522,9 +578,18 @@ mod tests {
                     body: Body::Variable {
                         k: 2,
                         children: vec![
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 0 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 1 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 2 },
+                            },
                         ],
                     },
                 })),
@@ -555,7 +620,10 @@ mod tests {
                                 body: Body::KeyArg { index: 0 },
                             }]),
                         },
-                        Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                        Node {
+                            tag: Tag::PkK,
+                            body: Body::KeyArg { index: 1 },
+                        },
                     ]),
                 })),
             },

@@ -1,6 +1,6 @@
 use crate::error::CliError;
-use md_codec::decode::decode_md1_string;
 use md_codec::chunk::reassemble;
+use md_codec::decode::decode_md1_string;
 use md_codec::encode::encode_payload;
 
 pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
@@ -16,7 +16,10 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
     if json {
         use crate::format::json::SCHEMA;
         let mut hex = String::with_capacity(bytes.len() * 2);
-        for b in &bytes { use std::fmt::Write as _; write!(hex, "{b:02x}").unwrap(); }
+        for b in &bytes {
+            use std::fmt::Write as _;
+            write!(hex, "{b:02x}").unwrap();
+        }
         let v = serde_json::json!({
             "schema": SCHEMA,
             "payload_bits": bit_len,
@@ -31,7 +34,9 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
     println!("payload-bits: {bit_len}");
     println!("payload-bytes: {}", bytes.len());
     print!("hex: ");
-    for b in &bytes { print!("{b:02x}"); }
+    for b in &bytes {
+        print!("{b:02x}");
+    }
     println!();
     Ok(())
 }

@@ -35,7 +35,7 @@ fn mk_origin(components: &[(bool, u32)]) -> OriginPath {
 /// Returns `true` if `tag` is one of the multisig variants permitted directly
 /// inside a canonical `wsh(...)` or `sh(wsh(...))` wrapper (`multi` or
 /// `sortedmulti`).
-pub (crate) fn is_wsh_inner_multi(tag: Tag) -> bool {
+pub(crate) fn is_wsh_inner_multi(tag: Tag) -> bool {
     matches!(tag, Tag::Multi | Tag::SortedMulti)
 }
 
@@ -45,13 +45,9 @@ pub (crate) fn is_wsh_inner_multi(tag: Tag) -> bool {
 pub fn canonical_origin(tree: &Node) -> Option<OriginPath> {
     match (&tree.tag, &tree.body) {
         // pkh(@N) single-key → m/44'/0'/0'
-        (Tag::Pkh, Body::KeyArg { .. }) => {
-            Some(mk_origin(&[(true, 44), (true, 0), (true, 0)]))
-        }
+        (Tag::Pkh, Body::KeyArg { .. }) => Some(mk_origin(&[(true, 44), (true, 0), (true, 0)])),
         // wpkh(@N) single-key → m/84'/0'/0'
-        (Tag::Wpkh, Body::KeyArg { .. }) => {
-            Some(mk_origin(&[(true, 84), (true, 0), (true, 0)]))
-        }
+        (Tag::Wpkh, Body::KeyArg { .. }) => Some(mk_origin(&[(true, 84), (true, 0), (true, 0)])),
         // tr(@N) key-path only (no TapTree) → m/86'/0'/0'
         (Tag::Tr, Body::Tr { tree: None, .. }) => {
             Some(mk_origin(&[(true, 86), (true, 0), (true, 0)]))
@@ -62,12 +58,7 @@ pub fn canonical_origin(tree: &Node) -> Option<OriginPath> {
         (Tag::Wsh, Body::Children(children))
             if children.len() == 1 && is_wsh_inner_multi(children[0].tag) =>
         {
-            Some(mk_origin(&[
-                (true, 48),
-                (true, 0),
-                (true, 0),
-                (true, 2),
-            ]))
+            Some(mk_origin(&[(true, 48), (true, 0), (true, 0), (true, 2)]))
         }
         // sh(wsh(multi/sortedmulti)) → m/48'/0'/0'/1'
         // sh(sortedmulti) legacy → None (handled by the catch-all below)
@@ -76,12 +67,7 @@ pub fn canonical_origin(tree: &Node) -> Option<OriginPath> {
             if inner.tag == Tag::Wsh {
                 if let Body::Children(grand) = &inner.body {
                     if grand.len() == 1 && is_wsh_inner_multi(grand[0].tag) {
-                        return Some(mk_origin(&[
-                            (true, 48),
-                            (true, 0),
-                            (true, 0),
-                            (true, 1),
-                        ]));
+                        return Some(mk_origin(&[(true, 48), (true, 0), (true, 0), (true, 1)]));
                     }
                 }
             }
@@ -98,17 +84,26 @@ mod tests {
     use crate::tree::{Body, Node};
 
     fn pkh_at(n: u8) -> Node {
-        Node { tag: Tag::Pkh, body: Body::KeyArg { index: n } }
+        Node {
+            tag: Tag::Pkh,
+            body: Body::KeyArg { index: n },
+        }
     }
 
     fn wpkh_at(n: u8) -> Node {
-        Node { tag: Tag::Wpkh, body: Body::KeyArg { index: n } }
+        Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: n },
+        }
     }
 
     fn tr_keypath(n: u8) -> Node {
         Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: n, tree: None },
+            body: Body::Tr {
+                key_index: n,
+                tree: None,
+            },
         }
     }
 
@@ -134,9 +129,18 @@ mod tests {
             body: Body::Variable {
                 k: 2,
                 children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 1 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 2 },
+                    },
                 ],
             },
         }
@@ -148,20 +152,35 @@ mod tests {
             body: Body::Variable {
                 k: 2,
                 children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 1 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 2 },
+                    },
                 ],
             },
         }
     }
 
     fn wsh_of(inner: Node) -> Node {
-        Node { tag: Tag::Wsh, body: Body::Children(vec![inner]) }
+        Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![inner]),
+        }
     }
 
     fn sh_of(inner: Node) -> Node {
-        Node { tag: Tag::Sh, body: Body::Children(vec![inner]) }
+        Node {
+            tag: Tag::Sh,
+            body: Body::Children(vec![inner]),
+        }
     }
 
     #[test]
@@ -239,14 +258,20 @@ mod tests {
     fn bare_wsh_at_n_returns_none() {
         // wsh(@N) — not allowed as a canonical shape; needs explicit override.
         // The inner here is a single pk_k(@0) (single-key wsh, not multisig).
-        let inner = Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } };
+        let inner = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 0 },
+        };
         assert_eq!(canonical_origin(&wsh_of(inner)), None);
     }
 
     #[test]
     fn bare_sh_at_n_returns_none() {
         // sh(@N) — not allowed as a canonical shape.
-        let inner = Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } };
+        let inner = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 0 },
+        };
         assert_eq!(canonical_origin(&sh_of(inner)), None);
     }
 
@@ -257,8 +282,14 @@ mod tests {
         let inner = Node {
             tag: Tag::OrD,
             body: Body::Children(vec![
-                Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                Node { tag: Tag::PkH, body: Body::KeyArg { index: 1 } },
+                Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: 0 },
+                },
+                Node {
+                    tag: Tag::PkH,
+                    body: Body::KeyArg { index: 1 },
+                },
             ]),
         };
         assert_eq!(canonical_origin(&wsh_of(inner)), None);

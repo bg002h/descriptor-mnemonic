@@ -17,16 +17,24 @@ impl std::fmt::Display for CompileError {
     }
 }
 impl From<CompileError> for CliError {
-    fn from(e: CompileError) -> Self { CliError::Compile(e.to_string()) }
+    fn from(e: CompileError) -> Self {
+        CliError::Compile(e.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ScriptContext { Tap, SegwitV0 }
+pub enum ScriptContext {
+    Tap,
+    SegwitV0,
+}
 impl FromStr for ScriptContext {
     type Err = CompileError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s { "tap" => Ok(Self::Tap), "segwitv0" => Ok(Self::SegwitV0),
-                  other => Err(CompileError::BadContext(other.into())) }
+        match s {
+            "tap" => Ok(Self::Tap),
+            "segwitv0" => Ok(Self::SegwitV0),
+            other => Err(CompileError::BadContext(other.into())),
+        }
     }
 }
 
@@ -53,16 +61,21 @@ pub fn compile_policy_to_template(
     unspendable_key: Option<&str>,
 ) -> Result<String, CompileError> {
     use miniscript::policy::concrete::Policy;
-    let policy: Policy<String> = expr.parse().map_err(|e| CompileError::Parse(format!("{e}")))?;
+    let policy: Policy<String> = expr
+        .parse()
+        .map_err(|e| CompileError::Parse(format!("{e}")))?;
     match ctx {
         ScriptContext::SegwitV0 => {
             // wsh() has no internal-key concept; unspendable_key is silently
             // ignored. The CLI layer rejects the flag for --context segwitv0
             // before reaching here, but the assertion guards programmatic
             // callers in debug builds.
-            debug_assert!(unspendable_key.is_none(),
-                "unspendable_key must be None for SegwitV0; CLI should reject upstream");
-            let ms = policy.compile::<miniscript::Segwitv0>()
+            debug_assert!(
+                unspendable_key.is_none(),
+                "unspendable_key must be None for SegwitV0; CLI should reject upstream"
+            );
+            let ms = policy
+                .compile::<miniscript::Segwitv0>()
                 .map_err(|e| CompileError::Compile(format!("{e}")))?;
             Ok(format!("wsh({ms})"))
         }
@@ -77,7 +90,8 @@ pub fn compile_policy_to_template(
             let unspendable = unspendable_key
                 .map(String::from)
                 .or_else(|| Some(crate::parse::template::NUMS_H_POINT_X_ONLY_HEX.to_string()));
-            let desc = policy.compile_tr(unspendable)
+            let desc = policy
+                .compile_tr(unspendable)
                 .map_err(|e| CompileError::Compile(format!("{e}")))?;
             // Descriptor::to_string() includes a trailing #<8-char-checksum>
             // (rust-miniscript's BIP-380 descriptor checksum); md1's encode
@@ -113,7 +127,10 @@ mod tests {
     #[test]
     fn compile_pk_tap_keypath_only() {
         let s = compile_policy_to_template("pk(@0)", ScriptContext::Tap, None).unwrap();
-        assert_eq!(s, "tr(@0)", "single-key tap should extract @0 as internal key");
+        assert_eq!(
+            s, "tr(@0)",
+            "single-key tap should extract @0 as internal key"
+        );
     }
 
     /// Spike-verified: `or(pk(@0),pk(@1))` → miniscript extracts @1 as internal,
@@ -130,8 +147,10 @@ mod tests {
     fn compile_or_pk_and_pk_older_tap() {
         let s = compile_policy_to_template(
             "or(pk(@0),and(pk(@1),older(144)))",
-            ScriptContext::Tap, None,
-        ).unwrap();
+            ScriptContext::Tap,
+            None,
+        )
+        .unwrap();
         assert_eq!(s, "tr(@0,and_v(v:pk(@1),older(144)))");
     }
 
@@ -139,22 +158,24 @@ mod tests {
     /// auto-NUMS default kicks in → `tr(<NUMS>, multi_a(2,@0,@1,@2))`.
     #[test]
     fn compile_thresh_2_of_3_tap_auto_nums() {
-        let s = compile_policy_to_template(
-            "thresh(2,pk(@0),pk(@1),pk(@2))",
-            ScriptContext::Tap, None,
-        ).unwrap();
-        assert_eq!(s, format!("tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0,@1,@2))"));
+        let s =
+            compile_policy_to_template("thresh(2,pk(@0),pk(@1),pk(@2))", ScriptContext::Tap, None)
+                .unwrap();
+        assert_eq!(
+            s,
+            format!("tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0,@1,@2))")
+        );
     }
 
     /// Spike-verified: `and(pk(@0),pk(@1))` → no single-key extractable;
     /// auto-NUMS default → `tr(<NUMS>, and_v(v:pk(@0),pk(@1)))`.
     #[test]
     fn compile_and_pk_pk_tap_auto_nums() {
-        let s = compile_policy_to_template(
-            "and(pk(@0),pk(@1))",
-            ScriptContext::Tap, None,
-        ).unwrap();
-        assert_eq!(s, format!("tr({NUMS_H_POINT_X_ONLY_HEX},and_v(v:pk(@0),pk(@1)))"));
+        let s = compile_policy_to_template("and(pk(@0),pk(@1))", ScriptContext::Tap, None).unwrap();
+        assert_eq!(
+            s,
+            format!("tr({NUMS_H_POINT_X_ONLY_HEX},and_v(v:pk(@0),pk(@1)))")
+        );
     }
 
     /// Explicit NUMS override: `pk(@0)` with `--unspendable-key <NUMS>` forces
@@ -164,11 +185,9 @@ mod tests {
     /// (Spike pass 2 verified: `pk(@0)` with `Some("NUMS")` → `tr(@0)`.)
     #[test]
     fn compile_pk_tap_explicit_nums_extract_still_wins() {
-        let s = compile_policy_to_template(
-            "pk(@0)",
-            ScriptContext::Tap,
-            Some(NUMS_H_POINT_X_ONLY_HEX),
-        ).unwrap();
+        let s =
+            compile_policy_to_template("pk(@0)", ScriptContext::Tap, Some(NUMS_H_POINT_X_ONLY_HEX))
+                .unwrap();
         // Same as auto-NUMS default — extract-first behavior holds.
         assert_eq!(s, "tr(@0)");
     }
@@ -179,7 +198,9 @@ mod tests {
     #[test]
     fn compile_strips_descriptor_checksum() {
         let s = compile_policy_to_template("pk(@0)", ScriptContext::Tap, None).unwrap();
-        assert!(!s.contains('#'),
-            "compile_policy_to_template output must not include #<checksum>; got {s:?}");
+        assert!(
+            !s.contains('#'),
+            "compile_policy_to_template output must not include #<checksum>; got {s:?}"
+        );
     }
 }

@@ -7,7 +7,8 @@ use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
 use bitcoin::secp256k1::Secp256k1;
 use std::str::FromStr;
 
-const ABANDON: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const ABANDON: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 fn account_xpub(path: &str, network: Network) -> Xpub {
     let mn = bip39::Mnemonic::parse(ABANDON).unwrap();
@@ -23,9 +24,20 @@ fn account_xpub(path: &str, network: Network) -> Xpub {
 fn snapshot_wpkh_mainnet_receive_0_to_2() {
     let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
     let key = format!("@0={xpub}");
-    let out = Command::cargo_bin("md").unwrap()
-        .args(["address", "--template", "wpkh(@0/<0;1>/*)", "--key", &key, "--count", "3", "--json"])
-        .output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "address",
+            "--template",
+            "wpkh(@0/<0;1>/*)",
+            "--key",
+            &key,
+            "--count",
+            "3",
+            "--json",
+        ])
+        .output()
+        .unwrap();
     let body = String::from_utf8(out.stdout).unwrap();
     insta::assert_snapshot!("wpkh_mainnet_receive_0_to_2", body);
 }
@@ -34,9 +46,19 @@ fn snapshot_wpkh_mainnet_receive_0_to_2() {
 fn snapshot_wpkh_mainnet_change_0() {
     let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
     let key = format!("@0={xpub}");
-    let out = Command::cargo_bin("md").unwrap()
-        .args(["address", "--template", "wpkh(@0/<0;1>/*)", "--key", &key, "--change", "--json"])
-        .output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "address",
+            "--template",
+            "wpkh(@0/<0;1>/*)",
+            "--key",
+            &key,
+            "--change",
+            "--json",
+        ])
+        .output()
+        .unwrap();
     let body = String::from_utf8(out.stdout).unwrap();
     insta::assert_snapshot!("wpkh_mainnet_change_0", body);
 }
@@ -45,9 +67,20 @@ fn snapshot_wpkh_mainnet_change_0() {
 fn snapshot_wpkh_testnet_receive_0() {
     let xpub = account_xpub("m/84'/1'/0'", Network::Testnet);
     let key = format!("@0={xpub}");
-    let out = Command::cargo_bin("md").unwrap()
-        .args(["address", "--template", "wpkh(@0/<0;1>/*)", "--key", &key, "--network", "testnet", "--json"])
-        .output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "address",
+            "--template",
+            "wpkh(@0/<0;1>/*)",
+            "--key",
+            &key,
+            "--network",
+            "testnet",
+            "--json",
+        ])
+        .output()
+        .unwrap();
     let body = String::from_utf8(out.stdout).unwrap();
     insta::assert_snapshot!("wpkh_testnet_receive_0", body);
 }
@@ -60,10 +93,20 @@ fn snapshot_wsh_2of2_mainnet_receive_0() {
     let xpub = account_xpub("m/48'/0'/0'/2'", Network::Bitcoin);
     let key_a = format!("@0={xpub}");
     let key_b = format!("@1={xpub}");
-    let out = Command::cargo_bin("md").unwrap()
-        .args(["address", "--template", "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
-               "--key", &key_a, "--key", &key_b, "--json"])
-        .output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "address",
+            "--template",
+            "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
+            "--key",
+            &key_a,
+            "--key",
+            &key_b,
+            "--json",
+        ])
+        .output()
+        .unwrap();
     let body = String::from_utf8(out.stdout).unwrap();
     insta::assert_snapshot!("wsh_2of2_mainnet_receive_0", body);
 }

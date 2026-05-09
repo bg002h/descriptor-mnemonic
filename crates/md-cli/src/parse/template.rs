@@ -36,32 +36,55 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         //   2: optional origin path (e.g. "/48'/0'/0'/2'")
         //   3: optional multipath body (e.g. "0;1")
         //   4: wildcard with optional hardening (e.g. "*", "*'", "*h")
-        Regex::new(
-            r"@(\d+)((?:/\d+'?)*)(?:/<([0-9;]+)>)?(/\*(?:'|h)?)?"
-        ).expect("static regex compiles")
+        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<([0-9;]+)>)?(/\*(?:'|h)?)?")
+            .expect("static regex compiles")
     });
     let mut out = Vec::new();
     for caps in re.captures_iter(template) {
-        let i: u8 = caps[1].parse().map_err(|_| CliError::TemplateParse(
-            format!("@i index out of range: @{}", &caps[1])
-        ))?;
+        let i: u8 = caps[1].parse().map_err(|_| {
+            CliError::TemplateParse(format!("@i index out of range: @{}", &caps[1]))
+        })?;
         let origin_path = if let Some(m) = caps.get(2) {
             let s = m.as_str();
-            if s.is_empty() { None } else {
-                Some(DerivationPath::from_str(s.trim_start_matches('/'))
-                    .map_err(|e| CliError::TemplateParse(format!("@{i} origin path `{s}`: {e}")))?)
+            if s.is_empty() {
+                None
+            } else {
+                Some(
+                    DerivationPath::from_str(s.trim_start_matches('/')).map_err(|e| {
+                        CliError::TemplateParse(format!("@{i} origin path `{s}`: {e}"))
+                    })?,
+                )
             }
-        } else { None };
+        } else {
+            None
+        };
         let multipath_alts = if let Some(m) = caps.get(3) {
-            m.as_str().split(';').map(|n| n.parse::<u32>()
-                .map_err(|_| CliError::TemplateParse(format!("@{i} multipath alt `{n}` not u32"))))
+            m.as_str()
+                .split(';')
+                .map(|n| {
+                    n.parse::<u32>().map_err(|_| {
+                        CliError::TemplateParse(format!("@{i} multipath alt `{n}` not u32"))
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()?
-        } else { Vec::new() };
-        let wildcard_hardened = caps.get(4).map(|m| m.as_str().ends_with('\'') || m.as_str().ends_with('h')).unwrap_or(false);
-        out.push(PlaceholderOccurrence { i, origin_path, multipath_alts, wildcard_hardened });
+        } else {
+            Vec::new()
+        };
+        let wildcard_hardened = caps
+            .get(4)
+            .map(|m| m.as_str().ends_with('\'') || m.as_str().ends_with('h'))
+            .unwrap_or(false);
+        out.push(PlaceholderOccurrence {
+            i,
+            origin_path,
+            multipath_alts,
+            wildcard_hardened,
+        });
     }
     if out.is_empty() {
-        return Err(CliError::TemplateParse("template contains no @i placeholders".into()));
+        return Err(CliError::TemplateParse(
+            "template contains no @i placeholders".into(),
+        ));
     }
     Ok(out)
 }
@@ -108,7 +131,10 @@ mod lex_tests {
     #[test]
     fn origin_path_extracted() {
         let v = lex_placeholders("wpkh(@0/48'/0'/0'/2'/<0;1>/*)").unwrap();
-        assert_eq!(v[0].origin_path.as_ref().unwrap().to_string(), "48'/0'/0'/2'");
+        assert_eq!(
+            v[0].origin_path.as_ref().unwrap().to_string(),
+            "48'/0'/0'/2'"
+        );
     }
 
     #[test]
@@ -124,9 +150,9 @@ mod lex_tests {
     }
 }
 
+use bitcoin::bip32::ChildNumber;
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 use md_codec::use_site_path::{Alternative, UseSitePath};
-use bitcoin::bip32::ChildNumber;
 
 /// Resolved per-`@i` view after consistency checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,9 +163,12 @@ pub struct ResolvedPlaceholders {
     pub use_site_path_overrides: Vec<(u8, UseSitePath)>,
 }
 
-pub fn resolve_placeholders(occs: &[PlaceholderOccurrence]) -> Result<ResolvedPlaceholders, CliError> {
+pub fn resolve_placeholders(
+    occs: &[PlaceholderOccurrence],
+) -> Result<ResolvedPlaceholders, CliError> {
     // Collapse same-@i occurrences; reject if conflicting.
-    let mut by_i: std::collections::BTreeMap<u8, &PlaceholderOccurrence> = std::collections::BTreeMap::new();
+    let mut by_i: std::collections::BTreeMap<u8, &PlaceholderOccurrence> =
+        std::collections::BTreeMap::new();
     for occ in occs {
         if let Some(prev) = by_i.get(&occ.i) {
             if prev.multipath_alts != occ.multipath_alts
@@ -147,17 +176,25 @@ pub fn resolve_placeholders(occs: &[PlaceholderOccurrence]) -> Result<ResolvedPl
                 || prev.origin_path != occ.origin_path
             {
                 return Err(CliError::TemplateParse(format!(
-                    "@{} appears with inconsistent path/multipath/hardening", occ.i
+                    "@{} appears with inconsistent path/multipath/hardening",
+                    occ.i
                 )));
             }
         } else {
             by_i.insert(occ.i, occ);
         }
     }
-    let n = (by_i.keys().max().copied().ok_or_else(|| CliError::TemplateParse("no placeholders".into()))? as usize + 1) as u8;
+    let n = (by_i
+        .keys()
+        .max()
+        .copied()
+        .ok_or_else(|| CliError::TemplateParse("no placeholders".into()))? as usize
+        + 1) as u8;
     for i in 0..n {
         if !by_i.contains_key(&i) {
-            return Err(CliError::TemplateParse(format!("@{i} not present; placeholders must be dense 0..n")));
+            return Err(CliError::TemplateParse(format!(
+                "@{i} not present; placeholders must be dense 0..n"
+            )));
         }
     }
     let at0 = by_i[&0];
@@ -171,12 +208,22 @@ pub fn resolve_placeholders(occs: &[PlaceholderOccurrence]) -> Result<ResolvedPl
         }
     }
     let path_decl = make_path_decl(&by_i, n, at0)?;
-    Ok(ResolvedPlaceholders { n, path_decl, use_site_path, use_site_path_overrides })
+    Ok(ResolvedPlaceholders {
+        n,
+        path_decl,
+        use_site_path,
+        use_site_path_overrides,
+    })
 }
 
 fn make_use_site_path(occ: &PlaceholderOccurrence) -> Result<UseSitePath, CliError> {
-    let alts: Vec<Alternative> = occ.multipath_alts.iter()
-        .map(|v| Alternative { hardened: false, value: *v })
+    let alts: Vec<Alternative> = occ
+        .multipath_alts
+        .iter()
+        .map(|v| Alternative {
+            hardened: false,
+            value: *v,
+        })
         .collect();
     Ok(UseSitePath {
         multipath: if alts.is_empty() { None } else { Some(alts) },
@@ -190,10 +237,19 @@ fn make_use_site_path(occ: &PlaceholderOccurrence) -> Result<UseSitePath, CliErr
 pub(crate) fn to_origin_path(p: Option<&bitcoin::bip32::DerivationPath>) -> OriginPath {
     let components = match p {
         None => Vec::new(),
-        Some(dp) => dp.into_iter().map(|c| match c {
-            ChildNumber::Normal { index }   => PathComponent { hardened: false, value: *index },
-            ChildNumber::Hardened { index } => PathComponent { hardened: true,  value: *index },
-        }).collect(),
+        Some(dp) => dp
+            .into_iter()
+            .map(|c| match c {
+                ChildNumber::Normal { index } => PathComponent {
+                    hardened: false,
+                    value: *index,
+                },
+                ChildNumber::Hardened { index } => PathComponent {
+                    hardened: true,
+                    value: *index,
+                },
+            })
+            .collect(),
     };
     OriginPath { components }
 }
@@ -207,7 +263,9 @@ fn make_path_decl(
     let paths = if all_same {
         PathDeclPaths::Shared(to_origin_path(at0.origin_path.as_ref()))
     } else {
-        let v: Vec<OriginPath> = (0..n).map(|i| to_origin_path(by_i[&i].origin_path.as_ref())).collect();
+        let v: Vec<OriginPath> = (0..n)
+            .map(|i| to_origin_path(by_i[&i].origin_path.as_ref()))
+            .collect();
         PathDeclPaths::Divergent(v)
     };
     Ok(PathDecl { n, paths })
@@ -246,8 +304,18 @@ mod resolve_tests {
     fn rejects_same_at_i_conflicting() {
         // Synthesize directly, lexer would also accept these as separate occurrences.
         let occs = vec![
-            PlaceholderOccurrence { i: 0, origin_path: None, multipath_alts: vec![0,1], wildcard_hardened: false },
-            PlaceholderOccurrence { i: 0, origin_path: None, multipath_alts: vec![2,3], wildcard_hardened: false },
+            PlaceholderOccurrence {
+                i: 0,
+                origin_path: None,
+                multipath_alts: vec![0, 1],
+                wildcard_hardened: false,
+            },
+            PlaceholderOccurrence {
+                i: 0,
+                origin_path: None,
+                multipath_alts: vec![2, 3],
+                wildcard_hardened: false,
+            },
         ];
         let err = resolve_placeholders(&occs).unwrap_err();
         let msg = format!("{err:?}");
@@ -255,7 +323,7 @@ mod resolve_tests {
     }
 }
 
-use crate::parse::keys::{ScriptCtx, MAINNET_XPUB_VERSION};
+use crate::parse::keys::{MAINNET_XPUB_VERSION, ScriptCtx};
 
 /// A synthetic xpub keyed by placeholder index `i` and the outer script context.
 /// Depth tracks BIP 388 expectation: depth 3 for single-sig (wpkh/pkh), depth
@@ -265,9 +333,12 @@ use crate::parse::keys::{ScriptCtx, MAINNET_XPUB_VERSION};
 /// that miniscript's parser (which validates curve membership) accepts it.
 fn synthetic_xpub_for(i: u8, ctx: ScriptCtx) -> String {
     use bitcoin::base58;
-    use bitcoin::hashes::{sha256, Hash};
+    use bitcoin::hashes::{Hash, sha256};
     use bitcoin::secp256k1::{Secp256k1, SecretKey};
-    let depth = match ctx { ScriptCtx::SingleSig => 3u8, ScriptCtx::MultiSig => 4u8 };
+    let depth = match ctx {
+        ScriptCtx::SingleSig => 3u8,
+        ScriptCtx::MultiSig => 4u8,
+    };
     // Deterministic per (i, depth); domain-separated tag keeps test fixtures stable.
     let seed = sha256::Hash::hash(&[b'm', b'd', b'-', b'v', b'0', b'.', b'1', b'5', i, depth]);
     let chain_code = sha256::Hash::hash(&[b'c', b'c', i, depth]).to_byte_array();
@@ -284,23 +355,27 @@ fn synthetic_xpub_for(i: u8, ctx: ScriptCtx) -> String {
 
 /// Substitute each `@i/...` with a synthetic xpub. Returns substituted template
 /// + map (synthetic-xpub-string → placeholder index).
-fn substitute_synthetic(template: &str, ctx: ScriptCtx)
-    -> Result<(String, std::collections::BTreeMap<String, u8>), CliError>
-{
+fn substitute_synthetic(
+    template: &str,
+    ctx: ScriptCtx,
+) -> Result<(String, std::collections::BTreeMap<String, u8>), CliError> {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(
-        r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;]+>)?(?:/\*(?:'|h)?)?"
-    ).expect("static regex compiles"));
+    let re = RE.get_or_init(|| {
+        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;]+>)?(?:/\*(?:'|h)?)?")
+            .expect("static regex compiles")
+    });
     let mut key_map = std::collections::BTreeMap::new();
     let mut keys_seen = std::collections::HashSet::new();
-    let out = re.replace_all(template, |caps: &regex::Captures| {
-        let i: u8 = caps[1].parse().unwrap_or(0);
-        let xpub = synthetic_xpub_for(i, ctx);
-        if keys_seen.insert(i) {
-            key_map.insert(xpub.clone(), i);
-        }
-        xpub
-    }).into_owned();
+    let out = re
+        .replace_all(template, |caps: &regex::Captures| {
+            let i: u8 = caps[1].parse().unwrap_or(0);
+            let xpub = synthetic_xpub_for(i, ctx);
+            if keys_seen.insert(i) {
+                key_map.insert(xpub.clone(), i);
+            }
+            xpub
+        })
+        .into_owned();
     Ok((out, key_map))
 }
 
@@ -310,23 +385,34 @@ mod sub_tests {
 
     #[test]
     fn synthetic_for_0_and_1_differ() {
-        assert_ne!(synthetic_xpub_for(0, ScriptCtx::MultiSig), synthetic_xpub_for(1, ScriptCtx::MultiSig));
+        assert_ne!(
+            synthetic_xpub_for(0, ScriptCtx::MultiSig),
+            synthetic_xpub_for(1, ScriptCtx::MultiSig)
+        );
     }
 
     #[test]
     fn synthetic_for_0_is_stable() {
-        assert_eq!(synthetic_xpub_for(0, ScriptCtx::MultiSig), synthetic_xpub_for(0, ScriptCtx::MultiSig));
+        assert_eq!(
+            synthetic_xpub_for(0, ScriptCtx::MultiSig),
+            synthetic_xpub_for(0, ScriptCtx::MultiSig)
+        );
     }
 
     #[test]
     fn singlesig_synthetic_uses_depth_3() {
         // Cross-context xpubs must differ — depth byte 4 is 3 vs 4.
-        assert_ne!(synthetic_xpub_for(0, ScriptCtx::SingleSig), synthetic_xpub_for(0, ScriptCtx::MultiSig));
+        assert_ne!(
+            synthetic_xpub_for(0, ScriptCtx::SingleSig),
+            synthetic_xpub_for(0, ScriptCtx::MultiSig)
+        );
     }
 
     #[test]
     fn substitution_strips_at_i_suffix() {
-        let (s, _) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let (s, _) =
+            substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig)
+                .unwrap();
         assert!(!s.contains('@'));
         assert!(!s.contains('<'));
         assert!(!s.contains('*'));
@@ -334,7 +420,11 @@ mod sub_tests {
 
     #[test]
     fn substitution_emits_consistent_keys_per_index() {
-        let (s, km) = substitute_synthetic("wsh(or_d(pk(@0/<0;1>/*),pk(@0/<0;1>/*)))", ScriptCtx::MultiSig).unwrap();
+        let (s, km) = substitute_synthetic(
+            "wsh(or_d(pk(@0/<0;1>/*),pk(@0/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
         assert_eq!(km.len(), 1);
         let key = synthetic_xpub_for(0, ScriptCtx::MultiSig);
         assert_eq!(s.matches(&key).count(), 2);
@@ -346,56 +436,93 @@ use md_codec::tree::{Body, Node};
 use miniscript::{Descriptor as MsDescriptor, DescriptorPublicKey};
 
 /// Walk the miniscript Descriptor's outermost wrapper and emit a `Node`.
-fn walk_root(desc: &MsDescriptor<DescriptorPublicKey>, key_map: &std::collections::BTreeMap<String, u8>)
-    -> Result<Node, CliError>
-{
+fn walk_root(
+    desc: &MsDescriptor<DescriptorPublicKey>,
+    key_map: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
     use miniscript::Descriptor::*;
     match desc {
         Wpkh(w) => Ok(Node {
             tag: Tag::Wpkh,
-            body: Body::KeyArg { index: lookup_key(&w.as_inner().to_string(), key_map)? },
+            body: Body::KeyArg {
+                index: lookup_key(&w.as_inner().to_string(), key_map)?,
+            },
         }),
         Pkh(p) => Ok(Node {
             tag: Tag::Pkh,
-            body: Body::KeyArg { index: lookup_key(&p.as_inner().to_string(), key_map)? },
+            body: Body::KeyArg {
+                index: lookup_key(&p.as_inner().to_string(), key_map)?,
+            },
         }),
         Wsh(w) => walk_wsh(w, key_map),
         Sh(s) => walk_sh(s, key_map),
         Tr(t) => walk_tr(t, key_map),
-        _ => Err(CliError::TemplateParse(format!("unsupported descriptor wrapper: {desc}"))),
+        _ => Err(CliError::TemplateParse(format!(
+            "unsupported descriptor wrapper: {desc}"
+        ))),
     }
 }
 
-fn lookup_key(key_str: &str, key_map: &std::collections::BTreeMap<String, u8>) -> Result<u8, CliError> {
+fn lookup_key(
+    key_str: &str,
+    key_map: &std::collections::BTreeMap<String, u8>,
+) -> Result<u8, CliError> {
     // miniscript may render the key with derivation suffix; strip suffix for lookup.
     let base = key_str.split('/').next().unwrap_or(key_str);
-    key_map.get(base).copied().ok_or_else(|| CliError::TemplateParse(
-        format!("internal: synthetic key {base} not found in key map (rendered: {key_str})")
-    ))
+    key_map.get(base).copied().ok_or_else(|| {
+        CliError::TemplateParse(format!(
+            "internal: synthetic key {base} not found in key map (rendered: {key_str})"
+        ))
+    })
 }
 
 /// Wrap an inner `Node` under a single-arity wrapper tag like `Wsh`/`Sh`.
 fn wrap_children(tag: Tag, inner: Node) -> Node {
-    Node { tag, body: Body::Children(vec![inner]) }
+    Node {
+        tag,
+        body: Body::Children(vec![inner]),
+    }
 }
 
 /// Build `multi`/`sortedmulti` style: `Tag::Multi` (or `SortedMulti`) wrapping
 /// each key as a `PkK` child. Use `MultiA`/`SortedMultiA` inside Tap context.
-fn build_multi_node(tag: Tag, k: usize, keys: &[&DescriptorPublicKey],
-                    km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
-    let children: Vec<Node> = keys.iter().map(|kk| {
-        let index = lookup_key(&kk.to_string(), km)?;
-        Ok(Node { tag: Tag::PkK, body: Body::KeyArg { index } })
-    }).collect::<Result<_, CliError>>()?;
-    Ok(Node { tag, body: Body::Variable { k: k as u8, children } })
+fn build_multi_node(
+    tag: Tag,
+    k: usize,
+    keys: &[&DescriptorPublicKey],
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
+    let children: Vec<Node> = keys
+        .iter()
+        .map(|kk| {
+            let index = lookup_key(&kk.to_string(), km)?;
+            Ok(Node {
+                tag: Tag::PkK,
+                body: Body::KeyArg { index },
+            })
+        })
+        .collect::<Result<_, CliError>>()?;
+    Ok(Node {
+        tag,
+        body: Body::Variable {
+            k: k as u8,
+            children,
+        },
+    })
 }
 
-fn walk_wsh(w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+fn walk_wsh(
+    w: &miniscript::descriptor::Wsh<DescriptorPublicKey>,
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
     let inner = walk_wsh_inner(w, km)?;
     Ok(wrap_children(Tag::Wsh, inner))
 }
 
-fn walk_sh(s: &miniscript::descriptor::Sh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+fn walk_sh(
+    s: &miniscript::descriptor::Sh<DescriptorPublicKey>,
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
     use miniscript::descriptor::ShInner;
     let inner = match s.as_inner() {
         ShInner::Wsh(w) => Node {
@@ -404,21 +531,34 @@ fn walk_sh(s: &miniscript::descriptor::Sh<DescriptorPublicKey>, km: &std::collec
         },
         ShInner::Wpkh(wp) => Node {
             tag: Tag::Wpkh,
-            body: Body::KeyArg { index: lookup_key(&wp.as_inner().to_string(), km)? },
+            body: Body::KeyArg {
+                index: lookup_key(&wp.as_inner().to_string(), km)?,
+            },
         },
-        ShInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/false)?,
-        ShInner::SortedMulti(sm) => build_multi_node(Tag::SortedMulti, sm.k(),
-            &sm.pks().iter().collect::<Vec<_>>(), km)?,
+        ShInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/ false)?,
+        ShInner::SortedMulti(sm) => build_multi_node(
+            Tag::SortedMulti,
+            sm.k(),
+            &sm.pks().iter().collect::<Vec<_>>(),
+            km,
+        )?,
     };
     Ok(wrap_children(Tag::Sh, inner))
 }
 
-fn walk_wsh_inner(w: &miniscript::descriptor::Wsh<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+fn walk_wsh_inner(
+    w: &miniscript::descriptor::Wsh<DescriptorPublicKey>,
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
     use miniscript::descriptor::WshInner;
     match w.as_inner() {
-        WshInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/false),
-        WshInner::SortedMulti(sm) => build_multi_node(Tag::SortedMulti, sm.k(),
-            &sm.pks().iter().collect::<Vec<_>>(), km),
+        WshInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/ false),
+        WshInner::SortedMulti(sm) => build_multi_node(
+            Tag::SortedMulti,
+            sm.k(),
+            &sm.pks().iter().collect::<Vec<_>>(),
+            km,
+        ),
     }
 }
 
@@ -429,26 +569,50 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
 ) -> Result<Node, CliError> {
     use miniscript::miniscript::decode::Terminal;
     match &ms.node {
-        Terminal::PkK(k) => Ok(Node { tag: Tag::PkK,
-            body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } }),
-        Terminal::PkH(k) => Ok(Node { tag: Tag::PkH,
-            body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } }),
+        Terminal::PkK(k) => Ok(Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg {
+                index: lookup_key(&k.to_string(), km)?,
+            },
+        }),
+        Terminal::PkH(k) => Ok(Node {
+            tag: Tag::PkH,
+            body: Body::KeyArg {
+                index: lookup_key(&k.to_string(), km)?,
+            },
+        }),
         Terminal::Multi(thresh) => build_multi_node(
-            Tag::Multi, thresh.k(), &thresh.data().iter().collect::<Vec<_>>(), km),
+            Tag::Multi,
+            thresh.k(),
+            &thresh.data().iter().collect::<Vec<_>>(),
+            km,
+        ),
         Terminal::MultiA(thresh) => build_multi_node(
-            Tag::MultiA, thresh.k(), &thresh.data().iter().collect::<Vec<_>>(), km),
+            Tag::MultiA,
+            thresh.k(),
+            &thresh.data().iter().collect::<Vec<_>>(),
+            km,
+        ),
         // `c:` wrapper. In Tapscript leaves, miniscript desugars `pk(K)` to
         // `c:pk_k(K)`; the BIP 388 wire form for that leaf is bare `PkK`, so
         // collapse the wrapper there. In segwitv0 we keep `Check` explicit.
         Terminal::Check(inner) => {
             if tap_context {
                 if let Terminal::PkK(k) = &inner.node {
-                    return Ok(Node { tag: Tag::PkK,
-                        body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } });
+                    return Ok(Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg {
+                            index: lookup_key(&k.to_string(), km)?,
+                        },
+                    });
                 }
                 if let Terminal::PkH(k) = &inner.node {
-                    return Ok(Node { tag: Tag::PkH,
-                        body: Body::KeyArg { index: lookup_key(&k.to_string(), km)? } });
+                    return Ok(Node {
+                        tag: Tag::PkH,
+                        body: Body::KeyArg {
+                            index: lookup_key(&k.to_string(), km)?,
+                        },
+                    });
                 }
             }
             Ok(Node {
@@ -480,12 +644,17 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
         _ => {
             let _ = tap_context;
-            Err(CliError::TemplateParse(format!("unsupported miniscript fragment: {ms}")))
+            Err(CliError::TemplateParse(format!(
+                "unsupported miniscript fragment: {ms}"
+            )))
         }
     }
 }
 
-fn walk_tr(t: &miniscript::descriptor::Tr<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
+fn walk_tr(
+    t: &miniscript::descriptor::Tr<DescriptorPublicKey>,
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
     let key_str = t.internal_key().to_string();
     let tree: Option<Box<Node>> = match t.tap_tree() {
         None => None,
@@ -516,7 +685,10 @@ fn walk_tr(t: &miniscript::descriptor::Tr<DescriptorPublicKey>, km: &std::collec
             orig_err
         }
     })?;
-    Ok(Node { tag: Tag::Tr, body: Body::Tr { key_index, tree } })
+    Ok(Node {
+        tag: Tag::Tr,
+        body: Body::Tr { key_index, tree },
+    })
 }
 
 /// Returns `true` if `s` is exactly 64 ASCII hex digits — the shape of a
@@ -540,12 +712,14 @@ fn walk_tap_tree(
 ) -> Result<Node, CliError> {
     let leaves: Vec<_> = tt.leaves().collect();
     match leaves.len() {
-        0 => Err(CliError::TemplateParse("tap tree present but contains no leaves".into())),
+        0 => Err(CliError::TemplateParse(
+            "tap tree present but contains no leaves".into(),
+        )),
         1 => {
             // Single leaf at any depth; we ignore depth here because there is
             // no branching. The leaf becomes a plain Node.
             let leaf = &leaves[0];
-            walk_miniscript_node(leaf.miniscript(), km, /*tap=*/true)
+            walk_miniscript_node(leaf.miniscript(), km, /*tap=*/ true)
         }
         n => Err(CliError::TemplateParse(format!(
             "multi-branch tap trees are not yet supported (got {n} leaves; single-leaf only). \
@@ -585,7 +759,9 @@ mod wsh_tests {
 
     #[test]
     fn wsh_multi_2of2() {
-        let (s, km) = substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let (s, km) =
+            substitute_synthetic("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", ScriptCtx::MultiSig)
+                .unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Wsh);
@@ -607,7 +783,11 @@ mod wsh_tests {
 
     #[test]
     fn wsh_sortedmulti_2of3() {
-        let (s, km) = substitute_synthetic("wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let (s, km) = substitute_synthetic(
+            "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Wsh);
@@ -641,7 +821,11 @@ mod wsh_tests {
 
     #[test]
     fn sh_wsh_multi_nested() {
-        let (s, km) = substitute_synthetic("sh(wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)))", ScriptCtx::MultiSig).unwrap();
+        let (s, km) = substitute_synthetic(
+            "sh(wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Sh);
@@ -675,7 +859,8 @@ mod tr_tests {
 
     #[test]
     fn tr_with_one_leaf() {
-        let (s, km) = substitute_synthetic("tr(@0/<0;1>/*,pk(@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let (s, km) =
+            substitute_synthetic("tr(@0/<0;1>/*,pk(@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
@@ -737,13 +922,16 @@ mod tr_tests {
     /// the parsed Descriptor's internal_key field as a literal x-only key.
     #[test]
     fn tr_with_nums_internal_key_emits_tr_unspendable() {
-        let template = format!(
-            "tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))"
-        );
+        let template =
+            format!("tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
-        assert_eq!(root.tag, Tag::TrUnspendable, "NUMS internal key MUST emit Tag::TrUnspendable");
+        assert_eq!(
+            root.tag,
+            Tag::TrUnspendable,
+            "NUMS internal key MUST emit Tag::TrUnspendable"
+        );
         let tree = match root.body {
             Body::TrUnspendable { tree } => tree.expect("multi_a leaf must be present"),
             _ => panic!("expected Body::TrUnspendable"),
@@ -776,7 +964,10 @@ mod tr_tests {
         assert_eq!(root.tag, Tag::TrUnspendable);
         match root.body {
             Body::TrUnspendable { tree } => {
-                assert!(tree.is_none(), "tree must be None for tr(<NUMS>) with no script arg");
+                assert!(
+                    tree.is_none(),
+                    "tree must be None for tr(<NUMS>) with no script arg"
+                );
             }
             _ => panic!("expected Body::TrUnspendable"),
         }
@@ -793,8 +984,7 @@ mod tr_tests {
         // x-only public key that is NOT the BIP-341 NUMS H-point. miniscript
         // accepts it at parse time; walk_tr must reject it at the walker
         // layer with a clear error.
-        let non_nums_hex =
-            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+        let non_nums_hex = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
         let template = format!("tr({non_nums_hex},pk(@0/<0;1>/*))");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
@@ -805,8 +995,14 @@ mod tr_tests {
                     msg.contains("unsupported internal-key form: literal hex"),
                     "expected v0.17 non-NUMS-hex error, got: {msg}"
                 );
-                assert!(msg.contains(non_nums_hex), "error must surface the offending hex");
-                assert!(msg.contains(NUMS_H_POINT_X_ONLY_HEX), "error must show the NUMS alternative");
+                assert!(
+                    msg.contains(non_nums_hex),
+                    "error must surface the offending hex"
+                );
+                assert!(
+                    msg.contains(NUMS_H_POINT_X_ONLY_HEX),
+                    "error must show the NUMS alternative"
+                );
             }
             other => panic!("expected TemplateParse, got {other:?}"),
         }
@@ -845,7 +1041,7 @@ mod tr_tests {
     }
 }
 
-use crate::parse::keys::{ParsedKey, ParsedFingerprint};
+use crate::parse::keys::{ParsedFingerprint, ParsedKey};
 use md_codec::encode::Descriptor;
 use md_codec::tlv::TlvSection;
 
@@ -864,17 +1060,23 @@ pub fn parse_template(
     let tree = walk_root(&ms_desc, &key_map)?;
 
     // TLV encoder (md_codec::tlv) requires strict ascending @i; sort before populating.
-    let pubkeys = if keys.is_empty() { None } else {
+    let pubkeys = if keys.is_empty() {
+        None
+    } else {
         let mut v: Vec<_> = keys.iter().map(|k| (k.i, k.payload)).collect();
         v.sort_by_key(|(i, _)| *i);
         Some(v)
     };
-    let fp_vec = if fingerprints.is_empty() { None } else {
+    let fp_vec = if fingerprints.is_empty() {
+        None
+    } else {
         let mut v: Vec<_> = fingerprints.iter().map(|f| (f.i, f.fp)).collect();
         v.sort_by_key(|(i, _)| *i);
         Some(v)
     };
-    let use_site_path_overrides = if resolved.use_site_path_overrides.is_empty() { None } else {
+    let use_site_path_overrides = if resolved.use_site_path_overrides.is_empty() {
+        None
+    } else {
         Some(resolved.use_site_path_overrides)
     };
 
@@ -909,11 +1111,7 @@ mod entry_tests {
 
     #[test]
     fn end_to_end_wsh_multi_template_only() {
-        let d = parse_template(
-            "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
-            &[],
-            &[],
-        ).unwrap();
+        let d = parse_template("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", &[], &[]).unwrap();
         assert_eq!(d.n, 2);
         assert_eq!(d.tree.tag, Tag::Wsh);
         assert!(d.tlv.pubkeys.is_none());
@@ -922,8 +1120,14 @@ mod entry_tests {
     #[test]
     fn end_to_end_with_fingerprints() {
         let fps = vec![
-            ParsedFingerprint { i: 0, fp: [0xDE, 0xAD, 0xBE, 0xEF] },
-            ParsedFingerprint { i: 1, fp: [0xCA, 0xFE, 0xBA, 0xBE] },
+            ParsedFingerprint {
+                i: 0,
+                fp: [0xDE, 0xAD, 0xBE, 0xEF],
+            },
+            ParsedFingerprint {
+                i: 1,
+                fp: [0xCA, 0xFE, 0xBA, 0xBE],
+            },
         ];
         let d = parse_template("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", &[], &fps).unwrap();
         let v = d.tlv.fingerprints.unwrap();

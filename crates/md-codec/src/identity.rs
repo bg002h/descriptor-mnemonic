@@ -1,12 +1,12 @@
 //! Identity computation per spec §8.
 
-use crate::bitstream::{re_emit_bits, BitWriter};
+use crate::bitstream::{BitWriter, re_emit_bits};
 use crate::canonicalize::{canonicalize_placeholder_indices, expand_per_at_n};
-use crate::encode::{encode_payload, Descriptor};
+use crate::encode::{Descriptor, encode_payload};
 use crate::error::Error;
 use crate::phrase::Phrase;
 use crate::varint::write_varint;
-use bitcoin::hashes::{sha256, Hash};
+use bitcoin::hashes::{Hash, sha256};
 
 /// 128-bit canonical identifier for an md1 encoding (spec §8).
 ///
@@ -216,8 +216,7 @@ pub fn compute_wallet_policy_id(d: &Descriptor) -> Result<WalletPolicyId, Error>
         // with v0.13's hash on the same wire).
         let fp_present = e.fingerprint.is_some();
         let xpub_present = e.xpub.is_some();
-        let presence_byte =
-            ((fp_present as u8) | ((xpub_present as u8) << 1)) & 0b0000_0011;
+        let presence_byte = ((fp_present as u8) | ((xpub_present as u8) << 1)) & 0b0000_0011;
 
         records_concat.push(presence_byte);
         records_concat.extend_from_slice(&record_bytes);
@@ -275,9 +274,18 @@ mod tests {
                 n: 1,
                 paths: PathDeclPaths::Shared(OriginPath {
                     components: vec![
-                        PathComponent { hardened: true, value: 84 },
-                        PathComponent { hardened: true, value: 0 },
-                        PathComponent { hardened: true, value: 0 },
+                        PathComponent {
+                            hardened: true,
+                            value: 84,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
                     ],
                 }),
             },
@@ -303,7 +311,10 @@ mod tests {
         let d1 = bip84_descriptor();
         let mut d2 = bip84_descriptor();
         if let PathDeclPaths::Shared(p) = &mut d2.path_decl.paths {
-            p.components[2] = PathComponent { hardened: true, value: 1 };
+            p.components[2] = PathComponent {
+                hardened: true,
+                value: 1,
+            };
         }
         let id1 = compute_md1_encoding_id(&d1).unwrap();
         let id2 = compute_md1_encoding_id(&d2).unwrap();
@@ -315,7 +326,10 @@ mod tests {
         let d1 = bip84_descriptor();
         let mut d2 = bip84_descriptor();
         if let PathDeclPaths::Shared(p) = &mut d2.path_decl.paths {
-            p.components[2] = PathComponent { hardened: true, value: 1 };
+            p.components[2] = PathComponent {
+                hardened: true,
+                value: 1,
+            };
         }
         let id1 = compute_wallet_descriptor_template_id(&d1).unwrap();
         let id2 = compute_wallet_descriptor_template_id(&d2).unwrap();
@@ -327,7 +341,10 @@ mod tests {
     fn wdt_id_differs_for_different_use_site_paths() {
         let d1 = bip84_descriptor();
         let mut d2 = bip84_descriptor();
-        d2.use_site_path = UseSitePath { multipath: None, wildcard_hardened: false };
+        d2.use_site_path = UseSitePath {
+            multipath: None,
+            wildcard_hardened: false,
+        };
         let id1 = compute_wallet_descriptor_template_id(&d1).unwrap();
         let id2 = compute_wallet_descriptor_template_id(&d2).unwrap();
         assert_ne!(id1, id2);
@@ -372,9 +389,18 @@ mod tests {
                 n: 1,
                 paths: PathDeclPaths::Shared(OriginPath {
                     components: vec![
-                        PathComponent { hardened: true, value: 84 },
-                        PathComponent { hardened: true, value: 0 },
-                        PathComponent { hardened: true, value: 0 },
+                        PathComponent {
+                            hardened: true,
+                            value: 84,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
                     ],
                 }),
             },
@@ -519,8 +545,8 @@ mod tests {
 
         // Final identity bytes (computed by /tmp/golden_vec.py).
         let expected_id: [u8; 16] = [
-            0x66, 0x50, 0xb9, 0x80, 0x3b, 0x3c, 0x66, 0x21,
-            0x01, 0x40, 0x54, 0x0d, 0xa8, 0xd7, 0x65, 0xa0,
+            0x66, 0x50, 0xb9, 0x80, 0x3b, 0x3c, 0x66, 0x21, 0x01, 0x40, 0x54, 0x0d, 0xa8, 0xd7,
+            0x65, 0xa0,
         ];
 
         let id = compute_wallet_policy_id(&d).unwrap();
@@ -567,7 +593,10 @@ mod tests {
     fn walletpolicyid_stable_across_use_site_elision() {
         let d_baseline = cell_7_wpkh_descriptor();
         let mut d_override = cell_7_wpkh_descriptor();
-        d_override.use_site_path = UseSitePath { multipath: None, wildcard_hardened: false };
+        d_override.use_site_path = UseSitePath {
+            multipath: None,
+            wildcard_hardened: false,
+        };
         d_override.tlv.use_site_path_overrides =
             Some(vec![(0u8, UseSitePath::standard_multipath())]);
         let id1 = compute_wallet_policy_id(&d_baseline).unwrap();
@@ -595,20 +624,37 @@ mod tests {
     #[test]
     fn walletpolicyid_partial_keys_distinct() {
         fn pkk(index: u8) -> Node {
-            Node { tag: Tag::PkK, body: Body::KeyArg { index } }
+            Node {
+                tag: Tag::PkK,
+                body: Body::KeyArg { index },
+            }
         }
         let bip48_2 = OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 48 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 2 },
+                PathComponent {
+                    hardened: true,
+                    value: 48,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 2,
+                },
             ],
         };
-        let mk_d = |fps: Option<Vec<(u8, [u8; 4])>>,
-                    pks: Option<Vec<(u8, [u8; 65])>>| Descriptor {
+        let mk_d = |fps: Option<Vec<(u8, [u8; 4])>>, pks: Option<Vec<(u8, [u8; 65])>>| Descriptor {
             n: 2,
-            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(bip48_2.clone()) },
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Shared(bip48_2.clone()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Wsh,
@@ -634,10 +680,7 @@ mod tests {
             Some(vec![(0, xpub), (1, xpub)]),
         );
         // Mixed: @0 cell-7, @1 cell-1 (no fp, no xpub).
-        let d_mixed = mk_d(
-            Some(vec![(0, [0x11; 4])]),
-            Some(vec![(0, xpub)]),
-        );
+        let d_mixed = mk_d(Some(vec![(0, [0x11; 4])]), Some(vec![(0, xpub)]));
         let id_full = compute_wallet_policy_id(&d_full).unwrap();
         let id_mixed = compute_wallet_policy_id(&d_mixed).unwrap();
         assert_ne!(id_full, id_mixed);
@@ -661,9 +704,18 @@ mod tests {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 44 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 44,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         };
@@ -737,24 +789,42 @@ mod tests {
     #[test]
     fn compute_wallet_policy_id_canonicalizes_first() {
         fn pkk(index: u8) -> Node {
-            Node { tag: Tag::PkK, body: Body::KeyArg { index } }
+            Node {
+                tag: Tag::PkK,
+                body: Body::KeyArg { index },
+            }
         }
         let xpub_a = deterministic_xpub();
         let mut xpub_b = deterministic_xpub();
         xpub_b[0] = 0x33;
         let bip48_2 = OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 48 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 2 },
+                PathComponent {
+                    hardened: true,
+                    value: 48,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 2,
+                },
             ],
         };
         // Non-canonical: tree first-occurrence is @1 then @0; pubkeys
         // wired by original index — A↔@0, B↔@1.
         let d_non_canonical = Descriptor {
             n: 2,
-            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(bip48_2.clone()) },
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Shared(bip48_2.clone()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Wsh,
@@ -777,7 +847,10 @@ mod tests {
         // original-@0 → new-@1 → carries A).
         let d_canonical = Descriptor {
             n: 2,
-            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(bip48_2) },
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Shared(bip48_2),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Wsh,
@@ -815,7 +888,9 @@ mod tests {
         let err = validate_presence_byte(0b0000_0100).unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidPresenceByte { reserved_bits: 0b0000_0100 }
+            Error::InvalidPresenceByte {
+                reserved_bits: 0b0000_0100
+            }
         ));
     }
 
@@ -825,7 +900,9 @@ mod tests {
         let err = validate_presence_byte(0b1000_0011).unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidPresenceByte { reserved_bits: 0b1000_0000 }
+            Error::InvalidPresenceByte {
+                reserved_bits: 0b1000_0000
+            }
         ));
     }
 
@@ -834,7 +911,9 @@ mod tests {
         let err = validate_presence_byte(0xFF).unwrap_err();
         assert!(matches!(
             err,
-            Error::InvalidPresenceByte { reserved_bits: 0b1111_1100 }
+            Error::InvalidPresenceByte {
+                reserved_bits: 0b1111_1100
+            }
         ));
     }
 }

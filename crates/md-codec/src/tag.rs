@@ -216,14 +216,38 @@ mod tests {
         assert_eq!(Tag::read(&mut r).unwrap(), t);
     }
 
-    #[test] fn tag_wpkh() { round_trip(Tag::Wpkh); }
-    #[test] fn tag_tr() { round_trip(Tag::Tr); }
-    #[test] fn tag_taptree() { round_trip(Tag::TapTree); }
-    #[test] fn tag_thresh() { round_trip(Tag::Thresh); }
-    #[test] fn tag_hash256_extension() { round_trip(Tag::Hash256); }
-    #[test] fn tag_false_extension() { round_trip(Tag::False); }
-    #[test] fn tag_true_extension() { round_trip(Tag::True); }
-    #[test] fn tag_tr_unspendable_extension() { round_trip(Tag::TrUnspendable); }
+    #[test]
+    fn tag_wpkh() {
+        round_trip(Tag::Wpkh);
+    }
+    #[test]
+    fn tag_tr() {
+        round_trip(Tag::Tr);
+    }
+    #[test]
+    fn tag_taptree() {
+        round_trip(Tag::TapTree);
+    }
+    #[test]
+    fn tag_thresh() {
+        round_trip(Tag::Thresh);
+    }
+    #[test]
+    fn tag_hash256_extension() {
+        round_trip(Tag::Hash256);
+    }
+    #[test]
+    fn tag_false_extension() {
+        round_trip(Tag::False);
+    }
+    #[test]
+    fn tag_true_extension() {
+        round_trip(Tag::True);
+    }
+    #[test]
+    fn tag_tr_unspendable_extension() {
+        round_trip(Tag::TrUnspendable);
+    }
 
     #[test]
     fn tag_unknown_extension_rejected() {
@@ -233,6 +257,9 @@ mod tests {
         w.write_bits(0x06, 5);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
-        assert!(matches!(Tag::read(&mut r), Err(Error::UnknownExtensionTag(0x06))));
+        assert!(matches!(
+            Tag::read(&mut r),
+            Err(Error::UnknownExtensionTag(0x06))
+        ));
     }
 }

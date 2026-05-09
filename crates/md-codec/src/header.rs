@@ -23,8 +23,7 @@ impl Header {
     /// Encode the 5-bit header into the bit stream.
     pub fn write(&self, w: &mut BitWriter) {
         // bit 3 (reserved) is always 0 in v0.11.
-        let bits = (u64::from(self.divergent_paths) << 4)
-            | u64::from(self.version & 0b111);
+        let bits = (u64::from(self.divergent_paths) << 4) | u64::from(self.version & 0b111);
         w.write_bits(bits, 5);
     }
 
@@ -41,7 +40,10 @@ impl Header {
         if version != Self::V0_11_VERSION {
             return Err(Error::UnsupportedVersion { got: version });
         }
-        Ok(Self { version, divergent_paths })
+        Ok(Self {
+            version,
+            divergent_paths,
+        })
     }
 }
 
@@ -51,7 +53,10 @@ mod tests {
 
     #[test]
     fn header_round_trip_shared() {
-        let h = Header { version: 0, divergent_paths: false };
+        let h = Header {
+            version: 0,
+            divergent_paths: false,
+        };
         let mut w = BitWriter::new();
         h.write(&mut w);
         let bytes = w.into_bytes();
@@ -61,7 +66,10 @@ mod tests {
 
     #[test]
     fn header_round_trip_divergent() {
-        let h = Header { version: 0, divergent_paths: true };
+        let h = Header {
+            version: 0,
+            divergent_paths: true,
+        };
         let mut w = BitWriter::new();
         h.write(&mut w);
         let bytes = w.into_bytes();
@@ -96,7 +104,10 @@ mod tests {
     #[test]
     fn header_common_case_byte_value() {
         // Common case: version=0, reserved=0, divergent_paths=0 ⇒ 0b00000 = 0x00
-        let h = Header { version: 0, divergent_paths: false };
+        let h = Header {
+            version: 0,
+            divergent_paths: false,
+        };
         let mut w = BitWriter::new();
         h.write(&mut w);
         assert_eq!(w.into_bytes(), vec![0x00]);

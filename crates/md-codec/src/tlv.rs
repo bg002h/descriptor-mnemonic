@@ -98,14 +98,19 @@ impl TlvSection {
 
         if let Some(overrides) = use_site_path_overrides {
             if overrides.is_empty() {
-                return Err(Error::EmptyTlvEntry { tag: TLV_USE_SITE_PATH_OVERRIDES });
+                return Err(Error::EmptyTlvEntry {
+                    tag: TLV_USE_SITE_PATH_OVERRIDES,
+                });
             }
             let mut sub = BitWriter::new();
             let mut last_idx: Option<u8> = None;
             for (idx, path) in overrides {
                 if let Some(prev) = last_idx {
                     if *idx <= prev {
-                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                        return Err(Error::OverrideOrderViolation {
+                            prev,
+                            current: *idx,
+                        });
                     }
                 }
                 last_idx = Some(*idx);
@@ -117,14 +122,19 @@ impl TlvSection {
         }
         if let Some(fps) = fingerprints {
             if fps.is_empty() {
-                return Err(Error::EmptyTlvEntry { tag: TLV_FINGERPRINTS });
+                return Err(Error::EmptyTlvEntry {
+                    tag: TLV_FINGERPRINTS,
+                });
             }
             let mut sub = BitWriter::new();
             let mut last_idx: Option<u8> = None;
             for (idx, fp) in fps {
                 if let Some(prev) = last_idx {
                     if *idx <= prev {
-                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                        return Err(Error::OverrideOrderViolation {
+                            prev,
+                            current: *idx,
+                        });
                     }
                 }
                 last_idx = Some(*idx);
@@ -145,7 +155,10 @@ impl TlvSection {
             for (idx, xpub) in pks {
                 if let Some(prev) = last_idx {
                     if *idx <= prev {
-                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                        return Err(Error::OverrideOrderViolation {
+                            prev,
+                            current: *idx,
+                        });
                     }
                 }
                 last_idx = Some(*idx);
@@ -159,14 +172,19 @@ impl TlvSection {
         }
         if let Some(paths) = origin_path_overrides {
             if paths.is_empty() {
-                return Err(Error::EmptyTlvEntry { tag: TLV_ORIGIN_PATH_OVERRIDES });
+                return Err(Error::EmptyTlvEntry {
+                    tag: TLV_ORIGIN_PATH_OVERRIDES,
+                });
             }
             let mut sub = BitWriter::new();
             let mut last_idx: Option<u8> = None;
             for (idx, path) in paths {
                 if let Some(prev) = last_idx {
                     if *idx <= prev {
-                        return Err(Error::OverrideOrderViolation { prev, current: *idx });
+                        return Err(Error::OverrideOrderViolation {
+                            prev,
+                            current: *idx,
+                        });
                     }
                 }
                 last_idx = Some(*idx);
@@ -199,7 +217,7 @@ impl TlvSection {
             // actually trailing codex32-padding (≤7 bits of zeros).
             let entry_start = r.save_position();
             if r.remaining_bits() < 5 {
-                break;  // not enough bits for even a tag — clean end-of-stream
+                break; // not enough bits for even a tag — clean end-of-stream
             }
             // Try to parse a complete TLV entry. Any failure (truncated read,
             // ordering violation, empty-entry-by-spec, length exceeds remaining)
@@ -244,8 +262,7 @@ impl TlvSection {
                         section.pubkeys = Some(entry);
                     }
                     TLV_ORIGIN_PATH_OVERRIDES => {
-                        let entry =
-                            read_origin_path_overrides(r, bit_len, key_index_width, n)?;
+                        let entry = read_origin_path_overrides(r, bit_len, key_index_width, n)?;
                         section.origin_path_overrides = Some(entry);
                     }
                     _ => {
@@ -371,9 +388,14 @@ fn read_use_site_overrides(
     key_index_width: u8,
     n: u8,
 ) -> Result<Vec<(u8, UseSitePath)>, Error> {
-    read_sparse_tlv_body(r, bit_len, TLV_USE_SITE_PATH_OVERRIDES, key_index_width, n, |r| {
-        UseSitePath::read(r)
-    })
+    read_sparse_tlv_body(
+        r,
+        bit_len,
+        TLV_USE_SITE_PATH_OVERRIDES,
+        key_index_width,
+        n,
+        UseSitePath::read,
+    )
 }
 
 fn read_fingerprints(
@@ -414,9 +436,14 @@ fn read_origin_path_overrides(
 ) -> Result<Vec<(u8, OriginPath)>, Error> {
     // OriginPath::read is self-delimiting (depth field + that-many
     // components) — it terminates without needing an outer length cue.
-    read_sparse_tlv_body(r, bit_len, TLV_ORIGIN_PATH_OVERRIDES, key_index_width, n, |r| {
-        OriginPath::read(r)
-    })
+    read_sparse_tlv_body(
+        r,
+        bit_len,
+        TLV_ORIGIN_PATH_OVERRIDES,
+        key_index_width,
+        n,
+        OriginPath::read,
+    )
 }
 
 #[cfg(test)]
@@ -497,17 +524,38 @@ mod tests {
         // Two distinct origin paths at idx 0 and idx 1.
         let bip84 = OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 84 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 5 },
+                PathComponent {
+                    hardened: true,
+                    value: 84,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 5,
+                },
             ],
         };
         let bip48 = OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 48 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 2 },
+                PathComponent {
+                    hardened: true,
+                    value: 48,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 2,
+                },
             ],
         };
         let mut s = TlvSection::new_empty();
@@ -529,14 +577,20 @@ mod tests {
         let mut s = TlvSection::new_empty();
         s.use_site_path_overrides = Some(vec![(
             0,
-            UseSitePath { multipath: None, wildcard_hardened: false },
+            UseSitePath {
+                multipath: None,
+                wildcard_hardened: false,
+            },
         )]);
         s.fingerprints = Some(vec![(0, [0u8; 4])]);
         s.pubkeys = Some(vec![(0, [0u8; 65])]);
         s.origin_path_overrides = Some(vec![(
             0,
             OriginPath {
-                components: vec![PathComponent { hardened: true, value: 84 }],
+                components: vec![PathComponent {
+                    hardened: true,
+                    value: 84,
+                }],
             },
         )]);
         let mut w = BitWriter::new();
@@ -555,7 +609,10 @@ mod tests {
         let result = s.write(&mut w, 2);
         assert!(matches!(
             result,
-            Err(Error::OverrideOrderViolation { prev: 1, current: 0 })
+            Err(Error::OverrideOrderViolation {
+                prev: 1,
+                current: 0
+            })
         ));
     }
 
@@ -589,7 +646,10 @@ mod tests {
         let result = TlvSection::read(&mut r, 2, 3);
         assert!(matches!(
             result,
-            Err(Error::OverrideOrderViolation { prev: 1, current: 1 })
+            Err(Error::OverrideOrderViolation {
+                prev: 1,
+                current: 1
+            })
         ));
     }
 
@@ -620,7 +680,10 @@ mod tests {
         let result = read_sparse_tlv_idx(&mut r, 2, 3, Some(1));
         assert!(matches!(
             result,
-            Err(Error::OverrideOrderViolation { prev: 1, current: 0 })
+            Err(Error::OverrideOrderViolation {
+                prev: 1,
+                current: 0
+            })
         ));
     }
 
@@ -697,23 +760,32 @@ mod tests {
             craft_inflated_tlv_wire(TLV_FINGERPRINTS, 0, 1, &[(0xDEAD_BEEF, 32)], 4);
         let mut r = BitReader::with_bit_limit(&bytes, total_bits);
         let result = TlvSection::read(&mut r, 1, 1);
-        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
+        assert!(
+            result.is_err(),
+            "trailing slack must be rejected, got {:?}",
+            result
+        );
     }
 
     #[test]
     fn pubkeys_with_trailing_slack_rejected() {
         let payload: Vec<(u64, usize)> = (0..65).map(|_i| (0x42u64, 8)).collect();
-        let (bytes, total_bits) =
-            craft_inflated_tlv_wire(TLV_PUBKEYS, 0, 1, &payload, 3);
+        let (bytes, total_bits) = craft_inflated_tlv_wire(TLV_PUBKEYS, 0, 1, &payload, 3);
         let mut r = BitReader::with_bit_limit(&bytes, total_bits);
         let result = TlvSection::read(&mut r, 1, 1);
-        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
+        assert!(
+            result.is_err(),
+            "trailing slack must be rejected, got {:?}",
+            result
+        );
     }
 
     #[test]
     fn use_site_path_overrides_with_trailing_slack_rejected() {
         let mut path_w = BitWriter::new();
-        UseSitePath::standard_multipath().write(&mut path_w).unwrap();
+        UseSitePath::standard_multipath()
+            .write(&mut path_w)
+            .unwrap();
         let path_bit_len = path_w.bit_len();
         let path_bytes = path_w.into_bytes();
         let mut path_record: Vec<(u64, usize)> = Vec::new();
@@ -728,7 +800,11 @@ mod tests {
             craft_inflated_tlv_wire(TLV_USE_SITE_PATH_OVERRIDES, 0, 1, &path_record, 2);
         let mut r = BitReader::with_bit_limit(&bytes, total_bits);
         let result = TlvSection::read(&mut r, 1, 1);
-        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
+        assert!(
+            result.is_err(),
+            "trailing slack must be rejected, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -737,6 +813,10 @@ mod tests {
             craft_inflated_tlv_wire(TLV_ORIGIN_PATH_OVERRIDES, 0, 1, &[(0, 4)], 5);
         let mut r = BitReader::with_bit_limit(&bytes, total_bits);
         let result = TlvSection::read(&mut r, 1, 1);
-        assert!(result.is_err(), "trailing slack must be rejected, got {:?}", result);
+        assert!(
+            result.is_err(),
+            "trailing slack must be rejected, got {:?}",
+            result
+        );
     }
 }

@@ -1,14 +1,14 @@
 //! Origin-path-decl block per spec §3.4.
 //!
 //! Block format:
-//!   shared mode (bit 4 = 0): [n: 5 bits, encoded n-1][origin-path-encoding]
-//!   divergent mode (bit 4 = 1): [n: 5 bits, encoded n-1][origin-path-encoding × n]
+//! - shared mode (bit 4 = 0): `[n: 5 bits, encoded n-1][origin-path-encoding]`
+//! - divergent mode (bit 4 = 1): `[n: 5 bits, encoded n-1][origin-path-encoding × n]`
 //!
 //! origin-path-encoding (explicit-only per D19′):
-//!   [depth: 4 bits][component × depth]
+//!   `[depth: 4 bits][component × depth]`
 //!
 //! component:
-//!   [hardened: 1 bit][value: LP4-ext varint]
+//!   `[hardened: 1 bit][value: LP4-ext varint]`
 
 use crate::bitstream::{BitReader, BitWriter};
 use crate::error::Error;
@@ -154,9 +154,18 @@ mod tests {
         // m/84'/0'/0'
         OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 84 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
+                PathComponent {
+                    hardened: true,
+                    value: 84,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
             ],
         }
     }
@@ -183,7 +192,12 @@ mod tests {
     #[test]
     fn origin_path_rejects_depth_too_large() {
         let p = OriginPath {
-            components: (0..16).map(|_| PathComponent { hardened: false, value: 0 }).collect(),
+            components: (0..16)
+                .map(|_| PathComponent {
+                    hardened: false,
+                    value: 0,
+                })
+                .collect(),
         };
         let mut w = BitWriter::new();
         assert!(matches!(
@@ -203,9 +217,18 @@ mod path_decl_tests {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 84 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 84,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         };
@@ -223,9 +246,18 @@ mod path_decl_tests {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 84 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 84,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         };
@@ -240,10 +272,16 @@ mod path_decl_tests {
             n: 2,
             paths: PathDeclPaths::Divergent(vec![
                 OriginPath {
-                    components: vec![PathComponent { hardened: true, value: 84 }],
+                    components: vec![PathComponent {
+                        hardened: true,
+                        value: 84,
+                    }],
                 },
                 OriginPath {
-                    components: vec![PathComponent { hardened: true, value: 86 }],
+                    components: vec![PathComponent {
+                        hardened: true,
+                        value: 86,
+                    }],
                 },
             ]),
         };

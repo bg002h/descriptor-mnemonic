@@ -4,8 +4,14 @@ use std::fmt;
 pub enum CliError {
     Codec(md_codec::Error),
     TemplateParse(String),
-    BadXpub { i: u8, why: String },
-    BadFingerprint { i: u8, why: String },
+    BadXpub {
+        i: u8,
+        why: String,
+    },
+    BadFingerprint {
+        i: u8,
+        why: String,
+    },
     /// Reserved for `cli-compiler` feature paths (`compile` subcommand,
     /// `encode --from-policy`). Constructed only when that feature is on;
     /// `#[allow(dead_code)]` keeps default-features clippy clean.
@@ -32,7 +38,9 @@ impl fmt::Display for CliError {
 impl std::error::Error for CliError {}
 
 impl From<md_codec::Error> for CliError {
-    fn from(e: md_codec::Error) -> Self { CliError::Codec(e) }
+    fn from(e: md_codec::Error) -> Self {
+        CliError::Codec(e)
+    }
 }
 
 #[cfg(test)]
@@ -41,7 +49,10 @@ mod tests {
 
     #[test]
     fn display_bad_xpub() {
-        let e = CliError::BadXpub { i: 2, why: "checksum failed".into() };
+        let e = CliError::BadXpub {
+            i: 2,
+            why: "checksum failed".into(),
+        };
         assert_eq!(format!("{e}"), "--key @2: checksum failed");
     }
 

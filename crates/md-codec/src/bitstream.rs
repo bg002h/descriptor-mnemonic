@@ -18,7 +18,10 @@ pub struct BitWriter {
 impl BitWriter {
     /// Create an empty `BitWriter`.
     pub fn new() -> Self {
-        Self { bytes: Vec::new(), bit_position: 0 }
+        Self {
+            bytes: Vec::new(),
+            bit_position: 0,
+        }
     }
 
     /// Write `count` bits from `value` (LSB-aligned in `value`) into the
@@ -30,7 +33,11 @@ impl BitWriter {
         debug_assert!(count <= 64, "write_bits count must be ≤ 64");
 
         // Mask `value` to the requested bit count.
-        let masked = if count == 64 { value } else { value & ((1u64 << count) - 1) };
+        let masked = if count == 64 {
+            value
+        } else {
+            value & ((1u64 << count) - 1)
+        };
 
         // Iterate from MSB to LSB of the requested value.
         let mut remaining = count;
@@ -92,7 +99,11 @@ impl<'a> BitReader<'a> {
     /// Reader that consumes exactly `bytes.len() * 8` bits (used by tests
     /// where the bit count is byte-aligned).
     pub fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, bit_position: 0, bit_limit: bytes.len() * 8 }
+        Self {
+            bytes,
+            bit_position: 0,
+            bit_limit: bytes.len() * 8,
+        }
     }
 
     /// Reader that consumes at most `bit_limit` bits — required when the
@@ -101,7 +112,11 @@ impl<'a> BitReader<'a> {
     /// decoder must know `bit_limit` to avoid reading padding bits as TLV data.
     pub fn with_bit_limit(bytes: &'a [u8], bit_limit: usize) -> Self {
         debug_assert!(bit_limit <= bytes.len() * 8);
-        Self { bytes, bit_position: 0, bit_limit }
+        Self {
+            bytes,
+            bit_position: 0,
+            bit_limit,
+        }
     }
 
     /// Read `count` bits MSB-first; returns the value LSB-aligned.
@@ -202,11 +217,7 @@ impl<'a> BitReader<'a> {
 /// Generalizes the read-bits-then-write-bits pattern used by the TLV
 /// encoder when re-emitting a sub-bitstream's bits into the outer wire
 /// without 1-bit drift on non-byte-aligned boundaries.
-pub fn re_emit_bits(
-    dst: &mut BitWriter,
-    src_bytes: &[u8],
-    bit_len: usize,
-) -> Result<(), Error> {
+pub fn re_emit_bits(dst: &mut BitWriter, src_bytes: &[u8], bit_len: usize) -> Result<(), Error> {
     let mut src_reader = BitReader::with_bit_limit(src_bytes, bit_len);
     let mut remaining = bit_len;
     while remaining > 0 {
@@ -301,7 +312,7 @@ mod tests {
         // 5-bit payload + 3-bit zero padding = 1 byte
         let mut w = BitWriter::new();
         w.write_bits(0b10110, 5);
-        let bytes = w.into_bytes();  // [0b1011_0000]; padding is the trailing 000
+        let bytes = w.into_bytes(); // [0b1011_0000]; padding is the trailing 000
 
         let mut r = BitReader::with_bit_limit(&bytes, 5);
         assert_eq!(r.read_bits(5).unwrap(), 0b10110);

@@ -18,7 +18,8 @@ use predicates::prelude::*;
 /// No `--keys` is passed; encode uses synthetic placeholder keys when none supplied.
 #[test]
 fn v017_v1_a_single_leaf_bare_pk_encodes() {
-    Command::cargo_bin("md").unwrap()
+    Command::cargo_bin("md")
+        .unwrap()
         .args(["encode", "tr(@0,pk(@1))"])
         .assert()
         .success()
@@ -35,7 +36,8 @@ fn v017_v1_a_single_leaf_bare_pk_encodes() {
 /// is preserved as a comment for git-history readers.
 #[test]
 fn v017_v1_b_and_v_inheritance_pattern_encodes() {
-    Command::cargo_bin("md").unwrap()
+    Command::cargo_bin("md")
+        .unwrap()
         .args(["encode", "tr(@0,and_v(v:pk(@1),older(144)))"])
         .assert()
         .success()

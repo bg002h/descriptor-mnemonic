@@ -26,7 +26,11 @@ fn bits_to_symbols(payload_bytes: &[u8], bit_count: usize) -> Result<Vec<u8>, Er
     let mut symbols = Vec::with_capacity(symbol_count);
     for _ in 0..symbol_count {
         let take = r.remaining_bits().min(5);
-        let val = if take == 0 { 0 } else { r.read_bits(take)? as u8 };
+        let val = if take == 0 {
+            0
+        } else {
+            r.read_bits(take)? as u8
+        };
         // Left-justify within 5 bits if final symbol is short. (For decoder
         // round-trip purposes the spec defines bit-packing MSB-first into
         // 5-bit symbols, so zero-padding the LOW bits of the final symbol is
@@ -52,7 +56,10 @@ fn symbol_to_char(s: u8) -> char {
 
 fn char_to_symbol(c: char) -> Option<u8> {
     let lc = c.to_ascii_lowercase() as u8;
-    CODEX32_ALPHABET.iter().position(|&b| b == lc).map(|i| i as u8)
+    CODEX32_ALPHABET
+        .iter()
+        .position(|&b| b == lc)
+        .map(|i| i as u8)
 }
 
 /// Wrap a v0.11 payload bit stream (byte-padded with exact `bit_count`)
@@ -62,7 +69,8 @@ pub fn wrap_payload(payload_bytes: &[u8], bit_count: usize) -> Result<String, Er
     // v0.x exposes `bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13]`.
     let checksum: [u8; 13] = crate::bch::bch_create_checksum_regular(HRP, &data_symbols);
 
-    let mut s = String::with_capacity(HRP.len() + 1 + data_symbols.len() + REGULAR_CHECKSUM_SYMBOLS);
+    let mut s =
+        String::with_capacity(HRP.len() + 1 + data_symbols.len() + REGULAR_CHECKSUM_SYMBOLS);
     s.push_str(HRP);
     s.push('1'); // BIP 173-style HRP separator
     for sym in &data_symbols {

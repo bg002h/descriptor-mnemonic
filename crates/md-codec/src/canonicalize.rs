@@ -10,7 +10,7 @@
 //! so this invariant holds, atomically permuting:
 //!
 //! - the tree's `KeyArg.index` and `Tr.key_index` fields;
-//! - the [`PathDecl`]'s `Divergent` paths vector (one path per `@N`);
+//! - the [`PathDecl`](crate::origin_path::PathDecl)'s `Divergent` paths vector (one path per `@N`);
 //! - per-`@N` TLV maps: `use_site_path_overrides`, `fingerprints`,
 //!   `pubkeys`, `origin_path_overrides`.
 //!
@@ -159,7 +159,10 @@ pub fn canonicalize_placeholder_indices(d: &mut Descriptor) -> Result<(), Error>
     // under-specified.
     for (i, was_seen) in seen.iter().enumerate() {
         if !was_seen {
-            return Err(Error::PlaceholderNotReferenced { idx: i as u8, n: d.n });
+            return Err(Error::PlaceholderNotReferenced {
+                idx: i as u8,
+                n: d.n,
+            });
         }
     }
 
@@ -460,9 +463,18 @@ mod tests {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 84 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 84,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         }
@@ -472,13 +484,19 @@ mod tests {
         PathDecl {
             n,
             paths: PathDeclPaths::Shared(OriginPath {
-                components: vec![PathComponent { hardened: true, value: 48 }],
+                components: vec![PathComponent {
+                    hardened: true,
+                    value: 48,
+                }],
             }),
         }
     }
 
     fn no_multipath() -> UseSitePath {
-        UseSitePath { multipath: None, wildcard_hardened: false }
+        UseSitePath {
+            multipath: None,
+            wildcard_hardened: false,
+        }
     }
 
     /// Pre-condition: `tr(@0)` already canonical → after canonicalize,
@@ -491,7 +509,10 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::Tr,
-                body: Body::Tr { key_index: 0, tree: None },
+                body: Body::Tr {
+                    key_index: 0,
+                    tree: None,
+                },
             },
             tlv: TlvSection::new_empty(),
         };
@@ -590,19 +611,22 @@ mod tests {
     #[test]
     fn permute_with_divergent_path_decl() {
         let path_for_at_0 = OriginPath {
-            components: vec![PathComponent { hardened: true, value: 84 }],
+            components: vec![PathComponent {
+                hardened: true,
+                value: 84,
+            }],
         };
         let path_for_at_1 = OriginPath {
-            components: vec![PathComponent { hardened: true, value: 86 }],
+            components: vec![PathComponent {
+                hardened: true,
+                value: 86,
+            }],
         };
         let mut d = Descriptor {
             n: 2,
             path_decl: PathDecl {
                 n: 2,
-                paths: PathDeclPaths::Divergent(vec![
-                    path_for_at_0.clone(),
-                    path_for_at_1.clone(),
-                ]),
+                paths: PathDeclPaths::Divergent(vec![path_for_at_0.clone(), path_for_at_1.clone()]),
             },
             use_site_path: no_multipath(),
             tree: Node {
@@ -656,10 +680,7 @@ mod tests {
         };
         canonicalize_placeholder_indices(&mut d).unwrap();
         // After: original @1 → new @0; override should now key on @0.
-        assert_eq!(
-            d.tlv.use_site_path_overrides.unwrap(),
-            vec![(0, custom)],
-        );
+        assert_eq!(d.tlv.use_site_path_overrides.unwrap(), vec![(0, custom)],);
     }
 
     /// Both `fingerprints` and `pubkeys` carry @N idx; both must be
@@ -709,7 +730,10 @@ mod tests {
     #[test]
     fn permute_with_origin_path_overrides() {
         let path_for_at_2 = OriginPath {
-            components: vec![PathComponent { hardened: true, value: 99 }],
+            components: vec![PathComponent {
+                hardened: true,
+                value: 99,
+            }],
         };
         let mut d = Descriptor {
             n: 3,
@@ -747,12 +771,18 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::Tr,
-                body: Body::Tr { key_index: 0, tree: None },
+                body: Body::Tr {
+                    key_index: 0,
+                    tree: None,
+                },
             },
             tlv: TlvSection::new_empty(),
         };
         let err = canonicalize_placeholder_indices(&mut d).unwrap_err();
-        assert!(matches!(err, Error::PlaceholderNotReferenced { idx: 1, n: 3 }));
+        assert!(matches!(
+            err,
+            Error::PlaceholderNotReferenced { idx: 1, n: 3 }
+        ));
     }
 
     /// Out-of-range `@N` reference is caught up-front with a typed error
@@ -770,7 +800,10 @@ mod tests {
             tlv: TlvSection::new_empty(),
         };
         let err = canonicalize_placeholder_indices(&mut d).unwrap_err();
-        assert!(matches!(err, Error::PlaceholderIndexOutOfRange { idx: 5, n: 2 }));
+        assert!(matches!(
+            err,
+            Error::PlaceholderIndexOutOfRange { idx: 5, n: 2 }
+        ));
     }
 
     /// Idempotence: canonicalizing twice is a no-op after the first call.
@@ -953,10 +986,8 @@ mod tests {
 
             // Encode → decode and confirm the result is already
             // canonical (decoder accepts it cleanly).
-            let (bytes, total_bits) =
-                crate::encode::encode_payload(&d).expect("encode");
-            let decoded =
-                crate::decode::decode_payload(&bytes, total_bits).expect("decode");
+            let (bytes, total_bits) = crate::encode::encode_payload(&d).expect("encode");
+            let decoded = crate::decode::decode_payload(&bytes, total_bits).expect("decode");
             let mut decoded_mut = decoded;
             canonicalize_placeholder_indices(&mut decoded_mut).unwrap();
             assert_eq!(canonical, decoded_mut);
@@ -974,15 +1005,27 @@ mod expand_tests {
     use crate::use_site_path::UseSitePath;
 
     fn pkk(index: u8) -> Node {
-        Node { tag: Tag::PkK, body: Body::KeyArg { index } }
+        Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index },
+        }
     }
 
     fn bip84() -> OriginPath {
         OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 84 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
+                PathComponent {
+                    hardened: true,
+                    value: 84,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
             ],
         }
     }
@@ -990,10 +1033,22 @@ mod expand_tests {
     fn bip48_type_2() -> OriginPath {
         OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 48 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 2 },
+                PathComponent {
+                    hardened: true,
+                    value: 48,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 2,
+                },
             ],
         }
     }
@@ -1004,9 +1059,15 @@ mod expand_tests {
     fn expand_full_elision_canonical_wpkh() {
         let d = Descriptor {
             n: 1,
-            path_decl: PathDecl { n: 1, paths: PathDeclPaths::Shared(bip84()) },
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(bip84()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
-            tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+            tree: Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            },
             tlv: TlvSection::new_empty(),
         };
         let expanded = expand_per_at_n(&d).unwrap();
@@ -1024,7 +1085,10 @@ mod expand_tests {
     fn expand_full_elision_canonical_wsh_multi() {
         let d = Descriptor {
             n: 3,
-            path_decl: PathDecl { n: 3, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            path_decl: PathDecl {
+                n: 3,
+                paths: PathDeclPaths::Shared(bip48_type_2()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Wsh,
@@ -1055,14 +1119,26 @@ mod expand_tests {
     fn expand_per_idx_override_mix() {
         let custom_path = OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 84 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 5 },
+                PathComponent {
+                    hardened: true,
+                    value: 84,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 5,
+                },
             ],
         };
         let d = Descriptor {
             n: 3,
-            path_decl: PathDecl { n: 3, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            path_decl: PathDecl {
+                n: 3,
+                paths: PathDeclPaths::Shared(bip48_type_2()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Wsh,
@@ -1091,10 +1167,16 @@ mod expand_tests {
     #[test]
     fn expand_divergent_paths() {
         let path_a = OriginPath {
-            components: vec![PathComponent { hardened: true, value: 84 }],
+            components: vec![PathComponent {
+                hardened: true,
+                value: 84,
+            }],
         };
         let path_b = OriginPath {
-            components: vec![PathComponent { hardened: true, value: 86 }],
+            components: vec![PathComponent {
+                hardened: true,
+                value: 86,
+            }],
         };
         let d = Descriptor {
             n: 2,
@@ -1125,10 +1207,16 @@ mod expand_tests {
     #[test]
     fn expand_use_site_path_overrides() {
         let baseline = UseSitePath::standard_multipath();
-        let custom = UseSitePath { multipath: None, wildcard_hardened: true };
+        let custom = UseSitePath {
+            multipath: None,
+            wildcard_hardened: true,
+        };
         let d = Descriptor {
             n: 2,
-            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Shared(bip48_type_2()),
+            },
             use_site_path: baseline.clone(),
             tree: Node {
                 tag: Tag::Wsh,
@@ -1162,7 +1250,10 @@ mod expand_tests {
         }
         let d = Descriptor {
             n: 3,
-            path_decl: PathDecl { n: 3, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            path_decl: PathDecl {
+                n: 3,
+                paths: PathDeclPaths::Shared(bip48_type_2()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Wsh,
@@ -1199,7 +1290,10 @@ mod expand_tests {
         let empty_path = OriginPath { components: vec![] };
         let d = Descriptor {
             n: 2,
-            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(empty_path) },
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Shared(empty_path),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Sh,
@@ -1227,9 +1321,15 @@ mod expand_tests {
         // Wallet A: elided form. path_decl carries the canonical BIP-84.
         let d_elided = Descriptor {
             n: 1,
-            path_decl: PathDecl { n: 1, paths: PathDeclPaths::Shared(bip84()) },
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(bip84()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
-            tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+            tree: Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            },
             tlv: TlvSection::new_empty(),
         };
         // Wallet B: explicit form. Same canonical BIP-84 path placed into
@@ -1237,9 +1337,15 @@ mod expand_tests {
         // canonical_origin into path_decl when no overrides supplied).
         let d_explicit = Descriptor {
             n: 1,
-            path_decl: PathDecl { n: 1, paths: PathDeclPaths::Shared(bip84()) },
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(bip84()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
-            tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+            tree: Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            },
             tlv: TlvSection::new_empty(),
         };
         assert_eq!(
@@ -1258,7 +1364,10 @@ mod expand_tests {
         let xpub_b = [0xbb; 65];
         let mut d = Descriptor {
             n: 2,
-            path_decl: PathDecl { n: 2, paths: PathDeclPaths::Shared(bip48_type_2()) },
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Shared(bip48_type_2()),
+            },
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Multi,
