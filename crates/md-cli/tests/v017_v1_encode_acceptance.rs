@@ -25,19 +25,21 @@ fn v017_v1_a_single_leaf_bare_pk_encodes() {
         .stdout(predicate::str::starts_with("md1"));
 }
 
-/// V1.b — pre-Phase-2 failure mode: AndV/Older/Verify miniscript fragments
-/// are rejected by `walk_miniscript_node` because only PkK/PkH/Multi/MultiA/Check
-/// are wired up. Phase 2's walker extension (Terminal::AndV + Terminal::Older
-/// + Terminal::Verify arms) will FORCE this test to fail; **update this test
-/// in Phase 5 (not Phase 2)** to assert success once the full integration
-/// suite is wired. Failing here mid-cycle is the canary that Axis 1 shipped.
+/// V1.b — Axis 1 success case. PRE-Phase-2 this failed with
+/// `unsupported miniscript fragment: and_v` because `walk_miniscript_node`
+/// only wired PkK/PkH/Multi/MultiA/Check. Phase 2 added Terminal::AndV +
+/// Terminal::Older + Terminal::Verify arms; the canary fired and was
+/// flipped to assert-success in the same commit (TDD red→green; keeps
+/// each commit's test suite green). The historical pre-Phase-2 stderr
+/// `unsupported miniscript fragment: and_v(v:pk(<resolved-xpub>),older(144))`
+/// is preserved as a comment for git-history readers.
 #[test]
-fn v017_v1_b_and_v_pre_phase_2_unsupported_fragment() {
+fn v017_v1_b_and_v_inheritance_pattern_encodes() {
     Command::cargo_bin("md").unwrap()
         .args(["encode", "tr(@0,and_v(v:pk(@1),older(144)))"])
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains("unsupported miniscript fragment: and_v"));
+        .success()
+        .stdout(predicate::str::starts_with("md1"));
 }
 
 /// V1.c — pre-Phase-3 failure mode: literal x-only hex in tr() internal-key

@@ -1,4 +1,18 @@
 use crate::error::CliError;
+
+/// BIP-341 §"Constructing and spending Taproot outputs" NUMS H-point — the
+/// canonical x-only public key with no known discrete log. Used as the
+/// taproot internal key in `Tag::TrUnspendable` form. Encoders MUST emit
+/// `Tag::TrUnspendable` (md-codec extension sub-code 0x05) iff the
+/// descriptor's `tr()` internal key is exactly this value; `Tag::Tr` for
+/// any `@N` placeholder. See SPEC v0.17 § Canonicalization invariant.
+///
+/// Lives in `parse/template.rs` (unconditional) rather than `compile.rs`
+/// (feature-gated `cli-compiler`) so it is available to all consumers
+/// (`format/text.rs` rendering, `walk_tr` recognition, plus `compile.rs`
+/// when the feature is enabled).
+pub(crate) const NUMS_H_POINT_X_ONLY_HEX: &str =
+    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 use bitcoin::bip32::DerivationPath;
 use regex::Regex;
 use std::str::FromStr;
@@ -442,6 +456,27 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
                 body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
             })
         }
+        // `v:` wrapper. Used inside and_v(v:pk(K), ...) shapes that
+        // miniscript's policy compiler emits for and-conjunctions and
+        // for any "must-also-sign" sub-expression.
+        Terminal::Verify(inner) => Ok(Node {
+            tag: Tag::Verify,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        // `and_v` — and-conjunction with verify-promotion semantics.
+        Terminal::AndV(l, r) => Ok(Node {
+            tag: Tag::AndV,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `older` — relative timelock. miniscript carries `Sequence`; we
+        // unwrap to consensus u32 for the BIP 388 wire body.
+        Terminal::Older(seq) => Ok(Node {
+            tag: Tag::Older,
+            body: Body::Timelock(seq.to_consensus_u32()),
+        }),
         // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
         _ => {
             let _ = tap_context;
@@ -454,14 +489,19 @@ fn walk_tr(t: &miniscript::descriptor::Tr<DescriptorPublicKey>, km: &std::collec
     let key_index = lookup_key(&t.internal_key().to_string(), km)?;
     let tree: Option<Box<Node>> = match t.tap_tree() {
         None => None,
-        Some(tt) => Some(Box::new(walk_tap_tree_v0_15(tt, km)?)),
+        Some(tt) => Some(Box::new(walk_tap_tree(tt, km)?)),
     };
     Ok(Node { tag: Tag::Tr, body: Body::Tr { key_index, tree } })
 }
 
-/// Walk miniscript 13's `TapTree` for the v0.15 supported subset (0 or 1 leaf).
+/// Walk miniscript 13's `TapTree` for the supported subset (0 or 1 leaf).
 /// Returns the leaf node directly when there is exactly one leaf.
-fn walk_tap_tree_v0_15(
+///
+/// Multi-branch (`{a,b}` brace syntax) is not yet supported. The policy
+/// compiler emits compact single-leaf miniscript fragments by default
+/// (e.g. `multi_a`, `and_v`), so this gate fires only on hand-written
+/// `tr(KEY, {a,b})` templates. Tracked as a v0.18+ followup.
+fn walk_tap_tree(
     tt: &miniscript::descriptor::TapTree<DescriptorPublicKey>,
     km: &std::collections::BTreeMap<String, u8>,
 ) -> Result<Node, CliError> {
@@ -469,13 +509,15 @@ fn walk_tap_tree_v0_15(
     match leaves.len() {
         0 => Err(CliError::TemplateParse("tap tree present but contains no leaves".into())),
         1 => {
-            // v0.15 supports a single leaf at any depth; we ignore depth here
-            // because there is no branching. The leaf becomes a plain Node.
+            // Single leaf at any depth; we ignore depth here because there is
+            // no branching. The leaf becomes a plain Node.
             let leaf = &leaves[0];
             walk_miniscript_node(leaf.miniscript(), km, /*tap=*/true)
         }
         n => Err(CliError::TemplateParse(format!(
-            "tap tree with {n} leaves not yet supported in v0.15 (single-leaf only)"
+            "multi-branch tap trees are not yet supported (got {n} leaves; single-leaf only). \
+             The policy compiler emits compact single-leaf miniscript fragments by default \
+             — file an issue if you need multi-branch support."
         ))),
     }
 }
@@ -612,6 +654,78 @@ mod tr_tests {
                 assert!(matches!(leaf.body, Body::KeyArg { index: 1 }));
             }
             _ => panic!("expected Body::Tr"),
+        }
+    }
+
+    /// Inheritance pattern: `tr(@0, and_v(v:pk(@1), older(144)))`.
+    /// Exercises the v0.17 walker arms for Terminal::AndV, Terminal::Verify,
+    /// and Terminal::Older. Spike-verified that `Policy::compile_tr(None)`
+    /// emits this shape from `or(pk(@0), and(pk(@1), older(144)))`.
+    #[test]
+    fn tr_with_and_v_verify_older_inheritance() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Tr);
+        let leaf = match root.body {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 0);
+                tree.expect("tap tree must be present")
+            }
+            _ => panic!("expected Body::Tr"),
+        };
+        // Leaf is and_v(<verify-child>, <older-child>)
+        assert_eq!(leaf.tag, Tag::AndV);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([verify, older])"),
+        };
+        // First child: v:pk(@1) → Tag::Verify wrapping bare Tag::PkK
+        assert_eq!(kids[0].tag, Tag::Verify);
+        let verify_inner = match &kids[0].body {
+            Body::Children(v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Verify.Children([pkk])"),
+        };
+        assert_eq!(verify_inner.tag, Tag::PkK);
+        assert!(matches!(verify_inner.body, Body::KeyArg { index: 1 }));
+        // Second child: older(144) → Tag::Older with Body::Timelock(144)
+        assert_eq!(kids[1].tag, Tag::Older);
+        assert!(matches!(kids[1].body, Body::Timelock(144)));
+    }
+
+    /// Multi-branch tap trees error with the new v0.17 message (no longer
+    /// references "v0.15") in the **template-parse path** (`walk_tap_tree`).
+    /// Hand-constructed `tr(KEY, {a,b})` template — the policy compiler does
+    /// not emit this shape, so this gate fires only on hand-written templates.
+    /// v0.18+ followup will lift the restriction.
+    ///
+    /// Note: This test does NOT cover `compile.rs`'s "v0.15 cli-compiler" error
+    /// message at line ~52; that error path lives in the policy-compile pipeline
+    /// and is separately removed by Phase 4 (which drops the bare-pk gate
+    /// entirely). The "v0.15 wording must be gone" assertion below checks only
+    /// the walk_tap_tree error path.
+    #[test]
+    fn tr_multi_branch_rejected_with_v0_17_error_message() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,{pk(@1/<0;1>/*),pk(@2/<0;1>/*)})",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let err = walk_root(&d, &km).unwrap_err();
+        match err {
+            CliError::TemplateParse(msg) => {
+                assert!(
+                    msg.contains("multi-branch tap trees are not yet supported"),
+                    "expected v0.17 multi-branch error, got: {msg}"
+                );
+                assert!(!msg.contains("v0.15"), "v0.15 wording must be gone");
+            }
+            other => panic!("expected TemplateParse, got {other:?}"),
         }
     }
 }

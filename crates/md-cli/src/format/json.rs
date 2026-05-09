@@ -179,6 +179,9 @@ pub enum JsonBody {
     Children(Vec<JsonNode>),
     Variable { k: u8, children: Vec<JsonNode> },
     Tr { key_index: u8, tree: Option<Box<JsonNode>> },
+    /// `tr(NUMS, ...)` shape — internal key is implicitly the BIP-341 NUMS
+    /// H-point, so there is no `key_index` field.
+    TrUnspendable { tree: Option<Box<JsonNode>> },
     Hash256Body(String),  // hex
     Hash160Body(String),  // hex
     Timelock(u32),
@@ -194,6 +197,9 @@ impl From<&Body> for JsonBody {
             },
             Body::Tr { key_index, tree } => JsonBody::Tr {
                 key_index: *key_index,
+                tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
+            },
+            Body::TrUnspendable { tree } => JsonBody::TrUnspendable {
                 tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
             },
             Body::Hash256Body(h) => JsonBody::Hash256Body(hex(h)),

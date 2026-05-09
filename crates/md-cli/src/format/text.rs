@@ -1,4 +1,5 @@
 use crate::error::CliError;
+use crate::parse::template::NUMS_H_POINT_X_ONLY_HEX;
 use md_codec::encode::Descriptor;
 use md_codec::tag::Tag;
 use md_codec::tree::{Body, Node};
@@ -39,6 +40,24 @@ fn render_node(
             out.push(')');
             Ok(())
         }
+        Tag::TrUnspendable => {
+            // tr(<NUMS-hex>, <optional tap tree>) — internal key is implicit
+            // BIP-341 NUMS, materialized in the rendered template as the
+            // canonical x-only hex string (the constant md-cli emits).
+            out.push_str("tr(");
+            out.push_str(NUMS_H_POINT_X_ONLY_HEX);
+            match &node.body {
+                Body::TrUnspendable { tree } => {
+                    if let Some(t) = tree {
+                        out.push(',');
+                        render_tap_node(t, default_usp, overrides, out)?;
+                    }
+                }
+                _ => return Err(CliError::TemplateParse("Tag::TrUnspendable without Body::TrUnspendable".into())),
+            }
+            out.push(')');
+            Ok(())
+        }
         Tag::Multi       => render_multi("multi",       node, default_usp, overrides, out),
         Tag::SortedMulti => render_multi("sortedmulti", node, default_usp, overrides, out),
         Tag::MultiA       => render_multi("multi_a",       node, default_usp, overrides, out),
@@ -52,6 +71,38 @@ fn render_node(
             }
             _ => Err(CliError::TemplateParse("PkK/PkH without KeyArg body".into())),
         },
+        Tag::AndV => {
+            // and_v(left, right) — function-call syntax. Used inside tap-script
+            // leaves for and-conjunction / inheritance patterns.
+            let kids = match &node.body {
+                Body::Children(v) if v.len() == 2 => v,
+                _ => return Err(CliError::TemplateParse("AndV body must be Children([2])".into())),
+            };
+            out.push_str("and_v(");
+            render_node(&kids[0], default_usp, overrides, out)?;
+            out.push(',');
+            render_node(&kids[1], default_usp, overrides, out)?;
+            out.push(')');
+            Ok(())
+        }
+        Tag::Verify => {
+            // `v:` wrapper — prefix syntax (no parens). The wrapped child is
+            // rendered inline; e.g. `v:pk(@1)`.
+            let inner = match &node.body {
+                Body::Children(v) if v.len() == 1 => &v[0],
+                _ => return Err(CliError::TemplateParse("Verify body must be Children([1])".into())),
+            };
+            out.push_str("v:");
+            render_node(inner, default_usp, overrides, out)
+        }
+        Tag::Older => {
+            let v = match node.body {
+                Body::Timelock(v) => v,
+                _ => return Err(CliError::TemplateParse("Older body must be Timelock".into())),
+            };
+            write!(out, "older({v})").unwrap();
+            Ok(())
+        }
         other => Err(CliError::TemplateParse(format!("unsupported tag in render: {other:?}"))),
     }
 }
@@ -163,6 +214,17 @@ mod tests {
     #[test]
     fn roundtrip_tr_keyonly() {
         let t = "tr(@0/<0;1>/*)";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.17 Phase 2 — round-trip of the inheritance pattern through the
+    /// text renderer (decode-side path). Ensures `Tag::AndV`, `Tag::Verify`,
+    /// `Tag::Older` render correctly when descriptors are reconstructed from
+    /// md1 bytecode.
+    #[test]
+    fn roundtrip_tr_and_v_verify_older_inheritance() {
+        let t = "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))";
         let d = parse_template(t, &[], &[]).unwrap();
         assert_eq!(descriptor_to_template(&d).unwrap(), t);
     }
