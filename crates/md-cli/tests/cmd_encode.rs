@@ -139,3 +139,138 @@ fn encode_rejects_tpub_under_default_mainnet() {
         .code(1)
         .stderr(predicate::str::contains("expected mainnet"));
 }
+
+/// v0.18 Item J — `--path` flag now actually affects encode output. Pre-v0.18
+/// the value was destructured as `path: _` at main.rs:218 and silently dropped.
+#[cfg(feature = "cli-compiler")]
+#[test]
+fn encode_with_explicit_path_populates_path_decl() {
+    use std::process::Command as StdCommand;
+
+    let baseline = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+        ])
+        .output()
+        .expect("baseline encode");
+    let baseline_phrase = String::from_utf8(baseline.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    let with_path = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--path",
+            "48'/0'/0'/2'",
+        ])
+        .output()
+        .expect("with-path encode");
+    let with_path_phrase = String::from_utf8(with_path.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    assert!(baseline_phrase.starts_with("md1"));
+    assert!(with_path_phrase.starts_with("md1"));
+    assert_ne!(
+        baseline_phrase, with_path_phrase,
+        "explicit --path must change the encoded phrase (was silently dropped pre-v0.18)"
+    );
+}
+
+/// v0.18 Item J — named-path forms (`bip44|48|49|84|86`) resolve via parse_path
+/// and produce the same wire output as the literal equivalent.
+#[cfg(feature = "cli-compiler")]
+#[test]
+fn encode_with_named_path_bip48() {
+    use std::process::Command as StdCommand;
+
+    let named = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--path",
+            "bip48",
+        ])
+        .output()
+        .expect("named-path encode");
+    let named_phrase = String::from_utf8(named.stdout).unwrap().trim().to_string();
+
+    let literal = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--path",
+            "48'/0'/0'/2'",
+        ])
+        .output()
+        .expect("literal-path encode");
+    let literal_phrase = String::from_utf8(literal.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    assert!(named_phrase.starts_with("md1"));
+    assert_eq!(
+        named_phrase, literal_phrase,
+        "`--path bip48` must resolve to `48'/0'/0'/2'` (parse_path::parse_path_name)"
+    );
+}
+
+/// v0.18 Item J — explicit --path overrides the inferred canonical default.
+/// Different explicit paths produce different phrases.
+#[cfg(feature = "cli-compiler")]
+#[test]
+fn encode_path_overrides_canonical_default() {
+    use std::process::Command as StdCommand;
+
+    let path_a = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--path",
+            "48'/0'/0'/2'",
+        ])
+        .output()
+        .expect("path-A encode");
+    let phrase_a = String::from_utf8(path_a.stdout).unwrap().trim().to_string();
+
+    let path_b = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--path",
+            "86'/0'/0'",
+        ])
+        .output()
+        .expect("path-B encode");
+    let phrase_b = String::from_utf8(path_b.stdout).unwrap().trim().to_string();
+
+    assert!(phrase_a.starts_with("md1"));
+    assert!(phrase_b.starts_with("md1"));
+    assert_ne!(
+        phrase_a, phrase_b,
+        "different explicit --path values must produce different encoded phrases"
+    );
+}

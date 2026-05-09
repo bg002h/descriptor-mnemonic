@@ -74,7 +74,9 @@ enum Command {
         /// a specific NUMS-equivalent key. Rejected when --context segwitv0.
         #[arg(long, value_name = "KEY")]
         unspendable_key: Option<String>,
-        /// Override the inferred shared derivation path.
+        /// Override the inferred origin path with a single shared path
+        /// (flattens Divergent mode to Shared). Accepts named (bip44|48|49|84|86),
+        /// hex (0xNN), or literal (m/...) forms.
         #[arg(long, value_name = "PATH")]
         path: Option<String>,
         /// Concrete xpub for placeholder `@i`. Repeatable.
@@ -215,7 +217,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
             from_policy,
             context,
             unspendable_key,
-            path: _,
+            path,
             keys,
             fingerprints,
             network,
@@ -268,6 +270,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                 template: &template_str,
                 keys: &keys,
                 fingerprints: &fingerprints,
+                path: path.as_deref(),
                 network: network.into(),
                 network_str: network.as_str(),
                 force_chunked,

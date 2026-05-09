@@ -45,6 +45,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0.18-phase-1-low-2-cli-path-non-from-policy-test-gate` — non-feature-gated `--path` test for raw template input
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 1 per-phase code-reviewer round (Item J `--path` fix; reviewer L2 finding).
+- **Where:** `crates/md-cli/tests/cmd_encode.rs`. The three Phase 1 tests are all `#[cfg(feature = "cli-compiler")]` and exercise `--from-policy`. The `--path` override fires at the same site for non-`--from-policy` (raw-template) input but no automated test pins that path.
+- **What:** Add a non-cfg-gated test `encode_with_explicit_path_raw_template` that runs `md encode wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)) --path "84'/0'/0'"` and asserts the phrase differs from no-path baseline. Provides unconditional CI coverage of the override site for the hand-written-template pathway.
+- **Why deferred:** parse/path.rs's existing unit `rejects_garbage` test plus the live probe in Phase 1 verification covers the same surface area at lower cost. This is a polish item, not a correctness gap.
+- **Status:** `open`
+- **Tier:** `low (test-coverage gap, post-resolution polish)`
+
 ### `manual-cli-surface-mirror` — md-cli flag/API changes must mirror to the toolkit-side user manual
 
 - **Surfaced:** 2026-05-07, m-format-star user manual v0.1 release in `bg002h/mnemonic-toolkit` (`manual-v0.1.0` tag; toolkit PR #1).

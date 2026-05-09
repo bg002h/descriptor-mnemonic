@@ -1,16 +1,23 @@
 use crate::error::CliError;
 use crate::format::text;
 use crate::parse::keys::{parse_fingerprint, parse_key};
-use crate::parse::template::{ctx_for_template, parse_template};
+use crate::parse::path::parse_path;
+use crate::parse::template::{ctx_for_template, parse_template, to_origin_path};
 
 use md_codec::chunk::{derive_chunk_set_id, split};
 use md_codec::encode::encode_md1_string;
 use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
+use md_codec::origin_path::PathDeclPaths;
 
 pub struct EncodeArgs<'a> {
     pub template: &'a str,
     pub keys: &'a [String],
     pub fingerprints: &'a [String],
+    /// Override the inferred shared origin path. Accepts named (`bip44|48|49|84|86`),
+    /// hex (`0xNN`), or literal (`m/...`) forms. When `Some`, replaces
+    /// `descriptor.path_decl.paths` with `PathDeclPaths::Shared(parsed)`,
+    /// preserving the placeholder count `n`.
+    pub path: Option<&'a str>,
     pub network: bitcoin::Network,
     pub network_str: &'static str,
     pub force_chunked: bool,
@@ -31,7 +38,11 @@ pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
+    let mut descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
+    if let Some(p_arg) = args.path {
+        let dp = parse_path(p_arg)?;
+        descriptor.path_decl.paths = PathDeclPaths::Shared(to_origin_path(Some(&dp)));
+    }
 
     #[cfg(feature = "json")]
     if args.json {
