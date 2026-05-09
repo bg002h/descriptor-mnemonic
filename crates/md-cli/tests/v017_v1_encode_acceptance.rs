@@ -42,20 +42,21 @@ fn v017_v1_b_and_v_inheritance_pattern_encodes() {
         .stdout(predicate::str::starts_with("md1"));
 }
 
-/// V1.c — pre-Phase-3 failure mode: literal x-only hex in tr() internal-key
-/// position is rejected by `walk_tr` because lookup_key only knows about
-/// `@N`-derived synthetic xpubs. Phase 3's NUMS recognition (walk_tr branch
-/// on `t.internal_key().to_string() == NUMS_H_POINT_X_ONLY_HEX`) will FORCE
-/// this test to fail; **update this test in Phase 5 (not Phase 3)** to
-/// assert success once the full integration suite is wired. Failing here
-/// mid-cycle is the canary that Axis 2 shipped.
+/// V1.c — Axis 2 success case. PRE-Phase-3 this failed with
+/// `synthetic key 50929b74... not found in key map` because `walk_tr`'s
+/// `lookup_key` call only knew about `@N`-derived synthetic xpubs and the
+/// literal NUMS hex was not in the map. Phase 3 added NUMS recognition
+/// (walk_tr branch on `t.internal_key().to_string() == NUMS_H_POINT_X_ONLY_HEX`
+/// → emit Tag::TrUnspendable); the canary fired and was flipped to
+/// assert-success in the same commit (TDD red→green; keeps each commit's
+/// test suite green). The historical pre-Phase-3 stderr
+/// `template parse error: internal: synthetic key <NUMS> not found in key map`
+/// is preserved as a comment for git-history readers.
 #[test]
-fn v017_v1_c_nums_pre_phase_3_synthetic_key_not_found() {
+fn v017_v1_c_nums_internal_key_encodes_via_tr_unspendable() {
     Command::cargo_bin("md").unwrap()
         .args(["encode", "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,@0,@1,@2))"])
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains(
-            "synthetic key 50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0 not found in key map",
-        ));
+        .success()
+        .stdout(predicate::str::starts_with("md1"));
 }

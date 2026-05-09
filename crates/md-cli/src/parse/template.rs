@@ -486,12 +486,45 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
 }
 
 fn walk_tr(t: &miniscript::descriptor::Tr<DescriptorPublicKey>, km: &std::collections::BTreeMap<String, u8>) -> Result<Node, CliError> {
-    let key_index = lookup_key(&t.internal_key().to_string(), km)?;
+    let key_str = t.internal_key().to_string();
     let tree: Option<Box<Node>> = match t.tap_tree() {
         None => None,
         Some(tt) => Some(Box::new(walk_tap_tree(tt, km)?)),
     };
+    // Canonicalization invariant (SPEC v0.17): emit Tag::TrUnspendable iff the
+    // internal key is exactly the BIP-341 NUMS H-point. Otherwise the internal
+    // key MUST be a placeholder-derived synthetic xpub (i.e. an @N).
+    if key_str == NUMS_H_POINT_X_ONLY_HEX {
+        return Ok(Node {
+            tag: Tag::TrUnspendable,
+            body: Body::TrUnspendable { tree },
+        });
+    }
+    let key_index = lookup_key(&key_str, km).map_err(|orig_err| {
+        // If the internal key isn't in the placeholder map AND looks like a
+        // literal x-only hex, surface a clearer error than the generic
+        // "synthetic key not found" message — md1 v0.17 does not encode
+        // arbitrary literal x-only keys in the tr() internal-key position.
+        if is_x_only_hex(&key_str) {
+            CliError::TemplateParse(format!(
+                "unsupported internal-key form: literal hex `{key_str}` other than \
+                 BIP-341 NUMS H-point. Use an @N placeholder (backed by an xpub via \
+                 --keys) for the internal key, or the BIP-341 NUMS H-point \
+                 ({NUMS_H_POINT_X_ONLY_HEX}) to encode as Tag::TrUnspendable."
+            ))
+        } else {
+            orig_err
+        }
+    })?;
     Ok(Node { tag: Tag::Tr, body: Body::Tr { key_index, tree } })
+}
+
+/// Returns `true` if `s` is exactly 64 ASCII hex digits — the shape of a
+/// BIP-340 x-only public key. Used to distinguish "literal hex internal
+/// key that md1 doesn't know how to encode" from generic key-map-miss
+/// errors.
+fn is_x_only_hex(s: &str) -> bool {
+    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Walk miniscript 13's `TapTree` for the supported subset (0 or 1 leaf).
@@ -695,6 +728,88 @@ mod tr_tests {
         // Second child: older(144) → Tag::Older with Body::Timelock(144)
         assert_eq!(kids[1].tag, Tag::Older);
         assert!(matches!(kids[1].body, Body::Timelock(144)));
+    }
+
+    /// v0.17 Phase 3 — NUMS H-point internal key emits Tag::TrUnspendable
+    /// (not Tag::Tr). Confirms the canonicalization invariant in walk_tr.
+    /// Note: substitute_synthetic does NOT touch the literal NUMS hex (the
+    /// regex matches `@N`-prefixed tokens only); the hex flows through into
+    /// the parsed Descriptor's internal_key field as a literal x-only key.
+    #[test]
+    fn tr_with_nums_internal_key_emits_tr_unspendable() {
+        let template = format!(
+            "tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))"
+        );
+        let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::TrUnspendable, "NUMS internal key MUST emit Tag::TrUnspendable");
+        let tree = match root.body {
+            Body::TrUnspendable { tree } => tree.expect("multi_a leaf must be present"),
+            _ => panic!("expected Body::TrUnspendable"),
+        };
+        assert_eq!(tree.tag, Tag::MultiA);
+        match &tree.body {
+            Body::Variable { k, children } => {
+                assert_eq!(*k, 2);
+                assert_eq!(children.len(), 3);
+                for (i, child) in children.iter().enumerate() {
+                    assert_eq!(child.tag, Tag::PkK);
+                    assert!(matches!(child.body, Body::KeyArg { index: ix } if ix as usize == i));
+                }
+            }
+            _ => panic!("expected Body::Variable"),
+        }
+    }
+
+    /// v0.17 Phase 3 — `tr(<NUMS>)` key-path-only (no tap tree) is a valid
+    /// frozen/unspendable output. Confirms miniscript 13 accepts the no-tree
+    /// shape and that walk_tr emits Tag::TrUnspendable with `tree: None`,
+    /// exercising the otherwise-unreachable `Body::TrUnspendable { tree: None }`
+    /// code path.
+    #[test]
+    fn tr_with_nums_key_only_no_tree_emits_tr_unspendable_with_none_tree() {
+        let template = format!("tr({NUMS_H_POINT_X_ONLY_HEX})");
+        let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::TrUnspendable);
+        match root.body {
+            Body::TrUnspendable { tree } => {
+                assert!(tree.is_none(), "tree must be None for tr(<NUMS>) with no script arg");
+            }
+            _ => panic!("expected Body::TrUnspendable"),
+        }
+    }
+
+    /// v0.17 Phase 3 — arbitrary x-only hex internal keys other than NUMS are
+    /// rejected at the walker layer with a clear error message. md1 v0.17's
+    /// wire format only supports @N placeholders or the BIP-341 NUMS sentinel
+    /// in the tr() internal-key position. Non-NUMS literal hex would require
+    /// a Tag::TrLiteralKey wire-format extension that v0.17 does not include.
+    #[test]
+    fn tr_with_non_nums_literal_hex_rejected_with_clear_message() {
+        // secp256k1 generator point's x-coordinate — a guaranteed-valid
+        // x-only public key that is NOT the BIP-341 NUMS H-point. miniscript
+        // accepts it at parse time; walk_tr must reject it at the walker
+        // layer with a clear error.
+        let non_nums_hex =
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+        let template = format!("tr({non_nums_hex},pk(@0/<0;1>/*))");
+        let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let err = walk_root(&d, &km).unwrap_err();
+        match err {
+            CliError::TemplateParse(msg) => {
+                assert!(
+                    msg.contains("unsupported internal-key form: literal hex"),
+                    "expected v0.17 non-NUMS-hex error, got: {msg}"
+                );
+                assert!(msg.contains(non_nums_hex), "error must surface the offending hex");
+                assert!(msg.contains(NUMS_H_POINT_X_ONLY_HEX), "error must show the NUMS alternative");
+            }
+            other => panic!("expected TemplateParse, got {other:?}"),
+        }
     }
 
     /// Multi-branch tap trees error with the new v0.17 message (no longer
