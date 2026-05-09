@@ -32,7 +32,7 @@ The previously-planned `mc-codex32` shared-crate extraction (originally gated on
 
 ## Manual coverage
 
-The end-user manual for the m-format star lives in the sibling `bg002h/mnemonic-toolkit` repo at `docs/manual/`. v0.1 of the manual mirrors `md-cli` verbatim under `docs/manual/src/40-cli-reference/42-md.md`. **Any flag/API change to `md-cli` in this repo must update that chapter in lockstep with the implementing PR.** The manual's `tests/lint.sh flag-coverage` step gates on missing flags. See `design/FOLLOWUPS.md` entry `manual-cli-surface-mirror` for the canonical record; primary entry lives in the toolkit repo.
+The end-user manual for the m-format constellation lives in the sibling `bg002h/mnemonic-toolkit` repo at `docs/manual/`. The manual mirrors all four CLIs (`mnemonic`, `md-cli`, `ms-cli`, `mk-cli`) verbatim — `md-cli`'s mirror chapter is `docs/manual/src/40-cli-reference/42-md.md`. **Any flag/API change to `md-cli` in this repo must update that chapter in lockstep with the implementing PR.** The manual's `tests/lint.sh flag-coverage` step gates on missing flags. See `design/FOLLOWUPS.md` entry `manual-cli-surface-mirror` for the canonical record; primary entry lives in the toolkit repo.
 
 ## Other repo-specific notes
 
