@@ -2,6 +2,31 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## v0.16.x → md-codec v0.17.0 + md-cli v0.2.0
+
+**No breaking change for existing v0.16-encoded payloads.** Existing md1 phrases decode byte-identically under v0.17. The new `Tag::TrUnspendable` (extension sub-code `0x05`) is in the v0.11 5-bit extension space and cannot appear in pre-v0.17 payloads.
+
+### CLI users
+
+`md compile` and `md encode --from-policy` now accept any miniscript-compileable Taproot policy, not just bare `pk(@N)`. The v0.15-era error `"v0.15 cli-compiler only supports single-key tap policies..."` is gone; multi-key tap policies (e.g. `thresh(2,pk,pk,pk)`, `or(pk(@0),and(pk(@1),older(N)))`) compile cleanly.
+
+New optional flag `--unspendable-key <KEY>` on `md compile` and `md encode --from-policy` exposes a tap-context fallback hint passed to miniscript's `compile_tr`. Defaults to BIP-341 NUMS H-point when omitted (auto-NUMS); rare to need a value.
+
+The flag is rejected for `--context segwitv0` (wsh has no internal-key concept), rejected when used without `--from-policy` on the encode subcommand (template-only mode has no compile step), and rejected when empty.
+
+### Library consumers (md-codec)
+
+Two new public enum variants:
+
+- `md_codec::tag::Tag::TrUnspendable` — wire-format additive in extension space (sub-code `0x05`). Code in primary 5-bit space is unchanged.
+- `md_codec::tree::Body::TrUnspendable { tree: Option<Box<Node>> }` — body shape for `Tag::TrUnspendable`. No `key_index` field (NUMS internal key is implicit).
+
+Existing match expressions on `Tag` and `Body` may need a new arm. The canonicalization invariant (encoder MUST emit `Tag::TrUnspendable` iff internal key is BIP-341 NUMS) is enforced at the consumer (md-cli) layer; md-codec is structurally agnostic.
+
+### Library consumers (md-cli)
+
+`compile_policy_to_template` signature changed from `(expr, ctx) -> Result<String>` to `(expr, ctx, unspendable_key: Option<&str>) -> Result<String>`. Programmatic callers must update their call sites; `None` is the recommended default (auto-NUMS).
+
 ## v0.15.x → v0.16.0 + new `md-cli` v0.1.0
 
 The `md` binary moved from `md-codec` into a new `md-cli` crate. **No wire-format change. No library API change.** The migration is install-path-only for CLI users and feature-flag migration for downstream Cargo consumers.
