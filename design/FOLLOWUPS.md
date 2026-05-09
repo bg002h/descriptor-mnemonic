@@ -225,6 +225,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `resolved 4fff2f2 — bitcoin and bip39 (the actually-shared deps) lifted to [workspace.dependencies]; both crates inherit via workspace = true. clap/anyhow/regex/serde/serde_json remain per-crate (md-cli only) since they're not duplicated.`
 - **Tier:** `v0.16.1`
 
+### `v0.17.1-from-policy-round-trip-integration` — round-trip integration test for `encode --from-policy` requires concrete xpubs
+
+- **Surfaced:** v0.17 Phase 5 — attempted to add an `encode → decode/inspect` round-trip integration test for the 2-of-3 multisig pattern; the decode-side canonicity gate (`non-canonical wrapper requires explicit origin for @0, but none provided`) blocked it. The blocker is unrelated to v0.17: md-cli's existing canonicity validation predates this cycle. `--from-policy` emits templates with bare `@N` (no derivation suffix), and decoding such a template requires explicit origin information per `@N`, which can only be supplied via `--key @N=<xpub>` arguments at decode time.
+- **Where:** `crates/md-cli/tests/cmd_encode.rs` (would-be test; deferred). The Phase 5 commit added a comment placeholder where the test should go.
+- **What:** Pin a `cmd_encode.rs` integration test that invokes `md encode --from-policy 'thresh(2,pk(@0),pk(@1),pk(@2))' --context tap --key @0=<testnet-tpub-0> --key @1=<testnet-tpub-1> --key @2=<testnet-tpub-2>` and then `md decode <phrase> --key @0=... --key @1=... --key @2=...`, verifying the decoded template contains `tr(<NUMS-hex>, multi_a(2,@0,@1,@2))` and the same canonical structure. Pick three real testnet xpubs with consistent BIP-48 origin paths so the canonicity gate is satisfied.
+- **Why deferred:** The encoding side is fully covered by `cmd_compile.rs` (golden table) + `cmd_encode.rs::encode_from_policy_thresh_2_of_3_tap` (md1 prefix assertion). The wire-format round-trip is exercised at the md-codec layer in `crates/md-codec/src/tree.rs` `tr_unspendable_multi_a_2_of_3_round_trip`. The CLI-level round-trip is a polish item, not a correctness gate.
+- **Status:** `open`
+- **Tier:** `v0.17.1` (next patch).
+
 ### `v0.17-md-cli-tap-multi-leaf-policy-compile` — `md compile --context tap` rejects multi-leaf policies; needs NUMS internal-key emission
 
 - **Surfaced:** 2026-05-09 user-driven exploration of `md compile` against Pieter Wuille's online policy-to-miniscript compiler example.
