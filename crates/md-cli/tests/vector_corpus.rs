@@ -1,12 +1,15 @@
 #![allow(missing_docs)]
 
-use assert_cmd::Command;
-use std::process::Command as StdCommand;
-use tempfile::tempdir;
-
 // Unix-only: this test shells out to the system `diff` command which is not
 // standard on Windows. The corpus is platform-invariant (regenerated vectors
 // are byte-identical regardless of OS), so Unix CI coverage is sufficient.
+#[cfg(unix)]
+use assert_cmd::Command;
+#[cfg(unix)]
+use std::process::Command as StdCommand;
+#[cfg(unix)]
+use tempfile::tempdir;
+
 #[cfg(unix)]
 #[test]
 fn vectors_output_matches_committed_corpus() {
