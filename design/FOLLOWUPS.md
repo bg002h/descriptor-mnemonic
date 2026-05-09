@@ -225,6 +225,22 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `resolved 4fff2f2 — bitcoin and bip39 (the actually-shared deps) lifted to [workspace.dependencies]; both crates inherit via workspace = true. clap/anyhow/regex/serde/serde_json remain per-crate (md-cli only) since they're not duplicated.`
 - **Tier:** `v0.16.1`
 
+### `v0.17-md-cli-tap-multi-leaf-policy-compile` — `md compile --context tap` rejects multi-leaf policies; needs NUMS internal-key emission
+
+- **Surfaced:** 2026-05-09 user-driven exploration of `md compile` against Pieter Wuille's online policy-to-miniscript compiler example.
+- **Where:**
+  - `crates/md-cli/src/compile.rs:42-56` (rejects anything that doesn't render as bare `pk(...)` after `policy.compile::<Tap>()`).
+  - `crates/md-cli/src/main.rs:235-239` (subcommand wiring) and `:203-212` (`encode --from-policy` wiring).
+  - md-codec already shipped the underlying machinery in v0.7.0 (`policy_to_bytecode(policy, options, ScriptContext, internal_key)` with `None → upstream NUMS unspendable`); see closed entry `md-policy-compiler-feature` at line ~593. The v0.16 library-only extraction kept that API intact but the extracted `md-cli compile.rs` reimplements policy compilation with its own miniscript dep and only handles the single-key case.
+- **What:** Wire `md compile --context tap` and `md encode --from-policy --context tap` through to the multi-leaf path:
+  1. Accept any `policy.compile::<Tap>()` output, not just bare `pk(...)`.
+  2. Emit `tr(NUMS, {leaf1, {leaf2, leaf3}})` form for multi-leaf trees, using miniscript's standard NUMS internal key (the `H` point with no known discrete log) when no caller-supplied internal key is provided.
+  3. Add `--internal-key <KEY>` flag to override NUMS with a caller-supplied key (matches the v0.7.0 `md from-policy --internal-key` shape that pre-extraction CLI exposed).
+  4. Tree-shape rendering: walk the miniscript output's `or` structure and emit the BIP-388 `{a,b}` Merkle-tree syntax. Concrete example: `or(pk(@0),and(pk(@1),older(144)))` should emit `tr(NUMS, {pk(@0), and_v(v:pk(@1),older(144))})`.
+- **Why deferred:** v0.15-cycle scope was deliberate single-key tap to ship the strip-layer-3 + library-only refactor first; multi-leaf was punted with the explicit error message at `compile.rs:51-54`. The library-side substrate already exists, so this is a pure CLI surface-area fill-in.
+- **Status:** `open`
+- **Tier:** `v0.17` (next minor — not blocking; gates on user demand for multi-leaf tap policies via the CLI).
+
 ### `v0.16-smoke-rs-doc-comment-renamed-claim-mismatch` — Phase-1 smoke.rs claims "renamed in Phase 3" but Phase 3 keeps it
 
 - **Surfaced:** Phase 1 code-quality review (minor finding)
