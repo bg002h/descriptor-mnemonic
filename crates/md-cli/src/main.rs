@@ -210,6 +210,26 @@ fn main() -> ExitCode {
     }
 }
 
+/// v0.18 Item G — reject `--unspendable-key` values that aren't the BIP-341
+/// NUMS H-point literal hex. Empty-string and segwitv0-incompat checks fire
+/// upstream of this guard; what reaches here is `Some(<non-empty-tap-value>)`.
+#[cfg(feature = "cli-compiler")]
+fn validate_unspendable_key_nums_only(uk: Option<&str>) -> Result<(), CliError> {
+    if let Some(v) = uk {
+        if v != parse::template::NUMS_H_POINT_X_ONLY_HEX {
+            return Err(CliError::BadArg(
+                "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex \
+                 (50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0) or omitted \
+                 (auto-NUMS default). Other forms (xpub-style descriptor keys, arbitrary x-only \
+                 hex) are not supported in this release; track v0.19+ for caller-supplied \
+                 internal-key support."
+                    .into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn dispatch(c: Command) -> Result<(), CliError> {
     match c {
         Command::Encode {
@@ -244,6 +264,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                         return Err(CliError::BadArg(
                             "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
                     }
+                    validate_unspendable_key_nums_only(unspendable_key.as_deref())?;
                     compile::compile_policy_to_template(&expr, ctx, unspendable_key.as_deref())
                         .map_err(CliError::from)?
                 }
@@ -314,6 +335,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                     return Err(CliError::BadArg(
                         "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
                 }
+                validate_unspendable_key_nums_only(unspendable_key.as_deref())?;
                 cmd::compile::run(&expr, &context, unspendable_key.as_deref(), json)
             }
             #[cfg(not(feature = "cli-compiler"))]
