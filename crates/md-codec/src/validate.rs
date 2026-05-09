@@ -79,6 +79,13 @@ fn walk_for_placeholders(
                 walk_for_placeholders(t, seen, first_occurrences)?;
             }
         }
+        Body::TrUnspendable { tree } => {
+            // Internal key is implicitly NUMS; no placeholder to register.
+            // Just walk the optional script tree.
+            if let Some(t) = tree {
+                walk_for_placeholders(t, seen, first_occurrences)?;
+            }
+        }
         Body::Hash256Body(_) | Body::Hash160Body(_) | Body::Timelock(_) | Body::Empty => {}
     }
     Ok(())
@@ -139,7 +146,14 @@ fn walk_tap_tree_leaves(node: &Node) -> Result<(), Error> {
 fn is_forbidden_leaf_tag(tag: Tag) -> bool {
     matches!(
         tag,
-        Tag::Wpkh | Tag::Tr | Tag::Wsh | Tag::Sh | Tag::Pkh | Tag::Multi | Tag::SortedMulti
+        Tag::Wpkh
+            | Tag::Tr
+            | Tag::TrUnspendable
+            | Tag::Wsh
+            | Tag::Sh
+            | Tag::Pkh
+            | Tag::Multi
+            | Tag::SortedMulti
     )
 }
 
@@ -290,6 +304,21 @@ mod tests {
     #[test]
     fn tap_tree_leaf_rejects_wsh() {
         let leaf = Node { tag: Tag::Wsh, body: Body::Children(vec![]) };
+        assert!(matches!(
+            validate_tap_script_tree(&leaf),
+            Err(Error::ForbiddenTapTreeLeaf { .. })
+        ));
+    }
+
+    #[test]
+    fn tap_tree_leaf_rejects_tr_unspendable() {
+        // Pathological nesting: tr(@0, tr_unspendable(...)) is not a valid
+        // tap-script leaf — TrUnspendable is a descriptor-level wrapper, not
+        // a leaf fragment. Reject in lockstep with Tag::Tr.
+        let leaf = Node {
+            tag: Tag::TrUnspendable,
+            body: Body::TrUnspendable { tree: None },
+        };
         assert!(matches!(
             validate_tap_script_tree(&leaf),
             Err(Error::ForbiddenTapTreeLeaf { .. })

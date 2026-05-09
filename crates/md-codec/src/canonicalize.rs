@@ -63,6 +63,12 @@ fn walk_collect_first(node: &Node, seen: &mut [bool], first_occurrences: &mut Ve
                 walk_collect_first(t, seen, first_occurrences);
             }
         }
+        Body::TrUnspendable { tree } => {
+            // NUMS internal key carries no placeholder; only walk the tree.
+            if let Some(t) = tree {
+                walk_collect_first(t, seen, first_occurrences);
+            }
+        }
         Body::Children(children) => {
             for c in children {
                 walk_collect_first(c, seen, first_occurrences);
@@ -86,6 +92,12 @@ fn remap_indices(node: &mut Node, perm: &[u8]) {
         }
         Body::Tr { key_index, tree } => {
             *key_index = perm[*key_index as usize];
+            if let Some(t) = tree {
+                remap_indices(t, perm);
+            }
+        }
+        Body::TrUnspendable { tree } => {
+            // No key_index to remap; only walk the tree.
             if let Some(t) = tree {
                 remap_indices(t, perm);
             }
@@ -223,6 +235,13 @@ fn check_placeholder_bounds(node: &Node, n: u8) -> Result<(), Error> {
             if *key_index >= n {
                 return Err(Error::PlaceholderIndexOutOfRange { idx: *key_index, n });
             }
+            if let Some(t) = tree {
+                check_placeholder_bounds(t, n)?;
+            }
+        }
+        Body::TrUnspendable { tree } => {
+            // NUMS carries no placeholder index; only the tree contains @N
+            // references that can be out-of-range.
             if let Some(t) = tree {
                 check_placeholder_bounds(t, n)?;
             }

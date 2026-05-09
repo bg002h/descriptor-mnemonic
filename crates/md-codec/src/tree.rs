@@ -34,6 +34,16 @@ pub enum Body {
         /// Optional tap-script-tree root.
         tree: Option<Box<Node>>,
     },
+    /// TrUnspendable's body: optional tap-script-tree root only. The internal
+    /// key is implicitly the BIP-341 NUMS H-point and is NOT encoded on the
+    /// wire — every conforming decoder substitutes the canonical x-only hex
+    /// `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`
+    /// when reassembling a descriptor. Distinct from `Body::Tr` because
+    /// there is no key_index to read or write.
+    TrUnspendable {
+        /// Optional tap-script-tree root.
+        tree: Option<Box<Node>>,
+    },
     /// Single key-arg (Pkh, Wpkh, PkK, PkH, multi-family children).
     /// Wire bit-width for `index` is determined by the parent Descriptor's
     /// key_index_width(); not carried in the AST.
@@ -82,6 +92,12 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
         }
         Body::Tr { key_index, tree } => {
             w.write_bits(u64::from(*key_index), key_index_width as usize);
+            w.write_bits(u64::from(tree.is_some()), 1);
+            if let Some(t) = tree {
+                write_node(w, t, key_index_width)?;
+            }
+        }
+        Body::TrUnspendable { tree } => {
             w.write_bits(u64::from(tree.is_some()), 1);
             if let Some(t) = tree {
                 write_node(w, t, key_index_width)?;
@@ -165,6 +181,15 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, Error> 
                 None
             };
             Body::Tr { key_index, tree }
+        }
+        Tag::TrUnspendable => {
+            let has_tree = r.read_bits(1)? != 0;
+            let tree = if has_tree {
+                Some(Box::new(read_node(r, key_index_width)?))
+            } else {
+                None
+            };
+            Body::TrUnspendable { tree }
         }
         Tag::After | Tag::Older => {
             let v = r.read_bits(32)? as u32;
@@ -464,5 +489,81 @@ mod tests {
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn tr_unspendable_no_tree_round_trip() {
+        // tr(<NUMS>) — extension-tag-only with empty body. Used when a wallet
+        // policy compiles to script-path-only with a NUMS internal key but no
+        // script tree (degenerate case).
+        let n = Node {
+            tag: Tag::TrUnspendable,
+            body: Body::TrUnspendable { tree: None },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 0).unwrap();
+        // Extension tag (5 + 5) + has_tree (1) = 11 bits
+        assert_eq!(w.bit_len(), 11);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+    }
+
+    #[test]
+    fn tr_unspendable_multi_a_2_of_3_round_trip() {
+        // tr(<NUMS>, multi_a(2, @0, @1, @2)) — the canonical 2-of-3 hardware-
+        // wallet multisig encoding. Internal key is implicitly NUMS; no
+        // key_index field on the wire.
+        let n = Node {
+            tag: Tag::TrUnspendable,
+            body: Body::TrUnspendable {
+                tree: Some(Box::new(Node {
+                    tag: Tag::MultiA,
+                    body: Body::Variable {
+                        k: 2,
+                        children: vec![
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                        ],
+                    },
+                })),
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    #[test]
+    fn tr_unspendable_and_v_inheritance_round_trip() {
+        // tr(<NUMS>, and_v(v:pk(@0), pk(@1))) — the inheritance/and-conjunction
+        // pattern via NUMS internal key. Exercises the and_v + verify-wrapper
+        // body path inside a TrUnspendable shell.
+        let n = Node {
+            tag: Tag::TrUnspendable,
+            body: Body::TrUnspendable {
+                tree: Some(Box::new(Node {
+                    tag: Tag::AndV,
+                    body: Body::Children(vec![
+                        Node {
+                            tag: Tag::Verify,
+                            body: Body::Children(vec![Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 0 },
+                            }]),
+                        },
+                        Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                    ]),
+                })),
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 1).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 1).unwrap(), n);
     }
 }
