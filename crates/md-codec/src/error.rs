@@ -89,7 +89,9 @@ pub enum Error {
     },
 
     /// TLV ordering violation: a TLV tag was followed by a smaller-or-equal tag.
-    #[error("TLV ordering violation: tag 0x{prev:02x} followed by 0x{current:02x}; require ascending")]
+    #[error(
+        "TLV ordering violation: tag 0x{prev:02x} followed by 0x{current:02x}; require ascending"
+    )]
     TlvOrderingViolation {
         /// Previous tag value.
         prev: u8,
@@ -141,7 +143,9 @@ pub enum Error {
     },
 
     /// First-occurrence ordering violated (BIP 388 well-formedness).
-    #[error("placeholder first-occurrence ordering violated: expected first={expected_first}, got first={got_first}")]
+    #[error(
+        "placeholder first-occurrence ordering violated: expected first={expected_first}, got first={got_first}"
+    )]
     PlaceholderFirstOccurrenceOutOfOrder {
         /// Expected placeholder index in canonical first-occurrence position.
         expected_first: u8,
@@ -283,7 +287,9 @@ pub enum Error {
     /// Address derivation requires a populated `Pubkeys` TLV entry for
     /// every `@N`; this descriptor is missing one (template-only or
     /// partial-keys mode). v0.14+ derivation surface only.
-    #[error("missing xpub for @{idx}; address derivation requires wallet-policy mode with all @N populated")]
+    #[error(
+        "missing xpub for @{idx}; address derivation requires wallet-policy mode with all @N populated"
+    )]
     MissingPubkey {
         /// The placeholder index whose xpub is absent.
         idx: u8,
@@ -306,13 +312,17 @@ pub enum Error {
     /// alternative or hardened wildcard. BIP 32 forbids hardened
     /// derivation from a public key, so an xpub-only restore cannot
     /// produce addresses for this wallet.
-    #[error("hardened public-key derivation: use-site path requires hardened component, which BIP 32 forbids on xpub-only restore")]
+    #[error(
+        "hardened public-key derivation: use-site path requires hardened component, which BIP 32 forbids on xpub-only restore"
+    )]
     HardenedPublicDerivation,
 
     /// The descriptor's wrapper shape is not in the v0.14 supported set
     /// (the five BIP 388 canonical shapes: `pkh(@0)`, `wpkh(@0)`,
     /// `tr(@0)` keypath-only, `wsh(multi/sortedmulti)`,
     /// `sh(wsh(multi/sortedmulti))`). Future versions may extend.
-    #[error("unsupported wrapper shape for address derivation; v0.14 supports pkh, wpkh, tr keypath-only, wsh-multi/sortedmulti, sh-wsh-multi/sortedmulti only")]
+    #[error(
+        "unsupported wrapper shape for address derivation; v0.14 supports pkh, wpkh, tr keypath-only, wsh-multi/sortedmulti, sh-wsh-multi/sortedmulti only"
+    )]
     UnsupportedDerivationShape,
 }

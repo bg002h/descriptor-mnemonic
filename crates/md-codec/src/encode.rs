@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::header::Header;
 use crate::origin_path::{PathDecl, PathDeclPaths};
 use crate::tlv::TlvSection;
-use crate::tree::{write_node, Body, Node};
+use crate::tree::{Body, Node, write_node};
 use crate::use_site_path::UseSitePath;
 
 /// Top-level descriptor parsed/built from a v0.11 wire payload.
@@ -119,18 +119,12 @@ mod render_tests {
 
     #[test]
     fn render_groups_at_4() {
-        assert_eq!(
-            render_codex32_grouped("md1qpz9r4cy7", 4),
-            "md1q-pz9r-4cy7"
-        );
+        assert_eq!(render_codex32_grouped("md1qpz9r4cy7", 4), "md1q-pz9r-4cy7");
     }
 
     #[test]
     fn render_zero_group_size_no_grouping() {
-        assert_eq!(
-            render_codex32_grouped("md1qpz9r4cy7", 0),
-            "md1qpz9r4cy7"
-        );
+        assert_eq!(render_codex32_grouped("md1qpz9r4cy7", 0), "md1qpz9r4cy7");
     }
 }
 

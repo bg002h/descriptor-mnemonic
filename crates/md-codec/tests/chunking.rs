@@ -16,9 +16,18 @@ fn small_descriptor() -> Descriptor {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 84 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 84,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         },
@@ -77,7 +86,10 @@ fn deep_path_descriptor() -> Descriptor {
     // gives roughly 215 bits — still single-string under the new 320-bit limit.
     let mut components = Vec::new();
     for i in 0..15u32 {
-        components.push(PathComponent { hardened: true, value: i + 1 });
+        components.push(PathComponent {
+            hardened: true,
+            value: i + 1,
+        });
     }
     Descriptor {
         n: 1,
@@ -86,7 +98,10 @@ fn deep_path_descriptor() -> Descriptor {
             paths: PathDeclPaths::Shared(OriginPath { components }),
         },
         use_site_path: UseSitePath::standard_multipath(),
-        tree: Node { tag: Tag::Wpkh, body: Body::KeyArg { index: 0 } },
+        tree: Node {
+            tag: Tag::Wpkh,
+            body: Body::KeyArg { index: 0 },
+        },
         tlv: TlvSection::new_empty(),
     }
 }
@@ -100,7 +115,10 @@ fn multi_chunk_descriptor() -> Descriptor {
     for cosigner in 0..4u32 {
         let mut components = Vec::new();
         for i in 0..15u32 {
-            components.push(PathComponent { hardened: true, value: cosigner * 100 + i + 1 });
+            components.push(PathComponent {
+                hardened: true,
+                value: cosigner * 100 + i + 1,
+            });
         }
         paths.push(OriginPath { components });
     }
@@ -116,7 +134,10 @@ fn multi_chunk_descriptor() -> Descriptor {
             body: Body::Variable {
                 k: 2,
                 children: (0..4)
-                    .map(|i| Node { tag: Tag::PkK, body: Body::KeyArg { index: i } })
+                    .map(|i| Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: i },
+                    })
                     .collect(),
             },
         },
@@ -138,7 +159,11 @@ fn multi_chunk_descriptor_splits_and_reassembles() {
     use md_codec::chunk::reassemble;
     let d = multi_chunk_descriptor();
     let chunks = split(&d).unwrap();
-    assert!(chunks.len() >= 2, "expected multi-chunk emission, got {}", chunks.len());
+    assert!(
+        chunks.len() >= 2,
+        "expected multi-chunk emission, got {}",
+        chunks.len()
+    );
     for c in &chunks {
         assert!(c.starts_with("md1"));
     }
@@ -166,7 +191,10 @@ fn near_cap_descriptor() -> Descriptor {
         path_decl: PathDecl {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
-                components: vec![PathComponent { hardened: true, value: 84 }],
+                components: vec![PathComponent {
+                    hardened: true,
+                    value: 84,
+                }],
             }),
         },
         use_site_path: UseSitePath::standard_multipath(),
@@ -191,7 +219,10 @@ fn over_cap_descriptor() -> Descriptor {
         path_decl: PathDecl {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
-                components: vec![PathComponent { hardened: true, value: 84 }],
+                components: vec![PathComponent {
+                    hardened: true,
+                    value: 84,
+                }],
             }),
         },
         use_site_path: UseSitePath::standard_multipath(),

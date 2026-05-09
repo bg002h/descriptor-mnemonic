@@ -225,21 +225,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `resolved 4fff2f2 — bitcoin and bip39 (the actually-shared deps) lifted to [workspace.dependencies]; both crates inherit via workspace = true. clap/anyhow/regex/serde/serde_json remain per-crate (md-cli only) since they're not duplicated.`
 - **Tier:** `v0.16.1`
 
+### `v0.17.1-from-policy-round-trip-integration` — round-trip integration test for `encode --from-policy` requires concrete xpubs
+
+- **Surfaced:** v0.17 Phase 5 — attempted to add an `encode → decode/inspect` round-trip integration test for the 2-of-3 multisig pattern; the decode-side canonicity gate (`non-canonical wrapper requires explicit origin for @0, but none provided`) blocked it. The blocker is unrelated to v0.17: md-cli's existing canonicity validation predates this cycle. `--from-policy` emits templates with bare `@N` (no derivation suffix), and decoding such a template requires explicit origin information per `@N`, which can only be supplied via `--key @N=<xpub>` arguments at decode time.
+- **Where:** `crates/md-cli/tests/cmd_encode.rs` (would-be test; deferred). The Phase 5 commit added a comment placeholder where the test should go.
+- **What:** Pin a `cmd_encode.rs` integration test that invokes `md encode --from-policy 'thresh(2,pk(@0),pk(@1),pk(@2))' --context tap --key @0=<testnet-tpub-0> --key @1=<testnet-tpub-1> --key @2=<testnet-tpub-2>` and then `md decode <phrase> --key @0=... --key @1=... --key @2=...`, verifying the decoded template contains `tr(<NUMS-hex>, multi_a(2,@0,@1,@2))` and the same canonical structure. Pick three real testnet xpubs with consistent BIP-48 origin paths so the canonicity gate is satisfied.
+- **Why deferred:** The encoding side is fully covered by `cmd_compile.rs` (golden table) + `cmd_encode.rs::encode_from_policy_thresh_2_of_3_tap` (md1 prefix assertion). The wire-format round-trip is exercised at the md-codec layer in `crates/md-codec/src/tree.rs` `tr_unspendable_multi_a_2_of_3_round_trip`. The CLI-level round-trip is a polish item, not a correctness gate.
+- **Status:** `open`
+- **Tier:** `v0.17.1` (next patch).
+
 ### `v0.17-md-cli-tap-multi-leaf-policy-compile` — `md compile --context tap` rejects multi-leaf policies; needs NUMS internal-key emission
 
 - **Surfaced:** 2026-05-09 user-driven exploration of `md compile` against Pieter Wuille's online policy-to-miniscript compiler example.
-- **Where:**
-  - `crates/md-cli/src/compile.rs:42-56` (rejects anything that doesn't render as bare `pk(...)` after `policy.compile::<Tap>()`).
-  - `crates/md-cli/src/main.rs:235-239` (subcommand wiring) and `:203-212` (`encode --from-policy` wiring).
-  - md-codec already shipped the underlying machinery in v0.7.0 (`policy_to_bytecode(policy, options, ScriptContext, internal_key)` with `None → upstream NUMS unspendable`); see closed entry `md-policy-compiler-feature` at line ~593. The v0.16 library-only extraction kept that API intact but the extracted `md-cli compile.rs` reimplements policy compilation with its own miniscript dep and only handles the single-key case.
-- **What:** Wire `md compile --context tap` and `md encode --from-policy --context tap` through to the multi-leaf path:
-  1. Accept any `policy.compile::<Tap>()` output, not just bare `pk(...)`.
-  2. Emit `tr(NUMS, {leaf1, {leaf2, leaf3}})` form for multi-leaf trees, using miniscript's standard NUMS internal key (the `H` point with no known discrete log) when no caller-supplied internal key is provided.
-  3. Add `--internal-key <KEY>` flag to override NUMS with a caller-supplied key (matches the v0.7.0 `md from-policy --internal-key` shape that pre-extraction CLI exposed).
-  4. Tree-shape rendering: walk the miniscript output's `or` structure and emit the BIP-388 `{a,b}` Merkle-tree syntax. Concrete example: `or(pk(@0),and(pk(@1),older(144)))` should emit `tr(NUMS, {pk(@0), and_v(v:pk(@1),older(144))})`.
-- **Why deferred:** v0.15-cycle scope was deliberate single-key tap to ship the strip-layer-3 + library-only refactor first; multi-leaf was punted with the explicit error message at `compile.rs:51-54`. The library-side substrate already exists, so this is a pure CLI surface-area fill-in.
-- **Status:** `open`
-- **Tier:** `v0.17` (next minor — not blocking; gates on user demand for multi-leaf tap policies via the CLI).
+- **Where (as resolved):**
+  - `crates/md-cli/src/compile.rs` — bare-pk gate dropped; switched to `Policy::compile_tr` with auto-NUMS fallback default.
+  - `crates/md-cli/src/main.rs` — `Compile` and `Encode` subcommands gained `--unspendable-key <KEY>` flag.
+  - `crates/md-cli/src/parse/template.rs` — `walk_tr` recognizes BIP-341 NUMS H-point and emits `Tag::TrUnspendable`; `walk_miniscript_node` extended for `Terminal::AndV`, `Terminal::Older`, `Terminal::Verify`.
+  - `crates/md-codec/src/tag.rs` + `tree.rs` — new `Tag::TrUnspendable` (extension sub-code 0x05) + `Body::TrUnspendable { tree }`.
+- **What shipped (v0.17):**
+  1. ✅ Accept any `policy.compile_tr(unspendable_key)` output, not just bare `pk(...)`. Bare-pk gate removed.
+  2. ✅ Auto-NUMS internal key for policies where miniscript can't extract a key-path candidate. Implemented via new `Tag::TrUnspendable` (md-codec wire-format extension sub-code 0x05) with implicit BIP-341 NUMS H-point — internal key not encoded on the wire, every conforming decoder substitutes the canonical x-only hex.
+  3. ✅ New `--unspendable-key <KEY>` flag on `md compile` and `md encode --from-policy`. Tap-context-only fallback hint passed to miniscript's `compile_tr`. Defaults to BIP-341 NUMS H-point (auto-NUMS) when omitted. Rejected for `--context segwitv0`, when used without `--from-policy`, and when empty. (Note: original followup proposed `--internal-key`; renamed to `--unspendable-key` per v0.7.2 precedent which fixed the same naming-as-coercion mistake.)
+  4. ✅ Tap-leaf miniscript fragments AndV/Older/Verify wired through (covers inheritance / timelock pattern). Other terminals (AndB, AndOr, OrB/C/D, OrI, After, hashes) deferred to v0.18+.
+- **What did NOT ship (deferred):**
+  - **BIP-388 `{a,b}` brace syntax for multi-branch tap trees.** Spike-verified that miniscript's policy compiler does not emit this shape from any tested policy (compact single-leaf miniscript fragments like `multi_a`, `and_v` are preferred). Hand-written `tr(KEY, {a,b})` templates remain rejected by `walk_tap_tree` with a v0.18+ followup error. This was originally proposed as item 4 above but turned out to be unnecessary for real-world policies and is a separate cycle.
+  - **Followup correction note:** the original entry claimed md-codec already shipped `policy_to_bytecode` machinery in v0.7.0 with the substrate intact through v0.16. Verification showed the substrate was deleted in commit `5350f8a` (v0.12.0) along with the v0.x byte-aligned format. v0.17 therefore implements multi-leaf support md-cli-locally (with new wire-format tag in md-codec for the NUMS case), not by wiring through to a pre-existing md-codec API.
+- **Status:** `resolved 5d2de0f` (md-codec v0.17.0 + md-cli v0.2.0; commits 49739e5..5d2de0f on branch `feat/v0.17-tap-multi-leaf-policy`).
+- **Tier:** v0.17 (closed). Carry-over followup `v0.17.1-from-policy-round-trip-integration` filed for the round-trip integration test.
 
 ### `v0.16-smoke-rs-doc-comment-renamed-claim-mismatch` — Phase-1 smoke.rs claims "renamed in Phase 3" but Phase 3 keeps it
 

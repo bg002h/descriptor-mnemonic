@@ -1,7 +1,7 @@
 use crate::error::CliError;
 use crate::format::text;
-use md_codec::decode::decode_md1_string;
 use md_codec::chunk::reassemble;
+use md_codec::decode::decode_md1_string;
 
 pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
     let descriptor = if strings.len() == 1 {
@@ -16,7 +16,10 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
         use crate::format::json::{JsonDescriptor, SCHEMA};
         let mut obj = serde_json::Map::new();
         obj.insert("schema".into(), SCHEMA.into());
-        obj.insert("descriptor".into(), serde_json::to_value(JsonDescriptor::from(&descriptor)).unwrap());
+        obj.insert(
+            "descriptor".into(),
+            serde_json::to_value(JsonDescriptor::from(&descriptor)).unwrap(),
+        );
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
         return Ok(());
     }

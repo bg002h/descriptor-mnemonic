@@ -58,8 +58,14 @@ impl UseSitePath {
     pub fn standard_multipath() -> Self {
         Self {
             multipath: Some(vec![
-                Alternative { hardened: false, value: 0 },
-                Alternative { hardened: false, value: 1 },
+                Alternative {
+                    hardened: false,
+                    value: 0,
+                },
+                Alternative {
+                    hardened: false,
+                    value: 1,
+                },
             ]),
             wildcard_hardened: false,
         }
@@ -103,7 +109,10 @@ impl UseSitePath {
             None
         };
         let wildcard_hardened = r.read_bits(1)? != 0;
-        Ok(Self { multipath, wildcard_hardened })
+        Ok(Self {
+            multipath,
+            wildcard_hardened,
+        })
     }
 }
 
@@ -132,7 +141,10 @@ mod tests {
 
     #[test]
     fn use_site_path_bare_star_round_trip() {
-        let p = UseSitePath { multipath: None, wildcard_hardened: false };
+        let p = UseSitePath {
+            multipath: None,
+            wildcard_hardened: false,
+        };
         let mut w = BitWriter::new();
         p.write(&mut w).unwrap();
         let bytes = w.into_bytes();
@@ -143,7 +155,10 @@ mod tests {
     #[test]
     fn use_site_path_bare_star_bit_cost() {
         // has-mp(0) + wildcard(0) = 2 bits
-        let p = UseSitePath { multipath: None, wildcard_hardened: false };
+        let p = UseSitePath {
+            multipath: None,
+            wildcard_hardened: false,
+        };
         let mut w = BitWriter::new();
         p.write(&mut w).unwrap();
         assert_eq!(w.bit_len(), 2);
@@ -151,7 +166,10 @@ mod tests {
 
     #[test]
     fn use_site_path_hardened_wildcard_round_trip() {
-        let p = UseSitePath { multipath: None, wildcard_hardened: true };
+        let p = UseSitePath {
+            multipath: None,
+            wildcard_hardened: true,
+        };
         let mut w = BitWriter::new();
         p.write(&mut w).unwrap();
         let bytes = w.into_bytes();
@@ -162,20 +180,36 @@ mod tests {
     #[test]
     fn use_site_path_alt_count_too_small_rejected() {
         let p = UseSitePath {
-            multipath: Some(vec![Alternative { hardened: false, value: 0 }]),
+            multipath: Some(vec![Alternative {
+                hardened: false,
+                value: 0,
+            }]),
             wildcard_hardened: false,
         };
         let mut w = BitWriter::new();
-        assert!(matches!(p.write(&mut w), Err(Error::AltCountOutOfRange { got: 1 })));
+        assert!(matches!(
+            p.write(&mut w),
+            Err(Error::AltCountOutOfRange { got: 1 })
+        ));
     }
 
     #[test]
     fn use_site_path_alt_count_too_large_rejected() {
         let p = UseSitePath {
-            multipath: Some((0..10).map(|i| Alternative { hardened: false, value: i }).collect()),
+            multipath: Some(
+                (0..10)
+                    .map(|i| Alternative {
+                        hardened: false,
+                        value: i,
+                    })
+                    .collect(),
+            ),
             wildcard_hardened: false,
         };
         let mut w = BitWriter::new();
-        assert!(matches!(p.write(&mut w), Err(Error::AltCountOutOfRange { got: 10 })));
+        assert!(matches!(
+            p.write(&mut w),
+            Err(Error::AltCountOutOfRange { got: 10 })
+        ));
     }
 }

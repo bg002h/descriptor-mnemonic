@@ -4,6 +4,120 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.17.0] — 2026-05-09
+
+Wire-format additive release. **No breaking change to existing v0.11
+encoded payloads** — v0.16-encoded policies decode unchanged under
+v0.17. New `Tag::TrUnspendable` is in extension space and cannot
+appear in pre-v0.17 payloads.
+
+### What's new
+
+- New `Tag::TrUnspendable` (extension prefix `0x1F`, sub-code `0x05`)
+  for the `tr(NUMS, ...)` shape with implicit BIP-341 NUMS H-point
+  internal key. Distinct from `Tag::Tr` because the internal key is
+  not encoded on the wire — every conforming decoder substitutes the
+  canonical x-only hex
+  `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`.
+- New `Body::TrUnspendable { tree: Option<Box<Node>> }` variant —
+  same optional-tree shape as `Body::Tr` minus the `key_index` field.
+  Wire layout: `[ext-prefix][sub-code 0x05][1-bit has_tree][optional tree]`.
+- `validate.rs::is_forbidden_leaf_tag` rejects pathological
+  `tr(@0, tr_unspendable(...))` nesting in lockstep with `Tag::Tr`.
+- `canonicalize.rs` walkers skip the implicit NUMS slot and recurse
+  only into the optional tree (no key_index permutation needed).
+- 6 net-new tests in `tag.rs` + `tree.rs` + `validate.rs` pinning the
+  new variant's encode/decode round-trip and the forbidden-leaf
+  rejection.
+
+### What didn't change
+
+- v0.11 wire format for any pre-existing `Tag::*`. Existing encoded
+  payloads decode byte-identically under v0.17.
+- BCH plumbing, codex32 framing, identity computations.
+- Public library API beyond the additive `Tag::TrUnspendable` and
+  `Body::TrUnspendable` enum variants.
+
+### Canonicalization invariant
+
+Encoders MUST emit `Tag::TrUnspendable` iff the descriptor's `tr()`
+internal key is exactly the BIP-341 NUMS H-point. Encoders MUST emit
+`Tag::Tr` (primary code `0x01`) for any `@N` placeholder internal
+key. The invariant is enforced at the consumer (md-cli walker) layer;
+md-codec is structurally agnostic. Decoders MAY accept `Tag::Tr` with
+a `key_index` resolving to NUMS as a non-canonical encoding without
+rejection, but MUST treat `Tag::TrUnspendable` as the canonical form.
+
+## md-cli [0.2.0] — 2026-05-09
+
+User-facing feature release: `md compile` and `md encode --from-policy`
+now handle any miniscript-compileable Taproot policy, not just bare
+`pk(...)` single-key cases. The pre-existing v0.15-era bare-pk gate
+(removed) only accepted `pk(@N)` policies for `--context tap`; v0.17
+accepts the full miniscript fragment space supported by md1's wire
+format including threshold multisig, inheritance/timelock, and any
+policy where miniscript's compile_tr can extract or fall back to NUMS.
+
+### What's new
+
+- **Headline use case:** `md compile 'thresh(2,pk(@0),pk(@1),pk(@2))'
+  --context tap` now produces
+  `tr(<NUMS-hex>, multi_a(2,@0,@1,@2))` — the canonical 2-of-3
+  hardware-wallet multisig pattern via auto-NUMS internal key.
+- **Inheritance pattern:** `md compile 'or(pk(@0),and(pk(@1),older(N)))'
+  --context tap` produces `tr(@0, and_v(v:pk(@1), older(N)))` —
+  miniscript extracts `@0` as the internal key; the timelocked branch
+  becomes the script-path leaf.
+- **New flag:** `--unspendable-key <KEY>` on `md compile` and
+  `md encode --from-policy`. Tap-context-only fallback hint passed
+  to miniscript's `compile_tr`. Defaults to BIP-341 NUMS H-point when
+  omitted (auto-NUMS). Rejected for `--context segwitv0` with a
+  clear error message; rejected when empty or used without
+  `--from-policy` on the encode subcommand.
+- **md-cli walker extension:** `walk_miniscript_node` now handles
+  `Terminal::AndV`, `Terminal::Older`, `Terminal::Verify`. md-codec
+  already encoded the corresponding tags; md-cli is now wired to
+  produce them from miniscript's policy-compiler output.
+- **NUMS recognition:** `walk_tr` detects the BIP-341 NUMS H-point in
+  the internal-key position and emits `Tag::TrUnspendable` per the
+  canonicalization invariant. Other literal x-only hex internal keys
+  are rejected with a clear error pointing the user to either an
+  `@N` placeholder or the BIP-341 NUMS H-point.
+- **Decode-side render:** `format/text.rs::render_node` now handles
+  the new tags (`Tag::TrUnspendable`, `Tag::AndV`, `Tag::Verify`,
+  `Tag::Older`) so descriptors reassembled from md1 phrases render
+  back to BIP-388 template strings.
+
+### What's removed
+
+- The `"v0.15 cli-compiler only supports single-key tap policies..."`
+  error path in `compile.rs`. Multi-key tap policies are now first-
+  class.
+- The `walk_tap_tree_v0_15` function name (renamed to `walk_tap_tree`;
+  multi-branch `{a,b}` support remains a v0.18+ followup).
+
+### What didn't change
+
+- Existing single-key tap behavior (`pk(@N)` → `tr(@N)` extract-first).
+- Existing segwitv0 behavior.
+- Wire-format compatibility for any `Tag::Tr` payloads.
+
+### Out of scope (deferred to v0.17.1+)
+
+- End-to-end round-trip integration test for `encode --from-policy`
+  via `decode`; blocked on md-cli's pre-existing canonicity gate.
+  Filed as `v0.17.1-from-policy-round-trip-integration` in
+  `design/FOLLOWUPS.md`.
+- Multi-branch `{a,b}` brace syntax in `tr()` script trees. miniscript's
+  policy compiler does not emit this shape from any known policy;
+  hand-written templates with `{a,b}` are rejected with an actionable
+  v0.18+ followup error message.
+- Other miniscript terminals (AndB, AndOr, OrB, OrC, OrD, OrI, After,
+  hashes). md-codec already encodes them all; md-cli's walker bridges
+  three (AndV, Older, Verify) in v0.17 — sufficient for the inheritance
+  / timelock pattern. Adding the rest is a v0.18+ incremental walker
+  expansion.
+
 ## md-codec [0.16.2] — 2026-05-07
 
 Audit-cycle close-out release. **No library API or wire-format change.**

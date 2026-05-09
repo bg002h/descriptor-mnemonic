@@ -21,15 +21,24 @@ pub struct ParsedKey {
     pub payload: [u8; 65],
 }
 
-pub fn parse_key(arg: &str, ctx: ScriptCtx, network: bitcoin::Network) -> Result<ParsedKey, CliError> {
-    let (i_str, xpub_str) = arg.split_once('=').ok_or_else(|| CliError::BadArg(
-        format!("--key expects @i=XPUB, got: {arg}")
-    ))?;
+pub fn parse_key(
+    arg: &str,
+    ctx: ScriptCtx,
+    network: bitcoin::Network,
+) -> Result<ParsedKey, CliError> {
+    let (i_str, xpub_str) = arg
+        .split_once('=')
+        .ok_or_else(|| CliError::BadArg(format!("--key expects @i=XPUB, got: {arg}")))?;
     let i = parse_index(i_str)?;
-    let bytes = base58::decode_check(xpub_str)
-        .map_err(|e| CliError::BadXpub { i, why: format!("base58check decode: {e}") })?;
+    let bytes = base58::decode_check(xpub_str).map_err(|e| CliError::BadXpub {
+        i,
+        why: format!("base58check decode: {e}"),
+    })?;
     if bytes.len() != XPUB_LEN {
-        return Err(CliError::BadXpub { i, why: format!("expected 78 bytes, got {}", bytes.len()) });
+        return Err(CliError::BadXpub {
+            i,
+            why: format!("expected 78 bytes, got {}", bytes.len()),
+        });
     }
     let (expected_version, network_label) = match network {
         bitcoin::Network::Bitcoin => (MAINNET_XPUB_VERSION, "mainnet"),
@@ -40,18 +49,31 @@ pub fn parse_key(arg: &str, ctx: ScriptCtx, network: bitcoin::Network) -> Result
         | bitcoin::Network::Regtest => (TESTNET_XPUB_VERSION, "testnet"),
     };
     if bytes[0..4] != expected_version {
-        return Err(CliError::BadXpub { i, why: format!(
-            "expected {network_label} xpub version {:02X}{:02X}{:02X}{:02X}, got {:02X}{:02X}{:02X}{:02X}",
-            expected_version[0], expected_version[1], expected_version[2], expected_version[3],
-            bytes[0], bytes[1], bytes[2], bytes[3]
-        )});
+        return Err(CliError::BadXpub {
+            i,
+            why: format!(
+                "expected {network_label} xpub version {:02X}{:02X}{:02X}{:02X}, got {:02X}{:02X}{:02X}{:02X}",
+                expected_version[0],
+                expected_version[1],
+                expected_version[2],
+                expected_version[3],
+                bytes[0],
+                bytes[1],
+                bytes[2],
+                bytes[3]
+            ),
+        });
     }
     let depth = bytes[4];
-    let expected_depth = match ctx { ScriptCtx::SingleSig => 3, ScriptCtx::MultiSig => 4 };
+    let expected_depth = match ctx {
+        ScriptCtx::SingleSig => 3,
+        ScriptCtx::MultiSig => 4,
+    };
     if depth != expected_depth {
-        return Err(CliError::BadXpub { i, why: format!(
-            "expected depth {expected_depth} for this script context, got {depth}"
-        )});
+        return Err(CliError::BadXpub {
+            i,
+            why: format!("expected depth {expected_depth} for this script context, got {depth}"),
+        });
     }
     let mut payload = [0u8; 65];
     payload.copy_from_slice(&bytes[13..78]);
@@ -60,9 +82,9 @@ pub fn parse_key(arg: &str, ctx: ScriptCtx, network: bitcoin::Network) -> Result
 
 fn parse_index(s: &str) -> Result<u8, CliError> {
     let stripped = s.strip_prefix('@').unwrap_or(s);
-    stripped.parse::<u8>().map_err(|_| CliError::BadArg(
-        format!("--key index must be 0..255, got: {s}")
-    ))
+    stripped
+        .parse::<u8>()
+        .map_err(|_| CliError::BadArg(format!("--key index must be 0..255, got: {s}")))
 }
 
 #[cfg(test)]
@@ -74,32 +96,51 @@ mod tests {
 
     #[test]
     fn rejects_no_equals() {
-        let err = parse_key("@0xpub6...", ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
+        let err =
+            parse_key("@0xpub6...", ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
         assert!(matches!(err, CliError::BadArg(_)));
     }
 
     #[test]
     fn rejects_bad_index() {
-        let err = parse_key(format!("@notnum={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
+        let err = parse_key(
+            format!("@notnum={XPUB_DEPTH4}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
         assert!(matches!(err, CliError::BadArg(_)));
     }
 
     #[test]
     fn rejects_bad_checksum() {
         let err = parse_key("@0=xpubBADCHECKSUMxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
-        assert!(matches!(err, CliError::BadXpub { i: 0, .. }), "got: {err:?}");
+        assert!(
+            matches!(err, CliError::BadXpub { i: 0, .. }),
+            "got: {err:?}"
+        );
     }
 
     #[test]
     fn accepts_valid_depth4_xpub() {
-        let parsed = parse_key(format!("@2={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap();
+        let parsed = parse_key(
+            format!("@2={XPUB_DEPTH4}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
         assert_eq!(parsed.i, 2);
         assert_eq!(parsed.payload.len(), 65);
     }
 
     #[test]
     fn rejects_depth4_xpub_in_singlesig_context() {
-        let err = parse_key(format!("@0={XPUB_DEPTH4}").as_str(), ScriptCtx::SingleSig, bitcoin::Network::Bitcoin).unwrap_err();
+        let err = parse_key(
+            format!("@0={XPUB_DEPTH4}").as_str(),
+            ScriptCtx::SingleSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("depth 3"), "got: {msg}");
     }
@@ -117,8 +158,18 @@ mod tests {
     #[test]
     fn strips_optional_at_prefix() {
         // Both forms accepted.
-        let a = parse_key(format!("@1={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap();
-        let b = parse_key(format!("1={XPUB_DEPTH4}").as_str(), ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap();
+        let a = parse_key(
+            format!("@1={XPUB_DEPTH4}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        let b = parse_key(
+            format!("1={XPUB_DEPTH4}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
         assert_eq!(a.i, b.i);
         assert_eq!(a.payload, b.payload);
     }
@@ -127,8 +178,12 @@ mod tests {
 
     #[test]
     fn accepts_tpub_under_testnet() {
-        let p = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
-                          ScriptCtx::SingleSig, bitcoin::Network::Testnet).unwrap();
+        let p = parse_key(
+            format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+            ScriptCtx::SingleSig,
+            bitcoin::Network::Testnet,
+        )
+        .unwrap();
         assert_eq!(p.i, 0);
         assert_eq!(p.payload.len(), 65);
     }
@@ -136,30 +191,46 @@ mod tests {
     #[test]
     fn accepts_tpub_under_signet() {
         // Signet uses the same testnet version bytes per BIP 32.
-        let p = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
-                          ScriptCtx::SingleSig, bitcoin::Network::Signet).unwrap();
+        let p = parse_key(
+            format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+            ScriptCtx::SingleSig,
+            bitcoin::Network::Signet,
+        )
+        .unwrap();
         assert_eq!(p.i, 0);
     }
 
     #[test]
     fn accepts_tpub_under_regtest() {
-        let p = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
-                          ScriptCtx::SingleSig, bitcoin::Network::Regtest).unwrap();
+        let p = parse_key(
+            format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+            ScriptCtx::SingleSig,
+            bitcoin::Network::Regtest,
+        )
+        .unwrap();
         assert_eq!(p.i, 0);
     }
 
     #[test]
     fn rejects_xpub_under_testnet() {
-        let err = parse_key(format!("@0={XPUB_DEPTH4}").as_str(),
-                            ScriptCtx::MultiSig, bitcoin::Network::Testnet).unwrap_err();
+        let err = parse_key(
+            format!("@0={XPUB_DEPTH4}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Testnet,
+        )
+        .unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("expected testnet"), "got: {msg}");
     }
 
     #[test]
     fn rejects_tpub_under_mainnet() {
-        let err = parse_key(format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
-                            ScriptCtx::SingleSig, bitcoin::Network::Bitcoin).unwrap_err();
+        let err = parse_key(
+            format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+            ScriptCtx::SingleSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("expected mainnet"), "got: {msg}");
     }
@@ -172,23 +243,26 @@ pub struct ParsedFingerprint {
 }
 
 pub fn parse_fingerprint(arg: &str) -> Result<ParsedFingerprint, CliError> {
-    let (i_str, hex_str) = arg.split_once('=').ok_or_else(|| CliError::BadArg(
-        format!("--fingerprint expects @i=HEX, got: {arg}")
-    ))?;
+    let (i_str, hex_str) = arg
+        .split_once('=')
+        .ok_or_else(|| CliError::BadArg(format!("--fingerprint expects @i=HEX, got: {arg}")))?;
     let i = parse_index(i_str)?;
     let hex = hex_str.strip_prefix("0x").unwrap_or(hex_str);
     if hex.len() != 8 {
-        return Err(CliError::BadFingerprint { i, why: format!(
-            "expected 8 hex chars (4 bytes), got {}", hex.len()
-        )});
+        return Err(CliError::BadFingerprint {
+            i,
+            why: format!("expected 8 hex chars (4 bytes), got {}", hex.len()),
+        });
     }
     let mut fp = [0u8; 4];
     for (n, chunk) in hex.as_bytes().chunks(2).enumerate() {
         let s = std::str::from_utf8(chunk).map_err(|_| CliError::BadFingerprint {
-            i, why: "non-utf8 hex".into()
+            i,
+            why: "non-utf8 hex".into(),
         })?;
         fp[n] = u8::from_str_radix(s, 16).map_err(|_| CliError::BadFingerprint {
-            i, why: format!("invalid hex byte: {s}")
+            i,
+            why: format!("invalid hex byte: {s}"),
         })?;
     }
     Ok(ParsedFingerprint { i, fp })

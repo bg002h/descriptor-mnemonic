@@ -12,7 +12,5 @@ use assert_cmd::Command;
 fn encode_wpkh_default_phrase() {
     let mut cmd = Command::cargo_bin("md").unwrap();
     cmd.args(["encode", "wpkh(@0/<0;1>/*)"]);
-    cmd.assert()
-        .success()
-        .stdout("md1qqpqqxqxkceprx7rap4t\n");
+    cmd.assert().success().stdout("md1qqpqqxqxkceprx7rap4t\n");
 }

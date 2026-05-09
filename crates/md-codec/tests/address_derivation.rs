@@ -1,6 +1,5 @@
 //! file location /home/user/repo/crates/md-codec/tests/address_derivation.rs
 
-
 //! Integration tests for `Descriptor::derive_address` (md1 v0.14).
 //!
 //! Each test follows the same shape: derive an account-level xpub from
@@ -14,17 +13,16 @@
 use bitcoin::Network;
 use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
 use bitcoin::secp256k1::Secp256k1;
-use md_codec::{
-    Descriptor, OriginPath, PathComponent, PathDecl, PathDeclPaths, Tag, TlvSection,
-};
 use md_codec::tree::{Body, Node};
 use md_codec::use_site_path::UseSitePath;
+use md_codec::{Descriptor, OriginPath, PathComponent, PathDecl, PathDeclPaths, Tag, TlvSection};
 use std::str::FromStr;
 
 /// The "abandon abandon abandon abandon abandon abandon abandon abandon
 /// abandon abandon abandon about" mnemonic — used by BIP 84, BIP 86,
 /// BIP 49, and BIP 44 published test vectors.
-const ABANDON_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const ABANDON_MNEMONIC: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 /// Derive the account-level xpub for the abandon-mnemonic at `path`.
 /// Returns a 65-byte `(chain_code || compressed_pubkey)` payload as it
@@ -165,7 +163,10 @@ fn bip86_tr_keypath_only_receive_address_zero() {
         use_site_path: UseSitePath::standard_multipath(),
         tree: Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 0, tree: None },
+            body: Body::Tr {
+                key_index: 0,
+                tree: None,
+            },
         },
         tlv: {
             let mut t = TlvSection::new_empty();
@@ -258,12 +259,7 @@ fn wsh_sortedmulti_2_of_3_address() {
         n: 3,
         path_decl: PathDecl {
             n: 3,
-            paths: PathDeclPaths::Shared(origin(&[
-                (true, 48),
-                (true, 0),
-                (true, 0),
-                (true, 2),
-            ])),
+            paths: PathDeclPaths::Shared(origin(&[(true, 48), (true, 0), (true, 0), (true, 2)])),
         },
         use_site_path: UseSitePath::standard_multipath(),
         tree: Node {
@@ -302,10 +298,13 @@ fn wsh_sortedmulti_2_of_3_address() {
             chain_code: bitcoin::bip32::ChainCode::from(chain_code),
         };
         let leaf = xpub
-            .derive_pub(&secp, &[
-                ChildNumber::Normal { index: 0 },
-                ChildNumber::Normal { index: 0 },
-            ])
+            .derive_pub(
+                &secp,
+                &[
+                    ChildNumber::Normal { index: 0 },
+                    ChildNumber::Normal { index: 0 },
+                ],
+            )
             .unwrap();
         pks.push(leaf.public_key);
     }
@@ -342,12 +341,7 @@ fn sh_wsh_sortedmulti_2_of_3_address() {
         n: 3,
         path_decl: PathDecl {
             n: 3,
-            paths: PathDeclPaths::Shared(origin(&[
-                (true, 48),
-                (true, 0),
-                (true, 0),
-                (true, 1),
-            ])),
+            paths: PathDeclPaths::Shared(origin(&[(true, 48), (true, 0), (true, 0), (true, 1)])),
         },
         use_site_path: UseSitePath::standard_multipath(),
         tree: Node {
@@ -387,10 +381,13 @@ fn sh_wsh_sortedmulti_2_of_3_address() {
             chain_code: bitcoin::bip32::ChainCode::from(chain_code),
         };
         let leaf = xpub
-            .derive_pub(&secp, &[
-                ChildNumber::Normal { index: 0 },
-                ChildNumber::Normal { index: 0 },
-            ])
+            .derive_pub(
+                &secp,
+                &[
+                    ChildNumber::Normal { index: 0 },
+                    ChildNumber::Normal { index: 0 },
+                ],
+            )
             .unwrap();
         pks.push(leaf.public_key);
     }
@@ -406,7 +403,10 @@ fn sh_wsh_sortedmulti_2_of_3_address() {
     let expected = bitcoin::Address::p2shwsh(&script, Network::Bitcoin).to_string();
 
     assert_eq!(got, expected);
-    assert!(got.starts_with('3'), "expected mainnet P2SH-form, got {got}");
+    assert!(
+        got.starts_with('3'),
+        "expected mainnet P2SH-form, got {got}"
+    );
 }
 
 /// Round-trip: encode → wrap → unwrap → decode → derive_address yields

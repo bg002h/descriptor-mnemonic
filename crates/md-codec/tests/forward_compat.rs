@@ -1,8 +1,8 @@
 //! Forward-compat tests: unknown TLV tags are skipped/preserved per D6.
 
 use md_codec::bitstream::BitWriter;
-use md_codec::encode::{encode_payload, Descriptor};
 use md_codec::decode::decode_payload;
+use md_codec::encode::{Descriptor, encode_payload};
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
@@ -15,7 +15,7 @@ fn bip84_descriptor_with_unknown_tlv() -> Descriptor {
     // 0x04 is the next free tag a future spec might allocate. A v0.13
     // decoder must round-trip this opaque blob unchanged per D6.
     let mut sub = BitWriter::new();
-    sub.write_bits(0x42, 8);  // arbitrary payload byte
+    sub.write_bits(0x42, 8); // arbitrary payload byte
     sub.write_bits(0x99, 8);
     let payload_bit_len = sub.bit_len();
     let payload = sub.into_bytes();
@@ -29,9 +29,18 @@ fn bip84_descriptor_with_unknown_tlv() -> Descriptor {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 84 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 84,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         },

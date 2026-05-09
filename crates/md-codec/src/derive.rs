@@ -185,7 +185,12 @@ fn derive_use_site_pubkey<C: Verification>(
         return Err(Error::HardenedPublicDerivation);
     }
     let leaf = intermediate
-        .derive_pub(secp, &[ChildNumber::Normal { index: address_index }])
+        .derive_pub(
+            secp,
+            &[ChildNumber::Normal {
+                index: address_index,
+            }],
+        )
         .map_err(|_| Error::HardenedPublicDerivation)?;
     Ok(leaf.public_key)
 }
@@ -331,7 +336,10 @@ mod tests {
     fn classify_tr_keypath_only() {
         let n = Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 0, tree: None },
+            body: Body::Tr {
+                key_index: 0,
+                tree: None,
+            },
         };
         assert_eq!(
             classify_derivable_shape(&n).unwrap(),
@@ -368,7 +376,10 @@ mod tests {
         };
         assert_eq!(
             classify_derivable_shape(&n).unwrap(),
-            DerivableShape::WshMulti { k: 2, sorted: false }
+            DerivableShape::WshMulti {
+                k: 2,
+                sorted: false
+            }
         );
     }
 
@@ -506,8 +517,14 @@ mod tests {
         let secp = Secp256k1::verification_only();
         let usp = UseSitePath {
             multipath: Some(vec![
-                Alternative { hardened: true, value: 0 },
-                Alternative { hardened: false, value: 1 },
+                Alternative {
+                    hardened: true,
+                    value: 0,
+                },
+                Alternative {
+                    hardened: false,
+                    value: 1,
+                },
             ]),
             wildcard_hardened: false,
         };
@@ -523,8 +540,14 @@ mod tests {
         let secp = Secp256k1::verification_only();
         let usp = UseSitePath {
             multipath: Some(vec![
-                Alternative { hardened: false, value: 0 },
-                Alternative { hardened: false, value: 1 },
+                Alternative {
+                    hardened: false,
+                    value: 0,
+                },
+                Alternative {
+                    hardened: false,
+                    value: 1,
+                },
             ]),
             wildcard_hardened: true,
         };
@@ -541,7 +564,10 @@ mod tests {
         let usp = UseSitePath::standard_multipath();
         assert!(matches!(
             derive_use_site_pubkey(&xpub, &usp, 5, 0, &secp),
-            Err(Error::ChainIndexOutOfRange { chain: 5, alt_count: 2 })
+            Err(Error::ChainIndexOutOfRange {
+                chain: 5,
+                alt_count: 2
+            })
         ));
     }
 
@@ -558,7 +584,10 @@ mod tests {
         // chain=1 rejected
         assert!(matches!(
             derive_use_site_pubkey(&xpub, &usp, 1, 0, &secp),
-            Err(Error::ChainIndexOutOfRange { chain: 1, alt_count: 0 })
+            Err(Error::ChainIndexOutOfRange {
+                chain: 1,
+                alt_count: 0
+            })
         ));
     }
 
@@ -624,9 +653,18 @@ mod tests {
     fn bip84_origin() -> OriginPath {
         OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 84 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
+                PathComponent {
+                    hardened: true,
+                    value: 84,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
             ],
         }
     }
@@ -652,10 +690,22 @@ mod tests {
                 n: 2,
                 paths: PathDeclPaths::Shared(OriginPath {
                     components: vec![
-                        PathComponent { hardened: true, value: 48 },
-                        PathComponent { hardened: true, value: 0 },
-                        PathComponent { hardened: true, value: 0 },
-                        PathComponent { hardened: true, value: 2 },
+                        PathComponent {
+                            hardened: true,
+                            value: 48,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 2,
+                        },
                     ],
                 }),
             },
@@ -688,7 +738,10 @@ mod tests {
             path_decl: PathDecl {
                 n: 1,
                 paths: PathDeclPaths::Shared(OriginPath {
-                    components: vec![PathComponent { hardened: true, value: 99 }],
+                    components: vec![PathComponent {
+                        hardened: true,
+                        value: 99,
+                    }],
                 }),
             },
             use_site_path: UseSitePath::standard_multipath(),
@@ -731,7 +784,10 @@ mod tests {
         let err = d.derive_address(5, 0, Network::Bitcoin).unwrap_err();
         assert!(matches!(
             err,
-            Error::ChainIndexOutOfRange { chain: 5, alt_count: 2 }
+            Error::ChainIndexOutOfRange {
+                chain: 5,
+                alt_count: 2
+            }
         ));
     }
 
@@ -745,8 +801,14 @@ mod tests {
             },
             use_site_path: UseSitePath {
                 multipath: Some(vec![
-                    Alternative { hardened: false, value: 0 },
-                    Alternative { hardened: false, value: 1 },
+                    Alternative {
+                        hardened: false,
+                        value: 0,
+                    },
+                    Alternative {
+                        hardened: false,
+                        value: 1,
+                    },
                 ]),
                 wildcard_hardened: true,
             },

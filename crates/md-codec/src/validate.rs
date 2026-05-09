@@ -79,6 +79,13 @@ fn walk_for_placeholders(
                 walk_for_placeholders(t, seen, first_occurrences)?;
             }
         }
+        Body::TrUnspendable { tree } => {
+            // Internal key is implicitly NUMS; no placeholder to register.
+            // Just walk the optional script tree.
+            if let Some(t) = tree {
+                walk_for_placeholders(t, seen, first_occurrences)?;
+            }
+        }
         Body::Hash256Body(_) | Body::Hash160Body(_) | Body::Timelock(_) | Body::Empty => {}
     }
     Ok(())
@@ -139,7 +146,14 @@ fn walk_tap_tree_leaves(node: &Node) -> Result<(), Error> {
 fn is_forbidden_leaf_tag(tag: Tag) -> bool {
     matches!(
         tag,
-        Tag::Wpkh | Tag::Tr | Tag::Wsh | Tag::Sh | Tag::Pkh | Tag::Multi | Tag::SortedMulti
+        Tag::Wpkh
+            | Tag::Tr
+            | Tag::TrUnspendable
+            | Tag::Wsh
+            | Tag::Sh
+            | Tag::Pkh
+            | Tag::Multi
+            | Tag::SortedMulti
     )
 }
 
@@ -230,8 +244,14 @@ mod tests {
             body: Body::Variable {
                 k: 1,
                 children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 1 },
+                    },
                 ],
             },
         };
@@ -248,8 +268,14 @@ mod tests {
             body: Body::Variable {
                 k: 1,
                 children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 1 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
                 ],
             },
         };
@@ -274,22 +300,52 @@ mod tests {
             1u8,
             UseSitePath {
                 multipath: Some(vec![
-                    Alternative { hardened: false, value: 0 },
-                    Alternative { hardened: false, value: 1 },
-                    Alternative { hardened: false, value: 2 },
+                    Alternative {
+                        hardened: false,
+                        value: 0,
+                    },
+                    Alternative {
+                        hardened: false,
+                        value: 1,
+                    },
+                    Alternative {
+                        hardened: false,
+                        value: 2,
+                    },
                 ]),
                 wildcard_hardened: false,
             },
         )];
         assert!(matches!(
             validate_multipath_consistency(&shared, &overrides),
-            Err(Error::MultipathAltCountMismatch { expected: 2, got: 3 })
+            Err(Error::MultipathAltCountMismatch {
+                expected: 2,
+                got: 3
+            })
         ));
     }
 
     #[test]
     fn tap_tree_leaf_rejects_wsh() {
-        let leaf = Node { tag: Tag::Wsh, body: Body::Children(vec![]) };
+        let leaf = Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![]),
+        };
+        assert!(matches!(
+            validate_tap_script_tree(&leaf),
+            Err(Error::ForbiddenTapTreeLeaf { .. })
+        ));
+    }
+
+    #[test]
+    fn tap_tree_leaf_rejects_tr_unspendable() {
+        // Pathological nesting: tr(@0, tr_unspendable(...)) is not a valid
+        // tap-script leaf — TrUnspendable is a descriptor-level wrapper, not
+        // a leaf fragment. Reject in lockstep with Tag::Tr.
+        let leaf = Node {
+            tag: Tag::TrUnspendable,
+            body: Body::TrUnspendable { tree: None },
+        };
         assert!(matches!(
             validate_tap_script_tree(&leaf),
             Err(Error::ForbiddenTapTreeLeaf { .. })
@@ -326,9 +382,10 @@ mod tests {
             tag: Tag::SortedMulti,
             body: Body::Variable {
                 k: 1,
-                children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 5 } },
-                ],
+                children: vec![Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: 5 },
+                }],
             },
         };
         let err = validate_placeholder_usage(&root, 5).unwrap_err();
@@ -345,9 +402,10 @@ mod tests {
             tag: Tag::SortedMulti,
             body: Body::Variable {
                 k: 1,
-                children: vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 15 } },
-                ],
+                children: vec![Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: 15 },
+                }],
             },
         };
         let err = validate_placeholder_usage(&root, 15).unwrap_err();
@@ -362,7 +420,10 @@ mod tests {
         // Tr's key_index path is a separate code path from KeyArg; verify it too.
         let root = Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 3, tree: None },
+            body: Body::Tr {
+                key_index: 3,
+                tree: None,
+            },
         };
         let err = validate_placeholder_usage(&root, 3).unwrap_err();
         assert!(matches!(
@@ -388,9 +449,18 @@ mod explicit_origin_required_tests {
     fn bip84_path() -> OriginPath {
         OriginPath {
             components: vec![
-                PathComponent { hardened: true, value: 84 },
-                PathComponent { hardened: true, value: 0 },
-                PathComponent { hardened: true, value: 0 },
+                PathComponent {
+                    hardened: true,
+                    value: 84,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
+                PathComponent {
+                    hardened: true,
+                    value: 0,
+                },
             ],
         }
     }
@@ -439,9 +509,18 @@ mod explicit_origin_required_tests {
                     body: Body::Variable {
                         k: 2,
                         children: vec![
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 0 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 1 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 2 },
+                            },
                         ],
                     },
                 }]),
@@ -474,9 +553,18 @@ mod explicit_origin_required_tests {
                     body: Body::Variable {
                         k: 2,
                         children: vec![
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 2 } },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 0 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 1 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 2 },
+                            },
                         ],
                     },
                 }]),
@@ -506,7 +594,10 @@ mod explicit_origin_required_tests {
         // tr(@0) key-path only → BIP 86 canonical exists → empty path_decl OK.
         let d = single_key_descriptor(Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 0, tree: None },
+            body: Body::Tr {
+                key_index: 0,
+                tree: None,
+            },
         });
         validate_explicit_origin_required(&d).unwrap();
     }
@@ -561,8 +652,14 @@ mod explicit_origin_required_tests {
                     body: Body::Variable {
                         k: 1,
                         children: vec![
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 0 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 1 },
+                            },
                         ],
                     },
                 }]),
@@ -590,8 +687,14 @@ mod explicit_origin_required_tests {
                     body: Body::Variable {
                         k: 1,
                         children: vec![
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 0 },
+                            },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 1 },
+                            },
                         ],
                     },
                 }]),
@@ -619,10 +722,9 @@ mod xpub_bytes_tests {
         let mut out = [0u8; 33];
         out[0] = 0x02;
         let x: [u8; 32] = [
-            0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
-            0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
-            0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9,
-            0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8, 0x17, 0x98,
+            0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC, 0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87,
+            0x0B, 0x07, 0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9, 0x59, 0xF2, 0x81, 0x5B,
+            0x16, 0xF8, 0x17, 0x98,
         ];
         out[1..].copy_from_slice(&x);
         out

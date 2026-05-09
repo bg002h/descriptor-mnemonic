@@ -29,10 +29,15 @@ impl ChunkHeader {
             return Err(Error::ChunkCountOutOfRange { count: self.count });
         }
         if self.index >= self.count {
-            return Err(Error::ChunkIndexOutOfRange { index: self.index, count: self.count });
+            return Err(Error::ChunkIndexOutOfRange {
+                index: self.index,
+                count: self.count,
+            });
         }
         if self.chunk_set_id >= (1 << 20) {
-            return Err(Error::ChunkSetIdOutOfRange { id: self.chunk_set_id });
+            return Err(Error::ChunkSetIdOutOfRange {
+                id: self.chunk_set_id,
+            });
         }
         w.write_bits(u64::from(self.version & 0b111), 3);
         w.write_bits(1, 1); // chunked = 1
@@ -57,7 +62,12 @@ impl ChunkHeader {
         let chunk_set_id = r.read_bits(20)? as u32;
         let count = (r.read_bits(6)? + 1) as u8;
         let index = r.read_bits(6)? as u8;
-        Ok(Self { version, chunk_set_id, count, index })
+        Ok(Self {
+            version,
+            chunk_set_id,
+            count,
+            index,
+        })
     }
 }
 
@@ -67,7 +77,12 @@ mod tests {
 
     #[test]
     fn chunk_header_round_trip() {
-        let h = ChunkHeader { version: 0, chunk_set_id: 0xABCDE, count: 3, index: 1 };
+        let h = ChunkHeader {
+            version: 0,
+            chunk_set_id: 0xABCDE,
+            count: 3,
+            index: 1,
+        };
         let mut w = BitWriter::new();
         h.write(&mut w).unwrap();
         // 3 + 1 + 1 + 20 + 6 + 6 = 37 bits
@@ -79,7 +94,12 @@ mod tests {
 
     #[test]
     fn chunk_header_count_64_round_trip() {
-        let h = ChunkHeader { version: 0, chunk_set_id: 0, count: 64, index: 63 };
+        let h = ChunkHeader {
+            version: 0,
+            chunk_set_id: 0,
+            count: 64,
+            index: 63,
+        };
         let mut w = BitWriter::new();
         h.write(&mut w).unwrap();
         let bytes = w.into_bytes();
@@ -89,7 +109,12 @@ mod tests {
 
     #[test]
     fn chunk_header_count_zero_rejected() {
-        let h = ChunkHeader { version: 0, chunk_set_id: 0, count: 0, index: 0 };
+        let h = ChunkHeader {
+            version: 0,
+            chunk_set_id: 0,
+            count: 0,
+            index: 0,
+        };
         let mut w = BitWriter::new();
         assert!(matches!(
             h.write(&mut w),
@@ -181,9 +206,15 @@ pub fn split(d: &Descriptor) -> Result<Vec<String>, Error> {
     let payload_bit_count_for_sizing = payload_bytes.len() * 8;
     let chunks_needed = payload_bit_count_for_sizing.div_ceil(SINGLE_STRING_PAYLOAD_BIT_LIMIT);
     if chunks_needed > 64 {
-        return Err(Error::ChunkCountExceedsMax { needed: chunks_needed });
+        return Err(Error::ChunkCountExceedsMax {
+            needed: chunks_needed,
+        });
     }
-    let count: u8 = if chunks_needed == 0 { 1 } else { chunks_needed as u8 };
+    let count: u8 = if chunks_needed == 0 {
+        1
+    } else {
+        chunks_needed as u8
+    };
 
     // Split payload into `count` byte-boundary slices.
     let bytes_per_chunk = payload_bytes.len().div_ceil(count as usize);

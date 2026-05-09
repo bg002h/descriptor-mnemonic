@@ -17,8 +17,11 @@ pub fn decode_payload(bytes: &[u8], total_bits: usize) -> Result<Descriptor, Err
     let header = Header::read(&mut r)?;
     let path_decl = PathDecl::read(&mut r, header.divergent_paths)?;
     let use_site_path = UseSitePath::read(&mut r)?;
-    let key_index_width = if path_decl.n <= 1 { 0 }
-        else { (32 - (path_decl.n as u32 - 1).leading_zeros()) as u8 };
+    let key_index_width = if path_decl.n <= 1 {
+        0
+    } else {
+        (32 - (path_decl.n as u32 - 1).leading_zeros()) as u8
+    };
     let tree = read_node(&mut r, key_index_width)?;
     let tlv = TlvSection::read(&mut r, key_index_width, path_decl.n)?;
 

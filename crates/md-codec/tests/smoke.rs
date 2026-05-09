@@ -1,7 +1,7 @@
 //! End-to-end round-trip smoke tests for v0.11.
 
-use md_codec::encode::{encode_payload, Descriptor};
 use md_codec::decode::decode_payload;
+use md_codec::encode::{Descriptor, encode_payload};
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
@@ -11,9 +11,18 @@ use md_codec::use_site_path::UseSitePath;
 fn bip84_path() -> OriginPath {
     OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 84 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 0 },
+            PathComponent {
+                hardened: true,
+                value: 84,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
         ],
     }
 }
@@ -61,10 +70,22 @@ fn bip84_single_sig_payload_bit_count() {
 fn bip48_path() -> OriginPath {
     OriginPath {
         components: vec![
-            PathComponent { hardened: true, value: 48 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 0 },
-            PathComponent { hardened: true, value: 2 },
+            PathComponent {
+                hardened: true,
+                value: 48,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 2,
+            },
         ],
     }
 }
@@ -84,10 +105,12 @@ fn bip48_2of3_sortedmulti_round_trip() {
                 tag: Tag::SortedMulti,
                 body: Body::Variable {
                     k: 2,
-                    children: (0..3).map(|i| Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: i },
-                    }).collect(),
+                    children: (0..3)
+                        .map(|i| Node {
+                            tag: Tag::PkK,
+                            body: Body::KeyArg { index: i },
+                        })
+                        .collect(),
                 },
             }]),
         },
@@ -152,10 +175,12 @@ fn bip48_2of3_md1_string_round_trip() {
                 tag: Tag::SortedMulti,
                 body: Body::Variable {
                     k: 2,
-                    children: (0..3).map(|i| Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: i },
-                    }).collect(),
+                    children: (0..3)
+                        .map(|i| Node {
+                            tag: Tag::PkK,
+                            body: Body::KeyArg { index: i },
+                        })
+                        .collect(),
                 },
             }]),
         },
@@ -174,16 +199,28 @@ fn bip86_taproot_md1_string_round_trip() {
             n: 1,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 86 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 86,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         },
         use_site_path: UseSitePath::standard_multipath(),
         tree: Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 0, tree: None },
+            body: Body::Tr {
+                key_index: 0,
+                tree: None,
+            },
         },
         tlv: TlvSection::new_empty(),
     };
@@ -201,9 +238,18 @@ fn vault_or_d_pk_older_md1_string_round_trip() {
             n: 2,
             paths: PathDeclPaths::Shared(OriginPath {
                 components: vec![
-                    PathComponent { hardened: true, value: 84 },
-                    PathComponent { hardened: true, value: 0 },
-                    PathComponent { hardened: true, value: 0 },
+                    PathComponent {
+                        hardened: true,
+                        value: 84,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
+                    PathComponent {
+                        hardened: true,
+                        value: 0,
+                    },
                 ],
             }),
         },
@@ -213,7 +259,10 @@ fn vault_or_d_pk_older_md1_string_round_trip() {
             body: Body::Children(vec![Node {
                 tag: Tag::OrD,
                 body: Body::Children(vec![
-                    Node { tag: Tag::PkK, body: Body::KeyArg { index: 0 } },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
                     Node {
                         tag: Tag::AndV,
                         body: Body::Children(vec![
@@ -224,7 +273,10 @@ fn vault_or_d_pk_older_md1_string_round_trip() {
                                     body: Body::Timelock(144),
                                 }]),
                             },
-                            Node { tag: Tag::PkK, body: Body::KeyArg { index: 1 } },
+                            Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 1 },
+                            },
                         ]),
                     },
                 ]),

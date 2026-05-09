@@ -535,7 +535,23 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 | <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0 || Byte preserved across v0.5→v0.6 for wire-format continuity
 |-
 | <code>0x36</code> || OriginPaths block (implemented v0.10) || See "Per-<code>@N</code> path declaration", above || 0 || Reclaimed in v0.10 from the previously reserved range; gated by header bit 3
+|-
+| <code>0x37</code> || <code>tr_unspendable()</code> || — || optional tree (no internal key on the wire) || NEW in v0.17. Distinct from <code>tr()</code> at <code>0x06</code> because the internal key is implicitly the BIP-341 NUMS H-point and is not encoded. See §"<code>tr_unspendable()</code> shape (v0.17)", below.
 |}
+
+=====<code>tr_unspendable()</code> shape (v0.17)=====
+
+The <code>tr_unspendable()</code> tag (<code>0x37</code> in this byte-aligned table; in the v0.11 5-bit bit-aligned format it occupies extension prefix sub-code <code>0x05</code>) encodes a Taproot descriptor whose internal key is the canonical BIP-341 §"Constructing and spending Taproot outputs" NUMS H-point — the x-only public key with no known discrete log:
+
+  <code>50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0</code>
+
+The internal key is '''not encoded on the wire'''. Every conforming decoder substitutes the canonical hex above when reassembling the descriptor template. The body shape is the optional script tree alone: <code>[has_tree bit][optional tree]</code>, with no <code>key_index</code> field (contrast <code>Tag::Tr</code> at <code>0x06</code>, which carries a <code>key_index</code> for the <code>@N</code>-derived internal key).
+
+'''Canonicalization invariant.''' Encoders MUST emit <code>Tag::TrUnspendable</code> (<code>0x37</code> / v0.11 ext-sub-code <code>0x05</code>) iff the descriptor's <code>tr()</code> internal key is exactly the BIP-341 NUMS H-point above. Encoders MUST emit <code>Tag::Tr</code> (<code>0x06</code>) for any <code>@N</code> placeholder internal key. Decoders MAY accept <code>Tag::Tr</code> with a <code>key_index</code> resolving to the NUMS H-point as a non-canonical encoding without rejection, but MUST treat <code>Tag::TrUnspendable</code> as the canonical form for the NUMS internal-key case.
+
+'''Use cases.''' (1) Threshold/multi-key script-path-only multisig where no single key dominates (e.g. <code>thresh(2,pk(@0),pk(@1),pk(@2))</code> compiles to <code>tr(NUMS, multi_a(2,@0,@1,@2))</code>). (2) Conjunction policies where extraction fails (<code>and(pk(@0),pk(@1))</code> compiles to <code>tr(NUMS, and_v(v:pk(@0),pk(@1)))</code>). (3) Caller-explicit script-path-only spending where key-path extraction is intentionally disabled.
+
+'''Forbidden as a tap-script leaf.''' <code>Tag::TrUnspendable</code> is a descriptor-level wrapper; nesting it as a tap-script leaf (e.g. <code>tr(@0, tr_unspendable(...))</code>) is rejected with <code>ForbiddenTapTreeLeaf</code> in lockstep with <code>Tag::Tr</code>.
 
 Tags <code>0x24</code>–<code>0x31</code> are unallocated. (In MD v0.5 and earlier, these bytes were reserved for descriptor-codec inline-key compatibility; MD v0.6 dropped them since MD's BIP-388 wallet-policy framing forbids inline keys. See the project's <code>MD_SCOPE_DECISION_2026-04-28.md</code> design document for rationale.)
 
