@@ -63,14 +63,17 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `open`
 - **Tier:** v0.5+ (Low)
 
-### `bip-tag-table-5bit-vs-8bit-drift` — BIP tag table lists 8-bit byte-aligned codes, implementation uses 5-bit primary tags
+### `bip-pre-v0-11-sections-bitstream-rewrite` — pre-v0.11 sections in BIP draft need v0.11 bitstream-native rewrite
 
-- **Surfaced:** 2026-05-09, post-v0.19 BIP-alignment audit (commit `7902127` added a NUMS-sentinel cross-reference and surfaced this related drift).
-- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` lines 471-481 (tag table) — lists 8-bit byte-aligned codes (e.g., `0x06` for `tr()`, `0x07` for `TapTree`, `0x08` for `multi()`, `0x09` for `sortedmulti()`, etc.). `crates/md-codec/src/tag.rs:95-` (current implementation) — 5-bit primary tag space (e.g., `Tr=0x01`, `TapTree=0x05`, `Multi=0x06`, `SortedMulti=0x07`) plus a 5-bit extension subspace via `Tag::ext_5bit_subcode`. The drift pattern is per-tag: BIP `multi()=0x08` vs implementation `Multi=0x06`; BIP `sortedmulti()=0x09` vs implementation `SortedMulti=0x07`; etc. The L543 NUMS-sentinel subsection mentions both inline ("`0x06` / v0.11 primary tag `0x01`"), which is the only place in the BIP that documents the mapping; the tag table itself doesn't.
-- **What:** Pre-existing drift from the v0.11 wire-format reset (md-codec v0.12.0 commit `5350f8a`). The BIP draft was authored against v0.x's byte-aligned format and never refreshed for v0.11+'s 5-bit packing. Doesn't affect implementation correctness — `tag.rs` is authoritative — but readers using the BIP table to understand wire layout get the wrong byte values. Two remediation paths: (a) full BIP-text refresh that rewrites the table for the 5-bit space (large; touches every byte-layout example); (b) targeted patch that adds a "v0.11+ implementation note" paragraph at the top of the tag table referring readers to `tag.rs` as authoritative for primary/extension codes, with the table itself preserved as historical/conceptual rather than implementation-accurate. Path (b) is lower cost.
-- **Why deferred:** Pre-existing; not v0.18 / v0.19 / v0.20-introduced. Best handled as part of a coordinated post-v0.17 BIP-text refresh pass (separate from any specific feature cycle), not bolted onto polish work.
+- **Surfaced:** 2026-05-10, deferred from the v0.4.4 BIP-text refresh cycle (which closed `bip-tag-table-5bit-vs-8bit-drift` via Approach C — tag table rewritten + scattered prose updated + retired-prose sections labeled-as-historical, but did NOT rewrite the byte-layout examples or the bytecode-header / path-decl prose for the v0.11 bitstream form).
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — three sections currently labeled "pre-v0.11 byte-aligned wire format, retained for historical reference":
+  - Bytecode-header description (`====Bytecode header====` around L294, with the 8-bit version/flag-bits table at L297-309). v0.11 actually uses a 5-bit header per `crates/md-codec/src/header.rs`.
+  - Path-decl prose (`====Path declaration====` and following subsections including `=====Shared-path declaration format=====`, `=====Per-@N path declaration=====`, `=====Path dictionary=====`). v0.11 encodes path-decls as structured bit-fields per `crates/md-codec/src/origin_path.rs`.
+  - Byte-layout examples in two places: the wsh-multi-with-fingerprints section (L598-628 area) and the six taproot examples (L668-729 area). v0.11 produces a packed 5-bit bitstream with no flat-byte form.
+- **What:** Design + execute a v0.11-native rewrite of these three sections. The substantive design question is notation: bit-offset annotations? bech32-symbol granularity (5-bit chunks)? Per-section spike against actual `md encode` output to confirm correctness of any worked example. Scope is materially larger than the v0.4.4 cycle's tag-table refresh; warrants its own brainstorm + SPEC + plan with iterative architect review.
+- **Why deferred:** v0.4.4 cycle's Approach C (tag-table rewrite + editorial labels) was chosen because the v0.11 bitstream-native rewrite needs its own design pass for notation choice. Bolting that into a tag-substitution cycle would have produced incorrect docs (architect r1 of the prior plan attempt surfaced this as Critical C1).
 - **Status:** `open`
-- **Tier:** v1+ (BIP-text refresh)
+- **Tier:** v0.5+ (BIP-text refresh; Important)
 
 ### `error-enum-non-exhaustive-attribute` — `md_codec::Error` lacks `#[non_exhaustive]`; every variant addition is a downstream-breaking change
 
@@ -577,15 +580,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** wont-fix — modern post-segwit only per design.
 - **Tier:** wont-fix
 
-
-### `rename-workflow-broad-sed-enumeration-lesson` — workflow doc should explicitly enumerate src/+tests/+bin/ for sed sweeps
-
-- **Surfaced:** Phase 4 (identifier mass-rename) code-quality reviewer (Minor); learnable lesson from 2 oversight-fix commits
-- **Where:** `design/RENAME_WORKFLOW.md` Phase 4 section
-- **What:** Phase 4 implementer's broad sed sweep ran on `src/` only and missed `tests/`, `src/bin/`, and module-specific subdirectories. Required two follow-up commits (`6c303c0`, `2c9d720`) covering 12 additional files. Lesson: when documenting a future rename, the workflow doc's Phase 4 sub-batch instructions should explicitly enumerate `src/**/*.rs`, `tests/**/*.rs`, and `src/bin/**/*.rs` as separate targets — don't rely on a single glob.
-- **Why deferred:** This is a meta-improvement to the workflow doc, not a current rename defect. Best applied next time `RENAME_WORKFLOW.md` is updated (e.g., during the next rename, or as a pre-emptive cleanup pass).
-- **Status:** open
-- **Tier:** v1+ (process improvement, not version-gating)
 
 ### `md-scope-strip-layer-3-signer-curation` — strip MD's signer-compatibility curation layer
 
@@ -1582,6 +1576,16 @@ See BIP §FAQ for rationale.
 - **Where (as filed):** https://github.com/rust-bitcoin/rust-miniscript/pull/936. Proposed adding `WalletPolicy::template() -> &Descriptor<KeyExpression>` and `WalletPolicy::key_info() -> &[DescriptorPublicKey]` accessors so external consumers (specifically md-codec's per-`@N` divergent-path encoder) could walk a policy in placeholder-index order without consuming it via `into_descriptor()`. Motivating case: multipath-shared `@N` placeholders (e.g. `sh(multi(1,@0/**,@0/<2;3>/*))`) where `into_descriptor()` erases placeholder identity.
 - **Status:** `wont-fix 2026-05-10 — closed-not-merged 2026-05-06 by mutual agreement after the underlying use case was solved differently`. Per upstream PR thread: rust-bitcoin/rust-miniscript#932 (`wallet_policy: fix set_key_info silently dropping keys for repeated placeholders`) merged 2026-05-02 fixed the `set_key_info` bug that was the concrete motivation for the proposed accessors. Brian agreed closing was wisest "until a genuine use case arises from a real programmer, as their needs may hint at a better form or way of accomplishing the same goal." Reviewer (trevarj) and maintainer (apoelstra) concurred. Companion entry retired at the same time. The originally-paired `v010-p3-tier-2-kiv-walk-deferred` followup that this would have unblocked is also closed in the v0.11 wire-format reset (the Tier 2 KIV walk substrate no longer exists). Workspace `[patch.crates-io]` block can drop the `md-codec-local-stack` PR-2 commit; the redirect for `external-pr-1-hash-terminals` (#935, still open) remains.
 - **Tier:** external → wont-fix
+
+### v0.4.4+ (BIP-text refresh)
+
+### `bip-tag-table-5bit-vs-8bit-drift` — BIP tag table lists 8-bit byte-aligned codes, implementation uses 5-bit primary tags
+
+- **Surfaced:** 2026-05-09, post-v0.19 BIP-alignment audit (commit `7902127` added a NUMS-sentinel cross-reference and surfaced this related drift).
+- **Where (as filed):** `bip/bip-mnemonic-descriptor.mediawiki` lines 471-481 (tag table) listed 8-bit byte-aligned codes; `crates/md-codec/src/tag.rs:95-131` was the authoritative 5-bit primary tag space + 5-bit extension subspace.
+- **What shipped:** v0.4.4 cycle (PR pending; commits `fcdcd38` + `0400346` + `1c331a3` + the FOLLOWUPS-bookkeeping commit). Approach C from the cycle's brainstorm: full tag-table rewrite (namespace reorganization — FALSE/TRUE moved primary→ext, Pkh moved 0x02→0x04, every operator freshly assigned per `tag.rs`); pre-v0.11 metadata-namespace rows (Placeholder/SharedPath/Fingerprints/OriginPaths at `0x33-0x36`) dropped from the table with a footnote pointing to `origin_path.rs` + `tlv.rs`; scattered operator-tag prose updated; sh-wrapper restriction matrix updated (wpkh 0x04→0x00, wsh 0x05→0x02, sh stays 0x03 with a "5-bit primary codes" caption); NUMS-sentinel cross-reference simplified; TapTree history extended through v0.11; byte-layout examples and bytecode-header / path-decl prose sections labeled-as-historical with editorial notes pointing to the deferred-followup `bip-pre-v0-11-sections-bitstream-rewrite` for the v0.11-native rewrite. Architect r1 + r2 convergence at 0C/0I before execution; whole-PR architect review post-execution.
+- **Status:** resolved 2026-05-10 (v0.4.4 BIP-text refresh).
+- **Tier:** v0.4.4 (closed)
 
 ---
 
