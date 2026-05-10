@@ -59,8 +59,15 @@ fn render_node(
         Tag::SortedMultiA => render_multi("sortedmulti_a", node, default_usp, overrides, out),
         Tag::PkK | Tag::PkH => match node.body {
             Body::KeyArg { index } => {
+                // Tag::PkK on the wire encodes miniscript's `Terminal::PkK(K)`
+                // (BIP-379 sugar `pk(K)` = `c:pk_k(K)`, type B). Tag::PkH
+                // similarly encodes `Terminal::PkH(K)` (sugar `pkh(K)` =
+                // `c:pk_h(K)`, type B). Render as the sugar form so the
+                // emitted text re-parses through miniscript at the same
+                // type the encoder accepted; the bare `pk_k(K)` / `pk_h(K)`
+                // forms are type K, only valid as a `c:` child.
                 if matches!(node.tag, Tag::PkH) {
-                    out.push_str("pk_h(");
+                    out.push_str("pkh(");
                 } else {
                     out.push_str("pk(");
                 }
@@ -272,7 +279,7 @@ fn render_hash160(name: &str, body: &Body, out: &mut String) -> Result<(), CliEr
 /// benefit; the assert is sufficient.
 ///
 /// Special cases:
-/// - `Check(PkK)` and `Check(PkH)` collapse to the shorthand `pk(K)` / `pk_h(K)`
+/// - `Check(PkK)` and `Check(PkH)` collapse to the shorthand `pk(K)` / `pkh(K)`
 ///   per miniscript's canonical printer; if the wrapper chain ends in `c:` and
 ///   the deepest inner is PkK/PkH, render the shorthand without any prefix.
 /// - When `n:` (Tag::ZeroNotEqual) appears immediately before a `0` literal,
@@ -328,7 +335,8 @@ fn render_wrapper_chain(
         }
     }
     // After collapsing the chain, if the deepest inner is PkK or PkH and the
-    // chain ends in `c`, emit the miniscript shorthand `pk(K)` / `pk_h(K)`.
+    // chain ends in `c`, emit the miniscript shorthand `pk(K)` / `pkh(K)`.
+    // (See the bare-PkK/PkH arm above for the BIP-379-sugar-form rationale.)
     if prefix.ends_with('c') && matches!(current.tag, Tag::PkK | Tag::PkH) {
         let prefix_no_c = &prefix[..prefix.len() - 1];
         if !prefix_no_c.is_empty() {
@@ -344,7 +352,7 @@ fn render_wrapper_chain(
             }
         };
         if matches!(current.tag, Tag::PkH) {
-            out.push_str("pk_h(");
+            out.push_str("pkh(");
         } else {
             out.push_str("pk(");
         }

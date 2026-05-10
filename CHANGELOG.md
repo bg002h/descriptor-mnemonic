@@ -4,6 +4,18 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.4.2] — 2026-05-10
+
+Bug-fix release. Wire format unchanged; encoded phrases produced by v0.4.0/v0.4.1 are byte-identical under v0.4.2.
+
+### Bug fix
+
+- **Decoder rendered miniscript hash fragments as `pk_h(K)` instead of `pkh(K)`.** Two sites in `crates/md-cli/src/format/text.rs`: bare `Tag::PkH` (line ~62) and the `Check(PkH)` shorthand-collapse path (line ~346). The bare `pk_h(K)` form is type K in miniscript (BIP-379) and is only valid as a `c:` child; the canonical form for `Terminal::PkH(K)` (which is what Tag::PkH represents on the wire) is `pkh(K)` (= `c:pk_h(K)` desugared, type B). Decoded text containing `pk_h(K)` in B-position was type-invalid and would not re-parse through miniscript, even though the wire payload was correct (encoded phrases recover the right policy; address derivation was unaffected). The fix matches the BIP-379 sugar form for both rendering sites.
+
+### Bug-class probe
+
+- Added `reencode_round_trip_curated_shapes` and `reencode_round_trip_each_manifest_entry` integration tests in `crates/md-cli/tests/template_roundtrip.rs`. The curated test pins four shapes that exercise `pkh()` in B-position (the user's inheritance template `wsh(andor(pkh,after,or_i(and_v(v:pkh,older),and_v(v:pkh,older))))`, plus `wsh(and_v(v:pkh,older))`, `wsh(or_i(pkh,pkh))`, and the tap-leaf companion). Both tests assert `encode(decode(encode(t))) == encode(t)` — strictly stronger than the existing `decode(encode(t)) == t` equality round-trip because it catches renderer outputs that fail to re-parse OR re-parse to a different AST. Future renderer asymmetries surface here even when the decoded text differs from the input by valid canonical-form drift.
+
 ## md-codec [0.19.0] — 2026-05-09
 
 Decode-side hardening. Real-world inputs are unaffected; only adversarial deeply-nested wire payloads change behavior (typed error instead of stack-overflow panic).
