@@ -468,7 +468,7 @@ The wallet's script is encoded as a tree of operators rooted at the top-level de
 |-
 | <code>0x05</code> || <code>wsh()</code> || — || 1 || Top-level: ACTIVE. As <code>sh(wsh)</code> inner: ACTIVE.
 |-
-| <code>0x06</code> || <code>tr()</code> || — || 1 internal key, optional tree ||
+| <code>0x06</code> || <code>tr()</code> || — || 1 internal key (<code>key_index</code> width <code>⌈log₂(n+1)⌉</code>; value <code>n</code> = NUMS sentinel), optional tree || See §"<code>tr()</code> NUMS sentinel rule (v0.18)" for the key_index width formula and NUMS canonicalization invariant.
 |-
 | <code>0x07</code> || <code>TapTree</code> || — || Multi-leaf TapTree inner-node framing (taproot script-tree subtree); recursive <code>[TapTree=0x07][LEFT_SUBTREE][RIGHT_SUBTREE]</code> (see §"Taproot tree") || Active (v0.5; tag was 0x08 in v0.5, renumbered to 0x07 in v0.6)
 |-
