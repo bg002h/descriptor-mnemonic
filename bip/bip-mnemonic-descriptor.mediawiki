@@ -449,94 +449,92 @@ When an MD card with per-<code>@N</code> paths participates in recovery alongsid
 
 ====Tree operators====
 
-The wallet's script is encoded as a tree of operators rooted at the top-level descriptor wrapper. Each operator is identified by a single tag byte. The tag table below adopts the assignments used by <code>descriptor-codec</code> (CC0-1.0) for full miniscript compatibility, with MD-specific extensions for BIP 388 wallet-policy semantics.
+The wallet's script is encoded as a tree of operators. Each operator is identified by a tag drawn from a 5-bit primary code space (values <code>0x00</code>–<code>0x1F</code>); primary code <code>0x1F</code> is an extension prefix, in which case the next 5 bits carry an extension subcode. The tag table below reflects the v0.11+ wire format. The authoritative source is <code>crates/md-codec/src/tag.rs</code> in the reference implementation; the BIP table mirrors that mapping.
+
+The wire format packs operator tags + their operand bits contiguously without byte alignment between operators (see §"Bytecode layout" below for the bit-packing rule). Path-decl framing, per-<code>@N</code> origin-path overrides, fingerprints, and xpubs are encoded by separate bit-aligned mechanisms (structured bit-fields for path-decl in <code>crates/md-codec/src/origin_path.rs</code>; 5-bit-tagged TLV entries with varint length + body in <code>crates/md-codec/src/tlv.rs</code>) — they do not occupy slots in the operator-tag table below.
 
 =====Tag table=====
 
 {| class="wikitable"
-! Tag !! Operator !! Operator data !! Children !! Disposition
+! Primary !! Ext !! Operator !! Operator data !! Children !! Disposition
 |-
-| <code>0x00</code> || <code>FALSE</code> || — || 0 ||
+| <code>0x00</code> || — || <code>wpkh()</code> || — || 1 key || Top-level: ACTIVE. As <code>sh(wpkh)</code> inner: ACTIVE.
 |-
-| <code>0x01</code> || <code>TRUE</code> || — || 0 ||
+| <code>0x01</code> || — || <code>tr()</code> || <code>key_index</code> (width <code>⌈log₂(n+1)⌉</code>; value <code>n</code> = NUMS sentinel) + 1-bit <code>has_tree</code> + optional tree || 0 (key-only) or 1 (TapTree subtree) || See §"<code>tr()</code> NUMS sentinel rule (v0.18)" for the key_index width formula and NUMS canonicalization invariant.
 |-
-| <code>0x02</code> || <code>pkh()</code> || — || 1 key || Top-level: REJECTED. Not used in any nested context in MD's accepted surface.
+| <code>0x02</code> || — || <code>wsh()</code> || — || 1 || Top-level: ACTIVE. As <code>sh(wsh)</code> inner: ACTIVE.
 |-
-| <code>0x03</code> || <code>sh()</code> || — || 1 || Top-level: ACTIVE per §"Sh wrapper restriction matrix".
+| <code>0x03</code> || — || <code>sh()</code> || — || 1 || Top-level: ACTIVE per §"Sh wrapper restriction matrix".
 |-
-| <code>0x04</code> || <code>wpkh()</code> || — || 1 key || Top-level: ACTIVE. As <code>sh(wpkh)</code> inner: ACTIVE.
+| <code>0x04</code> || — || <code>pkh()</code> || — || 1 key || Top-level: REJECTED. Not used in any nested context in MD's accepted surface.
 |-
-| <code>0x05</code> || <code>wsh()</code> || — || 1 || Top-level: ACTIVE. As <code>sh(wsh)</code> inner: ACTIVE.
+| <code>0x05</code> || — || <code>TapTree</code> inner-node || — || 2 (left/right subtree) || Multi-leaf TapTree inner-node framing (taproot script-tree subtree); recursive <code>[TapTree][LEFT_SUBTREE][RIGHT_SUBTREE]</code> (see §"Taproot tree"). Active (v0.5).
 |-
-| <code>0x06</code> || <code>tr()</code> || — || 1 internal key (<code>key_index</code> width <code>⌈log₂(n+1)⌉</code>; value <code>n</code> = NUMS sentinel), optional tree || See §"<code>tr()</code> NUMS sentinel rule (v0.18)" for the key_index width formula and NUMS canonicalization invariant.
+| <code>0x06</code> || — || <code>multi()</code> || 5-bit threshold + 5-bit count || count keys ||
 |-
-| <code>0x07</code> || <code>TapTree</code> || — || Multi-leaf TapTree inner-node framing (taproot script-tree subtree); recursive <code>[TapTree=0x07][LEFT_SUBTREE][RIGHT_SUBTREE]</code> (see §"Taproot tree") || Active (v0.5; tag was 0x08 in v0.5, renumbered to 0x07 in v0.6)
+| <code>0x07</code> || — || <code>sortedmulti()</code> || 5-bit threshold + 5-bit count || count keys ||
 |-
-| <code>0x08</code> || <code>multi()</code> || threshold (1 byte), count (1 byte) || count keys || Renumbered from 0x19 in v0.6 to group multisig family contiguously
+| <code>0x08</code> || — || <code>multi_a()</code> || 5-bit threshold + 5-bit count || count keys (taproot) ||
 |-
-| <code>0x09</code> || <code>sortedmulti()</code> || threshold (1 byte), count (1 byte) || count keys ||
+| <code>0x09</code> || — || <code>sortedmulti_a()</code> || 5-bit threshold + 5-bit count || count keys (taproot) || Coldcard + Ledger documented.
 |-
-| <code>0x0A</code> || <code>multi_a()</code> || threshold (1 byte), count (1 byte) || count keys (taproot) || Renumbered from 0x1A in v0.6
+| <code>0x0A</code> || — || <code>pk_k()</code> (BIP-379 sugar <code>pk()</code>) || <code>key_index</code> (width <code>⌈log₂(n+1)⌉</code>) || 0 ||
 |-
-| <code>0x0B</code> || <code>sortedmulti_a()</code> || threshold (1 byte), count (1 byte) || count keys (taproot) || NEW in v0.6 (Coldcard + Ledger documented)
+| <code>0x0B</code> || — || <code>pk_h()</code> (BIP-379 sugar <code>pkh()</code>) || <code>key_index</code> || 0 ||
 |-
-| <code>0x0C</code> || <code>a:</code> wrapper (Alt) || — || 1 ||
+| <code>0x0C</code> || — || <code>c:</code> wrapper (Check) || — || 1 ||
 |-
-| <code>0x0D</code> || <code>s:</code> wrapper (Swap) || — || 1 ||
+| <code>0x0D</code> || — || <code>v:</code> wrapper (Verify) || — || 1 ||
 |-
-| <code>0x0E</code> || <code>c:</code> wrapper (Check) || — || 1 ||
+| <code>0x0E</code> || — || <code>s:</code> wrapper (Swap) || — || 1 ||
 |-
-| <code>0x0F</code> || <code>d:</code> wrapper (DupIf) || — || 1 ||
+| <code>0x0F</code> || — || <code>a:</code> wrapper (Alt) || — || 1 ||
 |-
-| <code>0x10</code> || <code>v:</code> wrapper (Verify) || — || 1 ||
+| <code>0x10</code> || — || <code>d:</code> wrapper (DupIf) || — || 1 ||
 |-
-| <code>0x11</code> || <code>j:</code> wrapper (NonZero) || — || 1 ||
+| <code>0x11</code> || — || <code>j:</code> wrapper (NonZero) || — || 1 ||
 |-
-| <code>0x12</code> || <code>n:</code> wrapper (ZeroNotEqual) || — || 1 ||
+| <code>0x12</code> || — || <code>n:</code> wrapper (ZeroNotEqual) || — || 1 ||
 |-
-| <code>0x13</code> || <code>and_v</code> || — || 2 ||
+| <code>0x13</code> || — || <code>and_v</code> || — || 2 ||
 |-
-| <code>0x14</code> || <code>and_b</code> || — || 2 ||
+| <code>0x14</code> || — || <code>and_b</code> || — || 2 ||
 |-
-| <code>0x15</code> || <code>andor</code> || — || 3 ||
+| <code>0x15</code> || — || <code>andor</code> || — || 3 ||
 |-
-| <code>0x16</code> || <code>or_b</code> || — || 2 ||
+| <code>0x16</code> || — || <code>or_b</code> || — || 2 ||
 |-
-| <code>0x17</code> || <code>or_c</code> || — || 2 ||
+| <code>0x17</code> || — || <code>or_c</code> || — || 2 ||
 |-
-| <code>0x18</code> || <code>or_d</code> || — || 2 ||
+| <code>0x18</code> || — || <code>or_d</code> || — || 2 ||
 |-
-| <code>0x19</code> || <code>or_i</code> || — || 2 ||
+| <code>0x19</code> || — || <code>or_i</code> || — || 2 ||
 |-
-| <code>0x1A</code> || <code>thresh()</code> || threshold (1 byte), count (1 byte) || count ||
+| <code>0x1A</code> || — || <code>thresh()</code> || 5-bit threshold + 5-bit count || count ||
 |-
-| <code>0x1B</code> || <code>pk_k()</code> || — || 1 key ||
+| <code>0x1B</code> || — || <code>after()</code> || 32-bit absolute timelock || 0 ||
 |-
-| <code>0x1C</code> || <code>pk_h()</code> || — || 1 key ||
+| <code>0x1C</code> || — || <code>older()</code> || 32-bit relative timelock || 0 ||
 |-
-| <code>0x1D</code> || raw <code>pk_h</code> hash || 20-byte hash || 0 ||
+| <code>0x1D</code> || — || <code>sha256()</code> || 32-byte hash || 0 ||
 |-
-| <code>0x1E</code> || <code>after()</code> || LEB128 || 0 ||
+| <code>0x1E</code> || — || <code>hash160()</code> || 20-byte hash || 0 ||
 |-
-| <code>0x1F</code> || <code>older()</code> || LEB128 || 0 ||
+| <code>0x1F</code> || — || (extension prefix) || see ext rows below || — || Primary code <code>0x1F</code> is followed by a 5-bit extension subcode. Reserved primary code; never appears alone.
 |-
-| <code>0x20</code> || <code>sha256()</code> || 32-byte hash || 0 ||
+| <code>0x1F</code> || <code>0x00</code> || <code>hash256()</code> || 32-byte hash || 0 ||
 |-
-| <code>0x21</code> || <code>hash256()</code> || 32-byte hash || 0 ||
+| <code>0x1F</code> || <code>0x01</code> || <code>ripemd160()</code> || 20-byte hash || 0 ||
 |-
-| <code>0x22</code> || <code>ripemd160()</code> || 20-byte hash || 0 ||
+| <code>0x1F</code> || <code>0x02</code> || raw <code>pk_h</code> hash (<code>expr_raw_pkh</code>) || 20-byte hash || 0 || Reachable via <code>c:</code> wrapper only; type-K bare form. Never produced by md-cli's BIP 388 walker.
 |-
-| <code>0x23</code> || <code>hash160()</code> || 20-byte hash || 0 ||
+| <code>0x1F</code> || <code>0x03</code> || <code>FALSE</code> (literal <code>0</code>) || — || 0 ||
 |-
-| <code>0x33</code> || <code>@i</code> placeholder || 1-byte placeholder index (0–255) || 0 (a key reference, leaf) || Renumbered from 0x32 in v0.6 (byte 0x32 intentionally vacant)
-|-
-| <code>0x34</code> || Shared-path declaration || See "Path declaration", above || 0 || Renumbered from 0x33 in v0.6
-|-
-| <code>0x35</code> || Fingerprints block (implemented v0.2) || See "Fingerprints block", below || 0 || Byte preserved across v0.5→v0.6 for wire-format continuity
-|-
-| <code>0x36</code> || OriginPaths block (implemented v0.10) || See "Per-<code>@N</code> path declaration", above || 0 || Reclaimed in v0.10 from the previously reserved range; gated by header bit 3
+| <code>0x1F</code> || <code>0x04</code> || <code>TRUE</code> (literal <code>1</code>) || — || 0 ||
 |-
 |}
+
+''Pre-v0.11 metadata-namespace tags removed:'' the byte-aligned framing tags <code>Placeholder = 0x33</code>, <code>SharedPath = 0x34</code>, <code>Fingerprints = 0x35</code>, <code>OriginPaths = 0x36</code> from the pre-v0.11 byte-aligned wire format are retired in v0.11. v0.11 encodes path-decl framing and per-<code>@N</code> origin-path overrides via structured bit-fields in <code>crates/md-codec/src/origin_path.rs</code>; fingerprints and xpubs are encoded via 5-bit TLV entries (5-bit tag + varint length + body) in <code>crates/md-codec/src/tlv.rs</code>. None of these use the retired <code>0x33</code>–<code>0x36</code> byte-aligned framing tags. Key references (formerly the <code>0x33</code> placeholder framing) are now packed inline as <code>key_index</code> bit-fields next to their key-emitting operator (<code>pk_k</code>, <code>pk_h</code>, <code>wpkh</code>, <code>pkh</code>, <code>tr</code>, <code>multi</code>, etc.).
 
 =====<code>tr()</code> NUMS sentinel rule (v0.18)=====
 
