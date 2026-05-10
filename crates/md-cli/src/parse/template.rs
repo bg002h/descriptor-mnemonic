@@ -852,34 +852,74 @@ fn is_x_only_hex(s: &str) -> bool {
     s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Walk miniscript 13's `TapTree` for the supported subset (0 or 1 leaf).
-/// Returns the leaf node directly when there is exactly one leaf.
+/// Walk miniscript 13's `TapTree` and produce an md1 wire-tree node.
 ///
-/// Multi-branch (`{a,b}` brace syntax) is not yet supported. The policy
-/// compiler emits compact single-leaf miniscript fragments by default
-/// (e.g. `multi_a`, `and_v`), so this gate fires only on hand-written
-/// `tr(KEY, {a,b})` templates. Tracked as a v0.18+ followup.
+/// miniscript represents a `TapTree` as `Vec<(depth, leaf-Miniscript)>` in
+/// depth-first preorder. md1's wire format is a binary tree of `Tag::TapTree`
+/// internal nodes (each carrying `Body::Children([left, right])`) with the
+/// actual miniscript fragments at the leaves.
+///
+/// **Algorithm — stack-based depth-marked preorder reconstruction:** for
+/// each leaf in iteration order, push `(depth, leaf-Node)` onto a stack;
+/// while the top two entries share the same depth, pop them and wrap as a
+/// new `Tag::TapTree` branch at depth-1, then push the parent back. After
+/// all leaves are consumed, the stack holds exactly `[(0, root)]`.
+///
+/// **Single-leaf compatibility:** a single-leaf input `[(0, leaf)]` triggers
+/// no merge, ends with `[(0, leaf)]`, and returns `leaf` directly with NO
+/// `Tag::TapTree` wrap. This preserves the v0.18 single-leaf wire encoding
+/// bit-identically — `tr(@0, pk(@1))` continues to round-trip.
+///
+/// **Defensive end-state checks:** miniscript's type system prevents
+/// malformed `TapTree` values (`combine` is the only non-`leaf` constructor
+/// and caps at depth 128 with a typed error), but if a future regression
+/// breaks the invariant, surface a typed `CliError::TemplateParse` rather
+/// than panic.
 fn walk_tap_tree(
     tt: &miniscript::descriptor::TapTree<DescriptorPublicKey>,
     km: &std::collections::BTreeMap<String, u8>,
 ) -> Result<Node, CliError> {
-    let leaves: Vec<_> = tt.leaves().collect();
-    match leaves.len() {
-        0 => Err(CliError::TemplateParse(
-            "tap tree present but contains no leaves".into(),
-        )),
-        1 => {
-            // Single leaf at any depth; we ignore depth here because there is
-            // no branching. The leaf becomes a plain Node.
-            let leaf = &leaves[0];
-            walk_miniscript_node(leaf.miniscript(), km, /*tap=*/ true)
+    let mut stack: Vec<(u8, Node)> = Vec::new();
+    for leaf in tt.leaves() {
+        let leaf_node = walk_miniscript_node(leaf.miniscript(), km, /*tap=*/ true)?;
+        stack.push((leaf.depth(), leaf_node));
+        // Coalesce: while top two stack entries share the same depth, wrap
+        // them as a Tag::TapTree branch at depth-1. miniscript's TapTree
+        // always produces a complete binary tree in depth-first preorder,
+        // so the merge sequence is deterministic.
+        while stack.len() >= 2 && stack[stack.len() - 1].0 == stack[stack.len() - 2].0 {
+            let (d, right) = stack.pop().unwrap();
+            let (_, left) = stack.pop().unwrap();
+            let parent_depth = d.checked_sub(1).ok_or_else(|| {
+                CliError::TemplateParse(
+                    "tap tree shape invariant violated: \
+                     two adjacent leaves at depth 0"
+                        .into(),
+                )
+            })?;
+            stack.push((
+                parent_depth,
+                Node {
+                    tag: Tag::TapTree,
+                    body: Body::Children(vec![left, right]),
+                },
+            ));
         }
-        n => Err(CliError::TemplateParse(format!(
-            "multi-branch tap trees are not yet supported (got {n} leaves; single-leaf only). \
-             The policy compiler emits compact single-leaf miniscript fragments by default \
-             — file an issue if you need multi-branch support."
-        ))),
     }
+    if stack.is_empty() {
+        return Err(CliError::TemplateParse(
+            "tap tree present but contains no leaves".into(),
+        ));
+    }
+    if stack.len() != 1 || stack[0].0 != 0 {
+        return Err(CliError::TemplateParse(format!(
+            "tap tree shape invariant violated: stack ended with {} entries; \
+             root entry depth was {}",
+            stack.len(),
+            stack[0].0,
+        )));
+    }
+    Ok(stack.pop().unwrap().1)
 }
 
 #[cfg(test)]
@@ -1172,35 +1212,229 @@ mod tr_tests {
     }
 
     /// Multi-branch tap trees error with the new v0.17 message (no longer
-    /// references "v0.15") in the **template-parse path** (`walk_tap_tree`).
-    /// Hand-constructed `tr(KEY, {a,b})` template — the policy compiler does
-    /// not emit this shape, so this gate fires only on hand-written templates.
-    /// v0.18+ followup will lift the restriction.
-    ///
-    /// Note: This test does NOT cover `compile.rs`'s "v0.15 cli-compiler" error
-    /// message at line ~52; that error path lives in the policy-compile pipeline
-    /// and is separately removed by Phase 4 (which drops the bare-pk gate
-    /// entirely). The "v0.15 wording must be gone" assertion below checks only
-    /// the walk_tap_tree error path.
+    /// v0.19 — multi-branch tap tree, 2 leaves balanced.
+    /// `tr(@0,{pk(@1),pk(@2)})` walks to `Body::Tr { tree:
+    /// Some(TapTree { children: [PkK@1, PkK@2] }) }`. Replaces the v0.18-era
+    /// `tr_multi_branch_rejected_with_v0_17_error_message` test using the
+    /// SAME input string (unambiguous reject→accept transition in git diff).
     #[test]
-    fn tr_multi_branch_rejected_with_v0_17_error_message() {
+    fn tr_multi_branch_two_leaf_balanced() {
         let (s, km) = substitute_synthetic(
             "tr(@0/<0;1>/*,{pk(@1/<0;1>/*),pk(@2/<0;1>/*)})",
             ScriptCtx::MultiSig,
         )
         .unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
-        let err = walk_root(&d, &km).unwrap_err();
-        match err {
-            CliError::TemplateParse(msg) => {
-                assert!(
-                    msg.contains("multi-branch tap trees are not yet supported"),
-                    "expected v0.17 multi-branch error, got: {msg}"
-                );
-                assert!(!msg.contains("v0.15"), "v0.15 wording must be gone");
+        let root = walk_root(&d, &km).unwrap();
+        assert_eq!(root.tag, Tag::Tr);
+        let tree = match root.body {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 0, "internal key is @0");
+                tree.expect("tap tree must be present")
             }
-            other => panic!("expected TemplateParse, got {other:?}"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(tree.tag, Tag::TapTree);
+        let kids = match &tree.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected TapTree.Children([2])"),
+        };
+        assert_eq!(kids[0].tag, Tag::PkK);
+        assert!(matches!(kids[0].body, Body::KeyArg { index: 1 }));
+        assert_eq!(kids[1].tag, Tag::PkK);
+        assert!(matches!(kids[1].body, Body::KeyArg { index: 2 }));
+    }
+
+    /// v0.19 — 4-leaf balanced: `tr(@0,{{pk(@1),pk(@2)},{pk(@3),pk(@4)}})`
+    /// → `TapTree { TapTree { PkK@1, PkK@2 }, TapTree { PkK@3, PkK@4 } }`.
+    #[test]
+    fn tr_multi_branch_four_leaf_balanced() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,{{pk(@1/<0;1>/*),pk(@2/<0;1>/*)},{pk(@3/<0;1>/*),pk(@4/<0;1>/*)}})",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let tree = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(tree.tag, Tag::TapTree);
+        let top_kids = match &tree.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected TapTree.Children([2])"),
+        };
+        // Both top-level children are themselves TapTree branches.
+        for (i, branch) in top_kids.iter().enumerate() {
+            assert_eq!(branch.tag, Tag::TapTree, "top child {i} must be TapTree");
+            let leaves = match &branch.body {
+                Body::Children(v) if v.len() == 2 => v,
+                _ => panic!("expected nested TapTree.Children([2])"),
+            };
+            assert_eq!(leaves[0].tag, Tag::PkK);
+            assert_eq!(leaves[1].tag, Tag::PkK);
         }
+        // Verify @N indices in document order: @1, @2, @3, @4.
+        let expect_indices = [(0, 0, 1), (0, 1, 2), (1, 0, 3), (1, 1, 4)];
+        for (top_i, leaf_i, expected_idx) in expect_indices {
+            let branch = match &top_kids[top_i].body {
+                Body::Children(v) => v,
+                _ => unreachable!(),
+            };
+            assert!(
+                matches!(branch[leaf_i].body, Body::KeyArg { index: i } if i == expected_idx),
+                "top[{top_i}].leaf[{leaf_i}] must be @{expected_idx}",
+            );
+        }
+    }
+
+    /// v0.19 — 3-leaf left-unbalanced: depths `[1,2,2]`.
+    /// `tr(@0,{pk(@1),{pk(@2),pk(@3)}})` →
+    /// `TapTree { PkK@1, TapTree { PkK@2, PkK@3 } }`.
+    #[test]
+    fn tr_multi_branch_three_leaf_left_unbalanced() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,{pk(@1/<0;1>/*),{pk(@2/<0;1>/*),pk(@3/<0;1>/*)}})",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let tree = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(tree.tag, Tag::TapTree);
+        let top_kids = match &tree.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected TapTree.Children([2])"),
+        };
+        // Left: leaf PkK@1.
+        assert_eq!(top_kids[0].tag, Tag::PkK);
+        assert!(matches!(top_kids[0].body, Body::KeyArg { index: 1 }));
+        // Right: TapTree { PkK@2, PkK@3 }.
+        assert_eq!(top_kids[1].tag, Tag::TapTree);
+        let right_kids = match &top_kids[1].body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected nested TapTree.Children([2])"),
+        };
+        assert!(matches!(right_kids[0].body, Body::KeyArg { index: 2 }));
+        assert!(matches!(right_kids[1].body, Body::KeyArg { index: 3 }));
+    }
+
+    /// v0.19 — 3-leaf right-unbalanced: depths `[2,2,1]`.
+    /// `tr(@0,{{pk(@1),pk(@2)},pk(@3)})` →
+    /// `TapTree { TapTree { PkK@1, PkK@2 }, PkK@3 }`.
+    #[test]
+    fn tr_multi_branch_three_leaf_right_unbalanced() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,{{pk(@1/<0;1>/*),pk(@2/<0;1>/*)},pk(@3/<0;1>/*)})",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let tree = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        let top_kids = match &tree.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected TapTree.Children([2])"),
+        };
+        // Left: TapTree { PkK@1, PkK@2 }.
+        assert_eq!(top_kids[0].tag, Tag::TapTree);
+        let left_kids = match &top_kids[0].body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected nested TapTree.Children([2])"),
+        };
+        assert!(matches!(left_kids[0].body, Body::KeyArg { index: 1 }));
+        assert!(matches!(left_kids[1].body, Body::KeyArg { index: 2 }));
+        // Right: leaf PkK@3.
+        assert_eq!(top_kids[1].tag, Tag::PkK);
+        assert!(matches!(top_kids[1].body, Body::KeyArg { index: 3 }));
+    }
+
+    /// v0.19 — multi-branch with non-trivial leaf. Verifies the recursive
+    /// `walk_miniscript_node` call inside the stack-reconstruction loop.
+    /// `tr(@0,{pk(@1),and_v(v:pk(@2),older(144))})`.
+    #[test]
+    fn tr_multi_branch_with_complex_leaves() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,{pk(@1/<0;1>/*),and_v(v:pk(@2/<0;1>/*),older(144))})",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let tree = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        let kids = match &tree.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected TapTree.Children([2])"),
+        };
+        assert_eq!(kids[0].tag, Tag::PkK);
+        assert!(matches!(kids[0].body, Body::KeyArg { index: 1 }));
+        // Right leaf is and_v(Verify(PkK@2), Older(144)).
+        assert_eq!(kids[1].tag, Tag::AndV);
+        let andv_kids = match &kids[1].body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([2])"),
+        };
+        assert_eq!(andv_kids[0].tag, Tag::Verify);
+        assert_eq!(andv_kids[1].tag, Tag::Older);
+        assert!(matches!(andv_kids[1].body, Body::Timelock(144)));
+    }
+
+    /// v0.19 — NUMS sentinel + 2-leaf multi-branch. Verifies orthogonality
+    /// of the NUMS sentinel `key_index = n` rule and the tree shape:
+    /// `tr(<NUMS_HEX>,{pk(@0),pk(@1)})` with n=2 placeholders → sentinel
+    /// is `key_index = 2`, plus a 2-leaf TapTree.
+    #[test]
+    fn tr_nums_sentinel_with_two_leaf_multi_branch() {
+        let template = format!("tr({NUMS_H_POINT_X_ONLY_HEX},{{pk(@0/<0;1>/*),pk(@1/<0;1>/*)}})",);
+        let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let tree = match root.body {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 2, "n=2 placeholders → sentinel key_index = 2");
+                tree.expect("tap tree must be present")
+            }
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(tree.tag, Tag::TapTree);
+        let kids = match &tree.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected TapTree.Children([2])"),
+        };
+        assert!(matches!(kids[0].body, Body::KeyArg { index: 0 }));
+        assert!(matches!(kids[1].body, Body::KeyArg { index: 1 }));
+    }
+
+    /// v0.19 — NUMS sentinel + 3-leaf multi-branch. Verifies that
+    /// `km.len() as u8` arithmetic at walk_tr correctly varies with
+    /// placeholder count: n=3 here, so the sentinel must be `key_index = 3`.
+    /// Without this test, only the n=2 sentinel case is exercised.
+    #[test]
+    fn tr_nums_sentinel_with_three_leaf_multi_branch() {
+        let template = format!(
+            "tr({NUMS_H_POINT_X_ONLY_HEX},{{pk(@0/<0;1>/*),{{pk(@1/<0;1>/*),pk(@2/<0;1>/*)}}}})",
+        );
+        let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let tree = match root.body {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(key_index, 3, "n=3 placeholders → sentinel key_index = 3");
+                tree.expect("tap tree must be present")
+            }
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(tree.tag, Tag::TapTree);
     }
 
     /// v0.18 Phase 4a — andor ternary structural assertion. The only ternary

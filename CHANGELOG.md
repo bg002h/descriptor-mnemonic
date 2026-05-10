@@ -4,6 +4,26 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.4.0] — 2026-05-09
+
+Strictly additive feature release. Inputs that v0.3.0 accepted continue to encode bit-identically; only the previously-rejected multi-branch shapes now succeed.
+
+### What's new
+
+- **Multi-branch tap trees now accepted.** `walk_tap_tree` previously rejected any miniscript `TapTree` with more than one leaf (`"multi-branch tap trees are not yet supported (got n leaves; single-leaf only)"`). v0.4.0 replaces the leaf-count gate with a stack-based depth-marked-preorder reconstruction that produces a binary tree of `Tag::TapTree` internal nodes (each carrying `Body::Children([left, right])`). Hand-written templates like `tr(@0, {pk(@1), pk(@2)})` and `tr(@0, {{pk(@1),pk(@2)},{pk(@3),pk(@4)}})` now encode and round-trip end-to-end.
+- **Wire format unchanged.** `Tag::TapTree` (primary code 0x05) has been in md-codec since v0.11; the encoder now reaches it from real input. Single-leaf inputs (`tr(@0, pk(@1))`) continue to encode without a Tag::TapTree wrap, preserving v0.3.0 wire-format compatibility.
+- **`--path` required for multi-branch.** As with v0.3.0 single-leaf, `tr(@N, TapTree)` is non-canonical and the canonicity gate requires explicit origin info on encode. Use `--path "48'/0'/0'/2'"` (or per-`@N` `--key <xpub>` bindings) to satisfy the gate.
+
+### Test coverage
+
+- 7 new walker unit tests in `parse::template::tr_tests` covering 2-leaf balanced, 4-leaf balanced, 3-leaf left-unbalanced, 3-leaf right-unbalanced, complex-leaf, NUMS sentinel + 2-leaf, NUMS sentinel + 3-leaf.
+- 3 new round-trip integration tests in `tests/template_roundtrip.rs` exercising the full encode → decode pipeline with explicit `--path`.
+- 3 new codec wire-format unit tests in `crates/md-codec/src/tree.rs::tests` (closes a v0.18 audit gap: `Tag::TapTree` branching had no dedicated round-trip pinning at the codec layer).
+
+### Known limitations / followups
+
+- Decode-side recursion has no explicit depth cap. miniscript construction-side caps at 128, so encode-side cannot produce deeply-nested input, but adversarial decode-side bytes could nest `Tag::TapTree` arbitrarily. Pre-existing v0.11+ concern (not v0.4.0-introduced); filed as `tap-tree-depth-cap-hardening` followup pending a fuzz-harness pass over `read_node`.
+
 ## md-codec [0.18.0] — 2026-05-09 [BREAKING]
 
 **Wire-format break.** v0.17-encoded payloads MUST NOT be decoded under v0.18; a v0.18 decoder rejects v0.17 phrases with `Error::UnknownExtensionTag(0x05)`. v0.17 shipped on the same day with no engraved phrases in the wild, so this break has no migration cost.
