@@ -274,3 +274,112 @@ fn encode_path_overrides_canonical_default() {
         "different explicit --path values must produce different encoded phrases"
     );
 }
+
+/// v0.18 Phase 5 — Item F end-to-end round-trip for the 2-of-3 hardware-
+/// wallet multisig pattern (the headline use case). Encodes via
+/// `--from-policy` with an explicit `--path` (Phase 1's --path fix is the
+/// enabler — without it, the canonicity gate rejects the descriptor on
+/// decode). Decodes the resulting phrase and asserts the rendered
+/// template contains the NUMS hex (Phase 3's sentinel rule rendered as
+/// the literal x-only key) and the multi_a body. Resolves the
+/// `v0.17.1-from-policy-round-trip-integration` carryover FOLLOWUP.
+#[cfg(feature = "cli-compiler")]
+#[test]
+fn encode_decode_roundtrip_thresh_2_of_3_tap_with_explicit_path() {
+    use std::process::Command as StdCommand;
+
+    let encode_out = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--path",
+            "48'/0'/0'/2'",
+        ])
+        .output()
+        .expect("encode");
+    let phrase = String::from_utf8(encode_out.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    assert!(
+        phrase.starts_with("md1"),
+        "encode must produce an md1 phrase, got: {phrase}"
+    );
+
+    let decode_out = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args(["decode", &phrase])
+        .output()
+        .expect("decode");
+    let template = String::from_utf8(decode_out.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    assert!(
+        template.contains(
+            "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+        ),
+        "decoded template must include NUMS hex (Tag::Tr+sentinel rendered \
+         as tr(<NUMS>, ...)). Got: {template}"
+    );
+    assert!(
+        template.contains("multi_a(2,@0"),
+        "decoded template must include multi_a(2,@0... body. Got: {template}"
+    );
+}
+
+/// v0.18 Phase 5 — Item F end-to-end round-trip for the inheritance/
+/// timelock pattern. Exercises Phase 4a walker arms (AndV + Verify +
+/// Older) through the full encode → decode pipeline.
+#[cfg(feature = "cli-compiler")]
+#[test]
+fn encode_decode_roundtrip_inheritance_pattern_with_explicit_path() {
+    use std::process::Command as StdCommand;
+
+    let encode_out = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args([
+            "encode",
+            "--from-policy",
+            "or(pk(@0),and(pk(@1),older(144)))",
+            "--context",
+            "tap",
+            "--path",
+            "86'/0'/0'",
+        ])
+        .output()
+        .expect("encode");
+    let phrase = String::from_utf8(encode_out.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    assert!(phrase.starts_with("md1"));
+
+    let decode_out = StdCommand::new(env!("CARGO_BIN_EXE_md"))
+        .args(["decode", &phrase])
+        .output()
+        .expect("decode");
+    let template = String::from_utf8(decode_out.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    // Inheritance pattern: tr(@0, and_v(v:pk(@1), older(144)))
+    // - tr() with extracted @0 as internal key (miniscript prefers extraction
+    //   over the auto-NUMS fallback).
+    // - and_v with verify-wrapped pk and older timelock.
+    assert!(
+        template.starts_with("tr(@0"),
+        "decoded must start with tr(@0 (extracted @0 internal key). Got: {template}"
+    );
+    assert!(
+        template.contains("and_v(v:pk(@1"),
+        "decoded must include and_v(v:pk(@1 body. Got: {template}"
+    );
+    assert!(
+        template.contains("older(144)"),
+        "decoded must include older(144). Got: {template}"
+    );
+}
