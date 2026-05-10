@@ -259,6 +259,18 @@ fn render_hash160(name: &str, body: &Body, out: &mut String) -> Result<(), CliEr
 /// `s:n:j:X`). Walks down the wrapper spine, accumulating letters, then
 /// renders the innermost non-wrapper fragment after a single `:`.
 ///
+/// # Caller contract
+///
+/// Reachable from exactly one site: the wrapper-chain dispatch arm in
+/// [`render_node`] for tags `Check | Swap | Alt | DupIf | NonZero |
+/// ZeroNotEqual`. The function MUST NOT be called with any other tag —
+/// its first-iteration loop body relies on the head being a wrapper, and
+/// passing a non-wrapper would emit a malformed bare `:` followed by the
+/// inner render. The `debug_assert!` below pins this invariant in tests
+/// and debug builds. A structural restructure that peels the first letter
+/// unconditionally would also work but adds complexity for no live-bug
+/// benefit; the assert is sufficient.
+///
 /// Special cases:
 /// - `Check(PkK)` and `Check(PkH)` collapse to the shorthand `pk(K)` / `pk_h(K)`
 ///   per miniscript's canonical printer; if the wrapper chain ends in `c:` and
