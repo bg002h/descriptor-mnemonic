@@ -325,4 +325,18 @@ pub enum Error {
         "unsupported wrapper shape for address derivation; v0.14 supports pkh, wpkh, tr keypath-only, wsh-multi/sortedmulti, sh-wsh-multi/sortedmulti only"
     )]
     UnsupportedDerivationShape,
+
+    /// Decode-side recursion depth exceeded the hardening cap.
+    /// `read_node` calls itself recursively for tags with child bodies
+    /// (`Tag::Sh`, `Tag::AndV`, `Tag::TapTree`, `Tag::Multi`, `Tag::Tr`,
+    /// etc.); a hostile wire payload nesting these tags arbitrarily deep
+    /// would blow the Rust stack. The cap is shared across all recursive
+    /// tags as a generic anti-DOS hardening bound. v0.19 introduced.
+    #[error("decode recursion depth {depth} exceeded maximum {max}")]
+    DecodeRecursionDepthExceeded {
+        /// Current recursion depth at which the cap fired.
+        depth: u8,
+        /// Maximum allowed depth.
+        max: u8,
+    },
 }

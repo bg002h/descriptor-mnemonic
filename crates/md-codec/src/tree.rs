@@ -116,11 +116,40 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
     Ok(())
 }
 
+/// Hard cap on `read_node` recursion depth. Shared across all recursive tags
+/// (`Sh`, `AndV`, `AndOr`, `TapTree`, `Multi`, `Tr`, …) as a generic anti-DOS
+/// hardening bound — not a spec-mandated value for non-taproot sites. The
+/// value 128 happens to coincide with BIP-341 `TAPROOT_CONTROL_MAX_NODE_COUNT`,
+/// but its role here is just "any depth a real miniscript expression could
+/// plausibly reach + headroom"; P2WSH script-size limits cap practical
+/// miniscript depth at well under 50.
+pub const MAX_DECODE_DEPTH: u8 = 128;
+
 /// Decode a [`Node`] from the bit stream.
 ///
 /// `key_index_width` is the bit width used for key-index fields, derived from
 /// the descriptor's path-decl head. Filled in across phases 7-11.
+///
+/// Top-level entry point. Internally calls [`read_node_with_depth`] starting
+/// at depth 0; the recursion-depth cap fires at [`MAX_DECODE_DEPTH`].
 pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, Error> {
+    read_node_with_depth(r, key_index_width, 0)
+}
+
+/// Inner recursive form of [`read_node`] that threads `depth`. Increments
+/// `depth` once per call and errors if it reaches [`MAX_DECODE_DEPTH`].
+/// Public callers should use [`read_node`] instead, which starts at depth 0.
+fn read_node_with_depth(
+    r: &mut BitReader,
+    key_index_width: u8,
+    depth: u8,
+) -> Result<Node, Error> {
+    if depth >= MAX_DECODE_DEPTH {
+        return Err(Error::DecodeRecursionDepthExceeded {
+            depth,
+            max: MAX_DECODE_DEPTH,
+        });
+    }
     let tag = Tag::read(r)?;
     let body = match tag {
         Tag::PkK | Tag::PkH | Tag::Wpkh | Tag::Pkh => {
@@ -136,23 +165,23 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, Error> 
         | Tag::DupIf
         | Tag::NonZero
         | Tag::ZeroNotEqual => {
-            let child = read_node(r, key_index_width)?;
+            let child = read_node_with_depth(r, key_index_width, depth + 1)?;
             Body::Children(vec![child])
         }
         Tag::AndV | Tag::AndB | Tag::OrB | Tag::OrC | Tag::OrD | Tag::OrI => {
-            let l = read_node(r, key_index_width)?;
-            let r2 = read_node(r, key_index_width)?;
+            let l = read_node_with_depth(r, key_index_width, depth + 1)?;
+            let r2 = read_node_with_depth(r, key_index_width, depth + 1)?;
             Body::Children(vec![l, r2])
         }
         Tag::AndOr => {
-            let a = read_node(r, key_index_width)?;
-            let b = read_node(r, key_index_width)?;
-            let c = read_node(r, key_index_width)?;
+            let a = read_node_with_depth(r, key_index_width, depth + 1)?;
+            let b = read_node_with_depth(r, key_index_width, depth + 1)?;
+            let c = read_node_with_depth(r, key_index_width, depth + 1)?;
             Body::Children(vec![a, b, c])
         }
         Tag::TapTree => {
-            let l = read_node(r, key_index_width)?;
-            let r2 = read_node(r, key_index_width)?;
+            let l = read_node_with_depth(r, key_index_width, depth + 1)?;
+            let r2 = read_node_with_depth(r, key_index_width, depth + 1)?;
             Body::Children(vec![l, r2])
         }
         Tag::Multi | Tag::SortedMulti | Tag::MultiA | Tag::SortedMultiA | Tag::Thresh => {
@@ -163,7 +192,7 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, Error> 
             }
             let mut children = Vec::with_capacity(count);
             for _ in 0..count {
-                children.push(read_node(r, key_index_width)?);
+                children.push(read_node_with_depth(r, key_index_width, depth + 1)?);
             }
             Body::Variable { k, children }
         }
@@ -171,7 +200,11 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, Error> 
             let key_index = r.read_bits(key_index_width as usize)? as u8;
             let has_tree = r.read_bits(1)? != 0;
             let tree = if has_tree {
-                Some(Box::new(read_node(r, key_index_width)?))
+                Some(Box::new(read_node_with_depth(
+                    r,
+                    key_index_width,
+                    depth + 1,
+                )?))
             } else {
                 None
             };
@@ -772,5 +805,108 @@ mod tests {
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    /// v0.19 hardening — reject deeply-nested TapTree on the decode side.
+    /// Encode-side has no cap (input here is a programmatically-constructed
+    /// Node tree, not from the walker), but the decode-side cap fires
+    /// when the deepest left-child read attempts at depth MAX_DECODE_DEPTH.
+    #[test]
+    fn read_node_rejects_excessive_taptree_nesting() {
+        let mut left = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 0 },
+        };
+        // 128 TapTree wrappers: deepest leaf ends up at depth 128 on the
+        // left chain; cap fires when reading that leaf.
+        for _ in 0..128 {
+            left = Node {
+                tag: Tag::TapTree,
+                body: Body::Children(vec![
+                    left,
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                ]),
+            };
+        }
+        let mut w = BitWriter::new();
+        write_node(&mut w, &left, 0).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        let err = read_node(&mut r, 0).unwrap_err();
+        assert_eq!(
+            err,
+            Error::DecodeRecursionDepthExceeded {
+                depth: 128,
+                max: MAX_DECODE_DEPTH,
+            }
+        );
+    }
+
+    /// v0.19 hardening — cap is tag-agnostic; fires for non-taproot
+    /// recursive tags (AndV chain) the same way it fires for TapTree.
+    #[test]
+    fn read_node_rejects_excessive_andv_chain_nesting() {
+        let mut left = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 0 },
+        };
+        // 128 AndV wrappers on the left, with PkK leaves on the right at
+        // each level. Deepest left-leaf at depth 128 triggers the cap.
+        for _ in 0..128 {
+            left = Node {
+                tag: Tag::AndV,
+                body: Body::Children(vec![
+                    left,
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                ]),
+            };
+        }
+        let mut w = BitWriter::new();
+        write_node(&mut w, &left, 0).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        let err = read_node(&mut r, 0).unwrap_err();
+        assert_eq!(
+            err,
+            Error::DecodeRecursionDepthExceeded {
+                depth: 128,
+                max: MAX_DECODE_DEPTH,
+            }
+        );
+    }
+
+    /// v0.19 hardening — depth exactly at the limit (deepest leaf at
+    /// depth 127, one shy of MAX_DECODE_DEPTH) round-trips successfully.
+    #[test]
+    fn read_node_accepts_max_depth_minus_one() {
+        let mut left = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 0 },
+        };
+        // 127 TapTree wrappers: deepest leaf at depth 127, just under cap.
+        for _ in 0..127 {
+            left = Node {
+                tag: Tag::TapTree,
+                body: Body::Children(vec![
+                    left,
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                ]),
+            };
+        }
+        let mut w = BitWriter::new();
+        write_node(&mut w, &left, 0).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        let decoded = read_node(&mut r, 0).unwrap();
+        assert_eq!(decoded, left);
     }
 }
