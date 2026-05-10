@@ -182,6 +182,21 @@ fn render_node(
             // or descriptor APIs, so this arm exists for round-trip fidelity
             // when md-codec encounters a RawPkH wire tag emitted by some
             // other producer.
+            //
+            // Rendering choice: emit `expr_raw_pkh(<hex>)` (no underscore
+            // between `pk` and `h`; the parser-accepted checked form), not
+            // the bare-K Display form `expr_raw_pk_h(<hex>)` (with
+            // underscore). miniscript-rs's parser at `mod.rs:1017` only
+            // accepts `expr_raw_pkh`, which produces
+            // `Terminal::Check(Terminal::RawPkH(<hash>))` — type B. The bare
+            // `expr_raw_pk_h` Display form is type K (display.rs:248) and is
+            // an internal artifact, not a spec-level string. Emitting the
+            // checked form matches the v0.4.2 PkH pattern (bare `Tag::PkH`
+            // → `pkh(K)`, the type-B sugar; `Tag::RawPkH` → `expr_raw_pkh(<hex>)`,
+            // its type-B sugar) and produces output that re-parses through
+            // miniscript. Absorbs the would-be `Check(RawPkH)` shorthand-
+            // collapse case at the bare arm, so `render_wrapper_chain`
+            // needs no parallel extension.
             let h = match &node.body {
                 Body::Hash160Body(h) => h,
                 _ => {
@@ -190,7 +205,7 @@ fn render_node(
                     ));
                 }
             };
-            out.push_str("pk_h(");
+            out.push_str("expr_raw_pkh(");
             for byte in h {
                 write!(out, "{byte:02x}").unwrap();
             }
@@ -665,6 +680,32 @@ mod tests {
         let canonical = "tr(@0/<0;1>/*,and_v(or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)),1))";
         let d = parse_template(input, &[], &[]).unwrap();
         assert_eq!(descriptor_to_template(&d).unwrap(), canonical);
+    }
+
+    /// v0.4.3 — bare `Tag::RawPkH` rendering. The walker doesn't emit
+    /// `Tag::RawPkH` from any BIP 388 wallet-policy input (no
+    /// `Terminal::RawPkH` walker arm), so this path is unreachable via
+    /// `parse_template`. Construct the Node directly and call private
+    /// `render_node` to pin the rendering invariant. Asserts the output
+    /// matches `Terminal::Check(Terminal::RawPkH)`'s parser-accepted
+    /// Display form `expr_raw_pkh(<hex>)` — see the doc-comment on the
+    /// arm at `render_node`'s Tag::RawPkH match for the rationale.
+    #[test]
+    fn render_bare_rawpkh_emits_expr_raw_pkh() {
+        let node = Node {
+            tag: Tag::RawPkH,
+            body: Body::Hash160Body([0u8; 20]),
+        };
+        let usp = UseSitePath::standard_multipath();
+        let mut out = String::new();
+        render_node(
+            &node, /* n */ 1, &usp, /* overrides */ None, &mut out,
+        )
+        .expect("render_node Tag::RawPkH must succeed");
+        assert_eq!(
+            out,
+            "expr_raw_pkh(0000000000000000000000000000000000000000)",
+        );
     }
 }
 
