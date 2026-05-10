@@ -274,6 +274,20 @@ fn render_wrapper_chain(
     overrides: Option<&[(u8, UseSitePath)]>,
     out: &mut String,
 ) -> Result<(), CliError> {
+    // The single dispatch arm at render_node guarantees `node.tag` is one of
+    // the six wrapper tags (Check/Swap/Alt/DupIf/NonZero/ZeroNotEqual), so the
+    // first iteration of the loop below always assigns a non-None letter.
+    // Guard the empty-prefix case in debug builds to make the invariant
+    // explicit (release builds skip the assertion; the invariant is upheld by
+    // the dispatch site, not by render_wrapper_chain itself).
+    debug_assert!(
+        matches!(
+            node.tag,
+            Tag::Check | Tag::Swap | Tag::Alt | Tag::DupIf | Tag::NonZero | Tag::ZeroNotEqual
+        ),
+        "render_wrapper_chain called on non-wrapper tag {:?}",
+        node.tag
+    );
     let mut prefix = String::new();
     let mut current = node;
     loop {

@@ -45,6 +45,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0.18-render-wrapper-chain-empty-prefix-defensibility` — guard render_wrapper_chain against non-wrapper entry
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 7 whole-PR architect review.
+- **Where:** `crates/md-cli/src/format/text.rs::render_wrapper_chain`. The function loops collecting wrapper-prefix letters; if called with a non-wrapper tag, the loop breaks immediately and the function emits a bare `:` followed by the inner render, which would be malformed miniscript. Currently unreachable because the single dispatch arm at `render_node` is restricted to `Check|Swap|Alt|DupIf|NonZero|ZeroNotEqual`.
+- **What:** Phase 7 added a `debug_assert!` at function entry for explicit invariant. A future tightening would either (a) restructure the loop to peel the first letter unconditionally with a bounds check, or (b) accept the assert as sufficient for the indefinite future. Defensive but not a live bug.
+- **Why deferred:** Currently unreachable. The debug-assert covers the invariant in tests/debug builds. A more robust restructure can wait for a future cycle.
+- **Status:** `open`
+- **Tier:** `low (defensibility hardening, no live bug)`
+
 ### `v0.18-phase-4a-build-multi-node-k-bounds-parity` — apply same k-bounds guard to build_multi_node
 
 - **Surfaced:** 2026-05-09, v0.18 Phase 4a per-phase code-reviewer round (Item A walker arms; reviewer I1 finding while reviewing the new Thresh arm).
