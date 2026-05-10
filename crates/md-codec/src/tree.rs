@@ -545,7 +545,10 @@ mod tests {
         // case silently desyncs the bitstream.
         let n = Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 1, tree: None },
+            body: Body::Tr {
+                key_index: 1,
+                tree: None,
+            },
         };
         let mut w = BitWriter::new();
         // v0.18 width formula at n=1: ceil(log2(2)) = 1.
@@ -642,7 +645,10 @@ mod tests {
         // off-by-one errors in the upper-boundary ceil(log2(n+1)) edge.
         let n = Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: 4, tree: None },
+            body: Body::Tr {
+                key_index: 4,
+                tree: None,
+            },
         };
         let mut w = BitWriter::new();
         // v0.18 width at n=4: ceil(log2(5)) = 3 (was 2 in v0.17).

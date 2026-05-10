@@ -143,13 +143,7 @@ fn walk_tap_tree_leaves(node: &Node) -> Result<(), Error> {
 fn is_forbidden_leaf_tag(tag: Tag) -> bool {
     matches!(
         tag,
-        Tag::Wpkh
-            | Tag::Tr
-            | Tag::Wsh
-            | Tag::Sh
-            | Tag::Pkh
-            | Tag::Multi
-            | Tag::SortedMulti
+        Tag::Wpkh | Tag::Tr | Tag::Wsh | Tag::Sh | Tag::Pkh | Tag::Multi | Tag::SortedMulti
     )
 }
 

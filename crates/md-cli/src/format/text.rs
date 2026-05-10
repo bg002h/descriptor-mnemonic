@@ -607,7 +607,8 @@ mod tests {
     /// shorthand even though the wire form carries explicit Tag::Check.
     #[test]
     fn roundtrip_wsh_thresh_with_non_key_fragment_child() {
-        let t = "wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@1/<0;1>/*),snj:and_v(v:pk(@2/<0;1>/*),older(144))))";
+        let t =
+            "wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@1/<0;1>/*),snj:and_v(v:pk(@2/<0;1>/*),older(144))))";
         let d = parse_template(t, &[], &[]).unwrap();
         assert_eq!(descriptor_to_template(&d).unwrap(), t);
     }
@@ -641,8 +642,7 @@ mod tests {
         // Input: t:or_c(pk(@1), v:pk(@2)) — miniscript's t: prefix
         // Rendered (canonical): and_v(or_c(pk(@1),v:pk(@2)),1)
         let input = "tr(@0/<0;1>/*,t:or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)))";
-        let canonical =
-            "tr(@0/<0;1>/*,and_v(or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)),1))";
+        let canonical = "tr(@0/<0;1>/*,and_v(or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)),1))";
         let d = parse_template(input, &[], &[]).unwrap();
         assert_eq!(descriptor_to_template(&d).unwrap(), canonical);
     }

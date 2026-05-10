@@ -1226,7 +1226,9 @@ mod tr_tests {
                 assert_eq!(v.len(), 3, "andor must have exactly 3 children");
                 for (i, child) in v.iter().enumerate() {
                     assert_eq!(child.tag, Tag::PkK);
-                    assert!(matches!(child.body, Body::KeyArg { index: ix } if ix as usize == i + 1));
+                    assert!(
+                        matches!(child.body, Body::KeyArg { index: ix } if ix as usize == i + 1)
+                    );
                 }
             }
             _ => panic!("expected Body::Children"),

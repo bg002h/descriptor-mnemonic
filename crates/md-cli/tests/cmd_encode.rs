@@ -319,9 +319,7 @@ fn encode_decode_roundtrip_thresh_2_of_3_tap_with_explicit_path() {
         .to_string();
 
     assert!(
-        template.contains(
-            "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
-        ),
+        template.contains("50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"),
         "decoded template must include NUMS hex (Tag::Tr+sentinel rendered \
          as tr(<NUMS>, ...)). Got: {template}"
     );
