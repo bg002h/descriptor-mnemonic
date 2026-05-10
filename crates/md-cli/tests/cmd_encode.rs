@@ -37,6 +37,52 @@ fn encode_json_has_schema_and_phrase() {
         .stdout(predicate::str::contains("\"phrase\":"));
 }
 
+/// v0.20 — `--path` against a raw template (no `--from-policy`). The Phase 1
+/// `--path` tests are all `#[cfg(feature = "cli-compiler")]` and exercise
+/// `--from-policy`, so this path was previously unpinned in CI without the
+/// feature flag. Asserts the override produces a different phrase than the
+/// no-path baseline. Closes followup `v0.18-phase-1-low-2-cli-path-non-from-policy-test-gate`.
+#[test]
+fn encode_with_explicit_path_raw_template_differs_from_baseline() {
+    let baseline = Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))"])
+        .output()
+        .unwrap();
+    assert!(baseline.status.success(), "baseline encode failed");
+    let baseline_phrase = String::from_utf8(baseline.stdout)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+
+    let with_path = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
+            "--path",
+            "84'/0'/0'",
+        ])
+        .output()
+        .unwrap();
+    assert!(with_path.status.success(), "--path encode failed");
+    let with_path_phrase = String::from_utf8(with_path.stdout)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+
+    assert!(baseline_phrase.starts_with("md1"));
+    assert!(with_path_phrase.starts_with("md1"));
+    assert_ne!(
+        baseline_phrase, with_path_phrase,
+        "expected --path override to change the encoded phrase"
+    );
+}
+
 #[cfg(feature = "cli-compiler")]
 #[test]
 fn encode_from_policy_segwitv0() {

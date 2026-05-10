@@ -4,6 +4,44 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.19.0] — 2026-05-09
+
+Decode-side hardening. Real-world inputs are unaffected; only adversarial deeply-nested wire payloads change behavior (typed error instead of stack-overflow panic).
+
+### What's new
+
+- **Decode-side recursion depth cap.** `tree.rs::read_node` is now capped at `MAX_DECODE_DEPTH = 128`. A new internal `read_node_with_depth` helper threads the counter; the public `read_node(r, key_index_width)` API is unchanged for callers (it starts the recursion at depth 0). The cap is shared across all six recursion sites (single-child wrappers, two-child binary ops, three-child `AndOr`, `TapTree`, variable-arity `Multi`/`Thresh`, and `Tr`'s optional tree); 128 happens to coincide with BIP-341 `TAPROOT_CONTROL_MAX_NODE_COUNT` but the role here is generic anti-DOS hardening, not a taproot-specific cap.
+- **New `Error::DecodeRecursionDepthExceeded { depth, max }` variant.** Cross-implementations MUST surface a semantically equivalent rejection.
+
+### Threat model
+
+- **Decode-side:** hostile wire bytes nesting recursive tags arbitrarily deep would previously blow the Rust stack. v0.19 rejects with the typed error at depth ≥ 128.
+- **Encode-side (`write_node`) is intentionally not capped.** Bounded by API contract: callers construct `Node` via the walker (capped by miniscript's 128-node tap-tree limit) or supply a `Node` directly via internal API. Hostile encode-side input would only arise from a programmatic adversarial `Node` constructor; threat model here is decode-hostile-wire-input only.
+
+### Test coverage
+
+- TapTree at depth 128 fires the cap with `DecodeRecursionDepthExceeded { depth: 128, max: 128 }`.
+- AndV chain at depth 128 fires the cap (confirms tag-agnostic).
+- TapTree at depth 127 round-trips successfully.
+
+Closes followup `tap-tree-depth-cap-hardening`.
+
+## md-cli [0.4.1] — 2026-05-09
+
+Polish release. Three small post-v0.18/v0.19 cleanups; no flag changes, no wire-format effect, no manual-mirror impact. Bumps md-codec dep to `0.19.0`.
+
+### What's new
+
+- **`build_multi_node` k-bounds parity.** The walker's `multi`/`sortedmulti`/`multi_a` builder now bounds-checks `k ∈ 1..=32` at function entry, mirroring the v0.18 Phase 4a Thresh walker arm. Out-of-range `k` produces a clean `CliError::TemplateParse` instead of silent `u8` truncation. md-codec's `tree.rs::write_node` already returned `ThresholdOutOfRange` for the same range; this is UX polish.
+- **Non-cfg-gated `--path` test.** Added `encode_with_explicit_path_raw_template_differs_from_baseline` in `tests/cmd_encode.rs` to provide unconditional CI coverage of `--path` against raw-template input. The three Phase 1 `--path` tests are all `#[cfg(feature = "cli-compiler")]` and exercise `--from-policy` only.
+- **`render_wrapper_chain` caller contract documented.** Doc-comment on `crates/md-cli/src/format/text.rs::render_wrapper_chain` now explicitly enumerates the single dispatch site and permitted-tag set; the existing `debug_assert!` is the contract enforcer. No live bug; defensibility hardening only. Structural restructure declined per YAGNI.
+
+### Closes followups
+
+- `v0.18-phase-4a-build-multi-node-k-bounds-parity`
+- `v0.18-phase-1-low-2-cli-path-non-from-policy-test-gate`
+- `v0.18-render-wrapper-chain-empty-prefix-defensibility`
+
 ## md-cli [0.4.0] — 2026-05-09
 
 Strictly additive feature release. Inputs that v0.3.0 accepted continue to encode bit-identically; only the previously-rejected multi-branch shapes now succeed.
