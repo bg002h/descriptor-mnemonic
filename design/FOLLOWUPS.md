@@ -54,6 +54,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `open`
 - **Tier:** v1+ (BIP-text refresh)
 
+### `error-enum-non-exhaustive-attribute` — `md_codec::Error` lacks `#[non_exhaustive]`; every variant addition is a downstream-breaking change
+
+- **Surfaced:** 2026-05-09, v0.20 whole-PR architect review (Low finding). The v0.20 cycle bumped md-codec 0.18.0 → 0.19.0 (semver-minor under the pre-1.0 `0.X` breaking-change axis) specifically because adding `Error::DecodeRecursionDepthExceeded` is technically downstream-breaking for any matcher without a wildcard arm.
+- **Where:** `crates/md-codec/src/error.rs:7` (`pub enum Error`).
+- **What:** Add `#[non_exhaustive]` to the `Error` enum declaration. Future variant additions then become semver-additive (downstream matchers MUST already include a wildcard catch-all when matching a non_exhaustive enum, so adding variants doesn't break their compile). Without this attribute, every new variant continues to require an `0.X` breaking-component bump just for the variant addition, even when the actual behavioral change is purely additive hardening.
+- **Why deferred:** v0.20's release shape is correct as-shipped (the `0.X` bump matches the technical breakage, MIGRATION accurately documents it). Adding `#[non_exhaustive]` itself is a one-line breaking change that would warrant its own labeled cycle, and it pairs naturally with v1.0 API stabilization (where the `Error` shape gets pinned anyway). Filing as a forward-looking design-debt item rather than mid-cycle.
+- **Status:** `open`
+- **Tier:** v1.0 (API stabilization pairing)
+
 ### `manual-cli-surface-mirror` — md-cli flag/API changes must mirror to the toolkit-side user manual
 
 - **Surfaced:** 2026-05-07, m-format-star user manual v0.1 release in `bg002h/mnemonic-toolkit` (`manual-v0.1.0` tag; toolkit PR #1).
