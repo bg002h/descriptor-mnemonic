@@ -220,3 +220,33 @@ fn reencode_round_trip_each_manifest_entry() {
         );
     }
 }
+
+/// Pins the `Check(PkH)` shorthand-collapse arm in
+/// `format/text.rs::render_wrapper_chain` (gate `prefix.ends_with('c') &&
+/// matches!(current.tag, Tag::PkK | Tag::PkH)`). `wsh(pkh(K))` is the
+/// minimal shape that hits it: miniscript-rs parses `pkh(K)` in segwitv0
+/// context as `Terminal::Check(Terminal::PkH(K))`, the walker emits
+/// `Tag::Check` wrapping `Tag::PkH` (template.rs::walk_miniscript_node
+/// non-tap fallthrough), and the renderer must collapse `c:pk_h` back to
+/// `pkh(...)`. Without the v0.4.2 collapse fix, the re-encode would
+/// produce a different phrase (or fail to re-parse). Companion to the
+/// `inheritance_andor_or_i_pkh` curated case, which exercises the same
+/// arm under `or_i` siblings; this dedicated test pins the bare
+/// `wsh(pkh(K))` shape so future regressions surface specifically here.
+#[test]
+fn wsh_pkh_shorthand_collapse_round_trips() {
+    let template = "wsh(pkh(@0/<0;1>/*))";
+    let phrase = encode_with_path(template, "84'/0'/0'");
+    assert!(
+        phrase.starts_with("md1"),
+        "encode produced phrase: {phrase}"
+    );
+    let decoded = decode(&phrase);
+    assert_eq!(decoded, template, "round-trip mismatch");
+    let phrase_again = encode_with_path(&decoded, "84'/0'/0'");
+    assert_eq!(
+        phrase, phrase_again,
+        "re-encode of decoded text produced a different phrase: \
+         original={phrase}, decoded={decoded}, re-encoded={phrase_again}"
+    );
+}

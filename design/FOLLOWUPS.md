@@ -54,15 +54,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `open`
 - **Tier:** v0.5+ (Low; speculative, blocked on upstream admit-set decision)
 
-### `check-pkh-shorthand-collapse-unit-test-coverage` — no dedicated unit test pins `Check(PkH)` shorthand-collapse rendering
-
-- **Surfaced:** 2026-05-10, v0.4.2 architect review (Low finding).
-- **Where:** `crates/md-cli/src/format/text.rs::render_wrapper_chain` — `Check(PkH)` shorthand-collapse arm. Gate at ~line 355 (`if prefix.ends_with('c') && matches!(current.tag, Tag::PkK | Tag::PkH)`); emit site at ~line 370 (post-v0.4.2 the emit string is `pkh(`, not `pk_h(`). The integration tests in `tests/template_roundtrip.rs::reencode_round_trip_curated_shapes` exercise the bare `Tag::PkH` arm (around line 70) but the shorthand-collapse arm requires an AST shape that miniscript-rs may not produce from typical BIP 388 templates (`pkh(K)` parses to `Terminal::PkH(K)` directly, not `Terminal::Check(Terminal::PkH(K))`).
-- **What:** Investigate whether `Terminal::Check(Terminal::PkH)` is reachable at all from any BIP 388 input. If yes, add a `#[cfg(test)]` template that produces it and pins the rendering; if no, the shorthand-collapse arm is defensive dead-code and could either be removed or pinned via a hand-constructed `Node` test that bypasses miniscript-rs's parser.
-- **Why deferred:** Low priority; both fix sites in v0.4.2 are individually well-documented and the integration test catches the bug class via the bare arm. Investigation can wait.
-- **Status:** `open`
-- **Tier:** v0.5+ (Low)
-
 
 ### `error-enum-non-exhaustive-attribute` — `md_codec::Error` lacks `#[non_exhaustive]`; every variant addition is a downstream-breaking change
 
@@ -1590,6 +1581,13 @@ See BIP §FAQ for rationale.
 - **What shipped (retroactive close-out, 2026-05-10).** Substantive rename work was already done before the followup was filed: commit `fba767c` (2026-04-27, "Phase 4c — constant renames WDM_\*_CONST → MD_\*_CONST") renamed `WDM_REGULAR_CONST` → `MD_REGULAR_CONST` and `WDM_LONG_CONST` → `MD_LONG_CONST` in `crates/md-codec/src/encoding.rs` two days before this followup was filed. The followup was never closed at the time. Plus, commit `5350f8a` (md-codec v0.12.0, "strip v0.x, flatten v11") consolidated the BCH plumbing into `crates/md-codec/src/bch.rs` and deleted long-code support entirely along with the v0.x format — so `MD_LONG_CONST` no longer exists, not as a rename but as a deletion when its use-case was retired. The followup's stale `Where:` line pointed at `crates/md-codec/src/encoding.rs:171, 218, 860, 864`; that file was deleted in v0.12.0. Current state: `MD_REGULAR_CONST` lives at `crates/md-codec/src/bch.rs:17, 61, 76` with value `0x0815c07747a3392e7` (NUMS preimage `SHA-256("shibbolethnums")` unchanged). Verified by `grep -rnE '\bWDM_REGULAR_CONST|\bWDM_LONG_CONST' crates/ bip/ design/SPEC_*.md` returning zero matches. The BIP §"Why new target constants?" uses spec-domain abstract names (`T_REGULAR` / `T_LONG`) — it never used `WDM_*` symbol-domain names, so nothing to rename there. The remaining `wdm` mentions in `MIGRATION.md`, `CHANGELOG.md`, `README.md`, and `bip/bip-mnemonic-descriptor.mediawiki` L974/L1004 are intentional historical pointers (rename-migration guide for users, changelog history, "renamed at v0.3.0" historical asides) and are correctly preserved. Cycle was a plan-mode brainstorm that surfaced "already done" — no code/SPEC/BIP/version changes; FOLLOWUPS bookkeeping only.
 - **Status:** resolved 2026-05-10 (retroactive close-out; substantive work shipped 2026-04-27 `fba767c` + v0.12.0 `5350f8a`).
 - **Tier:** v1.0 → closed retroactively
+
+### `check-pkh-shorthand-collapse-unit-test-coverage` — no dedicated unit test pins `Check(PkH)` shorthand-collapse rendering
+
+- **Surfaced:** 2026-05-10, v0.4.2 architect review (Low finding).
+- **What shipped (2026-05-10).** Three-followup bundled mini-cycle. Phase 1 spike empirically resolved the core uncertainty the followup raised ("`pkh(K)` parses to `Terminal::PkH(K)` directly, not `Terminal::Check(Terminal::PkH(K))`"). Result: in segwitv0 (wsh) context, miniscript-rs's wallet-policy parser DOES produce `Terminal::Check(Terminal::PkH(K))` for `wsh(pkh(K))`, and the walker (`crates/md-cli/src/parse/template.rs::walk_miniscript_node` lines 614, 633-636) emits the `Tag::Check` wrapping `Tag::PkH` wire shape. Empirical verification: `md encode 'wsh(pkh(@0/<0;1>/*))' --path "84'/0'/0'"` produces a 68-bit payload whose tree portion is 16 bits = 5 (wsh) + 5 (Check) + 5 (PkH) + 1 (key_index), exactly the `Check(PkH)` shape, not the 11 bits a bare `PkH` would produce. Phase 2 added a dedicated `#[test] wsh_pkh_shorthand_collapse_round_trips` in `crates/md-cli/tests/template_roundtrip.rs` that exercises the bare `wsh(pkh(K))` shape — encode, decode, re-encode, with a re-encode-equality assertion that pins the shorthand-collapse arm in `format/text.rs::render_wrapper_chain` (gate `prefix.ends_with('c') && matches!(current.tag, Tag::PkK | Tag::PkH)`). The companion `inheritance_andor_or_i_pkh` case in `reencode_round_trip_curated_shapes` exercises the same arm under `or_i` siblings; the new test pins the minimal bare shape so future regressions surface specifically here. `cargo test --workspace --all-features` clean (full suite + new test). Doc-comment on the new test cites the surface invariants and the v0.4.2 origin.
+- **Status:** resolved 2026-05-10 (v0.4.5+ bundled mini-cycle).
+- **Tier:** v0.4.5+ (closed)
 
 ---
 
