@@ -54,7 +54,7 @@ The following terms are used throughout this document:
 * '''Canonical bytecode''' — the unique, deterministic byte sequence produced by encoding a given wallet policy under the MD bytecode rules. Round-trip identity: <code>decode(encode(policy)) == policy</code> in canonical form.
 * '''Chunk''' — one of one or more codex32-derived strings that together encode a single Template Card.
 
-Bytes are written in hexadecimal as <code>0xNN</code>. Byte sequences are concatenated left-to-right in the order written. Multi-byte integer fields use the byte order specified at each occurrence; LEB128 is little-endian by definition. All character positions in encoded strings are 0-indexed.
+Bytes are written in hexadecimal as <code>0xNN</code>. Byte sequences are concatenated left-to-right in the order written. The bytecode layer is a packed bit stream (see §"Bytecode layer / General structure"); fixed-width bit fields are MSB-first, and variable-length integer fields use the LP4-ext varint encoding defined in §"LP4-ext varint". All character positions in encoded strings are 0-indexed.
 
 ==Format overview==
 
@@ -135,21 +135,23 @@ defense in §"Payload".
 
 ===Default derivation paths===
 
-When neither a caller-supplied path (Tier 0) nor a key-origin-extracted path (Tier 1) is available, encoders pick a per-top-level-type default path indicator:
+When neither a caller-supplied path (Tier 0) nor a key-origin-extracted path (Tier 1) is available, encoders pick a per-top-level-type default path:
 
 {| class="wikitable"
-! Top-level !! Default tier-1 indicator !! Default path
+! Top-level !! Default path !! Reference
 |-
-| <code>wsh</code> || <code>0x05</code> || <code>m/48'/0'/0'/2'</code>
+| <code>wsh</code> || <code>m/48'/0'/0'/2'</code> || BIP 48 mainnet multisig P2WSH
 |-
-| <code>tr</code> || <code>0x04</code> || <code>m/86'/0'/0'</code>
+| <code>tr</code> || <code>m/86'/0'/0'</code> || BIP 86 mainnet (P2TR)
 |-
-| <code>wpkh</code> || <code>0x03</code> || <code>m/84'/0'/0'</code>
+| <code>wpkh</code> || <code>m/84'/0'/0'</code> || BIP 84 mainnet (P2WPKH)
 |-
-| <code>sh(wpkh)</code> || <code>0x02</code> || <code>m/49'/0'/0'</code>
+| <code>sh(wpkh)</code> || <code>m/49'/0'/0'</code> || BIP 49 mainnet (P2SH-P2WPKH)
 |-
-| <code>sh(wsh)</code> || <code>0x06</code> || <code>m/48'/0'/0'/1'</code>
+| <code>sh(wsh)</code> || <code>m/48'/0'/0'/1'</code> || BIP 48 mainnet multisig P2SH-P2WSH
 |}
+
+The path is encoded explicitly into the §"Origin path declaration" using the depth-prefixed component encoding; v0.11+ does not carry a path dictionary on the wire, so a default path costs the same number of bits as any other path of the same depth.
 
 ==Specification==
 
@@ -175,28 +177,30 @@ The separator is the single character <code>1</code>, following BIP 173 bech32 c
 
 ====Header====
 
-The header is the first portion of the data part and identifies the card type, version, and (for chunked cards) reassembly information.
+Each MD card's data part begins with a header that identifies the card mode, version, and (for chunked cards) reassembly information. The header is bit-packed at the front of the data part. Single-string payload headers and chunked headers have different 5-bit prefixes (see the layouts below); the chunked-vs-single dispatch is by reader role — the API caller selects the decode path. A decoder that mis-classifies the input fails fast at the appropriate <code>Error::ReservedHeaderBitSet</code> (single-string path reading a chunk header) or <code>Error::ChunkHeaderChunkedFlagMissing</code> (chunked path reading a payload header) rejection rather than silently corrupting.
 
-For '''single-string Template Cards''' (the common case for small wallets), the header is two bech32 characters:
+For '''single-string Template Cards''' (the common case for small wallets), the header is 5 bits (one bech32 character) and matches the bytecode-layer payload header described in §"Bytecode header":
 
-* '''Version''' (1 char, 5 bits): MD format version. Currently <code>0</code> (the bech32 character with value 0, namely <code>q</code>). Decoders MUST reject unknown versions.
-* '''Type''' (1 char, 5 bits): card type. Value <code>0</code> = single-string Template Card. Value <code>1</code> = chunked Template Card. Other values reserved for future use; decoders MUST reject unknown types.
+* Bits 4: divergent-paths flag.
+* Bit 3: <code>0</code> (single-string mode dispatch).
+* Bits 2–0: version (v0.11+ = <code>0b000</code>).
 
-For '''chunked Template Cards''', the header is eight bech32 characters:
+For '''chunked Template Cards''', the header is 37 bits (occupying eight bech32 characters with 3 bits of trailing slack absorbed by the symbol grid):
 
-* Version (1 char): as above.
-* Type (1 char): value <code>1</code>.
-* Chunk-set identifier (4 chars, 20 bits): a deterministic per-encoding identifier shared by all chunks of one Template Card, derived from the encoding's <code>Md1EncodingId</code> (defined immediately below). Used to detect chunks from different Template Cards being mixed during reassembly.
-* Total chunk count (1 char, 5 bits): number of chunks comprising this Template Card. Range 1–32. Encoders SHOULD use the smallest count that fits the payload.
-* Chunk index (1 char, 5 bits): position of this chunk in the sequence, 0-indexed. Range 0 through (count − 1).
+* Bits 36–34: version (v0.11+ = <code>0b000</code>).
+* Bit 33: <code>1</code> (chunked-mode dispatch).
+* Bit 32: reserved, MUST be <code>0</code>.
+* Bits 31–12: chunk-set identifier (CSI), 20 bits. A deterministic per-encoding identifier shared by all chunks of one Template Card, derived from the encoding's <code>Md1EncodingId</code> (defined immediately below). Used to detect chunks from different Template Cards being mixed during reassembly.
+* Bits 11–6: total chunk count, 6 bits, encoded as <code>count − 1</code>. Range <code>1..64</code>. Encoders SHOULD use the smallest count that fits the payload.
+* Bits 5–0: chunk index, 6 bits, 0-indexed. Range <code>0..(count − 1)</code>.
 
-The chunk-set identifier is normatively bound to the canonical encoding. Define <code>Md1EncodingId</code> as the leading 16 bytes of <code>SHA-256</code> over the canonical bit-packed payload bytecode of the Template Card — the bytecode produced by the encoder before the cross-chunk integrity hash is appended (see §"Payload" and §"Bytecode layer"). Encoders MUST derive <code>chunk_set_id</code> from <code>Md1EncodingId</code> by taking the leading 20 bits, MSB-first:
+The chunk-set identifier is normatively bound to the canonical encoding. Define <code>Md1EncodingId</code> as the leading 16 bytes of <code>SHA-256</code> over the canonical bit-packed payload bytecode of the Template Card — the bytecode produced by the encoder for the assembled (single-string-equivalent) payload (see §"Payload" and §"Bytecode layer"). Encoders MUST derive <code>chunk_set_id</code> from <code>Md1EncodingId</code> by taking the leading 20 bits, MSB-first:
 
 <pre>
   chunk_set_id = (Md1EncodingId[0] << 12) | (Md1EncodingId[1] << 4) | (Md1EncodingId[2] >> 4)
 </pre>
 
-This deterministic binding makes md1 encoding byte-reproducible — any two conforming encoders given the same canonical bytecode produce identical Template Card strings — and lets downstream toolchains SHA-pin regression corpora. Decoders MUST verify, after reassembly and bytecode decode, that the wire <code>chunk_set_id</code> matches the value derived from the reassembled encoding's <code>Md1EncodingId</code>; mismatch MUST be rejected with an error specifically identifying the chunk-set-id derivation check. The reference implementation surfaces this as <code>Error::ChunkSetIdMismatch { expected, derived }</code>.
+This deterministic binding makes md1 encoding bit-reproducible — any two conforming encoders given the same canonical bytecode produce identical Template Card strings — and lets downstream toolchains SHA-pin regression corpora. Decoders MUST verify, after reassembly and bytecode decode, that the wire <code>chunk_set_id</code> matches the value derived from the reassembled encoding's <code>Md1EncodingId</code>; mismatch MUST be rejected with an error specifically identifying the chunk-set-id derivation check. The reference implementation surfaces this as <code>Error::ChunkSetIdMismatch { expected, derived }</code>.
 
 <code>Md1EncodingId</code> is distinct from the Tier-3 <code>PolicyId</code> (§"Policy identifier") and from <code>WalletInstanceId</code> (§"Wallet Instance ID"): it covers the full Template Card payload (including any TLV blocks present in wallet-policy mode), whereas <code>PolicyId</code> covers only the BIP 388 template + path layout. The two values coincide for template-only cards but diverge once wallet-policy mode adds concrete pubkeys.
 
@@ -204,13 +208,11 @@ This deterministic binding makes md1 encoding byte-reproducible — any two conf
 
 ====Payload====
 
-The payload is the bech32 encoding of the canonical bytecode (defined in "Bytecode layer", below) for the entire Template Card, or — for chunked Template Cards — of one fragment of that bytecode.
+The payload is the canonical bit-packed bytecode (defined in §"Bytecode layer", below) of the Template Card, encoded directly as 5-bit codex32 symbols. For chunked Template Cards, each chunk's payload is one fragment of the assembled bit stream; chunking splits the bit stream into fragments at encoder-chosen bit boundaries (no byte-aligned framing).
 
-The canonical bytecode of a chunked Template Card consists of the encoded wallet policy followed by a 4-byte truncated cross-chunk integrity hash (defined below). Chunking splits the resulting byte stream into fragments; each fragment is the payload of one chunk.
+The bytecode is bit-packed (MSB-first); 5-bit symbols are emitted directly from the bit stream with no intermediate byte-aligned conversion. The final symbol may carry up to 4 bits of trailing zero padding to align the bit count with the codex32 symbol grid.
 
-Each byte of bytecode contributes 8 bits; the bech32 alphabet packs 5 bits per character. Bytecode is converted to bech32 characters by the standard convert-bits algorithm (BIP 173 procedure with <code>frombits=8</code>, <code>tobits=5</code>, padding enabled on the encode side; reversed on decode).
-
-Decoders MUST reject any MD string whose 5-bit payload symbols, after successful BCH checksum verification, do not byte-align — i.e., where the trailing pad bits of the final 5-bit symbol are non-zero. Such inputs are well-formed at the BCH layer but cannot have been produced by a conforming encoder, and accepting them would admit hostile inputs that bypass the encode-side padding invariant. The reference implementation surfaces this rejection as <code>Error::InvalidBytecode { offset: 0, kind: BytecodeErrorKind::MalformedPayloadPadding }</code>; cross-implementations MUST surface a semantically equivalent rejection — distinguishable from generic checksum failure and from generic bytecode-parse failure — so that conformance tests can pin the error path.
+Decoders MUST reject any MD string whose trailing-padding bits (after BCH checksum verification and bit-stream consumption by the decoder) are non-zero, except via the rollback-as-padding tolerance at the TLV-section boundary (§"TLV section / End-of-section detection"). Mid-stream non-zero pad bits cannot have been produced by a conforming encoder. The reference implementation surfaces this rejection as <code>Error::InvalidBytecode { kind: BytecodeErrorKind::MalformedPayloadPadding }</code>; cross-implementations MUST surface a semantically equivalent rejection — distinguishable from generic checksum failure and from generic bytecode-parse failure — so that conformance tests can pin the error path.
 
 ====Checksum====
 
@@ -258,27 +260,21 @@ This is the same 32-character set used by BIP 173 segwit addresses, BIP 350 bech
 
 ====Length envelope====
 
-For a single-string Template Card with the 2-character header:
-* HRP + separator: 3 characters
-* Header: 2 characters
-* Payload: variable
-* Checksum: 13 (regular) or 15 (long) characters
+A codex32 character is one 5-bit symbol from the bech32 alphabet. The data part of a Template Card string consists of HRP + separator (3 characters) + payload bits + BCH checksum (13 characters for the regular code; 15 for the long code), with the total string length capped at 93 (regular) or 108 (long) characters.
 
-Maximum payload bytes:
-* Regular: ⌊(93 − 2 − 13) × 5 / 8⌋ = 48 bytes
-* Long: ⌊(108 − 2 − 15) × 5 / 8⌋ = 56 bytes
+For a single-string Template Card, the payload is the canonical bit-packed bytecode (5-bit header + origin-path-decl + use-site-path-decl + tree + TLV section), MSB-first, with up to 4 bits of trailing zero padding to align with the 5-bit codex32 symbol grid.
 
-For a chunked Template Card with the 8-character header:
-* HRP + separator: 3 characters
-* Header: 8 characters
-* Fragment: variable
-* Checksum: 13 (regular) or 15 (long) characters
+Maximum payload bits:
+* Regular: (93 − 3 − 13) × 5 = 385 bits ≈ 48 bytes
+* Long: (108 − 3 − 15) × 5 = 450 bits ≈ 56 bytes
 
-Maximum fragment bytes per chunk:
-* Regular: ⌊(93 − 8 − 13) × 5 / 8⌋ = 45 bytes
-* Long: ⌊(108 − 8 − 15) × 5 / 8⌋ = 53 bytes
+For a chunked Template Card, each chunk's data part is HRP + separator (3 characters) + 37-bit chunk header (8 characters; 3 bits of trailing slack absorbed by the symbol grid) + fragment bits + checksum.
 
-With up to 32 chunks of long-code chunked encoding, a Template Card can encode up to 32 × 53 − 4 = 1692 bytes of canonical bytecode (subtracting the 4-byte cross-chunk hash). This is sufficient for any practical wallet policy.
+Maximum fragment bits per chunk:
+* Regular: (93 − 3 − 8 − 13) × 5 − 3 = 342 bits
+* Long: (108 − 3 − 8 − 15) × 5 − 3 = 407 bits
+
+The −3 term subtracts the chunk-header's 3 bits of post-header symbol-grid slack. With up to 64 long-code chunks, a Template Card can carry approximately 64 × 407 ≈ 26,000 bits of assembled payload — far more than needed for any practical wallet policy. v0.11+ does NOT carry a separate cross-chunk hash field; cross-chunk integrity is derived from the assembled-payload SHA-256 (see §"Chunking").
 
 ===Bytecode layer===
 
@@ -286,175 +282,102 @@ The bytecode is the canonical compact binary encoding of a wallet policy. It is 
 
 ====General structure====
 
-''Editorial note (added 2026-05-10):'' the bytecode-header and path-declaration descriptions in §§"Bytecode header", "Path declaration", "Shared-path declaration format", "Per-<code>@N</code> path declaration", and "Path dictionary" below describe the '''pre-v0.11 byte-aligned wire format'''. The v0.11+ wire format is a packed 5-bit bitstream with no byte-aligned framing: the header is 5 bits (3-bit version + divergent-paths flag + reserved bit) per <code>crates/md-codec/src/header.rs</code>; path-decls are encoded in structured bit-fields per <code>crates/md-codec/src/origin_path.rs</code>; per-<code>@N</code> origin-path overrides, fingerprints, and xpubs are 5-bit-tagged TLV entries per <code>crates/md-codec/src/tlv.rs</code>. The retired byte-aligned framing tags <code>Placeholder = 0x33</code>, <code>SharedPath = 0x34</code>, <code>Fingerprints = 0x35</code>, <code>OriginPaths = 0x36</code> do not appear in v0.11 wire output. The v0.11 bitstream-native description of these sections is deferred to followup <code>bip-pre-v0-11-sections-bitstream-rewrite</code>; until that lands, treat the prose below as historical reference and consult the reference implementation as authoritative.
+The bytecode is a packed bit stream — a contiguous concatenation of variable-width bit fields with no byte alignment between sections or operators. The bit stream is laid out MSB-first into bytes; the final byte is zero-padded if the total bit count is not a multiple of 8. The trailing zero-padding is also tolerated as up to 7 bits of slack at the TLV-section boundary (see §"TLV section / end-of-section detection") because the codex32 encoding layer emits 5-bit symbols.
 
-The bytecode begins with a one-byte bytecode header, optionally followed by a path declaration, followed by a tree of operators that encode the wallet's script. The tree is in prefix order: each node is its operator tag byte, then any operator-specific data (such as threshold and key-count for <code>multi</code>), then its child sub-trees recursively.
+A single-string Template Card carries the bytecode in this order:
 
-For chunked Template Cards, the bytecode is followed by a 4-byte cross-chunk integrity hash (defined in "Chunking", below) before the encoded byte stream is split into fragments.
+# Header — 5 bits.
+# Origin path declaration — variable.
+# Use-site path declaration — variable, always present.
+# Tree — variable, recursive.
+# TLV section — variable, may be empty.
+
+For chunked Template Cards, each chunk's bit stream begins with a 37-bit chunk header (carrying the chunk-set identifier, total chunk count, and this chunk's index) instead of the 5-bit payload header. The chunked and single-string layouts have distinguishable bit prefixes (see §"Header" and §"Chunking" for the full layouts) but the encoder/decoder dispatch is by reader role rather than by an in-band discriminator bit — see §"Header" for the rejection paths a mis-classifying decoder takes. After all chunks in a set are reassembled, the joined bit stream begins with the same 5-bit payload header and follows the same five-section layout above. Cross-chunk integrity is via the 20-bit chunk-set identifier carried in every chunk header (derived from the assembled payload's <code>Md1EncodingId</code>); see §"Chunking".
 
 ====Bytecode header====
 
-The first byte of the bytecode is the bytecode header, structured as follows:
+The first 5 bits of the bytecode are the payload header:
 
 {| class="wikitable"
-! Bits !! Field !! Notes
+! Bit !! Field !! Notes
 |-
-| 7–4 || Bytecode version || Currently <code>0x0</code>. Decoders MUST reject unknown versions.
+| 4 || Divergent-paths flag || <code>0</code> = a single shared origin path applies to every <code>@N</code> placeholder; <code>1</code> = one origin path per <code>@N</code> follows in the path declaration.
 |-
-| 3 || OriginPaths flag (v0.10+) || <code>1</code> if a per-<code>@N</code> origin-path block (<code>Tag::OriginPaths = 0x36</code>) is present in the path-declaration slot; <code>0</code> if a shared-path declaration (<code>Tag::SharedPath = 0x34</code>) is present. In v0.x ≤ 0.9 this bit was reserved-must-be-zero. See §"Per-<code>@N</code> path declaration", below.
+| 3 || Reserved || MUST be <code>0</code>. Decoders MUST reject <code>1</code> (<code>Error::ReservedHeaderBitSet</code>). The chunk-header layout (§"Chunking") packs different fields at the same bit positions; a decoder reading a chunk header as a payload header surfaces this rejection rather than silently corrupting.
 |-
-| 2 || Fingerprints flag || <code>1</code> if a fingerprints block is present (see below); <code>0</code> otherwise.
-|-
-| 1 || Reserved || MUST be <code>0</code> in v0.
-|-
-| 0 || Reserved || MUST be <code>0</code> in v0.
+| 2–0 || Version || 3-bit version field. v0.11+ = <code>0b000</code>. Decoders MUST reject any non-zero value (<code>Error::UnsupportedVersion</code>).
 |}
 
-In v0.10+, valid bytecode header values are <code>0x00</code>, <code>0x04</code>, <code>0x08</code>, and <code>0x0C</code>. (In v0.x ≤ 0.9 only <code>0x00</code> and <code>0x04</code> were valid; bit 3 was reserved-must-be-zero. The reserved-bits mask narrowed from <code>0x0B</code> to <code>0x03</code> with the v0.10 reclamation of bit 3.) Pre-v0.10 decoders confronted with v0.10 OriginPaths-using encodings (header bit 3 set) reject cleanly via <code>Error::ReservedBitsSet</code> — the intended forward-compat behavior.
+The header occupies the first 5 bits of the bit stream MSB-first; the origin path declaration begins immediately at bit 5 with no padding.
 
-====Path declaration====
+====Origin path declaration====
 
-Following the bytecode header is a path declaration, which specifies the derivation path(s) used by the <code>@i</code> placeholders in the template. Two variants exist:
-
-* '''Shared-path declaration''' (<code>Tag::SharedPath = 0x34</code>, header bit 3 = <code>0</code>): a single path applies to every <code>@i</code> placeholder. This is the original v0.x ≤ 0.9 form and remains the canonical encoding for any policy whose placeholders all derive from the same path.
-* '''Per-<code>@N</code> path declaration''' (<code>Tag::OriginPaths = 0x36</code>, header bit 3 = <code>1</code>): one path per placeholder, in placeholder-index order. Introduced in v0.10 to admit multisig wallets where each cosigner derives an xpub from a distinct origin path (e.g., distinct BIP 48 accounts per cosigner). See §"Per-<code>@N</code> path declaration" below.
-
-The two variants are '''mutually exclusive''': header bit 3 dispatches the path-decl tag, and the byte at offset 1 MUST agree with the bit. A v0.10 decoder seeing <code>Tag::OriginPaths (0x36)</code> at offset 1 with header bit 3 = <code>0</code>, or <code>Tag::SharedPath (0x34)</code> with header bit 3 = <code>1</code>, MUST reject the bytecode (as <code>UnexpectedTag</code> with <code>expected</code> set to the tag the header bit predicted).
-
-=====Shared-path declaration format (<code>Tag::SharedPath = 0x34</code>)=====
+The origin path declaration encodes the BIP 32 derivation path(s) that produce the xpubs referenced by each <code>@N</code> placeholder. The block dispatches on header bit 4:
 
 {| class="wikitable"
-! Byte !! Field !! Notes
+! Mode !! Header bit 4 !! Wire layout
 |-
-| 0 || Path declaration tag || <code>0x34</code> (shared-path declaration)
+| Shared || <code>0</code> || <code>[n: 5 bits, encoded n−1] [origin-path-encoding]</code>
 |-
-| 1 || Path encoding indicator || See "Path dictionary", below
-|-
-| 2…n || Path data || Present only if the path encoding indicator is <code>0xFE</code> (explicit path)
+| Divergent || <code>1</code> || <code>[n: 5 bits, encoded n−1] [origin-path-encoding × n]</code>
 |}
 
-=====Path dictionary=====
+''n'' is the descriptor's key count, range <code>1..32</code> (BIP 388 placeholder cap), encoded as <code>n−1</code> in 5 bits. Out-of-range values are rejected with <code>Error::KeyCountOutOfRange { n }</code>. In divergent mode the path encodings appear in placeholder-index order: the first encoding applies to <code>@0</code>, the second to <code>@1</code>, and so on; there is no per-entry index field — position in the list IS the index.
 
-The path encoding indicator selects between a dictionary of well-known paths and an explicit encoding:
+Conforming encoders MUST examine the placeholder paths in placeholder-index order and emit shared mode (header bit 4 = 0) when all paths are equal, divergent mode (header bit 4 = 1) otherwise. This rule is a pure function of policy state; <code>encode(decode(encode(p)))</code> is bit-identical to <code>encode(p)</code>.
 
-{| class="wikitable"
-! Indicator !! Path !! Notes
-|-
-| <code>0x01</code> || <code>m/44'/0'/0'</code> || BIP 44 mainnet
-|-
-| <code>0x02</code> || <code>m/49'/0'/0'</code> || BIP 49 mainnet (P2SH-P2WPKH)
-|-
-| <code>0x03</code> || <code>m/84'/0'/0'</code> || BIP 84 mainnet (P2WPKH)
-|-
-| <code>0x04</code> || <code>m/86'/0'/0'</code> || BIP 86 mainnet (P2TR)
-|-
-| <code>0x05</code> || <code>m/48'/0'/0'/2'</code> || BIP 48 mainnet multisig P2WSH
-|-
-| <code>0x06</code> || <code>m/48'/0'/0'/1'</code> || BIP 48 mainnet multisig P2SH-P2WSH
-|-
-| <code>0x07</code> || <code>m/87'/0'/0'</code> || BIP 87 mainnet multisig generic
-|-
-| <code>0x11</code> || <code>m/44'/1'/0'</code> || BIP 44 testnet
-|-
-| <code>0x12</code> || <code>m/49'/1'/0'</code> || BIP 49 testnet
-|-
-| <code>0x13</code> || <code>m/84'/1'/0'</code> || BIP 84 testnet
-|-
-| <code>0x14</code> || <code>m/86'/1'/0'</code> || BIP 86 testnet
-|-
-| <code>0x15</code> || <code>m/48'/1'/0'/2'</code> || BIP 48 testnet multisig P2WSH
-|-
-| <code>0x16</code> || <code>m/48'/1'/0'/1'</code> || BIP 48 testnet multisig P2SH-P2WSH
-|-
-| <code>0x17</code> || <code>m/87'/1'/0'</code> || BIP 87 testnet multisig generic
-|-
-| <code>0xFE</code> || (explicit) || Path encoded explicitly; see below
-|-
-| <code>0xFF</code> || (no path) || Reserved
-|}
+=====origin-path-encoding=====
 
-Indicators <code>0x08</code>–<code>0x10</code> and <code>0x18</code>–<code>0xFD</code> are reserved for future dictionary entries.
+Each origin-path-encoding is:
 
-'''Cross-format inheritance.''' The path dictionary is contractually shared with the sibling Mnemonic Key (MK) format ([https://github.com/bg002h/mnemonic-key bg002h/mnemonic-key]) byte-for-byte. Any allocation, deletion, or renumbering in this table requires a coordinated update of MK's specification and reference implementation in the same release window; see <code>design/RELEASE_PROCESS.md</code> in the reference implementation for the lockstep checklist.
+  <code>[depth: 4 bits] [component × depth]</code>
 
-=====Explicit path encoding=====
+''depth'' is the number of BIP 32 derivation components in the path, range <code>0..15</code>. Decoders MUST reject <code>depth > 15</code> with <code>Error::PathDepthExceeded { got, max: 15 }</code>; encoders MUST symmetrically reject longer paths before serialization. The cap is defense-in-depth — no real-world BIP path family exceeds 6 components (BIP 48 + change/index = 6); 15 leaves generous headroom.
 
-When the path encoding indicator is <code>0xFE</code>, the path is encoded explicitly:
+A path of depth <code>0</code> (the master node <code>m</code>) encodes as just the 4-bit zero-depth field with no following components.
 
-# A LEB128-encoded unsigned integer giving the number of path components.
-# For each path component: a LEB128-encoded child number, where hardened components encode <code>2c + 1</code> for child index <code>c</code> and unhardened components encode <code>2c</code>.
+v0.11+ does not carry a path dictionary on the wire; every origin path is encoded explicitly using the depth-prefixed form above. (Pre-v0.11 versions carried a 1-byte indicator that selected between well-known BIP 44 / 48 / 84 / 86 / 87 paths and an explicit encoding; that mechanism was retired by the v0.11 wire-format reset.)
 
-This convention follows the path encoding used by <code>descriptor-codec</code>.
+=====component=====
 
-'''Component-count cap (v0.10+).''' Explicit-form paths (<code>0xFE</code>) MUST NOT exceed '''10 components'''. Decoders MUST reject longer paths with <code>Error::PathComponentCountExceeded { got, max: 10 }</code>. The cap applies uniformly to <code>Tag::SharedPath</code> and <code>Tag::OriginPaths</code> declarations; encoders MUST symmetrically reject longer paths before serialization. The cap is defense-in-depth — no real-world BIP path family exceeds 6 components (BIP 48 + change/index = 6); 10 leaves generous headroom — and aligns with the sibling MK format's matching SPEC §3.5 cap.
+Each component is:
 
-=====Per-<code>@N</code> path declaration (v0.10+)=====
+  <code>[hardened: 1 bit] [value: LP4-ext varint]</code>
 
-When the wallet policy's <code>@N</code> placeholders use ''different'' origin paths (e.g., a multisig where each cosigner derives from a distinct BIP 48 account), the encoder emits a <code>Tag::OriginPaths</code> block in place of <code>Tag::SharedPath</code>. The block is gated by header bit 3 (<code>0x08</code>):
-
-{| class="wikitable"
-! Byte !! Field !! Notes
-|-
-| 0 || OriginPaths tag || <code>0x36</code> (<code>Tag::OriginPaths</code>); header bit 3 MUST be <code>1</code>
-|-
-| 1 || Count || <code>u8</code>; number of path declarations. MUST be in <code>1..=32</code> (BIP 388 placeholder cap) AND MUST equal the placeholder count derivable from the tree (i.e., <code>max(@i) + 1</code>).
-|-
-| 2…n || <code>path_decl_0</code>, <code>path_decl_1</code>, …, <code>path_decl_{N-1}</code> || Each is encoded with the same single-path format used by <code>Tag::SharedPath</code>: a 1-byte dictionary indicator (<code>0x01</code>–<code>0x07</code>, <code>0x11</code>–<code>0x17</code>) for well-known paths, or <code>0xFE</code> followed by the LEB128 component count and per-component bytes for explicit paths (subject to the <code>MAX_PATH_COMPONENTS = 10</code> cap above).
-|}
-
-Path-decls appear in placeholder-index order: <code>path_decl_0</code> is <code>@0</code>'s path, <code>path_decl_1</code> is <code>@1</code>'s, etc. There is no per-entry index — the position in the list IS the index.
-
-'''No deduplication.''' Path-decls are written densely, even if multiple placeholders share the same path. This optimizes for the common case of dictionary-form paths (1 byte each) and sidesteps the indirection complexity of a per-entry path-table reference. Encoders MAY emit <code>Tag::OriginPaths</code> with all-equal paths (e.g., a debugging encoder that asserts a particular layout), but the canonical encoder rule below produces <code>Tag::SharedPath</code> in that case.
-
-'''Encoder auto-detection.''' Conforming encoders MUST examine the placeholder paths in placeholder-index order and emit <code>Tag::SharedPath</code> if all paths are equal, <code>Tag::OriginPaths</code> otherwise. This rule is a pure function of policy state; <code>encode(decode(encode(p))) == encode(p)</code> byte-identically for any policy <code>p</code>. Decoder rejection paths for malformed <code>Tag::OriginPaths</code> blocks:
-
-* '''Structural''' (count zero or count > 32): rejected at the bytecode layer with <code>BytecodeErrorKind::OriginPathsCountTooLarge { count, max: 32 }</code>, independent of the tree.
-* '''Semantic''' (count != tree placeholder count): rejected at the policy layer with <code>Error::OriginPathsCountMismatch { expected, got }</code>, after tree-walk yields the actual placeholder count.
-* '''Cursor exhaustion mid-list''' (e.g., <code>count=3</code> with only 2 path-decls' worth of bytes before the tree): surfaces as <code>BytecodeErrorKind::UnexpectedEnd</code> from the inner <code>decode_path</code> call.
-
-'''Wire-format examples.'''
-
-Example A — 3-cosigner shared-path multisig, no fingerprints. Policy <code>wsh(sortedmulti(2, @0/**, @1/**, @2/**))</code> with all keys on <code>m/48'/0'/0'/2'</code> (dictionary <code>0x05</code>). v0.10 byte-identical to v0.9:
-
-<pre>
-  00                              ← header: bit 3 clear, bit 2 clear
-  | 34 05                         ← Tag::SharedPath (0x34) + indicator 0x05
-  | <wsh sortedmulti 2 @0 @1 @2>  ← tree bytes
-</pre>
-
-Example B — 3-cosigner divergent-path multisig with fingerprints. Same shape, but cosigner C has explicit path <code>m/48'/0'/0'/100'</code> (not in dictionary). Component-count = 4; <code>48'</code> → <code>0x61</code>; <code>0'</code> → <code>0x01</code>; <code>0'</code> → <code>0x01</code>; <code>100'</code> = <code>2*100 + 1 = 201</code>, LEB128 <code>0xC9 0x01</code> (two bytes — high-bit continuation). Full explicit-path bytes: <code>FE 04 61 01 01 C9 01</code> (7 bytes including the <code>0xFE</code> indicator):
-
-<pre>
-  0C                                              ← header: bit 3 set + bit 2 set
-  | 36 03 05 05 FE 04 61 01 01 C9 01              ← Tag::OriginPaths: count=3,
-  |                                                  paths={0x05, 0x05, explicit-7B}
-  | 35 03 deadbeef cafebabe d00df00d              ← Tag::Fingerprints: count=3, 4 bytes each
-  | <wsh sortedmulti 2 @0 @1 @2>                  ← tree bytes
-</pre>
-
-Decoder reads header byte <code>0x0C</code> → bit 3 set + bit 2 set. Dispatches: read <code>Tag::OriginPaths</code> block, then <code>Tag::Fingerprints</code> block, then tree. OriginPaths block size: 11 bytes (1 tag + 1 count + 1 + 1 + 7 explicit). Fingerprints block size: 14 bytes (1 + 1 + 12). Header: 1 byte. Total prefix before tree: 26 bytes.
-
-Example C — 3-cosigner divergent-path, no fingerprints. Same as B but without the fingerprints block:
-
-<pre>
-  08                                              ← header: bit 3 set, bit 2 clear
-  | 36 03 05 05 FE 04 61 01 01 C9 01              ← Tag::OriginPaths
-  | <wsh sortedmulti 2 @0 @1 @2>                  ← tree bytes
-</pre>
-
-Header byte <code>0x08</code> was previously a <code>ReservedBitsSet</code> violation in v0.x ≤ 0.9; in v0.10+ it is a valid header. Pre-v0.10 decoders confronted with v0.10 OriginPaths-using encodings reject cleanly via <code>Error::ReservedBitsSet</code> — the intended forward-compat behavior.
-
-'''Header byte values.''' v0.10 valid header bytes are exactly: <code>0x00</code> (no fingerprints, no origin paths), <code>0x04</code> (fingerprints only), <code>0x08</code> (origin paths only), <code>0x0C</code> (fingerprints + origin paths). Any other value is rejected with <code>Error::UnsupportedVersion(nibble)</code> (high nibble) or <code>BytecodeErrorKind::ReservedBitsSet { byte, mask: 0x03 }</code> (low bits 0–1).
+''hardened'' is the BIP 32 hardened bit. ''value'' is the un-hardened-bit child number, encoded as an LP4-ext varint (see §"LP4-ext varint", below). Component values up to <code>2^29 − 1</code> are representable; larger values are rejected with <code>Error::VarintOverflow { value }</code>.
 
 =====Authority precedence with MK=====
 
 When an MD card with per-<code>@N</code> paths participates in recovery alongside one or more MK cards (xpub backups; see [https://github.com/bg002h/mnemonic-key bg002h/mnemonic-key]), MK's <code>origin_path</code> is '''authoritative''' for the xpub's derivation; MD's per-<code>@N</code> path is '''descriptive''' — the policy's expected path layout. Per-format decoders are not required to be aware of cross-format context; consistency-checking is the recovery orchestrator's responsibility, and mismatch MUST cause the orchestrator to reject the assembly. See MK's BIP §"Authority precedence (MK ↔ MD path information)" for the full normative semantics.
 
+====Use-site path declaration====
+
+Following the origin path declaration is a use-site path declaration that encodes the BIP 388 multipath suffix (e.g. <code>/<0;1>/*</code>) shared by every <code>@N</code> placeholder. It is always present; its minimal form (no multipath, unhardened wildcard) is 2 bits.
+
+  <code>[has-multipath: 1 bit]</code>
+  <code>[if has-multipath:</code>
+  <code>  [alt-count: 3 bits, encoded count−2; range 2..9]</code>
+  <code>  [alternative × count]</code>
+  <code>]</code>
+  <code>[wildcard-hardened: 1 bit]</code>
+
+''has-multipath'' is <code>1</code> if a parenthesized alternation (<code><a;b;...></code>) precedes the wildcard, <code>0</code> otherwise. ''alt-count'' is the number of alternatives, encoded as <code>count − 2</code> in 3 bits; permitted range is <code>2..9</code> (out-of-range rejected with <code>Error::AltCountOutOfRange { got }</code>). ''wildcard-hardened'' is <code>1</code> if the trailing wildcard is <code>*h</code>, <code>0</code> for <code>*</code>.
+
+=====alternative=====
+
+Each alternative is encoded the same way as a derivation-path component (§"component", above):
+
+  <code>[hardened: 1 bit] [value: LP4-ext varint]</code>
+
+The standard BIP 388 multipath form <code>/<0;1>/*</code> encodes as 16 bits: 1 (multipath present) + 3 (count = 2) + 5 (alt 0: unhardened, value 0) + 6 (alt 1: unhardened, value 1) + 1 (unhardened wildcard).
+
+When a wallet policy needs different multipath suffixes per <code>@N</code>, the shared default declared here is overridden per placeholder by the <code>UseSitePathOverrides</code> TLV entry (see §"TLV section", below).
+
 ====Tree operators====
 
 The wallet's script is encoded as a tree of operators. Each operator is identified by a tag drawn from a 5-bit primary code space (values <code>0x00</code>–<code>0x1F</code>); primary code <code>0x1F</code> is an extension prefix, in which case the next 5 bits carry an extension subcode. The tag table below reflects the v0.11+ wire format. The authoritative source is <code>crates/md-codec/src/tag.rs</code> in the reference implementation; the BIP table mirrors that mapping.
 
-The wire format packs operator tags + their operand bits contiguously without byte alignment between operators (see §"Bytecode layout" below for the bit-packing rule). Path-decl framing, per-<code>@N</code> origin-path overrides, fingerprints, and xpubs are encoded by separate bit-aligned mechanisms (structured bit-fields for path-decl in <code>crates/md-codec/src/origin_path.rs</code>; 5-bit-tagged TLV entries with varint length + body in <code>crates/md-codec/src/tlv.rs</code>) — they do not occupy slots in the operator-tag table below.
+The wire format packs operator tags + their operand bits contiguously without byte alignment between operators (see §"General structure" above for the section ordering and §"Origin path declaration", §"Use-site path declaration", and §"TLV section" for the bit-aligned mechanisms that carry path-decl framing, per-<code>@N</code> origin-path overrides, fingerprints, and xpubs — none of which occupy slots in the operator-tag table below).
 
 =====Tag table=====
 
@@ -537,7 +460,7 @@ The wire format packs operator tags + their operand bits contiguously without by
 |-
 |}
 
-''Pre-v0.11 metadata-namespace tags removed:'' the byte-aligned framing tags <code>Placeholder = 0x33</code>, <code>SharedPath = 0x34</code>, <code>Fingerprints = 0x35</code>, <code>OriginPaths = 0x36</code> from the pre-v0.11 byte-aligned wire format are retired in v0.11. v0.11 encodes path-decl framing and per-<code>@N</code> origin-path overrides via structured bit-fields in <code>crates/md-codec/src/origin_path.rs</code>; fingerprints and xpubs are encoded via 5-bit TLV entries (5-bit tag + varint length + body) in <code>crates/md-codec/src/tlv.rs</code>. None of these use the retired <code>0x33</code>–<code>0x36</code> byte-aligned framing tags. Key references (formerly the <code>0x33</code> placeholder framing) are now packed inline as <code>key_index</code> bit-fields next to their key-emitting operator (<code>pk_k</code>, <code>pk_h</code>, <code>wpkh</code>, <code>pkh</code>, <code>tr</code>, <code>multi</code>, etc.).
+''Historical note.'' Pre-v0.11 wire formats carried byte-aligned framing tags <code>Placeholder = 0x33</code>, <code>SharedPath = 0x34</code>, <code>Fingerprints = 0x35</code>, and <code>OriginPaths = 0x36</code> in an 8-bit operator-tag namespace. v0.11 retired all four: path-decl framing moved into the bit-aligned §"Origin path declaration"; key references moved into inline <code>key_index</code> bit fields (§"Key references"); fingerprints, xpubs, and per-<code>@N</code> overrides moved into the §"TLV section". The <code>0x33</code>–<code>0x36</code> values do not appear in v0.11+ wire output.
 
 =====<code>tr()</code> NUMS sentinel rule (v0.18)=====
 
@@ -553,89 +476,146 @@ The wire bit-width of <code>key_index</code> is <code>⌈log₂(n + 1)⌉</code>
 
 '''History.''' v0.17.0 carried a separate <code>Tag::TrUnspendable</code> at primary <code>0x1F</code> + ext-sub-code <code>0x05</code> for this purpose. v0.18 retired that tag in favor of the sentinel rule above (saves 3-4 bits per usage). v0.18 is a wire-format break: pre-v0.18 encodings cannot decode under v0.18+, and vice versa. Ext-sub-code <code>0x05</code> at primary <code>0x1F</code> is freed in the v0.11 extension space.
 
-Tags <code>0x24</code>–<code>0x31</code> are unallocated. (In MD v0.5 and earlier, these bytes were reserved for descriptor-codec inline-key compatibility; MD v0.6 dropped them since MD's BIP-388 wallet-policy framing forbids inline keys. See the project's <code>MD_SCOPE_DECISION_2026-04-28.md</code> design document for rationale.)
-
-Tag <code>0x32</code> is unallocated in v0.6. (In v0.5 it was the Placeholder framing tag; v0.6 moves Placeholder to <code>0x33</code> and intentionally leaves <code>0x32</code> vacant so any v0.5→v0.6 transcoding mistake surfaces as a clean <code>from_byte=None</code> error rather than data corruption.)
-
-Tags <code>0x37</code>–<code>0xFF</code> are reserved.
-
-In v0.6 MD's BIP-388 wallet-policy framing additionally drops the legacy v0.5 <code>bare()</code> tag (was 0x07) — <code>Descriptor::Bare</code> is permanently rejected by the encoder via <code>PolicyScopeViolation</code>; no Tag is allocated for it in v0.6.
+Extension subcodes <code>0x05</code>–<code>0x1F</code> at primary <code>0x1F</code> are reserved for future allocation. (v0.17 used subcode <code>0x05</code> for <code>Tag::TrUnspendable</code>; that allocation was retired in v0.18 in favor of the <code>tr()</code> NUMS sentinel rule, freeing the subcode.) The Bare descriptor (<code>bare(SCRIPT)</code>) has no allocated tag — the encoder rejects it as <code>PolicyScopeViolation</code> per §"Top-level descriptor scope".
 
 =====Operator children layout=====
 
-For operators with a fixed number of children, child sub-trees follow the operator tag (and any operator-specific data) in the order specified by the miniscript fragment definition. For variable-arity operators (<code>thresh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>), the count is given in the operator data and that many children follow.
+Child sub-trees follow the operator's body bits in fixed order specified by the miniscript fragment definition. For variable-arity operators (<code>thresh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>), the threshold/count fields in the operator's body bits give the child count and that many children follow.
 
 =====Key references=====
 
-In MD v0, every key position in the bytecode (i.e., a child slot of <code>pk_k</code>, <code>pk_h</code>, <code>pkh</code>, <code>wpkh</code>, <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>tr</code>) MUST be a placeholder reference of the form:
+Operators that emit a key (<code>wpkh</code>, <code>pkh</code>, <code>pk_k</code>, <code>pk_h</code>, <code>tr</code>) carry the placeholder reference inline in their body bits as a <code>key_index</code> field of width <code>kiw = ⌈log₂(n + 1)⌉</code> bits, where <code>n</code> is the descriptor's key count. <code>key_index</code> values <code>0..n−1</code> reference the corresponding <code>@i</code> placeholder in the BIP 388 key information vector. The value <code>n</code> (one past the highest placeholder index) is reserved as the BIP-341 NUMS sentinel for <code>tr()</code> only; see §"<code>tr()</code> NUMS sentinel rule (v0.18)" above. For variable-arity key-emitting operators (<code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>sortedmulti_a</code>), each child key slot is a <code>key_index</code> field of the same <code>kiw</code> bit width, packed contiguously after the threshold and count fields.
 
-<pre>
-  0x33 <index>
-</pre>
+Inline keys (raw xpubs, raw pubkeys) are NOT permitted in v0; every key position references a BIP 388 placeholder. This guarantees the Template Card encodes the wallet structure without carrying any key material.
 
-where <code>&lt;index&gt;</code> is a single byte (0–255) identifying which entry in the BIP 388 key information vector this position uses. Inline keys (raw xpubs, raw pubkeys) are NOT permitted in v0 bytecode. This guarantees that the Template Card encodes the wallet structure without containing any key material.
+====TLV section====
 
-====Fingerprints block (optional)====
+Following the operator tree is the TLV (tag-length-value) section, which carries optional metadata: per-<code>@N</code> use-site path overrides, master-key fingerprints, xpubs, and per-<code>@N</code> origin-path overrides. The TLV section runs from the end of the tree until the codex32 symbol-aligned bit stream is exhausted; it may be empty.
 
-When the bytecode header's fingerprints flag is set, a fingerprints block follows the path declaration (and precedes the tree operators). Its format is:
+Each TLV entry is:
 
-{| class="wikitable"
-! Byte !! Field !! Notes
-|-
-| 0 || Block tag || <code>0x35</code>
-|-
-| 1 || Count || Number of fingerprints in this block (must equal the highest <code>@i</code> index in the template, plus 1)
-|-
-| 2…(2+4n) || Fingerprints || <code>n</code> consecutive 4-byte master key fingerprints, in placeholder index order
-|}
+  <code>[tag: 5 bits] [length: LP4-ext varint, in BITS] [payload: length bits]</code>
 
-When the block is present, fingerprints[i] is the master key fingerprint corresponding to placeholder <code>@i</code>. This allows a recovery tool to verify which seed corresponds to which placeholder before performing derivation.
+The ''length'' field gives the payload size in '''bits''' (not bytes). Entries appear in strictly ascending tag-value order; duplicates and out-of-order entries are rejected. Unknown tags (those not allocated below) are skipped via length-prefix advancement (forward-compat).
 
-When the block is absent (the default in v0), recovery tools match seeds to placeholders by trial derivation and xpub comparison, which is computationally trivial for typical wallets.
-
-'''Privacy.''' The fingerprints block leaks which seeds match which <code>@i</code> placeholders. The block is '''optional''' — implementations SHOULD NOT emit it by default. Recovery tools MUST warn the user before encoding fingerprints, especially for solo-user single-seed wallets where the disclosure is unnecessary. Decoders that surface the parsed block to the user MUST flag it as a privacy-sensitive field.
-
-=====Byte-layout example=====
-
-''Editorial note (added 2026-05-10):'' the byte sequence below is the '''pre-v0.11 byte-aligned wire format''' (header byte + <code>Tag::SharedPath = 0x34</code> + dictionary indicator + <code>Tag::Fingerprints = 0x35</code> + count + 4-byte fingerprints + operator tags + <code>Tag::Placeholder = 0x33</code> + index per key reference). The v0.11+ wire format is a packed 5-bit bitstream with no byte-aligned framing tags (see "General structure" editorial note above and the §"Tag table" for current operator codes). A bitstream-native walkthrough for this policy is deferred to followup <code>bip-pre-v0-11-sections-bitstream-rewrite</code>; this byte-layout example is retained for historical reference.
-
-The bytecode for the policy <code>wsh(multi(2, @0/**, @1/**))</code> with fingerprints block <code>[0xdeadbeef, 0xcafebabe]</code> and the BIP 84 mainnet shared path (<code>m/84'/0'/0'</code>, named indicator <code>0x03</code>) is:
-
-<pre>
-04 34 03 35 02 deadbeef cafebabe 05 08 02 02 33 00 33 01
-</pre>
-
-Annotated:
+=====TLV tag allocations=====
 
 {| class="wikitable"
-! Bytes !! Field !! Decoded
+! Tag !! Entry !! Payload shape
 |-
-| <code>04</code> || Header || v0; fingerprints flag set (bit 2 = 1)
+| <code>0x00</code> || <code>UseSitePathOverrides</code> || Sparse <code>(idx: kiw bits, use-site-path: per §"Use-site path declaration")</code> list. Overrides the shared use-site default for the listed <code>@N</code>.
 |-
-| <code>34 03</code> || Path declaration || <code>Tag::SharedPath</code> (<code>0x34</code>) + named indicator <code>0x03</code> (= <code>m/84'/0'/0'</code>)
+| <code>0x01</code> || <code>Fingerprints</code> || Sparse <code>(idx: kiw bits, fingerprint: 32 bits)</code> list. Master-key fingerprint for the listed <code>@N</code>, in BIP 32 byte order.
 |-
-| <code>35 02</code> || Fingerprints block header || <code>Tag::Fingerprints</code> (<code>0x35</code>) + count <code>2</code>
+| <code>0x02</code> || <code>Pubkeys</code> || Sparse <code>(idx: kiw bits, xpub: 520 bits)</code> list. xpub bytes are chain-code (32 bytes) followed by compressed pubkey (33 bytes). A non-empty <code>Pubkeys</code> entry promotes the descriptor to BIP 388 wallet-policy mode (xpubs are carried on the wire, not derived from origin paths).
 |-
-| <code>deadbeef</code> || fps[0] || Fingerprint for placeholder <code>@0</code>
+| <code>0x03</code> || <code>OriginPathOverrides</code> || Sparse <code>(idx: kiw bits, origin-path-encoding: per §"origin-path-encoding")</code> list. Overrides the canonical origin path for the listed <code>@N</code> when the wrapper origin is non-canonical or undefined.
 |-
-| <code>cafebabe</code> || fps[1] || Fingerprint for placeholder <code>@1</code>
-|-
-| <code>05 08</code> || Operator path || <code>Tag::Wsh</code> (<code>0x05</code>) + <code>Tag::Multi</code> (<code>0x08</code>)
-|-
-| <code>02 02</code> || Multi parameters || k = 2; n = 2
-|-
-| <code>33 00</code> || @0 || <code>Tag::Placeholder</code> (<code>0x33</code>) + index <code>0</code>
-|-
-| <code>33 01</code> || @1 || <code>Tag::Placeholder</code> (<code>0x33</code>) + index <code>1</code>
+| <code>0x04</code>–<code>0x1F</code> || ''reserved'' || Reserved for future TLV allocations. Decoders MUST forward-compat-skip unknown tags via the length-prefix.
 |}
 
-The same policy without a fingerprints block (header byte <code>0x00</code>) omits the <code>35 02 deadbeef cafebabe</code> bytes; the surrounding bytes are identical.
+''kiw'' (key-index width) is <code>⌈log₂(n + 1)⌉</code>, identical to the tree's <code>key_index</code> field width. Sparse-TLV invariants (uniform across all four sparse TLVs):
 
-====LEB128 encoding====
+* Each <code>idx < n</code>; out-of-range rejected with <code>Error::PlaceholderIndexOutOfRange</code>.
+* Indices appear in strictly ascending order; non-ascending rejected with <code>Error::OverrideOrderViolation</code>.
+* Each TLV is non-empty; encoders MUST omit a TLV entry when it carries no content (no <code>(idx, value)</code> pairs).
 
-Unsigned integer fields marked LEB128 (timelock values, threshold and count fields ''when so noted'', explicit-path child numbers) use little-endian base-128 (LEB128) variable-length encoding: each byte holds 7 bits of the integer with the most significant bit set when more bytes follow. The byte order within the LEB128 is little-endian (least significant 7 bits first).
+=====Fingerprints — privacy=====
 
-Note: The <code>multi</code>, <code>thresh</code>, etc. threshold and count fields described above use single-byte encoding, not LEB128, because they are bounded by the BIP 388 wallet-policy size limits (≤ 20 keys for segwit v0; ≤ 32 keys for taproot). Implementations MUST reject threshold or count values that exceed the maximum permitted by the surrounding script type.
+The <code>Fingerprints</code> TLV (tag <code>0x01</code>) leaks which seeds match which <code>@N</code> placeholders. It is optional metadata; implementations SHOULD NOT emit it by default. Recovery tools MUST warn the user before including fingerprints, especially for solo-user single-seed wallets where the disclosure is unnecessary. Decoders that surface parsed fingerprints to the user MUST flag the data as privacy-sensitive.
+
+When fingerprints are absent (the default), recovery tools match seeds to placeholders by trial derivation and xpub comparison, which is computationally trivial for typical wallets.
+
+=====End-of-section detection (rollback-as-padding)=====
+
+The TLV section has no explicit terminator: it runs until the codex32 symbol-aligned bit stream is exhausted. Because the wire is packed into 5-bit codex32 symbols, the final symbol can introduce up to 4 bits of trailing zero-padding (and the byte boundary up to 7 bits) that are not part of any TLV entry. Decoders therefore need a precise contract for distinguishing "end of section reached" from "malformed TLV entry."
+
+Decoders SHOULD use a save/restore-position mechanism on the bit-reader so that partial reads do not consume bits prematurely. The contract is:
+
+# Before parsing each candidate TLV entry, save the bit-reader position.
+# Attempt to read <code>[tag: 5 bits] [length: LP4-ext varint] [payload: length bits]</code> plus any per-tag inner-record validation.
+# On any parse failure, restore the bit-reader to the saved position and inspect the bits remaining at that position.
+# '''If <code>remaining_bits ≤ 7</code>''', those bits are zero-padding from the codex32 symbol-aligned encoding and MUST be tolerated: the decoder treats the failure as a clean end-of-section marker and stops.
+# '''If <code>remaining_bits > 7</code>''', the failure represents a genuinely malformed input and the original parse error is propagated.
+
+The 7-bit padding tolerance accommodates the symbol-aligned wire's worst-case trailing slack. Encoders MUST omit empty TLVs; decoders therefore treat any zero-length TLV at end-of-stream as padding via the rollback path rather than as a valid empty entry.
+
+=====Bit-layout example=====
+
+The bytecode for the policy <code>wsh(multi(2, @0/<0;1>/*, @1/<0;1>/*))</code> with the BIP 48 mainnet multisig P2WSH shared origin path <code>m/48'/0'/0'/2'</code> and no fingerprints is the 92-bit stream <code>0052d84212a0018460854290</code> (12 bytes; 92 bits used, 4 bits trailing zero-padding from the last byte). Section breakdown:
+
+{| class="wikitable"
+! Bits !! Section !! Decoded
+|-
+| 5 || Header || <code>00000</code> — div-paths flag <code>0</code>, reserved <code>0</code>, version <code>0b000</code>
+|-
+| 5 || Path-decl: <code>n−1</code> || <code>00001</code> — <code>n = 2</code> placeholders
+|-
+| 4 || Path-decl: depth || <code>0100</code> — 4 components
+|-
+| 11 || Path-decl: comp[0] = <code>48'</code> || <code>1 0110 110000</code> — hardened, LP4(L=6), value 48 = <code>0b110000</code>
+|-
+| 5 || Path-decl: comp[1] = <code>0'</code> || <code>1 0000</code> — hardened, LP4(L=0), value 0
+|-
+| 5 || Path-decl: comp[2] = <code>0'</code> || <code>1 0000</code> — hardened, LP4(L=0), value 0
+|-
+| 7 || Path-decl: comp[3] = <code>2'</code> || <code>1 0010 10</code> — hardened, LP4(L=2), value 2
+|-
+| 16 || Use-site path: <code>/<0;1>/*</code> || <code>1 000 (0 0000) (0 0001 1) 0</code> — multipath present, count−2=0 (count=2), alt 0 = unhardened 0, alt 1 = unhardened 1, unhardened wildcard
+|-
+| 5 || Tree: <code>wsh</code> tag || <code>00010</code> — primary tag <code>0x02</code>
+|-
+| 5 || Tree: <code>multi</code> tag || <code>00110</code> — primary tag <code>0x06</code>
+|-
+| 5 || Tree: <code>k − 1</code> || <code>00001</code> — threshold k = 2
+|-
+| 5 || Tree: <code>n − 1</code> || <code>00001</code> — child count n = 2
+|-
+| 5 || Tree: child 0 tag (<code>pk_k</code>) || <code>01010</code> — primary tag <code>0x0A</code>
+|-
+| 2 || Tree: child 0 <code>key_index</code> || <code>00</code> — index 0 (kiw = ⌈log₂(3)⌉ = 2 bits)
+|-
+| 5 || Tree: child 1 tag (<code>pk_k</code>) || <code>01010</code> — primary tag <code>0x0A</code>
+|-
+| 2 || Tree: child 1 <code>key_index</code> || <code>01</code> — index 1
+|-
+| 0 || TLV section || empty (no fingerprints, no overrides)
+|}
+
+Section sums: 5 (header) + 37 (path-decl: 5+4+11+5+5+7) + 16 (use-site) + 34 (tree: <code>wsh</code>(5) + <code>multi</code>(5) + <code>k−1</code>(5) + <code>n−1</code>(5) + 2 × (<code>pk_k</code>(5) + <code>key_index</code>(2))) + 0 (TLV) = 92 bits. Each child of the <code>multi</code> is a full <code>Node</code> with its own 5-bit tag (<code>pk_k</code> at primary <code>0x0A</code>) followed by the <code>kiw</code>-bit <code>key_index</code>; the children are not raw <code>key_index</code> fields.
+
+The same policy with a <code>Fingerprints</code> TLV entry binding <code>@0</code> to <code>0xdeadbeef</code> and <code>@1</code> to <code>0xcafebabe</code> is the 176-bit stream <code>0052d84212a0018460854290bc437ab6fbbdcafebabe</code>. The first 92 bits are identical to the no-fingerprints encoding above; the trailing 84 bits are the <code>Fingerprints</code> TLV entry:
+
+{| class="wikitable"
+! Bits !! Field !! Decoded
+|-
+| 5 || TLV tag || <code>00001</code> — tag <code>0x01</code> (<code>Fingerprints</code>)
+|-
+| 11 || TLV length || LP4 varint encoding 68 (= 2 entries × (kiw + 32) bits = 2 × 34); <code>0111 1000100</code> (L=7, payload <code>1000100</code>)
+|-
+| 2 || Entry 0 idx || <code>00</code> — placeholder <code>@0</code>
+|-
+| 32 || Entry 0 fingerprint || <code>deadbeef</code>
+|-
+| 2 || Entry 1 idx || <code>01</code> — placeholder <code>@1</code>
+|-
+| 32 || Entry 1 fingerprint || <code>cafebabe</code>
+|}
+
+====LP4-ext varint====
+
+LP4-ext is the variable-length integer encoding used for path-component values, use-site-path alternative values, and TLV-length fields. Bit-aligned, MSB-first within each field.
+
+  <code>single-form (L < 15):    [L: 4 bits] [payload: L bits]</code>
+  <code>extension-form (L = 15): [L: 4 bits = 15] [L_high: 4 bits]</code>
+  <code>                         [payload_low: 14 bits] [payload_high: L_high bits]</code>
+  <code>                         total = (payload_high << 14) | payload_low</code>
+
+In single-form, ''L'' bits of payload follow the 4-bit length prefix MSB-first. In extension-form (signaled by <code>L = 15</code>), an additional 4-bit ''L_high'' selects 1..15 extra payload bits beyond the 14-bit ''payload_low''; the full value is reassembled as <code>(payload_high << 14) | payload_low</code>. Total payload capacity is up to <code>14 + 15 = 29</code> bits, encoding values <code>0..2^29 − 1</code>. Out-of-range values are rejected with <code>Error::VarintOverflow { value }</code>.
+
+Bit costs for representative values: <code>0</code> is 4 bits (L=0, no payload); <code>1</code> is 5 bits (L=1, 1-bit payload); <code>84</code> is 11 bits (L=7, 7-bit payload); <code>16383</code> is 18 bits (L=14, 14-bit payload, single-form boundary); <code>16384</code> is 23 bits (extension-form, L_high=1).
+
+Note: the <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>sortedmulti_a</code>, and <code>thresh</code> threshold and count fields use fixed 5-bit encoding (encoded as <code>k − 1</code> and <code>n − 1</code>), not LP4-ext, because they are bounded by the BIP 388 wallet-policy cap of ≤ 32 keys. Timelock values (<code>after</code>, <code>older</code>) are encoded as raw 32-bit fields per BIP 68 / BIP 113.
 
 ====Taproot tree====
 
@@ -666,74 +646,35 @@ If an MD-encoded backup contains operators a recovery-time signer will not sign,
 
 Implementations MAY provide opt-in signer-subset validators as a layered concern. Such validators are tracked separately from this specification — see for example the named subsets maintained for Coldcard (firmware/edge <code>docs/taproot.md</code>) and Ledger (<code>LedgerHQ/vanadium</code> <code>apps/bitcoin/common/src/bip388/cleartext.rs</code>). A reference Rust implementation of the layered checker pattern ships as the <code>md-signer-compat</code> crate (workspace member alongside <code>md-codec</code>; v0.7.0+) with <code>COLDCARD_TAP</code> and <code>LEDGER_TAP</code> subsets, a <code>validate_tap_tree</code> walker that threads DFS-pre-order leaf indices through each per-leaf check, and a <code>md-signer-compat validate --signer &lt;name&gt; ...</code> CLI binary.
 
-=====Byte-layout examples=====
+=====Bit-layout examples=====
 
-''Editorial note (added 2026-05-10):'' the byte sequences in this section are '''pre-v0.11 byte-aligned wire format''' (specifically v0.6, retained for historical reference). The v0.11+ wire format is a packed 5-bit bitstream with no byte-aligned framing tags or per-operator byte slots — operator tags occupy 5-bit fields packed contiguously alongside their operand bits. The flat hex sequences below cannot be produced by a v0.11+ encoder. A bitstream-native walkthrough for these policies is deferred to followup <code>bip-pre-v0-11-sections-bitstream-rewrite</code>; the v0.11 SPEC document and the reference implementation (<code>crates/md-codec/src/{header,origin_path,tlv,tree}.rs</code>) are authoritative for current wire output.
+The four representative taproot shapes below are sourced from the reference implementation (verifiable via <code>md encode</code> + <code>md bytecode</code>). For each shape, the table walks the tree portion of the bit stream; the header, origin-path-decl, and use-site-path-decl bit-counts are summarized but not redrawn (they share the same shape as the §"Bit-layout example" walkthrough above, parameterized only by ''n'' and the chosen origin path).
 
-The byte sequences below are the operator-tree portion (everything after the format header byte and the shared-path declaration) for representative v0 taproot policies. The actual encoded policy is <code>[header byte] [shared-path declaration] [operator tree]</code>; the policies shown all use the default header (<code>0x00</code>) and a 2-byte explicit-path declaration <code>34 03</code> (<code>SharedPath</code> tag + BIP 84 mainnet indicator). All bytes below reflect the v0.6 wire format.
+'''Key-path-only <code>tr(@0/<0;1>/*)</code>''' with origin path <code>m/86'/0'/0'</code>, ''n'' = 1, key-index width <code>kiw</code> = 1.
+* Phrase: <code>md1qq80tgggqpsg88lzxawsqrlpe</code>
+* Bytecode: <code>000ef5a108006080</code> (8 bytes; 59 bits used)
+* Header (5) + path-decl (31) + use-site (16) + tree (7) = 59 bits
+* Tree (7 bits): <code>00001 0 0</code> — <code>tr</code> tag <code>0x01</code>; <code>key_index</code> = 0 (1 bit); <code>has_tree</code> = 0 (no script tree)
 
-Key-path-only <code>tr(@0/**)</code> — full bytecode <code>00 34 03 06 33 00</code>:
+'''Single-leaf <code>tr(@0/<0;1>/*, pk(@1/<0;1>/*))</code>''' with origin path <code>m/48'/0'/0'/2'</code>, ''n'' = 2, ''kiw'' = 2.
+* Phrase: <code>md1qpfdsssj5qqcy4yq50p2saz68dhr</code>
+* Bytecode: <code>0052d84212a001825480</code> (10 bytes; 73 bits used)
+* Header (5) + path-decl (37) + use-site (16) + tree (15) = 73 bits
+* Tree (15 bits): <code>00001 00 1 [01010 01]</code> — <code>tr</code> tag, <code>key_index</code> = 0, <code>has_tree</code> = 1, leaf <code>pk_k(@1)</code> as a bare <code>PkK</code> node (5-bit tag <code>0x0A</code> + 2-bit <code>key_index</code> = 1). Tap-leaves do NOT carry the <code>c:</code> wrapper around <code>pk_k</code> that wsh-context BIP 388 sugar emits — the BIP 388 <code>pk(K)</code> sugar expansion is context-aware, and tap-leaves emit <code>PkK</code> directly.
 
-<pre>
-  06 33 00
-  ^  ^  ^
-  |  |  +-- placeholder index 0
-  |  +----- Tag::Placeholder (0x33)
-  +-------- Tag::Tr (0x06)
-</pre>
+'''Single-leaf <code>tr(@0/<0;1>/*, multi_a(2, @1/<0;1>/*, @2/<0;1>/*, @3/<0;1>/*))</code>''' with origin path <code>m/48'/0'/0'/2'</code>, ''n'' = 4, ''kiw'' = 3.
+* Phrase: <code>md1qrfdsssj5qqcy2qgj32ffsg50cx8xxj7max</code>
+* Bytecode: <code>00d2d84212a001822808945494c0</code> (14 bytes; 106 bits used)
+* Header (5) + path-decl (37) + use-site (16) + tree (48) = 106 bits
+* Tree (48 bits): <code>00001 000 1 [01000 00001 00010 [01010 001] [01010 010] [01010 011]]</code> — <code>tr</code> tag, <code>key_index</code> = 0 (3 bits), <code>has_tree</code> = 1, leaf <code>multi_a</code> (5-bit tag <code>0x08</code>) with k = 2 (5-bit <code>k − 1</code> = 1), n = 3 children (5-bit <code>n − 1</code> = 2), then three <code>PkK</code> children, each a 5-bit tag <code>0x0A</code> + 3-bit <code>key_index</code> = 1, 2, 3.
 
-Single-leaf <code>tr(@0/**, pk(@1/**))</code> — full bytecode <code>00 34 03 06 33 00 0e 1b 33 01</code>:
+'''Two-leaf TapTree <code>tr(@0/<0;1>/*, {pk(@1/<0;1>/*), pk(@2/<0;1>/*)})</code>''' with origin path <code>m/48'/0'/0'/2'</code>, ''n'' = 3, ''kiw'' = 2.
+* Phrase: <code>md1qzfdsssj5qqcyj492s3w9eelx8vqrn</code>
+* Bytecode: <code>0092d84212a001824aa550</code> (11 bytes; 85 bits used)
+* Header (5) + path-decl (37) + use-site (16) + tree (27) = 85 bits
+* Tree (27 bits): <code>00001 00 1 [00101 [01010 01] [01010 10]]</code> — <code>tr</code> tag, <code>key_index</code> = 0, <code>has_tree</code> = 1, then <code>TapTree</code> inner node (5-bit tag <code>0x05</code>) with two child sub-trees: left = <code>pk_k(@1)</code>, right = <code>pk_k(@2)</code>. Deeper TapTree nesting recursively chains additional <code>0x05</code> framings up to the BIP 341 depth-128 ceiling (also enforced by the decoder via <code>MAX_DECODE_DEPTH = 128</code>).
 
-<pre>
-  06 33 00       0e 1b 33 01
-  -- internal key   -- leaf miniscript --
-                 ^  ^  ^  ^
-                 |  |  |  +-- placeholder index 1
-                 |  |  +----- Tag::Placeholder (0x33)
-                 |  +-------- Tag::PkK (0x1B)
-                 +----------- Tag::Check (0x0E)   ; the c: wrapper that BIP 388
-                                                   ; emits when expanding pk(K)
-                                                   ; under wsh()/tr()
-</pre>
-
-Single-leaf <code>tr(@0/**, multi_a(2, @1/**, @2/**, @3/**))</code> — full bytecode <code>00 34 03 06 33 00 0a 02 03 33 01 33 02 33 03</code>:
-
-<pre>
-  06 33 00     0a 02 03 33 01 33 02 33 03
-  -- internal     -- multi_a(2, @1, @2, @3) --
-                  ^  ^  ^  ^^^^^ ^^^^^ ^^^^^
-                  |  |  |  |     |     +-- @3 placeholder
-                  |  |  |  |     +-------- @2 placeholder
-                  |  |  |  +-------------- @1 placeholder
-                  |  |  +-- count n=3 (single byte)
-                  |  +----- threshold k=2 (single byte)
-                  +-------- Tag::MultiA (0x0A)
-</pre>
-
-A nested-allowed-operator example combining <code>or_d</code>, <code>and_v</code>, <code>v:</code>, and <code>older</code> — <code>tr(@0/**, or_d(pk(@1/**), and_v(v:older(144), pk(@2/**))))</code> — encodes to full bytecode <code>00 34 03 06 33 00 18 0e 1b 33 01 13 10 1f 90 01 0e 1b 33 02</code>; the script-tree portion alone is <code>18 0e 1b 33 01 13 10 1f 90 01 0e 1b 33 02</code>:
-
-<pre>
-  18 0e 1b 33 01            13 10 1f 90 01 0e 1b 33 02
-  -- or_d ----              -- and_v -----------------
-  ^  -- pk(@1) ---          ^  -- v:older(144) -- -- pk(@2) ---
-  |                         |  ^  ^  ^^^^^
-  |                         |  |  |  +-- LEB128(144) = 0x90 0x01
-  |                         |  |  +----- Tag::Older (0x1F)
-  |                         |  +-------- Tag::Verify (0x10) ; v: wrapper
-  +-- Tag::OrD (0x18)       +-- Tag::AndV (0x13)
-</pre>
-
-Two-leaf multi-leaf (v0.5+) <code>tr(@0/**, {pk(@1/**), pk(@2/**)})</code> — operator-tree portion <code>06 33 00 07 0e 1b 33 01 0e 1b 33 02</code>:
-
-<pre>
-  06 33 00  07  0e 1b 33 01   0e 1b 33 02
-  -- int.   ^   -- left leaf   -- right leaf
-  key       |
-            +-- Tag::TapTree (0x07) — inner-node framing;
-                LEFT_SUBTREE and RIGHT_SUBTREE follow immediately
-</pre>
-
-The <code>TapTree (0x07)</code> tag introduces an inner node. Its two subtrees (left then right) follow immediately in bytecode order, each being either a leaf-script tag sequence or another <code>0x07</code>-prefixed inner node. Deeper trees nest additional <code>0x07</code> frames recursively, up to the BIP 341 depth-128 ceiling.
+For the BIP-341 NUMS H-point key-path-only sentinel form (<code>tr(NUMS, ...)</code>), the <code>key_index</code> field holds the value ''n'' (one past the highest placeholder index) and the descriptor's tree omits any internal-key placeholder. See §"<code>tr()</code> NUMS sentinel rule (v0.18)" above for the canonicalization invariant; concrete worked NUMS examples can be regenerated via <code>md compile --context tap '...'</code> in the reference implementation when built with the <code>cli-compiler</code> feature.
 
 ====Round-trip canonical form====
 
@@ -748,39 +689,46 @@ Encoders MUST produce canonical form. Decoders MUST accept canonical form and SH
 
 ===Chunking===
 
-When a Template Card's canonical bytecode exceeds the maximum payload of a single long-code codex32 string (56 bytes), the encoding MUST be chunked. (The 4-byte cross-chunk integrity hash is appended only when chunking is used; it does not factor into the single-string capacity decision.) Encoders MAY also chunk smaller bytecodes for ergonomic reasons (e.g., to fit on physical media) but SHOULD prefer single-string encoding when the payload fits.
+When a Template Card's canonical bytecode exceeds the maximum payload of a single long-code codex32 string, the encoding MUST be chunked. Encoders MAY also chunk smaller bytecodes for ergonomic reasons (e.g., to fit on physical media) but SHOULD prefer single-string encoding when the payload fits.
 
-====Cross-chunk hash====
+====Chunk header (37 bits)====
 
-Before chunking, encoders compute a 4-byte cross-chunk integrity hash:
+Each chunk is a complete codex32-derived string. In place of the 5-bit payload header used by single-string Template Cards (§"Bytecode header"), each chunk's bit stream begins with a 37-bit chunk header:
 
-<pre>
-  cross_chunk_hash = SHA-256(canonical_bytecode)[0..4]
-</pre>
+{| class="wikitable"
+! Bits !! Field !! Notes
+|-
+| 36–34 || Version || 3-bit version, v0.11+ = <code>0b000</code>.
+|-
+| 33 || Chunked flag || MUST be <code>1</code> in chunk headers (signals "this codex32 string is one chunk in a chunked set"). The single-string payload header has a different bit layout (5-bit-symbol bit 3 = reserved-must-be-0); a decoder that reads a single-string payload header expecting a chunk header rejects with <code>Error::ChunkHeaderChunkedFlagMissing</code>, and the inverse mis-classification rejects with <code>Error::ReservedHeaderBitSet</code>.
+|-
+| 32 || Reserved || MUST be <code>0</code>.
+|-
+| 31–12 || Chunk-set identifier (CSI) || 20 bits. Derived from the assembled payload's <code>Md1EncodingId</code> (top 20 bits of <code>SHA-256</code> over the canonical bit-packed payload, MSB-first). Identical across all chunks in a set; functions as the cross-chunk integrity anchor.
+|-
+| 11–6 || Count − 1 || Total chunks in the set, range <code>1..64</code>, encoded as <code>count − 1</code> in 6 bits. Out-of-range rejected with <code>Error::ChunkCountOutOfRange</code>.
+|-
+| 5–0 || Index || This chunk's zero-based index within the set, in 6 bits. MUST be less than ''count''; out-of-range rejected with <code>Error::ChunkIndexOutOfRange</code>.
+|}
 
-The hash is the first 4 bytes of the SHA-256 of the canonical bytecode (everything from the bytecode header through the end of the tree). The hash is appended to the canonical bytecode, and the resulting byte stream is split into chunk fragments.
+====Chunk fragment====
 
-Decoders compute the hash over the reassembled bytecode (excluding the trailing 4 hash bytes) and verify it matches the trailing bytes. Mismatch MUST cause the decode to fail with an error specifically identifying the cross-chunk integrity check.
+After the 37-bit chunk header, each chunk carries an arbitrary fragment of the assembled payload's bit stream. Encoders SHOULD divide the canonical payload bit stream into fragments of approximately equal size; the exact division is implementation-defined, provided each chunk's bit-stream length fits within the codex32 size envelope chosen for the chunk's BCH code (regular or long). Decoders MUST accept any valid division. The boundary between header and fragment is exactly bit 37; the fragment runs from bit 37 to the end of the chunk's payload bits.
 
-====Chunk format====
-
-Each chunk is a complete codex32-derived string with the chunked Template Card header (type = 1). The total chunk count and chunk index fields in the header determine reassembly order. The chunk-set identifier (4 chars) MUST be identical across all chunks of one Template Card.
-
-Encoders SHOULD divide the canonical bytecode + hash into chunks of approximately equal size; the exact division is implementation-defined provided each chunk's fragment fits within the chunk's chosen code (regular or long). Decoders MUST accept any valid division.
+The chunk-set identifier serves the cross-chunk integrity role that a separate appended hash served in earlier wire formats. Because the CSI is derived from the assembled-payload SHA-256, an encoder that draws a non-conforming CSI produces a string whose CSI cannot be reproduced by a conforming decoder; mismatch is detected at reassembly (see below). v0.11+ does NOT carry a separate cross-chunk hash field.
 
 ====Reassembly====
 
 Decoders reassemble a chunked Template Card by:
 
 # Collecting all chunks transcribed by the user.
-# Verifying all chunks share the same chunk-set identifier; reject if mixed.
+# Verifying all chunks share the same 20-bit chunk-set identifier; reject if mixed.
 # Verifying all chunks declare the same total chunk count; reject if inconsistent.
 # Sorting chunks by chunk index; reject if any index appears multiple times or is missing.
 # Verifying the highest index equals (count − 1); reject if not.
-# Concatenating fragments in index order to reconstruct the canonical bytecode plus cross-chunk hash.
-# Splitting off the trailing 4 bytes and verifying the cross-chunk hash; reject on mismatch.
-# Decoding the resulting canonical bytecode as a Template Card.
-# Computing <code>Md1EncodingId</code> from the canonical bit-packed re-encoding of the decoded Template Card and verifying that the wire <code>chunk-set identifier</code> matches the value derived from <code>Md1EncodingId</code> per §"Header"; reject on mismatch with an error specifically identifying the derivation check (the reference implementation surfaces this as <code>Error::ChunkSetIdMismatch</code>). This ratifies that the encoder followed the deterministic-CSI contract; a non-conforming encoder that drew a random value would produce a string unreadable by conforming decoders.
+# Concatenating each chunk's fragment bits in index order to reconstruct the canonical payload bit stream.
+# Decoding the assembled payload as a Template Card (5-bit header at bit offset 0, then the standard five-section layout).
+# Computing <code>Md1EncodingId</code> from the canonical bit-packed re-encoding of the decoded Template Card and verifying that the chunk-headers' wire chunk-set identifier matches the value derived from <code>Md1EncodingId</code> per §"Chunk header"; reject on mismatch with an error specifically identifying the derivation check (the reference implementation surfaces this as <code>Error::ChunkSetIdMismatch</code>). This ratifies that the encoder followed the deterministic-CSI contract; a non-conforming encoder that drew a random value would produce a string unreadable by conforming decoders.
 
 ===Policy identifier (Tier 3)===
 
@@ -790,7 +738,7 @@ A Policy ID is a derived identifier MAY be engraved on a separate medium for off
   policy_id = SHA-256(canonical_bytecode)[0..16]
 </pre>
 
-The first 16 bytes of the SHA-256 of the canonical bytecode (the same bytecode that is encoded as the Template Card, ''without'' the cross-chunk hash). Policy IDs are encoded as 12-word BIP 39 mnemonic phrases (128 bits, including a 4-bit checksum word).
+The first 16 bytes of the SHA-256 of the canonical bytecode (the same bit-packed payload that is encoded as the Template Card; the chunk-set identifier carried in chunk headers is derived from the same hash, see §"Chunking"). Policy IDs are encoded as 12-word BIP 39 mnemonic phrases (128 bits, including a 4-bit checksum word).
 
 A Policy ID is OPTIONAL and never required for recovery from the Template Card alone. It serves only as a cryptographic anchor for verifying that a supplemental digital copy of the policy is authentic.
 
@@ -807,7 +755,7 @@ MD defines two cryptographic wallet-identifying hashes at different levels of sp
 
 Type 1 answers "what shape of wallet is this?"; Type 0 answers "which specific wallet instance is this?" Type 1 is the engraved anchor (Tier 3, MAY-engrave). Type 0 is the cryptographic check at recovery time. The two are not interchangeable: a Type-1 collision is expected and acceptable (two cosigners' wallets sharing a multisig shape); a Type-0 collision would indicate identical wallet instances. The reference implementation's <code>PolicyId</code> Rust type carries the Type-1 semantics; <code>WalletInstanceId</code> the Type-0; the names carry the type so no separate <code>Type1PolicyId</code> / <code>Type0PolicyId</code> aliases are introduced.
 
-'''v0.10 effect on Type 1.''' Two policies with same script template but different per-cosigner accounts (e.g., one cosigner on BIP 48 account 0' vs the same wallet on account 1') hash to ''different'' Type-1 <code>PolicyId</code>s in v0.10 — they are different wallet shapes. In v0.x ≤ 0.9 such policies silently collided on Type-1 <code>PolicyId</code> because the canonical bytecode lossily flattened them to a single shared path. v0.10's addition of <code>Tag::OriginPaths</code> closes that collision; the divergent-path Type-1 <code>PolicyId</code> for such wallets in v0.10 differs from the (incorrect, lossily-computed) v0.9 <code>PolicyId</code>. Users who computed PolicyIds on divergent-path policies under v0.x ≤ 0.9 SHOULD re-engrave under v0.10.
+'''Path-divergence injectivity.''' Two policies with the same script template but different per-cosigner accounts (e.g., one cosigner on BIP 48 account 0' vs the same wallet on account 1') hash to ''different'' Type-1 <code>PolicyId</code>s in v0.10+ — they are different wallet shapes. In v0.x ≤ 0.9 such policies silently collided on Type-1 <code>PolicyId</code> because the canonical bytecode lossily flattened them to a single shared path. v0.10 closed that collision via the per-<code>@N</code> divergent-path encoding (originally byte-aligned <code>Tag::OriginPaths = 0x36</code>; replaced in v0.11 by the divergent-paths header bit and the bit-aligned origin-path-encoding described in §"Origin path declaration"). The bug fix is preserved across both encoding mechanisms; the divergent-path Type-1 <code>PolicyId</code> for such wallets in v0.10+ differs from the (incorrect, lossily-computed) v0.9 <code>PolicyId</code>. Users who computed PolicyIds on divergent-path policies under v0.x ≤ 0.9 SHOULD re-engrave under v0.10+.
 
 ===Wallet Instance ID===
 
@@ -841,7 +789,7 @@ Conformant MD decoders MUST:
 # Reject unknown format-version or card-type values.
 # Implement BCH error correction for both regular and long codes per the polynomials specified above.
 # Implement erasure-aware decoding when the user supplies known-bad positions.
-# Compute the cross-chunk hash over reassembled chunks and reject on mismatch.
+# Verify the chunk-set identifier on reassembled chunks (compute <code>Md1EncodingId</code> from the assembled payload and reject if its top 20 bits differ from the chunk headers' wire <code>chunk_set_id</code>).
 # Validate the bytecode against the tag table; reject unknown tags or malformed structure.
 # Round-trip with BIP 388 canonical form.
 
@@ -864,7 +812,7 @@ For every decode attempt, conformant decoders MUST report:
 |-
 | Correction method || which technique succeeded || Required
 |-
-| Verification status || which post-decode checks passed || Required (cross-chunk hash, seed-derived xpub match, blockchain history if performed)
+| Verification status || which post-decode checks passed || Required (chunk-set-identifier check for multi-chunk decodes, seed-derived xpub match, blockchain history if performed)
 |-
 | Confidence || Confirmed / High / Probabilistic / Failed || Required (see "Recovery confidence", below)
 |}
@@ -872,7 +820,7 @@ For every decode attempt, conformant decoders MUST report:
 A decoder MUST NOT report "Confirmed" confidence unless ALL of:
 
 * BCH decode succeeded with at most 4 errors corrected total
-* Cross-chunk hash verified (if multi-chunk)
+* Chunk-set identifier verified (if multi-chunk)
 * All <code>@i</code> placeholders matched user's seeds at recovered paths
 * User explicitly confirmed the recovered policy structure matches expectation
 
@@ -889,7 +837,7 @@ The flow MUST proceed through these stages, in order:
 # '''Erasure-aware decode.''' If standard decode fails and erasures are marked, attempt erasure decoding (up to 8 erasures per string). If successful, report and stop.
 # '''Structure elicitation.''' If decoding still fails, prompt the user for structural information they remember about the policy: wallet kind, key count, threshold, derivation path, timelock values, chunk-set identifier (if separately stamped).
 # '''Constrained candidate search.''' Encode the user's structural assertions as a partial bytecode template. Enumerate candidate codewords within an extended Hamming radius (up to ~12) that decode to valid MD bytecode AND match the user's assertions.
-# '''Candidate verification.''' For each surviving candidate, derive xpubs from available seeds at the candidate's declared paths, verify they map to the expected placeholders, verify cross-chunk hash if multi-chunk, and reject candidates failing any check.
+# '''Candidate verification.''' For each surviving candidate, derive xpubs from available seeds at the candidate's declared paths, verify they map to the expected placeholders, verify the chunk-set identifier if multi-chunk, and reject candidates failing any check.
 # '''Optional blockchain verification.''' With explicit user consent, derive the candidate's first N receive addresses and check on-chain history. Disclose privacy implications before this step.
 # '''Result presentation.''' Display the recovered wallet policy in BIP 388 form, the Policy ID, derived xpubs, and the confidence level per "Decoder reporting".
 
@@ -971,9 +919,9 @@ A future revision MAY define an optional encrypted Template Card variant. v0 doe
 
 ===Why mandatory chunk-set identifier in chunked cards?===
 
-Without per-chunk-set identifiers, a user with multiple wallets risks mixing chunks from different Template Cards during reassembly. The 20-bit identifier provides ~1-in-1M discrimination against accidental cross-wallet contamination. Combined with the cross-chunk hash, the false-accept probability for accidental misassembly is approximately 2<sup>−52</sup>, which is negligible in practice.
+Without per-chunk-set identifiers, a user with multiple wallets risks mixing chunks from different Template Cards during reassembly. The 20-bit identifier provides ~1-in-1M discrimination against accidental cross-wallet contamination, and because every chunk header carries the same CSI, mismatched chunks are rejected before any payload reassembly is attempted.
 
-The 20-bit value is normatively derived from the encoding's <code>Md1EncodingId</code> (see §"Header") rather than drawn from a CSPRNG. This makes md1 byte-reproducible: two conforming encoders given the same canonical bytecode produce identical Template Card strings down to the wire bits, which lets downstream toolchains (engraving toolkits, regression-pinned vector corpora) SHA-pin md1 outputs without flake. Decoders verify the binding on reassembly, providing an additional integrity check beyond the cross-chunk hash — a non-conforming encoder that drew a random value would produce strings unreadable by conforming decoders, so the determinism contract is self-enforcing.
+The 20-bit value is normatively derived from the encoding's <code>Md1EncodingId</code> (see §"Header") rather than drawn from a CSPRNG. This serves two purposes. First, it makes md1 bit-reproducible: two conforming encoders given the same canonical bytecode produce identical Template Card strings down to the wire bits, which lets downstream toolchains (engraving toolkits, regression-pinned vector corpora) SHA-pin md1 outputs without flake. Second, the deterministic binding doubles as the cross-chunk integrity check: decoders re-derive the CSI from the reassembled payload's <code>Md1EncodingId</code> and reject if it differs from the wire CSI carried in chunk headers. v0.11+ does NOT carry a separate cross-chunk hash field — the CSI derivation IS the integrity check, and a non-conforming encoder that drew a random CSI value would produce strings unreadable by conforming decoders, so the determinism contract is self-enforcing.
 
 For single-string Template Cards, no chunk-set identifier is needed because there are no chunks to confuse.
 
@@ -1042,12 +990,12 @@ MD does not conflict with existing standards:
 
 MD v0 readers MUST reject MD strings with newer format-version bytes (loud failure; recommend the user obtain a newer MD tool). v1+ readers MUST accept v0 strings (graceful upgrade).
 
-'''v0.x ≤ 0.9 ↔ v0.10 wire-format break (header bit 3 reclamation).''' v0.x ≤ 0.9 reserved bit 3 of the bytecode header (mask <code>0x0B</code>); v0.10 reclaims it as the OriginPaths flag (mask narrows to <code>0x03</code>). Forward and backward compatibility behave as designed:
+'''Wire-format breaks on the v0.x evolution path.''' Two breaks shape the current v0.11+ wire format:
 
-* Existing v0.x ≤ 0.9 SharedPath-only encodings remain '''byte-identical''' under v0.10: header bit 3 stays <code>0</code>; <code>0x00</code> and <code>0x04</code> remain valid v0.10 header bytes. v0.10 decoders accept all v0.x ≤ 0.9 encodings without behavior change.
-* New v0.10 OriginPaths-using encodings (header bit 3 = <code>1</code>; header byte <code>0x08</code> or <code>0x0C</code>) are rejected by v0.x ≤ 0.9 decoders via <code>Error::ReservedBitsSet</code> — the intended forward-compat behavior. Recovery tools encountering this rejection from a pre-v0.10 decoder SHOULD recommend the user upgrade to a v0.10+ tool.
+* '''v0.x ≤ 0.9 → v0.10 (path-divergence support).''' v0.x ≤ 0.9 lossily flattened policies with divergent per-<code>@N</code> origin paths to a single shared path, so <code>decode(encode(p))</code> could differ from <code>p</code> for any policy where cosigners derived xpubs from different paths. v0.10 closed that bug by reclaiming bit 3 of the byte-aligned bytecode header as a divergent-paths flag and adding a per-<code>@N</code> path block. Pre-v0.10 decoders rejected v0.10 divergent-paths encodings cleanly via <code>Error::ReservedBitsSet</code>.
+* '''v0.x ≤ 0.10 → v0.11 (bit-packed wire-format reset).''' v0.11 replaced the byte-aligned bytecode framing (1-byte header, 1-byte path-decl tags, byte-aligned operator tags) with a packed 5-bit bit stream, eliminating per-section framing tags entirely; fingerprints, xpubs, and per-<code>@N</code> overrides moved into the §"TLV section". The path-divergence fix from v0.10 is preserved (now signaled by header bit 4 directly, with no framing tag); see §"Origin path declaration". v0.x ≤ 0.10 decoders cannot read v0.11+ encodings, and v0.11+ decoders cannot read pre-v0.11 encodings; the change is a clean break with no compat layer.
 
-The break closes a v0.x ≤ 0.9 silent path-divergence drop bug: those versions lossily flattened policies with divergent per-<code>@N</code> origin paths to a single shared path, so <code>decode(encode(p))</code> could differ from <code>p</code> for any policy where cosigners derived xpubs from different paths. v0.10's <code>Tag::OriginPaths</code> block closes that bug.
+Users who computed PolicyIds on divergent-path policies under v0.x ≤ 0.9 SHOULD re-engrave under v0.10+. Users who recovered policies from v0.x ≤ 0.10 Template Cards SHOULD verify they still decode under their current toolchain; if the toolchain is v0.11+, the v0.x ≤ 0.10 encodings will fail at the bytecode layer and the user must locate a v0.x ≤ 0.10 decoder to migrate forward.
 
 ==Test Vectors==
 
@@ -1068,7 +1016,7 @@ The vector schema follows '''additive evolution'''. <code>schema_version: 2</cod
 
 Schema-2 adds three optional fields:
 
-* On <code>Vector</code>: <code>expected_fingerprints_hex</code> — present (as a list of 8-char lowercase-hex strings) for vectors encoded with a fingerprints block, absent otherwise.
+* On <code>Vector</code>: <code>expected_fingerprints_hex</code> — present (as a list of 8-char lowercase-hex strings) for vectors encoded with a <code>Fingerprints</code> TLV entry (§"TLV section"), absent otherwise.
 * On <code>Vector</code>: <code>encode_options_fingerprints</code> — the raw <code>[u8; 4]</code> values that were passed to <code>EncodeOptions::with_fingerprints</code> when generating the vector, so independent regenerators reproduce the same bytecode.
 * On <code>NegativeVector</code>: <code>provenance</code> — a one-sentence note describing how <code>input_strings</code> were generated (e.g., "encoded <code>wsh(pk(@0/**))</code>, then uppercased the data character at position 5"). Implementers MAY consult this field to understand the precise mutation that triggers the named error variant.
 
@@ -1089,7 +1037,7 @@ Schema 2 is a strict superset of schema 1. The following additions were made acr
 * '''>=47 negative vectors''' — all 30 schema-1 variants (with <code>input_strings</code> regenerated by per-variant generators; each carries a <code>provenance</code> string) plus v0.2–v0.4 additions and v0.5 additions:
 ** <code>n_tap_leaf_subset</code> — <code>tr(@0/**, and_v(v:sha256(...), pk(@1/**)))</code>; encoder rejects with <code>TapLeafSubsetViolation { operator: "sha256" }</code> (encode-side; <code>input_strings</code> is empty).
 ** <code>n_fingerprints_count_mismatch</code> — encoder rejection when <code>EncodeOptions::with_fingerprints</code> is called with a count that doesn't match the placeholder count; <code>FingerprintsCountMismatch { expected: 2, got: 1 }</code> (encode-side; <code>input_strings</code> is empty).
-** <code>n_fingerprints_missing_tag</code> — bytecode header advertises a fingerprints block (bit 2 set) but the byte where <code>Tag::Fingerprints=0x35</code> is expected carries a different tag; decoder rejects with <code>InvalidBytecode { kind: UnexpectedTag { expected: 0x35, got: 0x05 } }</code>.
+** <code>n_fingerprints_missing_tag</code> — historical pre-v0.11 negative vector exercising a malformed byte-aligned <code>Tag::Fingerprints=0x35</code> framing. The fingerprints framing was retired in v0.11 (fingerprints are now a TLV entry; see §"TLV section"); the vector is preserved in the schema-1/schema-2 corpus for historical regression coverage and is not exercised against v0.11+ decoders.
 ** v0.5 TapTree negatives (N1–N9): <code>n_taptree_single_inner_under_tr</code> (N1; replaces the legacy <code>n_taptree_multi_leaf</code> v0.4 reservation rejection), <code>n_taptree_three_inners_under_tr</code> (N2), structural violations <code>n_taptree_inner_wpkh</code>, <code>n_taptree_inner_sh</code>, <code>n_taptree_inner_wsh</code>, <code>n_taptree_inner_tr</code>, <code>n_taptree_inner_pkh</code> (N3–N7), <code>n_taptree_unknown_tag_inner</code> (N8), and <code>n_taptree_at_top_level</code> (N9; <code>Tag::TapTree (0x05)</code> as top-level descriptor — not a valid descriptor type since 0x05 is reserved for inner-node framing inside <code>tr()</code>) — decoder rejects each with a descriptive <code>PolicyScopeViolation</code> or <code>InvalidBytecode</code> variant.
 
 ===Generation and verification===

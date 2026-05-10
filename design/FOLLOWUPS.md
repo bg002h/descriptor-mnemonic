@@ -63,17 +63,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `open`
 - **Tier:** v0.5+ (Low)
 
-### `bip-pre-v0-11-sections-bitstream-rewrite` — pre-v0.11 sections in BIP draft need v0.11 bitstream-native rewrite
-
-- **Surfaced:** 2026-05-10, deferred from the v0.4.4 BIP-text refresh cycle (which closed `bip-tag-table-5bit-vs-8bit-drift` via Approach C — tag table rewritten + scattered prose updated + retired-prose sections labeled-as-historical, but did NOT rewrite the byte-layout examples or the bytecode-header / path-decl prose for the v0.11 bitstream form).
-- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` — three sections currently labeled "pre-v0.11 byte-aligned wire format, retained for historical reference":
-  - Bytecode-header description (`====Bytecode header====` around L294, with the 8-bit version/flag-bits table at L297-309). v0.11 actually uses a 5-bit header per `crates/md-codec/src/header.rs`.
-  - Path-decl prose (`====Path declaration====` and following subsections including `=====Shared-path declaration format=====`, `=====Per-@N path declaration=====`, `=====Path dictionary=====`). v0.11 encodes path-decls as structured bit-fields per `crates/md-codec/src/origin_path.rs`.
-  - Byte-layout examples in two places: the wsh-multi-with-fingerprints section (L598-628 area) and the six taproot examples (L668-729 area). v0.11 produces a packed 5-bit bitstream with no flat-byte form.
-- **What:** Design + execute a v0.11-native rewrite of these three sections. The substantive design question is notation: bit-offset annotations? bech32-symbol granularity (5-bit chunks)? Per-section spike against actual `md encode` output to confirm correctness of any worked example. Scope is materially larger than the v0.4.4 cycle's tag-table refresh; warrants its own brainstorm + SPEC + plan with iterative architect review.
-- **Why deferred:** v0.4.4 cycle's Approach C (tag-table rewrite + editorial labels) was chosen because the v0.11 bitstream-native rewrite needs its own design pass for notation choice. Bolting that into a tag-substitution cycle would have produced incorrect docs (architect r1 of the prior plan attempt surfaced this as Critical C1).
-- **Status:** `open`
-- **Tier:** v0.5+ (BIP-text refresh; Important)
 
 ### `error-enum-non-exhaustive-attribute` — `md_codec::Error` lacks `#[non_exhaustive]`; every variant addition is a downstream-breaking change
 
@@ -1027,6 +1016,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v1.0
 
+### `bit-3-dispatch-prose-fix-cross-spec` — "bit 3 dispatches chunked-vs-single" claim is wrong in source comments + SPEC
+
+- **Surfaced:** 2026-05-10, v0.4.5 BIP bitstream-native rewrite cycle (whole-PR architect review). Architect read `header.rs`, `chunk.rs`, and the v0.11 SPEC and showed that the chunk header packs the chunked flag at numeric bit 1 of the first 5-bit symbol, not bit 3. The "bit 3 dispatches" claim is wrong in three places that share the language.
+- **Where:** `crates/md-codec/src/header.rs:4` module doc comment ("chunk header reuses this slot for chunked-flag" — wrong, chunk header puts chunked flag at numeric bit 1, not bit 3); `crates/md-codec/src/error.rs:195-196` doc comment for `Error::ChunkHeaderChunkedFlagMissing` ("bit 3 must be 1" — wrong, it's bit 1); `design/SPEC_v0_11_wire_format.md:113` ("Decoders dispatch chunked-vs-single-string by examining bit 3 of the first 5-bit symbol after the HRP" — wrong; the correct dispatch is role-based via the API caller, with fail-fast rejection at `ReservedHeaderBitSet` / `ChunkHeaderChunkedFlagMissing`).
+- **What:** Update the three sites to match implementation. The implementation itself works correctly because dispatch is role-based (caller selects single-string vs chunked decode path) and `ChunkHeader::read` reads the bit fields in the correct sequential order — the prose error never affects runtime behavior. But a cross-implementation author following the SPEC's "bit 3" claim would write a broken decoder. The BIP fix shipped in v0.4.5 (this entry's parent cycle); the source-comment + SPEC fix is a separate one-line-per-site cycle.
+- **Why deferred:** v0.4.5 cycle scope was the BIP draft; touching the SPEC + source-doc-comments would have widened the diff. Filed for a follow-on patch cycle.
+- **Status:** open
+- **Tier:** v0.5+ (Important; doc-only correctness fix; no runtime impact)
+
 ---
 
 ## Resolved items
@@ -1586,6 +1584,16 @@ See BIP §FAQ for rationale.
 - **What shipped:** v0.4.4 cycle (PR pending; commits `fcdcd38` + `0400346` + `1c331a3` + the FOLLOWUPS-bookkeeping commit). Approach C from the cycle's brainstorm: full tag-table rewrite (namespace reorganization — FALSE/TRUE moved primary→ext, Pkh moved 0x02→0x04, every operator freshly assigned per `tag.rs`); pre-v0.11 metadata-namespace rows (Placeholder/SharedPath/Fingerprints/OriginPaths at `0x33-0x36`) dropped from the table with a footnote pointing to `origin_path.rs` + `tlv.rs`; scattered operator-tag prose updated; sh-wrapper restriction matrix updated (wpkh 0x04→0x00, wsh 0x05→0x02, sh stays 0x03 with a "5-bit primary codes" caption); NUMS-sentinel cross-reference simplified; TapTree history extended through v0.11; byte-layout examples and bytecode-header / path-decl prose sections labeled-as-historical with editorial notes pointing to the deferred-followup `bip-pre-v0-11-sections-bitstream-rewrite` for the v0.11-native rewrite. Architect r1 + r2 convergence at 0C/0I before execution; whole-PR architect review post-execution.
 - **Status:** resolved 2026-05-10 (v0.4.4 BIP-text refresh).
 - **Tier:** v0.4.4 (closed)
+
+### v0.4.5+ (BIP bitstream-native rewrite)
+
+### `bip-pre-v0-11-sections-bitstream-rewrite` — pre-v0.11 sections in BIP draft need v0.11 bitstream-native rewrite
+
+- **Surfaced:** 2026-05-10, deferred from the v0.4.4 BIP-text refresh cycle (which labeled the pre-v0.11 sections as historical pending a dedicated bitstream-native rewrite cycle).
+- **What shipped:** v0.4.5 cycle (this commit). User direction "Fill out any empty sections of the bip and make sure BIP reflects implementation. Work autonomously with iterative agent review and merge when done." Phase 0 spike captured the v0.11+ bit layouts from `crates/md-codec/src/{header,origin_path,use_site_path,tlv,tree,chunk,varint,identity}.rs` and verified six representative templates by hand (report at `design/agent-reports/spike-v0_4_5-bip-bitstream-rewrite.md`). Phase 1 rewrote `====General structure====`, `====Bytecode header====`, `====Origin path declaration====` (with `=====origin-path-encoding=====` and `=====component=====`), and added a new `====Use-site path declaration====` section. Phase 2 wrote the `=====Bit-layout example=====` (wsh-multi 2-of-2 with and without `Fingerprints` TLV — 92 bits and 176 bits, full per-bit-field walkthrough) and `=====Bit-layout examples=====` (4 representative taproot shapes — 59 / 73 / 106 / 85 bits each, sourced from `md encode`). Phase 3 audited and rewrote: `====Header==== / ====Payload==== / ====Length envelope====` (encoding-layer; replaced 2-char/8-char header model with bit-packed 5-bit / 37-bit headers); `====Tree operators / =====Operator children layout===== / =====Key references=====` (replaced `0x33` placeholder framing with inline `key_index` bit-fields); replaced `====Fingerprints block (optional)====` with `====TLV section====` covering tag allocations 0x00-0x03 + end-of-section rollback-as-padding; replaced `====LEB128 encoding====` with `====LP4-ext varint====`; rewrote `===Chunking===` with the 37-bit chunk header, removed the retired 4-byte cross-chunk hash, and updated `====Reassembly====` to reference the chunk-set-identifier integrity check. Phase 4 dispatched whole-PR architect review; r1 found 1 important math error (path-component bit-count 12→11 for `48'`), 1 important wire-format-claim error (the cross-spec/cross-source "bit 3 dispatches chunked" prose was incorrect — chunk header packs the chunked flag at numeric bit 1 of the first 5-bit symbol, not bit 3), and 1 low (awkward self-correcting summary). All three folded; the bit-3 prose was rewritten to describe role-based dispatch with the appropriate fail-fast rejections (`ReservedHeaderBitSet` / `ChunkHeaderChunkedFlagMissing`).
+- **Source-comment + SPEC followup filed.** The bit-3 dispatch error is also present in `crates/md-codec/src/header.rs:4` module doc-comment, `crates/md-codec/src/error.rs:195-196`, and `design/SPEC_v0_11_wire_format.md:113`; corrected only in the BIP this cycle. See `bit-3-dispatch-prose-fix-cross-spec` below.
+- **Status:** resolved 2026-05-10 (v0.4.5 BIP bitstream-native rewrite).
+- **Tier:** v0.4.5 (closed)
 
 ---
 
