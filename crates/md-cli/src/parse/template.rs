@@ -489,12 +489,23 @@ fn wrap_children(tag: Tag, inner: Node) -> Node {
 
 /// Build `multi`/`sortedmulti` style: `Tag::Multi` (or `SortedMulti`) wrapping
 /// each key as a `PkK` child. Use `MultiA`/`SortedMultiA` inside Tap context.
+///
+/// Rejects `k` outside `1..=32` with a typed error before narrowing to `u8`,
+/// so callers see a CLI-layer message rather than a silent truncation. Mirrors
+/// the bounds-check the v0.18 Phase 4a Thresh walker arm performs at the same
+/// site. md-codec's `tree.rs::write_node` already returns `ThresholdOutOfRange`
+/// for the same range, so this is UX polish — corruption is impossible.
 fn build_multi_node(
     tag: Tag,
     k: usize,
     keys: &[&DescriptorPublicKey],
     km: &std::collections::BTreeMap<String, u8>,
 ) -> Result<Node, CliError> {
+    if !(1..=32).contains(&k) {
+        return Err(CliError::TemplateParse(format!(
+            "multi/sortedmulti/multi_a threshold k={k} out of range 1..=32"
+        )));
+    }
     let children: Vec<Node> = keys
         .iter()
         .map(|kk| {
@@ -942,6 +953,26 @@ mod root_tests {
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Pkh);
+    }
+
+    /// v0.20 — `build_multi_node` must reject k outside `1..=32` with a
+    /// CliError, mirroring the v0.18 Phase 4a Thresh walker bounds-check.
+    /// Keys are unreachable past the bounds-check at function entry, so an
+    /// empty keys slice is sufficient.
+    #[test]
+    fn build_multi_node_rejects_k_zero() {
+        let km = std::collections::BTreeMap::new();
+        let err = build_multi_node(Tag::Multi, 0, &[], &km).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("k=0 out of range 1..=32"), "got: {msg}");
+    }
+
+    #[test]
+    fn build_multi_node_rejects_k_above_thirty_two() {
+        let km = std::collections::BTreeMap::new();
+        let err = build_multi_node(Tag::SortedMultiA, 33, &[], &km).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("k=33 out of range 1..=32"), "got: {msg}");
     }
 }
 
