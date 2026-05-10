@@ -570,6 +570,7 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
     km: &std::collections::BTreeMap<String, u8>,
     tap_context: bool,
 ) -> Result<Node, CliError> {
+    use bitcoin::hashes::Hash;
     use miniscript::miniscript::decode::Terminal;
     match &ms.node {
         Terminal::PkK(k) => Ok(Node {
@@ -705,6 +706,63 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
                 walk_miniscript_node(l, km, tap_context)?,
                 walk_miniscript_node(r, km, tap_context)?,
             ]),
+        }),
+        // Hash preimage locks. miniscript carries arrays of bytes via newtypes
+        // (Sha256/Hash256/Ripemd160/Hash160 wrappers); we project to raw byte
+        // arrays for the BIP 388 wire body. SHA256 + HASH256 are 32-byte;
+        // RIPEMD160 + HASH160 are 20-byte.
+        Terminal::Sha256(h) => Ok(Node {
+            tag: Tag::Sha256,
+            body: Body::Hash256Body(h.to_byte_array()),
+        }),
+        Terminal::Hash256(h) => Ok(Node {
+            tag: Tag::Hash256,
+            body: Body::Hash256Body(h.to_byte_array()),
+        }),
+        Terminal::Ripemd160(h) => Ok(Node {
+            tag: Tag::Ripemd160,
+            body: Body::Hash160Body(h.to_byte_array()),
+        }),
+        Terminal::Hash160(h) => Ok(Node {
+            tag: Tag::Hash160,
+            body: Body::Hash160Body(h.to_byte_array()),
+        }),
+        // Single-arity stack-permutation / control-flow wrappers. Each takes
+        // Body::Children([1]). These unblock the more interesting fragments
+        // — Thresh / OrB / AndB position-2+ children all get s:-wrapped by
+        // miniscript's typecheck.
+        Terminal::Swap(inner) => Ok(Node {
+            tag: Tag::Swap,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::Alt(inner) => Ok(Node {
+            tag: Tag::Alt,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::DupIf(inner) => Ok(Node {
+            tag: Tag::DupIf,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::NonZero(inner) => Ok(Node {
+            tag: Tag::NonZero,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::ZeroNotEqual(inner) => Ok(Node {
+            tag: Tag::ZeroNotEqual,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        // Boolean literals. Reachable inside compound fragments —
+        // miniscript's `t:X` is sugar for `and_v(X, 1)`, so True appears
+        // wherever a script consumer wants to promote V → T. False appears
+        // less commonly but is structurally valid (e.g., as a never-spendable
+        // branch of `or_i`). Both have empty bodies on the wire.
+        Terminal::True => Ok(Node {
+            tag: Tag::True,
+            body: Body::Empty,
+        }),
+        Terminal::False => Ok(Node {
+            tag: Tag::False,
+            body: Body::Empty,
         }),
         // `thresh(k, c1, c2, ..., cn)` — k-of-n threshold over arbitrary
         // miniscript fragments (not just keys; distinct from Multi/MultiA).
@@ -1234,6 +1292,98 @@ mod tr_tests {
             }
             _ => panic!("expected Body::Variable, got {:?}", leaf.body),
         }
+    }
+
+    /// v0.18 Phase 4b — sha256 walker emits Body::Hash256Body(32 bytes).
+    /// Pinned hash is the canonical "trivial" 32-byte value.
+    #[test]
+    fn tr_with_sha256_emits_hash256_body() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),sha256(0000000000000000000000000000000000000000000000000000000000000001)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::AndV);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([2])"),
+        };
+        assert_eq!(kids[1].tag, Tag::Sha256);
+        match &kids[1].body {
+            Body::Hash256Body(h) => {
+                let mut expected = [0u8; 32];
+                expected[31] = 1;
+                assert_eq!(*h, expected);
+            }
+            _ => panic!("expected Body::Hash256Body"),
+        }
+    }
+
+    /// v0.18 Phase 4b — `s:` (Swap) wrapper walker emits Body::Children([1]).
+    /// Tests one of the 5 prefix wrappers; the others (a:, d:, j:, n:)
+    /// follow the same code path.
+    #[test]
+    fn wsh_thresh_with_swap_wrapper_emits_children_one() {
+        let (s, km) = substitute_synthetic(
+            "wsh(and_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        // Wsh wraps the and_b which has a c:pk_k (B-typed) and s:c:pk_k (W-typed)
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Wsh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::AndB);
+        let kids = match &inner.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_b.Children([2])"),
+        };
+        // Second child has the Swap wrapper.
+        assert_eq!(kids[1].tag, Tag::Swap);
+        match &kids[1].body {
+            Body::Children(v) if v.len() == 1 => {
+                // Inside the Swap is c:pk_k(@1), which collapses to Check(PkK).
+                assert_eq!(v[0].tag, Tag::Check);
+            }
+            _ => panic!("expected Swap.Children([1])"),
+        }
+    }
+
+    /// v0.18 Phase 4b — Terminal::True (reachable via miniscript's `t:` sugar
+    /// = and_v(X, 1)) emits Tag::True with Body::Empty. Confirms that True
+    /// is NOT rejected by the walker; the originally-planned negative test
+    /// "walker_rejects_true_in_tap_top_level_context" was wrong.
+    #[test]
+    fn tr_t_or_c_walker_emits_true_in_and_v_subtree() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,t:or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        // t:or_c(...) desugars to and_v(or_c(...), 1)
+        assert_eq!(leaf.tag, Tag::AndV);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([2])"),
+        };
+        assert_eq!(kids[0].tag, Tag::OrC);
+        assert_eq!(kids[1].tag, Tag::True);
+        assert!(matches!(kids[1].body, Body::Empty));
     }
 
     /// v0.18 Phase 4a — or_d recovery pattern walker structural assertion.

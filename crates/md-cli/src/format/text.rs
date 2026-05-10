@@ -153,6 +153,43 @@ fn render_node(
             out.push(')');
             Ok(())
         }
+        Tag::Sha256 => render_hash256("sha256", &node.body, out),
+        Tag::Hash256 => render_hash256("hash256", &node.body, out),
+        Tag::Ripemd160 => render_hash160("ripemd160", &node.body, out),
+        Tag::Hash160 => render_hash160("hash160", &node.body, out),
+        Tag::Check | Tag::Swap | Tag::Alt | Tag::DupIf | Tag::NonZero | Tag::ZeroNotEqual => {
+            render_wrapper_chain(node, n, default_usp, overrides, out)
+        }
+        Tag::True => {
+            out.push('1');
+            Ok(())
+        }
+        Tag::False => {
+            out.push('0');
+            Ok(())
+        }
+        Tag::RawPkH => {
+            // Decode-side only — Tag::RawPkH carries a 20-byte hash in the
+            // wire format. Miniscript's RawPkH variant is constructible only
+            // from raw scripts (per upstream doc-comment), never from policy
+            // or descriptor APIs, so this arm exists for round-trip fidelity
+            // when md-codec encounters a RawPkH wire tag emitted by some
+            // other producer.
+            let h = match &node.body {
+                Body::Hash160Body(h) => h,
+                _ => {
+                    return Err(CliError::TemplateParse(
+                        "RawPkH body must be Hash160Body".into(),
+                    ));
+                }
+            };
+            out.push_str("pk_h(");
+            for byte in h {
+                write!(out, "{byte:02x}").unwrap();
+            }
+            out.push(')');
+            Ok(())
+        }
         Tag::Thresh => {
             // thresh(k, c1, c2, ..., cn) — k-of-n threshold over arbitrary
             // miniscript fragments (distinct from Multi/MultiA which take only
@@ -177,6 +214,121 @@ fn render_node(
             "unsupported tag in render: {other:?}"
         ))),
     }
+}
+
+/// Render a 32-byte-hash literal (sha256, hash256). Body must be Hash256Body.
+fn render_hash256(name: &str, body: &Body, out: &mut String) -> Result<(), CliError> {
+    let h = match body {
+        Body::Hash256Body(h) => h,
+        _ => {
+            return Err(CliError::TemplateParse(format!(
+                "{name} body must be Hash256Body"
+            )));
+        }
+    };
+    out.push_str(name);
+    out.push('(');
+    for byte in h {
+        write!(out, "{byte:02x}").unwrap();
+    }
+    out.push(')');
+    Ok(())
+}
+
+/// Render a 20-byte-hash literal (ripemd160, hash160). Body must be Hash160Body.
+fn render_hash160(name: &str, body: &Body, out: &mut String) -> Result<(), CliError> {
+    let h = match body {
+        Body::Hash160Body(h) => h,
+        _ => {
+            return Err(CliError::TemplateParse(format!(
+                "{name} body must be Hash160Body"
+            )));
+        }
+    };
+    out.push_str(name);
+    out.push('(');
+    for byte in h {
+        write!(out, "{byte:02x}").unwrap();
+    }
+    out.push(')');
+    Ok(())
+}
+
+/// Render a chain of single-letter prefix wrappers as miniscript's canonical
+/// concatenated form: e.g. `Swap(NonZero(DupIf(X)))` → `snj:X` (not
+/// `s:n:j:X`). Walks down the wrapper spine, accumulating letters, then
+/// renders the innermost non-wrapper fragment after a single `:`.
+///
+/// Special cases:
+/// - `Check(PkK)` and `Check(PkH)` collapse to the shorthand `pk(K)` / `pk_h(K)`
+///   per miniscript's canonical printer; if the wrapper chain ends in `c:` and
+///   the deepest inner is PkK/PkH, render the shorthand without any prefix.
+/// - When `n:` (Tag::ZeroNotEqual) appears immediately before a `0` literal,
+///   miniscript prints `n0` not `n:0`. Phase 4b doesn't pin this corner; bare
+///   `0` at top-level is structurally degenerate. Handle if a future test
+///   surfaces it.
+fn render_wrapper_chain(
+    node: &Node,
+    n: u8,
+    default_usp: &UseSitePath,
+    overrides: Option<&[(u8, UseSitePath)]>,
+    out: &mut String,
+) -> Result<(), CliError> {
+    let mut prefix = String::new();
+    let mut current = node;
+    loop {
+        let letter = match current.tag {
+            Tag::Check => Some('c'),
+            Tag::Swap => Some('s'),
+            Tag::Alt => Some('a'),
+            Tag::DupIf => Some('d'),
+            Tag::NonZero => Some('j'),
+            Tag::ZeroNotEqual => Some('n'),
+            _ => None,
+        };
+        match letter {
+            Some(c) => {
+                prefix.push(c);
+                current = match &current.body {
+                    Body::Children(v) if v.len() == 1 => &v[0],
+                    _ => {
+                        return Err(CliError::TemplateParse(format!(
+                            "{c}: wrapper body must be Children([1])"
+                        )));
+                    }
+                };
+            }
+            None => break,
+        }
+    }
+    // After collapsing the chain, if the deepest inner is PkK or PkH and the
+    // chain ends in `c`, emit the miniscript shorthand `pk(K)` / `pk_h(K)`.
+    if prefix.ends_with('c') && matches!(current.tag, Tag::PkK | Tag::PkH) {
+        let prefix_no_c = &prefix[..prefix.len() - 1];
+        if !prefix_no_c.is_empty() {
+            out.push_str(prefix_no_c);
+            out.push(':');
+        }
+        let idx = match current.body {
+            Body::KeyArg { index } => index,
+            _ => {
+                return Err(CliError::TemplateParse(
+                    "Check(PkK/PkH) inner body must be KeyArg".into(),
+                ));
+            }
+        };
+        if matches!(current.tag, Tag::PkH) {
+            out.push_str("pk_h(");
+        } else {
+            out.push_str("pk(");
+        }
+        render_key(idx, default_usp, overrides, out)?;
+        out.push(')');
+        return Ok(());
+    }
+    out.push_str(&prefix);
+    out.push(':');
+    render_node(current, n, default_usp, overrides, out)
 }
 
 /// Render a binary fragment `name(left, right)` — used for and_b, or_b, or_c,
@@ -408,6 +560,77 @@ mod tests {
         let t = "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),after(700000)))";
         let d = parse_template(t, &[], &[]).unwrap();
         assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4b — sha256 hash preimage lock. Tests the 32-byte hash body
+    /// path through both walker and renderer. Hash literal is the canonical
+    /// "single-bit-set" SHA256 input (1 in binary).
+    #[test]
+    fn roundtrip_tr_and_v_sha256_hash_lock() {
+        let t = "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),sha256(0000000000000000000000000000000000000000000000000000000000000001)))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4b — hash160 preimage lock. Tests the 20-byte hash body path.
+    #[test]
+    fn roundtrip_tr_and_v_hash160_hash_lock() {
+        let t = "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),hash160(0000000000000000000000000000000000000001)))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4b — segwitv0 thresh with non-key fragment children.
+    /// Architect's I3 finding from round 1: Thresh accepts arbitrary fragments
+    /// (distinct from Multi/MultiA which take only keys). Phase 4a deferred
+    /// this end-to-end test because the second-and-later children require
+    /// `s:` (Swap) wrapping per miniscript's typecheck. Phase 4b's wrappers
+    /// unblock it.
+    ///
+    /// Note: segwitv0 desugars bare `pk(K)` to `c:pk_k(K)` at typed-miniscript
+    /// parse time. The renderer's Tag::Check arm collapses `Check(PkK) → pk(K)`
+    /// (miniscript's canonical shorthand), so the round-trip target uses the
+    /// shorthand even though the wire form carries explicit Tag::Check.
+    #[test]
+    fn roundtrip_wsh_thresh_with_non_key_fragment_child() {
+        let t = "wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@1/<0;1>/*),snj:and_v(v:pk(@2/<0;1>/*),older(144))))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4b — and_b with `s:` wrapper on the second child.
+    /// Deferred from Phase 4a (needs Swap).
+    #[test]
+    fn roundtrip_wsh_and_b_with_swap_wrapper() {
+        let t = "wsh(and_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4b — or_b with `s:` wrapper. Deferred from Phase 4a.
+    #[test]
+    fn roundtrip_wsh_or_b_with_swap_wrapper() {
+        let t = "wsh(or_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4b — or_c at top level via `t:` (or_c is V-typed; `t:X`
+    /// = `and_v(X, 1)` which produces a T-typed expression at the root).
+    /// Deferred from Phase 4a. Note: rendering of `t:or_c(...)` desugars to
+    /// `and_v(or_c(...),1)`, so the round-trip target string differs from
+    /// the input — we parse `t:or_c(...)`, walk it (which sees the desugared
+    /// form), and the renderer emits the desugared form. This is a parse-
+    /// then-render round-trip on the desugared canonical form.
+    #[test]
+    fn roundtrip_tr_t_or_c_desugars_to_and_v_with_true() {
+        // Input: t:or_c(pk(@1), v:pk(@2)) — miniscript's t: prefix
+        // Rendered (canonical): and_v(or_c(pk(@1),v:pk(@2)),1)
+        let input = "tr(@0/<0;1>/*,t:or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)))";
+        let canonical =
+            "tr(@0/<0;1>/*,and_v(or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)),1))";
+        let d = parse_template(input, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), canonical);
     }
 }
 
