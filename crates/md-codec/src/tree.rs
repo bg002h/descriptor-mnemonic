@@ -130,20 +130,18 @@ pub const MAX_DECODE_DEPTH: u8 = 128;
 /// `key_index_width` is the bit width used for key-index fields, derived from
 /// the descriptor's path-decl head. Filled in across phases 7-11.
 ///
-/// Top-level entry point. Internally calls [`read_node_with_depth`] starting
-/// at depth 0; the recursion-depth cap fires at [`MAX_DECODE_DEPTH`].
+/// Top-level entry point. Internally threads a recursion-depth counter that
+/// errors out at [`MAX_DECODE_DEPTH`] before parsing the next node, so a
+/// hostile wire payload nesting recursive tags (`Tag::Sh`, `Tag::AndV`,
+/// `Tag::TapTree`, etc.) arbitrarily deep cannot blow the Rust stack.
 pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, Error> {
     read_node_with_depth(r, key_index_width, 0)
 }
 
-/// Inner recursive form of [`read_node`] that threads `depth`. Increments
+/// Inner recursive form of `read_node` that threads `depth`. Public callers
+/// should use `read_node` instead, which starts at depth 0. Increments
 /// `depth` once per call and errors if it reaches [`MAX_DECODE_DEPTH`].
-/// Public callers should use [`read_node`] instead, which starts at depth 0.
-fn read_node_with_depth(
-    r: &mut BitReader,
-    key_index_width: u8,
-    depth: u8,
-) -> Result<Node, Error> {
+fn read_node_with_depth(r: &mut BitReader, key_index_width: u8, depth: u8) -> Result<Node, Error> {
     if depth >= MAX_DECODE_DEPTH {
         return Err(Error::DecodeRecursionDepthExceeded {
             depth,
