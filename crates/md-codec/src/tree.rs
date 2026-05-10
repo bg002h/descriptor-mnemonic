@@ -659,4 +659,118 @@ mod tests {
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 3).unwrap(), n);
     }
+
+    /// v0.19 — multi-branch tap tree wire-format round-trip. Closes audit
+    /// Concern B (no codec-level tests for `Tag::TapTree` with branching
+    /// existed before v0.19; multi-branch was previously walker-rejected
+    /// so there was no real input that exercised this wire shape).
+    /// `tr(@0, {pk(@1), pk(@2)})` with key_index_width=2.
+    /// Bit-length pin: Tag::Tr (5) + key_index (2) + has_tree (1)
+    ///                 + Tag::TapTree (5) + 2×(Tag::PkK (5) + key_index (2)) = 27 bits.
+    #[test]
+    fn tap_tree_two_leaf_round_trip() {
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::TapTree,
+                    body: Body::Children(vec![
+                        Node {
+                            tag: Tag::PkK,
+                            body: Body::KeyArg { index: 1 },
+                        },
+                        Node {
+                            tag: Tag::PkK,
+                            body: Body::KeyArg { index: 2 },
+                        },
+                    ]),
+                })),
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        assert_eq!(w.bit_len(), 27, "2-leaf TapTree wire layout pin");
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    /// v0.19 — 4-leaf nested multi-branch tap tree:
+    /// `tr(@0, {{pk(@1),pk(@2)}, {pk(@3),pk(@4)}})`. Verifies recursion
+    /// through `read_node`/`write_node` on nested Tag::TapTree.
+    #[test]
+    fn tap_tree_nested_four_leaf_round_trip() {
+        let mk_branch = |a: u8, b: u8| Node {
+            tag: Tag::TapTree,
+            body: Body::Children(vec![
+                Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: a },
+                },
+                Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: b },
+                },
+            ]),
+        };
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::TapTree,
+                    body: Body::Children(vec![mk_branch(1, 2), mk_branch(3, 4)]),
+                })),
+            },
+        };
+        let mut w = BitWriter::new();
+        // n=4 → ceil(log2(5)) = 3.
+        write_node(&mut w, &n, 3).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 3).unwrap(), n);
+    }
+
+    /// v0.19 — 3-leaf unbalanced: `tr(@0, {pk(@1), {pk(@2),pk(@3)}})`.
+    /// Asymmetric shape — the right child is a TapTree, the left is a
+    /// bare PkK leaf. Verifies the wire format doesn't require balanced
+    /// trees.
+    #[test]
+    fn tap_tree_unbalanced_round_trip() {
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::TapTree,
+                    body: Body::Children(vec![
+                        Node {
+                            tag: Tag::PkK,
+                            body: Body::KeyArg { index: 1 },
+                        },
+                        Node {
+                            tag: Tag::TapTree,
+                            body: Body::Children(vec![
+                                Node {
+                                    tag: Tag::PkK,
+                                    body: Body::KeyArg { index: 2 },
+                                },
+                                Node {
+                                    tag: Tag::PkK,
+                                    body: Body::KeyArg { index: 3 },
+                                },
+                            ]),
+                        },
+                    ]),
+                })),
+            },
+        };
+        let mut w = BitWriter::new();
+        // n=3 → ceil(log2(4)) = 2.
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
 }

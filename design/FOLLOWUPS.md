@@ -45,6 +45,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `tap-tree-depth-cap-hardening` — decode-side recursion depth cap for Tag::TapTree (and other recursive tags)
+
+- **Surfaced:** 2026-05-09, v0.19 pre-design audit (Concern A) and architect review.
+- **Where:** `crates/md-codec/src/tree.rs::read_node`. The match arms for `Tag::TapTree`, `Tag::Sh`, `Tag::Wsh`, `Tag::AndV`, and other recursive tags call `read_node` recursively without a depth bound. A wire payload nesting any of these tags arbitrarily deep would blow the Rust stack via mutual recursion.
+- **What:** Add a `recursion_depth: u8` parameter threaded through `read_node`, increment on each recursive call, error at `MAX_DECODE_DEPTH = 128` (matches BIP-341 `TAPROOT_CONTROL_MAX_NODE_COUNT`). New `Error::DecodeRecursionDepthExceeded { depth: u8, max: u8 }` variant. ~30 LOC + 2 tests + 1 Error variant + MIGRATION note (semver-minor of md-codec).
+- **Why deferred:** Pre-existing concern from v0.11 wire format, not v0.19-introduced. miniscript's `TapTree::combine` already caps at depth 128 on construction-side, so encode-side cannot produce deeply-nested input from real-world inputs. The decode-side concern requires a fuzz-harness pass to enumerate all unbounded recursion sites in `read_node` (Tag::Sh chains, Tag::AndV chains, etc.) before bundling a single coherent fix; bundling that audit into v0.19's walker work would expand scope and dilute review focus.
+- **Status:** `open`
+- **Tier:** `low (hardening; pre-existing; encode-side already bounded)`
+
 ### `v0.18-render-wrapper-chain-empty-prefix-defensibility` — guard render_wrapper_chain against non-wrapper entry
 
 - **Surfaced:** 2026-05-09, v0.18 Phase 7 whole-PR architect review.
