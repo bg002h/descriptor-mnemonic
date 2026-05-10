@@ -45,42 +45,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
-### `tap-tree-depth-cap-hardening` — decode-side recursion depth cap for Tag::TapTree (and other recursive tags)
-
-- **Surfaced:** 2026-05-09, v0.19 pre-design audit (Concern A) and architect review.
-- **Where:** `crates/md-codec/src/tree.rs::read_node`. The match arms for `Tag::TapTree`, `Tag::Sh`, `Tag::Wsh`, `Tag::AndV`, and other recursive tags call `read_node` recursively without a depth bound. A wire payload nesting any of these tags arbitrarily deep would blow the Rust stack via mutual recursion.
-- **What:** Add a `recursion_depth: u8` parameter threaded through `read_node`, increment on each recursive call, error at `MAX_DECODE_DEPTH = 128` (matches BIP-341 `TAPROOT_CONTROL_MAX_NODE_COUNT`). New `Error::DecodeRecursionDepthExceeded { depth: u8, max: u8 }` variant. ~30 LOC + 2 tests + 1 Error variant + MIGRATION note (semver-minor of md-codec).
-- **Why deferred:** Pre-existing concern from v0.11 wire format, not v0.19-introduced. miniscript's `TapTree::combine` already caps at depth 128 on construction-side, so encode-side cannot produce deeply-nested input from real-world inputs. The decode-side concern requires a fuzz-harness pass to enumerate all unbounded recursion sites in `read_node` (Tag::Sh chains, Tag::AndV chains, etc.) before bundling a single coherent fix; bundling that audit into v0.19's walker work would expand scope and dilute review focus.
-- **Status:** `open`
-- **Tier:** `low (hardening; pre-existing; encode-side already bounded)`
-
-### `v0.18-render-wrapper-chain-empty-prefix-defensibility` — guard render_wrapper_chain against non-wrapper entry
-
-- **Surfaced:** 2026-05-09, v0.18 Phase 7 whole-PR architect review.
-- **Where:** `crates/md-cli/src/format/text.rs::render_wrapper_chain`. The function loops collecting wrapper-prefix letters; if called with a non-wrapper tag, the loop breaks immediately and the function emits a bare `:` followed by the inner render, which would be malformed miniscript. Currently unreachable because the single dispatch arm at `render_node` is restricted to `Check|Swap|Alt|DupIf|NonZero|ZeroNotEqual`.
-- **What:** Phase 7 added a `debug_assert!` at function entry for explicit invariant. A future tightening would either (a) restructure the loop to peel the first letter unconditionally with a bounds check, or (b) accept the assert as sufficient for the indefinite future. Defensive but not a live bug.
-- **Why deferred:** Currently unreachable. The debug-assert covers the invariant in tests/debug builds. A more robust restructure can wait for a future cycle.
-- **Status:** `open`
-- **Tier:** `low (defensibility hardening, no live bug)`
-
-### `v0.18-phase-4a-build-multi-node-k-bounds-parity` — apply same k-bounds guard to build_multi_node
-
-- **Surfaced:** 2026-05-09, v0.18 Phase 4a per-phase code-reviewer round (Item A walker arms; reviewer I1 finding while reviewing the new Thresh arm).
-- **Where:** `crates/md-cli/src/parse/template.rs::build_multi_node` (line ~492). The function silently truncates k via `k as u8` for both Multi and MultiA paths; pre-existing concern, not introduced by Phase 4a.
-- **What:** Phase 4a's Thresh walker arm now bounds-checks `thresh.k()` (range 1..=32) before narrowing to u8, emitting a clear CliError::TemplateParse on out-of-range. `build_multi_node` shipped pre-v0.18 without this guard. For symmetry: add the same `if !(1..=32).contains(&k)` guard at build_multi_node entry. md-codec's tree.rs::write_node already returns ThresholdOutOfRange / ChildCountOutOfRange so the codec is safe; this is a UX polish (clearer error message at the walker layer instead of the codec).
-- **Why deferred:** out of scope for Phase 4a (which adds Thresh; build_multi_node is a separate site, pre-existing). One-line follow-up patch.
-- **Status:** `open`
-- **Tier:** `low (UX polish; existing codec guard prevents corruption)`
-
-### `v0.18-phase-1-low-2-cli-path-non-from-policy-test-gate` — non-feature-gated `--path` test for raw template input
-
-- **Surfaced:** 2026-05-09, v0.18 Phase 1 per-phase code-reviewer round (Item J `--path` fix; reviewer L2 finding).
-- **Where:** `crates/md-cli/tests/cmd_encode.rs`. The three Phase 1 tests are all `#[cfg(feature = "cli-compiler")]` and exercise `--from-policy`. The `--path` override fires at the same site for non-`--from-policy` (raw-template) input but no automated test pins that path.
-- **What:** Add a non-cfg-gated test `encode_with_explicit_path_raw_template` that runs `md encode wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)) --path "84'/0'/0'"` and asserts the phrase differs from no-path baseline. Provides unconditional CI coverage of the override site for the hand-written-template pathway.
-- **Why deferred:** parse/path.rs's existing unit `rejects_garbage` test plus the live probe in Phase 1 verification covers the same surface area at lower cost. This is a polish item, not a correctness gap.
-- **Status:** `open`
-- **Tier:** `low (test-coverage gap, post-resolution polish)`
-
 ### `bip-tag-table-5bit-vs-8bit-drift` — BIP tag table lists 8-bit byte-aligned codes, implementation uses 5-bit primary tags
 
 - **Surfaced:** 2026-05-09, post-v0.19 BIP-alignment audit (commit `7902127` added a NUMS-sentinel cross-reference and surfaced this related drift).
@@ -1547,6 +1511,40 @@ See BIP §FAQ for rationale.
 - **What (as filed):** the v0.10.1 Tier 2 gate used `decoded_shared_path == Some` as a proxy for "`key_info` is dummy-populated by `from_bytecode` and must not be Tier-2-walked." Airtight while the only path to populate `decoded_shared_path` was through `from_bytecode` (which always installed dummies). The concern: a future public `WalletPolicy::set_key_info(&mut self, ...)` API would let callers replace dummies with real keys post-decode, leaving `decoded_shared_path = Some` AND non-dummy `key_info` simultaneously — at which point the gate would silently skip Tier 2 and re-emit the original on-wire shared path instead of the new real-key paths.
 - **Status:** `wont-fix 2026-05-09` — substrate deleted in md-codec v0.12.0 commit `5350f8a` as part of the v0.11 from-scratch wire-format redesign (verified: `grep -rn "placeholder_paths_in_index_order\|decoded_shared_path\|from_bytecode\|WalletPolicy\b" crates/md-codec/src/` returns no output). The proxy gate cannot exist because the gate's substrate doesn't. v0.11+ structures use-site paths via `UseSitePath` (`crates/md-codec/src/use_site_path.rs`) computed directly from the walker — no tiered KIV walk, no proxy gate, no surface for the silent-correctness-bug class this entry guarded against. If md-codec ever exposes public mutation on the new `UseSitePath` substrate, the equivalent concern would re-arise on that substrate, but it would be a fresh design point — the original entry's specific gate-replacement guidance (e.g., explicit `key_info_is_dummy: bool` flag) targets a substrate that no longer exists.
 - **Tier:** vNext-API-expansion → wont-fix
+
+### v0.19.0+ (decode-side hardening + polish)
+
+### `tap-tree-depth-cap-hardening` — decode-side recursion depth cap for Tag::TapTree (and other recursive tags)
+
+- **Surfaced:** 2026-05-09, v0.19 pre-design audit (Concern A) and architect review.
+- **Where:** `crates/md-codec/src/tree.rs::read_node`. The match arms for `Tag::TapTree`, `Tag::Sh`, `Tag::Wsh`, `Tag::AndV`, and other recursive tags called `read_node` recursively without a depth bound. A wire payload nesting any of these tags arbitrarily deep would blow the Rust stack via mutual recursion.
+- **What shipped:** `MAX_DECODE_DEPTH = 128` constant; new internal `read_node_with_depth(r, key_index_width, depth)` helper guards at function entry and recurses with `depth + 1` at the six recursion sites. Public `read_node(r, key_index_width)` API unchanged for callers (threads `depth = 0` internally). New `Error::DecodeRecursionDepthExceeded { depth: u8, max: u8 }` variant. Three tests in `tree.rs::tests`: TapTree at depth 128 fires, AndV chain at depth 128 fires (tag-agnostic), TapTree at depth 127 round-trips. Encode-side `write_node` intentionally not capped (bounded by API contract, not depth check).
+- **Status:** resolved md-codec-v0.19.0 (commit `1af1e06`).
+- **Tier:** v0.20 (closed)
+
+### `v0.18-render-wrapper-chain-empty-prefix-defensibility` — guard render_wrapper_chain against non-wrapper entry
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 7 whole-PR architect review.
+- **Where:** `crates/md-cli/src/format/text.rs::render_wrapper_chain`.
+- **What shipped:** Doc-comment tightening (commit `b215d25`). The function's reachability invariant — single dispatch site at `render_node`, single permitted-tag set, debug_assert as the contract enforcer — is now explicit in the doc-comment. Structural restructure (peel the first letter unconditionally with bounds-check) declined per YAGNI; debug_assert covers tests/debug builds and the dispatch site is the actual contract enforcer. No live bug; defensibility hardening only.
+- **Status:** resolved md-cli-v0.4.1 (commit `b215d25` — doc-comment tightening sufficient; structural restructure declined per YAGNI).
+- **Tier:** v0.20 (closed)
+
+### `v0.18-phase-4a-build-multi-node-k-bounds-parity` — apply same k-bounds guard to build_multi_node
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 4a per-phase code-reviewer round (Item A walker arms; reviewer I1 finding while reviewing the new Thresh arm).
+- **Where:** `crates/md-cli/src/parse/template.rs::build_multi_node`.
+- **What shipped:** `if !(1..=32).contains(&k)` guard at function entry returning `CliError::TemplateParse("multi/sortedmulti/multi_a threshold k=N out of range 1..=32")`, mirroring the v0.18 Phase 4a Thresh walker arm. Two unit tests pin k=0 and k=33 rejection. md-codec's `tree.rs::write_node` already returned `ThresholdOutOfRange` for the same range, so this was UX polish at the walker layer, not a corruption fix.
+- **Status:** resolved md-cli-v0.4.1 (commit `ac1ff45`).
+- **Tier:** v0.20 (closed)
+
+### `v0.18-phase-1-low-2-cli-path-non-from-policy-test-gate` — non-feature-gated `--path` test for raw template input
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 1 per-phase code-reviewer round (Item J `--path` fix; reviewer L2 finding).
+- **Where:** `crates/md-cli/tests/cmd_encode.rs`.
+- **What shipped:** `encode_with_explicit_path_raw_template_differs_from_baseline` test — no `#[cfg(feature = ...)]` gate, exercises `md encode "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))" --path "84'/0'/0'"` against a raw-template input and asserts the phrase differs from the no-path baseline. Provides unconditional CI coverage of the `--path` override site, complementing the existing `#[cfg(feature = "cli-compiler")]` Phase 1 `--from-policy + --path` tests.
+- **Status:** resolved md-cli-v0.4.1 (commit `89b5ec2`).
+- **Tier:** v0.20 (closed)
 
 ---
 

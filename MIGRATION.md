@@ -2,6 +2,21 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## md-codec v0.18.0 → md-codec v0.19.0 + md-cli v0.4.0 → v0.4.1
+
+**No wire-format change.** v0.18-encoded payloads decode byte-identically under v0.19. The single behavioral change is decode-side rejection of adversarial deeply-nested input: `tree.rs::read_node` now caps recursion at `MAX_DECODE_DEPTH = 128` and returns a typed `Error::DecodeRecursionDepthExceeded { depth, max }` instead of stack-overflowing. Real-world inputs cannot reach depth 128 (miniscript's construction-side cap on tap-trees is 128 nodes; P2WSH script-size limits keep practical miniscript depth well under 50). If your codebase relies on `read_node` panicking under a hostile input, that path is now an `Err` instead.
+
+### Library consumers (md-codec)
+
+- **New `Error::DecodeRecursionDepthExceeded { depth: u8, max: u8 }` variant.** Cross-implementations MUST surface a semantically equivalent rejection. Match arms on `Error` that didn't include a wildcard catch-all will fail to compile.
+- **Public `read_node(r, key_index_width)` signature unchanged.** A new internal `read_node_with_depth(r, key_index_width, depth)` helper carries the recursion counter; callers stay on the 2-arg form.
+- **Encode-side `write_node` is intentionally not capped.** Bounded by API contract (the walker caps at miniscript's tap-tree limit; programmatic `Node` construction trusts the caller). Threat model is decode-hostile-wire-input only.
+
+### Library consumers (md-cli)
+
+- **`build_multi_node` now rejects `k ∉ 1..=32`** with a clean `CliError::TemplateParse` at function entry, instead of silent `u8` truncation. Real BIP 388 templates can't trigger this; defends against future miniscript loosening.
+- **No flag changes; no manual-mirror impact.** `mnemonic-toolkit/docs/manual/src/40-cli-reference/42-md.md` requires no update.
+
 ## md-codec v0.17.0 + md-cli v0.2.0 → md-codec v0.18.0 + md-cli v0.3.0 [BREAKING]
 
 **Wire-format break.** v0.17-encoded md1 phrases MUST NOT be decoded under v0.18. A v0.18 decoder rejects v0.17 phrases with `Error::UnknownExtensionTag(0x05)` (the freed extension sub-code that previously held `Tag::TrUnspendable`). Surface this to integrator users as a "phrase encoded under md-codec v0.17; re-encode under md-codec v0.18+" hint.
