@@ -116,10 +116,94 @@ fn render_node(
             write!(out, "older({v})").unwrap();
             Ok(())
         }
+        Tag::After => {
+            let v = match node.body {
+                Body::Timelock(v) => v,
+                _ => {
+                    return Err(CliError::TemplateParse(
+                        "After body must be Timelock".into(),
+                    ));
+                }
+            };
+            write!(out, "after({v})").unwrap();
+            Ok(())
+        }
+        Tag::AndB => render_binary("and_b", node, n, default_usp, overrides, out),
+        Tag::OrB => render_binary("or_b", node, n, default_usp, overrides, out),
+        Tag::OrC => render_binary("or_c", node, n, default_usp, overrides, out),
+        Tag::OrD => render_binary("or_d", node, n, default_usp, overrides, out),
+        Tag::OrI => render_binary("or_i", node, n, default_usp, overrides, out),
+        Tag::AndOr => {
+            // andor(a, b, c) — ternary "if a then b else c". Only ternary
+            // fragment in miniscript; Body::Children must have length 3.
+            let kids = match &node.body {
+                Body::Children(v) if v.len() == 3 => v,
+                _ => {
+                    return Err(CliError::TemplateParse(
+                        "AndOr body must be Children([3])".into(),
+                    ));
+                }
+            };
+            out.push_str("andor(");
+            render_node(&kids[0], n, default_usp, overrides, out)?;
+            out.push(',');
+            render_node(&kids[1], n, default_usp, overrides, out)?;
+            out.push(',');
+            render_node(&kids[2], n, default_usp, overrides, out)?;
+            out.push(')');
+            Ok(())
+        }
+        Tag::Thresh => {
+            // thresh(k, c1, c2, ..., cn) — k-of-n threshold over arbitrary
+            // miniscript fragments (distinct from Multi/MultiA which take only
+            // keys). Each child is rendered recursively.
+            let (k, children) = match &node.body {
+                Body::Variable { k, children } => (*k, children),
+                _ => {
+                    return Err(CliError::TemplateParse(
+                        "Thresh body must be Variable".into(),
+                    ));
+                }
+            };
+            write!(out, "thresh({k}").unwrap();
+            for child in children {
+                out.push(',');
+                render_node(child, n, default_usp, overrides, out)?;
+            }
+            out.push(')');
+            Ok(())
+        }
         other => Err(CliError::TemplateParse(format!(
             "unsupported tag in render: {other:?}"
         ))),
     }
+}
+
+/// Render a binary fragment `name(left, right)` — used for and_b, or_b, or_c,
+/// or_d, or_i. Body::Children must have exactly 2 elements.
+fn render_binary(
+    name: &str,
+    node: &Node,
+    n: u8,
+    default_usp: &UseSitePath,
+    overrides: Option<&[(u8, UseSitePath)]>,
+    out: &mut String,
+) -> Result<(), CliError> {
+    let kids = match &node.body {
+        Body::Children(v) if v.len() == 2 => v,
+        _ => {
+            return Err(CliError::TemplateParse(format!(
+                "{name} body must be Children([2])"
+            )));
+        }
+    };
+    out.push_str(name);
+    out.push('(');
+    render_node(&kids[0], n, default_usp, overrides, out)?;
+    out.push(',');
+    render_node(&kids[1], n, default_usp, overrides, out)?;
+    out.push(')');
+    Ok(())
 }
 
 /// Render a single-arity wrapper (wsh, sh, wpkh, pkh) — both `Children([inner])`
@@ -279,6 +363,49 @@ mod tests {
     #[test]
     fn roundtrip_tr_and_v_verify_older_inheritance() {
         let t = "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4a — or_d recovery pattern: `or_d(pk(K1), and_v(v:pk(K2),
+    /// older(N)))`. Common BOLT-3-style hot-cold split: hot key spends
+    /// immediately; cold key spends after timelock.
+    #[test]
+    fn roundtrip_tr_or_d_recovery_pattern() {
+        let t = "tr(@0/<0;1>/*,or_d(pk(@1/<0;1>/*),and_v(v:pk(@2/<0;1>/*),older(144))))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4a — or_i disjunction round-trip in tap-leaf context.
+    #[test]
+    fn roundtrip_tr_or_i_disjunction() {
+        let t = "tr(@0/<0;1>/*,or_i(pk(@1/<0;1>/*),pk(@2/<0;1>/*)))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    // or_c top-level test deferred to Phase 4b: or_c is V-typed at the
+    // top level which miniscript rejects as a non-T fragment. Phase 4b's
+    // wrapper coverage will enable wrapping or_c with `t:` (or using it
+    // inside another fragment) so a valid testable expression exists.
+
+    /// v0.18 Phase 4a — andor ternary: `andor(a, b, c)` is "if a then b else
+    /// c". The only ternary fragment in miniscript; exercises Body::Children
+    /// with length 3.
+    #[test]
+    fn roundtrip_tr_and_or_ternary() {
+        let t = "tr(@0/<0;1>/*,andor(pk(@1/<0;1>/*),pk(@2/<0;1>/*),pk(@3/<0;1>/*)))";
+        let d = parse_template(t, &[], &[]).unwrap();
+        assert_eq!(descriptor_to_template(&d).unwrap(), t);
+    }
+
+    /// v0.18 Phase 4a — `after()` absolute timelock (BIP-65). Distinct from
+    /// `older()` (relative timelock, BIP-112). Pinned at a value > 500_000_000
+    /// would be a Unix-timestamp; here the height-form is exercised.
+    #[test]
+    fn roundtrip_tr_and_v_after_absolute_timelock() {
+        let t = "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),after(700000)))";
         let d = parse_template(t, &[], &[]).unwrap();
         assert_eq!(descriptor_to_template(&d).unwrap(), t);
     }

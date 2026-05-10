@@ -644,6 +644,96 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             tag: Tag::Older,
             body: Body::Timelock(seq.to_consensus_u32()),
         }),
+        // `after` — absolute timelock (BIP-65 `OP_CHECKLOCKTIMEVERIFY`).
+        // miniscript carries `AbsLockTime`; convert to consensus u32 (preserves
+        // BIP-65's height-vs-timestamp boundary at 500_000_000).
+        Terminal::After(abs) => Ok(Node {
+            tag: Tag::After,
+            body: Body::Timelock(abs.to_consensus_u32()),
+        }),
+        // `and_b` — and-conjunction via boolean stack (no verify-promotion).
+        Terminal::AndB(l, r) => Ok(Node {
+            tag: Tag::AndB,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `andor(a, b, c)` — ternary "if a then b else c" pattern. The only
+        // ternary fragment in miniscript; emits md-codec's Tag::AndOr with
+        // Body::Children of length 3.
+        Terminal::AndOr(a, b, c) => Ok(Node {
+            tag: Tag::AndOr,
+            body: Body::Children(vec![
+                walk_miniscript_node(a, km, tap_context)?,
+                walk_miniscript_node(b, km, tap_context)?,
+                walk_miniscript_node(c, km, tap_context)?,
+            ]),
+        }),
+        // `or_b` — or-disjunction via BOOLOR. Both branches must produce a
+        // canonical boolean stack value.
+        Terminal::OrB(l, r) => Ok(Node {
+            tag: Tag::OrB,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `or_c` — or-disjunction via NOTIF (right branch is verify-promoted).
+        Terminal::OrC(l, r) => Ok(Node {
+            tag: Tag::OrC,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `or_d` — or-disjunction via IFDUP. Common in recovery patterns
+        // (e.g. or_d(pk(@0), and_v(v:pk(@1), older(N))) for BOLT-3-style
+        // hot-cold recovery).
+        Terminal::OrD(l, r) => Ok(Node {
+            tag: Tag::OrD,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `or_i` — or-disjunction via IF/ELSE/ENDIF. Either branch may be a
+        // full descriptor expression.
+        Terminal::OrI(l, r) => Ok(Node {
+            tag: Tag::OrI,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `thresh(k, c1, c2, ..., cn)` — k-of-n threshold over arbitrary
+        // miniscript fragments (not just keys; distinct from Multi/MultiA).
+        // Each child is recursively walked.
+        Terminal::Thresh(thresh) => {
+            // Bounds-check k BEFORE narrowing to u8: md-codec encodes k-1 in 5
+            // bits (range 1..=32). Without this guard, a hypothetical k > 32
+            // would silently truncate before reaching the codec's
+            // ThresholdOutOfRange check, producing a corrupt encoding instead
+            // of a clean error.
+            let k = thresh.k();
+            if !(1..=32).contains(&k) {
+                return Err(CliError::TemplateParse(format!(
+                    "thresh k={k} out of md1 wire-format range 1..=32"
+                )));
+            }
+            let children: Vec<Node> = thresh
+                .data()
+                .iter()
+                .map(|c| walk_miniscript_node(c, km, tap_context))
+                .collect::<Result<_, CliError>>()?;
+            Ok(Node {
+                tag: Tag::Thresh,
+                body: Body::Variable {
+                    k: k as u8,
+                    children,
+                },
+            })
+        }
         // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
         _ => {
             let _ = tap_context;
@@ -1053,6 +1143,121 @@ mod tr_tests {
             }
             other => panic!("expected TemplateParse, got {other:?}"),
         }
+    }
+
+    /// v0.18 Phase 4a — andor ternary structural assertion. The only ternary
+    /// fragment in miniscript; verify Body::Children has exactly 3 elements.
+    /// Round-trip in format/text.rs covers the rendering side; this test
+    /// pins the wire-level Body shape.
+    #[test]
+    fn tr_with_and_or_ternary_emits_three_children() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,andor(pk(@1/<0;1>/*),pk(@2/<0;1>/*),pk(@3/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::AndOr);
+        match &leaf.body {
+            Body::Children(v) => {
+                assert_eq!(v.len(), 3, "andor must have exactly 3 children");
+                for (i, child) in v.iter().enumerate() {
+                    assert_eq!(child.tag, Tag::PkK);
+                    assert!(matches!(child.body, Body::KeyArg { index: ix } if ix as usize == i + 1));
+                }
+            }
+            _ => panic!("expected Body::Children"),
+        }
+    }
+
+    /// v0.18 Phase 4a — `after()` (BIP-65 absolute timelock) walker
+    /// emits Body::Timelock with the consensus u32 value. Distinct
+    /// from `older()` (BIP-112 relative timelock) which already shipped
+    /// in v0.17 Phase 2.
+    #[test]
+    fn tr_with_after_absolute_timelock_emits_timelock_body() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),after(700000)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::AndV);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([2])"),
+        };
+        assert_eq!(kids[1].tag, Tag::After);
+        assert!(
+            matches!(kids[1].body, Body::Timelock(700000)),
+            "after(700000) must emit Body::Timelock(700000); got {:?}",
+            kids[1].body
+        );
+    }
+
+    /// v0.18 Phase 4a — `thresh(k, ...)` walker emits Body::Variable (distinct
+    /// from Body::Children that binary fragments use). 1-of-1 form chosen
+    /// because miniscript's typecheck demands W-typed children for thresh
+    /// position 2+, which require Swap (Phase 4b). 1-of-1 is the structurally
+    /// simplest case that does not need wrappers; multi-child Thresh tests
+    /// land in Phase 4b alongside the wrapper coverage.
+    #[test]
+    fn tr_with_thresh_1_of_1_emits_variable_body() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,thresh(1,pk(@1/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::Thresh);
+        match &leaf.body {
+            Body::Variable { k, children } => {
+                assert_eq!(*k, 1);
+                assert_eq!(children.len(), 1);
+                assert_eq!(children[0].tag, Tag::PkK);
+                assert!(matches!(children[0].body, Body::KeyArg { index: 1 }));
+            }
+            _ => panic!("expected Body::Variable, got {:?}", leaf.body),
+        }
+    }
+
+    /// v0.18 Phase 4a — or_d recovery pattern walker structural assertion.
+    /// Body shape: or_d(pk(@N), and_v(v:pk(@M), older(K))).
+    #[test]
+    fn tr_with_or_d_recovery_pattern_walker_shape() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,or_d(pk(@1/<0;1>/*),and_v(v:pk(@2/<0;1>/*),older(144))))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::OrD);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected or_d.Children([2])"),
+        };
+        assert_eq!(kids[0].tag, Tag::PkK);
+        assert_eq!(kids[1].tag, Tag::AndV);
     }
 }
 

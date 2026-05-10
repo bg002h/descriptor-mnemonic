@@ -45,6 +45,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0.18-phase-4a-build-multi-node-k-bounds-parity` — apply same k-bounds guard to build_multi_node
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 4a per-phase code-reviewer round (Item A walker arms; reviewer I1 finding while reviewing the new Thresh arm).
+- **Where:** `crates/md-cli/src/parse/template.rs::build_multi_node` (line ~492). The function silently truncates k via `k as u8` for both Multi and MultiA paths; pre-existing concern, not introduced by Phase 4a.
+- **What:** Phase 4a's Thresh walker arm now bounds-checks `thresh.k()` (range 1..=32) before narrowing to u8, emitting a clear CliError::TemplateParse on out-of-range. `build_multi_node` shipped pre-v0.18 without this guard. For symmetry: add the same `if !(1..=32).contains(&k)` guard at build_multi_node entry. md-codec's tree.rs::write_node already returns ThresholdOutOfRange / ChildCountOutOfRange so the codec is safe; this is a UX polish (clearer error message at the walker layer instead of the codec).
+- **Why deferred:** out of scope for Phase 4a (which adds Thresh; build_multi_node is a separate site, pre-existing). One-line follow-up patch.
+- **Status:** `open`
+- **Tier:** `low (UX polish; existing codec guard prevents corruption)`
+
 ### `v0.18-phase-1-low-2-cli-path-non-from-policy-test-gate` — non-feature-gated `--path` test for raw template input
 
 - **Surfaced:** 2026-05-09, v0.18 Phase 1 per-phase code-reviewer round (Item J `--path` fix; reviewer L2 finding).
