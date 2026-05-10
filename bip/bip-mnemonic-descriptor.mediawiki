@@ -597,6 +597,8 @@ When the block is absent (the default in v0), recovery tools match seeds to plac
 
 =====Byte-layout example=====
 
+''Editorial note (added 2026-05-10):'' the byte sequence below is the '''pre-v0.11 byte-aligned wire format''' (header byte + <code>Tag::SharedPath = 0x34</code> + dictionary indicator + <code>Tag::Fingerprints = 0x35</code> + count + 4-byte fingerprints + operator tags + <code>Tag::Placeholder = 0x33</code> + index per key reference). The v0.11+ wire format is a packed 5-bit bitstream with no byte-aligned framing tags (see "General structure" editorial note above and the §"Tag table" for current operator codes). A bitstream-native walkthrough for this policy is deferred to followup <code>bip-pre-v0-11-sections-bitstream-rewrite</code>; this byte-layout example is retained for historical reference.
+
 The bytecode for the policy <code>wsh(multi(2, @0/**, @1/**))</code> with fingerprints block <code>[0xdeadbeef, 0xcafebabe]</code> and the BIP 84 mainnet shared path (<code>m/84'/0'/0'</code>, named indicator <code>0x03</code>) is:
 
 <pre>
@@ -665,6 +667,8 @@ If an MD-encoded backup contains operators a recovery-time signer will not sign,
 Implementations MAY provide opt-in signer-subset validators as a layered concern. Such validators are tracked separately from this specification — see for example the named subsets maintained for Coldcard (firmware/edge <code>docs/taproot.md</code>) and Ledger (<code>LedgerHQ/vanadium</code> <code>apps/bitcoin/common/src/bip388/cleartext.rs</code>). A reference Rust implementation of the layered checker pattern ships as the <code>md-signer-compat</code> crate (workspace member alongside <code>md-codec</code>; v0.7.0+) with <code>COLDCARD_TAP</code> and <code>LEDGER_TAP</code> subsets, a <code>validate_tap_tree</code> walker that threads DFS-pre-order leaf indices through each per-leaf check, and a <code>md-signer-compat validate --signer &lt;name&gt; ...</code> CLI binary.
 
 =====Byte-layout examples=====
+
+''Editorial note (added 2026-05-10):'' the byte sequences in this section are '''pre-v0.11 byte-aligned wire format''' (specifically v0.6, retained for historical reference). The v0.11+ wire format is a packed 5-bit bitstream with no byte-aligned framing tags or per-operator byte slots — operator tags occupy 5-bit fields packed contiguously alongside their operand bits. The flat hex sequences below cannot be produced by a v0.11+ encoder. A bitstream-native walkthrough for these policies is deferred to followup <code>bip-pre-v0-11-sections-bitstream-rewrite</code>; the v0.11 SPEC document and the reference implementation (<code>crates/md-codec/src/{header,origin_path,tlv,tree}.rs</code>) are authoritative for current wire output.
 
 The byte sequences below are the operator-tree portion (everything after the format header byte and the shared-path declaration) for representative v0 taproot policies. The actual encoded policy is <code>[header byte] [shared-path declaration] [operator tree]</code>; the policies shown all use the default header (<code>0x00</code>) and a 2-byte explicit-path declaration <code>34 03</code> (<code>SharedPath</code> tag + BIP 84 mainnet indicator). All bytes below reflect the v0.6 wire format.
 
