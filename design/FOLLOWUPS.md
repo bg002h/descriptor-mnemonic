@@ -45,6 +45,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `rawpkh-renderer-pk_h-incorrect` — `Tag::RawPkH` rendering emits `pk_h(<hex>)` instead of `raw_pkh(<hex>)`
+
+- **Surfaced:** 2026-05-10, v0.4.2 architect review of the `pk_h` → `pkh` renderer fix (separate Important finding, not introduced by v0.4.2).
+- **Where:** `crates/md-cli/src/format/text.rs:186` (Tag::RawPkH render arm) emits `pk_h(<hex>)`. miniscript-rs's canonical Display for `Terminal::RawPkH(hash)` is `raw_pkh(<hex>)` (a distinct keyword, not a synonym of `pk_h`). The bare `pk_h(K)` parses as a key-expression form (type K), not a 20-byte raw hash literal; emitting `pk_h(<hex>)` for a raw-hash payload would fail to re-parse through miniscript at all.
+- **What:** Change the render arm to emit `raw_pkh(<hex>)`. Add a hand-crafted unit test that exercises the path (since miniscript-rs's wallet-policy parser doesn't typically produce `Terminal::RawPkH` from BIP 388 templates, the path is reachable only via adversarial / hand-constructed wire bytes — but the renderer must be correct for round-trip integrity).
+- **Why deferred:** Pre-existing in v0.4.x; surfaced during v0.4.2 review but architect rated as out-of-scope for the v0.4.2 patch (different render arm; no current md-cli encode path produces RawPkH; no integration test exercises it). v0.4.3 patch candidate.
+- **Status:** `open`
+- **Tier:** v0.4.3 (Important; pre-existing latent rendering asymmetry similar in shape to the v0.4.2 PkH fix)
+
+### `check-pkh-shorthand-collapse-unit-test-coverage` — no dedicated unit test pins `Check(PkH)` shorthand-collapse rendering
+
+- **Surfaced:** 2026-05-10, v0.4.2 architect review (Low finding).
+- **Where:** `crates/md-cli/src/format/text.rs::render_wrapper_chain` lines ~354-361 — `Check(PkH)` shorthand-collapse arm. The integration tests in `tests/template_roundtrip.rs::reencode_round_trip_curated_shapes` exercise the bare `Tag::PkH` arm (line ~70) but the shorthand-collapse arm requires an AST shape that miniscript-rs may not produce from typical BIP 388 templates (`pkh(K)` parses to `Terminal::PkH(K)` directly, not `Terminal::Check(Terminal::PkH(K))`).
+- **What:** Investigate whether `Terminal::Check(Terminal::PkH)` is reachable at all from any BIP 388 input. If yes, add a `#[cfg(test)]` template that produces it and pins the rendering; if no, the shorthand-collapse arm is defensive dead-code and could either be removed or pinned via a hand-constructed `Node` test that bypasses miniscript-rs's parser.
+- **Why deferred:** Low priority; both fix sites in v0.4.2 are individually well-documented and the integration test catches the bug class via the bare arm. Investigation can wait.
+- **Status:** `open`
+- **Tier:** v0.5+ (Low)
+
 ### `bip-tag-table-5bit-vs-8bit-drift` — BIP tag table lists 8-bit byte-aligned codes, implementation uses 5-bit primary tags
 
 - **Surfaced:** 2026-05-09, post-v0.19 BIP-alignment audit (commit `7902127` added a NUMS-sentinel cross-reference and surfaced this related drift).
