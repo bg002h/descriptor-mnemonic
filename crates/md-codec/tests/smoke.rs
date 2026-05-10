@@ -63,8 +63,11 @@ fn bip84_single_sig_payload_bit_count() {
         tlv: TlvSection::new_empty(),
     };
     let (_bytes, total_bits) = encode_payload(&d).unwrap();
-    // Header(5) + path-decl(5+26=31) + use-site(16) + tree(5) + TLV(0) = 57 bits
-    assert_eq!(total_bits, 57);
+    // Header(5) + path-decl(5+26=31) + use-site(16) + tree(5 tag + 1 key_index) + TLV(0) = 58 bits
+    // v0.18: key_index_width changed from 0 to 1 at n=1 (formula moved to
+    // ⌈log₂(n+1)⌉ to make room for the NUMS sentinel value n on Body::Tr).
+    // Total bit count therefore +1 vs the v0.17 value of 57.
+    assert_eq!(total_bits, 58);
 }
 
 fn bip48_path() -> OriginPath {

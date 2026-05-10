@@ -11,6 +11,7 @@ pub fn descriptor_to_template(d: &Descriptor) -> Result<String, CliError> {
     let mut out = String::new();
     render_node(
         &d.tree,
+        d.n,
         &d.use_site_path,
         d.tlv.use_site_path_overrides.as_deref(),
         &mut out,
@@ -20,48 +21,34 @@ pub fn descriptor_to_template(d: &Descriptor) -> Result<String, CliError> {
 
 fn render_node(
     node: &Node,
+    n: u8,
     default_usp: &UseSitePath,
     overrides: Option<&[(u8, UseSitePath)]>,
     out: &mut String,
 ) -> Result<(), CliError> {
     match node.tag {
-        Tag::Wpkh => render_wrapper("wpkh", node, default_usp, overrides, out),
-        Tag::Pkh => render_wrapper("pkh", node, default_usp, overrides, out),
-        Tag::Wsh => render_wrapper("wsh", node, default_usp, overrides, out),
-        Tag::Sh => render_wrapper("sh", node, default_usp, overrides, out),
+        Tag::Wpkh => render_wrapper("wpkh", node, n, default_usp, overrides, out),
+        Tag::Pkh => render_wrapper("pkh", node, n, default_usp, overrides, out),
+        Tag::Wsh => render_wrapper("wsh", node, n, default_usp, overrides, out),
+        Tag::Sh => render_wrapper("sh", node, n, default_usp, overrides, out),
         Tag::Tr => {
             out.push_str("tr(");
             match &node.body {
                 Body::Tr { key_index, tree } => {
-                    render_key(*key_index, default_usp, overrides, out)?;
+                    // v0.18 NUMS sentinel: key_index == n encodes the BIP-341
+                    // NUMS H-point as the implicit internal key. Render as the
+                    // literal x-only hex string. Other values reference @N.
+                    if *key_index == n {
+                        out.push_str(NUMS_H_POINT_X_ONLY_HEX);
+                    } else {
+                        render_key(*key_index, default_usp, overrides, out)?;
+                    }
                     if let Some(t) = tree {
                         out.push(',');
-                        render_tap_node(t, default_usp, overrides, out)?;
+                        render_tap_node(t, n, default_usp, overrides, out)?;
                     }
                 }
                 _ => return Err(CliError::TemplateParse("Tag::Tr without Body::Tr".into())),
-            }
-            out.push(')');
-            Ok(())
-        }
-        Tag::TrUnspendable => {
-            // tr(<NUMS-hex>, <optional tap tree>) — internal key is implicit
-            // BIP-341 NUMS, materialized in the rendered template as the
-            // canonical x-only hex string (the constant md-cli emits).
-            out.push_str("tr(");
-            out.push_str(NUMS_H_POINT_X_ONLY_HEX);
-            match &node.body {
-                Body::TrUnspendable { tree } => {
-                    if let Some(t) = tree {
-                        out.push(',');
-                        render_tap_node(t, default_usp, overrides, out)?;
-                    }
-                }
-                _ => {
-                    return Err(CliError::TemplateParse(
-                        "Tag::TrUnspendable without Body::TrUnspendable".into(),
-                    ));
-                }
             }
             out.push(')');
             Ok(())
@@ -97,9 +84,9 @@ fn render_node(
                 }
             };
             out.push_str("and_v(");
-            render_node(&kids[0], default_usp, overrides, out)?;
+            render_node(&kids[0], n, default_usp, overrides, out)?;
             out.push(',');
-            render_node(&kids[1], default_usp, overrides, out)?;
+            render_node(&kids[1], n, default_usp, overrides, out)?;
             out.push(')');
             Ok(())
         }
@@ -115,7 +102,7 @@ fn render_node(
                 }
             };
             out.push_str("v:");
-            render_node(inner, default_usp, overrides, out)
+            render_node(inner, n, default_usp, overrides, out)
         }
         Tag::Older => {
             let v = match node.body {
@@ -140,6 +127,7 @@ fn render_node(
 fn render_wrapper(
     name: &str,
     node: &Node,
+    n: u8,
     default_usp: &UseSitePath,
     overrides: Option<&[(u8, UseSitePath)]>,
     out: &mut String,
@@ -148,7 +136,7 @@ fn render_wrapper(
     out.push('(');
     match &node.body {
         Body::KeyArg { index } => render_key(*index, default_usp, overrides, out)?,
-        Body::Children(v) if v.len() == 1 => render_node(&v[0], default_usp, overrides, out)?,
+        Body::Children(v) if v.len() == 1 => render_node(&v[0], n, default_usp, overrides, out)?,
         _ => {
             return Err(CliError::TemplateParse(format!(
                 "{name} body must be KeyArg or Children([1])"
@@ -195,6 +183,7 @@ fn render_multi(
 /// directly (no wrapper around the leaf).
 fn render_tap_node(
     node: &Node,
+    n: u8,
     default_usp: &UseSitePath,
     overrides: Option<&[(u8, UseSitePath)]>,
     out: &mut String,
@@ -209,13 +198,13 @@ fn render_tap_node(
             }
         };
         out.push('{');
-        render_tap_node(&children[0], default_usp, overrides, out)?;
+        render_tap_node(&children[0], n, default_usp, overrides, out)?;
         out.push(',');
-        render_tap_node(&children[1], default_usp, overrides, out)?;
+        render_tap_node(&children[1], n, default_usp, overrides, out)?;
         out.push('}');
         Ok(())
     } else {
-        render_node(node, default_usp, overrides, out)
+        render_node(node, n, default_usp, overrides, out)
     }
 }
 

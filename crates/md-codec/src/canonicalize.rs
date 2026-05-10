@@ -53,18 +53,16 @@ fn walk_collect_first(node: &Node, seen: &mut [bool], first_occurrences: &mut Ve
             }
         }
         Body::Tr { key_index, tree } => {
+            // v0.18 NUMS sentinel: `key_index == seen.len()` (i.e., == n) is
+            // not a placeholder reference. `seen.get_mut` returns None for
+            // out-of-range indices and the registration is silently skipped,
+            // which is the correct behavior for the sentinel value.
             if let Some(slot) = seen.get_mut(*key_index as usize) {
                 if !*slot {
                     *slot = true;
                     first_occurrences.push(*key_index);
                 }
             }
-            if let Some(t) = tree {
-                walk_collect_first(t, seen, first_occurrences);
-            }
-        }
-        Body::TrUnspendable { tree } => {
-            // NUMS internal key carries no placeholder; only walk the tree.
             if let Some(t) = tree {
                 walk_collect_first(t, seen, first_occurrences);
             }
@@ -91,13 +89,13 @@ fn remap_indices(node: &mut Node, perm: &[u8]) {
             *index = perm[*index as usize];
         }
         Body::Tr { key_index, tree } => {
-            *key_index = perm[*key_index as usize];
-            if let Some(t) = tree {
-                remap_indices(t, perm);
+            // v0.18 NUMS sentinel: when `key_index == perm.len()` (i.e., == n)
+            // it represents the BIP-341 NUMS H-point, not a placeholder. Skip
+            // remapping; leave unchanged. The bare `perm[*key_index as usize]`
+            // would otherwise panic (index-out-of-bounds) on the sentinel value.
+            if (*key_index as usize) < perm.len() {
+                *key_index = perm[*key_index as usize];
             }
-        }
-        Body::TrUnspendable { tree } => {
-            // No key_index to remap; only walk the tree.
             if let Some(t) = tree {
                 remap_indices(t, perm);
             }
@@ -235,16 +233,14 @@ fn check_placeholder_bounds(node: &Node, n: u8) -> Result<(), Error> {
             }
         }
         Body::Tr { key_index, tree } => {
-            if *key_index >= n {
+            // v0.18 NUMS sentinel: `key_index == n` is the reserved NUMS-H-point
+            // signal and is allowed. Strictly greater values are rejected.
+            // (Architect C2 round 1 — this is a separate independent copy of
+            // the same `>= n` check that lives in validate.rs::walk_for_placeholders;
+            // both must be loosened to `> n` in lockstep.)
+            if *key_index > n {
                 return Err(Error::PlaceholderIndexOutOfRange { idx: *key_index, n });
             }
-            if let Some(t) = tree {
-                check_placeholder_bounds(t, n)?;
-            }
-        }
-        Body::TrUnspendable { tree } => {
-            // NUMS carries no placeholder index; only the tree contains @N
-            // references that can be out-of-range.
             if let Some(t) = tree {
                 check_placeholder_bounds(t, n)?;
             }

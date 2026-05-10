@@ -2,10 +2,13 @@ use crate::error::CliError;
 
 /// BIP-341 §"Constructing and spending Taproot outputs" NUMS H-point — the
 /// canonical x-only public key with no known discrete log. Used as the
-/// taproot internal key in `Tag::TrUnspendable` form. Encoders MUST emit
-/// `Tag::TrUnspendable` (md-codec extension sub-code 0x05) iff the
-/// descriptor's `tr()` internal key is exactly this value; `Tag::Tr` for
-/// any `@N` placeholder. See SPEC v0.17 § Canonicalization invariant.
+/// taproot internal key when a descriptor has no extractable single-key
+/// spend. v0.18 encodes this via the `Body::Tr { key_index = n, .. }`
+/// sentinel rule: when the descriptor's `tr()` internal key is exactly this
+/// value, encoders MUST emit `key_index == n` (one past the highest
+/// placeholder index). v0.17 used the now-removed `Tag::TrUnspendable`
+/// extension code 0x05; v0.18 freed that code in favor of the sentinel for
+/// engraving compactness (saves 3-4 bits per usage).
 ///
 /// Lives in `parse/template.rs` (unconditional) rather than `compile.rs`
 /// (feature-gated `cli-compiler`) so it is available to all consumers
@@ -660,26 +663,28 @@ fn walk_tr(
         None => None,
         Some(tt) => Some(Box::new(walk_tap_tree(tt, km)?)),
     };
-    // Canonicalization invariant (SPEC v0.17): emit Tag::TrUnspendable iff the
-    // internal key is exactly the BIP-341 NUMS H-point. Otherwise the internal
-    // key MUST be a placeholder-derived synthetic xpub (i.e. an @N).
+    // v0.18 NUMS sentinel: emit Tag::Tr with key_index = n (just past the
+    // highest placeholder) iff the internal key is exactly the BIP-341 NUMS
+    // H-point. Otherwise the internal key MUST be a placeholder-derived
+    // synthetic xpub (i.e. an @N).
     if key_str == NUMS_H_POINT_X_ONLY_HEX {
+        let n = km.len() as u8;
         return Ok(Node {
-            tag: Tag::TrUnspendable,
-            body: Body::TrUnspendable { tree },
+            tag: Tag::Tr,
+            body: Body::Tr { key_index: n, tree },
         });
     }
     let key_index = lookup_key(&key_str, km).map_err(|orig_err| {
         // If the internal key isn't in the placeholder map AND looks like a
         // literal x-only hex, surface a clearer error than the generic
-        // "synthetic key not found" message — md1 v0.17 does not encode
-        // arbitrary literal x-only keys in the tr() internal-key position.
+        // "synthetic key not found" message — md1 does not encode arbitrary
+        // literal x-only keys in the tr() internal-key position.
         if is_x_only_hex(&key_str) {
             CliError::TemplateParse(format!(
                 "unsupported internal-key form: literal hex `{key_str}` other than \
                  BIP-341 NUMS H-point. Use an @N placeholder (backed by an xpub via \
                  --keys) for the internal key, or the BIP-341 NUMS H-point \
-                 ({NUMS_H_POINT_X_ONLY_HEX}) to encode as Tag::TrUnspendable."
+                 ({NUMS_H_POINT_X_ONLY_HEX}) for the v0.18 NUMS sentinel encoding."
             ))
         } else {
             orig_err
@@ -915,13 +920,14 @@ mod tr_tests {
         assert!(matches!(kids[1].body, Body::Timelock(144)));
     }
 
-    /// v0.17 Phase 3 — NUMS H-point internal key emits Tag::TrUnspendable
-    /// (not Tag::Tr). Confirms the canonicalization invariant in walk_tr.
+    /// v0.18 — NUMS H-point internal key emits Tag::Tr with the sentinel
+    /// `key_index = n` (not the v0.17-era Tag::TrUnspendable). Confirms the
+    /// canonicalization invariant in walk_tr post-Phase-3.
     /// Note: substitute_synthetic does NOT touch the literal NUMS hex (the
     /// regex matches `@N`-prefixed tokens only); the hex flows through into
     /// the parsed Descriptor's internal_key field as a literal x-only key.
     #[test]
-    fn tr_with_nums_internal_key_emits_tr_unspendable() {
+    fn tr_with_nums_internal_key_emits_sentinel() {
         let template =
             format!("tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
@@ -929,12 +935,18 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(
             root.tag,
-            Tag::TrUnspendable,
-            "NUMS internal key MUST emit Tag::TrUnspendable"
+            Tag::Tr,
+            "NUMS internal key MUST emit Tag::Tr (with sentinel key_index = n)"
         );
         let tree = match root.body {
-            Body::TrUnspendable { tree } => tree.expect("multi_a leaf must be present"),
-            _ => panic!("expected Body::TrUnspendable"),
+            Body::Tr { key_index, tree } => {
+                assert_eq!(
+                    key_index, 3,
+                    "n=3 placeholders → sentinel key_index = 3 (NUMS H-point)"
+                );
+                tree.expect("multi_a leaf must be present")
+            }
+            _ => panic!("expected Body::Tr"),
         };
         assert_eq!(tree.tag, Tag::MultiA);
         match &tree.body {
@@ -950,26 +962,29 @@ mod tr_tests {
         }
     }
 
-    /// v0.17 Phase 3 — `tr(<NUMS>)` key-path-only (no tap tree) is a valid
+    /// v0.18 — `tr(<NUMS>)` key-path-only (no tap tree) is a valid
     /// frozen/unspendable output. Confirms miniscript 13 accepts the no-tree
-    /// shape and that walk_tr emits Tag::TrUnspendable with `tree: None`,
-    /// exercising the otherwise-unreachable `Body::TrUnspendable { tree: None }`
-    /// code path.
+    /// shape and that walk_tr emits Tag::Tr with sentinel key_index = n and
+    /// `tree: None` (the n=0 sentinel boundary case).
     #[test]
-    fn tr_with_nums_key_only_no_tree_emits_tr_unspendable_with_none_tree() {
+    fn tr_with_nums_key_only_no_tree_emits_sentinel_with_none_tree() {
         let template = format!("tr({NUMS_H_POINT_X_ONLY_HEX})");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
-        assert_eq!(root.tag, Tag::TrUnspendable);
+        assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::TrUnspendable { tree } => {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(
+                    key_index, 0,
+                    "n=0 placeholders (no @N in template) → sentinel key_index = 0"
+                );
                 assert!(
                     tree.is_none(),
                     "tree must be None for tr(<NUMS>) with no script arg"
                 );
             }
-            _ => panic!("expected Body::TrUnspendable"),
+            _ => panic!("expected Body::Tr"),
         }
     }
 

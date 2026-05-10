@@ -65,23 +65,20 @@ fn walk_for_placeholders(
             }
         }
         Body::Tr { key_index, tree } => {
-            if (*key_index as usize) >= seen.len() {
+            // v0.18 NUMS sentinel: `key_index == seen.len()` (i.e., == n) means
+            // the BIP-341 NUMS H-point is the implicit internal key and is NOT
+            // a placeholder reference. Don't register; don't reject. Values
+            // strictly greater than n are still rejected.
+            if (*key_index as usize) > seen.len() {
                 return Err(Error::PlaceholderIndexOutOfRange {
                     idx: *key_index,
                     n: seen.len() as u8,
                 });
             }
-            if !seen[*key_index as usize] {
+            if (*key_index as usize) < seen.len() && !seen[*key_index as usize] {
                 seen[*key_index as usize] = true;
                 first_occurrences.push(*key_index);
             }
-            if let Some(t) = tree {
-                walk_for_placeholders(t, seen, first_occurrences)?;
-            }
-        }
-        Body::TrUnspendable { tree } => {
-            // Internal key is implicitly NUMS; no placeholder to register.
-            // Just walk the optional script tree.
             if let Some(t) = tree {
                 walk_for_placeholders(t, seen, first_occurrences)?;
             }
@@ -148,7 +145,6 @@ fn is_forbidden_leaf_tag(tag: Tag) -> bool {
         tag,
         Tag::Wpkh
             | Tag::Tr
-            | Tag::TrUnspendable
             | Tag::Wsh
             | Tag::Sh
             | Tag::Pkh
@@ -338,21 +334,6 @@ mod tests {
     }
 
     #[test]
-    fn tap_tree_leaf_rejects_tr_unspendable() {
-        // Pathological nesting: tr(@0, tr_unspendable(...)) is not a valid
-        // tap-script leaf — TrUnspendable is a descriptor-level wrapper, not
-        // a leaf fragment. Reject in lockstep with Tag::Tr.
-        let leaf = Node {
-            tag: Tag::TrUnspendable,
-            body: Body::TrUnspendable { tree: None },
-        };
-        assert!(matches!(
-            validate_tap_script_tree(&leaf),
-            Err(Error::ForbiddenTapTreeLeaf { .. })
-        ));
-    }
-
-    #[test]
     fn tap_tree_leaf_accepts_pk_k() {
         let leaf = Node {
             tag: Tag::PkK,
@@ -418,18 +399,41 @@ mod tests {
     #[test]
     fn placeholder_usage_rejects_out_of_range_in_tr_key_index() {
         // Tr's key_index path is a separate code path from KeyArg; verify it too.
+        // v0.18: rejection threshold moved from `>= n` to `> n` so the NUMS
+        // sentinel value `key_index = n` can pass through. We pin `key_index = 4`
+        // with n=3 here — strictly out of range under v0.18 semantics.
         let root = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                key_index: 3,
+                key_index: 4,
                 tree: None,
             },
         };
         let err = validate_placeholder_usage(&root, 3).unwrap_err();
         assert!(matches!(
             err,
-            Error::PlaceholderIndexOutOfRange { idx: 3, n: 3 }
+            Error::PlaceholderIndexOutOfRange { idx: 4, n: 3 }
         ));
+    }
+
+    #[test]
+    fn placeholder_usage_accepts_nums_sentinel_in_tr_key_index() {
+        // v0.18 NUMS sentinel: `key_index == n` is the reserved NUMS-H-point
+        // signal and MUST pass validation. validate_placeholder_usage also
+        // requires every @i in 0..n to be referenced; the @0 reference here
+        // satisfies that for n=1.
+        let root = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 1, // sentinel for n=1
+                tree: Some(Box::new(Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: 0 },
+                })),
+            },
+        };
+        validate_placeholder_usage(&root, 1)
+            .expect("sentinel + @0 reference must validate under v0.18");
     }
 }
 

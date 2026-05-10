@@ -1,7 +1,9 @@
 //! v0.11 Tag enum per spec §5.
 //!
 //! 31 ops in primary 5-bit space (0x00..0x1E) + extension prefix at 0x1F.
-//! 6 ops in extension 10-bit space.
+//! 5 ops in extension 10-bit space (0x00..0x04). Sub-code 0x05 was used
+//! for `Tag::TrUnspendable` in v0.17.0 only; v0.18 freed it after moving
+//! to a sentinel `key_index = n` rule on `Tag::Tr` for engraving compactness.
 
 use crate::bitstream::{BitReader, BitWriter};
 use crate::error::Error;
@@ -82,17 +84,6 @@ pub enum Tag {
     False,
     /// Miniscript `1` literal (extension space).
     True,
-    /// `tr()` descriptor with implicit BIP-341 NUMS H-point internal key
-    /// (extension space). Distinct from `Tag::Tr` because the internal key
-    /// is not encoded on the wire — every conforming decoder substitutes
-    /// the BIP-341 unspendable NUMS x-only key
-    /// `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`.
-    /// Body shape: `Body::TrUnspendable { tree }` — has-tree bit + optional
-    /// tap-script-tree, identical to `Body::Tr` minus the key_index field.
-    /// Canonicalization: encoders MUST emit `Tag::TrUnspendable` iff the
-    /// descriptor's `tr()` internal_key is exactly the BIP-341 NUMS H-point;
-    /// `Tag::Tr` for any `@N` placeholder. Introduced in md-codec v0.17.
-    TrUnspendable,
 }
 
 const EXTENSION_PREFIX: u8 = 0x1F;
@@ -138,7 +129,6 @@ impl Tag {
             Tag::RawPkH => (EXTENSION_PREFIX, Some(0x02)),
             Tag::False => (EXTENSION_PREFIX, Some(0x03)),
             Tag::True => (EXTENSION_PREFIX, Some(0x04)),
-            Tag::TrUnspendable => (EXTENSION_PREFIX, Some(0x05)),
         }
     }
 
@@ -162,7 +152,6 @@ impl Tag {
                 0x02 => Ok(Tag::RawPkH),
                 0x03 => Ok(Tag::False),
                 0x04 => Ok(Tag::True),
-                0x05 => Ok(Tag::TrUnspendable),
                 _ => Err(Error::UnknownExtensionTag(ext)),
             }
         } else {
@@ -245,21 +234,17 @@ mod tests {
         round_trip(Tag::True);
     }
     #[test]
-    fn tag_tr_unspendable_extension() {
-        round_trip(Tag::TrUnspendable);
-    }
-
-    #[test]
     fn tag_unknown_extension_rejected() {
-        // 0x05 is now allocated to Tag::TrUnspendable; 0x06 is next-free.
+        // v0.18: 0x05 was freed (held Tag::TrUnspendable in v0.17.0 only); 0x05 is
+        // again next-free after the sentinel-key_index migration on Tag::Tr.
         let mut w = BitWriter::new();
         w.write_bits(0x1F, 5);
-        w.write_bits(0x06, 5);
+        w.write_bits(0x05, 5);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert!(matches!(
             Tag::read(&mut r),
-            Err(Error::UnknownExtensionTag(0x06))
+            Err(Error::UnknownExtensionTag(0x05))
         ));
     }
 }

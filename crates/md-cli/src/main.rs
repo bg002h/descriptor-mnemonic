@@ -57,7 +57,7 @@ struct Cli {
 enum Command {
     /// Encode a wallet policy into MD backup string(s).
     #[command(
-        after_long_help = "EXAMPLES:\n  $ md encode wpkh(@0/<0;1>/*)\n  md1qqpqqxqxkceprx7rap4t"
+        after_long_help = "EXAMPLES:\n  $ md encode wpkh(@0/<0;1>/*)\n  md1qqpqqxqq0zkd22pw8dmd3"
     )]
     Encode {
         /// BIP 388 template, e.g. `wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))`.
@@ -103,7 +103,7 @@ enum Command {
     },
     /// Decode one or more MD backup strings into a wallet policy template.
     #[command(
-        after_long_help = "EXAMPLES:\n  $ md decode md1qqpqqxqxkceprx7rap4t\n  wpkh(@0/<0;1>/*)"
+        after_long_help = "EXAMPLES:\n  $ md decode md1qqpqqxqq0zkd22pw8dmd3\n  wpkh(@0/<0;1>/*)"
     )]
     Decode {
         #[arg(required = true, num_args = 1..)]
