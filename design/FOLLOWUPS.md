@@ -1004,18 +1004,6 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** resolved by Phase-6-followup commit (folded into v0.10.0). Swept all 5 stale occurrences in the byte-layout example for `wsh(multi(2,@0/**,@1/**))`: the example bytecode line + 4 annotation rows now correctly reference `Tag::SharedPath = 0x34`, `Tag::Multi = 0x08`, `Tag::Placeholder = 0x33`. Also fixed the "Key references" section (`0x32 <index>` → `0x33 <index>`).
 - **Tier:** v0.10.0.1-cleanup (closed; folded into v0.10.0)
 
-### `wdm-symbol-rename-md` — rename WDM_REGULAR_CONST / WDM_LONG_CONST to MD_REGULAR_CONST / MD_LONG_CONST
-
-- **Surfaced:** v1.0 wire-format brainstorm 2026-04-29.
-- **Where:**
-  - `crates/md-codec/src/encoding.rs:171, 218, 860, 864` — symbol definitions and `SHA-256("shibbolethnums")` derivation site. The constant identifiers (`WDM_REGULAR_CONST`, `WDM_LONG_CONST`) and surrounding rustdoc still use the pre-rename `WDM_*` prefix.
-  - `bip/bip-mnemonic-descriptor.mediawiki` §"Why new target constants?" — names the constants as `WDM_*` in shipped BIP prose.
-  - `design/IMPLEMENTATION_TASKS_v0.1.md` and other historical design docs — reference `WDM_REGULAR_CONST` / `WDM_LONG_CONST` extensively in shipped-state notes (immutable history; do not retroactively rename).
-- **What:** rename the symbols (and their rustdoc + BIP prose mentions in the *current* spec, not historical notes) from `WDM_*` to `MD_*` for consistency with the v0.3.0 `wdm` → `md` project rename. The constant VALUES (`0x0815c07747a3392e7` and `0x205701dd1e8ce4b9f47`) and their NUMS preimage (`SHA-256("shibbolethnums")`) are LOCKED — wire-format-affecting; renaming would regenerate vectors via `GENERATOR_FAMILY` family-token roll. Symbols-only rename has zero wire-format impact.
-- **Why deferred:** this is consistency cleanup, not a correctness bug. v0.10.0 + v0.10.1 shipped with `WDM_*` symbols; renaming them is a public-API rename for any external library consumer (currently zero per project-policy "user count is zero"), so cost is bounded. Best done as part of the v1.0 wire-format-redesign work where other API-shape changes are also batched, rather than a one-off rename.
-- **Status:** open
-- **Tier:** v1.0
-
 
 ---
 
@@ -1593,6 +1581,15 @@ See BIP §FAQ for rationale.
 - **What shipped:** v0.4.5+ patch (this commit). Updated five sites: `crates/md-codec/src/header.rs:4` module doc (dropped the wrong "chunk header reuses this slot" cross-reference; added a note about role-based dispatch); `crates/md-codec/src/error.rs:195-197` doc + Display message for `Error::ChunkHeaderChunkedFlagMissing` (dropped the "(bit 3 must be 1)" specifier; replaced with a §9.3-grounded description); `design/SPEC_v0_11_wire_format.md:113` §3.3 dispatch note (replaced the bit-3 dispatch claim with role-based dispatch + accurate first-symbol layouts for both modes); `design/SPEC_v0_11_wire_format.md:689` §9.3 reserved-bit comment (rewrote the misleading "matches D9 bit 3 reservation" cross-reference); `design/SPEC_v0_11_wire_format.md:868-885` §13.2 decoder pseudocode + dispatch rationale (replaced bit-3 examination with role-based dispatch and corrected rationale paragraph). The implementation itself was always correct — dispatch is role-based via the API caller (`decode` for single-string, `reassemble` for chunked) — so this fix is doc-only with no runtime impact and no version bump. `cargo test --workspace --all-features` clean (zero failures); `cargo clippy --all-features --all-targets -- -D warnings` clean; `cargo doc --workspace --all-features --no-deps` clean.
 - **Status:** resolved 2026-05-10 (v0.4.5+ source-comment + SPEC fix).
 - **Tier:** v0.4.5+ (closed)
+
+### v0.4.5+ (FOLLOWUPS bookkeeping)
+
+### `wdm-symbol-rename-md` — rename WDM_REGULAR_CONST / WDM_LONG_CONST to MD_REGULAR_CONST / MD_LONG_CONST
+
+- **Surfaced:** v1.0 wire-format brainstorm 2026-04-29.
+- **What shipped (retroactive close-out, 2026-05-10).** Substantive rename work was already done before the followup was filed: commit `fba767c` (2026-04-27, "Phase 4c — constant renames WDM_\*_CONST → MD_\*_CONST") renamed `WDM_REGULAR_CONST` → `MD_REGULAR_CONST` and `WDM_LONG_CONST` → `MD_LONG_CONST` in `crates/md-codec/src/encoding.rs` two days before this followup was filed. The followup was never closed at the time. Plus, commit `5350f8a` (md-codec v0.12.0, "strip v0.x, flatten v11") consolidated the BCH plumbing into `crates/md-codec/src/bch.rs` and deleted long-code support entirely along with the v0.x format — so `MD_LONG_CONST` no longer exists, not as a rename but as a deletion when its use-case was retired. The followup's stale `Where:` line pointed at `crates/md-codec/src/encoding.rs:171, 218, 860, 864`; that file was deleted in v0.12.0. Current state: `MD_REGULAR_CONST` lives at `crates/md-codec/src/bch.rs:17, 61, 76` with value `0x0815c07747a3392e7` (NUMS preimage `SHA-256("shibbolethnums")` unchanged). Verified by `grep -rnE '\bWDM_REGULAR_CONST|\bWDM_LONG_CONST' crates/ bip/ design/SPEC_*.md` returning zero matches. The BIP §"Why new target constants?" uses spec-domain abstract names (`T_REGULAR` / `T_LONG`) — it never used `WDM_*` symbol-domain names, so nothing to rename there. The remaining `wdm` mentions in `MIGRATION.md`, `CHANGELOG.md`, `README.md`, and `bip/bip-mnemonic-descriptor.mediawiki` L974/L1004 are intentional historical pointers (rename-migration guide for users, changelog history, "renamed at v0.3.0" historical asides) and are correctly preserved. Cycle was a plan-mode brainstorm that surfaced "already done" — no code/SPEC/BIP/version changes; FOLLOWUPS bookkeeping only.
+- **Status:** resolved 2026-05-10 (retroactive close-out; substantive work shipped 2026-04-27 `fba767c` + v0.12.0 `5350f8a`).
+- **Tier:** v1.0 → closed retroactively
 
 ---
 
