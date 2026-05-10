@@ -639,15 +639,15 @@ Note: The <code>multi</code>, <code>thresh</code>, etc. threshold and count fiel
 
 ====Taproot tree====
 
-The <code>tr()</code> operator (<code>0x06</code>) encodes a top-level taproot wallet policy. The internal-key sub-tree (a key reference) immediately follows the <code>tr()</code> tag. The optional script-tree position that follows is one of:
+The <code>tr()</code> operator (<code>0x01</code>) encodes a top-level taproot wallet policy. The internal-key sub-tree (a key reference) immediately follows the <code>tr()</code> tag. The optional script-tree position that follows is one of:
 
 * Absent — keypath-only <code>tr(KEY)</code>; no further bytes in the operator payload.
 * A single tap-leaf miniscript — encoded directly as a leaf-script tag sequence (any operator from the per-leaf miniscript subset detailed below in this section). This is the <code>tr(KEY, leaf)</code> form.
 * A <code>TapTree</code> inner-node framing — a recursive <code>[TapTree=0x05][LEFT_SUBTREE][RIGHT_SUBTREE]</code> sequence where each <code>SUBTREE</code> is recursively defined as another tap-leaf or another inner-node framing. This is the <code>tr(KEY, TREE)</code> multi-leaf form (v0.5+; <code>TapTree</code> tag was 0x08 in v0.5, renumbered to 0x07 in v0.6, and renumbered to 0x05 in v0.11 with the 5-bit primary-tag reset).
 
-Multi-leaf taproot trees are encoded recursively using the <code>TapTree (0x07)</code> tag as inner-node framing. BIP 388's curly-brace source form <code>{LEFT, RIGHT}</code> is the human-readable counterpart of this bytecode; the MD bytecode is the wire encoding of that grammar.
+Multi-leaf taproot trees are encoded recursively using the <code>TapTree (0x05)</code> tag as inner-node framing. BIP 388's curly-brace source form <code>{LEFT, RIGHT}</code> is the human-readable counterpart of this bytecode; the MD bytecode is the wire encoding of that grammar.
 
-The decoder enforces BIP 341's <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> ceiling on tree depth via a peek-before-recurse pattern: a <code>0x07</code> byte is consumed only after the depth gate passes, so a hostile producer cannot blow the parser's stack via deeply nested framings. Decoders MUST reject trees that would exceed depth 128 with <code>Error::PolicyScopeViolation</code> identifying the depth overflow.
+The decoder enforces BIP 341's <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> ceiling on tree depth via a peek-before-recurse pattern: a <code>0x05</code> tag is consumed only after the depth gate passes, so a hostile producer cannot blow the parser's stack via deeply nested framings. Decoders MUST reject trees that would exceed depth 128 with <code>Error::PolicyScopeViolation</code> identifying the depth overflow.
 
 Implementations MAY enforce a per-leaf miniscript subset matching their target hardware signer's documented admit list. The MD encoding format itself does not require this — see §"Signer compatibility (informational)" below for the layered-responsibility framing. Implementations SHOULD clearly document any such limitations per BIP 388 §"Implementation guidelines".
 
@@ -1019,7 +1019,7 @@ MD's <code>@i</code> placeholder framing assumes named keys provided separately 
 
 ===What about <code>tr(KEY)</code> single-sig taproot?===
 
-Single-key taproot (<code>tr(KEY)</code>) and single-leaf taproot (<code>tr(KEY, single-leaf-script)</code>) are both supported and have been since v0.2. As of v0.5, these are degenerate cases of the full multi-leaf admission: single-leaf is simply a tree of depth zero (no <code>TapTree=0x08</code> inner node), and keypath-only is an absent script-tree position. The bytecode encoding for both forms is UNCHANGED from v0.4.x — v0.5 is wire-additive, not wire-breaking, for these cases.
+Single-key taproot (<code>tr(KEY)</code>) and single-leaf taproot (<code>tr(KEY, single-leaf-script)</code>) are both supported and have been since v0.2. As of v0.5, these are degenerate cases of the full multi-leaf admission: single-leaf is simply a tree of depth zero (no <code>TapTree</code> inner node), and keypath-only is an absent script-tree position. The bytecode encoding for both forms is UNCHANGED from v0.4.x — v0.5 is wire-additive, not wire-breaking, for these cases.
 
 ===Why is the HRP <code>md</code> rather than something more descriptive?===
 
