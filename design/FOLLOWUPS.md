@@ -448,6 +448,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** rust-miniscript's wallet-policy parser; not a direct md-codec issue
 - **What:** Concrete-key form `tr(<concrete>, {pk(<concrete>), multi_a(2, <concrete>, <concrete>)})` fails; `@N`-template form `tr(@0/**, {pk(@1/**), multi_a(2, @2/**, @3/**)})` works. Possibly an upstream parser bug or a documented limitation.
 - **Why deferred:** Workaround is sound (use template form, which matches the rest of the corpus). Not blocking md-codec v0.5.
+- **Upstream status (verified 2026-05-10):** No upstream PR or issue addressing this specific parser-quirk found in `rust-bitcoin/rust-miniscript`. Searched merged PRs (`gh search prs --merged "multi_a"`, no curly-braces matches); searched issues (`gh search issues "multi_a curly"`, no matches); scanned current open PRs (#940, #941, #937, #935, #933, #914, etc.) — none touch the parser quirk. Workaround remains in our corpus.
 - **Status:** open
 - **Tier:** v1+ (file as upstream issue if desired; not on md-codec critical path)
 
@@ -466,17 +467,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** https://github.com/rust-bitcoin/rust-miniscript/pull/935 (closed predecessor: https://github.com/apoelstra/rust-miniscript/pull/1)
 - **What:** PR replacing `translate_hash_fail!` with real translator implementations in `WalletPolicyTranslator` (both directions) so BIP 388 templates with hash terminals (`sha256`/`hash256`/`ripemd160`/`hash160`) round-trip through `WalletPolicy::from_descriptor` and `WalletPolicy::into_descriptor`. Adds a new `WalletPolicyError::TranslatorInvalidHashHex(&'static str, String)` variant. Without the fix, those templates return `WalletPolicyError` (graceful failure via `translate_hash_fail!`), so md-codec's hash-terminal test vectors (e.g. `wsh(andor(pk(@0/**),sha256(...),...))`) cannot encode/decode. Until merged, our workspace `[patch]` redirects to a local clone of the patched fork.
 - **Why deferred:** waiting for upstream maintainer review. Originally framed as a "panic fix" — that wording was inaccurate; the upstream behavior is graceful `WalletPolicyError` return, and our PR adds real hash-terminal SUPPORT (a feature) rather than fixing a panic.
-- **Status:** open
-- **Tier:** external
-
-### `external-pr-2-template-accessor` — rust-bitcoin/rust-miniscript PR #936
-
-- **Surfaced:** v0.10 follow-up 2026-04-29; originally as `apoelstra/rust-miniscript#2`; re-routed to true upstream as `rust-bitcoin/rust-miniscript#936` on 2026-04-29.
-- **Where:** https://github.com/rust-bitcoin/rust-miniscript/pull/936 (closed predecessor: https://github.com/apoelstra/rust-miniscript/pull/2)
-- **What:** PR adding `WalletPolicy::template() -> &Descriptor<KeyExpression>` and `WalletPolicy::key_info() -> &[DescriptorPublicKey]` accessors so external consumers (specifically md-codec's per-`@N` divergent-path encoder) can walk a policy in placeholder-index order without consuming it via `into_descriptor()`. Re-exports `KeyExpression`/`KeyIndex` at `miniscript::descriptor::*`. The motivating case is multipath-shared `@N` placeholders (e.g. `sh(multi(1,@0/**,@0/<2;3>/*))`) where `into_descriptor()` erases placeholder identity.
-- **Why deferred:** waiting for upstream maintainer review. Until merged, the workspace `[patch]` redirects to the local `md-codec-local-stack` branch in the `rust-miniscript-fork` sibling clone, which stacks this commit on top of `fix/wallet-policy-hash-terminals` (the PR #1 branch).
-- **Coordination:** PR #1 (`external-pr-1-hash-terminals`, at `rust-bitcoin/rust-miniscript#935`) and PR #2 (now at `rust-bitcoin/rust-miniscript#936`) are independent — either can land first. The `md-codec-local-stack` branch is a dedicated separate branch (pushed to the fork remote so CI can clone it) so neither PR's history is polluted. When PR #2 merges, strip its commit from `md-codec-local-stack` and update the workspace `[patch]` rationale; when both PRs merge, the `[patch]` block can be removed and the SHA pin bumped to upstream. Cross-linked from `rust-bitcoin/rust-miniscript#934` (the AST-order issue).
-- **Downstream value:** unblocks `v010-p3-tier-2-kiv-walk-deferred` (the v0.10.0 Tier 2 KIV walk stub), targeted for v0.10.1 or v0.11.
+- **Upstream status (verified 2026-05-10):** `rust-bitcoin/rust-miniscript#935` is still OPEN, base `master`, no merge or close. Our workspace `[patch]` redirect remains in place.
 - **Status:** open
 - **Tier:** external
 
@@ -1582,6 +1573,15 @@ See BIP §FAQ for rationale.
 - **What shipped:** v0.4.3 changes the bare arm to emit `expr_raw_pkh(<hex>)` (the parser-accepted checked form), matching the v0.4.2 PkH pattern (bare wire tag → spec-level type-B sugar, not internal-K Display). Absorbs the would-be `Check(RawPkH)` shorthand-collapse case at the bare arm. Doc-comment expanded to document the Display-vs-parser asymmetry. Unit test `format::text::tests::render_bare_rawpkh_emits_expr_raw_pkh` constructs a Tag::RawPkH Node directly and pins the rendering invariant via private `render_node` (the walker has no Terminal::RawPkH arm so `parse_template` can't reach this path).
 - **Status:** resolved md-cli-v0.4.3.
 - **Tier:** v0.4.3 (closed; pre-existing renderer asymmetry similar to the v0.4.2 PkH fix)
+
+### External (closed by upstream)
+
+### `external-pr-2-template-accessor` — rust-bitcoin/rust-miniscript PR #936
+
+- **Surfaced:** v0.10 follow-up 2026-04-29; originally as `apoelstra/rust-miniscript#2`; re-routed to true upstream as `rust-bitcoin/rust-miniscript#936` on 2026-04-29.
+- **Where (as filed):** https://github.com/rust-bitcoin/rust-miniscript/pull/936. Proposed adding `WalletPolicy::template() -> &Descriptor<KeyExpression>` and `WalletPolicy::key_info() -> &[DescriptorPublicKey]` accessors so external consumers (specifically md-codec's per-`@N` divergent-path encoder) could walk a policy in placeholder-index order without consuming it via `into_descriptor()`. Motivating case: multipath-shared `@N` placeholders (e.g. `sh(multi(1,@0/**,@0/<2;3>/*))`) where `into_descriptor()` erases placeholder identity.
+- **Status:** `wont-fix 2026-05-10 — closed-not-merged 2026-05-06 by mutual agreement after the underlying use case was solved differently`. Per upstream PR thread: rust-bitcoin/rust-miniscript#932 (`wallet_policy: fix set_key_info silently dropping keys for repeated placeholders`) merged 2026-05-02 fixed the `set_key_info` bug that was the concrete motivation for the proposed accessors. Brian agreed closing was wisest "until a genuine use case arises from a real programmer, as their needs may hint at a better form or way of accomplishing the same goal." Reviewer (trevarj) and maintainer (apoelstra) concurred. Companion entry retired at the same time. The originally-paired `v010-p3-tier-2-kiv-walk-deferred` followup that this would have unblocked is also closed in the v0.11 wire-format reset (the Tier 2 KIV walk substrate no longer exists). Workspace `[patch.crates-io]` block can drop the `md-codec-local-stack` PR-2 commit; the redirect for `external-pr-1-hash-terminals` (#935, still open) remains.
+- **Tier:** external → wont-fix
 
 ---
 
