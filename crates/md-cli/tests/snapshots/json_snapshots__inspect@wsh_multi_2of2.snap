@@ -68,14 +68,14 @@ expression: body
     }
   },
   "md1_encoding_id": {
-    "hex": "8b4ef13748da52fa1904c349926c3d6c"
+    "hex": "4bb65e98059d03f4b388b2328c27e141"
   },
   "schema": "md-cli/1",
   "wallet_descriptor_template_id": {
-    "hex": "1c68cb9c6fef1bce8f8b5a65879d0f6f"
+    "hex": "d8692fe2fa5247a7fea106155fd5e270"
   },
   "wallet_policy_id": {
-    "fingerprint": "0xc321525d",
-    "hex": "c321525d859e44c03bc432917952279d"
+    "fingerprint": "0xb4f94b14",
+    "hex": "b4f94b14938c82cd8d50f9fbabc5188b"
   }
 }

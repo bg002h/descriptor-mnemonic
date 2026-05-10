@@ -46,15 +46,16 @@ impl FromStr for ScriptContext {
 /// `ctx` selects the script context — `Tap` for `tr()`, `SegwitV0` for `wsh()`.
 ///
 /// `unspendable_key` is a Tap-context-only fallback hint passed to miniscript's
-/// `compile_tr(unspendable_key)`. Three accepted forms (per SPEC v0.17):
-/// `Some("<xpub-style descriptor key>")` for advanced script-path-only spending
-/// through a user-supplied key; `Some("<BIP-341 NUMS H-point hex>")` for
-/// explicit NUMS (rendered as `Tag::TrUnspendable`); or `None` to let md-cli
-/// auto-supply the BIP-341 NUMS H-point. The auto-NUMS default is strictly
-/// additive — miniscript's extract-first behavior preserves single-key
-/// extraction when possible; auto-NUMS only kicks in when no extraction is
-/// available (e.g. threshold-multisig). For `SegwitV0`, the parameter is
-/// ignored (`wsh()` has no internal-key concept).
+/// `compile_tr(unspendable_key)`. Two accepted forms (v0.18 Item G CLI guard):
+/// `Some("<BIP-341 NUMS H-point hex>")` (the literal x-only hex
+/// `50929b...e803ac0`) for explicit NUMS, or `None` to let md-cli auto-supply
+/// the BIP-341 NUMS H-point. The CLI dispatch layer rejects any other value
+/// (xpub-style descriptor keys, arbitrary x-only hex) with a BadArg pointing
+/// at v0.19+ for caller-supplied internal-key support. The auto-NUMS default
+/// is strictly additive — miniscript's extract-first behavior preserves
+/// single-key extraction when possible; auto-NUMS only kicks in when no
+/// extraction is available (e.g. threshold-multisig). For `SegwitV0`, the
+/// parameter is ignored (`wsh()` has no internal-key concept).
 pub fn compile_policy_to_template(
     expr: &str,
     ctx: ScriptContext,

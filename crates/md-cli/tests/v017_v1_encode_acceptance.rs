@@ -44,18 +44,21 @@ fn v017_v1_b_and_v_inheritance_pattern_encodes() {
         .stdout(predicate::str::starts_with("md1"));
 }
 
-/// V1.c — Axis 2 success case. PRE-Phase-3 this failed with
+/// V1.c — Axis 2 success case. PRE-v0.17-Phase-3 this failed with
 /// `synthetic key 50929b74... not found in key map` because `walk_tr`'s
 /// `lookup_key` call only knew about `@N`-derived synthetic xpubs and the
-/// literal NUMS hex was not in the map. Phase 3 added NUMS recognition
-/// (walk_tr branch on `t.internal_key().to_string() == NUMS_H_POINT_X_ONLY_HEX`
-/// → emit Tag::TrUnspendable); the canary fired and was flipped to
-/// assert-success in the same commit (TDD red→green; keeps each commit's
-/// test suite green). The historical pre-Phase-3 stderr
+/// literal NUMS hex was not in the map. v0.17 Phase 3 added NUMS recognition
+/// (walk_tr branch on `t.internal_key().to_string() == NUMS_H_POINT_X_ONLY_HEX`)
+/// originally emitting Tag::TrUnspendable. **v0.18 Phase 3** retired
+/// Tag::TrUnspendable in favor of the sentinel `Tag::Tr { key_index = n, .. }`
+/// rule (n=3 here, since the template has @0..@2). The canary now exercises
+/// the sentinel mechanism; the assert-success boundary (phrase starts with
+/// `md1`) holds across both v0.17 and v0.18 wire formats. The historical
+/// pre-v0.17 stderr
 /// `template parse error: internal: synthetic key <NUMS> not found in key map`
-/// is preserved as a comment for git-history readers.
+/// is preserved here for git-history readers.
 #[test]
-fn v017_v1_c_nums_internal_key_encodes_via_tr_unspendable() {
+fn v018_v1_c_nums_internal_key_encodes_via_sentinel() {
     Command::cargo_bin("md").unwrap()
         .args(["encode", "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,@0,@1,@2))"])
         .assert()

@@ -57,7 +57,7 @@ struct Cli {
 enum Command {
     /// Encode a wallet policy into MD backup string(s).
     #[command(
-        after_long_help = "EXAMPLES:\n  $ md encode wpkh(@0/<0;1>/*)\n  md1qqpqqxqxkceprx7rap4t"
+        after_long_help = "EXAMPLES:\n  $ md encode wpkh(@0/<0;1>/*)\n  md1qqpqqxqq0zkd22pw8dmd3"
     )]
     Encode {
         /// BIP 388 template, e.g. `wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))`.
@@ -74,7 +74,9 @@ enum Command {
         /// a specific NUMS-equivalent key. Rejected when --context segwitv0.
         #[arg(long, value_name = "KEY")]
         unspendable_key: Option<String>,
-        /// Override the inferred shared derivation path.
+        /// Override the inferred origin path with a single shared path
+        /// (flattens Divergent mode to Shared). Accepts named (bip44|48|49|84|86),
+        /// hex (0xNN), or literal (m/...) forms.
         #[arg(long, value_name = "PATH")]
         path: Option<String>,
         /// Concrete xpub for placeholder `@i`. Repeatable.
@@ -101,7 +103,7 @@ enum Command {
     },
     /// Decode one or more MD backup strings into a wallet policy template.
     #[command(
-        after_long_help = "EXAMPLES:\n  $ md decode md1qqpqqxqxkceprx7rap4t\n  wpkh(@0/<0;1>/*)"
+        after_long_help = "EXAMPLES:\n  $ md decode md1qqpqqxqq0zkd22pw8dmd3\n  wpkh(@0/<0;1>/*)"
     )]
     Decode {
         #[arg(required = true, num_args = 1..)]
@@ -208,6 +210,26 @@ fn main() -> ExitCode {
     }
 }
 
+/// v0.18 Item G — reject `--unspendable-key` values that aren't the BIP-341
+/// NUMS H-point literal hex. Empty-string and segwitv0-incompat checks fire
+/// upstream of this guard; what reaches here is `Some(<non-empty-tap-value>)`.
+#[cfg(feature = "cli-compiler")]
+fn validate_unspendable_key_nums_only(uk: Option<&str>) -> Result<(), CliError> {
+    if let Some(v) = uk {
+        if v != parse::template::NUMS_H_POINT_X_ONLY_HEX {
+            return Err(CliError::BadArg(
+                "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex \
+                 (50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0) or omitted \
+                 (auto-NUMS default). Other forms (xpub-style descriptor keys, arbitrary x-only \
+                 hex) are not supported in this release; track v0.19+ for caller-supplied \
+                 internal-key support."
+                    .into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn dispatch(c: Command) -> Result<(), CliError> {
     match c {
         Command::Encode {
@@ -215,7 +237,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
             from_policy,
             context,
             unspendable_key,
-            path: _,
+            path,
             keys,
             fingerprints,
             network,
@@ -242,6 +264,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                         return Err(CliError::BadArg(
                             "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
                     }
+                    validate_unspendable_key_nums_only(unspendable_key.as_deref())?;
                     compile::compile_policy_to_template(&expr, ctx, unspendable_key.as_deref())
                         .map_err(CliError::from)?
                 }
@@ -268,6 +291,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                 template: &template_str,
                 keys: &keys,
                 fingerprints: &fingerprints,
+                path: path.as_deref(),
                 network: network.into(),
                 network_str: network.as_str(),
                 force_chunked,
@@ -311,6 +335,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                     return Err(CliError::BadArg(
                         "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
                 }
+                validate_unspendable_key_nums_only(unspendable_key.as_deref())?;
                 cmd::compile::run(&expr, &context, unspendable_key.as_deref(), json)
             }
             #[cfg(not(feature = "cli-compiler"))]

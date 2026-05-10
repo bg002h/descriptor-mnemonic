@@ -45,6 +45,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `v0.18-render-wrapper-chain-empty-prefix-defensibility` — guard render_wrapper_chain against non-wrapper entry
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 7 whole-PR architect review.
+- **Where:** `crates/md-cli/src/format/text.rs::render_wrapper_chain`. The function loops collecting wrapper-prefix letters; if called with a non-wrapper tag, the loop breaks immediately and the function emits a bare `:` followed by the inner render, which would be malformed miniscript. Currently unreachable because the single dispatch arm at `render_node` is restricted to `Check|Swap|Alt|DupIf|NonZero|ZeroNotEqual`.
+- **What:** Phase 7 added a `debug_assert!` at function entry for explicit invariant. A future tightening would either (a) restructure the loop to peel the first letter unconditionally with a bounds check, or (b) accept the assert as sufficient for the indefinite future. Defensive but not a live bug.
+- **Why deferred:** Currently unreachable. The debug-assert covers the invariant in tests/debug builds. A more robust restructure can wait for a future cycle.
+- **Status:** `open`
+- **Tier:** `low (defensibility hardening, no live bug)`
+
+### `v0.18-phase-4a-build-multi-node-k-bounds-parity` — apply same k-bounds guard to build_multi_node
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 4a per-phase code-reviewer round (Item A walker arms; reviewer I1 finding while reviewing the new Thresh arm).
+- **Where:** `crates/md-cli/src/parse/template.rs::build_multi_node` (line ~492). The function silently truncates k via `k as u8` for both Multi and MultiA paths; pre-existing concern, not introduced by Phase 4a.
+- **What:** Phase 4a's Thresh walker arm now bounds-checks `thresh.k()` (range 1..=32) before narrowing to u8, emitting a clear CliError::TemplateParse on out-of-range. `build_multi_node` shipped pre-v0.18 without this guard. For symmetry: add the same `if !(1..=32).contains(&k)` guard at build_multi_node entry. md-codec's tree.rs::write_node already returns ThresholdOutOfRange / ChildCountOutOfRange so the codec is safe; this is a UX polish (clearer error message at the walker layer instead of the codec).
+- **Why deferred:** out of scope for Phase 4a (which adds Thresh; build_multi_node is a separate site, pre-existing). One-line follow-up patch.
+- **Status:** `open`
+- **Tier:** `low (UX polish; existing codec guard prevents corruption)`
+
+### `v0.18-phase-1-low-2-cli-path-non-from-policy-test-gate` — non-feature-gated `--path` test for raw template input
+
+- **Surfaced:** 2026-05-09, v0.18 Phase 1 per-phase code-reviewer round (Item J `--path` fix; reviewer L2 finding).
+- **Where:** `crates/md-cli/tests/cmd_encode.rs`. The three Phase 1 tests are all `#[cfg(feature = "cli-compiler")]` and exercise `--from-policy`. The `--path` override fires at the same site for non-`--from-policy` (raw-template) input but no automated test pins that path.
+- **What:** Add a non-cfg-gated test `encode_with_explicit_path_raw_template` that runs `md encode wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)) --path "84'/0'/0'"` and asserts the phrase differs from no-path baseline. Provides unconditional CI coverage of the override site for the hand-written-template pathway.
+- **Why deferred:** parse/path.rs's existing unit `rejects_garbage` test plus the live probe in Phase 1 verification covers the same surface area at lower cost. This is a polish item, not a correctness gap.
+- **Status:** `open`
+- **Tier:** `low (test-coverage gap, post-resolution polish)`
+
 ### `manual-cli-surface-mirror` — md-cli flag/API changes must mirror to the toolkit-side user manual
 
 - **Surfaced:** 2026-05-07, m-format-star user manual v0.1 release in `bg002h/mnemonic-toolkit` (`manual-v0.1.0` tag; toolkit PR #1).
@@ -225,14 +252,14 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `resolved 4fff2f2 — bitcoin and bip39 (the actually-shared deps) lifted to [workspace.dependencies]; both crates inherit via workspace = true. clap/anyhow/regex/serde/serde_json remain per-crate (md-cli only) since they're not duplicated.`
 - **Tier:** `v0.16.1`
 
-### `v0.17.1-from-policy-round-trip-integration` — round-trip integration test for `encode --from-policy` requires concrete xpubs
+### `v0.17.1-from-policy-round-trip-integration` — round-trip integration test for `encode --from-policy`
 
-- **Surfaced:** v0.17 Phase 5 — attempted to add an `encode → decode/inspect` round-trip integration test for the 2-of-3 multisig pattern; the decode-side canonicity gate (`non-canonical wrapper requires explicit origin for @0, but none provided`) blocked it. The blocker is unrelated to v0.17: md-cli's existing canonicity validation predates this cycle. `--from-policy` emits templates with bare `@N` (no derivation suffix), and decoding such a template requires explicit origin information per `@N`, which can only be supplied via `--key @N=<xpub>` arguments at decode time.
-- **Where:** `crates/md-cli/tests/cmd_encode.rs` (would-be test; deferred). The Phase 5 commit added a comment placeholder where the test should go.
-- **What:** Pin a `cmd_encode.rs` integration test that invokes `md encode --from-policy 'thresh(2,pk(@0),pk(@1),pk(@2))' --context tap --key @0=<testnet-tpub-0> --key @1=<testnet-tpub-1> --key @2=<testnet-tpub-2>` and then `md decode <phrase> --key @0=... --key @1=... --key @2=...`, verifying the decoded template contains `tr(<NUMS-hex>, multi_a(2,@0,@1,@2))` and the same canonical structure. Pick three real testnet xpubs with consistent BIP-48 origin paths so the canonicity gate is satisfied.
-- **Why deferred:** The encoding side is fully covered by `cmd_compile.rs` (golden table) + `cmd_encode.rs::encode_from_policy_thresh_2_of_3_tap` (md1 prefix assertion). The wire-format round-trip is exercised at the md-codec layer in `crates/md-codec/src/tree.rs` `tr_unspendable_multi_a_2_of_3_round_trip`. The CLI-level round-trip is a polish item, not a correctness gate.
-- **Status:** `open`
-- **Tier:** `v0.17.1` (next patch).
+- **Surfaced:** v0.17 Phase 5 — attempted to add an `encode → decode/inspect` round-trip integration test for the 2-of-3 multisig pattern; the decode-side canonicity gate (`non-canonical wrapper requires explicit origin for @0, but none provided`) blocked it. The blocker is unrelated to v0.17: md-cli's existing canonicity validation predates this cycle.
+- **Where (as resolved):** `crates/md-cli/tests/cmd_encode.rs::encode_decode_roundtrip_thresh_2_of_3_tap_with_explicit_path` and `encode_decode_roundtrip_inheritance_pattern_with_explicit_path`. The v0.18 Phase 1 `--path` fix unblocked the canonicity gate (explicit path satisfies the non-canonical wrapper origin requirement without needing per-`@N` `--key` xpubs). v0.18 Phase 5 (Item F) added both round-trip tests.
+- **What shipped:** Two integration tests that round-trip `thresh(2,pk(@0),pk(@1),pk(@2))` with `--path "48'/0'/0'/2'"` and `or(pk(@0),and(pk(@1),older(144)))` with `--path "86'/0'/0'"`. Both encode → decode and verify the rendered template contains the expected fragments (NUMS hex for the 2-of-3, extracted @0 + and_v + older for the inheritance pattern).
+- **Why this resolution:** Phase 1's `--path` threading provides a simpler path to the canonicity gate than the original three-xpub `--key @N=<xpub>` plan. No real testnet xpubs needed.
+- **Status:** `resolved 2026-05-09 by v0.18 Phase 5 (commit follows)`
+- **Tier:** v0.17.1 (closed by v0.18).
 
 ### `v0.17-md-cli-tap-multi-leaf-policy-compile` — `md compile --context tap` rejects multi-leaf policies; needs NUMS internal-key emission
 

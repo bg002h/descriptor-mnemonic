@@ -4,6 +4,47 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.18.0] — 2026-05-09 [BREAKING]
+
+**Wire-format break.** v0.17-encoded payloads MUST NOT be decoded under v0.18; a v0.18 decoder rejects v0.17 phrases with `Error::UnknownExtensionTag(0x05)`. v0.17 shipped on the same day with no engraved phrases in the wild, so this break has no migration cost.
+
+### What's new
+
+- **NUMS sentinel rule on `Body::Tr`.** When `key_index == n` (one past the highest placeholder index), the implicit internal key is the BIP-341 NUMS H-point. Encoders MUST emit `key_index = n` iff the descriptor's `tr()` internal key is exactly the NUMS H-point. Saves 3-4 bits per usage vs the v0.17 dedicated tag.
+- **`key_index_width` formula updated** from `⌈log₂(n)⌉` (with special-case 0 at n=1) to `⌈log₂(n+1)⌉` uniformly. Both `encode.rs` and `decode.rs` computations updated in lockstep.
+- **`Tag::TrUnspendable` and `Body::TrUnspendable` removed.** Extension sub-code `0x05` freed.
+- **Validate + canonicalize bounds loosened** from `>= n` to `> n` on `Body::Tr` (validate.rs::walk_for_placeholders + canonicalize.rs::check_placeholder_bounds).
+- **`canonicalize.rs::remap_indices`** guards against out-of-bounds panic on the sentinel value.
+- **4 sentinel boundary round-trip tests** at n=1, 2, 3, 4.
+
+### What didn't change
+
+- All other Tag variants and their wire layouts.
+- BCH plumbing, codex32 framing, identity computations.
+- Header layout, path-decl encoding, use-site-path encoding.
+
+## md-cli [0.3.0] — 2026-05-09 [BREAKING]
+
+Companion bump for md-codec 0.18.0's wire-format break, plus four net-new feature surfaces.
+
+### What's new
+
+- **`--path <PATH>` flag now works on `md encode`** (Item J). Pre-v0.18 the value was destructured as `path: _` at main.rs:218 and silently dropped. Required for the canonicity gate to accept non-canonical wrappers.
+- **`--unspendable-key` xpub-form rejection** (Item G). v0.18 narrows accepted forms to NUMS-hex-or-omitted via uniform CLI dispatch guard. xpub form rejects with a clear pointer to v0.19+.
+- **Full miniscript walker coverage** (Item A). 17 new `walk_miniscript_node` arms (AndB, AndOr, OrB, OrC, OrD, OrI, Thresh, After, Sha256, Hash256, Ripemd160, Hash160, Swap, Alt, DupIf, NonZero, ZeroNotEqual) plus 2 boolean-literal arms (True, False — reachable via miniscript's `t:` sugar = `and_v(X, 1)`). 13+ new render arms with wrapper-chain canonicalization (`Swap(NonZero(DupIf(X)))` renders as `snj:X`, not `s:n:j:X`); Tag::Check shorthand collapse to `pk(K)` / `pk_h(K)`.
+- **NUMS sentinel emission in `walk_tr`** (Item B). Emits `Tag::Tr { key_index: n }` (sentinel) instead of the now-removed `Tag::TrUnspendable`.
+- **`render_node` signature change** — added `n: u8` parameter (cascades to `render_wrapper`, `render_tap_node`). Sentinel detected via structural `key_index == n`, not string comparison.
+- **Round-trip integration tests** in cmd_encode.rs for 2-of-3 multisig and inheritance pattern.
+
+### What's gone
+
+- **`JsonBody::TrUnspendable` variant** removed (md-codec break propagated).
+- **v0.17 `--help` example phrases** updated. v0.17 phrase `md1qqpqqxqxkceprx7rap4t` for `wpkh(@0/<0;1>/*)` no longer round-trips; v0.18 phrase is `md1qqpqqxqq0zkd22pw8dmd3`.
+
+### Migration
+
+A v0.18 CLI cannot decode v0.17 phrases. Re-encode any v0.17 phrases under v0.18 before consuming them with a v0.18+ tool. v0.18 vector corpus regenerated at `crates/md-codec/tests/vectors/`.
+
 ## md-codec [0.17.0] — 2026-05-09
 
 Wire-format additive release. **No breaking change to existing v0.11

@@ -17,11 +17,11 @@ pub fn decode_payload(bytes: &[u8], total_bits: usize) -> Result<Descriptor, Err
     let header = Header::read(&mut r)?;
     let path_decl = PathDecl::read(&mut r, header.divergent_paths)?;
     let use_site_path = UseSitePath::read(&mut r)?;
-    let key_index_width = if path_decl.n <= 1 {
-        0
-    } else {
-        (32 - (path_decl.n as u32 - 1).leading_zeros()) as u8
-    };
+    // v0.18 width formula: ⌈log₂(n + 1)⌉ — the +1 reserves room for the NUMS
+    // sentinel value `key_index = n` on Body::Tr. MUST mirror
+    // `Descriptor::key_index_width` exactly; at n=1 the width is 1 (was 0
+    // under v0.17), and a stale formula here silently desyncs the bitstream.
+    let key_index_width = (32 - (path_decl.n as u32).leading_zeros()) as u8;
     let tree = read_node(&mut r, key_index_width)?;
     let tlv = TlvSection::read(&mut r, key_index_width, path_decl.n)?;
 

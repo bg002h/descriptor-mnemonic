@@ -2,10 +2,13 @@ use crate::error::CliError;
 
 /// BIP-341 §"Constructing and spending Taproot outputs" NUMS H-point — the
 /// canonical x-only public key with no known discrete log. Used as the
-/// taproot internal key in `Tag::TrUnspendable` form. Encoders MUST emit
-/// `Tag::TrUnspendable` (md-codec extension sub-code 0x05) iff the
-/// descriptor's `tr()` internal key is exactly this value; `Tag::Tr` for
-/// any `@N` placeholder. See SPEC v0.17 § Canonicalization invariant.
+/// taproot internal key when a descriptor has no extractable single-key
+/// spend. v0.18 encodes this via the `Body::Tr { key_index = n, .. }`
+/// sentinel rule: when the descriptor's `tr()` internal key is exactly this
+/// value, encoders MUST emit `key_index == n` (one past the highest
+/// placeholder index). v0.17 used the now-removed `Tag::TrUnspendable`
+/// extension code 0x05; v0.18 freed that code in favor of the sentinel for
+/// engraving compactness (saves 3-4 bits per usage).
 ///
 /// Lives in `parse/template.rs` (unconditional) rather than `compile.rs`
 /// (feature-gated `cli-compiler`) so it is available to all consumers
@@ -567,6 +570,7 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
     km: &std::collections::BTreeMap<String, u8>,
     tap_context: bool,
 ) -> Result<Node, CliError> {
+    use bitcoin::hashes::Hash;
     use miniscript::miniscript::decode::Terminal;
     match &ms.node {
         Terminal::PkK(k) => Ok(Node {
@@ -641,6 +645,153 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             tag: Tag::Older,
             body: Body::Timelock(seq.to_consensus_u32()),
         }),
+        // `after` — absolute timelock (BIP-65 `OP_CHECKLOCKTIMEVERIFY`).
+        // miniscript carries `AbsLockTime`; convert to consensus u32 (preserves
+        // BIP-65's height-vs-timestamp boundary at 500_000_000).
+        Terminal::After(abs) => Ok(Node {
+            tag: Tag::After,
+            body: Body::Timelock(abs.to_consensus_u32()),
+        }),
+        // `and_b` — and-conjunction via boolean stack (no verify-promotion).
+        Terminal::AndB(l, r) => Ok(Node {
+            tag: Tag::AndB,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `andor(a, b, c)` — ternary "if a then b else c" pattern. The only
+        // ternary fragment in miniscript; emits md-codec's Tag::AndOr with
+        // Body::Children of length 3.
+        Terminal::AndOr(a, b, c) => Ok(Node {
+            tag: Tag::AndOr,
+            body: Body::Children(vec![
+                walk_miniscript_node(a, km, tap_context)?,
+                walk_miniscript_node(b, km, tap_context)?,
+                walk_miniscript_node(c, km, tap_context)?,
+            ]),
+        }),
+        // `or_b` — or-disjunction via BOOLOR. Both branches must produce a
+        // canonical boolean stack value.
+        Terminal::OrB(l, r) => Ok(Node {
+            tag: Tag::OrB,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `or_c` — or-disjunction via NOTIF (right branch is verify-promoted).
+        Terminal::OrC(l, r) => Ok(Node {
+            tag: Tag::OrC,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `or_d` — or-disjunction via IFDUP. Common in recovery patterns
+        // (e.g. or_d(pk(@0), and_v(v:pk(@1), older(N))) for BOLT-3-style
+        // hot-cold recovery).
+        Terminal::OrD(l, r) => Ok(Node {
+            tag: Tag::OrD,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // `or_i` — or-disjunction via IF/ELSE/ENDIF. Either branch may be a
+        // full descriptor expression.
+        Terminal::OrI(l, r) => Ok(Node {
+            tag: Tag::OrI,
+            body: Body::Children(vec![
+                walk_miniscript_node(l, km, tap_context)?,
+                walk_miniscript_node(r, km, tap_context)?,
+            ]),
+        }),
+        // Hash preimage locks. miniscript carries arrays of bytes via newtypes
+        // (Sha256/Hash256/Ripemd160/Hash160 wrappers); we project to raw byte
+        // arrays for the BIP 388 wire body. SHA256 + HASH256 are 32-byte;
+        // RIPEMD160 + HASH160 are 20-byte.
+        Terminal::Sha256(h) => Ok(Node {
+            tag: Tag::Sha256,
+            body: Body::Hash256Body(h.to_byte_array()),
+        }),
+        Terminal::Hash256(h) => Ok(Node {
+            tag: Tag::Hash256,
+            body: Body::Hash256Body(h.to_byte_array()),
+        }),
+        Terminal::Ripemd160(h) => Ok(Node {
+            tag: Tag::Ripemd160,
+            body: Body::Hash160Body(h.to_byte_array()),
+        }),
+        Terminal::Hash160(h) => Ok(Node {
+            tag: Tag::Hash160,
+            body: Body::Hash160Body(h.to_byte_array()),
+        }),
+        // Single-arity stack-permutation / control-flow wrappers. Each takes
+        // Body::Children([1]). These unblock the more interesting fragments
+        // — Thresh / OrB / AndB position-2+ children all get s:-wrapped by
+        // miniscript's typecheck.
+        Terminal::Swap(inner) => Ok(Node {
+            tag: Tag::Swap,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::Alt(inner) => Ok(Node {
+            tag: Tag::Alt,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::DupIf(inner) => Ok(Node {
+            tag: Tag::DupIf,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::NonZero(inner) => Ok(Node {
+            tag: Tag::NonZero,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        Terminal::ZeroNotEqual(inner) => Ok(Node {
+            tag: Tag::ZeroNotEqual,
+            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+        }),
+        // Boolean literals. Reachable inside compound fragments —
+        // miniscript's `t:X` is sugar for `and_v(X, 1)`, so True appears
+        // wherever a script consumer wants to promote V → T. False appears
+        // less commonly but is structurally valid (e.g., as a never-spendable
+        // branch of `or_i`). Both have empty bodies on the wire.
+        Terminal::True => Ok(Node {
+            tag: Tag::True,
+            body: Body::Empty,
+        }),
+        Terminal::False => Ok(Node {
+            tag: Tag::False,
+            body: Body::Empty,
+        }),
+        // `thresh(k, c1, c2, ..., cn)` — k-of-n threshold over arbitrary
+        // miniscript fragments (not just keys; distinct from Multi/MultiA).
+        // Each child is recursively walked.
+        Terminal::Thresh(thresh) => {
+            // Bounds-check k BEFORE narrowing to u8: md-codec encodes k-1 in 5
+            // bits (range 1..=32). Without this guard, a hypothetical k > 32
+            // would silently truncate before reaching the codec's
+            // ThresholdOutOfRange check, producing a corrupt encoding instead
+            // of a clean error.
+            let k = thresh.k();
+            if !(1..=32).contains(&k) {
+                return Err(CliError::TemplateParse(format!(
+                    "thresh k={k} out of md1 wire-format range 1..=32"
+                )));
+            }
+            let children: Vec<Node> = thresh
+                .data()
+                .iter()
+                .map(|c| walk_miniscript_node(c, km, tap_context))
+                .collect::<Result<_, CliError>>()?;
+            Ok(Node {
+                tag: Tag::Thresh,
+                body: Body::Variable {
+                    k: k as u8,
+                    children,
+                },
+            })
+        }
         // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
         _ => {
             let _ = tap_context;
@@ -660,26 +811,28 @@ fn walk_tr(
         None => None,
         Some(tt) => Some(Box::new(walk_tap_tree(tt, km)?)),
     };
-    // Canonicalization invariant (SPEC v0.17): emit Tag::TrUnspendable iff the
-    // internal key is exactly the BIP-341 NUMS H-point. Otherwise the internal
-    // key MUST be a placeholder-derived synthetic xpub (i.e. an @N).
+    // v0.18 NUMS sentinel: emit Tag::Tr with key_index = n (just past the
+    // highest placeholder) iff the internal key is exactly the BIP-341 NUMS
+    // H-point. Otherwise the internal key MUST be a placeholder-derived
+    // synthetic xpub (i.e. an @N).
     if key_str == NUMS_H_POINT_X_ONLY_HEX {
+        let n = km.len() as u8;
         return Ok(Node {
-            tag: Tag::TrUnspendable,
-            body: Body::TrUnspendable { tree },
+            tag: Tag::Tr,
+            body: Body::Tr { key_index: n, tree },
         });
     }
     let key_index = lookup_key(&key_str, km).map_err(|orig_err| {
         // If the internal key isn't in the placeholder map AND looks like a
         // literal x-only hex, surface a clearer error than the generic
-        // "synthetic key not found" message — md1 v0.17 does not encode
-        // arbitrary literal x-only keys in the tr() internal-key position.
+        // "synthetic key not found" message — md1 does not encode arbitrary
+        // literal x-only keys in the tr() internal-key position.
         if is_x_only_hex(&key_str) {
             CliError::TemplateParse(format!(
                 "unsupported internal-key form: literal hex `{key_str}` other than \
                  BIP-341 NUMS H-point. Use an @N placeholder (backed by an xpub via \
                  --keys) for the internal key, or the BIP-341 NUMS H-point \
-                 ({NUMS_H_POINT_X_ONLY_HEX}) to encode as Tag::TrUnspendable."
+                 ({NUMS_H_POINT_X_ONLY_HEX}) for the v0.18 NUMS sentinel encoding."
             ))
         } else {
             orig_err
@@ -915,13 +1068,14 @@ mod tr_tests {
         assert!(matches!(kids[1].body, Body::Timelock(144)));
     }
 
-    /// v0.17 Phase 3 — NUMS H-point internal key emits Tag::TrUnspendable
-    /// (not Tag::Tr). Confirms the canonicalization invariant in walk_tr.
+    /// v0.18 — NUMS H-point internal key emits Tag::Tr with the sentinel
+    /// `key_index = n` (not the v0.17-era Tag::TrUnspendable). Confirms the
+    /// canonicalization invariant in walk_tr post-Phase-3.
     /// Note: substitute_synthetic does NOT touch the literal NUMS hex (the
     /// regex matches `@N`-prefixed tokens only); the hex flows through into
     /// the parsed Descriptor's internal_key field as a literal x-only key.
     #[test]
-    fn tr_with_nums_internal_key_emits_tr_unspendable() {
+    fn tr_with_nums_internal_key_emits_sentinel() {
         let template =
             format!("tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
@@ -929,12 +1083,18 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(
             root.tag,
-            Tag::TrUnspendable,
-            "NUMS internal key MUST emit Tag::TrUnspendable"
+            Tag::Tr,
+            "NUMS internal key MUST emit Tag::Tr (with sentinel key_index = n)"
         );
         let tree = match root.body {
-            Body::TrUnspendable { tree } => tree.expect("multi_a leaf must be present"),
-            _ => panic!("expected Body::TrUnspendable"),
+            Body::Tr { key_index, tree } => {
+                assert_eq!(
+                    key_index, 3,
+                    "n=3 placeholders → sentinel key_index = 3 (NUMS H-point)"
+                );
+                tree.expect("multi_a leaf must be present")
+            }
+            _ => panic!("expected Body::Tr"),
         };
         assert_eq!(tree.tag, Tag::MultiA);
         match &tree.body {
@@ -950,26 +1110,29 @@ mod tr_tests {
         }
     }
 
-    /// v0.17 Phase 3 — `tr(<NUMS>)` key-path-only (no tap tree) is a valid
+    /// v0.18 — `tr(<NUMS>)` key-path-only (no tap tree) is a valid
     /// frozen/unspendable output. Confirms miniscript 13 accepts the no-tree
-    /// shape and that walk_tr emits Tag::TrUnspendable with `tree: None`,
-    /// exercising the otherwise-unreachable `Body::TrUnspendable { tree: None }`
-    /// code path.
+    /// shape and that walk_tr emits Tag::Tr with sentinel key_index = n and
+    /// `tree: None` (the n=0 sentinel boundary case).
     #[test]
-    fn tr_with_nums_key_only_no_tree_emits_tr_unspendable_with_none_tree() {
+    fn tr_with_nums_key_only_no_tree_emits_sentinel_with_none_tree() {
         let template = format!("tr({NUMS_H_POINT_X_ONLY_HEX})");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
-        assert_eq!(root.tag, Tag::TrUnspendable);
+        assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::TrUnspendable { tree } => {
+            Body::Tr { key_index, tree } => {
+                assert_eq!(
+                    key_index, 0,
+                    "n=0 placeholders (no @N in template) → sentinel key_index = 0"
+                );
                 assert!(
                     tree.is_none(),
                     "tree must be None for tr(<NUMS>) with no script arg"
                 );
             }
-            _ => panic!("expected Body::TrUnspendable"),
+            _ => panic!("expected Body::Tr"),
         }
     }
 
@@ -1038,6 +1201,215 @@ mod tr_tests {
             }
             other => panic!("expected TemplateParse, got {other:?}"),
         }
+    }
+
+    /// v0.18 Phase 4a — andor ternary structural assertion. The only ternary
+    /// fragment in miniscript; verify Body::Children has exactly 3 elements.
+    /// Round-trip in format/text.rs covers the rendering side; this test
+    /// pins the wire-level Body shape.
+    #[test]
+    fn tr_with_and_or_ternary_emits_three_children() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,andor(pk(@1/<0;1>/*),pk(@2/<0;1>/*),pk(@3/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::AndOr);
+        match &leaf.body {
+            Body::Children(v) => {
+                assert_eq!(v.len(), 3, "andor must have exactly 3 children");
+                for (i, child) in v.iter().enumerate() {
+                    assert_eq!(child.tag, Tag::PkK);
+                    assert!(
+                        matches!(child.body, Body::KeyArg { index: ix } if ix as usize == i + 1)
+                    );
+                }
+            }
+            _ => panic!("expected Body::Children"),
+        }
+    }
+
+    /// v0.18 Phase 4a — `after()` (BIP-65 absolute timelock) walker
+    /// emits Body::Timelock with the consensus u32 value. Distinct
+    /// from `older()` (BIP-112 relative timelock) which already shipped
+    /// in v0.17 Phase 2.
+    #[test]
+    fn tr_with_after_absolute_timelock_emits_timelock_body() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),after(700000)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::AndV);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([2])"),
+        };
+        assert_eq!(kids[1].tag, Tag::After);
+        assert!(
+            matches!(kids[1].body, Body::Timelock(700000)),
+            "after(700000) must emit Body::Timelock(700000); got {:?}",
+            kids[1].body
+        );
+    }
+
+    /// v0.18 Phase 4a — `thresh(k, ...)` walker emits Body::Variable (distinct
+    /// from Body::Children that binary fragments use). 1-of-1 form chosen
+    /// because miniscript's typecheck demands W-typed children for thresh
+    /// position 2+, which require Swap (Phase 4b). 1-of-1 is the structurally
+    /// simplest case that does not need wrappers; multi-child Thresh tests
+    /// land in Phase 4b alongside the wrapper coverage.
+    #[test]
+    fn tr_with_thresh_1_of_1_emits_variable_body() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,thresh(1,pk(@1/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::Thresh);
+        match &leaf.body {
+            Body::Variable { k, children } => {
+                assert_eq!(*k, 1);
+                assert_eq!(children.len(), 1);
+                assert_eq!(children[0].tag, Tag::PkK);
+                assert!(matches!(children[0].body, Body::KeyArg { index: 1 }));
+            }
+            _ => panic!("expected Body::Variable, got {:?}", leaf.body),
+        }
+    }
+
+    /// v0.18 Phase 4b — sha256 walker emits Body::Hash256Body(32 bytes).
+    /// Pinned hash is the canonical "trivial" 32-byte value.
+    #[test]
+    fn tr_with_sha256_emits_hash256_body() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),sha256(0000000000000000000000000000000000000000000000000000000000000001)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::AndV);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([2])"),
+        };
+        assert_eq!(kids[1].tag, Tag::Sha256);
+        match &kids[1].body {
+            Body::Hash256Body(h) => {
+                let mut expected = [0u8; 32];
+                expected[31] = 1;
+                assert_eq!(*h, expected);
+            }
+            _ => panic!("expected Body::Hash256Body"),
+        }
+    }
+
+    /// v0.18 Phase 4b — `s:` (Swap) wrapper walker emits Body::Children([1]).
+    /// Tests one of the 5 prefix wrappers; the others (a:, d:, j:, n:)
+    /// follow the same code path.
+    #[test]
+    fn wsh_thresh_with_swap_wrapper_emits_children_one() {
+        let (s, km) = substitute_synthetic(
+            "wsh(and_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        // Wsh wraps the and_b which has a c:pk_k (B-typed) and s:c:pk_k (W-typed)
+        let inner = match root.body {
+            Body::Children(ref v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Wsh.Children([inner])"),
+        };
+        assert_eq!(inner.tag, Tag::AndB);
+        let kids = match &inner.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_b.Children([2])"),
+        };
+        // Second child has the Swap wrapper.
+        assert_eq!(kids[1].tag, Tag::Swap);
+        match &kids[1].body {
+            Body::Children(v) if v.len() == 1 => {
+                // Inside the Swap is c:pk_k(@1), which collapses to Check(PkK).
+                assert_eq!(v[0].tag, Tag::Check);
+            }
+            _ => panic!("expected Swap.Children([1])"),
+        }
+    }
+
+    /// v0.18 Phase 4b — Terminal::True (reachable via miniscript's `t:` sugar
+    /// = and_v(X, 1)) emits Tag::True with Body::Empty. Confirms that True
+    /// is NOT rejected by the walker; the originally-planned negative test
+    /// "walker_rejects_true_in_tap_top_level_context" was wrong.
+    #[test]
+    fn tr_t_or_c_walker_emits_true_in_and_v_subtree() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,t:or_c(pk(@1/<0;1>/*),v:pk(@2/<0;1>/*)))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        // t:or_c(...) desugars to and_v(or_c(...), 1)
+        assert_eq!(leaf.tag, Tag::AndV);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected and_v.Children([2])"),
+        };
+        assert_eq!(kids[0].tag, Tag::OrC);
+        assert_eq!(kids[1].tag, Tag::True);
+        assert!(matches!(kids[1].body, Body::Empty));
+    }
+
+    /// v0.18 Phase 4a — or_d recovery pattern walker structural assertion.
+    /// Body shape: or_d(pk(@N), and_v(v:pk(@M), older(K))).
+    #[test]
+    fn tr_with_or_d_recovery_pattern_walker_shape() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,or_d(pk(@1/<0;1>/*),and_v(v:pk(@2/<0;1>/*),older(144))))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::OrD);
+        let kids = match &leaf.body {
+            Body::Children(v) if v.len() == 2 => v,
+            _ => panic!("expected or_d.Children([2])"),
+        };
+        assert_eq!(kids[0].tag, Tag::PkK);
+        assert_eq!(kids[1].tag, Tag::AndV);
     }
 }
 

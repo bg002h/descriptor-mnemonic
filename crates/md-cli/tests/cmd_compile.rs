@@ -132,3 +132,72 @@ fn compile_pk_tap_with_explicit_nums_unspendable_key() {
         .success()
         .stdout(predicates::str::starts_with("tr(@0)"));
 }
+
+/// v0.18 Item G — `--unspendable-key <xpub>` is rejected at dispatch.
+/// Pre-v0.18 the xpub form half-worked (compile rendered something, but
+/// encode failed opaquely). v0.18 narrows the accepted forms to NUMS-hex-or-
+/// omitted with a clear pointer at v0.19+ for caller-supplied keys.
+#[test]
+fn compile_unspendable_key_rejects_xpub_form() {
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "compile",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--unspendable-key",
+            "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex",
+        ))
+        .stderr(predicates::str::contains("v0.19+"));
+}
+
+/// v0.18 Item G — arbitrary x-only-hex values that aren't the NUMS H-point
+/// are also rejected. Verifies the guard is a strict equality check, not a
+/// "looks like 64 hex chars" heuristic.
+#[test]
+fn compile_unspendable_key_rejects_non_nums_x_only_hex() {
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "compile",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--unspendable-key",
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex",
+        ));
+}
+
+/// v0.18 Item G — encode --from-policy applies the same NUMS-hex-only guard
+/// as compile (uniform CLI dispatch). Pre-v0.18 the encode-side xpub form
+/// failed with an opaque downstream error rather than a clean rejection.
+#[test]
+fn encode_from_policy_unspendable_key_rejects_xpub_form() {
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "--from-policy",
+            "thresh(2,pk(@0),pk(@1),pk(@2))",
+            "--context",
+            "tap",
+            "--unspendable-key",
+            "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex",
+        ));
+}

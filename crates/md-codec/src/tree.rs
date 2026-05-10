@@ -28,19 +28,18 @@ pub enum Body {
     /// Tr's body: key index, has-tree, optional tap-script-tree root.
     /// The wire bit-width for `key_index` is determined by Descriptor.key_index_width()
     /// (parsed from the path-decl head); not carried in the AST.
+    ///
+    /// **v0.18 NUMS sentinel:** the reserved value `key_index = n` (where `n`
+    /// is the descriptor's placeholder count) signals that the implicit
+    /// internal key is the BIP-341 NUMS H-point
+    /// `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`.
+    /// Encoders MUST emit `key_index = n` iff the descriptor's `tr()`
+    /// internal key is exactly the BIP-341 NUMS H-point. Values `0..n-1`
+    /// reference `@i` placeholders. Values `> n` are rejected.
     Tr {
-        /// Internal-key index into the descriptor's key table.
+        /// Internal-key index into the descriptor's key table, OR the
+        /// reserved sentinel `n` (NUMS H-point — see variant doc-comment).
         key_index: u8,
-        /// Optional tap-script-tree root.
-        tree: Option<Box<Node>>,
-    },
-    /// TrUnspendable's body: optional tap-script-tree root only. The internal
-    /// key is implicitly the BIP-341 NUMS H-point and is NOT encoded on the
-    /// wire — every conforming decoder substitutes the canonical x-only hex
-    /// `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`
-    /// when reassembling a descriptor. Distinct from `Body::Tr` because
-    /// there is no key_index to read or write.
-    TrUnspendable {
         /// Optional tap-script-tree root.
         tree: Option<Box<Node>>,
     },
@@ -94,12 +93,6 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
         }
         Body::Tr { key_index, tree } => {
             w.write_bits(u64::from(*key_index), key_index_width as usize);
-            w.write_bits(u64::from(tree.is_some()), 1);
-            if let Some(t) = tree {
-                write_node(w, t, key_index_width)?;
-            }
-        }
-        Body::TrUnspendable { tree } => {
             w.write_bits(u64::from(tree.is_some()), 1);
             if let Some(t) = tree {
                 write_node(w, t, key_index_width)?;
@@ -183,15 +176,6 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8) -> Result<Node, Error> 
                 None
             };
             Body::Tr { key_index, tree }
-        }
-        Tag::TrUnspendable => {
-            let has_tree = r.read_bits(1)? != 0;
-            let tree = if has_tree {
-                Some(Box::new(read_node(r, key_index_width)?))
-            } else {
-                None
-            };
-            Body::TrUnspendable { tree }
         }
         Tag::After | Tag::Older => {
             let v = r.read_bits(32)? as u32;
@@ -360,8 +344,12 @@ mod tests {
             },
         };
         let mut w = BitWriter::new();
+        // Synthetic width-0 unit test of the tree layer. v0.18 Descriptor
+        // formula gives width=1 at n=1; width=0 only arises at n=0 (no
+        // placeholders). The test exercises the zero-width edge of write_node /
+        // read_node directly, not the live n=1 encoding path.
         write_node(&mut w, &n, 0).unwrap();
-        // Tr tag (5) + key-arg (0 bits, n=1) + has-tree=0 (1 bit) = 6 bits
+        // Tr tag (5) + key-arg (0 bits, synthetic width=0) + has-tree=0 (1 bit) = 6 bits
         assert_eq!(w.bit_len(), 6);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
@@ -548,31 +536,79 @@ mod tests {
     }
 
     #[test]
-    fn tr_unspendable_no_tree_round_trip() {
-        // tr(<NUMS>) — extension-tag-only with empty body. Used when a wallet
-        // policy compiles to script-path-only with a NUMS internal key but no
-        // script tree (degenerate case).
+    fn tr_sentinel_n_1_bare_round_trip() {
+        // v0.18: tr(<NUMS>) with no script tree at n=1 (single-placeholder
+        // descriptor that ignores @0 by going pure script-path). This is the
+        // narrowest sentinel case — width changes from 0 (v0.17 ceil(log2(1)))
+        // to 1 (v0.18 ceil(log2(2))). Architect C1 from round 1 — without
+        // updating decode.rs's key_index_width formula in lockstep, this
+        // case silently desyncs the bitstream.
         let n = Node {
-            tag: Tag::TrUnspendable,
-            body: Body::TrUnspendable { tree: None },
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 1,
+                tree: None,
+            },
         };
         let mut w = BitWriter::new();
-        write_node(&mut w, &n, 0).unwrap();
-        // Extension tag (5 + 5) + has_tree (1) = 11 bits
-        assert_eq!(w.bit_len(), 11);
+        // v0.18 width formula at n=1: ceil(log2(2)) = 1.
+        write_node(&mut w, &n, 1).unwrap();
+        // Tag::Tr (5) + key_index (1) + has_tree (1) = 7 bits (was 11 v0.17).
+        assert_eq!(w.bit_len(), 7);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
-        assert_eq!(read_node(&mut r, 0).unwrap(), n);
+        assert_eq!(read_node(&mut r, 1).unwrap(), n);
     }
 
     #[test]
-    fn tr_unspendable_multi_a_2_of_3_round_trip() {
-        // tr(<NUMS>, multi_a(2, @0, @1, @2)) — the canonical 2-of-3 hardware-
-        // wallet multisig encoding. Internal key is implicitly NUMS; no
-        // key_index field on the wire.
+    fn tr_sentinel_n_2_and_v_inheritance_round_trip() {
+        // v0.18: tr(<NUMS>, and_v(v:pk(@0), pk(@1))) — inheritance pattern via
+        // NUMS internal key. n=2 sentinel (key_index = 2). Exercises and_v +
+        // verify wrapper inside the script-path branch. Width formula change
+        // boundary: n=2 was width=1 (v0.17 ceil(log2(2))) and is now width=2
+        // (v0.18 ceil(log2(3))).
         let n = Node {
-            tag: Tag::TrUnspendable,
-            body: Body::TrUnspendable {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 2,
+                tree: Some(Box::new(Node {
+                    tag: Tag::AndV,
+                    body: Body::Children(vec![
+                        Node {
+                            tag: Tag::Verify,
+                            body: Body::Children(vec![Node {
+                                tag: Tag::PkK,
+                                body: Body::KeyArg { index: 0 },
+                            }]),
+                        },
+                        Node {
+                            tag: Tag::PkK,
+                            body: Body::KeyArg { index: 1 },
+                        },
+                    ]),
+                })),
+            },
+        };
+        let mut w = BitWriter::new();
+        // v0.18 width at n=2: ceil(log2(3)) = 2 (was 1 in v0.17).
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    #[test]
+    fn tr_sentinel_n_3_multi_a_2_of_3_round_trip() {
+        // v0.18: tr(<NUMS>, multi_a(2, @0, @1, @2)) — the canonical 2-of-3
+        // hardware-wallet multisig encoding (the headline use case). n=3
+        // sentinel. Width unchanged from v0.17: ceil(log2(3)) and ceil(log2(4))
+        // both equal 2. This is the "no-bit-width-delta but still a wire
+        // change" boundary: tag bytes shrink (no extension prefix) but width
+        // stays the same.
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 3,
                 tree: Some(Box::new(Node {
                     tag: Tag::MultiA,
                     body: Body::Variable {
@@ -603,35 +639,24 @@ mod tests {
     }
 
     #[test]
-    fn tr_unspendable_and_v_inheritance_round_trip() {
-        // tr(<NUMS>, and_v(v:pk(@0), pk(@1))) — the inheritance/and-conjunction
-        // pattern via NUMS internal key. Exercises the and_v + verify-wrapper
-        // body path inside a TrUnspendable shell.
+    fn tr_sentinel_n_4_bare_round_trip() {
+        // v0.18: tr(<NUMS>) at n=4 — boundary where width goes 2→3 between
+        // v0.17 (ceil(log2(4)) = 2) and v0.18 (ceil(log2(5)) = 3). Catches
+        // off-by-one errors in the upper-boundary ceil(log2(n+1)) edge.
         let n = Node {
-            tag: Tag::TrUnspendable,
-            body: Body::TrUnspendable {
-                tree: Some(Box::new(Node {
-                    tag: Tag::AndV,
-                    body: Body::Children(vec![
-                        Node {
-                            tag: Tag::Verify,
-                            body: Body::Children(vec![Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 0 },
-                            }]),
-                        },
-                        Node {
-                            tag: Tag::PkK,
-                            body: Body::KeyArg { index: 1 },
-                        },
-                    ]),
-                })),
+            tag: Tag::Tr,
+            body: Body::Tr {
+                key_index: 4,
+                tree: None,
             },
         };
         let mut w = BitWriter::new();
-        write_node(&mut w, &n, 1).unwrap();
+        // v0.18 width at n=4: ceil(log2(5)) = 3 (was 2 in v0.17).
+        write_node(&mut w, &n, 3).unwrap();
+        // Tag::Tr (5) + key_index (3) + has_tree (1) = 9 bits.
+        assert_eq!(w.bit_len(), 9);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
-        assert_eq!(read_node(&mut r, 1).unwrap(), n);
+        assert_eq!(read_node(&mut r, 3).unwrap(), n);
     }
 }

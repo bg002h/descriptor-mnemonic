@@ -2,6 +2,34 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## md-codec v0.17.0 + md-cli v0.2.0 → md-codec v0.18.0 + md-cli v0.3.0 [BREAKING]
+
+**Wire-format break.** v0.17-encoded md1 phrases MUST NOT be decoded under v0.18. A v0.18 decoder rejects v0.17 phrases with `Error::UnknownExtensionTag(0x05)` (the freed extension sub-code that previously held `Tag::TrUnspendable`). Surface this to integrator users as a "phrase encoded under md-codec v0.17; re-encode under md-codec v0.18+" hint.
+
+v0.17 shipped on the same day as v0.18 with no engraved phrases known in the wild, so the practical migration cost is zero — but if you generated and stored phrases between the v0.17 and v0.18 releases, re-encode them under v0.18 before relying on them with v0.18+ tools.
+
+### CLI users
+
+- **`--unspendable-key`** narrows accepted forms. Pre-v0.18 the xpub form half-worked (compile rendered something but encode failed opaquely). v0.18 only accepts the literal BIP-341 NUMS H-point hex (`50929b74...e803ac0`) or omission (auto-NUMS default). xpub form rejects at the dispatch layer with a clear error pointing at v0.19+ for caller-supplied internal-key support.
+- **`--path` now works** on `md encode`. Pre-v0.18 the flag was wired but silently ignored. The fix unblocks the canonicity gate for non-canonical wrappers, which is required for round-tripping `--from-policy` outputs without per-`@N` `--key <xpub>` arguments.
+- **`md encode --help` and `md decode --help` example phrases updated.** The v0.17 phrase `md1qqpqqxqxkceprx7rap4t` for `wpkh(@0/<0;1>/*)` no longer round-trips; the v0.18 equivalent is `md1qqpqqxqq0zkd22pw8dmd3`.
+
+### Library consumers (md-codec)
+
+- **`Tag::TrUnspendable` and `Body::TrUnspendable` removed.** Code that matched on these variants will fail to compile. Migrate to `Tag::Tr` with `Body::Tr { key_index: n, tree }` where `n` is the descriptor's placeholder count (sentinel value).
+- **`Descriptor::key_index_width` formula change.** The `if self.n <= 1 { 0 }` special case is gone; the new uniform formula `⌈log₂(n+1)⌉` returns 1 (not 0) at n=1. Code that pre-computed the width independently must update; built-in callers are already updated in lockstep.
+- **`validate.rs` and `canonicalize.rs` placeholder-bounds rejection** moved from `>= n` to `> n` on `Body::Tr`. The reserved value `key_index = n` is no longer rejected — it's the NUMS sentinel.
+
+### Library consumers (md-cli)
+
+- **`format::text::render_node` signature change** — now takes `n: u8` as a new required parameter. Cascades to `render_wrapper`, `render_tap_node`. Internal callers updated; external callers (none known) must add `n` to their call sites.
+- **`format::json::JsonBody::TrUnspendable` variant removed.** JSON consumers that matched on it must migrate to `JsonBody::Tr` with `key_index == n` discrimination.
+- **17 new walker arms** (`Terminal::AndB`, `AndOr`, `OrB`, `OrC`, `OrD`, `OrI`, `Thresh`, `After`, `Sha256`, `Hash256`, `Ripemd160`, `Hash160`, `Swap`, `Alt`, `DupIf`, `NonZero`, `ZeroNotEqual`, plus `True`/`False`). Code that previously hit the catch-all "unsupported miniscript fragment" error path for these terminals will now succeed.
+
+### Vector corpus
+
+- `crates/md-codec/tests/vectors/*.{phrase.txt,bytes.hex}` regenerated under v0.18. Diff vs v0.17: hash drift on every phrase due to the `key_index_width` formula change at n=1 (every wpkh-single-sig phrase shifts by 1 bit).
+
 ## v0.16.x → md-codec v0.17.0 + md-cli v0.2.0
 
 **No breaking change for existing v0.16-encoded payloads.** Existing md1 phrases decode byte-identically under v0.17. The new `Tag::TrUnspendable` (extension sub-code `0x05`) is in the v0.11 5-bit extension space and cannot appear in pre-v0.17 payloads.

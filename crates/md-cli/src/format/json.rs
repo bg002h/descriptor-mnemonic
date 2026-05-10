@@ -223,13 +223,12 @@ pub enum JsonBody {
         k: u8,
         children: Vec<JsonNode>,
     },
+    /// `tr()` body. `key_index < n` references @i; `key_index == n` is the
+    /// v0.18 NUMS sentinel signalling the BIP-341 NUMS H-point as the
+    /// implicit internal key (replaces v0.17's separate `TrUnspendable`
+    /// variant).
     Tr {
         key_index: u8,
-        tree: Option<Box<JsonNode>>,
-    },
-    /// `tr(NUMS, ...)` shape — internal key is implicitly the BIP-341 NUMS
-    /// H-point, so there is no `key_index` field.
-    TrUnspendable {
         tree: Option<Box<JsonNode>>,
     },
     Hash256Body(String), // hex
@@ -248,9 +247,6 @@ impl From<&Body> for JsonBody {
             },
             Body::Tr { key_index, tree } => JsonBody::Tr {
                 key_index: *key_index,
-                tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
-            },
-            Body::TrUnspendable { tree } => JsonBody::TrUnspendable {
                 tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
             },
             Body::Hash256Body(h) => JsonBody::Hash256Body(hex(h)),
