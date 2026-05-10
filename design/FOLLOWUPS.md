@@ -81,6 +81,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `open`
 - **Tier:** `low (test-coverage gap, post-resolution polish)`
 
+### `bip-tag-table-5bit-vs-8bit-drift` — BIP tag table lists 8-bit byte-aligned codes, implementation uses 5-bit primary tags
+
+- **Surfaced:** 2026-05-09, post-v0.19 BIP-alignment audit (commit `7902127` added a NUMS-sentinel cross-reference and surfaced this related drift).
+- **Where:** `bip/bip-mnemonic-descriptor.mediawiki` lines 471-481 (tag table) — lists 8-bit byte-aligned codes (e.g., `0x06` for `tr()`, `0x07` for `TapTree`, `0x08` for `multi()`, etc.). `crates/md-codec/src/tag.rs` (current implementation) — 5-bit primary tag space (e.g., `0x01` for `tr()`, `0x05` for `TapTree`, `0x07` for `Multi`, etc.) plus a 5-bit extension subspace via `Tag::ext_5bit_subcode`. The L543 NUMS-sentinel subsection mentions both inline ("`0x06` / v0.11 primary tag `0x01`"), which is the only place in the BIP that documents the mapping; the tag table itself doesn't.
+- **What:** Pre-existing drift from the v0.11 wire-format reset (md-codec v0.12.0 commit `5350f8a`). The BIP draft was authored against v0.x's byte-aligned format and never refreshed for v0.11+'s 5-bit packing. Doesn't affect implementation correctness — `tag.rs` is authoritative — but readers using the BIP table to understand wire layout get the wrong byte values. Two remediation paths: (a) full BIP-text refresh that rewrites the table for the 5-bit space (large; touches every byte-layout example); (b) targeted patch that adds a "v0.11+ implementation note" paragraph at the top of the tag table referring readers to `tag.rs` as authoritative for primary/extension codes, with the table itself preserved as historical/conceptual rather than implementation-accurate. Path (b) is lower cost.
+- **Why deferred:** Pre-existing; not v0.18 / v0.19 / v0.20-introduced. Best handled as part of a coordinated post-v0.17 BIP-text refresh pass (separate from any specific feature cycle), not bolted onto polish work.
+- **Status:** `open`
+- **Tier:** v1+ (BIP-text refresh)
+
 ### `manual-cli-surface-mirror` — md-cli flag/API changes must mirror to the toolkit-side user manual
 
 - **Surfaced:** 2026-05-07, m-format-star user manual v0.1 release in `bg002h/mnemonic-toolkit` (`manual-v0.1.0` tag; toolkit PR #1).
@@ -552,10 +561,10 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ### `cli-json-debug-formatted-enum-strings` — replace `format!("{:?}", enum_value)` with serde-typed enum mirrors in CLI JSON output
 
-- **Surfaced:** Phase B bucket C reviewer (Opus 4.7) on commit `231574d`
-- **Where:** `crates/wdm-codec/src/bin/wdm/json.rs` `confidence_debug` and `outcome_debug` helpers
-- **What:** The CLI's `--json` output preserves v0.1.1 enum strings (`"Confirmed"`, `"AutoCorrected"`, etc.) by stringifying via `format!("{:?}", e)`. This works but couples the JSON contract to the library's `Debug` impl — if anyone ever changes a `Debug` derive (e.g., to add a field), the JSON output silently changes. Replacement: define bin-private serde-able enum mirrors with `#[serde(rename_all = "PascalCase")]` (or explicit `#[serde(rename = "...")]` per variant) so the JSON contract is anchored in the wrapper, not in `Debug`.
-- **Why deferred:** v0.2's JSON contract is "byte-identical to v0.1.1" — the `Debug` shortcut achieves that. Decoupling the JSON contract from `Debug` is a v1.0 stabilization concern (v1.0 will pin the JSON shape as a contract, at which point the indirection through `Debug` becomes a real liability).
+- **Surfaced:** Phase B bucket C reviewer (Opus 4.7) on commit `231574d`. Substrate revisited 2026-05-09.
+- **Where (as filed):** `crates/wdm-codec/src/bin/wdm/json.rs` `confidence_debug` and `outcome_debug` helpers — substrate gone since the v0.11 wire-format reset (no `wdm-codec` crate, no `confidence_debug` / `outcome_debug` helpers). The Debug-coupled antipattern persists in current code at `crates/md-cli/src/format/json.rs:209` (`format!("{:?}", n.tag)`) for the `Tag` enum; that is the live site this entry now tracks.
+- **What:** The CLI's `--json` output stringifies enum variants via `format!("{:?}", e)`. This works but couples the JSON contract to the library's `Debug` impl — if anyone ever changes a `Debug` derive (e.g., to add a field), the JSON output silently changes. Replacement: define bin-private serde-able enum mirrors with `#[serde(rename_all = "PascalCase")]` (or explicit `#[serde(rename = "...")]` per variant) so the JSON contract is anchored in the wrapper, not in `Debug`.
+- **Why deferred:** Pre-v1.0 the JSON shape is not yet a stability contract — the `Debug` shortcut is acceptable. Decoupling becomes a real liability when v1.0 pins JSON as a contract. Until then, drift risk is bounded (only one site; only one enum).
 - **Status:** open
 - **Tier:** v1+
 
