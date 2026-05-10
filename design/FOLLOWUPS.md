@@ -399,7 +399,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ### `v2-design-questions` — clean-slate questions to revisit at a major redesign
 
-- **Surfaced:** 2026-04-29 v0.10 brainstorm conversation. While locking Q6 (Tag::Fingerprints vs Tag::OriginPaths separation), the question came up: "if we were starting the format from scratch today, would we pick something different?" Yes — and the same question generalizes to other accumulated design choices.
+- **Surfaced:** 2026-04-29 v0.10 brainstorm conversation. While locking Q6 (Tag::Fingerprints vs Tag::OriginPaths separation), the question came up: "if we were starting the format from scratch today, would we pick something different?" Yes — and the same question generalizes to other accumulated design choices. Additional items appended 2026-05-10 from the v0.4.5 BIP bitstream-native rewrite cycle, which exercised the v0.11+ wire format deeply enough to surface concrete pain points worth carrying into a v2 retrospective.
 - **Where:** Conceptual / cross-cutting. Lives as a v2+ scoping document if/when major-redesign is on the table. Not tied to any specific code path.
 - **What:** This entry catalogs design choices that v0.x ships with for good reason (path dependence, accumulated constraints, organic evolution) but that a clean-slate v2.0 redesign would likely re-evaluate. Capturing them now prevents future sessions from reinventing the analysis.
 
@@ -420,6 +420,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   7. **Tag space layout.** v0.x has tag bytes scattered across `0x00`–`0x35` (now `0x36+` post-v0.10) due to organic accumulation. A fresh design might reserve byte ranges semantically — operators 0x00-0x3F, framing 0x40-0x4F, etc.
 
   8. **Header version field width.** v0.x uses 4 bits for version (allowing 16 future versions). A fresh design might use 8 bits or none (using the format-name itself for major-version discrimination).
+
+  **Post-v0.11 retrospective batch (added 2026-05-10).** The v0.4.5 BIP bitstream-native rewrite cycle dug into the v0.11+ wire format in detail and surfaced these additional concrete pain points worth carrying into a v2 retrospective. Items 1-8 above pre-date the v0.11 wire-format reset; items 9-13 below are framed against the shipped v0.11+ wire.
+
+  9. **Variable-arity children should be raw `key_index` fields, not full `Node`s.** `multi(2, @0, @1)` currently encodes each child as a full Node with its own 5-bit `Tag::PkK` + `kiw`-bit `key_index`, even though the parent operator (`Multi`, `SortedMulti`, `MultiA`, `SortedMultiA`) implies "all children are keys." The redundant per-child `Tag::PkK` is 5 wasted bits each. A 3-of-5 multisig burns 25 bits; a 7-of-11 burns 55. Trivial to fix in a wire break — encode `n × kiw` bits directly after the `k − 1` and `n − 1` threshold/count fields.
+
+  10. **Payload header and chunk header bit positions don't align.** Today the payload header packs `[paths:1][reserved=0:1][version:3]` into one 5-bit symbol; the chunk header packs `[version:3][chunked=1:1][reserved=0:1]` into the first 5 bits of its 37-bit header. The dispatch-relevant bit lands at numeric position 3 in payload-header value but position 1 in chunk-header value — which is precisely why the cross-spec "examine bit 3 to dispatch" prose was wrong (fixed 2026-05-10 in commit `2c25259`). A v2 design should put a single unambiguous discriminator bit at the same numeric position across both modes (and ideally encode `version` at the same position too) so an in-band auto-dispatcher works without a caller-provided hint.
+
+  11. **Origin-paths-vs-use-site-paths is asymmetric.** Origin-path divergence is signaled by a header flag (bit 4) with the per-`@N` block packed inline; use-site-path overrides are carried in the `UseSitePathOverrides` TLV entry (tag 0x00). Both are per-`@N` override concerns but use different mechanisms. A v2 design should unify: either both in TLV (saves a header bit and unifies the "per-`@N` override" code path), or both inline (uniform but loses the sparse-encoding win for use-site overrides). TLV-for-both is probably cleaner.
+
+  12. **Walker context-dependent `Check(PkK)` mangling.** In tap context, `walk_miniscript_node` collapses `Terminal::Check(Terminal::PkK(K))` to bare `Tag::PkK` on the wire (because BIP 388 tap-leaf canonical form is bare `pk_k`). In segwitv0 (wsh) context, the same `Check(PkK)` is preserved as `Tag::Check` wrapping `Tag::PkK`. Same miniscript input produces different wire shapes depending on the top-level descriptor. A v2 design could normalize uniformly at the walker (always collapse `Check(PkK)` and `Check(PkH)` to bare key tags) and shift the context-aware decoration to the renderer. Trades wire complexity for renderer complexity, but unifies the wire-shape audit surface.
+
+  13. **5-bit primary tag space is exhausted.** As of v0.18, every primary slot 0x00–0x1E is allocated, with 0x1F as the extension prefix; the extension subspace (5 more bits) has 5 of 32 slots used (Hash256, Ripemd160, RawPkH, False, True). Future operators must always pay the 5-bit extension overhead. A v2 design should pick a larger primary space (6-bit / 64 slots) or a more spacious extension subspace, sized against the realistic admit-set ceiling for active miniscript fragments.
+
+  **Smaller wins (file under "yes but not load-bearing"):**
+
+  - Fold the payload-header reserved bit (bit 3) into the version field for a 4-bit version (16 generations of breaking changes; same as item 8 above but motivated by the v0.11 reserved-bit being dead space rather than by version-field width).
+  - Add an explicit TLV-section length prefix so end-of-section detection isn't an implicit rollback-as-padding contract. (The current 7-bit padding tolerance is load-bearing for codex32 symbol alignment; a length prefix would let decoders distinguish "padding" from "truncation" without the rollback ceremony.)
+  - Replace the `kiw = ⌈log₂(n + 1)⌉` NUMS-sentinel widening trick on `tr()` with a separate 1-bit "is-NUMS" flag on the `tr()` body, so `kiw` matches "bits to address n keys" without the off-by-one and so NUMS-vs-not is grep-able at the bit level rather than implicit in the key_index value.
 
 - **Why deferred:** None of these affect v0.10 (or v0.11, v0.12, v1.0). They're meta-design questions worth capturing once and revisiting if a major redesign is ever contemplated. Pursuing any one of them now would mean re-doing wire-format work each iteration, which the project has explicitly avoided pre-v1.0.
 - **Status:** open
