@@ -4,6 +4,38 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.4.3] — 2026-05-10
+
+Bug-fix release (parallel to v0.4.2). Wire format unchanged.
+
+### Bug fix
+
+- **Decoder rendered `Tag::RawPkH` as `pk_h(<hex>)`.** The bare arm at `crates/md-cli/src/format/text.rs:193` emitted `pk_h(<hex>)`, which is neither the canonical Display for `Terminal::RawPkH` nor a parser-accepted form. miniscript-rs's parser only accepts `expr_raw_pkh(<hex>)` (the checked form, no underscore between `pk` and `h`); the bare-K Display form is `expr_raw_pk_h(<hex>)` (with underscore) and is an internal artifact, not a spec-level string. The fix renders `expr_raw_pkh(<hex>)` — the parser-accepted checked form — matching the v0.4.2 PkH pattern (bare wire tag → spec-level type-B sugar, not internal-K Display). Real-world impact today is zero: the md-cli walker has no `Terminal::RawPkH` arm so the encoder never produces `Tag::RawPkH` from BIP 388 input; the renderer arm is decode-fidelity-only for hypothetical wire payloads from non-md-cli producers.
+
+### Test
+
+- New unit test `format::text::tests::render_bare_rawpkh_emits_expr_raw_pkh`. Constructs a `Tag::RawPkH` Node directly (bypassing the walker, which doesn't emit it) and calls private `render_node` to pin the rendering invariant. Asserts output `expr_raw_pkh(<40 hex zeros>)` for a `[0u8; 20]` hash payload.
+
+### Closes followup
+
+- `rawpkh-renderer-pk_h-incorrect` (filed during v0.4.2 architect review).
+
+### Files new followup
+
+- `terminal-rawpkh-walker-arm-missing` — separate encode-side gap: `walk_miniscript_node` has no `Terminal::RawPkH` arm. Blocked on a BIP 388 admit-set decision (`expr_raw_pkh()` not currently admitted as a wallet-policy template form). Severity: Low; no real-world impact today.
+
+## md-cli [0.4.2] — 2026-05-10
+
+Bug-fix release. Wire format unchanged; encoded phrases produced by v0.4.0/v0.4.1 are byte-identical under v0.4.2.
+
+### Bug fix
+
+- **Decoder rendered miniscript hash fragments as `pk_h(K)` instead of `pkh(K)`.** Two sites in `crates/md-cli/src/format/text.rs`: bare `Tag::PkH` (line ~62) and the `Check(PkH)` shorthand-collapse path (line ~346). The bare `pk_h(K)` form is type K in miniscript (BIP-379) and is only valid as a `c:` child; the canonical form for `Terminal::PkH(K)` (which is what Tag::PkH represents on the wire) is `pkh(K)` (= `c:pk_h(K)` desugared, type B). Decoded text containing `pk_h(K)` in B-position was type-invalid and would not re-parse through miniscript, even though the wire payload was correct (encoded phrases recover the right policy; address derivation was unaffected). The fix matches the BIP-379 sugar form for both rendering sites.
+
+### Bug-class probe
+
+- Added `reencode_round_trip_curated_shapes` and `reencode_round_trip_each_manifest_entry` integration tests in `crates/md-cli/tests/template_roundtrip.rs`. The curated test pins four shapes that exercise `pkh()` in B-position (the user's inheritance template `wsh(andor(pkh,after,or_i(and_v(v:pkh,older),and_v(v:pkh,older))))`, plus `wsh(and_v(v:pkh,older))`, `wsh(or_i(pkh,pkh))`, and the tap-leaf companion). Both tests assert `encode(decode(encode(t))) == encode(t)` — strictly stronger than the existing `decode(encode(t)) == t` equality round-trip because it catches renderer outputs that fail to re-parse OR re-parse to a different AST. Future renderer asymmetries surface here even when the decoded text differs from the input by valid canonical-form drift.
+
 ## md-codec [0.19.0] — 2026-05-09
 
 Decode-side hardening. Real-world inputs are unaffected; only adversarial deeply-nested wire payloads change behavior (typed error instead of stack-overflow panic).

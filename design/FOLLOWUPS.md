@@ -45,6 +45,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `terminal-rawpkh-walker-arm-missing` — `walk_miniscript_node` has no `Terminal::RawPkH` arm
+
+- **Surfaced:** 2026-05-10, v0.4.3 architect r1 review (Q4 — distinguished from the renderer-side gap closed by v0.4.3).
+- **Where:** `crates/md-cli/src/parse/template.rs::walk_miniscript_node`. The function dispatches over `miniscript::Terminal` variants but has no arm for `Terminal::RawPkH(hash)`. The encoder therefore cannot produce `Tag::RawPkH` from any input, even hypothetically. Verified by `grep -n "Terminal::RawPkH" crates/md-cli/src/parse/template.rs` returning empty (Phase-1 Explore in v0.4.3 plan).
+- **What:** Add a walker arm that translates `Terminal::RawPkH(hash)` into `Node { tag: Tag::RawPkH, body: Body::Hash160Body(hash.to_byte_array()) }`. Symmetric to the v0.4.3 renderer fix: post-arm, encode→decode would round-trip correctly (the renderer at `format/text.rs:178` now emits `expr_raw_pkh(<hex>)` which is the form miniscript-rs's parser accepts).
+- **Why deferred:** Speculative. BIP 388 wallet-policy templates do NOT currently admit `expr_raw_pkh()` as a valid form, so adding the walker arm doesn't unlock any real-world template shapes — md-cli's `Descriptor::from_str` (which uses miniscript's wallet-policy parser) rejects `expr_raw_pkh(...)` upstream of the walker. Adding the arm is therefore prep-work for a future BIP 388 admit-set extension that may never come; YAGNI says wait. If/when miniscript-rs or BIP 388 admits the form, this followup unblocks immediately.
+- **Status:** `open`
+- **Tier:** v0.5+ (Low; speculative, blocked on upstream admit-set decision)
+
+### `check-pkh-shorthand-collapse-unit-test-coverage` — no dedicated unit test pins `Check(PkH)` shorthand-collapse rendering
+
+- **Surfaced:** 2026-05-10, v0.4.2 architect review (Low finding).
+- **Where:** `crates/md-cli/src/format/text.rs::render_wrapper_chain` lines ~354-361 — `Check(PkH)` shorthand-collapse arm. The integration tests in `tests/template_roundtrip.rs::reencode_round_trip_curated_shapes` exercise the bare `Tag::PkH` arm (line ~70) but the shorthand-collapse arm requires an AST shape that miniscript-rs may not produce from typical BIP 388 templates (`pkh(K)` parses to `Terminal::PkH(K)` directly, not `Terminal::Check(Terminal::PkH(K))`).
+- **What:** Investigate whether `Terminal::Check(Terminal::PkH)` is reachable at all from any BIP 388 input. If yes, add a `#[cfg(test)]` template that produces it and pins the rendering; if no, the shorthand-collapse arm is defensive dead-code and could either be removed or pinned via a hand-constructed `Node` test that bypasses miniscript-rs's parser.
+- **Why deferred:** Low priority; both fix sites in v0.4.2 are individually well-documented and the integration test catches the bug class via the bare arm. Investigation can wait.
+- **Status:** `open`
+- **Tier:** v0.5+ (Low)
+
 ### `bip-tag-table-5bit-vs-8bit-drift` — BIP tag table lists 8-bit byte-aligned codes, implementation uses 5-bit primary tags
 
 - **Surfaced:** 2026-05-09, post-v0.19 BIP-alignment audit (commit `7902127` added a NUMS-sentinel cross-reference and surfaced this related drift).
@@ -1554,6 +1572,16 @@ See BIP §FAQ for rationale.
 - **What shipped:** `encode_with_explicit_path_raw_template_differs_from_baseline` test — no `#[cfg(feature = ...)]` gate, exercises `md encode "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))" --path "84'/0'/0'"` against a raw-template input and asserts the phrase differs from the no-path baseline. Provides unconditional CI coverage of the `--path` override site, complementing the existing `#[cfg(feature = "cli-compiler")]` Phase 1 `--from-policy + --path` tests.
 - **Status:** resolved md-cli-v0.4.1 (commit `89b5ec2`).
 - **Tier:** v0.20 (closed)
+
+### v0.4.2+ (renderer fixes)
+
+### `rawpkh-renderer-pk_h-incorrect` — `Tag::RawPkH` rendering emits `pk_h(<hex>)` instead of a parser-accepted form
+
+- **Surfaced:** 2026-05-10, v0.4.2 architect review.
+- **Where (as filed):** `crates/md-cli/src/format/text.rs:186` (Tag::RawPkH render arm) emitted `pk_h(<hex>)`. The v0.4.2 architect's claim that the canonical form was `raw_pkh(<hex>)` was corrected by a Phase-1 Explore investigation in v0.4.3 planning: miniscript-rs's actual canonical Display is `expr_raw_pk_h(<hex>)` for bare `Terminal::RawPkH` (type K, internal artifact) and `expr_raw_pkh(<hex>)` for `Terminal::Check(Terminal::RawPkH)` (type B, the only form the parser accepts).
+- **What shipped:** v0.4.3 changes the bare arm to emit `expr_raw_pkh(<hex>)` (the parser-accepted checked form), matching the v0.4.2 PkH pattern (bare wire tag → spec-level type-B sugar, not internal-K Display). Absorbs the would-be `Check(RawPkH)` shorthand-collapse case at the bare arm. Doc-comment expanded to document the Display-vs-parser asymmetry. Unit test `format::text::tests::render_bare_rawpkh_emits_expr_raw_pkh` constructs a Tag::RawPkH Node directly and pins the rendering invariant via private `render_node` (the walker has no Terminal::RawPkH arm so `parse_template` can't reach this path).
+- **Status:** resolved md-cli-v0.4.3.
+- **Tier:** v0.4.3 (closed; pre-existing renderer asymmetry similar to the v0.4.2 PkH fix)
 
 ---
 

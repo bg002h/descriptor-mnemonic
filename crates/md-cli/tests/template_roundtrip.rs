@@ -115,3 +115,108 @@ fn tap_three_leaf_unbalanced_round_trips() {
     let decoded = decode(&phrase);
     assert_eq!(decoded, template);
 }
+
+/// v0.4.2 generic bug-class probe: every template here must satisfy a
+/// stronger property than `decode(encode(t)) == t` — namely
+/// `encode(decode(encode(t))) == encode(t)`. This catches asymmetries
+/// where the renderer emits text that miniscript-rs cannot re-parse, OR
+/// re-parses to a different AST that produces a different wire payload,
+/// EVEN IF the decoded text differs from the input by some valid
+/// canonical-form drift. The original-vs-decoded equality assertion in
+/// `round_trip_each_manifest_entry` catches text drift but not
+/// "decoded text doesn't re-parse" (it stops at decode); this test
+/// closes that gap.
+///
+/// Each entry is `(test_name, template, optional_explicit_path)`. Path
+/// is `Some(...)` for non-canonical wrappers (`canonical_origin` returns
+/// `None` for these and the encode-side canonicity gate would otherwise
+/// reject the template).
+///
+/// Concrete shape that surfaced this test (2026-05-10): the user's
+/// inheritance/multi-tier-recovery policy
+/// `wsh(andor(pkh(@0),after(N),or_i(and_v(v:pkh(@1),older(M)),and_v(v:pkh(@2),older(K)))))`
+/// encoded fine but decoded to non-canonical `pk_h(...)` (type K) where
+/// the input had `pkh(...)` (type B); `v:pk_h(...)` is type-invalid in
+/// miniscript so the decoded text wouldn't re-parse. The
+/// renderer was patched in `format/text.rs::render_node` (Tag::PkH arm)
+/// and `render_wrapper_chain` (Check(PkH) shorthand collapse).
+#[test]
+fn reencode_round_trip_curated_shapes() {
+    let cases: &[(&str, &str, Option<&str>)] = &[
+        // Bug-surfacing case: pkh fragment inside andor / or_i / and_v
+        // wrappers with both absolute and relative timelocks.
+        (
+            "inheritance_andor_or_i_pkh",
+            "wsh(andor(pkh(@0/<0;1>/*),after(1200000),or_i(and_v(v:pkh(@1/<0;1>/*),older(4032)),and_v(v:pkh(@2/<0;1>/*),older(32768)))))",
+            Some("48'/0'/0'/2'"),
+        ),
+        // Companion: pkh inside a simpler `and_v(v:pkh(...), older(...))`
+        // (the inheritance-pattern tap-leaf shape from v0.18 prep). Wsh
+        // context here, not tap, so exercises the wsh `pkh` rendering
+        // arm specifically.
+        (
+            "wsh_and_v_v_pkh_older",
+            "wsh(and_v(v:pkh(@0/<0;1>/*),older(144)))",
+            Some("48'/0'/0'/2'"),
+        ),
+        // Sanity: a wsh-wrapped bare pkh inside or_i (no v: wrapper) —
+        // confirms bare Tag::PkH renders as `pkh(...)` in B-position.
+        (
+            "wsh_or_i_pkh_pkh",
+            "wsh(or_i(pkh(@0/<0;1>/*),pkh(@1/<0;1>/*)))",
+            Some("48'/0'/0'/2'"),
+        ),
+        // Tap-leaf variant of the v: + pkh shape (the original v0.18-prep
+        // shape that didn't surface the bug because tap-leaves go through
+        // a different rendering path; included for parity coverage).
+        (
+            "tap_leaf_and_v_v_pkh_older",
+            "tr(@0/<0;1>/*,and_v(v:pkh(@1/<0;1>/*),older(144)))",
+            Some("48'/0'/0'/2'"),
+        ),
+    ];
+    for (name, template, path) in cases {
+        let phrase = match path {
+            Some(p) => encode_with_path(template, p),
+            None => encode(template),
+        };
+        assert!(
+            phrase.starts_with("md1"),
+            "[{name}] encode produced non-md1 phrase: {phrase}"
+        );
+        let decoded = decode(&phrase);
+        let phrase_again = match path {
+            Some(p) => encode_with_path(&decoded, p),
+            None => encode(&decoded),
+        };
+        assert_eq!(
+            phrase, phrase_again,
+            "[{name}] re-encode of decoded text produced a different phrase: \
+             original={phrase}, decoded={decoded}, re-encoded={phrase_again}"
+        );
+    }
+}
+
+/// v0.4.2 manifest-wide variant of `reencode_round_trip_curated_shapes`.
+/// Catches the same bug class for any future manifest entry whose
+/// decoded text doesn't round-trip through re-encode. Manifest entries
+/// don't currently carry an explicit path; templates that need one
+/// (none today) would trip the canonicity gate and fail loudly here,
+/// signaling that the manifest needs a path field.
+#[test]
+fn reencode_round_trip_each_manifest_entry() {
+    for v in manifest::MANIFEST {
+        if v.force_chunked {
+            continue;
+        }
+        let phrase = encode(v.template);
+        let decoded = decode(&phrase);
+        let phrase_again = encode(&decoded);
+        assert_eq!(
+            phrase, phrase_again,
+            "[{}] re-encode of decoded text produced a different phrase: \
+             original={phrase}, decoded={decoded}, re-encoded={phrase_again}",
+            v.name
+        );
+    }
+}
