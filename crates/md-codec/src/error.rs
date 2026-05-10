@@ -192,8 +192,10 @@ pub enum Error {
         id: u32,
     },
 
-    /// Chunk header missing chunked-flag (bit 3 must be 1).
-    #[error("chunk header chunked-flag missing; bit 3 must be 1 for chunk headers")]
+    /// Chunk header missing chunked-flag. The chunked-flag bit follows the
+    /// 3-bit version field in a chunk header (see `chunk.rs` / spec §9.3) and
+    /// MUST be 1.
+    #[error("chunk header chunked-flag missing; the chunked-flag bit must be 1 in chunk headers")]
     ChunkHeaderChunkedFlagMissing,
 
     /// Encoding requires more chunks than the spec maximum (64).

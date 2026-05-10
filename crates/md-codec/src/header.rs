@@ -1,8 +1,12 @@
 //! Payload header (5 bits) per spec §3.3.
 //!
 //!   bit 4: divergent-paths flag (0=shared origin path, 1=divergent)
-//!   bit 3: reserved (MUST be 0 in v0.11; chunk header reuses this slot for chunked-flag)
+//!   bit 3: reserved (MUST be 0 in v0.11)
 //!   bits 2..0: version (3 bits; v0.11 = 0)
+//!
+//! The chunk header (`chunk.rs`, spec §9.3) is a separate 37-bit form with a
+//! different first-symbol layout; chunked-vs-single-string dispatch is by API
+//! reader role, not by an in-band discriminator bit.
 
 use crate::bitstream::{BitReader, BitWriter};
 use crate::error::Error;

@@ -110,7 +110,7 @@ bit 4   bit 3   bit 2   bit 1   bit 0
 - **Bit 3:** reserved. v0.11 encoders MUST emit 0; decoders MUST reject 1 in payload-header position.
 - **Bit 4:** all-keys-same-path flag. `0` = shared origin path (one path applies to all `@N`); `1` = divergent origin paths (per-`@N` paths follow).
 
-**Note on bit-3 dual use across payload header and chunk header.** The payload header (this section) reserves bit 3 = 0. The chunk header (§9.3) places its `chunked` flag at the same bit-3 position; in chunk headers, this bit is set to 1 to indicate "this codex32 string is one chunk in a chunked set." Decoders dispatch chunked-vs-single-string by examining bit 3 of the first 5-bit symbol after the HRP — bit 3 = 0 means the symbol is a payload header (single-string mode); bit 3 = 1 means it's a chunk header (chunked mode). See §13.2 for decoder pseudocode.
+**Note on chunked-vs-single-string dispatch.** Single-string payload headers and chunk headers (§9.3) have different first-symbol layouts. The payload header packs `[paths:1][reserved=0:1][version:3]` into one 5-bit symbol (bit 4 = paths, bit 3 = reserved, bits 2..0 = version). The chunk header packs `[version:3][chunked=1:1][reserved=0:1]` into the first 5 bits of its 37-bit header (the version field occupies bits 4..2 of the first symbol; the chunked flag is at bit 1; the reserved bit is at bit 0). Encoder/decoder dispatch is by reader role — the API caller selects the decode path. A decoder routed to the wrong path fails fast at `Error::ReservedHeaderBitSet` (single-string path mis-applied to a chunk header) or `Error::ChunkHeaderChunkedFlagMissing` (chunked path mis-applied to a payload header) rather than silently corrupting. See §13.2 for the recommended decoder structure.
 
 ### 3.4 Origin path declaration
 
@@ -686,7 +686,7 @@ Per chunk, prepended to the chunk's payload before BCH-checksumming:
 ```
 [version: 3 bits]                # matches main format version (must be 0 for v0.11)
 [chunked: 1 bit]                  # 1 (this is a chunk in a chunked set)
-[reserved: 1 bit]                 # matches D9 bit 3 reservation; must be 0
+[reserved: 1 bit]                 # must be 0 (mirrors the payload-header reserved-bit contract; see §3.3)
 [chunk-set-id: 20 bits]           # Md1EncodingId[0..20]
 [count: 6 bits]                   # 1..64 chunks total
 [index: 6 bits]                   # 0..63, this chunk's position
@@ -865,13 +865,11 @@ A bit-aligned encoder/decoder library is foundational. Design notes:
 ```
 1. Strip HRP, validate it equals "md1".
 2. Parse codex32 5-bit symbols, validate BCH checksum.
-3. Examine bit 3 of the first 5-bit symbol (the symbol immediately after HRP, before any payload parsing):
-     - bit 3 = 0: this is a payload header (single-string mode).
-                  Goto step 4 with the same symbol stream.
-     - bit 3 = 1: this is a chunk header (chunked mode).
-                  Parse chunk header (§9.3), buffer the chunk-payload, await
-                  remaining chunks, then reassemble (§9.6) and recurse with
-                  the reassembled bit stream from step 4.
+3. Dispatch chunked-vs-single-string by reader role. The caller indicates whether the input is a single-string Template Card or one of N chunks of a chunked Template Card:
+     - chunked path: parse chunk header (§9.3), buffer the chunk-payload,
+                     await remaining chunks, then reassemble (§9.6) and
+                     recurse with the reassembled bit stream from step 4.
+     - single-string path: continue with step 4.
 4. Parse payload header (5 bits, §3.3). Validate bits 0-2 match a known version,
    bit 3 = 0, bit 4 ∈ {0, 1}.
 5. Parse origin-path-decl (§3.4, dispatched on bit 4).
@@ -882,7 +880,7 @@ A bit-aligned encoder/decoder library is foundational. Design notes:
 10. Compute IDs as needed (§8).
 ```
 
-The dispatch in step 3 works because v0.11 reserves payload-header bit 3 = 0 (§3.3), while chunk-header bit 3 is the `chunked` flag set to 1 (§9.3). Encoders never produce a payload header with bit 3 = 1, so seeing bit 3 = 1 unambiguously indicates chunked mode.
+The role-based dispatch in step 3 matches the reference implementation's API surface (`decode` for single-string mode, `reassemble` for chunked mode). A decoder routed to the wrong path fails fast at `Error::ReservedHeaderBitSet` (single-string `Header::read` applied to a chunk header — payload-header bit 3 must be 0, but the chunk-header symbol can carry a 1 at the corresponding numeric position when version != 0) or `Error::ChunkHeaderChunkedFlagMissing` (chunked `ChunkHeader::read` applied to a payload header — the chunked-flag-position bit is 0 in the payload header, since it's the reserved-must-be-0 slot in stream order). Implementations that wish to auto-detect mode without a caller-provided hint can sniff the 4th bit of the post-HRP bit stream (the chunked flag in chunk-header layout, the trailing version bit `version[1]` in payload-header layout) — but this technique is robust only while `version = 0` is the only valid version.
 
 ### 13.3 Encoder structure (recommended)
 
