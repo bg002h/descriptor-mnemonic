@@ -399,6 +399,31 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ### `v2-design-questions` — clean-slate questions to revisit at a major redesign
 
+> **RESOLUTION (2026-05-10): Addressed via the md-codec v0.30 wire-format-redesign cycle.** See `design/SPEC_v0_30_wire_format.md`, `design/IMPLEMENTATION_PLAN_v0_30.md`, and `design/agent-reports/spike-v0.30-{q9,q10,q11,q13,q6}-pre-spec.md`. Per-item disposition table below; original analysis preserved unchanged for historical context.
+>
+> **Per-item disposition (Q1–Q13 + 3 smaller wins):**
+>
+> | Item | Disposition | Where |
+> |------|-------------|-------|
+> | Q1 (unified per-`@N` block) | Absorbed into Q11 | SPEC §6 |
+> | Q2 (path dictionary) | Resolved-by-v0.11 (path dictionary already retired pre-v0.30) | SPEC §1.3 |
+> | Q3 (md1+mk1 unification) | Foreclosed (sibling-format-bundle decision per `CLAUDE.md`) | SPEC §1.5 |
+> | Q4 (encoding uniformity) | LP4-ext for variable fields; **fixed-5 retained for bounded `k`/`n`** per "most bit-efficient encoding in circumstances that matter" principle | SPEC §3.3 |
+> | Q5 (string-layer split) | Status quo retained (bytecode-layer metadata) | SPEC §8 |
+> | Q6 (BCH polynomial separation) | **DEFERRED** per Phase 0a Spike Q6; per-HRP-residue + HRP-mixing sufficient for hand-transcription threat model | spike-v0.30-q6 + SPEC §10 |
+> | Q7 (semantic tag ranges) | Implemented within v0.30's 6-bit primary space | SPEC §3.2 |
+> | Q8 (version field width) | Widened to 4 bits (absorbs SW1) | SPEC §2 |
+> | Q9 (multi child packing) | **SHIPPED** in v0.30 (raw `key_index` only; no per-child tag) | spike-v0.30-q9 + SPEC §4 |
+> | Q10 (header bit alignment + in-band discriminator) | Implemented (chunked-flag at bit 0; `version=4`; usable WF set {4, 8, 12}) | spike-v0.30-q10 + SPEC §2 |
+> | Q11 (per-`@N` override unification) | **WONT-FIX** per Phase 0a Spike Q11; current bifurcated design empirically optimal | spike-v0.30-q11 + SPEC §6 |
+> | Q12 (walker normalization) | Implemented (bare `PkK`/`PkH` on wire; renderer reconstructs `c:` from context) | SPEC §5 |
+> | Q13 (tag-space rework) | Bytecode 6-bit / TLV 5-bit split per Phase 3.6 lock | spike-v0.30-q13 + SPEC §3.1 |
+> | SW1 (reserved bit folded into version) | Absorbed by Q10 + Q8 | SPEC §2 |
+> | SW2 (TLV section length prefix) | **REVERTED** in Phase 3.6 (rollback-as-padding retained from v0.x) per "most bit-efficient encoding in circumstances that matter" | SPEC §9 |
+> | SW3 (NUMS-sentinel removal) | Implemented (1-bit `is_nums` flag in `tr()` body; `kiw = ⌈log₂(n)⌉`) | SPEC §7 |
+>
+> Empirically validated against a 17-wallet × 3-mode corpus: v0.30 wins in all three modes (Mode A −159 bits; Mode B −172 bits; Mode C −182 bits aggregate vs v0.x).
+
 - **Surfaced:** 2026-04-29 v0.10 brainstorm conversation. While locking Q6 (Tag::Fingerprints vs Tag::OriginPaths separation), the question came up: "if we were starting the format from scratch today, would we pick something different?" Yes — and the same question generalizes to other accumulated design choices. Additional items appended 2026-05-10 from the v0.4.5 BIP bitstream-native rewrite cycle, which exercised the v0.11+ wire format deeply enough to surface concrete pain points worth carrying into a v2 retrospective.
 - **Where:** Conceptual / cross-cutting. Lives as a v2+ scoping document if/when major-redesign is on the table. Not tied to any specific code path.
 - **What:** This entry catalogs design choices that v0.x ships with for good reason (path dependence, accumulated constraints, organic evolution) but that a clean-slate v2.0 redesign would likely re-evaluate. Capturing them now prevents future sessions from reinventing the analysis.
@@ -440,8 +465,21 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   - Replace the `kiw = ⌈log₂(n + 1)⌉` NUMS-sentinel widening trick on `tr()` with a separate 1-bit "is-NUMS" flag on the `tr()` body, so `kiw` matches "bits to address n keys" without the off-by-one and so NUMS-vs-not is grep-able at the bit level rather than implicit in the key_index value.
 
 - **Why deferred:** None of these affect v0.10 (or v0.11, v0.12, v1.0). They're meta-design questions worth capturing once and revisiting if a major redesign is ever contemplated. Pursuing any one of them now would mean re-doing wire-format work each iteration, which the project has explicitly avoided pre-v1.0.
-- **Status:** open
-- **Tier:** v2+ (or wont-fix if v2.0 is never contemplated; the analysis here remains useful as design rationale either way)
+- **Status:** **resolved-via-v0.30-cycle (2026-05-10)** — see Resolution block at top of entry.
+- **Tier:** v0.30 (design-frozen 2026-05-10; implementation pending across Cycles 2–5 per `IMPLEMENTATION_PLAN_v0_30.md`)
+
+### `v0.30-wire-format-redesign` — md-codec v0.30 design cycle outputs
+
+- **Surfaced:** 2026-05-10. Brainstorm + SPEC + Implementation Plan + Phase 0a empirical spikes + 17-wallet × 3-mode validation comparison cycle ran 2026-05-10. Resolves the `v2-design-questions` catalog wholesale (see disposition table in that entry's Resolution block).
+- **Where:**
+  - SPEC: `design/SPEC_v0_30_wire_format.md`
+  - Implementation plan: `design/IMPLEMENTATION_PLAN_v0_30.md`
+  - Spike reports (Phase 0a empirical validation): `design/agent-reports/spike-v0.30-{q9,q10,q11,q13,q6}-pre-spec.md`
+  - Originating plan file (in-session brainstorm + iteration log): `/home/bcg/.claude/plans/typed-rolling-spindle.md`
+- **What:** Pre-alpha wire-format redesign with clean break (no v0.x decode path; `WireVersionMismatch` rejection of v0.x payloads). Internal `version = 4`; crate version 0.18.x → 0.30.0. Nine concrete changes addressing 11 of the 16 v2-design-questions catalog items; 5 disposed of without code change (Q1/Q2/Q3 archived, Q6/Q11 deferred-or-wont-fix per spike). Empirical validation: −159/−172/−182 bits across the 17-wallet corpus in Modes A/B/C respectively.
+- **Cycle structure:** Cycle 1 (design, this cycle) closed by the `md-codec-v0.30-spec-frozen` tag. Cycle 2 (Phases A + B = tag-space rework + header layout). Cycle 3 (Phases C + E + F + G = multi packing + walker normalization + NUMS flag + error taxonomy sweep). Cycle 4 (Phase H = corpus regen). Cycle 5 (Phases I + J = BIP draft rewrite + final tag `md-codec-v0.30.0`). See `IMPLEMENTATION_PLAN_v0_30.md` §3–§5 for per-phase detail.
+- **Status:** Cycle 1 design-frozen. Implementation pending.
+- **Tier:** v0.30 (active)
 
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
