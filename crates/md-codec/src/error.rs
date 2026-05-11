@@ -2,6 +2,19 @@
 
 use thiserror::Error;
 
+/// Operator-context kind — where in the descriptor tree an operator appears.
+/// Per SPEC v0.30 §11. Carried by [`Error::OperatorContextViolation`] to name
+/// which tree-position a forbidden tag was encountered in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextKind {
+    /// Top-level descriptor position (e.g., bare `PkK` as the descriptor root).
+    TopLevel,
+    /// Inside a `tr()` tap-script leaf (BIP-342 tapscript-only operators).
+    TapLeaf,
+    /// Inside a multi-family body (non-key tag among multi children).
+    MultiBody,
+}
+
 /// Errors produced by md-codec wire-format components.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum Error {
@@ -41,8 +54,8 @@ pub enum Error {
         max: usize,
     },
 
-    /// Key count n out of range; v0.11 requires 1 ≤ n ≤ 32.
-    #[error("key count {n} out of range; v0.11 requires 1 ≤ n ≤ 32")]
+    /// Key count `n` out of range. Per SPEC v0.30 §4: `1 ≤ n ≤ 32`.
+    #[error("key count {n} out of range; require 1 ≤ n ≤ 32")]
     KeyCountOutOfRange {
         /// Actual key count provided.
         n: u8,
@@ -57,8 +70,8 @@ pub enum Error {
         got: usize,
     },
 
-    /// Multipath alt-count out of range; v0.11 requires 2 ≤ count ≤ 9.
-    #[error("multipath alt-count {got} out of range; v0.11 requires 2 ≤ count ≤ 9")]
+    /// Multipath alt-count out of range. Per SPEC v0.30 §8: `2 ≤ count ≤ 9`.
+    #[error("multipath alt-count {got} out of range; require 2 ≤ count ≤ 9")]
     AltCountOutOfRange {
         /// Provided alt-count.
         got: usize,
@@ -76,15 +89,15 @@ pub enum Error {
         primary: u8,
     },
 
-    /// Threshold k out of range; v0.11 requires 1 ≤ k ≤ 32.
-    #[error("threshold k={k} out of range; v0.11 requires 1 ≤ k ≤ 32")]
+    /// Threshold `k` out of range. Per SPEC v0.30 §4: `1 ≤ k ≤ 32`.
+    #[error("threshold k={k} out of range; require 1 ≤ k ≤ 32")]
     ThresholdOutOfRange {
         /// Provided k value.
         k: u8,
     },
 
-    /// Variable-arity child count out of range.
-    #[error("child count {count} out of range; v0.11 requires 1 ≤ count ≤ 32")]
+    /// Variable-arity child count out of range. Per SPEC v0.30 §4: `1 ≤ count ≤ 32`.
+    #[error("child count {count} out of range; require 1 ≤ count ≤ 32")]
     ChildCountOutOfRange {
         /// Provided child count.
         count: usize,
@@ -180,8 +193,19 @@ pub enum Error {
         tag: u8,
     },
 
-    /// Chunk count out of range; v0.11 requires 1 ≤ count ≤ 64.
-    #[error("chunk count {count} out of range; v0.11 requires 1 ≤ count ≤ 64")]
+    /// Operator appears in a forbidden context per SPEC v0.30 §11.
+    /// See FOLLOWUP `v0.30-phase-g-operator-context-violation-unwired`
+    /// for current decoder-side fire-site status.
+    #[error("operator {tag:?} not allowed in context {context:?}")]
+    OperatorContextViolation {
+        /// The offending operator tag.
+        tag: crate::tag::Tag,
+        /// Which tree-position the tag is forbidden in.
+        context: ContextKind,
+    },
+
+    /// Chunk count out of range. Per SPEC v0.30 §2.5: `1 ≤ count ≤ 64`.
+    #[error("chunk count {count} out of range; require 1 ≤ count ≤ 64")]
     ChunkCountOutOfRange {
         /// Provided count.
         count: u8,
@@ -203,10 +227,10 @@ pub enum Error {
         id: u32,
     },
 
-    /// Chunk header missing chunked-flag. The chunked-flag bit follows the
-    /// 3-bit version field in a chunk header (see `chunk.rs` / spec §9.3) and
-    /// MUST be 1.
-    #[error("chunk header chunked-flag missing; the chunked-flag bit must be 1 in chunk headers")]
+    /// Chunk header missing chunked-flag. Per SPEC v0.30 §2.2: bit 0 of the
+    /// first 5-bit symbol of a chunked payload is the chunked-flag (followed
+    /// by the 4-bit version field); it MUST be 1 in every chunk header.
+    #[error("chunk header chunked-flag missing; per SPEC §2.2 bit 0 of the first symbol must be 1")]
     ChunkHeaderChunkedFlagMissing,
 
     /// Encoding requires more chunks than the spec maximum (64).
@@ -339,9 +363,13 @@ pub enum Error {
     )]
     UnsupportedDerivationShape,
 
-    /// SPEC §7: `is_nums` flag set on a non-`Tr` operator; Phase G finalizes
-    /// the full doc and context-coupling semantics.
-    #[error("NUMS sentinel conflict")]
+    /// Inside a `tr()` body, `is_nums = false` was paired with a `key_index`
+    /// out of range (`key_index >= n`). Per SPEC v0.30 §7 + §11: the
+    /// placeholder-index range is `0..n` strictly; the v0.x NUMS sentinel
+    /// slot at `key_index = n` is gone (NUMS is now flag-driven via
+    /// `Body::Tr.is_nums`). Raised by `validate_placeholder_usage` when the
+    /// in-`tr()` overflow condition is hit.
+    #[error("NUMS sentinel conflict: is_nums=false with key_index out of range (SPEC §7 §11)")]
     NUMSSentinelConflict,
 
     /// Decode-side recursion depth exceeded the hardening cap.
@@ -357,4 +385,34 @@ pub enum Error {
         /// Maximum allowed depth.
         max: u8,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tag::Tag;
+
+    /// SPEC v0.30 §11: `OperatorContextViolation` carries the offending tag
+    /// + a `ContextKind` discriminator. Pins the type shape and Display
+    /// output against future drift; does NOT claim live wire reachability
+    /// (see FOLLOWUP `v0.30-phase-g-operator-context-violation-unwired`).
+    #[test]
+    fn operator_context_violation_constructs() {
+        let err = Error::OperatorContextViolation {
+            tag: Tag::Multi,
+            context: ContextKind::MultiBody,
+        };
+        let s = err.to_string();
+        assert!(s.contains("Multi"), "Display must mention tag: {s}");
+        assert!(s.contains("MultiBody"), "Display must mention context: {s}");
+    }
+
+    /// SPEC v0.30 §7 + §11: `NUMSSentinelConflict` Display pins the SPEC-cite
+    /// substring so the doc-comment + format string don't silently drift.
+    #[test]
+    fn nums_sentinel_conflict_display() {
+        let s = Error::NUMSSentinelConflict.to_string();
+        assert!(s.contains("§7"), "Display must cite SPEC §7: {s}");
+        assert!(s.contains("§11"), "Display must cite SPEC §11: {s}");
+    }
 }

@@ -507,7 +507,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/error.rs` lines 17-18 (`ReservedHeaderBitSet`), 37-38 (`KeyCountOutOfRange`), 53-54 (`AltCountOutOfRange`), 72-73 (`ThresholdOutOfRange`), 80 (`ChildCountOutOfRange`), 176-177 (`ChunkCountOutOfRange`) and likely several other variant doc-comments and `#[error("...")]` format strings that retain `v0.11` literal references.
 - **What:** Phase A correctly cleaned up the module-level + enum-level doc (line 1 + 5) and `ForbiddenTapTreeLeaf`'s field doc (line 172). The "v0.11" branding inside individual variant doc-comments and error format strings (e.g., `"v0.11 requires 1 ≤ count ≤ 64"`) is unchanged. Phase B will REMOVE two of these variants (`ReservedHeaderBitSet`, `UnsupportedVersion`) but won't touch the rest. The `v0.11` literals will outlive both Phase A and Phase B in their current scope.
 - **Why deferred:** Phase A's scope was tag-related only. Expanding to clean all `v0.11` prose would have been out-of-scope. The cleanest sweep happens in Phase G (decoder error taxonomy refactor) which already touches every `error.rs` call site.
-- **Status:** open
+- **Status:** resolved (phase g: v0.11 prose purged from 5 error variants — `KeyCountOutOfRange`, `AltCountOutOfRange`, `ThresholdOutOfRange`, `ChildCountOutOfRange`, `ChunkCountOutOfRange`; each now cites a v0.30 SPEC section)
 - **Tier:** v0.30 (lift gated by Phase G or by an explicit "tidy v0.x prose" sub-task in Phase B)
 
 ### `v0.30-phase-b-r1-low-1` — `ChunkHeaderChunkedFlagMissing` doc-comment references stale 3-bit version + spec §9.3
@@ -516,7 +516,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/error.rs:207` (the doc-comment on the `ChunkHeaderChunkedFlagMissing` variant, currently "The chunked-flag bit follows the 3-bit version field in a chunk header (see `chunk.rs` / spec §9.3) and MUST be 1.").
 - **What:** Phase B widened the chunk-header version field from 3 to 4 bits and re-cited the layout under SPEC v0.30 §2.2 (the §9.3 reference is from the v0.x SPEC numbering). The variant itself remains in the error enum (Phase G handles broader error-taxonomy cleanup); only its doc-comment is now stale.
 - **Why deferred:** Phase B's atomic-commit-discipline focus was on header layout + version-mismatch semantics. The `ChunkHeaderChunkedFlagMissing` variant's path is reachable only after `WireVersionMismatch` does NOT fire (version=4 path) yet chunked-flag is somehow 0 — a narrow edge case that does NOT arise from any realistic v0.x payload. Updating the doc-comment now would touch error.rs unrelated-to-Phase-B; cleaner to defer to Phase G's full error-taxonomy sweep.
-- **Status:** open
+- **Status:** resolved (phase g: `ChunkHeaderChunkedFlagMissing` doc + format string updated to cite SPEC v0.30 §2.2 and the new 4-bit version-field layout)
 - **Tier:** v0.30 (lift gated by Phase G — broader error-taxonomy refactor — or a sub-task in Phases C-G that touches error.rs)
 
 ### `v0.30-phase-b-r1-nit-1` — `encode.rs` module doc says "v0.11 wire payload"
@@ -545,6 +545,18 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** Phase C's scope was core variant + sweep; the dead-helper cleanup is cosmetic. Decide at Phase H (when corpus regen revisits tree-test fixtures) whether to delete or rewire.
 - **Status:** open
 - **Tier:** v0.30 (lift gated by Phase H, or by an opportunistic doc/cleanup commit)
+
+### `v0.30-phase-g-operator-context-violation-unwired` — `Error::OperatorContextViolation` + `ContextKind` carry SPEC §11 but have no live fire sites
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase G implementation.
+- **Where:** `crates/md-codec/src/error.rs` — `ContextKind { TopLevel, TapLeaf, MultiBody }` and `Error::OperatorContextViolation { tag: Tag, context: ContextKind }` (both v0.30 Phase G additions per SPEC v0.30 §11.1).
+- **What:** SPEC v0.30 §11.1 reserves `OperatorContextViolation` for three context-violation cases. None have a natural decoder-side raise site at v0.30 entry:
+  - `MultiBody`: post-Phase-C, multi-family bodies carry raw `kiw`-bit indices (not child tags), so the decoder never reads a non-key tag where it expects an index. Variant is structurally unreachable.
+  - `TopLevel`: top-level shape (e.g., bare `PkK` as a descriptor root) is enforced parser-side in `md-cli/src/parse`, not decoder-side in `md-codec`.
+  - `TapLeaf`: the narrower [`Error::ForbiddenTapTreeLeaf`] already covers BIP-342-forbidden tags inside tap-script-tree leaves; replacing it would be a downgrade in precision.
+- **Why deferred:** Phase G's sub-plan explicitly instructed "Don't invent fictional fire sites just to make the variant live"; SPEC compliance is satisfied by the type's existence + a construct-and-Display unit test pinning the shape. Lift gated by a future v1+ wire-extension that surfaces a context-violation case (e.g., parser-side enforcement migrating into the decoder, or a new multi-family encoding that re-introduces context-sensitive child tags).
+- **Status:** open
+- **Tier:** v0.30 (active; lift gated by parser-side migration or v1+ extension that surfaces a natural raise site)
 
 ### `repo-hygiene-stale-file-location-doc-artifacts` — `//! #file location ...` / `//! file location ...` strings at line 1 of various Rust files
 
