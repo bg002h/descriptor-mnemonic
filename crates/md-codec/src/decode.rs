@@ -2,9 +2,10 @@
 
 use crate::bitstream::BitReader;
 use crate::encode::Descriptor;
-use crate::error::Error;
+use crate::error::{ContextKind, Error};
 use crate::header::Header;
 use crate::origin_path::PathDecl;
+use crate::tag::Tag;
 use crate::tlv::TlvSection;
 use crate::tree::read_node;
 use crate::use_site_path::UseSitePath;
@@ -24,6 +25,24 @@ pub fn decode_payload(bytes: &[u8], total_bits: usize) -> Result<Descriptor, Err
     // desyncs the bitstream.
     let key_index_width = (32 - (path_decl.n as u32).saturating_sub(1).leading_zeros()) as u8;
     let tree = read_node(&mut r, key_index_width)?;
+
+    // SPEC §11: root tag MUST be in {Sh, Wsh, Wpkh, Pkh, Tr} (the wrapper-tag
+    // allow-list — structural body validation for `Sh`/`Wsh` is separate).
+    // Decoder-side hardening (defense in depth) — the parser-side enforces this
+    // for CLI/template inputs; this catches malformed wires that bypass the
+    // parser via direct bitstream construction. Note: `Sh` covers both
+    // `sh(multi)` and `sh(wsh(multi))` which are distinct BIP-388 shapes sharing
+    // the same root tag; per-shape validation happens at the policy layer.
+    if !matches!(
+        tree.tag,
+        Tag::Sh | Tag::Wsh | Tag::Wpkh | Tag::Pkh | Tag::Tr
+    ) {
+        return Err(Error::OperatorContextViolation {
+            tag: tree.tag,
+            context: ContextKind::TopLevel,
+        });
+    }
+
     let tlv = TlvSection::read(&mut r, key_index_width, path_decl.n)?;
 
     let descriptor = Descriptor {
@@ -60,4 +79,67 @@ pub fn decode_payload(bytes: &[u8], total_bits: usize) -> Result<Descriptor, Err
 pub fn decode_md1_string(s: &str) -> Result<Descriptor, Error> {
     let (bytes, symbol_aligned_bit_count) = crate::codex32::unwrap_string(s)?;
     decode_payload(&bytes, symbol_aligned_bit_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encode::encode_payload;
+    use crate::origin_path::{OriginPath, PathComponent, PathDeclPaths};
+    use crate::tlv::TlvSection;
+    use crate::tree::{Body, Node};
+
+    /// SPEC §11 TopLevel check: a wire payload whose root tag is outside the
+    /// BIP-388 allow-list `{Sh, Wsh, Wpkh, Pkh, Tr}` must be rejected with
+    /// `Error::OperatorContextViolation { context: ContextKind::TopLevel }`.
+    /// The encoder has no root-tag gate (only placeholder/multipath/taptree
+    /// validators run), so `encode_payload` of an AndV-rooted descriptor
+    /// succeeds and round-trips through `decode_payload` exposes the gap.
+    #[test]
+    fn decode_rejects_non_canonical_root_tag() {
+        // The TopLevel check fires in `decode_payload` before any downstream
+        // validator runs, so this test reaches the rejection regardless of
+        // whether path_decl would satisfy `validate_explicit_origin_required`
+        // (it does, but the check is short-circuited above). path_decl is
+        // populated here to mirror a realistic descriptor shape.
+        let d = Descriptor {
+            n: 1,
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(OriginPath {
+                    components: vec![PathComponent {
+                        hardened: true,
+                        value: 84,
+                    }],
+                }),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::AndV,
+                body: Body::Children(vec![
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                    Node {
+                        tag: Tag::PkK,
+                        body: Body::KeyArg { index: 0 },
+                    },
+                ]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        let (bytes, total_bits) = encode_payload(&d).expect("encode AndV-rooted ok");
+        let err = decode_payload(&bytes, total_bits).expect_err("decode must reject");
+        assert!(
+            matches!(
+                err,
+                Error::OperatorContextViolation {
+                    tag: Tag::AndV,
+                    context: ContextKind::TopLevel,
+                }
+            ),
+            "expected OperatorContextViolation{{TopLevel}}, got {err:?}"
+        );
+    }
 }

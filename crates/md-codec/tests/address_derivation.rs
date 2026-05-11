@@ -1,5 +1,3 @@
-//! file location /home/user/repo/crates/md-codec/tests/address_derivation.rs
-
 //! Integration tests for `Descriptor::derive_address` (md1 v0.14).
 //!
 //! Each test follows the same shape: derive an account-level xpub from

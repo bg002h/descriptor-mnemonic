@@ -129,12 +129,16 @@ fn multi_chunk_descriptor() -> Descriptor {
             paths: PathDeclPaths::Divergent(paths),
         },
         use_site_path: UseSitePath::standard_multipath(),
+        // v0.31: root tag must be in {Sh, Wsh, Wpkh, Pkh, Tr}; wrap SortedMulti in Wsh.
         tree: Node {
-            tag: Tag::SortedMulti,
-            body: Body::MultiKeys {
-                k: 2,
-                indices: (0..4).collect(),
-            },
+            tag: Tag::Wsh,
+            body: Body::Children(vec![Node {
+                tag: Tag::SortedMulti,
+                body: Body::MultiKeys {
+                    k: 2,
+                    indices: (0..4).collect(),
+                },
+            }]),
         },
         tlv: TlvSection::new_empty(),
     }

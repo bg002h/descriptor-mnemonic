@@ -194,8 +194,10 @@ pub enum Error {
     },
 
     /// Operator appears in a forbidden context per SPEC v0.30 §11.
-    /// See FOLLOWUP `v0.30-phase-g-operator-context-violation-unwired`
-    /// for current decoder-side fire-site status.
+    /// `TopLevel` is enforced decoder-side at `decode_payload`; `TapLeaf` is
+    /// covered by the narrower [`Error::ForbiddenTapTreeLeaf`]; `MultiBody` is
+    /// structurally unreachable post-v0.30 Phase C (multi-family bodies carry
+    /// raw kiw-bit indices, not child tags).
     #[error("operator {tag:?} not allowed in context {context:?}")]
     OperatorContextViolation {
         /// The offending operator tag.

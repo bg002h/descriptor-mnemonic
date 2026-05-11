@@ -1,5 +1,3 @@
-//! #file location crates/md-codec/src/derive.rs
-
 //! Address derivation per md1 v0.14.
 //!
 //! Given a decoded [`Descriptor`] in wallet-policy mode (`Pubkeys` TLV

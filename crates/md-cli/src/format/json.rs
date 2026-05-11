@@ -117,9 +117,96 @@ mod tests {
 
 use md_codec::encode::Descriptor;
 use md_codec::origin_path::{OriginPath, PathDecl, PathDeclPaths};
+use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
 use md_codec::tree::{Body, Node};
 use md_codec::use_site_path::UseSitePath;
+
+/// Serde mirror of [`md_codec::tag::Tag`] anchoring the JSON `tag` field
+/// to an explicit PascalCase contract — independent of `Tag`'s `Debug` impl.
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) enum JsonTag {
+    Wpkh,
+    Wsh,
+    Pkh,
+    Sh,
+    AndV,
+    AndB,
+    AndOr,
+    OrB,
+    OrC,
+    OrD,
+    OrI,
+    PkK,
+    PkH,
+    Multi,
+    MultiA,
+    SortedMulti,
+    SortedMultiA,
+    Thresh,
+    Tr,
+    Check,
+    Verify,
+    Swap,
+    Alt,
+    DupIf,
+    NonZero,
+    ZeroNotEqual,
+    After,
+    Older,
+    Sha256,
+    TapTree,
+    Hash160,
+    Hash256,
+    Ripemd160,
+    RawPkH,
+    False,
+    True,
+}
+
+impl From<&Tag> for JsonTag {
+    fn from(t: &Tag) -> Self {
+        match t {
+            Tag::Wpkh => JsonTag::Wpkh,
+            Tag::Wsh => JsonTag::Wsh,
+            Tag::Pkh => JsonTag::Pkh,
+            Tag::Sh => JsonTag::Sh,
+            Tag::AndV => JsonTag::AndV,
+            Tag::AndB => JsonTag::AndB,
+            Tag::AndOr => JsonTag::AndOr,
+            Tag::OrB => JsonTag::OrB,
+            Tag::OrC => JsonTag::OrC,
+            Tag::OrD => JsonTag::OrD,
+            Tag::OrI => JsonTag::OrI,
+            Tag::PkK => JsonTag::PkK,
+            Tag::PkH => JsonTag::PkH,
+            Tag::Multi => JsonTag::Multi,
+            Tag::MultiA => JsonTag::MultiA,
+            Tag::SortedMulti => JsonTag::SortedMulti,
+            Tag::SortedMultiA => JsonTag::SortedMultiA,
+            Tag::Thresh => JsonTag::Thresh,
+            Tag::Tr => JsonTag::Tr,
+            Tag::Check => JsonTag::Check,
+            Tag::Verify => JsonTag::Verify,
+            Tag::Swap => JsonTag::Swap,
+            Tag::Alt => JsonTag::Alt,
+            Tag::DupIf => JsonTag::DupIf,
+            Tag::NonZero => JsonTag::NonZero,
+            Tag::ZeroNotEqual => JsonTag::ZeroNotEqual,
+            Tag::After => JsonTag::After,
+            Tag::Older => JsonTag::Older,
+            Tag::Sha256 => JsonTag::Sha256,
+            Tag::TapTree => JsonTag::TapTree,
+            Tag::Hash160 => JsonTag::Hash160,
+            Tag::Hash256 => JsonTag::Hash256,
+            Tag::Ripemd160 => JsonTag::Ripemd160,
+            Tag::RawPkH => JsonTag::RawPkH,
+            Tag::False => JsonTag::False,
+            Tag::True => JsonTag::True,
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub struct JsonDescriptor {
@@ -200,13 +287,13 @@ impl From<&UseSitePath> for JsonUseSitePath {
 
 #[derive(Serialize)]
 pub struct JsonNode {
-    pub tag: String,
+    pub tag: JsonTag,
     pub body: JsonBody,
 }
 impl From<&Node> for JsonNode {
     fn from(n: &Node) -> Self {
         Self {
-            tag: format!("{:?}", n.tag),
+            tag: JsonTag::from(&n.tag),
             body: (&n.body).into(),
         }
     }
@@ -325,5 +412,68 @@ mod descriptor_json_tests {
         assert_eq!(j["tree"]["body"]["data"][0]["tag"], "Multi");
         // v0.30 Phase C: multi-family serializes as MultiKeys with raw indices.
         assert_eq!(j["tree"]["body"]["data"][0]["body"]["kind"], "MultiKeys");
+    }
+
+    /// Pin `JsonTag`'s PascalCase contract against serde-rename drift. Each
+    /// mixed-case variant is asserted against its expected serialized string
+    /// directly — independent of snapshot regen, so a future accidental `_`
+    /// insertion or rename-attribute drop fails this test loudly.
+    #[test]
+    fn json_tag_serialization_pins_pascal_case() {
+        let cases: &[(Tag, &str)] = &[
+            (Tag::PkK, "PkK"),
+            (Tag::PkH, "PkH"),
+            (Tag::RawPkH, "RawPkH"),
+            (Tag::MultiA, "MultiA"),
+            (Tag::SortedMultiA, "SortedMultiA"),
+            (Tag::OrI, "OrI"),
+            (Tag::DupIf, "DupIf"),
+            (Tag::NonZero, "NonZero"),
+            (Tag::ZeroNotEqual, "ZeroNotEqual"),
+            (Tag::TapTree, "TapTree"),
+            (Tag::False, "False"),
+            (Tag::True, "True"),
+        ];
+        for (tag, expected) in cases {
+            let json = serde_json::to_value(JsonTag::from(tag)).unwrap();
+            assert_eq!(
+                json,
+                serde_json::Value::String((*expected).to_string()),
+                "Tag::{:?} should serialize to {:?}",
+                tag,
+                expected
+            );
+        }
+    }
+
+    /// `Tag::TapTree` snapshot coverage: no manifest fixture exercises a
+    /// branching tap-script-tree (single-leaf `tr()` emits a bare leaf at
+    /// root, not a `TapTree` node), so this inline test serves as the live
+    /// regression for the `"TapTree"` serialized string. Constructs a minimal
+    /// `Body::Tr` with a `TapTree` child and asserts JSON output.
+    #[test]
+    fn tr_with_taptree_serializes_taptree_string() {
+        use md_codec::tree::{Body, Node};
+        let leaf = Node {
+            tag: Tag::PkK,
+            body: Body::KeyArg { index: 1 },
+        };
+        let tap_branch = Node {
+            tag: Tag::TapTree,
+            body: Body::Children(vec![leaf.clone(), leaf]),
+        };
+        let tr = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: false,
+                key_index: 0,
+                tree: Some(Box::new(tap_branch)),
+            },
+        };
+        let j = serde_json::to_value(JsonNode::from(&tr)).unwrap();
+        assert_eq!(j["tag"], "Tr");
+        let inner_tree = &j["body"]["data"]["tree"];
+        assert_eq!(inner_tree["tag"], "TapTree");
+        assert_eq!(inner_tree["body"]["kind"], "Children");
     }
 }

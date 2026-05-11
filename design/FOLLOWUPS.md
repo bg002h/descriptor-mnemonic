@@ -564,7 +564,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
   - `TopLevel`: top-level shape (e.g., bare `PkK` as a descriptor root) is enforced parser-side in `md-cli/src/parse`, not decoder-side in `md-codec`.
   - `TapLeaf`: the narrower [`Error::ForbiddenTapTreeLeaf`] already covers BIP-342-forbidden tags inside tap-script-tree leaves; replacing it would be a downgrade in precision.
 - **Why deferred:** Phase G's sub-plan explicitly instructed "Don't invent fictional fire sites just to make the variant live"; SPEC compliance is satisfied by the type's existence + a construct-and-Display unit test pinning the shape. Lift gated by a future v1+ wire-extension that surfaces a context-violation case (e.g., parser-side enforcement migrating into the decoder, or a new multi-family encoding that re-introduces context-sensitive child tags).
-- **Status:** open
+- **Status:** resolved (v0.31.0: TopLevel wired at decode.rs; TapLeaf intentionally covered by narrower ForbiddenTapTreeLeaf; MultiBody structurally unreachable post-Phase-C)
 - **Tier:** v0.30 (active; lift gated by parser-side migration or v1+ extension that surfaces a natural raise site)
 
 ### `repo-hygiene-stale-file-location-doc-artifacts` — `//! #file location ...` / `//! file location ...` strings at line 1 of various Rust files
@@ -573,7 +573,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** at least `crates/md-codec/src/derive.rs:1` (`//! #file location crates/md-codec/src/derive.rs`) and `crates/md-codec/tests/address_derivation.rs:1` (`//! file location /home/user/repo/crates/md-codec/tests/address_derivation.rs`). Likely more across the workspace; not enumerated.
 - **What:** Tooling-injected doc-comment artifacts that render literally in `cargo doc` output. Inconsistent format (one has `#`, one omits; one has a real path, one has a `/home/user/repo/...` placeholder). Repo-hygiene drift, not a behavior issue.
 - **Why deferred:** Out-of-scope for Phase C — pre-exist on the HEAD commit before any Phase C edits. Sweeping these mid-Phase-C would violate the "Don't add features, refactor, or introduce abstractions beyond what the task requires" memory. Worth a dedicated cleanup commit later.
-- **Status:** open
+- **Status:** resolved (v0.31.0: 2 sites deleted)
 - **Tier:** v1+ (low-priority; opportunistic sweep)
 
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
@@ -681,7 +681,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where (as filed):** `crates/wdm-codec/src/bin/wdm/json.rs` `confidence_debug` and `outcome_debug` helpers — substrate gone since the v0.11 wire-format reset (no `wdm-codec` crate, no `confidence_debug` / `outcome_debug` helpers). The Debug-coupled antipattern persists in current code at `crates/md-cli/src/format/json.rs:209` (`format!("{:?}", n.tag)`) for the `Tag` enum; that is the live site this entry now tracks.
 - **What:** The CLI's `--json` output stringifies enum variants via `format!("{:?}", e)`. This works but couples the JSON contract to the library's `Debug` impl — if anyone ever changes a `Debug` derive (e.g., to add a field), the JSON output silently changes. Replacement: define bin-private serde-able enum mirrors with `#[serde(rename_all = "PascalCase")]` (or explicit `#[serde(rename = "...")]` per variant) so the JSON contract is anchored in the wrapper, not in `Debug`.
 - **Why deferred:** Pre-v1.0 the JSON shape is not yet a stability contract — the `Debug` shortcut is acceptable. Decoupling becomes a real liability when v1.0 pins JSON as a contract. Until then, drift risk is bounded (only one site; only one enum).
-- **Status:** open
+- **Status:** resolved (v0.31.0: JsonTag serde mirror at md-cli/src/format/json.rs)
 - **Tier:** v1+
 
 ### `legacy-pkh-permanent-exclusion` — `pkh(KEY)` is permanently excluded

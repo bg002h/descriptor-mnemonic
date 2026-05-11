@@ -36,6 +36,20 @@ Bug-fix release. Wire format unchanged; encoded phrases produced by v0.4.0/v0.4.
 
 - Added `reencode_round_trip_curated_shapes` and `reencode_round_trip_each_manifest_entry` integration tests in `crates/md-cli/tests/template_roundtrip.rs`. The curated test pins four shapes that exercise `pkh()` in B-position (the user's inheritance template `wsh(andor(pkh,after,or_i(and_v(v:pkh,older),and_v(v:pkh,older))))`, plus `wsh(and_v(v:pkh,older))`, `wsh(or_i(pkh,pkh))`, and the tap-leaf companion). Both tests assert `encode(decode(encode(t))) == encode(t)` — strictly stronger than the existing `decode(encode(t)) == t` equality round-trip because it catches renderer outputs that fail to re-parse OR re-parse to a different AST. Future renderer asymmetries surface here even when the decoded text differs from the input by valid canonical-form drift.
 
+## md-codec [0.31.0] — 2026-05-10
+
+### Added
+- Decoder-side TopLevel rejection: `Error::OperatorContextViolation { tag, context: ContextKind::TopLevel }` now fires when a decoded descriptor's root tag is outside the BIP-388 allow-list `{Sh, Wsh, Wpkh, Pkh, Tr}`. Defense-in-depth check; previously the decoder silently accepted any root tag. Resolves FOLLOWUP `v0.30-phase-g-operator-context-violation-unwired`.
+
+### Changed
+- `md-cli` JSON output: tag-name strings now go through a `JsonTag` serde mirror with explicit `#[serde(rename_all = "PascalCase")]` (was `format!("{:?}", tag)`). Output is byte-identical to v0.30.0; the change establishes a stability contract for the `tag` field in JSON output. Resolves FOLLOWUP `cli-json-debug-formatted-enum-strings`.
+
+### Removed
+- Stale `//! #file location ...` and `//! file location ...` docstring artifacts at `crates/md-codec/src/derive.rs:1` and `crates/md-codec/tests/address_derivation.rs:1`. Pre-existing tooling injection; no behavior impact. Resolves FOLLOWUP `repo-hygiene-stale-file-location-doc-artifacts`.
+
+### Workspace
+- `md-cli` md-codec dep specifier bumped to `0.31.0`. md-cli's own version stays at `0.4.3`.
+
 ## md-codec [0.30.0] — 2026-05-10
 
 ### Changed (breaking)
