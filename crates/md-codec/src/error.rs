@@ -1,8 +1,8 @@
-//! v0.11-specific error variants.
+//! Error variants for the md-codec wire-format codec.
 
 use thiserror::Error;
 
-/// Errors produced by v0.11 wire-format codec components.
+/// Errors produced by md-codec wire-format components.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum Error {
     /// A read of `requested` bits was attempted but only `available` bits remained.
@@ -57,13 +57,17 @@ pub enum Error {
         got: usize,
     },
 
-    /// Unknown primary tag value (0x00..0x1F unrecognized).
-    #[error("unknown primary tag value 0x{0:02x}")]
-    UnknownPrimaryTag(u8),
-
-    /// Unknown extension tag value (after 0x1F primary prefix).
-    #[error("unknown extension tag value 0x{0:02x}")]
-    UnknownExtensionTag(u8),
+    /// Tag value outside the allocated v0.30 set: 6-bit primary in reserved
+    /// range 0x24..=0x3E, or extension prefix 0x3F followed by an unrecognized
+    /// 4-bit subcode 0x00..=0x0F (the entire extension subspace is reserved
+    /// in v0.30). `primary` carries the raw 6-bit value read off the wire
+    /// (0x3F for extension-subspace failures); the 4-bit subcode is consumed
+    /// but not reported. Per SPEC v0.30 §3.2 and §11.1.
+    #[error("tag value 0x{primary:02x} out of range")]
+    TagOutOfRange {
+        /// The raw 6-bit primary value read off the wire.
+        primary: u8,
+    },
 
     /// Threshold k out of range; v0.11 requires 1 ≤ k ≤ 32.
     #[error("threshold k={k} out of range; v0.11 requires 1 ≤ k ≤ 32")]
@@ -165,7 +169,7 @@ pub enum Error {
     /// Tap-script-tree leaf has a tag that is forbidden per spec §6.3.1.
     #[error("forbidden tap-script-tree leaf tag: 0x{tag:02x}")]
     ForbiddenTapTreeLeaf {
-        /// Primary 5-bit tag code of the forbidden leaf.
+        /// Primary 6-bit tag code (bytecode space) of the forbidden leaf.
         tag: u8,
     },
 

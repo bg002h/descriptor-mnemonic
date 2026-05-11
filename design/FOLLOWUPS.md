@@ -481,6 +481,36 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** Cycle 1 design-frozen. Implementation pending.
 - **Tier:** v0.30 (active)
 
+### `v0.30-phase-a-tree-tests-ignored-pending-corpus-regen` — 12 `tree::tests` marked `#[ignore]` by Phase A
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase A execution. The `IMPLEMENTATION_PLAN_v0_30.md` §3 Phase A stop condition implicitly assumed full `cargo test -p md-codec --lib` would stay green after the 5→6-bit primary tag width change; reality is that 12 unit tests in `tree::tests` carry bit-count pin assertions whose values shift by ±N bits per tag emitted. None are logic failures; all are predictable corpus-regen-class fallout.
+- **Where:** `crates/md-codec/src/tree.rs` — search for `#[ignore = "v0.30 Phase A:"]`. Affected tests:
+  - **Lifted in Phase F (NUMS `is_nums` flag replaces sentinel):** `tr_bip86_no_tree`, `tr_sentinel_n_1_bare_round_trip`, `tr_sentinel_n_4_bare_round_trip`, `key_arg_n1_zero_bits`, `key_arg_n3_two_bits`
+  - **Lifted in Phase C (multi child packing) or Phase H (corpus regen):** `sortedmulti_2of3_bit_cost`
+  - **Lifted in Phase H (corpus regen):** `after_700_000_round_trip`, `sha256_round_trip`, `hash160_round_trip`, `hash256_extension_round_trip`, `false_round_trip`, `tap_tree_two_leaf_round_trip`
+- **What:** All 12 tests still have valid round-trip logic in their bodies; only the pinned-bit-count assertion values are stale relative to v0.30 widths. Each `#[ignore]` annotation states the target lift phase verbatim. Phase H's corpus regen pass MUST un-ignore the H-phase tests and update their bit-count constants; Phases C/F MUST un-ignore their respective tests as a step of those phases' commits.
+- **Why deferred:** The plan explicitly scoped tree.rs OUT of Phase A (its real touch happens in Phases C/E/F). Fixing the bit-count pins in Phase A would pull tree.rs into Phase A scope and risk error-prone recomputation, with some pins needing re-update at Phase F (kiw formula change). The `#[ignore]` deferral preserves test code intact for trivial un-ignore + recompute in the proper phase. Decision made by user 2026-05-10 in the Phase A execution flow.
+- **Status:** open
+- **Tier:** v0.30 (active; lift gated by Phases C/F/H)
+
+### `v0.30-phase-a-r1-low-1` — `tree::tests::ripemd160_extension_round_trip` retains stale `_extension` suffix
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase A code-reviewer r1.
+- **Where:** `crates/md-codec/src/tree.rs:524` (the `#[test] fn ripemd160_extension_round_trip` declaration).
+- **What:** Phase A renamed the three tag-level `_extension`-suffixed tests in `tag.rs::tests` (Hash256/False/True) to drop the misleading suffix, since those variants are now primary-space in v0.30. The parallel tree-layer test `ripemd160_extension_round_trip` was not renamed — it falls inside tree.rs which Phase A scoped out. The test still passes (no bit-count pin to invalidate), but the name implies Ripemd160 is still an extension-space tag, which it isn't post-v0.30.
+- **Why deferred:** tree.rs is out of Phase A scope per the plan; touching it for a test rename would expand scope. Bundle with the Phase C/F tree.rs touches.
+- **Status:** open
+- **Tier:** v0.30 (lift gated by Phase C or F when tree.rs is next touched)
+
+### `v0.30-phase-a-r1-nit-1` — multiple `v0.11`-branded prose strings in `error.rs` remain after Phase A
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase A code-reviewer r1.
+- **Where:** `crates/md-codec/src/error.rs` lines 17-18 (`ReservedHeaderBitSet`), 37-38 (`KeyCountOutOfRange`), 53-54 (`AltCountOutOfRange`), 72-73 (`ThresholdOutOfRange`), 80 (`ChildCountOutOfRange`), 176-177 (`ChunkCountOutOfRange`) and likely several other variant doc-comments and `#[error("...")]` format strings that retain `v0.11` literal references.
+- **What:** Phase A correctly cleaned up the module-level + enum-level doc (line 1 + 5) and `ForbiddenTapTreeLeaf`'s field doc (line 172). The "v0.11" branding inside individual variant doc-comments and error format strings (e.g., `"v0.11 requires 1 ≤ count ≤ 64"`) is unchanged. Phase B will REMOVE two of these variants (`ReservedHeaderBitSet`, `UnsupportedVersion`) but won't touch the rest. The `v0.11` literals will outlive both Phase A and Phase B in their current scope.
+- **Why deferred:** Phase A's scope was tag-related only. Expanding to clean all `v0.11` prose would have been out-of-scope. The cleanest sweep happens in Phase G (decoder error taxonomy refactor) which already touches every `error.rs` call site.
+- **Status:** open
+- **Tier:** v0.30 (lift gated by Phase G or by an explicit "tidy v0.x prose" sub-task in Phase B)
+
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
 - **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
