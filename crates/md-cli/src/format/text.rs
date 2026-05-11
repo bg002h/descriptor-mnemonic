@@ -294,9 +294,13 @@ fn render_hash160(name: &str, body: &Body, out: &mut String) -> Result<(), CliEr
 /// benefit; the assert is sufficient.
 ///
 /// Special cases:
-/// - `Check(PkK)` and `Check(PkH)` collapse to the shorthand `pk(K)` / `pkh(K)`
-///   per miniscript's canonical printer; if the wrapper chain ends in `c:` and
-///   the deepest inner is PkK/PkH, render the shorthand without any prefix.
+/// - `Check(PkK)` / `Check(PkH)` collapse to `pk(K)` / `pkh(K)`. v0.30 SPEC
+///   §5.1 (Q12 — walker normalization) makes the v0.30 md-cli walker emit
+///   bare `Tag::PkK` / `Tag::PkH` at every key-leaf position, so this arm
+///   is unreachable on v0.30-produced wires (the bare-PkK/PkH arm in
+///   [`render_node`] handles the shorthand directly). Retained as defensive
+///   coverage for foreign/legacy/test-fabricated wires that still carry the
+///   wrapped shape.
 /// - When `n:` (Tag::ZeroNotEqual) appears immediately before a `0` literal,
 ///   miniscript prints `n0` not `n:0`. Phase 4b doesn't pin this corner; bare
 ///   `0` at top-level is structurally degenerate. Handle if a future test
@@ -630,9 +634,9 @@ mod tests {
     /// unblock it.
     ///
     /// Note: segwitv0 desugars bare `pk(K)` to `c:pk_k(K)` at typed-miniscript
-    /// parse time. The renderer's Tag::Check arm collapses `Check(PkK) → pk(K)`
-    /// (miniscript's canonical shorthand), so the round-trip target uses the
-    /// shorthand even though the wire form carries explicit Tag::Check.
+    /// parse time. v0.30 SPEC §5.1 makes the walker emit bare `Tag::PkK` for
+    /// the key-leaf (no enclosing Tag::Check); the renderer's bare-PkK arm
+    /// emits `pk(K)` directly. Round-trip target uses the shorthand.
     #[test]
     fn roundtrip_wsh_thresh_with_non_key_fragment_child() {
         let t =

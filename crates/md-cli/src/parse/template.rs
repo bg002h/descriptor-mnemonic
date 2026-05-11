@@ -543,7 +543,7 @@ fn walk_sh(
                 index: lookup_key(&wp.as_inner().to_string(), km)?,
             },
         },
-        ShInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/ false)?,
+        ShInner::Ms(ms) => walk_miniscript_node(ms, km)?,
         ShInner::SortedMulti(sm) => build_multi_node(
             Tag::SortedMulti,
             sm.k(),
@@ -560,7 +560,7 @@ fn walk_wsh_inner(
 ) -> Result<Node, CliError> {
     use miniscript::descriptor::WshInner;
     match w.as_inner() {
-        WshInner::Ms(ms) => walk_miniscript_node(ms, km, /*tap=*/ false),
+        WshInner::Ms(ms) => walk_miniscript_node(ms, km),
         WshInner::SortedMulti(sm) => build_multi_node(
             Tag::SortedMulti,
             sm.k(),
@@ -573,7 +573,6 @@ fn walk_wsh_inner(
 fn walk_miniscript_node<C: miniscript::ScriptContext>(
     ms: &miniscript::Miniscript<DescriptorPublicKey, C>,
     km: &std::collections::BTreeMap<String, u8>,
-    tap_context: bool,
 ) -> Result<Node, CliError> {
     use bitcoin::hashes::Hash;
     use miniscript::miniscript::decode::Terminal;
@@ -602,31 +601,31 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             &thresh.data().iter().collect::<Vec<_>>(),
             km,
         ),
-        // `c:` wrapper. In Tapscript leaves, miniscript desugars `pk(K)` to
-        // `c:pk_k(K)`; the BIP 388 wire form for that leaf is bare `PkK`, so
-        // collapse the wrapper there. In segwitv0 we keep `Check` explicit.
+        // `c:` wrapper. v0.30 SPEC §5.1 (Q12 — walker normalization): emit
+        // bare `Tag::PkK` / `Tag::PkH` at every key-check position regardless
+        // of context (tap-leaf and segwitv0 alike). `Tag::Check` is only
+        // emitted wrapping non-key children. Renderer reconstructs the
+        // `pk(K)` / `pkh(K)` shorthand from bare PkK/PkH per SPEC §5.2.
         Terminal::Check(inner) => {
-            if tap_context {
-                if let Terminal::PkK(k) = &inner.node {
-                    return Ok(Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg {
-                            index: lookup_key(&k.to_string(), km)?,
-                        },
-                    });
-                }
-                if let Terminal::PkH(k) = &inner.node {
-                    return Ok(Node {
-                        tag: Tag::PkH,
-                        body: Body::KeyArg {
-                            index: lookup_key(&k.to_string(), km)?,
-                        },
-                    });
-                }
+            if let Terminal::PkK(k) = &inner.node {
+                return Ok(Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg {
+                        index: lookup_key(&k.to_string(), km)?,
+                    },
+                });
+            }
+            if let Terminal::PkH(k) = &inner.node {
+                return Ok(Node {
+                    tag: Tag::PkH,
+                    body: Body::KeyArg {
+                        index: lookup_key(&k.to_string(), km)?,
+                    },
+                });
             }
             Ok(Node {
                 tag: Tag::Check,
-                body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+                body: Body::Children(vec![walk_miniscript_node(inner, km)?]),
             })
         }
         // `v:` wrapper. Used inside and_v(v:pk(K), ...) shapes that
@@ -634,14 +633,14 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         // for any "must-also-sign" sub-expression.
         Terminal::Verify(inner) => Ok(Node {
             tag: Tag::Verify,
-            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+            body: Body::Children(vec![walk_miniscript_node(inner, km)?]),
         }),
         // `and_v` — and-conjunction with verify-promotion semantics.
         Terminal::AndV(l, r) => Ok(Node {
             tag: Tag::AndV,
             body: Body::Children(vec![
-                walk_miniscript_node(l, km, tap_context)?,
-                walk_miniscript_node(r, km, tap_context)?,
+                walk_miniscript_node(l, km)?,
+                walk_miniscript_node(r, km)?,
             ]),
         }),
         // `older` — relative timelock. miniscript carries `Sequence`; we
@@ -661,8 +660,8 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         Terminal::AndB(l, r) => Ok(Node {
             tag: Tag::AndB,
             body: Body::Children(vec![
-                walk_miniscript_node(l, km, tap_context)?,
-                walk_miniscript_node(r, km, tap_context)?,
+                walk_miniscript_node(l, km)?,
+                walk_miniscript_node(r, km)?,
             ]),
         }),
         // `andor(a, b, c)` — ternary "if a then b else c" pattern. The only
@@ -671,9 +670,9 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         Terminal::AndOr(a, b, c) => Ok(Node {
             tag: Tag::AndOr,
             body: Body::Children(vec![
-                walk_miniscript_node(a, km, tap_context)?,
-                walk_miniscript_node(b, km, tap_context)?,
-                walk_miniscript_node(c, km, tap_context)?,
+                walk_miniscript_node(a, km)?,
+                walk_miniscript_node(b, km)?,
+                walk_miniscript_node(c, km)?,
             ]),
         }),
         // `or_b` — or-disjunction via BOOLOR. Both branches must produce a
@@ -681,16 +680,16 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         Terminal::OrB(l, r) => Ok(Node {
             tag: Tag::OrB,
             body: Body::Children(vec![
-                walk_miniscript_node(l, km, tap_context)?,
-                walk_miniscript_node(r, km, tap_context)?,
+                walk_miniscript_node(l, km)?,
+                walk_miniscript_node(r, km)?,
             ]),
         }),
         // `or_c` — or-disjunction via NOTIF (right branch is verify-promoted).
         Terminal::OrC(l, r) => Ok(Node {
             tag: Tag::OrC,
             body: Body::Children(vec![
-                walk_miniscript_node(l, km, tap_context)?,
-                walk_miniscript_node(r, km, tap_context)?,
+                walk_miniscript_node(l, km)?,
+                walk_miniscript_node(r, km)?,
             ]),
         }),
         // `or_d` — or-disjunction via IFDUP. Common in recovery patterns
@@ -699,8 +698,8 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         Terminal::OrD(l, r) => Ok(Node {
             tag: Tag::OrD,
             body: Body::Children(vec![
-                walk_miniscript_node(l, km, tap_context)?,
-                walk_miniscript_node(r, km, tap_context)?,
+                walk_miniscript_node(l, km)?,
+                walk_miniscript_node(r, km)?,
             ]),
         }),
         // `or_i` — or-disjunction via IF/ELSE/ENDIF. Either branch may be a
@@ -708,8 +707,8 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         Terminal::OrI(l, r) => Ok(Node {
             tag: Tag::OrI,
             body: Body::Children(vec![
-                walk_miniscript_node(l, km, tap_context)?,
-                walk_miniscript_node(r, km, tap_context)?,
+                walk_miniscript_node(l, km)?,
+                walk_miniscript_node(r, km)?,
             ]),
         }),
         // Hash preimage locks. miniscript carries arrays of bytes via newtypes
@@ -738,23 +737,23 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         // miniscript's typecheck.
         Terminal::Swap(inner) => Ok(Node {
             tag: Tag::Swap,
-            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+            body: Body::Children(vec![walk_miniscript_node(inner, km)?]),
         }),
         Terminal::Alt(inner) => Ok(Node {
             tag: Tag::Alt,
-            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+            body: Body::Children(vec![walk_miniscript_node(inner, km)?]),
         }),
         Terminal::DupIf(inner) => Ok(Node {
             tag: Tag::DupIf,
-            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+            body: Body::Children(vec![walk_miniscript_node(inner, km)?]),
         }),
         Terminal::NonZero(inner) => Ok(Node {
             tag: Tag::NonZero,
-            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+            body: Body::Children(vec![walk_miniscript_node(inner, km)?]),
         }),
         Terminal::ZeroNotEqual(inner) => Ok(Node {
             tag: Tag::ZeroNotEqual,
-            body: Body::Children(vec![walk_miniscript_node(inner, km, tap_context)?]),
+            body: Body::Children(vec![walk_miniscript_node(inner, km)?]),
         }),
         // Boolean literals. Reachable inside compound fragments —
         // miniscript's `t:X` is sugar for `and_v(X, 1)`, so True appears
@@ -787,7 +786,7 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             let children: Vec<Node> = thresh
                 .data()
                 .iter()
-                .map(|c| walk_miniscript_node(c, km, tap_context))
+                .map(|c| walk_miniscript_node(c, km))
                 .collect::<Result<_, CliError>>()?;
             Ok(Node {
                 tag: Tag::Thresh,
@@ -798,12 +797,9 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             })
         }
         // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
-        _ => {
-            let _ = tap_context;
-            Err(CliError::TemplateParse(format!(
-                "unsupported miniscript fragment: {ms}"
-            )))
-        }
+        _ => Err(CliError::TemplateParse(format!(
+            "unsupported miniscript fragment: {ms}"
+        ))),
     }
 }
 
@@ -886,7 +882,7 @@ fn walk_tap_tree(
 ) -> Result<Node, CliError> {
     let mut stack: Vec<(u8, Node)> = Vec::new();
     for leaf in tt.leaves() {
-        let leaf_node = walk_miniscript_node(leaf.miniscript(), km, /*tap=*/ true)?;
+        let leaf_node = walk_miniscript_node(leaf.miniscript(), km)?;
         stack.push((leaf.depth(), leaf_node));
         // Coalesce: while top two stack entries share the same depth, wrap
         // them as a Tag::TapTree branch at depth-1. miniscript's TapTree
@@ -1606,11 +1602,56 @@ mod tr_tests {
         assert_eq!(kids[1].tag, Tag::Swap);
         match &kids[1].body {
             Body::Children(v) if v.len() == 1 => {
-                // Inside the Swap is c:pk_k(@1), which collapses to Check(PkK).
-                assert_eq!(v[0].tag, Tag::Check);
+                // v0.30 SPEC §5.1: c:pk_k(@1) emits bare Tag::PkK (no
+                // enclosing Tag::Check) regardless of context. Pre-v0.30 this
+                // arm asserted Tag::Check; the walker normalization collapses
+                // the wrapper at the key-leaf position.
+                assert_eq!(v[0].tag, Tag::PkK);
+                assert!(matches!(v[0].body, Body::KeyArg { index: 1 }));
             }
             _ => panic!("expected Swap.Children([1])"),
         }
+    }
+
+    /// v0.30 Phase E (Q12) — `wsh(pkh(@0))` parses as
+    /// `Terminal::Check(Terminal::PkH(K))` in segwitv0; v0.30 SPEC §5.1
+    /// requires the walker to emit bare `Tag::PkH` (not `Tag::Check(PkH)`)
+    /// at the key-leaf position. Companion to the integration round-trip in
+    /// `tests/template_roundtrip.rs::wsh_pkh_shorthand_collapse_round_trips`.
+    #[test]
+    fn pkh_key_leaf_bare_on_wire() {
+        let (s, km) =
+            substitute_synthetic("wsh(pkh(@0/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let inner = match &root.body {
+            Body::Children(v) if v.len() == 1 => &v[0],
+            _ => panic!("expected Wsh.Children([1])"),
+        };
+        assert_eq!(inner.tag, Tag::PkH, "expected bare Tag::PkH, no Check wrap");
+        assert!(matches!(inner.body, Body::KeyArg { index: 0 }));
+    }
+
+    /// v0.30 Phase E (Q12) — Tr tap-leaf `pk(@1)` (= `c:pk_k(@1)` post-
+    /// desugar) emits bare `Tag::PkK` (no enclosing `Tag::Check`). Matches
+    /// the historical tap-context collapse; v0.30 lifts the same collapse to
+    /// segwitv0 too, but this test pins the tap-leaf invariant explicitly so
+    /// future regressions surface here.
+    #[test]
+    fn tr_tap_leaf_bare_pk_on_wire() {
+        let (s, km) = substitute_synthetic(
+            "tr(@0/<0;1>/*,pk(@1/<0;1>/*))",
+            ScriptCtx::MultiSig,
+        )
+        .unwrap();
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
+        let root = walk_root(&d, &km).unwrap();
+        let leaf = match root.body {
+            Body::Tr { tree, .. } => tree.expect("tap tree must be present"),
+            _ => panic!("expected Body::Tr"),
+        };
+        assert_eq!(leaf.tag, Tag::PkK, "expected bare Tag::PkK in tap leaf");
+        assert!(matches!(leaf.body, Body::KeyArg { index: 1 }));
     }
 
     /// v0.18 Phase 4b — Terminal::True (reachable via miniscript's `t:` sugar
