@@ -100,7 +100,7 @@ Mirrors `tree::Body` variants under the v0.30 wire format:
 - `{"kind": "Children", "data": [JsonNode, ...]}` — wrapper nodes (Wsh, Sh, Check, Verify, AndV, AndOr, TapTree branches, …)
 - `{"kind": "MultiKeys", "data": {"k": u8, "indices": [u8, ...]}}` — Multi / SortedMulti / MultiA / SortedMultiA (v0.30+ packs key indices at `kiw = ⌈log₂(n)⌉` bits)
 - `{"kind": "Variable", "data": {"k": u8, "children": [JsonNode, ...]}}` — Thresh (mixed key + sub-policy children)
-- `{"kind": "Tr", "data": {"key_index": u8, "is_nums": bool, "tree": JsonNode | null}}` — Taproot root. The `is_nums` flag (v0.30+) replaces the pre-v0.30 `key_index = n` sentinel. The inner `tree`, when present, is a plain `JsonNode` whose tag is either a leaf miniscript tag or `TapTree` for a branch.
+- `{"kind": "Tr", "data": {"is_nums": bool, "key_index": u8, "tree": JsonNode | null}}` — Taproot root. The `is_nums` flag (v0.30+) replaces the pre-v0.30 `key_index = n` sentinel. Field order matches struct declaration (serde-serializes `is_nums` first). The inner `tree`, when present, is a plain `JsonNode` whose tag is either a leaf miniscript tag or `TapTree` for a branch.
 - `{"kind": "Hash256Body", "data": "<hex64>"}` — 32-byte hash literal
 - `{"kind": "Hash160Body", "data": "<hex40>"}` — 20-byte hash literal
 - `{"kind": "Timelock", "data": u32}` — After/Older

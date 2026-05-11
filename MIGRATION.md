@@ -10,7 +10,7 @@ Migration steps for upgrading between major releases of `md-codec` (formerly `wd
 
 - **Removed `Error::UnsupportedDerivationShape`.** Structurally unreachable post-rewrite. Match arms that included this variant must remove it; canonical replacement for any residual derivation failure (e.g., miniscript type-check errors) is the new `Error::AddressDerivationFailed { detail: String }`.
 - **New `Error::AddressDerivationFailed { detail: String }`.** Wraps miniscript-layer derivation errors that don't map to a specific md-codec variant. `String` carries the upstream miniscript diagnostic verbatim.
-- **New public module `crate::to_miniscript`** with the `to_miniscript_descriptor` function. Converts a v0.30 wire AST to a `miniscript::Descriptor<DescriptorPublicKey>`. Substitutes the chain alt into each `DescriptorXKey.derivation_path` at build time; the trailing `/*` wildcard is handled by `miniscript::Descriptor::at_derivation_index`.
+- **New public module `crate::to_miniscript`** with the `to_miniscript_descriptor` function. Converts a v0.30 wire AST to a `miniscript::Descriptor<DescriptorPublicKey>` (with `Wildcard::Unhardened` placeholder). Substitutes the chain alt into each `DescriptorXKey.derivation_path` at build time; the trailing `/*` wildcard is resolved by the caller (`Descriptor::derive_address`) via `miniscript::Descriptor::at_derivation_index`.
 - **New Cargo feature `derive` (default-on).** `default = ["derive"]`; `derive = ["dep:miniscript"]`. Pure-codec consumers who don't need `derive_address` can opt out with `default-features = false` (saves a `miniscript` dep). Other public APIs are unaffected by the feature flag.
 
 ### Library consumers (md-cli)
