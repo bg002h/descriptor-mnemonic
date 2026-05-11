@@ -1,6 +1,6 @@
 //! v0.30 Tag enum per SPEC §3.
 //!
-//! 35 operators in primary 6-bit space (0x00..=0x23). Primary range
+//! 36 operators in primary 6-bit space (0x00..=0x23). Primary range
 //! 0x24..=0x3E is reserved for future operators per SPEC §3.2's semantic
 //! ranges. Primary value 0x3F is the extension prefix; 4-bit subcodes
 //! 0x00..=0x0F are all reserved in v0.30 (no extension variants allocated).

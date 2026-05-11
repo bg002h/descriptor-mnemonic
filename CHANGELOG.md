@@ -36,6 +36,28 @@ Bug-fix release. Wire format unchanged; encoded phrases produced by v0.4.0/v0.4.
 
 - Added `reencode_round_trip_curated_shapes` and `reencode_round_trip_each_manifest_entry` integration tests in `crates/md-cli/tests/template_roundtrip.rs`. The curated test pins four shapes that exercise `pkh()` in B-position (the user's inheritance template `wsh(andor(pkh,after,or_i(and_v(v:pkh,older),and_v(v:pkh,older))))`, plus `wsh(and_v(v:pkh,older))`, `wsh(or_i(pkh,pkh))`, and the tap-leaf companion). Both tests assert `encode(decode(encode(t))) == encode(t)` — strictly stronger than the existing `decode(encode(t)) == t` equality round-trip because it catches renderer outputs that fail to re-parse OR re-parse to a different AST. Future renderer asymmetries surface here even when the decoded text differs from the input by valid canonical-form drift.
 
+## md-codec [0.30.0] — 2026-05-10
+
+### Changed (breaking)
+- Wire-format redesign: incompatible with v0.x payloads. Decoders raise `WireVersionMismatch` for v0.x inputs. See `design/SPEC_v0_30_wire_format.md` for the normative spec.
+- Tag space: 6-bit primary + 4-bit extension (was 5-bit primary + 5-bit extension). 5 operators promoted to primary (Hash256, Ripemd160, RawPkH, False, True). [Phase A: 0e93040]
+- Header: 4-bit version (was 3-bit); reserved bit reclaimed; in-band chunked-flag at first 5-bit symbol's bit 0. [Phase B: 7944f00]
+- Multi child packing: `Body::MultiKeys { k, indices }` variant carries raw kiw-width indices for Multi/SortedMulti/MultiA/SortedMultiA (Thresh keeps Body::Variable). [Phase C: 67c2b30]
+- Walker normalization: bare `Tag::PkK`/`Tag::PkH` at c:-positions; Check wraps only non-key children. [Phase E: 2e6918b]
+- NUMS sentinel removal: `Body::Tr.is_nums: bool` replaces the `key_index = n` sentinel. `key_index_width = ⌈log₂(n)⌉` (was ⌈log₂(n+1)⌉). [Phase F: 377745c]
+- Error taxonomy: new `WireVersionMismatch`, `MalformedHeader`, `TagOutOfRange`, `NUMSSentinelConflict`, `OperatorContextViolation` + `ContextKind`. v0.11-branded prose purged. [Phase G: 45d4702]
+- Test corpus regenerated; 6 previously-ignored tree.rs tests lifted (12/12 done). [Phase H: e86fb78]
+
+### Removed
+- `Tag::TrUnspendable` (replaced by `is_nums` flag on `Body::Tr`).
+- Error variants `ReservedHeaderBitSet`, `UnsupportedVersion`, `UnknownPrimaryTag`, `UnknownExtensionTag` (replaced by v0.30 taxonomy).
+
+### Documentation
+- BIP draft (`bip/bip-mnemonic-descriptor.mediawiki`) rewritten to reflect v0.30 wire format: tag table, header, multi-child packing, NUMS flag, error taxonomy, 6 bit-layout examples regenerated against Phase H corpus. [Phase I: d04ec30]
+
+### Migration
+v0.30 is a clean break from v0.x. There is no migration path; existing v0.x payloads cannot be decoded by v0.30, and v0.30 payloads cannot be decoded by v0.x. Tag the format version explicitly when persisting payloads cross-version.
+
 ## md-codec [0.19.0] — 2026-05-09
 
 Decode-side hardening. Real-world inputs are unaffected; only adversarial deeply-nested wire payloads change behavior (typed error instead of stack-overflow panic).

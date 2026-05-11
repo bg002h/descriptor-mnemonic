@@ -8,7 +8,7 @@ use crate::tlv::TlvSection;
 use crate::tree::{Body, Node, write_node};
 use crate::use_site_path::UseSitePath;
 
-/// Top-level descriptor parsed/built from a v0.11 wire payload.
+/// Top-level descriptor parsed/built from a v0.30 wire payload.
 ///
 /// Each field corresponds to a spec section: Header (§3.2), origin
 /// `PathDecl` (§3.3), use-site `UseSitePath` (§3.4), descriptor `tree`
@@ -30,10 +30,8 @@ pub struct Descriptor {
 impl Descriptor {
     /// Bit width for placeholder-index encoding: ⌈log₂(n)⌉ per SPEC v0.30 §7.
     ///
-    /// **v0.30:** the NUMS H-point is now signalled by an explicit `is_nums`
-    /// bit on `Body::Tr` (SPEC §7), not by a reserved sentinel `key_index = n`.
-    /// The formula therefore drops the +1 that v0.18 reserved for that
-    /// sentinel; index range is `0..n` (saving 1 bit at n ∈ {1, 2, 4, 8, 16, 32}).
+    /// Index range is `0..n`. The NUMS H-point is signalled by an explicit
+    /// `is_nums` bit on `Body::Tr` (SPEC §7), not by a reserved sentinel.
     /// MUST stay in lockstep with `decode::decode_payload`'s independent
     /// computation; a stale formula would silently desync the bitstream.
     pub fn key_index_width(&self) -> u8 {
@@ -43,9 +41,9 @@ impl Descriptor {
     }
 
     /// Returns `true` iff this descriptor is in **wallet-policy mode** per
-    /// spec v0.13 §3.3: the `Pubkeys` TLV is present *and* contains at
-    /// least one entry. Template-only mode (no `Pubkeys` TLV at all, or
-    /// `Pubkeys = Some(vec![])` after sparse-decode) returns `false`.
+    /// SPEC §3.3: the `Pubkeys` TLV is present *and* contains at least one
+    /// entry. Template-only mode (no `Pubkeys` TLV at all, or `Pubkeys =
+    /// Some(vec![])` after sparse-decode) returns `false`.
     ///
     /// The check is a post-TLV-decode predicate; mode dispatch never reads
     /// a header bit.
@@ -59,7 +57,7 @@ impl Descriptor {
 /// is the exact unpadded length needed for round-trip decoding (see §3.7's
 /// "TLV section ends when codex32 total-length is exhausted" rule).
 ///
-/// Per spec v0.13 §6.1, the encoder canonicalizes BIP 388 placeholder
+/// Per SPEC §6.1, the encoder canonicalizes BIP 388 placeholder
 /// ordering before emitting bits: `@i` first appears in the tree before
 /// `@j` for `j > i`. Canonicalization permutes the tree indices,
 /// divergent path decl, and per-`@N` TLV maps atomically; if `d` is

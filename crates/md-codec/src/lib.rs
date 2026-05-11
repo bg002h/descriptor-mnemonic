@@ -5,10 +5,12 @@
 //!
 //! [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
 //!
-//! v0.11 wire format: bit-aligned payload, sparse per-`@N` TLV overrides,
-//! 5-bit header (3-bit version + reserved bit + `divergent_paths` flag),
-//! symbol-aligned codex32 wrapping with HRP `"md"`. See
-//! `design/SPEC_v0_11_wire_format.md` for the normative spec.
+//! v0.30 wire format: bit-aligned payload, sparse per-`@N` TLV overrides,
+//! 5-bit single-payload header (4-bit version=4 + `divergent_paths` flag),
+//! 6-bit bytecode tag space, decoder auto-dispatch between single and chunked
+//! payloads via the first 5-bit symbol's bit 0, symbol-aligned codex32
+//! wrapping with HRP `"md"`. See `design/SPEC_v0_30_wire_format.md` for the
+//! normative spec.
 
 mod bch;
 
