@@ -4,6 +4,52 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.32.0] — 2026-05-11
+
+Replaces the v0.14-era hand-rolled 5-shape allow-list for address
+derivation with a generic AST → `miniscript::Descriptor` converter, so
+every BIP-388-parseable shape derives via rust-miniscript.
+
+### Changed (breaking)
+
+- `Descriptor::derive_address` now covers every BIP-388-parseable shape
+  via rust-miniscript. The 5-shape allow-list (Pkh, Wpkh, TrKeyPathOnly,
+  WshMulti, ShWshMulti) is replaced by a generic AST → `miniscript::Descriptor`
+  converter (`crate::to_miniscript`); the API now handles multi-leaf
+  tap-trees, `tr(NUMS, ...)`, `sh(multi)` / `sh(sortedmulti)`, arbitrary
+  `wsh(<miniscript>)`, and any tap-leaf miniscript fragment.
+- **Removed `Error::UnsupportedDerivationShape`** — structurally unreachable
+  post-rewrite. Downstream code matching on this variant must update;
+  canonical replacement is `Error::AddressDerivationFailed { detail }`
+  for any residual derivation failure (e.g., miniscript type-check errors).
+
+### Added
+
+- `crates/md-codec/src/to_miniscript.rs` — public `to_miniscript_descriptor`
+  function converts a v0.30 wire AST to a
+  `miniscript::Descriptor<DescriptorPublicKey>`. Feature-gated behind
+  `derive` (default-on). Substitutes the chain alt into each
+  `DescriptorXKey.derivation_path` at build time; the trailing `/*`
+  wildcard is handled by `miniscript::Descriptor::at_derivation_index`.
+- `Error::AddressDerivationFailed { detail: String }` — wraps
+  miniscript-layer derivation errors that don't map to a specific
+  md-codec variant.
+- 9 new shape-coverage tests in `tests/address_derivation.rs` (Tiers
+  1, 2, 3 from the v0.32 design analysis). Each test cross-validates
+  against an independent
+  `miniscript::Descriptor::<DescriptorPublicKey>::from_str(...)`
+  derivation path — any future md-codec divergence from upstream
+  miniscript surfaces immediately.
+
+### Workspace
+
+- `[features]` section added to `crates/md-codec/Cargo.toml`:
+  `default = ["derive"]`; `derive = ["dep:miniscript"]`.
+  `miniscript = { workspace = true, optional = true }` added to
+  `[dependencies]`. Pure-codec consumers can opt out via
+  `default-features = false` (and lose `derive_address`).
+- `md-cli` md-codec dep specifier bumped to `0.32.0`.
+
 ## md-cli [0.4.3] — 2026-05-10
 
 Bug-fix release (parallel to v0.4.2). Wire format unchanged.

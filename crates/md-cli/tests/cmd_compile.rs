@@ -12,6 +12,7 @@ fn compile_pk_segwitv0() {
         .stdout(predicates::str::starts_with("wsh("));
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn compile_json() {
     Command::cargo_bin("md")

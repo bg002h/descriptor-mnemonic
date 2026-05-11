@@ -356,14 +356,16 @@ pub enum Error {
     )]
     HardenedPublicDerivation,
 
-    /// The descriptor's wrapper shape is not in the v0.14 supported set
-    /// (the five BIP 388 canonical shapes: `pkh(@0)`, `wpkh(@0)`,
-    /// `tr(@0)` keypath-only, `wsh(multi/sortedmulti)`,
-    /// `sh(wsh(multi/sortedmulti))`). Future versions may extend.
-    #[error(
-        "unsupported wrapper shape for address derivation; v0.14 supports pkh, wpkh, tr keypath-only, wsh-multi/sortedmulti, sh-wsh-multi/sortedmulti only"
-    )]
-    UnsupportedDerivationShape,
+    /// Address derivation failed at the miniscript layer (or in the
+    /// AST → miniscript converter). Carries a free-form `detail` string
+    /// describing the underlying error — typically a `miniscript::Error`,
+    /// a `Tr`/`Wsh` constructor failure (type-check / context error), or
+    /// an arity/context mismatch raised by the converter.
+    #[error("address derivation failed: {detail}")]
+    AddressDerivationFailed {
+        /// Free-form description of the underlying failure.
+        detail: String,
+    },
 
     /// Inside a `tr()` body, `is_nums = false` was paired with a `key_index`
     /// out of range (`key_index >= n`). Per SPEC v0.30 §7 + §11: the

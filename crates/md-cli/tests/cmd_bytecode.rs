@@ -29,6 +29,7 @@ fn bytecode_prints_hex_and_lengths() {
         .stdout(predicates::str::contains("hex:"));
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn bytecode_json_has_payload_fields() {
     let phrase = encode("wpkh(@0/<0;1>/*)");

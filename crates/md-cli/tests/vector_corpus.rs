@@ -10,7 +10,7 @@ use std::process::Command as StdCommand;
 #[cfg(unix)]
 use tempfile::tempdir;
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "json"))]
 #[test]
 fn vectors_output_matches_committed_corpus() {
     let tmp = tempdir().unwrap();

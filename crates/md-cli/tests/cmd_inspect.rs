@@ -31,6 +31,7 @@ fn inspect_prints_all_fields() {
         ));
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn inspect_json_has_schema_and_descriptor() {
     let phrase = encode("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))");

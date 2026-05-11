@@ -1,12 +1,17 @@
-//! Integration tests for `Descriptor::derive_address` (md1 v0.14).
+//! Integration tests for `Descriptor::derive_address` (md1 v0.32+).
 //!
 //! Each test follows the same shape: derive an account-level xpub from
 //! a known mnemonic via rust-bitcoin's bip32 (trusted), pack the
 //! `(chain_code, compressed_pubkey)` bytes into the v0.13 `Pubkeys` TLV,
 //! then ask md-codec to derive an address and assert it matches a
 //! golden vector from the relevant BIP's published test vectors (or, for
-//! multisig, a vector cross-checked against rust-bitcoin's own descriptor
-//! derivation done in-test through a second path).
+//! generic shapes, an independent miniscript-direct derivation done
+//! in-test through `miniscript::Descriptor::<DescriptorPublicKey>::from_str`).
+//!
+//! Feature-gated behind `derive` (default-on; gates the
+//! `Descriptor::derive_address` API).
+
+#![cfg(feature = "derive")]
 
 use bitcoin::Network;
 use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
@@ -48,7 +53,6 @@ fn origin(components: &[(bool, u32)]) -> OriginPath {
     }
 }
 
-#[allow(dead_code)] // multi-family fixtures now use MultiKeys; pkk retained for future non-multi cases
 fn pkk(index: u8) -> Node {
     Node {
         tag: Tag::PkK,
@@ -241,9 +245,9 @@ fn bip84_wpkh_testnet_address() {
 }
 
 /// 2-of-3 wsh-sortedmulti from three independent abandon-mnemonics-like
-/// xpubs. Cross-checks our `(classify_derivable_shape +
-/// build_multi_script + Address::p2wsh)` chain against rust-bitcoin's
-/// own primitives applied independently in-test.
+/// xpubs. Cross-checks the miniscript-converter path
+/// (`to_miniscript_descriptor` + `at_derivation_index`) against
+/// rust-bitcoin's own primitives applied independently in-test.
 #[test]
 fn wsh_sortedmulti_2_of_3_address() {
     use bitcoin::bip32::ChildNumber;
@@ -407,6 +411,548 @@ fn sh_wsh_sortedmulti_2_of_3_address() {
         got.starts_with('3'),
         "expected mainnet P2SH-form, got {got}"
     );
+}
+
+// ─── v0.32 — generic-shape coverage via rust-miniscript shortcut ──
+//
+// Each new test pairs an md-codec derivation against an independent
+// `miniscript::Descriptor<DescriptorPublicKey>::from_str(...)` derivation
+// path; byte-identical addresses are the post-condition. Future drift
+// between md-codec and upstream rust-miniscript will surface as a paired-
+// test mismatch.
+
+/// Pretty-print a 65-byte xpub TLV payload into a base58-check xpub
+/// string suitable for embedding in a miniscript descriptor template.
+fn xpub_bytes_to_string(bytes: &[u8; 65]) -> String {
+    use bitcoin::bip32::{ChainCode, ChildNumber, Fingerprint, Xpub};
+    use bitcoin::secp256k1::PublicKey;
+    use bitcoin::NetworkKind;
+    let mut chain_code = [0u8; 32];
+    chain_code.copy_from_slice(&bytes[..32]);
+    let pk = PublicKey::from_slice(&bytes[32..]).unwrap();
+    let xpub = Xpub {
+        network: NetworkKind::Main,
+        depth: 0,
+        parent_fingerprint: Fingerprint::default(),
+        child_number: ChildNumber::Normal { index: 0 },
+        public_key: pk,
+        chain_code: ChainCode::from(chain_code),
+    };
+    xpub.to_string()
+}
+
+/// Independent miniscript-direct derivation: parse `descriptor_str`,
+/// `.at_derivation_index(index).address(network).to_string()`.
+fn miniscript_direct_address(
+    descriptor_str: &str,
+    chain: u32,
+    index: u32,
+    network: Network,
+) -> String {
+    let desc =
+        miniscript::Descriptor::<miniscript::DescriptorPublicKey>::from_str(descriptor_str)
+            .expect("parse descriptor template");
+    // Multipath descriptors need explicit per-chain selection. The plan's
+    // converter substitutes the chain alt before calling
+    // `at_derivation_index`, so cross-validate by reducing the multipath
+    // here too — pick one alt via `single_path_descriptors()`.
+    let single = if desc.is_multipath() {
+        let alternatives = desc
+            .clone()
+            .into_single_descriptors()
+            .expect("split multipath");
+        alternatives
+            .into_iter()
+            .nth(chain as usize)
+            .expect("chain in range")
+    } else {
+        desc
+    };
+    let definite = single.at_derivation_index(index).expect("derivation idx");
+    definite
+        .address(network)
+        .expect("address")
+        .to_string()
+}
+
+/// Build the standard `<chain;chain'/*` multipath descriptor key suffix
+/// for use in miniscript descriptor templates with `<0;1>/*`.
+const MULTIPATH_TAIL: &str = "/<0;1>/*";
+
+/// Tier 1 — `sh(sortedmulti(2, @0, @1, @2))` legacy P2SH multisig.
+#[test]
+fn sh_sortedmulti_2_of_3_address() {
+    let xpub_a = account_xpub_bytes("m/45'/0'");
+    let xpub_b = account_xpub_bytes("m/45'/1'");
+    let xpub_c = account_xpub_bytes("m/45'/2'");
+
+    let d = Descriptor {
+        n: 3,
+        path_decl: PathDecl {
+            n: 3,
+            paths: PathDeclPaths::Divergent(vec![
+                origin(&[(true, 45), (true, 0)]),
+                origin(&[(true, 45), (true, 1)]),
+                origin(&[(true, 45), (true, 2)]),
+            ]),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Sh,
+            body: Body::Children(vec![Node {
+                tag: Tag::SortedMulti,
+                body: Body::MultiKeys {
+                    k: 2,
+                    indices: vec![0, 1, 2],
+                },
+            }]),
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![(0u8, xpub_a), (1u8, xpub_b), (2u8, xpub_c)]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "sh(sortedmulti(2,{a}{m},{b}{m},{c}{m}))",
+        a = xpub_bytes_to_string(&xpub_a),
+        b = xpub_bytes_to_string(&xpub_b),
+        c = xpub_bytes_to_string(&xpub_c),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+    assert!(got.starts_with('3'), "expected mainnet P2SH-form, got {got}");
+}
+
+/// Tier 1 — `tr(NUMS, pk(@0))` script-path-only taproot.
+#[test]
+fn tr_nums_single_pk_leaf_address() {
+    let xpub_a = account_xpub_bytes("m/86'/0'/0'");
+    let nums = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+
+    let d = Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(origin(&[(true, 86), (true, 0), (true, 0)])),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: true,
+                key_index: 0,
+                tree: Some(Box::new(pkk(0))),
+            },
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![(0u8, xpub_a)]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "tr({nums},pk({a}{m}))",
+        a = xpub_bytes_to_string(&xpub_a),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+    assert!(got.starts_with("bc1p"), "expected mainnet P2TR, got {got}");
+}
+
+/// Tier 2 — `tr(@0, pk(@1))` single-leaf taproot with a regular internal
+/// key + a script-path single-pk leaf.
+#[test]
+fn tr_single_pk_leaf_address() {
+    let xpub_a = account_xpub_bytes("m/86'/0'/0'");
+    let xpub_b = account_xpub_bytes("m/86'/0'/1'");
+
+    let d = Descriptor {
+        n: 2,
+        path_decl: PathDecl {
+            n: 2,
+            paths: PathDeclPaths::Divergent(vec![
+                origin(&[(true, 86), (true, 0), (true, 0)]),
+                origin(&[(true, 86), (true, 0), (true, 1)]),
+            ]),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: false,
+                key_index: 0,
+                tree: Some(Box::new(pkk(1))),
+            },
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![(0u8, xpub_a), (1u8, xpub_b)]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "tr({a}{m},pk({b}{m}))",
+        a = xpub_bytes_to_string(&xpub_a),
+        b = xpub_bytes_to_string(&xpub_b),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+}
+
+/// Tier 2 — `tr(@0, multi_a(2, @1, @2, @3))` tap-leaf multisig.
+#[test]
+fn tr_multi_a_2_of_3_leaf_address() {
+    let xpub_a = account_xpub_bytes("m/86'/0'/0'");
+    let xpub_b = account_xpub_bytes("m/86'/0'/1'");
+    let xpub_c = account_xpub_bytes("m/86'/0'/2'");
+    let xpub_d = account_xpub_bytes("m/86'/0'/3'");
+
+    let d = Descriptor {
+        n: 4,
+        path_decl: PathDecl {
+            n: 4,
+            paths: PathDeclPaths::Divergent(vec![
+                origin(&[(true, 86), (true, 0), (true, 0)]),
+                origin(&[(true, 86), (true, 0), (true, 1)]),
+                origin(&[(true, 86), (true, 0), (true, 2)]),
+                origin(&[(true, 86), (true, 0), (true, 3)]),
+            ]),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: false,
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::MultiA,
+                    body: Body::MultiKeys {
+                        k: 2,
+                        indices: vec![1, 2, 3],
+                    },
+                })),
+            },
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![
+                (0u8, xpub_a),
+                (1u8, xpub_b),
+                (2u8, xpub_c),
+                (3u8, xpub_d),
+            ]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "tr({a}{m},multi_a(2,{b}{m},{c}{m},{d}{m}))",
+        a = xpub_bytes_to_string(&xpub_a),
+        b = xpub_bytes_to_string(&xpub_b),
+        c = xpub_bytes_to_string(&xpub_c),
+        d = xpub_bytes_to_string(&xpub_d),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+}
+
+/// Tier 2 — `wsh(pk(@0))` exercises the Phase E `Check(pk_k(...))`
+/// re-wrapping path for bare PkK inside Wsh.
+#[test]
+fn wsh_check_pk_k_address() {
+    let xpub_a = account_xpub_bytes("m/84'/0'/0'");
+
+    let d = Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(origin(&[(true, 84), (true, 0), (true, 0)])),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![pkk(0)]),
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![(0u8, xpub_a)]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "wsh(pk({a}{m}))",
+        a = xpub_bytes_to_string(&xpub_a),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+}
+
+/// Tier 3 — `tr(@0, {pk(@1), pk(@2)})` 2-leaf branching tap-tree.
+#[test]
+fn tr_branching_two_leaf_address() {
+    let xpub_a = account_xpub_bytes("m/86'/0'/0'");
+    let xpub_b = account_xpub_bytes("m/86'/0'/1'");
+    let xpub_c = account_xpub_bytes("m/86'/0'/2'");
+
+    let d = Descriptor {
+        n: 3,
+        path_decl: PathDecl {
+            n: 3,
+            paths: PathDeclPaths::Divergent(vec![
+                origin(&[(true, 86), (true, 0), (true, 0)]),
+                origin(&[(true, 86), (true, 0), (true, 1)]),
+                origin(&[(true, 86), (true, 0), (true, 2)]),
+            ]),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: false,
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::TapTree,
+                    body: Body::Children(vec![pkk(1), pkk(2)]),
+                })),
+            },
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![(0u8, xpub_a), (1u8, xpub_b), (2u8, xpub_c)]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "tr({a}{m},{{pk({b}{m}),pk({c}{m})}})",
+        a = xpub_bytes_to_string(&xpub_a),
+        b = xpub_bytes_to_string(&xpub_b),
+        c = xpub_bytes_to_string(&xpub_c),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+}
+
+/// Tier 3 — `tr(@0, {pk(@1), multi_a(2, @2, @3)})` mixed-leaf tap-tree.
+#[test]
+fn tr_branching_with_multi_a_address() {
+    let xpub_a = account_xpub_bytes("m/86'/0'/0'");
+    let xpub_b = account_xpub_bytes("m/86'/0'/1'");
+    let xpub_c = account_xpub_bytes("m/86'/0'/2'");
+    let xpub_d = account_xpub_bytes("m/86'/0'/3'");
+
+    let d = Descriptor {
+        n: 4,
+        path_decl: PathDecl {
+            n: 4,
+            paths: PathDeclPaths::Divergent(vec![
+                origin(&[(true, 86), (true, 0), (true, 0)]),
+                origin(&[(true, 86), (true, 0), (true, 1)]),
+                origin(&[(true, 86), (true, 0), (true, 2)]),
+                origin(&[(true, 86), (true, 0), (true, 3)]),
+            ]),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: false,
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::TapTree,
+                    body: Body::Children(vec![
+                        pkk(1),
+                        Node {
+                            tag: Tag::MultiA,
+                            body: Body::MultiKeys {
+                                k: 2,
+                                indices: vec![2, 3],
+                            },
+                        },
+                    ]),
+                })),
+            },
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![
+                (0u8, xpub_a),
+                (1u8, xpub_b),
+                (2u8, xpub_c),
+                (3u8, xpub_d),
+            ]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "tr({a}{m},{{pk({b}{m}),multi_a(2,{c}{m},{d}{m})}})",
+        a = xpub_bytes_to_string(&xpub_a),
+        b = xpub_bytes_to_string(&xpub_b),
+        c = xpub_bytes_to_string(&xpub_c),
+        d = xpub_bytes_to_string(&xpub_d),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+}
+
+/// Tier 3 — `wsh(and_v(v:pk(@0), older(144)))` arbitrary miniscript body
+/// with a relative timelock.
+#[test]
+fn wsh_and_v_address() {
+    let xpub_a = account_xpub_bytes("m/84'/0'/0'");
+
+    let d = Descriptor {
+        n: 1,
+        path_decl: PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(origin(&[(true, 84), (true, 0), (true, 0)])),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![Node {
+                tag: Tag::AndV,
+                body: Body::Children(vec![
+                    Node {
+                        tag: Tag::Verify,
+                        body: Body::Children(vec![pkk(0)]),
+                    },
+                    Node {
+                        tag: Tag::Older,
+                        body: Body::Timelock(144),
+                    },
+                ]),
+            }]),
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![(0u8, xpub_a)]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "wsh(and_v(v:pk({a}{m}),older(144)))",
+        a = xpub_bytes_to_string(&xpub_a),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
+}
+
+/// Tier 3 — `wsh(thresh(2, pk(@0), s:pk(@1), s:pk(@2)))` wsh threshold
+/// over three keys (canonical miniscript thresh shape).
+#[test]
+fn wsh_thresh_address() {
+    let xpub_a = account_xpub_bytes("m/48'/0'/0'/2'");
+    let xpub_b = account_xpub_bytes("m/48'/0'/1'/2'");
+    let xpub_c = account_xpub_bytes("m/48'/0'/2'/2'");
+
+    let d = Descriptor {
+        n: 3,
+        path_decl: PathDecl {
+            n: 3,
+            paths: PathDeclPaths::Divergent(vec![
+                origin(&[(true, 48), (true, 0), (true, 0), (true, 2)]),
+                origin(&[(true, 48), (true, 0), (true, 1), (true, 2)]),
+                origin(&[(true, 48), (true, 0), (true, 2), (true, 2)]),
+            ]),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree: Node {
+            tag: Tag::Wsh,
+            body: Body::Children(vec![Node {
+                tag: Tag::Thresh,
+                body: Body::Variable {
+                    k: 2,
+                    children: vec![
+                        pkk(0),
+                        Node {
+                            tag: Tag::Swap,
+                            body: Body::Children(vec![pkk(1)]),
+                        },
+                        Node {
+                            tag: Tag::Swap,
+                            body: Body::Children(vec![pkk(2)]),
+                        },
+                    ],
+                },
+            }]),
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![(0u8, xpub_a), (1u8, xpub_b), (2u8, xpub_c)]);
+            t
+        },
+    };
+    let got = d
+        .derive_address(0, 0, Network::Bitcoin)
+        .unwrap()
+        .assume_checked()
+        .to_string();
+
+    let template = format!(
+        "wsh(thresh(2,pk({a}{m}),s:pk({b}{m}),s:pk({c}{m})))",
+        a = xpub_bytes_to_string(&xpub_a),
+        b = xpub_bytes_to_string(&xpub_b),
+        c = xpub_bytes_to_string(&xpub_c),
+        m = MULTIPATH_TAIL,
+    );
+    let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
+    assert_eq!(got, expected);
 }
 
 /// Round-trip: encode → wrap → unwrap → decode → derive_address yields

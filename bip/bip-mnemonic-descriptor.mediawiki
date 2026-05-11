@@ -88,6 +88,15 @@ templates as input:
   <code>TAPROOT_CONTROL_MAX_NODE_COUNT = 128</code> depth ceiling. See
   §"Taproot tree" for the bytecode form. Active (v0.5).
 
+Decoders MAY derive addresses for any of the above accepted shapes by
+translating the wire AST to a BIP-380 descriptor and delegating script-
+and address-construction to a BIP-380 implementation
+(e.g. <code>rust-miniscript</code>'s <code>Descriptor::at_derivation_index</code>
++ <code>Descriptor::address</code>). The reference implementation
+(<code>md-codec</code>) follows this approach as of v0.32; the wire format
+does not itself prescribe an address-derivation algorithm beyond the
+BIP-380/BIP-388 semantics inherited via the AST encoding.
+
 Conformant MD encoders MUST reject the following BIP-388-permitted top-level
 forms; MD's accepted scope is narrower than BIP 388:
 

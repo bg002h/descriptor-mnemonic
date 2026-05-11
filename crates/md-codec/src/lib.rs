@@ -29,6 +29,8 @@ pub mod origin_path;
 pub mod phrase;
 pub mod tag;
 pub mod tlv;
+#[cfg(feature = "derive")]
+pub mod to_miniscript;
 pub mod tree;
 pub mod use_site_path;
 pub mod validate;

@@ -23,6 +23,7 @@ fn decode_round_trips_to_template() {
         .stdout(predicates::str::contains(template));
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn decode_json_emits_schema_and_descriptor() {
     let phrase = encode("wpkh(@0/<0;1>/*)");

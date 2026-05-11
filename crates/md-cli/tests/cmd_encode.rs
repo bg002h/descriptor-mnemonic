@@ -26,6 +26,7 @@ fn encode_with_policy_id_fingerprint_prints_two_lines() {
         .stdout(predicate::str::contains("policy-id-fingerprint: 0x"));
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn encode_json_has_schema_and_phrase() {
     Command::cargo_bin("md")
@@ -143,6 +144,7 @@ fn encode_from_policy_inheritance_tap() {
 // for all placeholders. Tracked in design/FOLLOWUPS.md as
 // `v0.17.1-from-policy-round-trip-integration`.
 
+#[cfg(feature = "json")]
 #[test]
 fn encode_json_network_field_default_mainnet() {
     Command::cargo_bin("md")
@@ -153,6 +155,7 @@ fn encode_json_network_field_default_mainnet() {
         .stdout(predicate::str::contains("\"network\": \"mainnet\""));
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn encode_json_network_field_testnet() {
     Command::cargo_bin("md")
