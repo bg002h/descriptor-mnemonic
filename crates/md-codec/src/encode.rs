@@ -80,7 +80,7 @@ pub fn encode_payload(d: &Descriptor) -> Result<(Vec<u8>, usize), Error> {
 
     let mut w = BitWriter::new();
     let header = Header {
-        version: 0,
+        version: Header::WF_REDESIGN_VERSION,
         divergent_paths: matches!(d.path_decl.paths, PathDeclPaths::Divergent(_)),
     };
     header.write(&mut w);

@@ -1,16 +1,18 @@
-//! Chunk header per spec §9.3.
+//! Chunk header per SPEC v0.30 §2.2.
 //!
-//! Encodes the 37-bit chunked wire-format header:
-//! 3-bit version + 1-bit chunked-flag (= 1) + 1-bit reserved (= 0) +
-//! 20-bit chunk-set-id + 6-bit count-minus-1 + 6-bit index.
+//! Encodes the 37-bit chunked wire-format header. First-symbol layout
+//! MSB-first: `[v3][v2][v1][v0][chunked]` (4-bit version + 1-bit chunked-flag).
+//! Remainder: 20-bit chunk-set-id + 6-bit count-minus-1 + 6-bit index.
+//! Total = 4 + 1 + 20 + 6 + 6 = 37 bits.
 
 use crate::bitstream::{BitReader, BitWriter};
 use crate::error::Error;
+use crate::header::Header;
 
-/// Wire header for a single chunk in a chunked v0.11 payload.
+/// Wire header for a single chunk in a chunked v0.30 payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChunkHeader {
-    /// Wire-format version (3 bits).
+    /// Wire-format version (4 bits). v0.30 = 4.
     pub version: u8,
     /// 20-bit chunk-set identifier shared by all chunks in a set.
     pub chunk_set_id: u32,
@@ -39,9 +41,8 @@ impl ChunkHeader {
                 id: self.chunk_set_id,
             });
         }
-        w.write_bits(u64::from(self.version & 0b111), 3);
+        w.write_bits(u64::from(self.version & 0b1111), 4);
         w.write_bits(1, 1); // chunked = 1
-        w.write_bits(0, 1); // reserved
         w.write_bits(u64::from(self.chunk_set_id), 20);
         w.write_bits((self.count - 1) as u64, 6); // count-1 offset
         w.write_bits(u64::from(self.index), 6);
@@ -50,15 +51,21 @@ impl ChunkHeader {
 
     /// Decode a chunk header (37 bits) from `r`.
     ///
+    /// Returns [`Error::WireVersionMismatch`] if the 4-bit version field
+    /// is not `WF_REDESIGN_VERSION` per SPEC §2.5 (e.g., v0.x chunked
+    /// payloads where version=0 in the first 3 wire bits become version=0
+    /// or version=1 under the v0.30 4-bit read depending on prior bits).
     /// Returns [`Error::ChunkHeaderChunkedFlagMissing`] if the chunked-flag
-    /// bit is not set.
+    /// bit is not set after the version check passes.
     pub fn read(r: &mut BitReader) -> Result<Self, Error> {
-        let version = r.read_bits(3)? as u8;
+        let version = r.read_bits(4)? as u8;
+        if version != Header::WF_REDESIGN_VERSION {
+            return Err(Error::WireVersionMismatch { got: version });
+        }
         let chunked = r.read_bits(1)? != 0;
         if !chunked {
             return Err(Error::ChunkHeaderChunkedFlagMissing);
         }
-        let _reserved = r.read_bits(1)?;
         let chunk_set_id = r.read_bits(20)? as u32;
         let count = (r.read_bits(6)? + 1) as u8;
         let index = r.read_bits(6)? as u8;
@@ -74,18 +81,19 @@ impl ChunkHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::header::Header;
 
     #[test]
     fn chunk_header_round_trip() {
         let h = ChunkHeader {
-            version: 0,
+            version: Header::WF_REDESIGN_VERSION,
             chunk_set_id: 0xABCDE,
             count: 3,
             index: 1,
         };
         let mut w = BitWriter::new();
         h.write(&mut w).unwrap();
-        // 3 + 1 + 1 + 20 + 6 + 6 = 37 bits
+        // 4 + 1 + 20 + 6 + 6 = 37 bits
         assert_eq!(w.bit_len(), 37);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
@@ -95,7 +103,7 @@ mod tests {
     #[test]
     fn chunk_header_count_64_round_trip() {
         let h = ChunkHeader {
-            version: 0,
+            version: Header::WF_REDESIGN_VERSION,
             chunk_set_id: 0,
             count: 64,
             index: 63,
@@ -110,7 +118,7 @@ mod tests {
     #[test]
     fn chunk_header_count_zero_rejected() {
         let h = ChunkHeader {
-            version: 0,
+            version: Header::WF_REDESIGN_VERSION,
             chunk_set_id: 0,
             count: 0,
             index: 0,
@@ -119,6 +127,33 @@ mod tests {
         assert!(matches!(
             h.write(&mut w),
             Err(Error::ChunkCountOutOfRange { count: 0 })
+        ));
+    }
+
+    /// SPEC v0.30 §2.5 v0.x rejection for chunk-header path. A wire crafted
+    /// with version=0 and chunked-flag=1 (the v0.30-layout interpretation of
+    /// what a v0.x chunked first-symbol becomes when reordered) must be
+    /// rejected with `WireVersionMismatch { got: 0 }`.
+    #[test]
+    fn chunk_header_rejects_v0x_version() {
+        // Construct first 5 bits MSB-first: [v3=0][v2=0][v1=0][v0=0][chunked=1]
+        //   = 0b00001 (numeric 1)
+        // Pad with 32 zero bits (chunk_set_id + count-1 + index) to reach
+        // the full 37-bit chunk header length. 37 bits packed MSB-first into
+        // 5 bytes (with 3 trailing zero bits beyond the bit limit).
+        // Easier: use BitWriter to build the wire deterministically.
+        let mut w = BitWriter::new();
+        w.write_bits(0, 4); // version = 0 (v0.x)
+        w.write_bits(1, 1); // chunked = 1
+        w.write_bits(0, 20); // chunk_set_id
+        w.write_bits(0, 6); // count-1
+        w.write_bits(0, 6); // index
+        assert_eq!(w.bit_len(), 37);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert!(matches!(
+            ChunkHeader::read(&mut r),
+            Err(Error::WireVersionMismatch { got: 0 })
         ));
     }
 }
@@ -229,7 +264,7 @@ pub fn split(d: &Descriptor) -> Result<Vec<String>, Error> {
         // (full 8 bits per byte, no further fractional content). Chunk's
         // exact bit count = 37 + 8 × |chunk_payload_bytes|.
         let header = ChunkHeader {
-            version: 0,
+            version: Header::WF_REDESIGN_VERSION,
             chunk_set_id,
             count,
             index,

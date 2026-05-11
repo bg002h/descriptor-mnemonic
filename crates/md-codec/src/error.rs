@@ -14,15 +14,22 @@ pub enum Error {
         available: usize,
     },
 
-    /// Header bit 3 (reserved) was set; v0.11 requires bit 3 = 0.
-    #[error("reserved header bit (bit 3) set; v0.11 requires bit 3 = 0")]
-    ReservedHeaderBitSet,
-
-    /// Wire-format version field doesn't match a supported version.
-    #[error("unsupported wire-format version: got {got}")]
-    UnsupportedVersion {
-        /// Version value parsed from bits 0..2.
+    /// Wire-format version field doesn't match v0.30 (=4). Returned when a
+    /// payload or chunk-header is read with a version value outside the
+    /// accepted v0.30 set. Per SPEC v0.30 §2.4 + §2.5 + §11.1.
+    #[error("wire-format version mismatch: got {got}, expected 4")]
+    WireVersionMismatch {
+        /// Version value parsed from the wire.
         got: u8,
+    },
+
+    /// Header malformed in a way other than version mismatch — e.g., chunked-
+    /// flag inconsistent with caller context, or chunk-header internal field
+    /// out of range. Per SPEC v0.30 §11.1.
+    #[error("malformed header: {detail}")]
+    MalformedHeader {
+        /// Free-form description of the malformedness.
+        detail: String,
     },
 
     /// Path depth exceeds MAX_PATH_COMPONENTS (15).

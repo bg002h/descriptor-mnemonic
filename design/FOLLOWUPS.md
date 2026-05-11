@@ -511,6 +511,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** open
 - **Tier:** v0.30 (lift gated by Phase G or by an explicit "tidy v0.x prose" sub-task in Phase B)
 
+### `v0.30-phase-b-r1-low-1` — `ChunkHeaderChunkedFlagMissing` doc-comment references stale 3-bit version + spec §9.3
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase B code-reviewer r1.
+- **Where:** `crates/md-codec/src/error.rs:207` (the doc-comment on the `ChunkHeaderChunkedFlagMissing` variant, currently "The chunked-flag bit follows the 3-bit version field in a chunk header (see `chunk.rs` / spec §9.3) and MUST be 1.").
+- **What:** Phase B widened the chunk-header version field from 3 to 4 bits and re-cited the layout under SPEC v0.30 §2.2 (the §9.3 reference is from the v0.x SPEC numbering). The variant itself remains in the error enum (Phase G handles broader error-taxonomy cleanup); only its doc-comment is now stale.
+- **Why deferred:** Phase B's atomic-commit-discipline focus was on header layout + version-mismatch semantics. The `ChunkHeaderChunkedFlagMissing` variant's path is reachable only after `WireVersionMismatch` does NOT fire (version=4 path) yet chunked-flag is somehow 0 — a narrow edge case that does NOT arise from any realistic v0.x payload. Updating the doc-comment now would touch error.rs unrelated-to-Phase-B; cleaner to defer to Phase G's full error-taxonomy sweep.
+- **Status:** open
+- **Tier:** v0.30 (lift gated by Phase G — broader error-taxonomy refactor — or a sub-task in Phases C-G that touches error.rs)
+
+### `v0.30-phase-b-r1-nit-1` — `encode.rs` module doc says "v0.11 wire payload"
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase B code-reviewer r1.
+- **Where:** `crates/md-codec/src/encode.rs:11` (the `Descriptor` struct's module-level doc-comment, currently containing "Top-level descriptor parsed/built from a v0.11 wire payload").
+- **What:** Phase B's scope expansion to `encode.rs` updated only the single `version: 0` literal at line 83 — not the module/struct doc-comment at line 11. Phase J (final tag + crate-level doc sweep per `IMPLEMENTATION_PLAN_v0_30.md` §3 Phase J: `lib.rs:8-11` module doc rewrite) is the natural home for this prose update.
+- **Why deferred:** Phase B's scope was header layout. Module-doc prose belongs to Phase J's crate-doc sweep.
+- **Status:** open
+- **Tier:** v0.30 (lift gated by Phase J — final tag + crate doc rewrite)
+
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
 - **Surfaced:** Phase 6 implementer (commit `7d6e278`). T6 fixture's plan-prescribed concrete-key policy string failed to parse via rust-miniscript's wallet-policy parser; switched to the `@N`-template form which parses cleanly and matches existing `vectors.rs` convention.
