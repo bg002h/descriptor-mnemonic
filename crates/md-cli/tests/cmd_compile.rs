@@ -137,7 +137,8 @@ fn compile_pk_tap_with_explicit_nums_unspendable_key() {
 /// v0.18 Item G — `--unspendable-key <xpub>` is rejected at dispatch.
 /// Pre-v0.18 the xpub form half-worked (compile rendered something, but
 /// encode failed opaquely). v0.18 narrows the accepted forms to NUMS-hex-or-
-/// omitted with a clear pointer at v0.19+ for caller-supplied keys.
+/// omitted with a clear note that other forms are deferred to a future
+/// version.
 #[test]
 fn compile_unspendable_key_rejects_xpub_form() {
     Command::cargo_bin("md")
@@ -155,7 +156,7 @@ fn compile_unspendable_key_rejects_xpub_form() {
         .stderr(predicates::str::contains(
             "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex",
         ))
-        .stderr(predicates::str::contains("v0.19+"));
+        .stderr(predicates::str::contains("deferred to a future version"));
 }
 
 /// v0.18 Item G — arbitrary x-only-hex values that aren't the NUMS H-point

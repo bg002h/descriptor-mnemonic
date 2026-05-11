@@ -105,7 +105,7 @@ v0.17 shipped on the same day as v0.18 with no engraved phrases known in the wil
 
 ### CLI users
 
-- **`--unspendable-key`** narrows accepted forms. Pre-v0.18 the xpub form half-worked (compile rendered something but encode failed opaquely). v0.18 only accepts the literal BIP-341 NUMS H-point hex (`50929b74...e803ac0`) or omission (auto-NUMS default). xpub form rejects at the dispatch layer with a clear error pointing at v0.19+ for caller-supplied internal-key support.
+- **`--unspendable-key`** narrows accepted forms. Pre-v0.18 the xpub form half-worked (compile rendered something but encode failed opaquely). v0.18 only accepts the literal BIP-341 NUMS H-point hex (`50929b74...e803ac0`) or omission (auto-NUMS default). xpub form rejects at the dispatch layer with a clear error noting that those forms are deferred to a future version.
 - **`--path` now works** on `md encode`. Pre-v0.18 the flag was wired but silently ignored. The fix unblocks the canonicity gate for non-canonical wrappers, which is required for round-tripping `--from-policy` outputs without per-`@N` `--key <xpub>` arguments.
 - **`md encode --help` and `md decode --help` example phrases updated.** The v0.17 phrase `md1qqpqqxqxkceprx7rap4t` for `wpkh(@0/<0;1>/*)` no longer round-trips; the v0.18 equivalent is `md1qqpqqxqq0zkd22pw8dmd3`.
 

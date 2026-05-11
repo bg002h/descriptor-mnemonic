@@ -221,8 +221,7 @@ fn validate_unspendable_key_nums_only(uk: Option<&str>) -> Result<(), CliError> 
                 "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex \
                  (50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0) or omitted \
                  (auto-NUMS default). Other forms (xpub-style descriptor keys, arbitrary x-only \
-                 hex) are not supported in this release; track v0.19+ for caller-supplied \
-                 internal-key support."
+                 hex) are deferred to a future version."
                     .into(),
             ));
         }

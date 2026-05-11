@@ -49,9 +49,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 - **Surfaced:** 2026-05-11, toolkit-repo Phase 0.B audit review r1 (commit `713178c` in `bg002h/mnemonic-toolkit`). The toolkit user-manual's `42-md.md` chapter was updated to say "caller-supplied internal-key support is deferred to a future version"; the reviewer noticed the underlying CLI error string in this repo still carries the stale `v0.19+` reference.
 - **Where:** `crates/md-cli/src/main.rs:224` — error message `"track v0.19+ for caller-supplied internal-key support"`.
-- **What:** Update the user-visible error string to remove the stale version reference. Suggested replacement: `"caller-supplied internal-key support is deferred to a future version"` or simply drop the version pointer. v0.19 through v0.32 all shipped without delivering xpub-style internal-key support; the `v0.19+` reference is misleading.
-- **Why deferred:** Surfaced in a cross-repo audit (toolkit Phase 0.B), not in an md1-repo cycle. The fix is a one-line CLI string change; folded into the next md1 patch or a dedicated `chore(md-cli):` commit. Companion entry exists in `mnemonic-toolkit/design/FOLLOWUPS.md`.
-- **Status:** `open`
+- **What:** Update the user-visible error string to remove the stale version reference. v0.19 through v0.32 all shipped without delivering xpub-style internal-key support; the `v0.19+` reference is misleading. Resolution: replaced the trailing clause with `"are deferred to a future version."` Also updated the matching doc-comment in `crates/md-cli/src/compile.rs:54` and the historical migration note in `MIGRATION.md:108`, plus the test predicate in `crates/md-cli/tests/cmd_compile.rs:158` that pinned the stale string.
+- **Status:** `resolved` (2026-05-11, this commit).
 - **Tier:** `cross-repo`
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` — `md-cli-unspendable-key-v0.19-error-string-stale-companion`
 

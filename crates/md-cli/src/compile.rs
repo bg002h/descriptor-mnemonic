@@ -50,8 +50,8 @@ impl FromStr for ScriptContext {
 /// `Some("<BIP-341 NUMS H-point hex>")` (the literal x-only hex
 /// `50929b...e803ac0`) for explicit NUMS, or `None` to let md-cli auto-supply
 /// the BIP-341 NUMS H-point. The CLI dispatch layer rejects any other value
-/// (xpub-style descriptor keys, arbitrary x-only hex) with a BadArg pointing
-/// at v0.19+ for caller-supplied internal-key support. The auto-NUMS default
+/// (xpub-style descriptor keys, arbitrary x-only hex) with a BadArg noting
+/// that those forms are deferred to a future version. The auto-NUMS default
 /// is strictly additive — miniscript's extract-first behavior preserves
 /// single-key extraction when possible; auto-NUMS only kicks in when no
 /// extraction is available (e.g. threshold-multisig). For `SegwitV0`, the
