@@ -546,6 +546,15 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** resolved (Phase H: both helpers deleted)
 - **Tier:** v0.30
 
+### `v0.30-phase-i-tag-rs-operator-count-off-by-one` — `tag.rs:3` says "35 operators" but actual primary count is 36
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase I code-reviewer r1.
+- **Where:** `crates/md-codec/src/tag.rs:3` (`//! 35 operators in primary 6-bit space (0x00..=0x23).`).
+- **What:** The primary range `0x00..=0x23` is 36 slots (0x23 − 0x00 + 1). The BIP rewrite at `bip/bip-mnemonic-descriptor.mediawiki:403` correctly says "36 operators". The tag.rs comment is off-by-one; either it incorrectly counts a slot, or one of the 36 primary slots is reserved-not-operator (unlikely given the Tag::codes mapping). Trivial 1-character fix to align the doc comment with the BIP + the Tag::codes implementation.
+- **Why deferred:** Pre-existing in tag.rs (predates Phase I); pulling tag.rs into Phase I's BIP-rewrite commit would violate "don't refactor beyond scope" memory. File for opportunistic cleanup or fold into Phase J's lib.rs/encode.rs doc sweep.
+- **Status:** open
+- **Tier:** v0.30 (active; lift gated by Phase J doc sweep or opportunistic touch)
+
 ### `v0.30-phase-g-operator-context-violation-unwired` — `Error::OperatorContextViolation` + `ContextKind` carry SPEC §11 but have no live fire sites
 
 - **Surfaced:** 2026-05-10, md-codec v0.30 Phase G implementation.
