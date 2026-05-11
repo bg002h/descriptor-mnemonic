@@ -50,7 +50,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-md-codec = "0.16"
+md-codec = "0.32"
 ```
 
 Encode a wallet policy and decode it back:
@@ -82,13 +82,18 @@ two-PolicyId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 
 ## Cargo features
 
-None. md-codec is library-only as of v0.16.0; the previous `cli`,
-`cli-compiler`, and `json` features moved to `md-cli` along with the
-binary. Library consumers depend on the crate without a feature flag:
+| Feature | Default? | Purpose |
+|---|---|---|
+| `derive` | yes | Enable `Descriptor::derive_address` (pulls in `miniscript` as a dep for the v0.32 AST → `miniscript::Descriptor` converter). |
+
+md-codec became library-only at v0.16.0; the original CLI features
+(`cli`, `cli-compiler`, `json`) moved to the sibling `md-cli` crate.
+The `derive` feature was added at v0.32.0 — pure-codec consumers who
+don't need address derivation can opt out with `default-features = false`:
 
 ```toml
 [dependencies]
-md-codec = "0.16"
+md-codec = { version = "0.32", default-features = false }
 ```
 
 ## License

@@ -2,6 +2,86 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## md-codec v0.31.0 → md-codec v0.32.0
+
+**No wire-format change.** v0.30/v0.31-encoded payloads decode byte-identically under v0.32. The change is API-only: `Descriptor::derive_address` now covers every BIP-388-parseable shape (was a hand-rolled 5-shape allow-list: `Pkh`, `Wpkh`, `TrKeyPathOnly`, `WshMulti`, `ShWshMulti`). The new implementation routes through a generic AST → `miniscript::Descriptor` converter, so multi-leaf tap-trees, `tr(NUMS, ...)`, `sh(multi)` / `sh(sortedmulti)`, arbitrary `wsh(<miniscript>)`, and tap-leaf miniscript all derive without the allow-list gate.
+
+### Library consumers (md-codec)
+
+- **Removed `Error::UnsupportedDerivationShape`.** Structurally unreachable post-rewrite. Match arms that included this variant must remove it; canonical replacement for any residual derivation failure (e.g., miniscript type-check errors) is the new `Error::AddressDerivationFailed { detail: String }`.
+- **New `Error::AddressDerivationFailed { detail: String }`.** Wraps miniscript-layer derivation errors that don't map to a specific md-codec variant. `String` carries the upstream miniscript diagnostic verbatim.
+- **New public module `crate::to_miniscript`** with the `to_miniscript_descriptor` function. Converts a v0.30 wire AST to a `miniscript::Descriptor<DescriptorPublicKey>`. Substitutes the chain alt into each `DescriptorXKey.derivation_path` at build time; the trailing `/*` wildcard is handled by `miniscript::Descriptor::at_derivation_index`.
+- **New Cargo feature `derive` (default-on).** `default = ["derive"]`; `derive = ["dep:miniscript"]`. Pure-codec consumers who don't need `derive_address` can opt out with `default-features = false` (saves a `miniscript` dep). Other public APIs are unaffected by the feature flag.
+
+### Library consumers (md-cli)
+
+- **md-cli's md-codec dep specifier bumped to `0.32.0`.** Unrelated to wire format; md-cli's own version stays at `0.4.3`.
+- **No flag changes; no manual-mirror impact.** `mnemonic-toolkit/docs/manual/src/40-cli-reference/42-md.md` requires no update.
+
+### Vector corpus
+
+- Unchanged. v0.30 wire vectors continue to round-trip byte-identically.
+
+## md-codec v0.30.0 → md-codec v0.31.0 + md-cli v0.4.2 → v0.4.3
+
+**No wire-format change.** v0.30-encoded payloads decode byte-identically under v0.31. Two defense-in-depth + stability-contract additions:
+
+### Library consumers (md-codec)
+
+- **New decoder check.** `Error::OperatorContextViolation { tag, context: ContextKind::TopLevel }` now fires when a decoded descriptor's root tag is outside the BIP-388 allow-list `{Sh, Wsh, Wpkh, Pkh, Tr}`. Pre-v0.31 the decoder silently accepted any root tag; this closes the gap. Match arms that exhaustively cover `Error` may need a new arm (the `OperatorContextViolation` variant itself existed in v0.30; only the TopLevel branch is new behaviorally).
+
+### Library consumers (md-cli)
+
+- **JSON output `tag` field stability contract.** Tag-name strings now go through a `JsonTag` serde mirror with explicit `#[serde(rename_all = "PascalCase")]`. Output is byte-identical to v0.30.0 (e.g., `"Wsh"`, `"Multi"`, `"PkK"`) — the change establishes a stability contract for the `tag` field in JSON output rather than relying on `format!("{:?}", tag)`. Downstream JSON consumers that pinned tag-name strings on v0.30.0 output continue to work.
+- **md-cli's md-codec dep specifier bumped to `0.31.0`.** md-cli's own version became `0.4.3`.
+
+### Removed (internal docstring artifacts)
+
+- Stale `//! #file location ...` and `//! file location ...` artifacts in `crates/md-codec/src/derive.rs:1` and `crates/md-codec/tests/address_derivation.rs:1` were pre-existing tooling injection with no behavior impact. No migration action needed.
+
+## md-codec v0.19.0 → md-codec v0.30.0 + md-cli v0.4.1 → v0.4.2 [BREAKING]
+
+**Wire-format break.** v0.30 is a clean break from v0.x. v0.x-encoded md1 phrases MUST NOT be decoded under v0.30, and v0.30 phrases cannot be decoded under v0.x. Decoders raise `Error::WireVersionMismatch` for v0.x inputs. Re-encode v0.x payloads under v0.30 before relying on them with v0.30+ tools. See `design/SPEC_v0_30_wire_format.md` for the normative spec.
+
+The version jumped 0.19 → 0.30 (skipping 0.20–0.29) to signal the breaking-change scope; no intermediate versions ever shipped.
+
+### Wire-format summary
+
+| Aspect | v0.x (pre-v0.30) | v0.30 |
+|---|---|---|
+| Header version field | 3-bit | 4-bit (version = 4) |
+| Reserved header bit | one reserved bit | reclaimed |
+| Chunked-flag dispatch | external | in-band at first 5-bit symbol's bit 0 |
+| Primary tag space | 5-bit | 6-bit |
+| Extension tag space | 5-bit | 4-bit |
+| Multi-family child packing | uniform `Body::Variable { k, children }` for all multi-flavors and Thresh | new `Body::MultiKeys { k, indices }` for Multi / SortedMulti / MultiA / SortedMultiA (raw kiw-width indices); Thresh keeps `Body::Variable` |
+| Walker normalization | Check/Verify wrapped key children too | bare `Tag::PkK` / `Tag::PkH` at c:-positions; Check wraps only non-key children |
+| NUMS internal key encoding | sentinel `key_index = n` on `Body::Tr` | explicit `is_nums: bool` flag on `Body::Tr`; `key_index_width = ⌈log₂(n)⌉` (was `⌈log₂(n+1)⌉`) |
+
+### CLI users
+
+- **All v0.x phrases stop decoding under v0.30.** `md decode` on a v0.x phrase emits `WireVersionMismatch`. Practical impact: none if you regenerate phrases from templates; lethal if you only stored phrases. **Re-encode known templates before upgrading the consumer.**
+- **`md encode` output for the same template will differ.** For example, `wpkh(@0/<0;1>/*)` produces a different phrase under v0.30 than under v0.18+. The v0.18-era example phrase in this guide (`md1qqpqqxqq0zkd22pw8dmd3`) is no longer the current output for that template.
+- **`md encode --help` / `md decode --help` example phrases regenerated** under v0.30.
+
+### Library consumers (md-codec)
+
+- **`Tag::TrUnspendable` and `Body::TrUnspendable` removed.** v0.30 expresses NUMS via the `is_nums: bool` flag on `Body::Tr`. Code that matched on the removed variants must migrate to `Body::Tr` with `is_nums` discrimination.
+- **`Body::MultiKeys { k: u8, indices: Vec<u8> }` added.** Multi / SortedMulti / MultiA / SortedMultiA now use this variant on the wire; their child key indices are packed at `kiw = ⌈log₂(n)⌉` bits. Thresh remains on `Body::Variable`. Match arms that exhaustively cover `Body` may need a new arm.
+- **`Body::Tr` shape change.** Was `{ key_index: u8, tree: Option<Box<Node>> }`. Now `{ is_nums: bool, key_index: u8, tree: Option<Box<Node>> }`. The pre-v0.30 sentinel (`key_index = n` meaning NUMS) is gone; `key_index = n` is now structurally invalid (`Error::NUMSSentinelConflict`).
+- **`Descriptor::key_index_width` formula change.** Was `⌈log₂(n+1)⌉`. Now `⌈log₂(n)⌉` (NUMS no longer consumes an index slot).
+- **Error taxonomy refactor.** New variants: `WireVersionMismatch`, `MalformedHeader`, `TagOutOfRange`, `NUMSSentinelConflict`, `OperatorContextViolation { tag, context: ContextKind }` (the `ContextKind` enum is also new). Removed: `ReservedHeaderBitSet`, `UnsupportedVersion`, `UnknownPrimaryTag`, `UnknownExtensionTag`. Match arms relying on the removed variants must migrate to their v0.30 successors (`MalformedHeader` covers `ReservedHeaderBitSet`; `WireVersionMismatch` covers `UnsupportedVersion`; `TagOutOfRange` covers the two `Unknown*Tag` variants).
+- **Walker normalization (`Tag::PkK` / `Tag::PkH` bare at c:-positions).** Encoder output is more compact: `c:pk_k(@0)` and `c:pk_h(@0)` in the input miniscript now encode as bare `Tag::PkK` / `Tag::PkH` at the c:-position, with `Tag::Check` wrapping only non-key children. Decoded ASTs reflect the bare form; renderers must handle this.
+- **v0.11-branded prose purged.** Public-API doc-comments and SPEC-cross-references no longer carry "v0.11 wire" language as a name for the post-v0.11 / pre-v0.30 wire format. The phrase is preserved only where it cites historical invariants that survived v0.30 (e.g., `path_decl` population by decoder).
+
+### Library consumers (md-cli)
+
+- **`md-cli v0.4.2` bumps the md-codec dep specifier to `0.30.0`.** md-cli's own surface (subcommands, flags, JSON envelope, exit codes) is unchanged at v0.4.2.
+
+### Vector corpus
+
+- **Regenerated under v0.30.** Files at `crates/md-codec/tests/vectors/` (per-shape `{template, phrase.txt, bytes.hex, descriptor.json}` quadruples; manifest at `tests/vectors/manifest.rs`). All phrases differ from v0.x; the corpus also lifted 6 previously-ignored `tree.rs` test cases that v0.30's walker normalization made representable.
+
 ## md-codec v0.18.0 → md-codec v0.19.0 + md-cli v0.4.0 → v0.4.1
 
 **No wire-format change.** v0.18-encoded payloads decode byte-identically under v0.19. The single behavioral change is decode-side rejection of adversarial deeply-nested input: `tree.rs::read_node` now caps recursion at `MAX_DECODE_DEPTH = 128` and returns a typed `Error::DecodeRecursionDepthExceeded { depth, max }` instead of stack-overflowing. Real-world inputs cannot reach depth 128 (miniscript's construction-side cap on tap-trees is 128 nodes; P2WSH script-size limits keep practical miniscript depth well under 50). If your codebase relies on `read_node` panicking under a hostile input, that path is now an `Err` instead.

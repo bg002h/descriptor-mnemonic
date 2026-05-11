@@ -91,15 +91,16 @@ Example:
 ### `JsonNode`
 | Field | Type |
 |---|---|
-| `tag` | string (Tag variant name, e.g. `"Wsh"`, `"Multi"`, `"PkK"`, `"Tr"`, `"TapTree"`) |
+| `tag` | string (Tag variant name, e.g. `"Wsh"`, `"Multi"`, `"PkK"`, `"Tr"`, `"TapTree"`). Stable since md-cli v0.4.3 / md-codec v0.31.0: emitted via a `JsonTag` serde mirror with `#[serde(rename_all = "PascalCase")]`. Byte-identical to the pre-v0.31 `format!("{:?}", tag)` output. |
 | `body` | `JsonBody` |
 
 ### `JsonBody` (adjacent-tagged on `kind`)
-Mirrors v0.14's `tree::Body` variants exactly:
-- `{"kind": "KeyArg", "data": {"index": u8}}` — single key arg (Pkh, Wpkh, PkK, PkH, multi children)
+Mirrors `tree::Body` variants under the v0.30 wire format:
+- `{"kind": "KeyArg", "data": {"index": u8}}` — single key arg (Pkh, Wpkh, PkK, PkH at non-multi sites)
 - `{"kind": "Children", "data": [JsonNode, ...]}` — wrapper nodes (Wsh, Sh, Check, Verify, AndV, AndOr, TapTree branches, …)
-- `{"kind": "Variable", "data": {"k": u8, "children": [JsonNode, ...]}}` — Multi/SortedMulti/MultiA/SortedMultiA/Thresh
-- `{"kind": "Tr", "data": {"key_index": u8, "tree": JsonNode | null}}` — Taproot root (the inner `tree`, when present, is a plain `JsonNode` whose tag is either a leaf miniscript tag or `TapTree` for a branch)
+- `{"kind": "MultiKeys", "data": {"k": u8, "indices": [u8, ...]}}` — Multi / SortedMulti / MultiA / SortedMultiA (v0.30+ packs key indices at `kiw = ⌈log₂(n)⌉` bits)
+- `{"kind": "Variable", "data": {"k": u8, "children": [JsonNode, ...]}}` — Thresh (mixed key + sub-policy children)
+- `{"kind": "Tr", "data": {"key_index": u8, "is_nums": bool, "tree": JsonNode | null}}` — Taproot root. The `is_nums` flag (v0.30+) replaces the pre-v0.30 `key_index = n` sentinel. The inner `tree`, when present, is a plain `JsonNode` whose tag is either a leaf miniscript tag or `TapTree` for a branch.
 - `{"kind": "Hash256Body", "data": "<hex64>"}` — 32-byte hash literal
 - `{"kind": "Hash160Body", "data": "<hex40>"}` — 20-byte hash literal
 - `{"kind": "Timelock", "data": u32}` — After/Older

@@ -64,7 +64,7 @@ versions) cosigners' extended public keys.
 - **For the `md` CLI:** [`crates/md-cli/README.md`](crates/md-cli/README.md) — install instructions, subcommand reference, network selection.
 - **For why the spec is the way it is:** `design/POLICY_BACKUP.md` documents the design decisions and tradeoffs in detail.
 - **For comparison with existing formats:** `design/PRIOR_ART.md`.
-- **For what real miniscripts look like under MD encoding:** `design/CORPUS.md` and the locked test vectors at `crates/md-codec/tests/vectors/v0.1.json`.
+- **For what real miniscripts look like under MD encoding:** `design/CORPUS.md` and the locked test vectors at `crates/md-codec/tests/vectors/` (per-shape `{template, phrase.txt, bytes.hex, descriptor.json}` quadruples; manifest at `manifest.rs`).
 
 ## What MD is for
 
@@ -89,18 +89,19 @@ The v0 specification scope targets the most common self-custody case:
 
 This covers single-key wallets, all common multisig configurations (including those where each cosigner derives from a distinct BIP 48 account), decaying multisig, simple inheritance, and timelock-based recovery — every Liana wallet template plus typical Coldcard self-custody setups.
 
-Foreign xpubs (multi-party multisig where you don't hold all seeds) are deferred to v1+. Per-`@N` divergent paths shipped in v0.10 (header bit 3 reclaimed; `Tag::OriginPaths = 0x36`); see [`CHANGELOG.md`](CHANGELOG.md) and [`MIGRATION.md`](MIGRATION.md) for the v0.10 wire-format break.
+Foreign xpubs (multi-party multisig where you don't hold all seeds) are deferred to v1+. Per-`@N` divergent paths shipped in v0.10 (`Tag::OriginPaths`); the current wire format is **v0.30** (a clean break from v0.x — see `design/SPEC_v0_30_wire_format.md`, [`CHANGELOG.md`](CHANGELOG.md), and [`MIGRATION.md`](MIGRATION.md)). v0.32 (2026-05-11) replaced the v0.14-era 5-shape address-derivation allow-list with a generic AST → `miniscript::Descriptor` converter, covering every BIP-388-parseable shape.
 
 ## Status
 
-This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/md-codec/`](crates/md-codec/) with 673+ tests passing across the workspace. Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).
+This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/md-codec/`](crates/md-codec/) with 444 tests passing across the workspace (395 without default features). Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).
 
 The Rust reference implementation implements the current scope:
 
 - Full encode → bytecode → chunking → codex32 → BCH-checksummed string round-trip.
 - Decode pipeline with per-stage diagnostics (`DecodeReport` + `Confidence`).
-- 673+ unit + integration tests across `md-codec` + `md-signer-compat`, including corpus round-trips, negative conformance vectors, hand-AST defensive coverage, and BCH known-vectors cross-checked against an independent Python implementation.
-- v0.1 + v0.2 test vectors locked in `crates/md-codec/tests/vectors/` (schemas in `src/vectors.rs`).
+- 444 unit + integration tests across the workspace (395 without default features), including corpus round-trips, negative conformance vectors, hand-AST defensive coverage, and BCH known-vectors cross-checked against an independent Python implementation.
+- v0.30 wire-format test vectors locked in `crates/md-codec/tests/vectors/` (per-shape quadruples; manifest at `tests/vectors/manifest.rs`).
+- `Descriptor::derive_address` (v0.32+, feature `derive`, default-on) covers every BIP-388-parseable shape via the generic AST → `miniscript::Descriptor` converter at `crates/md-codec/src/to_miniscript.rs`.
 - An `md` CLI (in [`crates/md-cli/`](crates/md-cli/)) for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations, plus a `from-policy` mode (behind opt-in `cli-compiler` feature) wrapping rust-miniscript's policy compiler.
 - A sibling [`md-signer-compat`](crates/md-signer-compat/) crate (v0.7.0+) shipping named hardware-signer subsets (`COLDCARD_TAP`, `LEDGER_TAP`) with a `validate_tap_tree` walker, plus a `md-signer-compat validate --signer <name> ...` CLI binary.
 

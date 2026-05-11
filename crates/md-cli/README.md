@@ -6,8 +6,10 @@ policies][bip388].
 
 The codec library lives in the sibling [`md-codec`](../md-codec/) crate;
 md-cli is a thin CLI on top of it. The `md` binary's source moved out of
-md-codec into this crate at md-codec v0.16.0 / md-cli v0.1.0; the wire
-format is unchanged.
+md-codec into this crate at md-codec v0.16.0 / md-cli v0.1.0 (split was
+wire-format-neutral). The current wire format is v0.30 (a clean break
+from v0.x — see [`MIGRATION.md`](../../MIGRATION.md) and
+`design/SPEC_v0_30_wire_format.md`).
 
 [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
 
@@ -45,7 +47,7 @@ cargo install --path crates/md-cli --no-default-features
 | `md vectors [--out DIR]` | Regenerate the project's deterministic test-vector corpus (maintainer tool). |
 | `md compile <EXPR> --context tap\|segwitv0 [--unspendable-key <KEY>]` | Compile a sub-Miniscript-Policy expression into a BIP 388 template. Requires `cli-compiler` feature. `--unspendable-key` is a tap-context-only fallback hint; defaults to BIP-341 NUMS H-point when omitted. |
 
-### Compile examples (v0.17)
+### Compile examples
 
 ```text
 # Single-key tap (key-path-only):
@@ -70,8 +72,8 @@ md compile 'and(pk(@0),pk(@1))' --context tap \
     --unspendable-key 50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0
 # → tr(50929b74...ce803ac0,and_v(v:pk(@0),pk(@1)))
 
-# Segwitv0 wsh:
-md compile 'multi(2,@0,@1,@2)' --context segwitv0
+# Segwitv0 wsh (policy `thresh` compiles to miniscript `multi`):
+md compile 'thresh(2,pk(@0),pk(@1),pk(@2))' --context segwitv0
 # → wsh(multi(2,@0,@1,@2))
 ```
 
