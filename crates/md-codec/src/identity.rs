@@ -623,6 +623,7 @@ mod tests {
     /// version.
     #[test]
     fn walletpolicyid_partial_keys_distinct() {
+        #[allow(dead_code)]
         fn pkk(index: u8) -> Node {
             Node {
                 tag: Tag::PkK,
@@ -660,9 +661,9 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::Multi,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1)],
+                        indices: vec![0, 1],
                     },
                 }]),
             },
@@ -788,6 +789,7 @@ mod tests {
     /// consistently) produce identical IDs.
     #[test]
     fn compute_wallet_policy_id_canonicalizes_first() {
+        #[allow(dead_code)]
         fn pkk(index: u8) -> Node {
             Node {
                 tag: Tag::PkK,
@@ -830,9 +832,9 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::Multi,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(1), pkk(0)],
+                        indices: vec![1, 0],
                     },
                 }]),
             },
@@ -856,9 +858,9 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::Multi,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1)],
+                        indices: vec![0, 1],
                     },
                 }]),
             },

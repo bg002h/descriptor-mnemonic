@@ -106,14 +106,9 @@ fn bip48_2of3_sortedmulti_round_trip() {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: (0..3)
-                        .map(|i| Node {
-                            tag: Tag::PkK,
-                            body: Body::KeyArg { index: i },
-                        })
-                        .collect(),
+                    indices: (0..3).collect(),
                 },
             }]),
         },
@@ -176,14 +171,9 @@ fn bip48_2of3_md1_string_round_trip() {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: (0..3)
-                        .map(|i| Node {
-                            tag: Tag::PkK,
-                            body: Body::KeyArg { index: i },
-                        })
-                        .collect(),
+                    indices: (0..3).collect(),
                 },
             }]),
         },

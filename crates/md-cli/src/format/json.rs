@@ -223,6 +223,12 @@ pub enum JsonBody {
         k: u8,
         children: Vec<JsonNode>,
     },
+    /// v0.30 Phase C: multi-family bodies (Multi/SortedMulti/MultiA/SortedMultiA)
+    /// carry raw key indices, not child Nodes.
+    MultiKeys {
+        k: u8,
+        indices: Vec<u8>,
+    },
     /// `tr()` body. `key_index < n` references @i; `key_index == n` is the
     /// v0.18 NUMS sentinel signalling the BIP-341 NUMS H-point as the
     /// implicit internal key (replaces v0.17's separate `TrUnspendable`
@@ -244,6 +250,10 @@ impl From<&Body> for JsonBody {
             Body::Variable { k, children } => JsonBody::Variable {
                 k: *k,
                 children: children.iter().map(JsonNode::from).collect(),
+            },
+            Body::MultiKeys { k, indices } => JsonBody::MultiKeys {
+                k: *k,
+                indices: indices.clone(),
             },
             Body::Tr { key_index, tree } => JsonBody::Tr {
                 key_index: *key_index,
@@ -308,6 +318,7 @@ mod descriptor_json_tests {
         assert_eq!(j["tree"]["body"]["kind"], "Children");
         // Inner Multi node:
         assert_eq!(j["tree"]["body"]["data"][0]["tag"], "Multi");
-        assert_eq!(j["tree"]["body"]["data"][0]["body"]["kind"], "Variable");
+        // v0.30 Phase C: multi-family serializes as MultiKeys with raw indices.
+        assert_eq!(j["tree"]["body"]["data"][0]["body"]["kind"], "MultiKeys");
     }
 }

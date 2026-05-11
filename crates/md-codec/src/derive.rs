@@ -120,7 +120,8 @@ fn multi_threshold_and_sort(node: &Node) -> Result<(u8, bool), Error> {
         _ => return Err(Error::UnsupportedDerivationShape),
     };
     match &node.body {
-        Body::Variable { k, .. } => Ok((*k, sorted)),
+        // v0.30 Phase C: multi-family carries raw key indices in MultiKeys.
+        Body::MultiKeys { k, .. } => Ok((*k, sorted)),
         _ => Err(Error::UnsupportedDerivationShape),
     }
 }
@@ -368,9 +369,9 @@ mod tests {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::Multi,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(0), pkk(1), pkk(2)],
+                    indices: vec![0, 1, 2],
                 },
             }]),
         };
@@ -389,9 +390,9 @@ mod tests {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(0), pkk(1), pkk(2)],
+                    indices: vec![0, 1, 2],
                 },
             }]),
         };
@@ -409,9 +410,9 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1), pkk(2)],
+                        indices: vec![0, 1, 2],
                     },
                 }]),
             }]),
@@ -428,9 +429,9 @@ mod tests {
             tag: Tag::Sh,
             body: Body::Children(vec![Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(0), pkk(1)],
+                    indices: vec![0, 1],
                 },
             }]),
         };
@@ -714,9 +715,9 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1)],
+                        indices: vec![0, 1],
                     },
                 }]),
             },

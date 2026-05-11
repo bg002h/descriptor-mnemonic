@@ -164,9 +164,9 @@ fn wsh_sortedmulti_2of3() -> Node {
         tag: Tag::Wsh,
         body: Body::Children(vec![Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![pkk(0), pkk(1), pkk(2)],
+                indices: vec![0, 1, 2],
             },
         }]),
     }
@@ -177,9 +177,9 @@ fn wsh_sortedmulti_2of2() -> Node {
         tag: Tag::Wsh,
         body: Body::Children(vec![Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![pkk(0), pkk(1)],
+                indices: vec![0, 1],
             },
         }]),
     }
@@ -350,9 +350,9 @@ fn forced_explicit_sh_sortedmulti_rejected_at_decoder() {
             tag: Tag::Sh,
             body: Body::Children(vec![Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(0), pkk(1)],
+                    indices: vec![0, 1],
                 },
             }]),
         },
@@ -437,9 +437,9 @@ fn placeholder_ordering_rejected_by_validator() {
         tag: Tag::Wsh,
         body: Body::Children(vec![Node {
             tag: Tag::Multi,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![pkk(1), pkk(0)],
+                indices: vec![1, 0],
             },
         }]),
     };
@@ -467,9 +467,9 @@ fn placeholder_ordering_rejected_by_validator() {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::Multi,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(1), pkk(0)],
+                    indices: vec![1, 0],
                 },
             }]),
         },
@@ -537,9 +537,9 @@ fn divergent_paths_wallet_policy_2of2_round_trip() {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::Multi,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(0), pkk(1)],
+                    indices: vec![0, 1],
                 },
             }]),
         },

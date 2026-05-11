@@ -18,12 +18,25 @@ pub struct Node {
 pub enum Body {
     /// No body fields beyond N child nodes (Class 1 fixed-arity).
     Children(Vec<Node>),
-    /// Variable-arity (Multi*, Thresh): k, children. n is implicit (= children.len()).
+    /// Variable-arity body for `Tag::Thresh` only (post-v0.30 Phase C).
+    /// Encodes `k` + N child Nodes. Multi-family tags use [`Body::MultiKeys`]
+    /// per SPEC v0.30 §4.
     Variable {
         /// Threshold `k`.
         k: u8,
         /// Child nodes; `n = children.len()`.
         children: Vec<Node>,
+    },
+    /// Multi-family body (`Tag::Multi`, `SortedMulti`, `MultiA`,
+    /// `SortedMultiA`): k-of-n with raw `kiw`-width key indices, NOT full
+    /// child Nodes. Per SPEC v0.30 §4: wire layout is
+    /// `tag | (k-1)(5) | (n-1)(5) | n × index(kiw)`.
+    MultiKeys {
+        /// Threshold `k`.
+        k: u8,
+        /// Placeholder indices `@i`; `n = indices.len()`. Each entry is
+        /// emitted as `kiw` bits.
+        indices: Vec<u8>,
     },
     /// Tr's body: key index, has-tree, optional tap-script-tree root.
     /// The wire bit-width for `key_index` is determined by Descriptor.key_index_width()
@@ -76,7 +89,7 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
             }
         }
         Body::Variable { k, children } => {
-            // Encode k-1 in 5 bits per spec §4.2.
+            // Thresh-only post-v0.30 Phase C. Encode k-1 in 5 bits per spec §4.2.
             if !(1..=32).contains(&(*k as u32)) {
                 return Err(Error::ThresholdOutOfRange { k: *k });
             }
@@ -89,6 +102,22 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
             w.write_bits((children.len() - 1) as u64, 5);
             for c in children {
                 write_node(w, c, key_index_width)?;
+            }
+        }
+        Body::MultiKeys { k, indices } => {
+            // Multi-family per SPEC v0.30 §4: k-of-n + raw kiw-width indices.
+            if !(1..=32).contains(&(*k as u32)) {
+                return Err(Error::ThresholdOutOfRange { k: *k });
+            }
+            if !(1..=32).contains(&(indices.len() as u32)) {
+                return Err(Error::ChildCountOutOfRange {
+                    count: indices.len(),
+                });
+            }
+            w.write_bits((*k - 1) as u64, 5);
+            w.write_bits((indices.len() - 1) as u64, 5);
+            for idx in indices {
+                w.write_bits(u64::from(*idx), key_index_width as usize);
             }
         }
         Body::Tr { key_index, tree } => {
@@ -182,7 +211,19 @@ fn read_node_with_depth(r: &mut BitReader, key_index_width: u8, depth: u8) -> Re
             let r2 = read_node_with_depth(r, key_index_width, depth + 1)?;
             Body::Children(vec![l, r2])
         }
-        Tag::Multi | Tag::SortedMulti | Tag::MultiA | Tag::SortedMultiA | Tag::Thresh => {
+        Tag::Multi | Tag::SortedMulti | Tag::MultiA | Tag::SortedMultiA => {
+            let k = (r.read_bits(5)? + 1) as u8;
+            let count = (r.read_bits(5)? + 1) as usize;
+            if k as usize > count {
+                return Err(Error::KGreaterThanN { k, n: count });
+            }
+            let mut indices = Vec::with_capacity(count);
+            for _ in 0..count {
+                indices.push(r.read_bits(key_index_width as usize)? as u8);
+            }
+            Body::MultiKeys { k, indices }
+        }
+        Tag::Thresh => {
             let k = (r.read_bits(5)? + 1) as u8;
             let count = (r.read_bits(5)? + 1) as usize;
             if k as usize > count {
@@ -314,22 +355,9 @@ mod tests {
     fn sortedmulti_2of3_round_trip() {
         let n = Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 0 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 1 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 2 },
-                    },
-                ],
+                indices: vec![0, 1, 2],
             },
         };
         let mut w = BitWriter::new();
@@ -339,33 +367,55 @@ mod tests {
         assert_eq!(read_node(&mut r, 2).unwrap(), n);
     }
 
+    /// v0.30 Phase C — multi packing bit-cost pin.
+    /// `Tag(6-bit) | k-1(5) | n-1(5) | 3×kiw(2 at n=3) = 22 bits` (SPEC §4.2).
+    /// Saves 14 bits over v0.x's per-child encoding (which was 36 bits).
     #[test]
-    #[ignore = "v0.30 Phase A: bit-count pin stale (tag width + multi-child packing); lifted in Phase C (multi packing) or H (corpus regen)"]
     fn sortedmulti_2of3_bit_cost() {
-        // Tag(5) + k=2 (5, encoded 1) + n=3 (5, encoded 2) + 3× PkK (5+2 each = 7) = 5+5+5+21 = 36
         let n = Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 0 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 1 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 2 },
-                    },
-                ],
+                indices: vec![0, 1, 2],
             },
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 2).unwrap();
-        assert_eq!(w.bit_len(), 36);
+        assert_eq!(w.bit_len(), 22);
+    }
+
+    /// v0.30 Phase C — `Body::MultiKeys` round-trips under `Tag::Multi`.
+    #[test]
+    fn multi_keys_body_round_trip() {
+        let n = Node {
+            tag: Tag::Multi,
+            body: Body::MultiKeys {
+                k: 2,
+                indices: vec![0, 1, 2],
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    /// v0.30 Phase C — `Body::MultiKeys` round-trips under `Tag::SortedMultiA`.
+    #[test]
+    fn sortedmulti_a_indices_round_trip() {
+        let n = Node {
+            tag: Tag::SortedMultiA,
+            body: Body::MultiKeys {
+                k: 2,
+                indices: vec![0, 1, 2],
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
     }
 
     #[test]
@@ -430,18 +480,9 @@ mod tests {
                 key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::MultiA,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 1 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 2 },
-                            },
-                        ],
+                        indices: vec![1, 2],
                     },
                 })),
             },
@@ -521,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn ripemd160_extension_round_trip() {
+    fn ripemd160_round_trip() {
         let h = [0x42; 20];
         let n = Node {
             tag: Tag::Ripemd160,
@@ -652,22 +693,9 @@ mod tests {
                 key_index: 3,
                 tree: Some(Box::new(Node {
                     tag: Tag::MultiA,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 0 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 1 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 2 },
-                            },
-                        ],
+                        indices: vec![0, 1, 2],
                     },
                 })),
             },

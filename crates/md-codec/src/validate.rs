@@ -64,6 +64,23 @@ fn walk_for_placeholders(
                 walk_for_placeholders(c, seen, first_occurrences)?;
             }
         }
+        Body::MultiKeys { indices, .. } => {
+            // v0.30 Phase C: multi-family bodies carry raw key indices instead
+            // of child Nodes. Same placeholder-usage semantics as KeyArg, per
+            // index.
+            for index in indices {
+                if (*index as usize) >= seen.len() {
+                    return Err(Error::PlaceholderIndexOutOfRange {
+                        idx: *index,
+                        n: seen.len() as u8,
+                    });
+                }
+                if !seen[*index as usize] {
+                    seen[*index as usize] = true;
+                    first_occurrences.push(*index);
+                }
+            }
+        }
         Body::Tr { key_index, tree } => {
             // v0.18 NUMS sentinel: `key_index == seen.len()` (i.e., == n) means
             // the BIP-341 NUMS H-point is the implicit internal key and is NOT
@@ -214,14 +231,9 @@ mod tests {
     fn placeholder_usage_ok_for_2_of_3() {
         let root = Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: (0..3)
-                    .map(|i| Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: i },
-                    })
-                    .collect(),
+                indices: vec![0, 1, 2],
             },
         };
         validate_placeholder_usage(&root, 3).unwrap();
@@ -231,18 +243,9 @@ mod tests {
     fn placeholder_usage_rejects_unreferenced() {
         let root = Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 1,
-                children: vec![
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 0 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 1 },
-                    },
-                ],
+                indices: vec![0, 1],
             },
         };
         assert!(matches!(
@@ -255,18 +258,9 @@ mod tests {
     fn placeholder_usage_rejects_out_of_order_first_occurrences() {
         let root = Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 1,
-                children: vec![
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 1 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 0 },
-                    },
-                ],
+                indices: vec![1, 0],
             },
         };
         assert!(matches!(
@@ -355,12 +349,9 @@ mod tests {
         // n=5 → key_index_width=3 admits 0..=7. @5..=7 are out of range.
         let root = Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 1,
-                children: vec![Node {
-                    tag: Tag::PkK,
-                    body: Body::KeyArg { index: 5 },
-                }],
+                indices: vec![5],
             },
         };
         let err = validate_placeholder_usage(&root, 5).unwrap_err();
@@ -375,12 +366,9 @@ mod tests {
         // n=15 → key_index_width=4 admits 0..=15. @15 just out of range.
         let root = Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 1,
-                children: vec![Node {
-                    tag: Tag::PkK,
-                    body: Body::KeyArg { index: 15 },
-                }],
+                indices: vec![15],
             },
         };
         let err = validate_placeholder_usage(&root, 15).unwrap_err();
@@ -504,22 +492,9 @@ mod explicit_origin_required_tests {
                 tag: Tag::Sh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 0 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 1 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 2 },
-                            },
-                        ],
+                        indices: vec![0, 1, 2],
                     },
                 }]),
             },
@@ -548,22 +523,9 @@ mod explicit_origin_required_tests {
                 tag: Tag::Sh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 0 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 1 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 2 },
-                            },
-                        ],
+                        indices: vec![0, 1, 2],
                     },
                 }]),
             },
@@ -647,18 +609,9 @@ mod explicit_origin_required_tests {
                 tag: Tag::Sh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 1,
-                        children: vec![
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 0 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 1 },
-                            },
-                        ],
+                        indices: vec![0, 1],
                     },
                 }]),
             },
@@ -682,18 +635,9 @@ mod explicit_origin_required_tests {
                 tag: Tag::Sh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 1,
-                        children: vec![
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 0 },
-                            },
-                            Node {
-                                tag: Tag::PkK,
-                                body: Body::KeyArg { index: 1 },
-                            },
-                        ],
+                        indices: vec![0, 1],
                     },
                 }]),
             },

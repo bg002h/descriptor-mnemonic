@@ -126,22 +126,9 @@ mod tests {
     fn multi_2of3() -> Node {
         Node {
             tag: Tag::Multi,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 0 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 1 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 2 },
-                    },
-                ],
+                indices: vec![0, 1, 2],
             },
         }
     }
@@ -149,22 +136,9 @@ mod tests {
     fn sortedmulti_2of3() -> Node {
         Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 0 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 1 },
-                    },
-                    Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: 2 },
-                    },
-                ],
+                indices: vec![0, 1, 2],
             },
         }
     }

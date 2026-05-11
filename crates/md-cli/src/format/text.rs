@@ -439,26 +439,19 @@ fn render_multi(
     overrides: Option<&[(u8, UseSitePath)]>,
     out: &mut String,
 ) -> Result<(), CliError> {
-    let (k, children) = match &node.body {
-        Body::Variable { k, children } => (*k, children),
+    // v0.30 Phase C: multi-family bodies carry raw key indices, not child Nodes.
+    let (k, indices) = match &node.body {
+        Body::MultiKeys { k, indices } => (*k, indices),
         _ => {
             return Err(CliError::TemplateParse(format!(
-                "{name} body must be Variable"
+                "{name} body must be MultiKeys"
             )));
         }
     };
     write!(out, "{name}({k}").unwrap();
-    for child in children {
-        let idx = match child.body {
-            Body::KeyArg { index } => index,
-            _ => {
-                return Err(CliError::TemplateParse(format!(
-                    "{name} child must be KeyArg"
-                )));
-            }
-        };
+    for idx in indices {
         out.push(',');
-        render_key(idx, default_usp, overrides, out)?;
+        render_key(*idx, default_usp, overrides, out)?;
     }
     out.push(')');
     Ok(())

@@ -131,14 +131,9 @@ fn multi_chunk_descriptor() -> Descriptor {
         use_site_path: UseSitePath::standard_multipath(),
         tree: Node {
             tag: Tag::SortedMulti,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: (0..4)
-                    .map(|i| Node {
-                        tag: Tag::PkK,
-                        body: Body::KeyArg { index: i },
-                    })
-                    .collect(),
+                indices: (0..4).collect(),
             },
         },
         tlv: TlvSection::new_empty(),

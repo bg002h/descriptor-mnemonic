@@ -77,6 +77,17 @@ fn walk_collect_first(node: &Node, seen: &mut [bool], first_occurrences: &mut Ve
                 walk_collect_first(c, seen, first_occurrences);
             }
         }
+        Body::MultiKeys { indices, .. } => {
+            // v0.30 Phase C: multi-family bodies carry raw key indices.
+            for idx in indices {
+                if let Some(slot) = seen.get_mut(*idx as usize) {
+                    if !*slot {
+                        *slot = true;
+                        first_occurrences.push(*idx);
+                    }
+                }
+            }
+        }
         Body::Hash256Body(_) | Body::Hash160Body(_) | Body::Timelock(_) | Body::Empty => {}
     }
 }
@@ -108,6 +119,12 @@ fn remap_indices(node: &mut Node, perm: &[u8]) {
         Body::Variable { children, .. } => {
             for c in children {
                 remap_indices(c, perm);
+            }
+        }
+        Body::MultiKeys { indices, .. } => {
+            // v0.30 Phase C: rewrite raw indices through the perm map.
+            for idx in indices.iter_mut() {
+                *idx = perm[*idx as usize];
             }
         }
         Body::Hash256Body(_) | Body::Hash160Body(_) | Body::Timelock(_) | Body::Empty => {}
@@ -253,6 +270,13 @@ fn check_placeholder_bounds(node: &Node, n: u8) -> Result<(), Error> {
         Body::Variable { children, .. } => {
             for c in children {
                 check_placeholder_bounds(c, n)?;
+            }
+        }
+        Body::MultiKeys { indices, .. } => {
+            for idx in indices {
+                if *idx >= n {
+                    return Err(Error::PlaceholderIndexOutOfRange { idx: *idx, n });
+                }
             }
         }
         Body::Hash256Body(_) | Body::Hash160Body(_) | Body::Timelock(_) | Body::Empty => {}
@@ -447,6 +471,7 @@ mod tests {
     use crate::tree::{Body, Node};
     use crate::use_site_path::UseSitePath;
 
+    #[allow(dead_code)] // retained for non-multi-family fixtures; multi-family now uses MultiKeys
     fn pkk(index: u8) -> Node {
         Node {
             tag: Tag::PkK,
@@ -530,9 +555,9 @@ mod tests {
             // walk will hit @1 first.
             tree: Node {
                 tag: Tag::Multi,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(1), pkk(0)],
+                    indices: vec![1, 0],
                 },
             },
             tlv: TlvSection::new_empty(),
@@ -540,9 +565,9 @@ mod tests {
         canonicalize_placeholder_indices(&mut d).unwrap();
         let expected_tree = Node {
             tag: Tag::Multi,
-            body: Body::Variable {
+            body: Body::MultiKeys {
                 k: 2,
-                children: vec![pkk(0), pkk(1)],
+                indices: vec![0, 1],
             },
         };
         assert_eq!(d.tree, expected_tree);
@@ -571,9 +596,9 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(2), pkk(0), pkk(1)],
+                        indices: vec![2, 0, 1],
                     },
                 }]),
             },
@@ -588,9 +613,9 @@ mod tests {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(0), pkk(1), pkk(2)],
+                    indices: vec![0, 1, 2],
                 },
             }]),
         };
@@ -629,10 +654,10 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::Multi,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
                         // First-occurrence: @1, then @0 → perm[0] = 1, perm[1] = 0.
-                        children: vec![pkk(1), pkk(0)],
+                        indices: vec![1, 0],
                     },
                 }]),
             },
@@ -662,9 +687,9 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::Multi,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(1), pkk(0)],
+                    indices: vec![1, 0],
                 },
             },
             tlv: {
@@ -695,11 +720,11 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
                     // First-occurrence: @2, @0, @1
                     // perm[0]=1, perm[1]=2, perm[2]=0.
-                    children: vec![pkk(2), pkk(0), pkk(1)],
+                    indices: vec![2, 0, 1],
                 },
             },
             tlv: {
@@ -737,10 +762,10 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
                     // first-occurrence: @2, @0, @1 → perm[2]=0
-                    children: vec![pkk(2), pkk(0), pkk(1)],
+                    indices: vec![2, 0, 1],
                 },
             },
             tlv: {
@@ -811,9 +836,9 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(2), pkk(0), pkk(1)],
+                    indices: vec![2, 0, 1],
                 },
             },
             tlv: {
@@ -838,9 +863,9 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(2), pkk(0), pkk(1)],
+                    indices: vec![2, 0, 1],
                 },
             },
             tlv: {
@@ -864,9 +889,9 @@ mod tests {
             use_site_path: no_multipath(),
             tree: Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(2), pkk(0), pkk(1)],
+                    indices: vec![2, 0, 1],
                 },
             },
             tlv: TlvSection::new_empty(),
@@ -895,10 +920,10 @@ mod tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::Multi,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
                         // first-occurrence: @1 then @0 (non-canonical).
-                        children: vec![pkk(1), pkk(0)],
+                        indices: vec![1, 0],
                     },
                 }]),
             },
@@ -958,8 +983,8 @@ mod tests {
                 *v = mapping[v];
             }
 
-            let children: Vec<Node> = renumbered.iter().map(|i| pkk(*i)).collect();
-            let n_children = children.len();
+            let indices: Vec<u8> = renumbered.clone();
+            let n_children = indices.len();
             let k_value = std::cmp::min(2u8, n_children as u8);
             let mut d = Descriptor {
                 n,
@@ -969,9 +994,9 @@ mod tests {
                     tag: Tag::Wsh,
                     body: Body::Children(vec![Node {
                         tag: Tag::SortedMulti,
-                        body: Body::Variable {
+                        body: Body::MultiKeys {
                             k: k_value,
-                            children,
+                            indices,
                         },
                     }]),
                 },
@@ -1000,6 +1025,7 @@ mod expand_tests {
     use crate::tree::{Body, Node};
     use crate::use_site_path::UseSitePath;
 
+    #[allow(dead_code)] // retained for non-multi-family fixtures; multi-family now uses MultiKeys
     fn pkk(index: u8) -> Node {
         Node {
             tag: Tag::PkK,
@@ -1090,9 +1116,9 @@ mod expand_tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1), pkk(2)],
+                        indices: vec![0, 1, 2],
                     },
                 }]),
             },
@@ -1140,9 +1166,9 @@ mod expand_tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1), pkk(2)],
+                        indices: vec![0, 1, 2],
                     },
                 }]),
             },
@@ -1185,9 +1211,9 @@ mod expand_tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::Multi,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1)],
+                        indices: vec![0, 1],
                     },
                 }]),
             },
@@ -1218,9 +1244,9 @@ mod expand_tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::Multi,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1)],
+                        indices: vec![0, 1],
                     },
                 }]),
             },
@@ -1255,9 +1281,9 @@ mod expand_tests {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1), pkk(2)],
+                        indices: vec![0, 1, 2],
                     },
                 }]),
             },
@@ -1295,9 +1321,9 @@ mod expand_tests {
                 tag: Tag::Sh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1)],
+                        indices: vec![0, 1],
                     },
                 }]),
             },
@@ -1367,10 +1393,10 @@ mod expand_tests {
             use_site_path: UseSitePath::standard_multipath(),
             tree: Node {
                 tag: Tag::Multi,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
                     // first-occurrence: @1 then @0 → perm[0]=1, perm[1]=0.
-                    children: vec![pkk(1), pkk(0)],
+                    indices: vec![1, 0],
                 },
             },
             tlv: {

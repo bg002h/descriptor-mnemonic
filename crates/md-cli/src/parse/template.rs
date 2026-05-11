@@ -506,21 +506,15 @@ fn build_multi_node(
             "multi/sortedmulti/multi_a threshold k={k} out of range 1..=32"
         )));
     }
-    let children: Vec<Node> = keys
+    let indices: Vec<u8> = keys
         .iter()
-        .map(|kk| {
-            let index = lookup_key(&kk.to_string(), km)?;
-            Ok(Node {
-                tag: Tag::PkK,
-                body: Body::KeyArg { index },
-            })
-        })
+        .map(|kk| lookup_key(&kk.to_string(), km))
         .collect::<Result<_, CliError>>()?;
     Ok(Node {
         tag,
-        body: Body::Variable {
+        body: Body::MultiKeys {
             k: k as u8,
-            children,
+            indices,
         },
     })
 }
@@ -995,13 +989,11 @@ mod wsh_tests {
         };
         assert_eq!(inner.tag, Tag::Multi);
         match &inner.body {
-            Body::Variable { k, children } => {
+            Body::MultiKeys { k, indices } => {
                 assert_eq!(*k, 2);
-                assert_eq!(children.len(), 2);
-                assert!(matches!(children[0].body, Body::KeyArg { index: 0 }));
-                assert!(matches!(children[1].body, Body::KeyArg { index: 1 }));
+                assert_eq!(indices, &vec![0, 1]);
             }
-            _ => panic!("expected Body::Variable"),
+            _ => panic!("expected Body::MultiKeys"),
         }
     }
 
@@ -1021,11 +1013,11 @@ mod wsh_tests {
         };
         assert_eq!(inner.tag, Tag::SortedMulti);
         match &inner.body {
-            Body::Variable { k, children } => {
+            Body::MultiKeys { k, indices } => {
                 assert_eq!(*k, 2);
-                assert_eq!(children.len(), 3);
+                assert_eq!(indices.len(), 3);
             }
-            _ => panic!("expected Body::Variable"),
+            _ => panic!("expected Body::MultiKeys"),
         }
     }
 
@@ -1169,15 +1161,11 @@ mod tr_tests {
         };
         assert_eq!(tree.tag, Tag::MultiA);
         match &tree.body {
-            Body::Variable { k, children } => {
+            Body::MultiKeys { k, indices } => {
                 assert_eq!(*k, 2);
-                assert_eq!(children.len(), 3);
-                for (i, child) in children.iter().enumerate() {
-                    assert_eq!(child.tag, Tag::PkK);
-                    assert!(matches!(child.body, Body::KeyArg { index: ix } if ix as usize == i));
-                }
+                assert_eq!(indices, &vec![0, 1, 2]);
             }
-            _ => panic!("expected Body::Variable"),
+            _ => panic!("expected Body::MultiKeys"),
         }
     }
 

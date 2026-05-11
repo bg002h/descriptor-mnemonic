@@ -50,6 +50,7 @@ fn origin(components: &[(bool, u32)]) -> OriginPath {
     }
 }
 
+#[allow(dead_code)] // multi-family fixtures now use MultiKeys; pkk retained for future non-multi cases
 fn pkk(index: u8) -> Node {
     Node {
         tag: Tag::PkK,
@@ -266,9 +267,9 @@ fn wsh_sortedmulti_2_of_3_address() {
             tag: Tag::Wsh,
             body: Body::Children(vec![Node {
                 tag: Tag::SortedMulti,
-                body: Body::Variable {
+                body: Body::MultiKeys {
                     k: 2,
-                    children: vec![pkk(0), pkk(1), pkk(2)],
+                    indices: vec![0, 1, 2],
                 },
             }]),
         },
@@ -350,9 +351,9 @@ fn sh_wsh_sortedmulti_2_of_3_address() {
                 tag: Tag::Wsh,
                 body: Body::Children(vec![Node {
                     tag: Tag::SortedMulti,
-                    body: Body::Variable {
+                    body: Body::MultiKeys {
                         k: 2,
-                        children: vec![pkk(0), pkk(1), pkk(2)],
+                        indices: vec![0, 1, 2],
                     },
                 }]),
             }]),

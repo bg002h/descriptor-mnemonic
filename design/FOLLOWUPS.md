@@ -486,21 +486,20 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** 2026-05-10, md-codec v0.30 Phase A execution. The `IMPLEMENTATION_PLAN_v0_30.md` §3 Phase A stop condition implicitly assumed full `cargo test -p md-codec --lib` would stay green after the 5→6-bit primary tag width change; reality is that 12 unit tests in `tree::tests` carry bit-count pin assertions whose values shift by ±N bits per tag emitted. None are logic failures; all are predictable corpus-regen-class fallout.
 - **Where:** `crates/md-codec/src/tree.rs` — search for `#[ignore = "v0.30 Phase A:"]`. Affected tests:
   - **Lifted in Phase F (NUMS `is_nums` flag replaces sentinel):** `tr_bip86_no_tree`, `tr_sentinel_n_1_bare_round_trip`, `tr_sentinel_n_4_bare_round_trip`, `key_arg_n1_zero_bits`, `key_arg_n3_two_bits`
-  - **Lifted in Phase C (multi child packing) or Phase H (corpus regen):** `sortedmulti_2of3_bit_cost`
+  - **Lifted in Phase C (multi child packing):** ~~`sortedmulti_2of3_bit_cost`~~ — un-ignored 2026-05-10; bit count re-pinned at 22 (was 36 pre-v0.30).
   - **Lifted in Phase H (corpus regen):** `after_700_000_round_trip`, `sha256_round_trip`, `hash160_round_trip`, `hash256_extension_round_trip`, `false_round_trip`, `tap_tree_two_leaf_round_trip`
 - **What:** All 12 tests still have valid round-trip logic in their bodies; only the pinned-bit-count assertion values are stale relative to v0.30 widths. Each `#[ignore]` annotation states the target lift phase verbatim. Phase H's corpus regen pass MUST un-ignore the H-phase tests and update their bit-count constants; Phases C/F MUST un-ignore their respective tests as a step of those phases' commits.
 - **Why deferred:** The plan explicitly scoped tree.rs OUT of Phase A (its real touch happens in Phases C/E/F). Fixing the bit-count pins in Phase A would pull tree.rs into Phase A scope and risk error-prone recomputation, with some pins needing re-update at Phase F (kiw formula change). The `#[ignore]` deferral preserves test code intact for trivial un-ignore + recompute in the proper phase. Decision made by user 2026-05-10 in the Phase A execution flow.
-- **Status:** open
-- **Tier:** v0.30 (active; lift gated by Phases C/F/H)
+- **Status:** partial — `sortedmulti_2of3_bit_cost` lifted in Phase C; 11 remain (Phase F lifts 5, Phase H lifts 6)
+- **Tier:** v0.30 (active; lift gated by Phases F/H)
 
 ### `v0.30-phase-a-r1-low-1` — `tree::tests::ripemd160_extension_round_trip` retains stale `_extension` suffix
 
 - **Surfaced:** 2026-05-10, md-codec v0.30 Phase A code-reviewer r1.
-- **Where:** `crates/md-codec/src/tree.rs:524` (the `#[test] fn ripemd160_extension_round_trip` declaration).
-- **What:** Phase A renamed the three tag-level `_extension`-suffixed tests in `tag.rs::tests` (Hash256/False/True) to drop the misleading suffix, since those variants are now primary-space in v0.30. The parallel tree-layer test `ripemd160_extension_round_trip` was not renamed — it falls inside tree.rs which Phase A scoped out. The test still passes (no bit-count pin to invalidate), but the name implies Ripemd160 is still an extension-space tag, which it isn't post-v0.30.
-- **Why deferred:** tree.rs is out of Phase A scope per the plan; touching it for a test rename would expand scope. Bundle with the Phase C/F tree.rs touches.
-- **Status:** open
-- **Tier:** v0.30 (lift gated by Phase C or F when tree.rs is next touched)
+- **Where:** `crates/md-codec/src/tree.rs` — test renamed to `ripemd160_round_trip`.
+- **What:** Phase A renamed the three tag-level `_extension`-suffixed tests in `tag.rs::tests` (Hash256/False/True) to drop the misleading suffix, since those variants are now primary-space in v0.30. The parallel tree-layer test was renamed in Phase C bundle.
+- **Status:** resolved (phase c: tree.rs ripemd160 test renamed)
+- **Tier:** v0.30
 
 ### `v0.30-phase-a-r1-nit-1` — multiple `v0.11`-branded prose strings in `error.rs` remain after Phase A
 
@@ -528,6 +527,33 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why deferred:** Phase B's scope was header layout. Module-doc prose belongs to Phase J's crate-doc sweep.
 - **Status:** open
 - **Tier:** v0.30 (lift gated by Phase J — final tag + crate doc rewrite)
+
+### `v0.30-phase-c-help-examples-md1-strings-drift` — md-cli `--help` text embeds literal md1 strings that drift on wire-format change
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase C execution.
+- **Where:** md-cli's `help_examples` integration test crate (`crates/md-cli/tests/help_examples.rs` — grep `decode_example_matches_actual_output` and `encode_example_matches_actual_output`). The `--help` text of `md-cli decode` and `md-cli encode` carries literal `md1...` strings as examples; the tests assert these match runtime output exactly.
+- **What:** Phase C's multi-family packing shrinks the wire (e.g. SortedMulti 2-of-3 goes from 36 bits per multi-family arity-3 occurrence to 22 bits per the new packing), so any literal `md1...` example embedded in `--help` text now mismatches runtime encoding. The 2 named tests fail; rest of `help_examples` may also drift after Phases E/F.
+- **Why deferred:** Phase C's scope was AST + encoder/decoder + walker/renderer + fixture rewrites; `--help` text regeneration belongs with the Phase H corpus regen (every example string drifts under the new wire and must be re-encoded against the post-Phase-G binary).
+- **Status:** open
+- **Tier:** v0.30 (active; lift gated by Phase H corpus regen)
+
+### `v0.30-phase-c-canonicalize-pkk-helpers-dead-code` — two `pkk` test helpers in `canonicalize.rs` retained under `#[allow(dead_code)]`
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase C code-reviewer r1.
+- **Where:** `crates/md-codec/src/canonicalize.rs:474` and `:1028`.
+- **What:** After multi-family fixtures were converted from `Body::Variable { children: vec![Node{tag:PkK,...}, ...] }` to `Body::MultiKeys { indices: vec![...] }`, the `pkk(idx)` helpers that built `Node{tag:Tag::PkK, body:Body::KeyArg{index:idx}}` lost their call sites. Implementer marked them `#[allow(dead_code)]`; reviewer prefers deletion. Either choice is defensible — keep for hypothetical Phase H/J fixture additions, or delete for cleanliness.
+- **Why deferred:** Phase C's scope was core variant + sweep; the dead-helper cleanup is cosmetic. Decide at Phase H (when corpus regen revisits tree-test fixtures) whether to delete or rewire.
+- **Status:** open
+- **Tier:** v0.30 (lift gated by Phase H, or by an opportunistic doc/cleanup commit)
+
+### `repo-hygiene-stale-file-location-doc-artifacts` — `//! #file location ...` / `//! file location ...` strings at line 1 of various Rust files
+
+- **Surfaced:** 2026-05-10, md-codec v0.30 Phase C code-reviewer r1 (pre-existing on HEAD `7944f00`; not introduced by Phase C).
+- **Where:** at least `crates/md-codec/src/derive.rs:1` (`//! #file location crates/md-codec/src/derive.rs`) and `crates/md-codec/tests/address_derivation.rs:1` (`//! file location /home/user/repo/crates/md-codec/tests/address_derivation.rs`). Likely more across the workspace; not enumerated.
+- **What:** Tooling-injected doc-comment artifacts that render literally in `cargo doc` output. Inconsistent format (one has `#`, one omits; one has a real path, one has a `/home/user/repo/...` placeholder). Repo-hygiene drift, not a behavior issue.
+- **Why deferred:** Out-of-scope for Phase C — pre-exist on the HEAD commit before any Phase C edits. Sweeping these mid-Phase-C would violate the "Don't add features, refactor, or introduce abstractions beyond what the task requires" memory. Worth a dedicated cleanup commit later.
+- **Status:** open
+- **Tier:** v1+ (low-priority; opportunistic sweep)
 
 ### `rust-miniscript-multi-a-in-curly-braces-parser-quirk` — concrete-key `multi_a(...)` inside `tr({...})` fails to parse
 
