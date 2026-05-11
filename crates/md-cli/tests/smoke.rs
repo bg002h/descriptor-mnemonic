@@ -10,11 +10,11 @@ use assert_cmd::Command;
 
 #[test]
 fn encode_wpkh_default_phrase() {
-    // v0.18 wire-format break: phrase shifted by one bech32 char
-    // (`md1qqpqqxqxkceprx7rap4t` v0.17 → `md1qqpqqxqq0zkd22pw8dmd3` v0.18) due
-    // to the key_index_width formula moving to ⌈log₂(n+1)⌉ — at n=1 the width
-    // grew 0→1, adding one bit to the descriptor body.
+    // v0.30 wire-format break: phrase re-pinned post-tag-space rework
+    // (`md1qqpqqxqq0zkd22pw8dmd3` v0.18 → `md1yqpqqxqq8xtwhw4xwn4qh` v0.30)
+    // due to 6-bit primary tags + 4-bit version + `is_nums` flag + kiw
+    // formula change to ⌈log₂(n)⌉.
     let mut cmd = Command::cargo_bin("md").unwrap();
     cmd.args(["encode", "wpkh(@0/<0;1>/*)"]);
-    cmd.assert().success().stdout("md1qqpqqxqq0zkd22pw8dmd3\n");
+    cmd.assert().success().stdout("md1yqpqqxqq8xtwhw4xwn4qh\n");
 }

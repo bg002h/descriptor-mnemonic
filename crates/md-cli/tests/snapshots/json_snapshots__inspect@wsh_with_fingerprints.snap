@@ -22,29 +22,13 @@ expression: body
           {
             "body": {
               "data": {
-                "children": [
-                  {
-                    "body": {
-                      "data": {
-                        "index": 0
-                      },
-                      "kind": "KeyArg"
-                    },
-                    "tag": "PkK"
-                  },
-                  {
-                    "body": {
-                      "data": {
-                        "index": 1
-                      },
-                      "kind": "KeyArg"
-                    },
-                    "tag": "PkK"
-                  }
+                "indices": [
+                  0,
+                  1
                 ],
                 "k": 2
               },
-              "kind": "Variable"
+              "kind": "MultiKeys"
             },
             "tag": "Multi"
           }
@@ -68,14 +52,14 @@ expression: body
     }
   },
   "md1_encoding_id": {
-    "hex": "4bb65e98059d03f4b388b2328c27e141"
+    "hex": "95c5f8f35650c65b5559c430de33e801"
   },
   "schema": "md-cli/1",
   "wallet_descriptor_template_id": {
-    "hex": "d8692fe2fa5247a7fea106155fd5e270"
+    "hex": "a235ee7574702e45f80089c07e73ed22"
   },
   "wallet_policy_id": {
-    "fingerprint": "0xb4f94b14",
-    "hex": "b4f94b14938c82cd8d50f9fbabc5188b"
+    "fingerprint": "0xce85bdfa",
+    "hex": "ce85bdfa7e6728b63d20b65bdb6bfd6d"
   }
 }

@@ -25,37 +25,13 @@
         {
           "tag": "SortedMulti",
           "body": {
-            "kind": "Variable",
+            "kind": "MultiKeys",
             "data": {
               "k": 2,
-              "children": [
-                {
-                  "tag": "PkK",
-                  "body": {
-                    "kind": "KeyArg",
-                    "data": {
-                      "index": 0
-                    }
-                  }
-                },
-                {
-                  "tag": "PkK",
-                  "body": {
-                    "kind": "KeyArg",
-                    "data": {
-                      "index": 1
-                    }
-                  }
-                },
-                {
-                  "tag": "PkK",
-                  "body": {
-                    "kind": "KeyArg",
-                    "data": {
-                      "index": 2
-                    }
-                  }
-                }
+              "indices": [
+                0,
+                1,
+                2
               ]
             }
           }

@@ -30,28 +30,12 @@
               {
                 "tag": "Multi",
                 "body": {
-                  "kind": "Variable",
+                  "kind": "MultiKeys",
                   "data": {
                     "k": 2,
-                    "children": [
-                      {
-                        "tag": "PkK",
-                        "body": {
-                          "kind": "KeyArg",
-                          "data": {
-                            "index": 0
-                          }
-                        }
-                      },
-                      {
-                        "tag": "PkK",
-                        "body": {
-                          "kind": "KeyArg",
-                          "data": {
-                            "index": 1
-                          }
-                        }
-                      }
+                    "indices": [
+                      0,
+                      1
                     ]
                   }
                 }

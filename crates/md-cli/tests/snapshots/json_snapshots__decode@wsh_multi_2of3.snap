@@ -22,38 +22,14 @@ expression: body
           {
             "body": {
               "data": {
-                "children": [
-                  {
-                    "body": {
-                      "data": {
-                        "index": 0
-                      },
-                      "kind": "KeyArg"
-                    },
-                    "tag": "PkK"
-                  },
-                  {
-                    "body": {
-                      "data": {
-                        "index": 1
-                      },
-                      "kind": "KeyArg"
-                    },
-                    "tag": "PkK"
-                  },
-                  {
-                    "body": {
-                      "data": {
-                        "index": 2
-                      },
-                      "kind": "KeyArg"
-                    },
-                    "tag": "PkK"
-                  }
+                "indices": [
+                  0,
+                  1,
+                  2
                 ],
                 "k": 2
               },
-              "kind": "Variable"
+              "kind": "MultiKeys"
             },
             "tag": "Multi"
           }

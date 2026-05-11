@@ -487,11 +487,11 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/tree.rs` — search for `#[ignore = "v0.30 Phase A:"]`. Affected tests:
   - **Lifted in Phase F (NUMS `is_nums` flag replaces sentinel):** ~~`tr_bip86_no_tree`, `tr_sentinel_n_1_bare_round_trip` (→ `tr_nums_n_1_bare_round_trip`), `tr_sentinel_n_4_bare_round_trip` (→ `tr_nums_n_4_bare_round_trip`), `key_arg_n1_zero_bits`, `key_arg_n3_two_bits`~~ — un-ignored 2026-05-10 in Phase F; sentinel-suffixed tests renamed; bit counts re-pinned against v0.30 §7 (kiw=⌈log₂(n)⌉ + is_nums flag).
   - **Lifted in Phase C (multi child packing):** ~~`sortedmulti_2of3_bit_cost`~~ — un-ignored 2026-05-10; bit count re-pinned at 22 (was 36 pre-v0.30).
-  - **Lifted in Phase H (corpus regen):** `after_700_000_round_trip`, `sha256_round_trip`, `hash160_round_trip`, `hash256_extension_round_trip`, `false_round_trip`, `tap_tree_two_leaf_round_trip`
+  - **Lifted in Phase H (corpus regen):** ~~`after_700_000_round_trip`, `sha256_round_trip`, `hash160_round_trip`, `hash256_extension_round_trip` (renamed → `hash256_round_trip`), `false_round_trip`, `tap_tree_two_leaf_round_trip`~~ — un-ignored 2026-05-10 in Phase H; bit counts re-pinned (38, 262, 166, 262, 6, 32 respectively); `hash256_extension_round_trip` renamed to `hash256_round_trip` (Hash256 is primary in v0.30); doc-comment on `tap_tree_two_leaf_round_trip` rewritten to v0.30 widths.
 - **What:** All 12 tests still have valid round-trip logic in their bodies; only the pinned-bit-count assertion values are stale relative to v0.30 widths. Each `#[ignore]` annotation states the target lift phase verbatim. Phase H's corpus regen pass MUST un-ignore the H-phase tests and update their bit-count constants; Phases C/F MUST un-ignore their respective tests as a step of those phases' commits.
 - **Why deferred:** The plan explicitly scoped tree.rs OUT of Phase A (its real touch happens in Phases C/E/F). Fixing the bit-count pins in Phase A would pull tree.rs into Phase A scope and risk error-prone recomputation, with some pins needing re-update at Phase F (kiw formula change). The `#[ignore]` deferral preserves test code intact for trivial un-ignore + recompute in the proper phase. Decision made by user 2026-05-10 in the Phase A execution flow.
-- **Status:** partial — 6 lifted (Phase C: 1; Phase F: 5); 6 remain (Phase H)
-- **Tier:** v0.30 (active; lift gated by Phase H)
+- **Status:** resolved (Phase H: 6 remaining tests lifted; total 12/12)
+- **Tier:** v0.30
 
 ### `v0.30-phase-a-r1-low-1` — `tree::tests::ripemd160_extension_round_trip` retains stale `_extension` suffix
 
@@ -534,8 +534,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** md-cli's `help_examples` integration test crate (`crates/md-cli/tests/help_examples.rs` — grep `decode_example_matches_actual_output` and `encode_example_matches_actual_output`). The `--help` text of `md-cli decode` and `md-cli encode` carries literal `md1...` strings as examples; the tests assert these match runtime output exactly.
 - **What:** Phase C's multi-family packing shrinks the wire (e.g. SortedMulti 2-of-3 goes from 36 bits per multi-family arity-3 occurrence to 22 bits per the new packing), so any literal `md1...` example embedded in `--help` text now mismatches runtime encoding. The 2 named tests fail; rest of `help_examples` may also drift after Phases E/F.
 - **Why deferred:** Phase C's scope was AST + encoder/decoder + walker/renderer + fixture rewrites; `--help` text regeneration belongs with the Phase H corpus regen (every example string drifts under the new wire and must be re-encoded against the post-Phase-G binary).
-- **Status:** open
-- **Tier:** v0.30 (active; lift gated by Phase H corpus regen)
+- **Status:** resolved (Phase H: 2 literal md1 strings updated in main.rs — `md1qqpqqxqq0zkd22pw8dmd3` → `md1yqpqqxqq8xtwhw4xwn4qh` in encode + decode `after_long_help`)
+- **Tier:** v0.30
 
 ### `v0.30-phase-c-canonicalize-pkk-helpers-dead-code` — two `pkk` test helpers in `canonicalize.rs` retained under `#[allow(dead_code)]`
 
@@ -543,8 +543,8 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/canonicalize.rs:474` and `:1028`.
 - **What:** After multi-family fixtures were converted from `Body::Variable { children: vec![Node{tag:PkK,...}, ...] }` to `Body::MultiKeys { indices: vec![...] }`, the `pkk(idx)` helpers that built `Node{tag:Tag::PkK, body:Body::KeyArg{index:idx}}` lost their call sites. Implementer marked them `#[allow(dead_code)]`; reviewer prefers deletion. Either choice is defensible — keep for hypothetical Phase H/J fixture additions, or delete for cleanliness.
 - **Why deferred:** Phase C's scope was core variant + sweep; the dead-helper cleanup is cosmetic. Decide at Phase H (when corpus regen revisits tree-test fixtures) whether to delete or rewire.
-- **Status:** open
-- **Tier:** v0.30 (lift gated by Phase H, or by an opportunistic doc/cleanup commit)
+- **Status:** resolved (Phase H: both helpers deleted)
+- **Tier:** v0.30
 
 ### `v0.30-phase-g-operator-context-violation-unwired` — `Error::OperatorContextViolation` + `ContextKind` carry SPEC §11 but have no live fire sites
 

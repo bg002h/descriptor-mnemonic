@@ -19,6 +19,7 @@ expression: body
     "tree": {
       "body": {
         "data": {
+          "is_nums": false,
           "key_index": 0,
           "tree": null
         },

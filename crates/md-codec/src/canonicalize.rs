@@ -482,14 +482,6 @@ mod tests {
     use crate::tree::{Body, Node};
     use crate::use_site_path::UseSitePath;
 
-    #[allow(dead_code)] // retained for non-multi-family fixtures; multi-family now uses MultiKeys
-    fn pkk(index: u8) -> Node {
-        Node {
-            tag: Tag::PkK,
-            body: Body::KeyArg { index },
-        }
-    }
-
     fn shared_bip84() -> PathDecl {
         PathDecl {
             n: 1,
@@ -980,7 +972,7 @@ mod tests {
             distinct.dedup();
             let n = distinct.len() as u8;
             assert!(n >= 2, "test fixture expects ≥2 distinct placeholders");
-            // Children are pkk(@perm[i]) — but to match `n` we must use
+            // Children are pk_k(@perm[i]) — but to match `n` we must use
             // exactly the `n` placeholders {0, 1, ..., n-1}; the
             // permutation `perm` already does that as long as `distinct`
             // == 0..n. Re-index if the permutation skipped any.
@@ -1037,14 +1029,6 @@ mod expand_tests {
     use crate::tlv::TlvSection;
     use crate::tree::{Body, Node};
     use crate::use_site_path::UseSitePath;
-
-    #[allow(dead_code)] // retained for non-multi-family fixtures; multi-family now uses MultiKeys
-    fn pkk(index: u8) -> Node {
-        Node {
-            tag: Tag::PkK,
-            body: Body::KeyArg { index },
-        }
-    }
 
     fn bip84() -> OriginPath {
         OriginPath {

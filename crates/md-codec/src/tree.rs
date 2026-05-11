@@ -555,7 +555,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: tag-width bit-count pin stale; lifted in Phase H (corpus regen)"]
     fn after_700_000_round_trip() {
         let n = Node {
             tag: Tag::After,
@@ -563,15 +562,14 @@ mod tests {
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
-        // Tag(5) + u32(32) = 37 bits
-        assert_eq!(w.bit_len(), 37);
+        // Tag(6) + u32(32) = 38 bits
+        assert_eq!(w.bit_len(), 38);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: tag-width bit-count pin stale; lifted in Phase H (corpus regen)"]
     fn sha256_round_trip() {
         let h = [0xab; 32];
         let n = Node {
@@ -580,15 +578,14 @@ mod tests {
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
-        // Tag(5) + 256 = 261 bits
-        assert_eq!(w.bit_len(), 261);
+        // Tag(6) + 256 = 262 bits
+        assert_eq!(w.bit_len(), 262);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: tag-width bit-count pin stale; lifted in Phase H (corpus regen)"]
     fn hash160_round_trip() {
         let h = [0xcd; 20];
         let n = Node {
@@ -597,16 +594,15 @@ mod tests {
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
-        // Tag(5) + 160 = 165 bits
-        assert_eq!(w.bit_len(), 165);
+        // Tag(6) + 160 = 166 bits
+        assert_eq!(w.bit_len(), 166);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: bit-count pin stale (Hash256 promoted from extension to primary); lifted in Phase H (corpus regen)"]
-    fn hash256_extension_round_trip() {
+    fn hash256_round_trip() {
         let h = [0xef; 32];
         let n = Node {
             tag: Tag::Hash256,
@@ -614,8 +610,8 @@ mod tests {
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
-        // Extension tag = 5+5 = 10 bits, then 256 = 266 total
-        assert_eq!(w.bit_len(), 266);
+        // Tag(6) + 256 = 262 bits (Hash256 primary 0x1F in v0.30).
+        assert_eq!(w.bit_len(), 262);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
@@ -636,7 +632,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: bit-count pin stale (False promoted from extension to primary); lifted in Phase H (corpus regen)"]
     fn false_round_trip() {
         let n = Node {
             tag: Tag::False,
@@ -644,7 +639,7 @@ mod tests {
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
-        assert_eq!(w.bit_len(), 10); // extension tag = 10 bits, no body
+        assert_eq!(w.bit_len(), 6); // Tag(6), no body (False primary 0x22 in v0.30)
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
@@ -790,10 +785,9 @@ mod tests {
     /// existed before v0.19; multi-branch was previously walker-rejected
     /// so there was no real input that exercised this wire shape).
     /// `tr(@0, {pk(@1), pk(@2)})` with key_index_width=2.
-    /// Bit-length pin: Tag::Tr (5) + key_index (2) + has_tree (1)
-    ///                 + Tag::TapTree (5) + 2×(Tag::PkK (5) + key_index (2)) = 27 bits.
+    /// Bit-length pin (v0.30): Tag::Tr (6) + is_nums (1) + kiw (2) + has_tree (1)
+    ///                 + Tag::TapTree (6) + 2×(Tag::PkK (6) + kiw (2)) = 32 bits.
     #[test]
-    #[ignore = "v0.30 Phase A: tag-width bit-count pin stale; lifted in Phase H (corpus regen)"]
     fn tap_tree_two_leaf_round_trip() {
         let n = Node {
             tag: Tag::Tr,
@@ -817,7 +811,7 @@ mod tests {
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 2).unwrap();
-        assert_eq!(w.bit_len(), 27, "2-leaf TapTree wire layout pin");
+        assert_eq!(w.bit_len(), 32, "2-leaf TapTree wire layout pin");
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 2).unwrap(), n);

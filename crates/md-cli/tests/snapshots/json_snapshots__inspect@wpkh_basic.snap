@@ -40,7 +40,7 @@ expression: body
     }
   },
   "md1_encoding_id": {
-    "hex": "7513d3245368c2f774da15bcd29e858a"
+    "hex": "6386e83f114dc65da7afe37052228760"
   },
   "schema": "md-cli/1",
   "wallet_descriptor_template_id": {
