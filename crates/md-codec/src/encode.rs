@@ -28,18 +28,18 @@ pub struct Descriptor {
 }
 
 impl Descriptor {
-    /// Bit width for placeholder-index encoding: ⌈log₂(n + 1)⌉.
+    /// Bit width for placeholder-index encoding: ⌈log₂(n)⌉ per SPEC v0.30 §7.
     ///
-    /// **v0.18:** the +1 reserves room for the sentinel value `key_index = n`
-    /// on `Body::Tr`, signalling the BIP-341 NUMS H-point as the implicit
-    /// internal key. v0.17 used ⌈log₂(n)⌉ and carried NUMS via the now-removed
-    /// `Tag::TrUnspendable` extension code. The formula matches
-    /// `decode::decode_payload`'s independent computation; the two MUST stay
-    /// in lockstep — at n=1 the width changes 0→1 and a stale decoder would
-    /// silently desync the bitstream.
+    /// **v0.30:** the NUMS H-point is now signalled by an explicit `is_nums`
+    /// bit on `Body::Tr` (SPEC §7), not by a reserved sentinel `key_index = n`.
+    /// The formula therefore drops the +1 that v0.18 reserved for that
+    /// sentinel; index range is `0..n` (saving 1 bit at n ∈ {1, 2, 4, 8, 16, 32}).
+    /// MUST stay in lockstep with `decode::decode_payload`'s independent
+    /// computation; a stale formula would silently desync the bitstream.
     pub fn key_index_width(&self) -> u8 {
-        // `bit_length(n)` = ⌈log₂(n + 1)⌉ for n ≥ 0; at n=0, 32 - 32 = 0.
-        (32 - (self.n as u32).leading_zeros()) as u8
+        // ⌈log₂(n)⌉ for n ≥ 2; clamp to 0 at n ∈ {0, 1}.
+        // Identity: ⌈log₂(n)⌉ = bit_length(n-1) for n ≥ 2.
+        (32 - (self.n as u32).saturating_sub(1).leading_zeros()) as u8
     }
 
     /// Returns `true` iff this descriptor is in **wallet-policy mode** per

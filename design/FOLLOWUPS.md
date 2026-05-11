@@ -485,13 +485,13 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 - **Surfaced:** 2026-05-10, md-codec v0.30 Phase A execution. The `IMPLEMENTATION_PLAN_v0_30.md` §3 Phase A stop condition implicitly assumed full `cargo test -p md-codec --lib` would stay green after the 5→6-bit primary tag width change; reality is that 12 unit tests in `tree::tests` carry bit-count pin assertions whose values shift by ±N bits per tag emitted. None are logic failures; all are predictable corpus-regen-class fallout.
 - **Where:** `crates/md-codec/src/tree.rs` — search for `#[ignore = "v0.30 Phase A:"]`. Affected tests:
-  - **Lifted in Phase F (NUMS `is_nums` flag replaces sentinel):** `tr_bip86_no_tree`, `tr_sentinel_n_1_bare_round_trip`, `tr_sentinel_n_4_bare_round_trip`, `key_arg_n1_zero_bits`, `key_arg_n3_two_bits`
+  - **Lifted in Phase F (NUMS `is_nums` flag replaces sentinel):** ~~`tr_bip86_no_tree`, `tr_sentinel_n_1_bare_round_trip` (→ `tr_nums_n_1_bare_round_trip`), `tr_sentinel_n_4_bare_round_trip` (→ `tr_nums_n_4_bare_round_trip`), `key_arg_n1_zero_bits`, `key_arg_n3_two_bits`~~ — un-ignored 2026-05-10 in Phase F; sentinel-suffixed tests renamed; bit counts re-pinned against v0.30 §7 (kiw=⌈log₂(n)⌉ + is_nums flag).
   - **Lifted in Phase C (multi child packing):** ~~`sortedmulti_2of3_bit_cost`~~ — un-ignored 2026-05-10; bit count re-pinned at 22 (was 36 pre-v0.30).
   - **Lifted in Phase H (corpus regen):** `after_700_000_round_trip`, `sha256_round_trip`, `hash160_round_trip`, `hash256_extension_round_trip`, `false_round_trip`, `tap_tree_two_leaf_round_trip`
 - **What:** All 12 tests still have valid round-trip logic in their bodies; only the pinned-bit-count assertion values are stale relative to v0.30 widths. Each `#[ignore]` annotation states the target lift phase verbatim. Phase H's corpus regen pass MUST un-ignore the H-phase tests and update their bit-count constants; Phases C/F MUST un-ignore their respective tests as a step of those phases' commits.
 - **Why deferred:** The plan explicitly scoped tree.rs OUT of Phase A (its real touch happens in Phases C/E/F). Fixing the bit-count pins in Phase A would pull tree.rs into Phase A scope and risk error-prone recomputation, with some pins needing re-update at Phase F (kiw formula change). The `#[ignore]` deferral preserves test code intact for trivial un-ignore + recompute in the proper phase. Decision made by user 2026-05-10 in the Phase A execution flow.
-- **Status:** partial — `sortedmulti_2of3_bit_cost` lifted in Phase C; 11 remain (Phase F lifts 5, Phase H lifts 6)
-- **Tier:** v0.30 (active; lift gated by Phases F/H)
+- **Status:** partial — 6 lifted (Phase C: 1; Phase F: 5); 6 remain (Phase H)
+- **Tier:** v0.30 (active; lift gated by Phase H)
 
 ### `v0.30-phase-a-r1-low-1` — `tree::tests::ripemd160_extension_round_trip` retains stale `_extension` suffix
 

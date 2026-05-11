@@ -153,6 +153,7 @@ fn tr_keypath_at_0() -> Node {
     Node {
         tag: Tag::Tr,
         body: Body::Tr {
+            is_nums: false,
             key_index: 0,
             tree: None,
         },
@@ -722,6 +723,7 @@ fn tr_with_taptree_rejects_empty_path_decl() {
         tree: Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(pkk(0))),
             },
@@ -748,6 +750,7 @@ fn tr_with_taptree_accepts_with_populated_path_decl() {
         tree: Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(pkk(0))),
             },

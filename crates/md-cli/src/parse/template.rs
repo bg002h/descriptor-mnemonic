@@ -3,12 +3,10 @@ use crate::error::CliError;
 /// BIP-341 §"Constructing and spending Taproot outputs" NUMS H-point — the
 /// canonical x-only public key with no known discrete log. Used as the
 /// taproot internal key when a descriptor has no extractable single-key
-/// spend. v0.18 encodes this via the `Body::Tr { key_index = n, .. }`
-/// sentinel rule: when the descriptor's `tr()` internal key is exactly this
-/// value, encoders MUST emit `key_index == n` (one past the highest
-/// placeholder index). v0.17 used the now-removed `Tag::TrUnspendable`
-/// extension code 0x05; v0.18 freed that code in favor of the sentinel for
-/// engraving compactness (saves 3-4 bits per usage).
+/// spend. v0.30 encodes this via the explicit `Body::Tr { is_nums: true, .. }`
+/// flag per SPEC §7: when the descriptor's `tr()` internal key is exactly
+/// this value, encoders MUST set `is_nums = true`. v0.18's reserved-sentinel
+/// `key_index = n` scheme was replaced in v0.30 by a 1-bit in-band flag.
 ///
 /// Lives in `parse/template.rs` (unconditional) rather than `compile.rs`
 /// (feature-gated `cli-compiler`) so it is available to all consumers
@@ -812,15 +810,17 @@ fn walk_tr(
         None => None,
         Some(tt) => Some(Box::new(walk_tap_tree(tt, km)?)),
     };
-    // v0.18 NUMS sentinel: emit Tag::Tr with key_index = n (just past the
-    // highest placeholder) iff the internal key is exactly the BIP-341 NUMS
-    // H-point. Otherwise the internal key MUST be a placeholder-derived
-    // synthetic xpub (i.e. an @N).
+    // SPEC v0.30 §7: emit Tag::Tr with `is_nums = true` iff the internal key
+    // is exactly the BIP-341 NUMS H-point. Otherwise the internal key MUST be
+    // a placeholder-derived synthetic xpub (i.e. an @N).
     if key_str == NUMS_H_POINT_X_ONLY_HEX {
-        let n = km.len() as u8;
         return Ok(Node {
             tag: Tag::Tr,
-            body: Body::Tr { key_index: n, tree },
+            body: Body::Tr {
+                is_nums: true,
+                key_index: 0,
+                tree,
+            },
         });
     }
     let key_index = lookup_key(&key_str, km).map_err(|orig_err| {
@@ -833,7 +833,7 @@ fn walk_tr(
                 "unsupported internal-key form: literal hex `{key_str}` other than \
                  BIP-341 NUMS H-point. Use an @N placeholder (backed by an xpub via \
                  --keys) for the internal key, or the BIP-341 NUMS H-point \
-                 ({NUMS_H_POINT_X_ONLY_HEX}) for the v0.18 NUMS sentinel encoding."
+                 ({NUMS_H_POINT_X_ONLY_HEX}) for the v0.30 NUMS-flag encoding."
             ))
         } else {
             orig_err
@@ -841,7 +841,11 @@ fn walk_tr(
     })?;
     Ok(Node {
         tag: Tag::Tr,
-        body: Body::Tr { key_index, tree },
+        body: Body::Tr {
+            is_nums: false,
+            key_index,
+            tree,
+        },
     })
 }
 
@@ -1061,7 +1065,11 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr { key_index, tree } => {
+            Body::Tr {
+                is_nums: _,
+                key_index,
+                tree,
+            } => {
                 assert_eq!(key_index, 0);
                 assert!(tree.is_none());
             }
@@ -1077,7 +1085,11 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr { key_index, tree } => {
+            Body::Tr {
+                is_nums: _,
+                key_index,
+                tree,
+            } => {
                 assert_eq!(key_index, 0);
                 let leaf = tree.unwrap();
                 assert_eq!(leaf.tag, Tag::PkK);
@@ -1102,7 +1114,11 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         let leaf = match root.body {
-            Body::Tr { key_index, tree } => {
+            Body::Tr {
+                is_nums: _,
+                key_index,
+                tree,
+            } => {
                 assert_eq!(key_index, 0);
                 tree.expect("tap tree must be present")
             }
@@ -1127,14 +1143,14 @@ mod tr_tests {
         assert!(matches!(kids[1].body, Body::Timelock(144)));
     }
 
-    /// v0.18 — NUMS H-point internal key emits Tag::Tr with the sentinel
-    /// `key_index = n` (not the v0.17-era Tag::TrUnspendable). Confirms the
-    /// canonicalization invariant in walk_tr post-Phase-3.
+    /// v0.30 — NUMS H-point internal key emits Tag::Tr with the explicit
+    /// `is_nums = true` flag (per SPEC §7; replaces v0.18's sentinel
+    /// `key_index = n`). Confirms walk_tr emits the flag, not a sentinel.
     /// Note: substitute_synthetic does NOT touch the literal NUMS hex (the
     /// regex matches `@N`-prefixed tokens only); the hex flows through into
     /// the parsed Descriptor's internal_key field as a literal x-only key.
     #[test]
-    fn tr_with_nums_internal_key_emits_sentinel() {
+    fn tr_with_nums_internal_key_emits_is_nums_flag() {
         let template =
             format!("tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
@@ -1143,14 +1159,16 @@ mod tr_tests {
         assert_eq!(
             root.tag,
             Tag::Tr,
-            "NUMS internal key MUST emit Tag::Tr (with sentinel key_index = n)"
+            "NUMS internal key MUST emit Tag::Tr with is_nums = true"
         );
         let tree = match root.body {
-            Body::Tr { key_index, tree } => {
-                assert_eq!(
-                    key_index, 3,
-                    "n=3 placeholders → sentinel key_index = 3 (NUMS H-point)"
-                );
+            Body::Tr {
+                is_nums,
+                key_index,
+                tree,
+            } => {
+                assert!(is_nums, "NUMS internal key must set is_nums = true");
+                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
                 tree.expect("multi_a leaf must be present")
             }
             _ => panic!("expected Body::Tr"),
@@ -1165,23 +1183,24 @@ mod tr_tests {
         }
     }
 
-    /// v0.18 — `tr(<NUMS>)` key-path-only (no tap tree) is a valid
-    /// frozen/unspendable output. Confirms miniscript 13 accepts the no-tree
-    /// shape and that walk_tr emits Tag::Tr with sentinel key_index = n and
-    /// `tree: None` (the n=0 sentinel boundary case).
+    /// v0.30 — `tr(<NUMS>)` key-path-only (no tap tree) is a valid
+    /// frozen/unspendable output. Confirms walk_tr emits Tag::Tr with
+    /// `is_nums = true` and `tree: None`.
     #[test]
-    fn tr_with_nums_key_only_no_tree_emits_sentinel_with_none_tree() {
+    fn tr_with_nums_key_only_no_tree_emits_is_nums_with_none_tree() {
         let template = format!("tr({NUMS_H_POINT_X_ONLY_HEX})");
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr { key_index, tree } => {
-                assert_eq!(
-                    key_index, 0,
-                    "n=0 placeholders (no @N in template) → sentinel key_index = 0"
-                );
+            Body::Tr {
+                is_nums,
+                key_index,
+                tree,
+            } => {
+                assert!(is_nums, "NUMS internal key must set is_nums = true");
+                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
                 assert!(
                     tree.is_none(),
                     "tree must be None for tr(<NUMS>) with no script arg"
@@ -1243,7 +1262,11 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         let tree = match root.body {
-            Body::Tr { key_index, tree } => {
+            Body::Tr {
+                is_nums: _,
+                key_index,
+                tree,
+            } => {
                 assert_eq!(key_index, 0, "internal key is @0");
                 tree.expect("tap tree must be present")
             }
@@ -1404,19 +1427,23 @@ mod tr_tests {
         assert!(matches!(andv_kids[1].body, Body::Timelock(144)));
     }
 
-    /// v0.19 — NUMS sentinel + 2-leaf multi-branch. Verifies orthogonality
-    /// of the NUMS sentinel `key_index = n` rule and the tree shape:
-    /// `tr(<NUMS_HEX>,{pk(@0),pk(@1)})` with n=2 placeholders → sentinel
-    /// is `key_index = 2`, plus a 2-leaf TapTree.
+    /// v0.30 — NUMS flag + 2-leaf multi-branch. Verifies orthogonality of
+    /// the `is_nums` flag (SPEC §7) and the tree shape:
+    /// `tr(<NUMS_HEX>,{pk(@0),pk(@1)})` → `is_nums = true` plus a 2-leaf TapTree.
     #[test]
-    fn tr_nums_sentinel_with_two_leaf_multi_branch() {
+    fn tr_nums_flag_with_two_leaf_multi_branch() {
         let template = format!("tr({NUMS_H_POINT_X_ONLY_HEX},{{pk(@0/<0;1>/*),pk(@1/<0;1>/*)}})",);
         let (s, km) = substitute_synthetic(&template, ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         let tree = match root.body {
-            Body::Tr { key_index, tree } => {
-                assert_eq!(key_index, 2, "n=2 placeholders → sentinel key_index = 2");
+            Body::Tr {
+                is_nums,
+                key_index,
+                tree,
+            } => {
+                assert!(is_nums, "NUMS internal key must set is_nums = true");
+                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
                 tree.expect("tap tree must be present")
             }
             _ => panic!("expected Body::Tr"),
@@ -1430,12 +1457,11 @@ mod tr_tests {
         assert!(matches!(kids[1].body, Body::KeyArg { index: 1 }));
     }
 
-    /// v0.19 — NUMS sentinel + 3-leaf multi-branch. Verifies that
-    /// `km.len() as u8` arithmetic at walk_tr correctly varies with
-    /// placeholder count: n=3 here, so the sentinel must be `key_index = 3`.
-    /// Without this test, only the n=2 sentinel case is exercised.
+    /// v0.30 — NUMS flag + 3-leaf multi-branch. Verifies walk_tr emits
+    /// `is_nums = true` regardless of placeholder count (the v0.18 sentinel
+    /// `key_index = n` was a count-dependent value; v0.30's flag is binary).
     #[test]
-    fn tr_nums_sentinel_with_three_leaf_multi_branch() {
+    fn tr_nums_flag_with_three_leaf_multi_branch() {
         let template = format!(
             "tr({NUMS_H_POINT_X_ONLY_HEX},{{pk(@0/<0;1>/*),{{pk(@1/<0;1>/*),pk(@2/<0;1>/*)}}}})",
         );
@@ -1443,8 +1469,13 @@ mod tr_tests {
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         let tree = match root.body {
-            Body::Tr { key_index, tree } => {
-                assert_eq!(key_index, 3, "n=3 placeholders → sentinel key_index = 3");
+            Body::Tr {
+                is_nums,
+                key_index,
+                tree,
+            } => {
+                assert!(is_nums, "NUMS internal key must set is_nums = true");
+                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
                 tree.expect("tap tree must be present")
             }
             _ => panic!("expected Body::Tr"),

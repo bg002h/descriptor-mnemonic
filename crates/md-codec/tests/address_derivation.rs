@@ -165,6 +165,7 @@ fn bip86_tr_keypath_only_receive_address_zero() {
         tree: Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: None,
             },

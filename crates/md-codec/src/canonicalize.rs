@@ -52,15 +52,20 @@ fn walk_collect_first(node: &Node, seen: &mut [bool], first_occurrences: &mut Ve
                 }
             }
         }
-        Body::Tr { key_index, tree } => {
-            // v0.18 NUMS sentinel: `key_index == seen.len()` (i.e., == n) is
-            // not a placeholder reference. `seen.get_mut` returns None for
-            // out-of-range indices and the registration is silently skipped,
-            // which is the correct behavior for the sentinel value.
-            if let Some(slot) = seen.get_mut(*key_index as usize) {
-                if !*slot {
-                    *slot = true;
-                    first_occurrences.push(*key_index);
+        Body::Tr {
+            is_nums,
+            key_index,
+            tree,
+        } => {
+            // SPEC v0.30 §7: when `is_nums = true` the internal key is the
+            // BIP-341 NUMS H-point (not a placeholder reference); skip
+            // registration.
+            if !*is_nums {
+                if let Some(slot) = seen.get_mut(*key_index as usize) {
+                    if !*slot {
+                        *slot = true;
+                        first_occurrences.push(*key_index);
+                    }
                 }
             }
             if let Some(t) = tree {
@@ -99,12 +104,14 @@ fn remap_indices(node: &mut Node, perm: &[u8]) {
         Body::KeyArg { index } => {
             *index = perm[*index as usize];
         }
-        Body::Tr { key_index, tree } => {
-            // v0.18 NUMS sentinel: when `key_index == perm.len()` (i.e., == n)
-            // it represents the BIP-341 NUMS H-point, not a placeholder. Skip
-            // remapping; leave unchanged. The bare `perm[*key_index as usize]`
-            // would otherwise panic (index-out-of-bounds) on the sentinel value.
-            if (*key_index as usize) < perm.len() {
+        Body::Tr {
+            is_nums,
+            key_index,
+            tree,
+        } => {
+            // SPEC v0.30 §7: when `is_nums = true` the internal key is the
+            // BIP-341 NUMS H-point (not a placeholder); skip remapping.
+            if !*is_nums {
                 *key_index = perm[*key_index as usize];
             }
             if let Some(t) = tree {
@@ -249,14 +256,18 @@ fn check_placeholder_bounds(node: &Node, n: u8) -> Result<(), Error> {
                 return Err(Error::PlaceholderIndexOutOfRange { idx: *index, n });
             }
         }
-        Body::Tr { key_index, tree } => {
-            // v0.18 NUMS sentinel: `key_index == n` is the reserved NUMS-H-point
-            // signal and is allowed. Strictly greater values are rejected.
-            // (Architect C2 round 1 — this is a separate independent copy of
-            // the same `>= n` check that lives in validate.rs::walk_for_placeholders;
-            // both must be loosened to `> n` in lockstep.)
-            if *key_index > n {
-                return Err(Error::PlaceholderIndexOutOfRange { idx: *key_index, n });
+        Body::Tr {
+            is_nums,
+            key_index,
+            tree,
+        } => {
+            // SPEC v0.30 §7 + §11: when `is_nums = true` the internal key is
+            // the BIP-341 NUMS H-point (not a placeholder); skip the bounds
+            // check. Otherwise `key_index` must be in `0..n`; out-of-range
+            // raises `NUMSSentinelConflict` per SPEC §11 (Phase G finalizes
+            // the variant's full doc-comment).
+            if !*is_nums && *key_index >= n {
+                return Err(Error::NUMSSentinelConflict);
             }
             if let Some(t) = tree {
                 check_placeholder_bounds(t, n)?;
@@ -531,6 +542,7 @@ mod tests {
             tree: Node {
                 tag: Tag::Tr,
                 body: Body::Tr {
+                    is_nums: false,
                     key_index: 0,
                     tree: None,
                 },
@@ -793,6 +805,7 @@ mod tests {
             tree: Node {
                 tag: Tag::Tr,
                 body: Body::Tr {
+                    is_nums: false,
                     key_index: 0,
                     tree: None,
                 },

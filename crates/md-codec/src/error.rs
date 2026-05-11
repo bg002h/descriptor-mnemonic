@@ -339,6 +339,11 @@ pub enum Error {
     )]
     UnsupportedDerivationShape,
 
+    /// SPEC §7: `is_nums` flag set on a non-`Tr` operator; Phase G finalizes
+    /// the full doc and context-coupling semantics.
+    #[error("NUMS sentinel conflict")]
+    NUMSSentinelConflict,
+
     /// Decode-side recursion depth exceeded the hardening cap.
     /// `read_node` calls itself recursively for tags with child bodies
     /// (`Tag::Sh`, `Tag::AndV`, `Tag::TapTree`, `Tag::Multi`, `Tag::Tr`,

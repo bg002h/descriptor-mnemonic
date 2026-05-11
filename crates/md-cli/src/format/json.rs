@@ -229,11 +229,11 @@ pub enum JsonBody {
         k: u8,
         indices: Vec<u8>,
     },
-    /// `tr()` body. `key_index < n` references @i; `key_index == n` is the
-    /// v0.18 NUMS sentinel signalling the BIP-341 NUMS H-point as the
-    /// implicit internal key (replaces v0.17's separate `TrUnspendable`
-    /// variant).
+    /// `tr()` body. Per SPEC v0.30 §7: `is_nums = true` signals the
+    /// BIP-341 NUMS H-point as the implicit internal key (key_index unused);
+    /// `is_nums = false` references @{key_index} for `key_index < n`.
     Tr {
+        is_nums: bool,
         key_index: u8,
         tree: Option<Box<JsonNode>>,
     },
@@ -255,7 +255,12 @@ impl From<&Body> for JsonBody {
                 k: *k,
                 indices: indices.clone(),
             },
-            Body::Tr { key_index, tree } => JsonBody::Tr {
+            Body::Tr {
+                is_nums,
+                key_index,
+                tree,
+            } => JsonBody::Tr {
+                is_nums: *is_nums,
                 key_index: *key_index,
                 tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
             },

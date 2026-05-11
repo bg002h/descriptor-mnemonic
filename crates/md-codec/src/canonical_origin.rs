@@ -101,6 +101,7 @@ mod tests {
         Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: n,
                 tree: None,
             },
@@ -114,6 +115,7 @@ mod tests {
         Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: n,
                 tree: Some(Box::new(Node {
                     tag: Tag::PkK,

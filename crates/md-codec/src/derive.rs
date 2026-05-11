@@ -338,6 +338,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: None,
             },
@@ -353,6 +354,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(pkk(1))),
             },
@@ -749,6 +751,7 @@ mod tests {
             tree: Node {
                 tag: Tag::Tr,
                 body: Body::Tr {
+                    is_nums: false,
                     key_index: 0,
                     tree: Some(Box::new(pkk(0))),
                 },

@@ -34,11 +34,15 @@ fn render_node(
         Tag::Tr => {
             out.push_str("tr(");
             match &node.body {
-                Body::Tr { key_index, tree } => {
-                    // v0.18 NUMS sentinel: key_index == n encodes the BIP-341
-                    // NUMS H-point as the implicit internal key. Render as the
-                    // literal x-only hex string. Other values reference @N.
-                    if *key_index == n {
+                Body::Tr {
+                    is_nums,
+                    key_index,
+                    tree,
+                } => {
+                    // SPEC v0.30 §7: is_nums=true encodes the BIP-341 NUMS
+                    // H-point as the implicit internal key; render as the
+                    // literal x-only hex. Otherwise render @{key_index}.
+                    if *is_nums {
                         out.push_str(NUMS_H_POINT_X_ONLY_HEX);
                     } else {
                         render_key(*key_index, default_usp, overrides, out)?;

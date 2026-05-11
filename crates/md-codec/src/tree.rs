@@ -38,20 +38,19 @@ pub enum Body {
         /// emitted as `kiw` bits.
         indices: Vec<u8>,
     },
-    /// Tr's body: key index, has-tree, optional tap-script-tree root.
-    /// The wire bit-width for `key_index` is determined by Descriptor.key_index_width()
-    /// (parsed from the path-decl head); not carried in the AST.
-    ///
-    /// **v0.18 NUMS sentinel:** the reserved value `key_index = n` (where `n`
-    /// is the descriptor's placeholder count) signals that the implicit
-    /// internal key is the BIP-341 NUMS H-point
-    /// `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`.
-    /// Encoders MUST emit `key_index = n` iff the descriptor's `tr()`
-    /// internal key is exactly the BIP-341 NUMS H-point. Values `0..n-1`
-    /// reference `@i` placeholders. Values `> n` are rejected.
+    /// Tr's body: NUMS flag, key index, optional tap-script-tree root.
+    /// Per SPEC v0.30 §7: wire shape is
+    /// `Tag::Tr | is_nums(1) | [key_index(kiw) iff !is_nums] | has_tree(1) | [tree iff has_tree]`.
+    /// When `is_nums = true`, the internal key is the BIP-341 NUMS H-point
+    /// `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`
+    /// and `key_index` is unused on the wire (encoder writes 0 by convention;
+    /// decoder ignores). When `is_nums = false`, `key_index` is a `0..n`
+    /// placeholder index encoded at `kiw` bits.
     Tr {
-        /// Internal-key index into the descriptor's key table, OR the
-        /// reserved sentinel `n` (NUMS H-point — see variant doc-comment).
+        /// `true` iff the internal key is the BIP-341 NUMS H-point.
+        is_nums: bool,
+        /// Internal-key index into the descriptor's key table. Unused when
+        /// `is_nums = true` (no wire representation).
         key_index: u8,
         /// Optional tap-script-tree root.
         tree: Option<Box<Node>>,
@@ -120,8 +119,21 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                 w.write_bits(u64::from(*idx), key_index_width as usize);
             }
         }
-        Body::Tr { key_index, tree } => {
-            w.write_bits(u64::from(*key_index), key_index_width as usize);
+        Body::Tr {
+            is_nums,
+            key_index,
+            tree,
+        } => {
+            // SPEC v0.30 §7: is_nums(1) | [key_index(kiw) iff !is_nums] |
+            // has_tree(1) | [tree iff has_tree].
+            debug_assert!(
+                !(*is_nums && *key_index != 0),
+                "is_nums=true implies key_index=0 (no wire representation otherwise)"
+            );
+            w.write_bits(u64::from(*is_nums), 1);
+            if !*is_nums {
+                w.write_bits(u64::from(*key_index), key_index_width as usize);
+            }
             w.write_bits(u64::from(tree.is_some()), 1);
             if let Some(t) = tree {
                 write_node(w, t, key_index_width)?;
@@ -236,7 +248,14 @@ fn read_node_with_depth(r: &mut BitReader, key_index_width: u8, depth: u8) -> Re
             Body::Variable { k, children }
         }
         Tag::Tr => {
-            let key_index = r.read_bits(key_index_width as usize)? as u8;
+            // SPEC v0.30 §7: is_nums(1) | [key_index(kiw) iff !is_nums] |
+            // has_tree(1) | [tree iff has_tree].
+            let is_nums = r.read_bits(1)? != 0;
+            let key_index = if is_nums {
+                0
+            } else {
+                r.read_bits(key_index_width as usize)? as u8
+            };
             let has_tree = r.read_bits(1)? != 0;
             let tree = if has_tree {
                 Some(Box::new(read_node_with_depth(
@@ -247,7 +266,11 @@ fn read_node_with_depth(r: &mut BitReader, key_index_width: u8, depth: u8) -> Re
             } else {
                 None
             };
-            Body::Tr { key_index, tree }
+            Body::Tr {
+                is_nums,
+                key_index,
+                tree,
+            }
         }
         Tag::After | Tag::Older => {
             let v = r.read_bits(32)? as u32;
@@ -292,30 +315,29 @@ mod tests {
     use crate::bitstream::{BitReader, BitWriter};
 
     #[test]
-    #[ignore = "v0.30 Phase A: kiw-related bit-count pin stale; lifted in Phase F (NUMS flag) or H (corpus regen)"]
     fn key_arg_n1_zero_bits() {
-        // n=1 ⇒ index_width = 0; key-arg emits zero bits
+        // v0.30: at n=1, kiw = ⌈log₂(1)⌉ = 0; key-arg emits zero bits.
         let n = Node {
             tag: Tag::PkK,
             body: Body::KeyArg { index: 0 },
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 0).unwrap();
-        // Tag: 5 bits + key-arg: 0 bits = 5 bits total
-        assert_eq!(w.bit_len(), 5);
+        // Tag::PkK (6 bits) + key-arg (0 bits) = 6 bits total.
+        assert_eq!(w.bit_len(), 6);
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: kiw-related bit-count pin stale; lifted in Phase F (NUMS flag) or H (corpus regen)"]
     fn key_arg_n3_two_bits() {
+        // v0.30: at n=3, kiw = ⌈log₂(3)⌉ = 2.
         let n = Node {
             tag: Tag::PkK,
             body: Body::KeyArg { index: 2 },
         };
         let mut w = BitWriter::new();
         write_node(&mut w, &n, 2).unwrap();
-        // Tag: 5 + key-arg: 2 = 7 bits
-        assert_eq!(w.bit_len(), 7);
+        // Tag::PkK (6 bits) + key-arg (2 bits) = 8 bits total.
+        assert_eq!(w.bit_len(), 8);
     }
 
     #[test]
@@ -419,23 +441,22 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: NUMS-sentinel-based; lifted in Phase F (is_nums flag replaces sentinel)"]
     fn tr_bip86_no_tree() {
+        // v0.30: tr(@0) keypath-only at synthetic width=0 (n=1 in Descriptor
+        // would yield kiw=0). Exercises the zero-width edge of write_node /
+        // read_node directly.
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: None,
             },
         };
         let mut w = BitWriter::new();
-        // Synthetic width-0 unit test of the tree layer. v0.18 Descriptor
-        // formula gives width=1 at n=1; width=0 only arises at n=0 (no
-        // placeholders). The test exercises the zero-width edge of write_node /
-        // read_node directly, not the live n=1 encoding path.
         write_node(&mut w, &n, 0).unwrap();
-        // Tr tag (5) + key-arg (0 bits, synthetic width=0) + has-tree=0 (1 bit) = 6 bits
-        assert_eq!(w.bit_len(), 6);
+        // Tag::Tr (6) + is_nums (1) + key_index (0, kiw=0) + has_tree (1) = 8 bits.
+        assert_eq!(w.bit_len(), 8);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
         assert_eq!(read_node(&mut r, 0).unwrap(), n);
@@ -477,6 +498,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::MultiA,
@@ -485,6 +507,44 @@ mod tests {
                         indices: vec![1, 2],
                     },
                 })),
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    /// v0.30 Phase F — `Body::Tr { is_nums: true, .. }` round-trips. NUMS
+    /// suppresses the kiw field on the wire entirely.
+    #[test]
+    fn tr_nums_flag_round_trip() {
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: true,
+                key_index: 0,
+                tree: None,
+            },
+        };
+        let mut w = BitWriter::new();
+        write_node(&mut w, &n, 2).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+    }
+
+    /// v0.30 Phase F — `Body::Tr { is_nums: false, key_index, .. }` round-
+    /// trips with explicit key_index written at kiw width.
+    #[test]
+    fn tr_is_nums_false_round_trip() {
+        let n = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: false,
+                key_index: 2,
+                tree: None,
             },
         };
         let mut w = BitWriter::new();
@@ -617,42 +677,39 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: NUMS-sentinel-based; lifted in Phase F (is_nums flag replaces sentinel)"]
-    fn tr_sentinel_n_1_bare_round_trip() {
-        // v0.18: tr(<NUMS>) with no script tree at n=1 (single-placeholder
-        // descriptor that ignores @0 by going pure script-path). This is the
-        // narrowest sentinel case — width changes from 0 (v0.17 ceil(log2(1)))
-        // to 1 (v0.18 ceil(log2(2))). Architect C1 from round 1 — without
-        // updating decode.rs's key_index_width formula in lockstep, this
-        // case silently desyncs the bitstream.
+    fn tr_nums_n_1_bare_round_trip() {
+        // v0.30: tr(<NUMS>) with no script tree at n=1. NUMS is now signalled
+        // via the `is_nums` flag, not a reserved sentinel `key_index`. At n=1
+        // the v0.30 kiw is 0 — but `is_nums=true` suppresses the kiw write
+        // entirely, so the kiw width is irrelevant here.
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                key_index: 1,
+                is_nums: true,
+                key_index: 0,
                 tree: None,
             },
         };
         let mut w = BitWriter::new();
-        // v0.18 width formula at n=1: ceil(log2(2)) = 1.
-        write_node(&mut w, &n, 1).unwrap();
-        // Tag::Tr (5) + key_index (1) + has_tree (1) = 7 bits (was 11 v0.17).
-        assert_eq!(w.bit_len(), 7);
+        // kiw=0 at n=1 (irrelevant — is_nums=true suppresses the kiw field).
+        write_node(&mut w, &n, 0).unwrap();
+        // Tag::Tr (6) + is_nums (1) + has_tree (1) = 8 bits.
+        assert_eq!(w.bit_len(), 8);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
-        assert_eq!(read_node(&mut r, 1).unwrap(), n);
+        assert_eq!(read_node(&mut r, 0).unwrap(), n);
     }
 
     #[test]
-    fn tr_sentinel_n_2_and_v_inheritance_round_trip() {
-        // v0.18: tr(<NUMS>, and_v(v:pk(@0), pk(@1))) — inheritance pattern via
-        // NUMS internal key. n=2 sentinel (key_index = 2). Exercises and_v +
-        // verify wrapper inside the script-path branch. Width formula change
-        // boundary: n=2 was width=1 (v0.17 ceil(log2(2))) and is now width=2
-        // (v0.18 ceil(log2(3))).
+    fn tr_nums_n_2_and_v_inheritance_round_trip() {
+        // v0.30: tr(<NUMS>, and_v(v:pk(@0), pk(@1))) — inheritance pattern via
+        // NUMS internal key, signalled by `is_nums = true`. Exercises and_v +
+        // verify wrapper inside the script-path branch.
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                key_index: 2,
+                is_nums: true,
+                key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::AndV,
                     body: Body::Children(vec![
@@ -672,25 +729,23 @@ mod tests {
             },
         };
         let mut w = BitWriter::new();
-        // v0.18 width at n=2: ceil(log2(3)) = 2 (was 1 in v0.17).
-        write_node(&mut w, &n, 2).unwrap();
+        // v0.30 width at n=2: ⌈log₂(2)⌉ = 1.
+        write_node(&mut w, &n, 1).unwrap();
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
-        assert_eq!(read_node(&mut r, 2).unwrap(), n);
+        assert_eq!(read_node(&mut r, 1).unwrap(), n);
     }
 
     #[test]
-    fn tr_sentinel_n_3_multi_a_2_of_3_round_trip() {
-        // v0.18: tr(<NUMS>, multi_a(2, @0, @1, @2)) — the canonical 2-of-3
-        // hardware-wallet multisig encoding (the headline use case). n=3
-        // sentinel. Width unchanged from v0.17: ceil(log2(3)) and ceil(log2(4))
-        // both equal 2. This is the "no-bit-width-delta but still a wire
-        // change" boundary: tag bytes shrink (no extension prefix) but width
-        // stays the same.
+    fn tr_nums_n_3_multi_a_2_of_3_round_trip() {
+        // v0.30: tr(<NUMS>, multi_a(2, @0, @1, @2)) — the canonical 2-of-3
+        // hardware-wallet multisig encoding (the headline use case). NUMS
+        // signalled by `is_nums = true`. At n=3 the v0.30 kiw is 2.
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                key_index: 3,
+                is_nums: true,
+                key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::MultiA,
                     body: Body::MultiKeys {
@@ -708,26 +763,26 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "v0.30 Phase A: NUMS-sentinel-based; lifted in Phase F (is_nums flag replaces sentinel)"]
-    fn tr_sentinel_n_4_bare_round_trip() {
-        // v0.18: tr(<NUMS>) at n=4 — boundary where width goes 2→3 between
-        // v0.17 (ceil(log2(4)) = 2) and v0.18 (ceil(log2(5)) = 3). Catches
-        // off-by-one errors in the upper-boundary ceil(log2(n+1)) edge.
+    fn tr_nums_n_4_bare_round_trip() {
+        // v0.30: tr(<NUMS>) at n=4. NUMS signalled by `is_nums = true`. At
+        // n=4 the v0.30 kiw is ⌈log₂(4)⌉ = 2; is_nums=true suppresses the
+        // kiw field, so it's irrelevant here.
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                key_index: 4,
+                is_nums: true,
+                key_index: 0,
                 tree: None,
             },
         };
         let mut w = BitWriter::new();
-        // v0.18 width at n=4: ceil(log2(5)) = 3 (was 2 in v0.17).
-        write_node(&mut w, &n, 3).unwrap();
-        // Tag::Tr (5) + key_index (3) + has_tree (1) = 9 bits.
-        assert_eq!(w.bit_len(), 9);
+        // kiw=2 at n=4 (irrelevant — is_nums=true suppresses the kiw field).
+        write_node(&mut w, &n, 2).unwrap();
+        // Tag::Tr (6) + is_nums (1) + has_tree (1) = 8 bits.
+        assert_eq!(w.bit_len(), 8);
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
-        assert_eq!(read_node(&mut r, 3).unwrap(), n);
+        assert_eq!(read_node(&mut r, 2).unwrap(), n);
     }
 
     /// v0.19 — multi-branch tap tree wire-format round-trip. Closes audit
@@ -743,6 +798,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::TapTree,
@@ -788,6 +844,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::TapTree,
@@ -796,7 +853,7 @@ mod tests {
             },
         };
         let mut w = BitWriter::new();
-        // n=4 → ceil(log2(5)) = 3.
+        // 5 distinct indices (0..=4) → v0.30 kiw = ⌈log₂(5)⌉ = 3.
         write_node(&mut w, &n, 3).unwrap();
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);
@@ -812,6 +869,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::TapTree,
@@ -838,7 +896,7 @@ mod tests {
             },
         };
         let mut w = BitWriter::new();
-        // n=3 → ceil(log2(4)) = 2.
+        // v0.30 kiw at n=3: ⌈log₂(3)⌉ = 2.
         write_node(&mut w, &n, 2).unwrap();
         let bytes = w.into_bytes();
         let mut r = BitReader::new(&bytes);

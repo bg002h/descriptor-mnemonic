@@ -81,20 +81,24 @@ fn walk_for_placeholders(
                 }
             }
         }
-        Body::Tr { key_index, tree } => {
-            // v0.18 NUMS sentinel: `key_index == seen.len()` (i.e., == n) means
-            // the BIP-341 NUMS H-point is the implicit internal key and is NOT
-            // a placeholder reference. Don't register; don't reject. Values
-            // strictly greater than n are still rejected.
-            if (*key_index as usize) > seen.len() {
-                return Err(Error::PlaceholderIndexOutOfRange {
-                    idx: *key_index,
-                    n: seen.len() as u8,
-                });
-            }
-            if (*key_index as usize) < seen.len() && !seen[*key_index as usize] {
-                seen[*key_index as usize] = true;
-                first_occurrences.push(*key_index);
+        Body::Tr {
+            is_nums,
+            key_index,
+            tree,
+        } => {
+            // SPEC v0.30 §7 + §11: when `is_nums = true` the internal key is
+            // the BIP-341 NUMS H-point (not a placeholder reference); skip
+            // registration. Otherwise `key_index` must be in `0..n`; out-of-
+            // range raises `NUMSSentinelConflict` per SPEC §11 (Phase G
+            // finalizes the variant's full doc-comment).
+            if !*is_nums {
+                if (*key_index as usize) >= seen.len() {
+                    return Err(Error::NUMSSentinelConflict);
+                }
+                if !seen[*key_index as usize] {
+                    seen[*key_index as usize] = true;
+                    first_occurrences.push(*key_index);
+                }
             }
             if let Some(t) = tree {
                 walk_for_placeholders(t, seen, first_occurrences)?;
@@ -380,34 +384,33 @@ mod tests {
 
     #[test]
     fn placeholder_usage_rejects_out_of_range_in_tr_key_index() {
-        // Tr's key_index path is a separate code path from KeyArg; verify it too.
-        // v0.18: rejection threshold moved from `>= n` to `> n` so the NUMS
-        // sentinel value `key_index = n` can pass through. We pin `key_index = 4`
-        // with n=3 here — strictly out of range under v0.18 semantics.
+        // SPEC v0.30 §7 + §11: `is_nums = false` with `key_index >= n` is a
+        // `NUMSSentinelConflict` (distinct from KeyArg's
+        // `PlaceholderIndexOutOfRange`; NUMS is signalled by `is_nums = true`
+        // with `key_index` unused on wire).
         let root = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                key_index: 4,
+                is_nums: false,
+                key_index: 3,
                 tree: None,
             },
         };
         let err = validate_placeholder_usage(&root, 3).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::PlaceholderIndexOutOfRange { idx: 4, n: 3 }
-        ));
+        assert!(matches!(err, Error::NUMSSentinelConflict));
     }
 
     #[test]
-    fn placeholder_usage_accepts_nums_sentinel_in_tr_key_index() {
-        // v0.18 NUMS sentinel: `key_index == n` is the reserved NUMS-H-point
-        // signal and MUST pass validation. validate_placeholder_usage also
-        // requires every @i in 0..n to be referenced; the @0 reference here
-        // satisfies that for n=1.
+    fn placeholder_usage_accepts_nums_flag_in_tr() {
+        // SPEC v0.30 §7: `is_nums = true` is the NUMS-H-point signal and
+        // MUST pass validation. validate_placeholder_usage requires every
+        // @i in 0..n to be referenced; the @0 reference here satisfies that
+        // for n=1.
         let root = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                key_index: 1, // sentinel for n=1
+                is_nums: true,
+                key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::PkK,
                     body: Body::KeyArg { index: 0 },
@@ -415,7 +418,7 @@ mod tests {
             },
         };
         validate_placeholder_usage(&root, 1)
-            .expect("sentinel + @0 reference must validate under v0.18");
+            .expect("is_nums flag + @0 reference must validate under v0.30");
     }
 }
 
@@ -555,6 +558,7 @@ mod explicit_origin_required_tests {
         let d = single_key_descriptor(Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: None,
             },
@@ -568,6 +572,7 @@ mod explicit_origin_required_tests {
         let d = single_key_descriptor(Node {
             tag: Tag::Tr,
             body: Body::Tr {
+                is_nums: false,
                 key_index: 0,
                 tree: Some(Box::new(Node {
                     tag: Tag::PkK,
