@@ -424,9 +424,9 @@ fn sh_wsh_sortedmulti_2_of_3_address() {
 /// Pretty-print a 65-byte xpub TLV payload into a base58-check xpub
 /// string suitable for embedding in a miniscript descriptor template.
 fn xpub_bytes_to_string(bytes: &[u8; 65]) -> String {
+    use bitcoin::NetworkKind;
     use bitcoin::bip32::{ChainCode, ChildNumber, Fingerprint, Xpub};
     use bitcoin::secp256k1::PublicKey;
-    use bitcoin::NetworkKind;
     let mut chain_code = [0u8; 32];
     chain_code.copy_from_slice(&bytes[..32]);
     let pk = PublicKey::from_slice(&bytes[32..]).unwrap();
@@ -449,9 +449,8 @@ fn miniscript_direct_address(
     index: u32,
     network: Network,
 ) -> String {
-    let desc =
-        miniscript::Descriptor::<miniscript::DescriptorPublicKey>::from_str(descriptor_str)
-            .expect("parse descriptor template");
+    let desc = miniscript::Descriptor::<miniscript::DescriptorPublicKey>::from_str(descriptor_str)
+        .expect("parse descriptor template");
     // Multipath descriptors need explicit per-chain selection. The plan's
     // converter substitutes the chain alt before calling
     // `at_derivation_index`, so cross-validate by reducing the multipath
@@ -469,10 +468,7 @@ fn miniscript_direct_address(
         desc
     };
     let definite = single.at_derivation_index(index).expect("derivation idx");
-    definite
-        .address(network)
-        .expect("address")
-        .to_string()
+    definite.address(network).expect("address").to_string()
 }
 
 /// Build the standard `<chain;chain'/*` multipath descriptor key suffix
@@ -528,7 +524,10 @@ fn sh_sortedmulti_2_of_3_address() {
     );
     let expected = miniscript_direct_address(&template, 0, 0, Network::Bitcoin);
     assert_eq!(got, expected);
-    assert!(got.starts_with('3'), "expected mainnet P2SH-form, got {got}");
+    assert!(
+        got.starts_with('3'),
+        "expected mainnet P2SH-form, got {got}"
+    );
 }
 
 /// Tier 1 — `tr(NUMS, pk(@0))` script-path-only taproot.

@@ -24,17 +24,17 @@
 //!   hardened wildcard.
 
 #[cfg(feature = "derive")]
+use crate::encode::Descriptor;
+#[cfg(feature = "derive")]
 use crate::error::Error;
+#[cfg(feature = "derive")]
+use bitcoin::NetworkKind;
+#[cfg(feature = "derive")]
+use bitcoin::address::NetworkUnchecked;
 #[cfg(feature = "derive")]
 use bitcoin::bip32::{ChainCode, ChildNumber, Fingerprint, Xpub};
 #[cfg(feature = "derive")]
 use bitcoin::secp256k1::PublicKey;
-#[cfg(feature = "derive")]
-use bitcoin::NetworkKind;
-#[cfg(feature = "derive")]
-use crate::encode::Descriptor;
-#[cfg(feature = "derive")]
-use bitcoin::address::NetworkUnchecked;
 #[cfg(feature = "derive")]
 use bitcoin::{Address, Network};
 
@@ -118,11 +118,11 @@ impl Descriptor {
         }
 
         let desc = crate::to_miniscript::to_miniscript_descriptor(self, chain)?;
-        let definite = desc
-            .at_derivation_index(index)
-            .map_err(|e| Error::AddressDerivationFailed {
-                detail: e.to_string(),
-            })?;
+        let definite =
+            desc.at_derivation_index(index)
+                .map_err(|e| Error::AddressDerivationFailed {
+                    detail: e.to_string(),
+                })?;
         let addr = definite
             .address(network)
             .map_err(|e| Error::AddressDerivationFailed {

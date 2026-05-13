@@ -23,6 +23,48 @@ schema-mirror invariant.
 **Companion:** `bg002h/mnemonic-gui` v0.2 Phase C.2, FOLLOWUPS.md entry
 `mnemonic-gui-schema-mirror`.
 
+## md-codec [0.32.1] — 2026-05-13
+
+v0.8.0 cross-repo BIP-vector adoption cycle, Phase 1. Cycle SPEC at
+`mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`; per-phase
+review at `design/agent-reports/v0_8_0-phase-1-bip341-wallet-r1.md`.
+
+### Added (tests-only; no library API change)
+
+- `tests/bip341_wallet_vectors.rs` — pin BIP-341 wallet-test-vectors.json
+  `scriptPubKey` corpus (7 entries: key-spend-only, two single-leaf,
+  three balanced two-leaf, one asymmetric `[leaf, [leaf, leaf]]`).
+  Plus 2 invariant cells (fixture SHA + array length).
+- `tests/vectors/bip341-wallet-test-vectors.json` — fixture pinned at
+  sha256 `403e19fb81dd1f31e745699216308f61fb403774b2aafa87b631b8f7c042d37f`.
+- `Cargo.toml` `[dev-dependencies]`: `serde_json = "1"` and `hex = "0.4"`.
+- `design/agent-reports/v0_8_0-bip-test-vector-audit-matrix.md` — v0.8.0
+  successor to the v0.7.1 matrix. Cross-cites the toolkit hub matrix +
+  sibling-repo matrices.
+- `design/FOLLOWUPS.md` — `bip-vector-adoption-v0_8` (cycle companion)
+  and `bip341-keypath-signing-vector-coverage` (OOS-PER-LAYER: BIP-341
+  `keyPathSpending` array deferred until a Schnorr signing surface lands
+  in the constellation).
+
+### What this validates
+
+md-codec's `tr(K, {…})` descriptor pipeline compiles via
+`miniscript::Descriptor::new_tr`, which delegates taproot tree assembly
+and output-key tweaking to `bitcoin v0.32`'s `TaprootBuilder` +
+`TaprootSpendInfo` APIs. v0.7.1's only taproot pin (BIP-86 key-spend)
+left script-tree assembly unverified against an upstream-authoritative
+source. v0.32.1 closes that gap. A future `bitcoin` bump that drifts
+taproot semantics (leaf-version handling, merkle-root construction
+order) now fails these cells before it can silently change md-codec
+output.
+
+### What didn't change
+
+- Public API surface unchanged.
+- md1 wire format unchanged.
+- All pre-existing md-codec tests still pass; +9 cells from this
+  cycle → 271 md-codec total at v0.32.1.
+
 ## md-codec [0.32.0] — 2026-05-11
 
 Replaces the v0.14-era hand-rolled 5-shape allow-list for address

@@ -80,9 +80,10 @@ fn subcommand_to_json(sub: &Command) -> Value {
     let mut positionals: Vec<Value> = Vec::new();
     for arg in sub.get_arguments() {
         // Skip the auto-generated --help / --version flags clap synthesises.
-        if matches!(arg.get_action(), ArgAction::Help | ArgAction::HelpShort
-            | ArgAction::HelpLong | ArgAction::Version)
-        {
+        if matches!(
+            arg.get_action(),
+            ArgAction::Help | ArgAction::HelpShort | ArgAction::HelpLong | ArgAction::Version
+        ) {
             continue;
         }
         if arg.is_positional() {

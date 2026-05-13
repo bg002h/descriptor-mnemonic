@@ -52,7 +52,10 @@ fn gui_schema_lists_all_documented_subcommands() {
         "gui-schema must omit itself from the schema"
     );
     // Built-in `help` must be filtered out.
-    assert!(!names.contains(&"help"), "clap's built-in `help` must be filtered");
+    assert!(
+        !names.contains(&"help"),
+        "clap's built-in `help` must be filtered"
+    );
 }
 
 #[test]
