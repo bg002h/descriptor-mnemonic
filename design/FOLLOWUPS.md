@@ -50,7 +50,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`. Plan at `/home/bcg/.claude/plans/v0_8_0-bip-vector-adoption.md`. R1 review at `mnemonic-toolkit/design/agent-reports/v0_8_0-phase-0-spec-plan-r1.md`.
 - **Where:** descriptor-mnemonic Phase 1 = BIP-341 wallet-test-vectors.json adoption in `crates/md-codec/tests/bip341_wallet_vectors.rs` (+7 cells against the upstream `scriptPubKey` array; key-spend, single-leaf, balanced two-leaf, asymmetric subtree).
 - **What:** This repo's contribution to the v0.8.0 cross-repo vectors-only patch cycle. Closes when the cycle's audit-matrix successor doc lands in this repo at `design/agent-reports/v0_8_0-bip-test-vector-audit-matrix.md` (Phase 4) and the patch tag is cut at Phase E.
-- **Status:** `open` (Phase 1 committed; Phase 4 + E pending).
+- **Status:** `resolved ef00e07` — md-codec-v0.32.1 tag pushed; cycle close PR #30 merged. Companion sibling-repo tags: ms-codec-v0.1.2 (mnemonic-secret 527c9c7), mnemonic-toolkit-v0.9.1 (f036737).
 - **Tier:** `cross-repo`
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md`, `mnemonic-secret/design/FOLLOWUPS.md`, `mnemonic-key/design/FOLLOWUPS.md` — same `bip-vector-adoption-v0_8` short-id in each.
 
