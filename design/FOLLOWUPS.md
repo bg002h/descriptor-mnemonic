@@ -54,6 +54,16 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Tier:** `cross-repo`
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md`, `mnemonic-secret/design/FOLLOWUPS.md`, `mnemonic-key/design/FOLLOWUPS.md` — same `bip-vector-adoption-v0_8` short-id in each.
 
+### `md-mk-private-key-surface-watch` — reopen md/mk Cycle A participation if this repo grows a private-key surface
+
+- **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 0 R3 architect-review I-R3-4 fold (drop md/mk symmetry-stubs); opened as a standalone tracker entry per Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-md-mk` class. Primary tracker entry in `mnemonic-toolkit/design/FOLLOWUPS.md`.
+- **Where:** This repo (`md-codec` + `md-cli`). Currently holds descriptor / wallet-policy material only — no private-key buffer.
+- **What:** v0.9.0 Cycle A's secret-memory hygiene work (toolkit + ms repos; tags `mnemonic-toolkit-v0.9.2`, `ms-codec-v0.1.3`, `ms-cli-v0.2.2`, shipped 2026-05-13) dropped the no-scope-symmetry matrix stubs originally planned for md/mk repos because they have no secret material to audit. If this repo later gains a private-key surface (e.g., a future md-codec descriptor-binding with embedded xprv), this FOLLOWUP fires and Cycle A's hygiene discipline (Zeroizing + SAFETY anchors + matrix delta) reopens for md.
+- **Why deferred:** No secret material to audit today.
+- **Status:** `open` (monitoring)
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` (primary tracker), `mnemonic-secret/design/FOLLOWUPS.md`, `mnemonic-key/design/FOLLOWUPS.md` — same `md-mk-private-key-surface-watch` short-id.
+
 ### `bip341-keypath-signing-vector-coverage` — BIP-341 `keyPathSpending` corpus deferred until a Schnorr signing surface exists
 
 - **Surfaced:** 2026-05-13, v0.8.0 Phase 1 architect review (R1 disposition fold).
