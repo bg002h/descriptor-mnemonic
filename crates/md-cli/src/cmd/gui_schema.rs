@@ -49,7 +49,11 @@ const HIDDEN_SUBCOMMANDS: &[&str] = &["gui-schema", "help"];
 pub fn run() -> Result<(), CliError> {
     let cmd = crate::Cli::command();
     let value = build_schema(&cmd);
-    println!("{}", serde_json::to_string_pretty(&value).unwrap());
+    // C.2 R1 I-1 fold: emit compact single-line JSON to match the
+    // mk-cli / ms-cli / mnemonic-toolkit sibling implementations.
+    // Multi-line pretty output diverges from the cross-repo convention
+    // and breaks line-count / byte-length CI scripts.
+    println!("{}", serde_json::to_string(&value).unwrap());
     Ok(())
 }
 
@@ -168,27 +172,31 @@ fn classify_kind(arg: &Arg) -> (&'static str, Value) {
     ) {
         return ("path", Value::Null);
     }
-    let parser_debug = format!("{:?}", arg.get_value_parser());
-    if parser_debug.contains("path_buf") {
+    // C.2 R1 I-2 fold: replace fragile Debug-string heuristics with
+    // stable TypeId comparisons matching the mk-cli / mnemonic-toolkit
+    // sibling pattern. `ValueParser::type_id()` is a documented public
+    // API; the Debug output for ValueParser is not contract-stable
+    // across clap minor releases.
+    let tid = arg.get_value_parser().type_id();
+    if tid == std::any::TypeId::of::<std::path::PathBuf>() {
         return ("path", Value::Null);
     }
-
-    // 4. Numerics: ValueParser::other(TypeId(...)) is what clap uses for
-    //    `value_parser!(u32 | i64 | …)` and for `default_value_t = <int>`.
-    //    We disambiguate from custom-struct parsers (also Other) by checking
-    //    whether the default value parses as an integer; that catches every
-    //    numeric flag in our CLI surface (`--chain`, `--index`, `--count`).
-    if parser_debug.contains("other(")
-        && arg
-            .get_default_values()
-            .iter()
-            .any(|os| os.to_str().is_some_and(|s| s.parse::<i64>().is_ok()))
-    {
+    let is_numeric = tid == std::any::TypeId::of::<u8>()
+        || tid == std::any::TypeId::of::<u16>()
+        || tid == std::any::TypeId::of::<u32>()
+        || tid == std::any::TypeId::of::<u64>()
+        || tid == std::any::TypeId::of::<i8>()
+        || tid == std::any::TypeId::of::<i16>()
+        || tid == std::any::TypeId::of::<i32>()
+        || tid == std::any::TypeId::of::<i64>()
+        || tid == std::any::TypeId::of::<usize>()
+        || tid == std::any::TypeId::of::<isize>();
+    if is_numeric {
         return ("number", Value::Null);
     }
 
     // 5. Default: text. Includes ValueParser::string / os_string and any
-    //    Other-typed parser without an integer default.
+    //    custom parser whose TypeId is not in the path/number set above.
     ("text", Value::Null)
 }
 
