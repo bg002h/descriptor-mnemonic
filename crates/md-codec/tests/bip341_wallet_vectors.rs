@@ -30,7 +30,6 @@
 //! SPEC: `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md` §2.
 //! Phase: 1.
 
-use bitcoin::hashes::sha256d;
 use bitcoin::key::{Secp256k1, UntweakedPublicKey};
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo};
@@ -59,9 +58,6 @@ fn fixture_sha256_pin() {
         "BIP-341 fixture SHA drifted; vectors may have changed upstream — \
          re-audit before bumping FIXTURE_SHA256",
     );
-    // Suppress unused-import warning for sha256d (kept for future
-    // explicit-namespace clarity if the upstream `Hash` trait moves).
-    let _ = std::any::type_name::<sha256d::Hash>();
 }
 
 #[test]

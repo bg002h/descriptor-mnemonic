@@ -45,6 +45,24 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `bip-vector-adoption-v0_8` — cross-repo cycle: BIP-vector adoption v0.8.0
+
+- **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`. Plan at `/home/bcg/.claude/plans/v0_8_0-bip-vector-adoption.md`. R1 review at `mnemonic-toolkit/design/agent-reports/v0_8_0-phase-0-spec-plan-r1.md`.
+- **Where:** descriptor-mnemonic Phase 1 = BIP-341 wallet-test-vectors.json adoption in `crates/md-codec/tests/bip341_wallet_vectors.rs` (+7 cells against the upstream `scriptPubKey` array; key-spend, single-leaf, balanced two-leaf, asymmetric subtree).
+- **What:** This repo's contribution to the v0.8.0 cross-repo vectors-only patch cycle. Closes when the cycle's audit-matrix successor doc lands in this repo at `design/agent-reports/v0_8_0-bip-test-vector-audit-matrix.md` (Phase 4) and the patch tag is cut at Phase E.
+- **Status:** `open` (Phase 1 committed; Phase 4 + E pending).
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md`, `mnemonic-secret/design/FOLLOWUPS.md`, `mnemonic-key/design/FOLLOWUPS.md` — same `bip-vector-adoption-v0_8` short-id in each.
+
+### `bip341-keypath-signing-vector-coverage` — BIP-341 `keyPathSpending` corpus deferred until a Schnorr signing surface exists
+
+- **Surfaced:** 2026-05-13, v0.8.0 Phase 1 architect review (R1 disposition fold).
+- **Where:** `crates/md-codec/tests/bip341_wallet_vectors.rs` — file-level doc-comment marks `keyPathSpending` (length-1 sibling array in the same upstream JSON fixture) as OUT-OF-SCOPE-PER-LAYER.
+- **What:** The BIP-341 `wallet-test-vectors.json` fixture has a companion `keyPathSpending` array (1 vector) covering Schnorr signing flow (sighash computation, signing, verification). md-codec exposes no signing surface — `cargo doc` shows zero `sign(...)` / `signing_key` / `schnorr` entry points. Adding the vector would require implementing a Schnorr signing surface first. If that surface lands in a future cycle, this FOLLOWUP closes by adding the cell.
+- **Status:** `open` (deferred until signing surface lands; coverage gap accepted at v0.8.0).
+- **Tier:** `v1+`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` — `bip340-schnorr-signing-surface-evaluation` (the broader OOS-PER-LAYER classification of all signing-related BIPs in this constellation).
+
 ### `md-cli-unspendable-key-v0.19-error-string-stale` — `--unspendable-key` error message still says "track v0.19+"
 
 - **Surfaced:** 2026-05-11, toolkit-repo Phase 0.B audit review r1 (commit `713178c` in `bg002h/mnemonic-toolkit`). The toolkit user-manual's `42-md.md` chapter was updated to say "caller-supplied internal-key support is deferred to a future version"; the reviewer noticed the underlying CLI error string in this repo still carries the stale `v0.19+` reference.
