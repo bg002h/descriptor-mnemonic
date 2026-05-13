@@ -398,8 +398,8 @@ mod tests {
 
     /// SPEC v0.30 §11: `OperatorContextViolation` carries the offending tag
     /// + a `ContextKind` discriminator. Pins the type shape and Display
-    /// output against future drift; does NOT claim live wire reachability
-    /// (see FOLLOWUP `v0.30-phase-g-operator-context-violation-unwired`).
+    ///   output against future drift; does NOT claim live wire reachability
+    ///   (see FOLLOWUP `v0.30-phase-g-operator-context-violation-unwired`).
     #[test]
     fn operator_context_violation_constructs() {
         let err = Error::OperatorContextViolation {

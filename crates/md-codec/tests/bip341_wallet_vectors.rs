@@ -38,8 +38,7 @@ use bitcoin::{Address, KnownHrp, ScriptBuf};
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("vectors/bip341-wallet-test-vectors.json");
-const FIXTURE_SHA256: &str =
-    "403e19fb81dd1f31e745699216308f61fb403774b2aafa87b631b8f7c042d37f";
+const FIXTURE_SHA256: &str = "403e19fb81dd1f31e745699216308f61fb403774b2aafa87b631b8f7c042d37f";
 
 fn vectors() -> Vec<Value> {
     let root: Value = serde_json::from_str(FIXTURE).expect("fixture parses");
@@ -51,7 +50,7 @@ fn vectors() -> Vec<Value> {
 
 #[test]
 fn fixture_sha256_pin() {
-    use bitcoin::hashes::{sha256, Hash};
+    use bitcoin::hashes::{Hash, sha256};
     let actual = sha256::Hash::hash(FIXTURE.as_bytes()).to_string();
     assert_eq!(
         actual, FIXTURE_SHA256,

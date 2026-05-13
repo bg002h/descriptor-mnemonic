@@ -1651,8 +1651,7 @@ mod tr_tests {
     /// `tests/template_roundtrip.rs::wsh_pkh_shorthand_collapse_round_trips`.
     #[test]
     fn pkh_key_leaf_bare_on_wire() {
-        let (s, km) =
-            substitute_synthetic("wsh(pkh(@0/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
+        let (s, km) = substitute_synthetic("wsh(pkh(@0/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         let inner = match &root.body {
@@ -1670,11 +1669,8 @@ mod tr_tests {
     /// future regressions surface here.
     #[test]
     fn tr_tap_leaf_bare_pk_on_wire() {
-        let (s, km) = substitute_synthetic(
-            "tr(@0/<0;1>/*,pk(@1/<0;1>/*))",
-            ScriptCtx::MultiSig,
-        )
-        .unwrap();
+        let (s, km) =
+            substitute_synthetic("tr(@0/<0;1>/*,pk(@1/<0;1>/*))", ScriptCtx::MultiSig).unwrap();
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         let leaf = match root.body {

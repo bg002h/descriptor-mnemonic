@@ -23,8 +23,7 @@ use miniscript::descriptor::{
 };
 use miniscript::miniscript::limits::{MAX_PUBKEYS_IN_CHECKSIGADD, MAX_PUBKEYS_PER_MULTISIG};
 use miniscript::{
-    AbsLockTime, Legacy, Miniscript, RelLockTime, ScriptContext, Segwitv0, Tap, Terminal,
-    Threshold,
+    AbsLockTime, Legacy, Miniscript, RelLockTime, ScriptContext, Segwitv0, Tap, Terminal, Threshold,
 };
 use std::str::FromStr;
 use std::sync::Arc;
@@ -73,9 +72,12 @@ fn build_descriptor_public_key(
     let xpub_bytes = e.xpub.ok_or(Error::MissingPubkey { idx: e.idx })?;
     let xkey = xpub_from_tlv_bytes(e.idx, &xpub_bytes)?;
 
-    let origin = e
-        .fingerprint
-        .map(|fp| (Fingerprint::from(fp), origin_path_to_derivation(&e.origin_path)));
+    let origin = e.fingerprint.map(|fp| {
+        (
+            Fingerprint::from(fp),
+            origin_path_to_derivation(&e.origin_path),
+        )
+    });
 
     // Derivation path is the use-site multipath alt (without the trailing
     // wildcard, which is handled via `Wildcard::Unhardened`).
@@ -114,10 +116,12 @@ fn origin_path_to_derivation(p: &OriginPath) -> DerivationPath {
 fn use_site_to_derivation_path(u: &UseSitePath, chain: u32) -> Result<DerivationPath, Error> {
     let mut comps: Vec<ChildNumber> = Vec::new();
     if let Some(alts) = &u.multipath {
-        let alt = alts.get(chain as usize).ok_or(Error::ChainIndexOutOfRange {
-            chain,
-            alt_count: alts.len(),
-        })?;
+        let alt = alts
+            .get(chain as usize)
+            .ok_or(Error::ChainIndexOutOfRange {
+                chain,
+                alt_count: alts.len(),
+            })?;
         if alt.hardened {
             return Err(Error::HardenedPublicDerivation);
         }
@@ -146,7 +150,14 @@ fn node_to_descriptor(
         (Tag::Wsh, Body::Children(children)) if children.len() == 1 => {
             wsh_inner_to_descriptor(&children[0], keys)
         }
-        (Tag::Tr, Body::Tr { is_nums, key_index, tree }) => {
+        (
+            Tag::Tr,
+            Body::Tr {
+                is_nums,
+                key_index,
+                tree,
+            },
+        ) => {
             let internal_key = if *is_nums {
                 build_nums_internal_key()?
             } else {
@@ -186,7 +197,10 @@ fn wsh_inner_to_descriptor(
 ) -> Result<miniscript::Descriptor<DescriptorPublicKey>, Error> {
     if let (Tag::SortedMulti, Body::MultiKeys { k, indices }) = (&inner.tag, &inner.body) {
         let thresh = build_multi_threshold::<{ MAX_PUBKEYS_PER_MULTISIG }>(
-            *k, indices, keys, "wsh-sortedmulti",
+            *k,
+            indices,
+            keys,
+            "wsh-sortedmulti",
         )?;
         return miniscript::Descriptor::new_wsh_sortedmulti(thresh)
             .map_err(|e| failed(e.to_string()));
@@ -209,7 +223,10 @@ fn sh_inner_to_descriptor(
                 (&grandchild.tag, &grandchild.body)
             {
                 let thresh = build_multi_threshold::<{ MAX_PUBKEYS_PER_MULTISIG }>(
-                    *k, indices, keys, "sh-wsh-sortedmulti",
+                    *k,
+                    indices,
+                    keys,
+                    "sh-wsh-sortedmulti",
                 )?;
                 return miniscript::Descriptor::new_sh_wsh_sortedmulti(thresh)
                     .map_err(|e| failed(e.to_string()));
@@ -223,7 +240,10 @@ fn sh_inner_to_descriptor(
         }
         (Tag::SortedMulti, Body::MultiKeys { k, indices }) => {
             let thresh = build_multi_threshold::<{ MAX_PUBKEYS_PER_MULTISIG }>(
-                *k, indices, keys, "sh-sortedmulti",
+                *k,
+                indices,
+                keys,
+                "sh-sortedmulti",
             )?;
             miniscript::Descriptor::new_sh_sortedmulti(thresh).map_err(|e| failed(e.to_string()))
         }
@@ -367,9 +387,8 @@ where
             // rust-miniscript's `Miniscript::from_ast` enforces context-
             // appropriateness (rejects Multi inside Tap, MultiA inside
             // Segwitv0) via `check_global_consensus_validity`.
-            let thresh = build_multi_threshold::<{ MAX_PUBKEYS_PER_MULTISIG }>(
-                *k, indices, keys, "multi",
-            )?;
+            let thresh =
+                build_multi_threshold::<{ MAX_PUBKEYS_PER_MULTISIG }>(*k, indices, keys, "multi")?;
             Terminal::Multi(thresh)
         }
         (Tag::MultiA, Body::MultiKeys { k, indices }) => {
