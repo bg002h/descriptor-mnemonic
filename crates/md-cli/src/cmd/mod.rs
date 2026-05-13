@@ -4,6 +4,8 @@ pub mod bytecode;
 pub mod compile;
 pub mod decode;
 pub mod encode;
+#[cfg(feature = "json")]
+pub mod gui_schema;
 pub mod inspect;
 pub mod vectors;
 pub mod verify;
