@@ -4,6 +4,25 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.5.0] — 2026-05-12
+
+Companion to `mnemonic-gui` v0.2 Phase C.2. Adds `md gui-schema`
+subcommand emitting SPEC §7 JSON for consumption by the GUI overlay's
+schema-mirror invariant.
+
+### Added
+
+- `md gui-schema` — zero-argument subcommand that prints a JSON
+  description (`version: 1`, `cli: "md"`, subcommand + flag + positional
+  metadata) of the live clap-derive flag surface. Implemented via clap
+  reflection (`CommandFactory::command()` walk). Kind classifier maps
+  SetTrue/SetFalse → `"boolean"`, restricted `value_parser` →
+  `"dropdown"` with `choices`, ValueHint::FilePath/AnyPath → `"path"`,
+  else `"text"`.
+
+**Companion:** `bg002h/mnemonic-gui` v0.2 Phase C.2, FOLLOWUPS.md entry
+`mnemonic-gui-schema-mirror`.
+
 ## md-codec [0.32.0] — 2026-05-11
 
 Replaces the v0.14-era hand-rolled 5-shape allow-list for address

@@ -193,6 +193,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Emit a machine-readable JSON description of this CLI's flag surface
+    /// (SPEC §7 of the mnemonic-gui v0.2 plan). Consumed by the mnemonic-gui
+    /// overlay to bootstrap and drift-check per-subcommand widget schemas.
+    #[cfg(feature = "json")]
+    #[command(name = "gui-schema")]
+    GuiSchema,
 }
 
 fn main() -> ExitCode {
@@ -370,5 +376,7 @@ fn dispatch(c: Command) -> Result<(), CliError> {
                 json,
             })
         }
+        #[cfg(feature = "json")]
+        Command::GuiSchema => cmd::gui_schema::run(),
     }
 }
