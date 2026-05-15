@@ -45,6 +45,16 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-cli-vectors-manifest-inlined` — `crates/md-cli/src/cmd/vectors.rs::manifest::MANIFEST` is a working copy of `crates/md-codec/tests/vectors/manifest.rs`
+
+- **Surfaced:** 2026-05-15, v0.3 `mnemonic-gui` cycle crates.io publish round. `md-cli` `cargo publish --dry-run` rejected `include!(concat!(MANIFEST_DIR, "/../md-codec/tests/vectors/manifest.rs"))` because `cargo publish` refuses out-of-package source includes (the published `.crate` file must be self-contained). Quick-fix at commit `93937d4` inlined the 10-entry `Vector` struct + `MANIFEST` const directly into `crates/md-cli/src/cmd/vectors.rs`.
+- **Where:** `crates/md-cli/src/cmd/vectors.rs:7-43` (inlined `mod manifest` block) + `crates/md-codec/tests/vectors/manifest.rs` (canonical source).
+- **What:** The 10-entry `MANIFEST` is duplicated in two locations. Both must be kept in sync when a vector entry is added/removed/renamed. The doc-comment at `crates/md-cli/src/cmd/vectors.rs:7-16` documents the duplication + maintenance discipline. Proper resolution: factor `Vector` + `MANIFEST` into `md-codec`'s public API as a `#[cfg(test)]`-or-feature-gated module (e.g., `md_codec::test_vectors`), then re-import from `md-cli`. Alternative: feature-gate the `vectors` subcommand off by default in published `md-cli` builds (it's primarily a developer-debugging tool, not an end-user surface).
+- **Why deferred:** Quick crates.io publishability fix at `93937d4`; the duplication is a known smell but harmless (the working copy is small + the `md-codec` test suite already exercises `MANIFEST`, so divergence is detected at `cargo test` time even without dedicated cross-check).
+- **Status:** `open`
+- **Tier:** `v1+`
+- **Companion:** `mnemonic-key/design/FOLLOWUPS.md` entry `mk-cli-vector-corpus-inlined` (same publishability pattern, different corpus: `mk-cli`'s `v0.1.json` is a working copy of `mk-codec`'s test corpus).
+
 ### `bip-vector-adoption-v0_8` — cross-repo cycle: BIP-vector adoption v0.8.0
 
 - **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`. Plan at `/home/bcg/.claude/plans/v0_8_0-bip-vector-adoption.md`. R1 review at `mnemonic-toolkit/design/agent-reports/v0_8_0-phase-0-spec-plan-r1.md`.
