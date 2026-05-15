@@ -51,9 +51,9 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-cli/src/cmd/vectors.rs:7-43` (inlined `mod manifest` block) + `crates/md-codec/tests/vectors/manifest.rs` (canonical source).
 - **What:** The 10-entry `MANIFEST` is duplicated in two locations. Both must be kept in sync when a vector entry is added/removed/renamed. The doc-comment at `crates/md-cli/src/cmd/vectors.rs:7-16` documents the duplication + maintenance discipline. Proper resolution: factor `Vector` + `MANIFEST` into `md-codec`'s public API as a `#[cfg(test)]`-or-feature-gated module (e.g., `md_codec::test_vectors`), then re-import from `md-cli`. Alternative: feature-gate the `vectors` subcommand off by default in published `md-cli` builds (it's primarily a developer-debugging tool, not an end-user surface).
 - **Why deferred:** Quick crates.io publishability fix at `93937d4`; the duplication is a known smell but harmless (the working copy is small + the `md-codec` test suite already exercises `MANIFEST`, so divergence is detected at `cargo test` time even without dedicated cross-check).
-- **Status:** `open`
+- **Status:** `resolved 8a52bed` — md-codec 0.33.0 promotes `MANIFEST` + `Vector` to `pub mod test_vectors` (`#[non_exhaustive]` on `Vector` for future-proofing); md-cli 0.5.1 re-imports via `use md_codec::test_vectors::{Vector, MANIFEST};` and drops the inline `mod manifest` (~32 LOC). Same refactor across `src/cmd/vectors.rs`, `tests/json_snapshots.rs`, `tests/template_roundtrip.rs`. Both crates published to crates.io 2026-05-15.
 - **Tier:** `v1+`
-- **Companion:** `mnemonic-key/design/FOLLOWUPS.md` entry `mk-cli-vector-corpus-inlined` (same publishability pattern, different corpus: `mk-cli`'s `v0.1.json` is a working copy of `mk-codec`'s test corpus).
+- **Companion:** `mnemonic-key/design/FOLLOWUPS.md` entry `mk-cli-vector-corpus-inlined` (same publishability pattern, different corpus: `mk-cli`'s `v0.1.json` was a working copy of `mk-codec`'s test corpus); resolved at mnemonic-key commit `33f2ca2` (mk-codec 0.3.0 + mk-cli 0.3.2).
 
 ### `bip-vector-adoption-v0_8` — cross-repo cycle: BIP-vector adoption v0.8.0
 
