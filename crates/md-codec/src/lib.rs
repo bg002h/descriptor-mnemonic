@@ -28,6 +28,7 @@ pub mod identity;
 pub mod origin_path;
 pub mod phrase;
 pub mod tag;
+pub mod test_vectors;
 pub mod tlv;
 #[cfg(feature = "derive")]
 pub mod to_miniscript;

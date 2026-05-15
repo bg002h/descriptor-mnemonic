@@ -4,43 +4,13 @@ use crate::parse::template::parse_template;
 use std::fs;
 use std::path::PathBuf;
 
-// v0.5.1 crates.io-publish fix: inline the MANIFEST constant that was
-// previously `include!`d from `../md-codec/tests/vectors/manifest.rs`.
-// `cargo publish` refuses out-of-package source includes (the published
-// .crate file is self-contained). Maintenance note: this manifest is
-// also used by `crates/md-codec/tests/template_roundtrip.rs`; the two
-// copies must stay in sync until a future cycle factors this into a
-// shared module (FOLLOWUP candidate: move to
-// `md-codec/src/test_vectors.rs` as a `#[cfg(test)]`-or-feature-gated
-// public API, OR feature-gate this whole `vectors` subcommand off by
-// default in published md-cli builds).
-mod manifest {
-    #[allow(dead_code)]
-    pub struct Vector {
-        pub name: &'static str,
-        pub template: &'static str,
-        pub keys: &'static [(u8, &'static str)],
-        pub fingerprints: &'static [(u8, [u8; 4])],
-        pub force_chunked: bool,
-    }
-
-    pub const MANIFEST: &[Vector] = &[
-        Vector { name: "wpkh_basic",         template: "wpkh(@0/<0;1>/*)",                                   keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "pkh_basic",          template: "pkh(@0/<0;1>/*)",                                    keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "wsh_multi_2of2",     template: "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",                keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "wsh_multi_2of3",     template: "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",     keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "wsh_sortedmulti",    template: "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))", keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "tr_keyonly",         template: "tr(@0/<0;1>/*)",                                     keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "sh_wsh_multi",       template: "sh(wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*)))",            keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "wsh_divergent_paths", template: "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))",               keys: &[], fingerprints: &[], force_chunked: false },
-        Vector { name: "wsh_with_fingerprints", template: "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
-            keys: &[],
-            fingerprints: &[(0, [0xDE,0xAD,0xBE,0xEF]), (1, [0xCA,0xFE,0xBA,0xBE])],
-            force_chunked: false },
-        Vector { name: "wsh_multi_chunked",  template: "wsh(multi(3,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",     keys: &[], fingerprints: &[], force_chunked: true },
-    ];
-}
-use manifest::MANIFEST;
+// v0.5.1 ships the canonical corpus via `md_codec::test_vectors` — the
+// single source of truth shared by md-codec's own integration tests, by
+// this subcommand, and by md-cli's `tests/json_snapshots.rs` /
+// `tests/template_roundtrip.rs`. Previously inlined here as a workaround
+// for `cargo publish`'s out-of-package-include refusal; replaced in
+// 0.5.1 by md-codec 0.33's public API.
+use md_codec::test_vectors::{Vector, MANIFEST};
 
 pub fn run(out: Option<String>) -> Result<(), CliError> {
     let out_dir = match out {
@@ -54,7 +24,7 @@ pub fn run(out: Option<String>) -> Result<(), CliError> {
     fs::create_dir_all(&out_dir)
         .map_err(|e| CliError::BadArg(format!("mkdir {out_dir:?}: {e}")))?;
 
-    let mut entries: Vec<&manifest::Vector> = MANIFEST.iter().collect();
+    let mut entries: Vec<&Vector> = MANIFEST.iter().collect();
     entries.sort_by_key(|v| v.name);
 
     for v in entries {

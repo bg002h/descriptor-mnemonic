@@ -1,11 +1,6 @@
 #![allow(missing_docs)]
 
-mod manifest {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../md-codec/tests/vectors/manifest.rs"
-    ));
-}
+use md_codec::test_vectors as manifest;
 
 use assert_cmd::Command;
 
