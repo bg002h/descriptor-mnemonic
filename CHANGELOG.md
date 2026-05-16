@@ -4,6 +4,17 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.33.1] — 2026-05-15
+
+Patch: add `///` doc-comments to the 5 `pub` fields of
+`md_codec::test_vectors::Vector` (`name`, `template`, `keys`,
+`fingerprints`, `force_chunked`). The fields were exposed in v0.33.0
+(commit `8a52bed`, the test_vectors public-API promotion) but lacked
+doc-comments, which the workspace `-D warnings` clippy gate upgrades
+to errors via the `missing_docs` lint. Result: workspace CI red on
+`main` since 2026-05-14 23:15 UTC. Doc-comment-only patch; no API
+contract change.
+
 ## md-cli [0.5.2] — 2026-05-15
 
 Patch: add `--help` descriptions to `md decode --json` and `md inspect

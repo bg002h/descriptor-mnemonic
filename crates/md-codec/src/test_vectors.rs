@@ -12,10 +12,22 @@
 /// One entry of the canonical test-vector corpus.
 #[non_exhaustive]
 pub struct Vector {
+    /// Vector identifier — used in test failure messages and as a stable
+    /// handle for cross-suite filtering. Convention: snake_case mirroring
+    /// the wallet-policy template's distinguishing structure.
     pub name: &'static str,
+    /// BIP-388 wallet-policy template string the vector encodes. Parsed
+    /// by `parse::template`; round-tripped through `encode` and `decode`.
     pub template: &'static str,
+    /// `(@N, xpub)` pairs binding each `@N` placeholder in `template`. Empty
+    /// when the vector exercises template-only paths (no key binding).
     pub keys: &'static [(u8, &'static str)],
+    /// `(@N, 4-byte master fingerprint)` pairs aligned with `keys`. Empty
+    /// when the vector does not exercise fingerprint round-tripping.
     pub fingerprints: &'static [(u8, [u8; 4])],
+    /// When true, force the encoder onto the chunked wire path even if the
+    /// payload would fit in a single chunk. Exercises chunk-boundary logic
+    /// without padding the template artificially.
     pub force_chunked: bool,
 }
 
