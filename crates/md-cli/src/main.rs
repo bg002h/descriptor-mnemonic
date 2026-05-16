@@ -108,6 +108,8 @@ enum Command {
     Decode {
         #[arg(required = true, num_args = 1..)]
         strings: Vec<String>,
+        /// Emit a structured JSON object on stdout instead of the
+        /// plain BIP-388 wallet-policy template string.
         #[arg(long)]
         json: bool,
     },
@@ -129,6 +131,8 @@ enum Command {
     Inspect {
         #[arg(required = true, num_args = 1..)]
         strings: Vec<String>,
+        /// Emit a structured JSON object on stdout instead of the
+        /// pretty-printed multi-line text form.
         #[arg(long)]
         json: bool,
     },
