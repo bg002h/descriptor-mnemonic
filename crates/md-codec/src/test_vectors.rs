@@ -38,6 +38,7 @@ pub struct Vector {
 /// decode strips canonical 86'/0'/0' resp. 49'/0'/0'). Coverage for those
 /// wrappers is preserved by `parse::template` unit tests
 /// (`tr_with_one_leaf`, `sh_wpkh_nested`).
+#[rustfmt::skip]
 pub const MANIFEST: &[Vector] = &[
     Vector { name: "wpkh_basic",         template: "wpkh(@0/<0;1>/*)",                                   keys: &[], fingerprints: &[], force_chunked: false },
     Vector { name: "pkh_basic",          template: "pkh(@0/<0;1>/*)",                                    keys: &[], fingerprints: &[], force_chunked: false },

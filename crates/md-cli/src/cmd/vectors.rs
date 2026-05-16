@@ -10,7 +10,7 @@ use std::path::PathBuf;
 // `tests/template_roundtrip.rs`. Previously inlined here as a workaround
 // for `cargo publish`'s out-of-package-include refusal; replaced in
 // 0.5.1 by md-codec 0.33's public API.
-use md_codec::test_vectors::{Vector, MANIFEST};
+use md_codec::test_vectors::{MANIFEST, Vector};
 
 pub fn run(out: Option<String>) -> Result<(), CliError> {
     let out_dir = match out {
