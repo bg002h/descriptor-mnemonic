@@ -4,6 +4,21 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.5.2] — 2026-05-15
+
+Patch: add `--help` descriptions to `md decode --json` and `md inspect
+--json`. These were the only two flags in the md-cli surface with
+empty `#[arg(long)]` doc-comments. Companion to
+`mnemonic-toolkit@mnemonic-toolkit-v0.13.1`, which closed the same
+class of gap (enumerating accepted values in `--help`) across five
+toolkit subcommands. Doc-comment-only — no flag behavior change, no
+manual updates required.
+
+(Note: md-cli `0.5.1` was a silent intra-cycle version bump in commit
+`8a52bed` carrying the `md-codec` test_vectors refactor; no
+behavior-affecting changes shipped between `0.5.0` and `0.5.2` other
+than the test_vectors module move.)
+
 ## md-cli [0.5.0] — 2026-05-12
 
 Companion to `mnemonic-gui` v0.2 Phase C.2. Adds `md gui-schema`
