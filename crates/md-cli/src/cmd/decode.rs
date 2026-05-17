@@ -3,7 +3,7 @@ use crate::format::text;
 use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
 
-pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
+pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
@@ -21,11 +21,11 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
             serde_json::to_value(JsonDescriptor::from(&descriptor)).unwrap(),
         );
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
-        return Ok(());
+        return Ok(0);
     }
     let _ = json;
 
     let template = text::descriptor_to_template(&descriptor)?;
     println!("{template}");
-    Ok(())
+    Ok(0)
 }

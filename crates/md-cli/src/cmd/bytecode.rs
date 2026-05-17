@@ -3,7 +3,7 @@ use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
 use md_codec::encode::encode_payload;
 
-pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
+pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
@@ -27,7 +27,7 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
             "hex": hex,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
-        return Ok(());
+        return Ok(0);
     }
     let _ = json;
 
@@ -38,5 +38,5 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
         print!("{b:02x}");
     }
     println!();
-    Ok(())
+    Ok(0)
 }

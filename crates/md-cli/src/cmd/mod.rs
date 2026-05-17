@@ -7,5 +7,6 @@ pub mod encode;
 #[cfg(feature = "json")]
 pub mod gui_schema;
 pub mod inspect;
+pub mod repair;
 pub mod vectors;
 pub mod verify;

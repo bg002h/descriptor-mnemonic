@@ -18,7 +18,7 @@ pub struct AddressArgs<'a> {
     pub json: bool,
 }
 
-pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
+pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
     let descriptor = build_descriptor(&args)?;
     if !descriptor.is_wallet_policy() {
         return Err(CliError::BadArg(
@@ -54,7 +54,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
             "addresses": addresses,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
-        return Ok(());
+        return Ok(0);
     }
     let _ = args.json;
     let _ = args.network_str;
@@ -62,7 +62,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<(), CliError> {
     for (_, _, addr) in &rows {
         println!("{addr}");
     }
-    Ok(())
+    Ok(0)
 }
 
 fn build_descriptor(args: &AddressArgs<'_>) -> Result<Descriptor, CliError> {

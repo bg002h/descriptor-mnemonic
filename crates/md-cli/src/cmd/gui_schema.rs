@@ -46,7 +46,7 @@ const CLI_NAME: &str = "md";
 const HIDDEN_SUBCOMMANDS: &[&str] = &["gui-schema", "help"];
 
 /// Entry point: print SPEC §7 JSON for every visible subcommand.
-pub fn run() -> Result<(), CliError> {
+pub fn run() -> Result<u8, CliError> {
     let cmd = crate::Cli::command();
     let value = build_schema(&cmd);
     // C.2 R1 I-1 fold: emit compact single-line JSON to match the
@@ -54,7 +54,7 @@ pub fn run() -> Result<(), CliError> {
     // Multi-line pretty output diverges from the cross-repo convention
     // and breaks line-count / byte-length CI scripts.
     println!("{}", serde_json::to_string(&value).unwrap());
-    Ok(())
+    Ok(0)
 }
 
 /// Walk the root `Command` and produce the SPEC §7 JSON `Value`. Pure

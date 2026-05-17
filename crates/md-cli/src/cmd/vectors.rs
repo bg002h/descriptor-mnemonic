@@ -12,7 +12,7 @@ use std::path::PathBuf;
 // 0.5.1 by md-codec 0.33's public API.
 use md_codec::test_vectors::{MANIFEST, Vector};
 
-pub fn run(out: Option<String>) -> Result<(), CliError> {
+pub fn run(out: Option<String>) -> Result<u8, CliError> {
     let out_dir = match out {
         Some(p) => PathBuf::from(p),
         // v0.5.1 publish-fix: was `concat!(MANIFEST_DIR, "/../md-codec/tests/vectors")`
@@ -70,7 +70,7 @@ pub fn run(out: Option<String>) -> Result<(), CliError> {
             write_lf(&out_dir.join(format!("{}.descriptor.json", v.name)), &json)?;
         }
     }
-    Ok(())
+    Ok(0)
 }
 
 fn write_lf(path: &std::path::Path, contents: &str) -> Result<(), CliError> {

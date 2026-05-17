@@ -6,7 +6,7 @@ use md_codec::identity::{
     compute_md1_encoding_id, compute_wallet_descriptor_template_id, compute_wallet_policy_id,
 };
 
-pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
+pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {
@@ -39,7 +39,7 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
             serde_json::to_value(JsonHash::from(&pid)).unwrap(),
         );
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
-        return Ok(());
+        return Ok(0);
     }
     let _ = json;
 
@@ -56,5 +56,5 @@ pub fn run(strings: &[String], json: bool) -> Result<(), CliError> {
         "wallet-policy-id-fingerprint: {}",
         text::fmt_policy_id_fingerprint(&pid)
     );
-    Ok(())
+    Ok(0)
 }

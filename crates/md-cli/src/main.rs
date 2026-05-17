@@ -203,12 +203,27 @@ enum Command {
     #[cfg(feature = "json")]
     #[command(name = "gui-schema")]
     GuiSchema,
+    /// BCH error-correction for md1 strings. Wraps `md_codec::decode_with_correction`
+    /// and renders a per-chunk repair report.
+    ///
+    /// Exit codes (D26 cross-CLI parity with `ms repair` / `mk repair` /
+    /// `mnemonic repair`):
+    ///   0 — every input was already valid (no corrections applied)
+    ///   5 — at least one chunk had corrections applied (REPAIR_APPLIED)
+    ///   2 — atomic-fail per plan §1 D28: ANY chunk failing BCH capacity
+    ///       fails the whole call; the failing chunk's index is named in
+    ///       the stderr message and NO partial corrected output is emitted
+    ///       on stdout.
+    #[command(
+        after_long_help = "ATOMIC SEMANTICS (multi-chunk):\n  When more than one md1 chunk is supplied, the call is atomic per plan\n  §1 D28: if ANY chunk fails BCH error-correction capacity (> 4 errors),\n  the WHOLE call exits 2 with the failing chunk index named on stderr.\n  NO partial corrected chunks are emitted on stdout.\n\nINPUT FORMAT:\n  Accepts chunked-form md1 strings only (those bearing a chunk header,\n  as emitted by `md encode --force-chunked` or by automatic chunking when\n  the payload exceeds 320 bits). Non-chunked single-string md1 (those\n  emitted by plain `md encode` for small payloads) are rejected with a\n  wire-format error — use `md decode` for read-only inspection of those.\n\nEXAMPLES:\n  $ md repair md1qq...\n  $ md repair md1qq... md1qq... md1qq...\n  $ md repair --json md1qq..."
+    )]
+    Repair(cmd::repair::RepairArgs),
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match dispatch(cli.command) {
-        Ok(()) => ExitCode::from(0),
+        Ok(code) => ExitCode::from(code),
         Err(CliError::BadArg(m)) => {
             eprintln!("md: {m}");
             ExitCode::from(2)
@@ -239,7 +254,7 @@ fn validate_unspendable_key_nums_only(uk: Option<&str>) -> Result<(), CliError> 
     Ok(())
 }
 
-fn dispatch(c: Command) -> Result<(), CliError> {
+fn dispatch(c: Command) -> Result<u8, CliError> {
     match c {
         Command::Encode {
             template,
@@ -382,5 +397,6 @@ fn dispatch(c: Command) -> Result<(), CliError> {
         }
         #[cfg(feature = "json")]
         Command::GuiSchema => cmd::gui_schema::run(),
+        Command::Repair(a) => cmd::repair::run(a),
     }
 }

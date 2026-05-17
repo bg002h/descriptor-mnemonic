@@ -13,7 +13,7 @@ pub struct VerifyArgs<'a> {
     pub network: bitcoin::Network,
 }
 
-pub fn run(args: VerifyArgs<'_>) -> Result<(), CliError> {
+pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
     let decoded = if args.strings.len() == 1 {
         decode_md1_string(&args.strings[0])?
     } else {
@@ -42,5 +42,5 @@ pub fn run(args: VerifyArgs<'_>) -> Result<(), CliError> {
         )));
     }
     println!("OK");
-    Ok(())
+    Ok(0)
 }

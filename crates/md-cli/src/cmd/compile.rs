@@ -6,7 +6,7 @@ pub fn run(
     ctx_str: &str,
     unspendable_key: Option<&str>,
     json: bool,
-) -> Result<(), CliError> {
+) -> Result<u8, CliError> {
     let ctx: ScriptContext = ctx_str
         .parse()
         .map_err(|e: crate::compile::CompileError| CliError::Compile(e.to_string()))?;
@@ -18,10 +18,10 @@ pub fn run(
         use crate::format::json::SCHEMA;
         let v = serde_json::json!({ "schema": SCHEMA, "template": template, "context": ctx_str });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
-        return Ok(());
+        return Ok(0);
     }
     let _ = json;
 
     println!("{template}");
-    Ok(())
+    Ok(0)
 }

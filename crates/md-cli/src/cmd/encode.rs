@@ -26,7 +26,7 @@ pub struct EncodeArgs<'a> {
     pub json: bool,
 }
 
-pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
+pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     let ctx = ctx_for_template(args.template);
     let parsed_keys = args
         .keys
@@ -66,7 +66,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
             );
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
-        return Ok(());
+        return Ok(0);
     }
 
     if args.force_chunked {
@@ -92,5 +92,5 @@ pub fn run(args: EncodeArgs<'_>) -> Result<(), CliError> {
     // effect. Status: wont-fix at v0.15.2 (FOLLOWUPS v0.15.1-phase-2-low-1).
     // Revisit only if a real long-code mode is reintroduced.
     let _ = args.force_long_code;
-    Ok(())
+    Ok(0)
 }
