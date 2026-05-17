@@ -4,6 +4,13 @@
 //! MSB-first: `[v3][v2][v1][v0][chunked]` (4-bit version + 1-bit chunked-flag).
 //! Remainder: 20-bit chunk-set-id + 6-bit count-minus-1 + 6-bit index.
 //! Total = 4 + 1 + 20 + 6 + 6 = 37 bits.
+//!
+//! v0.34.0: also hosts [`decode_with_correction`] — the BCH-error-correcting
+//! decode entry point. Per chunk: parse → polymod-residue → (if non-zero)
+//! call [`crate::bch_decode::decode_regular_errors`] → apply corrections →
+//! re-encode → forward to [`reassemble`]. Atomic per plan §1 D28: any chunk
+//! exceeding the BCH `t = 4` capacity fails the whole call without partial
+//! output.
 
 use crate::bitstream::{BitReader, BitWriter};
 use crate::error::Error;
@@ -379,4 +386,187 @@ pub fn reassemble(strings: &[&str]) -> Result<Descriptor, Error> {
     }
 
     Ok(descriptor)
+}
+
+// ---------------------------------------------------------------------------
+// v0.34.0: BCH-error-correcting decode (plan §1 D22 + §2.B.1).
+// ---------------------------------------------------------------------------
+
+/// Per-correction report emitted by [`decode_with_correction`]. One entry
+/// per repaired character. `position` is 0-indexed into the codex32
+/// data-part (i.e. the characters following the `md1` HRP + separator);
+/// `was` is the original (corrupted) char from the input; `now` is the
+/// corrected char.
+///
+/// Atomic per plan §1 D28: when [`decode_with_correction`] succeeds the
+/// returned vector aggregates corrections across all chunks; chunks that
+/// were already valid contribute nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrectionDetail {
+    /// 0-indexed position of the chunk in the caller's `&[&str]` slice.
+    pub chunk_index: usize,
+    /// 0-indexed position of the corrected character within the chunk's
+    /// data-part (post-HRP-and-separator).
+    pub position: usize,
+    /// The original (corrupted) character at this position.
+    pub was: char,
+    /// The corrected character at this position.
+    pub now: char,
+}
+
+/// Local codex32 alphabet (BIP 173 lowercase). Each char = one 5-bit
+/// symbol. Duplicated from `codex32.rs` (which keeps it private) so this
+/// module doesn't widen the codex32 public surface; the mapping is
+/// constant per BIP 173.
+const CODEX32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+/// BIP 173 separator character between HRP and data-part for md1 strings.
+const HRP_PREFIX: &str = "md1";
+
+/// Parse a single md1 chunk into its 5-bit data-part symbol vector.
+/// Returns the data-with-checksum symbols (i.e. all symbols after `md1`).
+/// Visual separators (whitespace + `-`) are stripped per codex32 convention.
+fn parse_chunk_symbols(chunk: &str, chunk_index: usize) -> Result<Vec<u8>, Error> {
+    let lower = chunk.to_ascii_lowercase();
+    if !lower.starts_with(HRP_PREFIX) {
+        return Err(Error::Codex32DecodeError(format!(
+            "chunk {chunk_index}: string does not start with HRP md1"
+        )));
+    }
+    let rest = &lower[HRP_PREFIX.len()..];
+    let mut symbols: Vec<u8> = Vec::with_capacity(rest.len());
+    for c in rest.chars() {
+        if c.is_whitespace() || c == '-' {
+            continue;
+        }
+        let lc = c as u8;
+        let sym = CODEX32_ALPHABET
+            .iter()
+            .position(|&b| b == lc)
+            .ok_or_else(|| {
+                Error::Codex32DecodeError(format!(
+                    "chunk {chunk_index}: character {c:?} not in codex32 alphabet"
+                ))
+            })? as u8;
+        symbols.push(sym);
+    }
+    Ok(symbols)
+}
+
+/// Re-encode a 5-bit data-part symbol vector as a complete md1 string.
+fn encode_chunk_string(data_with_checksum: &[u8]) -> String {
+    let mut out = String::with_capacity(HRP_PREFIX.len() + data_with_checksum.len());
+    out.push_str(HRP_PREFIX);
+    for &v in data_with_checksum {
+        out.push(CODEX32_ALPHABET[(v & 0x1F) as usize] as char);
+    }
+    out
+}
+
+/// BCH-error-correcting decode for a chunk-set of md1 strings.
+///
+/// Per plan §1 Q1 lock — full-decode semantics: this is the single entry
+/// point that callers needing both "did anything get repaired?" AND "the
+/// fully-decoded descriptor" should use.
+///
+/// Algorithm:
+/// 1. For each chunk, parse the data-part into 5-bit symbols and compute
+///    the BCH polymod residue (`hrp_expand("md") || data_with_checksum`)
+///    XOR'd against [`crate::bch::MD_REGULAR_CONST`].
+/// 2. Residue `== 0` ⇒ chunk passes through unchanged.
+/// 3. Residue `!= 0` ⇒ invoke
+///    [`crate::bch_decode::decode_regular_errors`]. If `None`, return
+///    `Err(Error::TooManyErrors { chunk_index, bound: 8 })` per plan §2.B.4
+///    D29 error-mapping table.
+/// 4. Apply corrections to the chunk's symbol vector, re-encode as a
+///    fresh md1 string, and record one [`CorrectionDetail`] per repaired
+///    character.
+/// 5. After ALL chunks have been processed (any single uncorrectable
+///    chunk aborts atomically per plan §1 D28), forward the corrected
+///    chunk strings to [`reassemble`] to produce the [`Descriptor`].
+///
+/// On success returns `(Descriptor, Vec<CorrectionDetail>)`. The
+/// correction-detail vector is in (`chunk_index` ascending,
+/// `position` ascending within chunk) order; an empty vector means every
+/// input chunk was already a valid codeword.
+pub fn decode_with_correction(
+    strings: &[&str],
+) -> Result<(Descriptor, Vec<CorrectionDetail>), Error> {
+    if strings.is_empty() {
+        return Err(Error::ChunkSetEmpty);
+    }
+
+    let mut corrected_strings: Vec<String> = Vec::with_capacity(strings.len());
+    let mut all_details: Vec<CorrectionDetail> = Vec::new();
+
+    for (chunk_index, chunk) in strings.iter().enumerate() {
+        let symbols = parse_chunk_symbols(chunk, chunk_index)?;
+
+        // Polymod residue against md1's target constant.
+        let mut input = crate::bch::hrp_expand("md");
+        input.extend_from_slice(&symbols);
+        let residue = crate::bch::polymod_run(&input) ^ crate::bch::MD_REGULAR_CONST;
+
+        if residue == 0 {
+            // Already valid — pass through unchanged.
+            corrected_strings.push((*chunk).to_string());
+            continue;
+        }
+
+        // Attempt BCH correction.
+        let (positions, magnitudes) =
+            crate::bch_decode::decode_regular_errors(residue, symbols.len()).ok_or(
+                Error::TooManyErrors {
+                    chunk_index,
+                    bound: 8,
+                },
+            )?;
+
+        // Apply corrections; record (was, now) chars per position.
+        let mut corrected = symbols.clone();
+        let mut details: Vec<CorrectionDetail> = Vec::with_capacity(positions.len());
+        for (&pos, &mag) in positions.iter().zip(&magnitudes) {
+            if pos >= corrected.len() {
+                // Defensive: chien_search bounded pos to [0, L); but a
+                // pathological 5+-error pattern could in principle skirt
+                // that. Treat as uncorrectable per Q2 absorption rules.
+                return Err(Error::TooManyErrors {
+                    chunk_index,
+                    bound: 8,
+                });
+            }
+            let was_byte = corrected[pos];
+            let now_byte = was_byte ^ mag;
+            let was = CODEX32_ALPHABET[(was_byte & 0x1F) as usize] as char;
+            let now = CODEX32_ALPHABET[(now_byte & 0x1F) as usize] as char;
+            details.push(CorrectionDetail {
+                chunk_index,
+                position: pos,
+                was,
+                now,
+            });
+            corrected[pos] = now_byte;
+        }
+
+        // Defensive re-verify (catches pathological 5+-error patterns
+        // that happen to produce a degree-≤4 locator with 4 valid roots).
+        let mut verify_input = crate::bch::hrp_expand("md");
+        verify_input.extend_from_slice(&corrected);
+        let verify_residue =
+            crate::bch::polymod_run(&verify_input) ^ crate::bch::MD_REGULAR_CONST;
+        if verify_residue != 0 {
+            return Err(Error::TooManyErrors {
+                chunk_index,
+                bound: 8,
+            });
+        }
+
+        corrected_strings.push(encode_chunk_string(&corrected));
+        all_details.extend(details);
+    }
+
+    // Hand corrected strings to the existing reassembly path.
+    let corrected_refs: Vec<&str> = corrected_strings.iter().map(|s| s.as_str()).collect();
+    let descriptor = reassemble(&corrected_refs)?;
+    Ok((descriptor, all_details))
 }

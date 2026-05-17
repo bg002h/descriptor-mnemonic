@@ -13,6 +13,7 @@
 //! normative spec.
 
 pub mod bch;
+pub mod bch_decode;
 
 pub mod bitstream;
 pub mod canonical_origin;
@@ -38,7 +39,9 @@ pub mod validate;
 pub mod varint;
 
 pub use canonicalize::canonicalize_placeholder_indices;
-pub use chunk::{ChunkHeader, derive_chunk_set_id, reassemble, split};
+pub use chunk::{
+    ChunkHeader, CorrectionDetail, decode_with_correction, derive_chunk_set_id, reassemble, split,
+};
 pub use decode::{decode_md1_string, decode_payload};
 pub use encode::{Descriptor, encode_md1_string, encode_payload};
 pub use error::Error;

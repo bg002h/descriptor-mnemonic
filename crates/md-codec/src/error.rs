@@ -389,6 +389,21 @@ pub enum Error {
         /// Maximum allowed depth.
         max: u8,
     },
+
+    /// BCH correction capacity exceeded: a chunk's syndrome pattern
+    /// indicated more than `t = 4` errors (BCH(93, 80, 8) singleton
+    /// bound `2t = 8`), so a unique correction cannot be derived.
+    /// v0.34.0 introduced; raised by [`crate::decode_with_correction`].
+    /// Atomic per plan §1 D28: any chunk failing this check fails the
+    /// whole multi-chunk call without partial output.
+    #[error("chunk {chunk_index} has more than {bound} errors; uncorrectable")]
+    TooManyErrors {
+        /// 0-indexed position of the offending chunk in the caller's
+        /// `&[&str]` slice.
+        chunk_index: usize,
+        /// The BCH singleton bound `2t = 8` (i.e. 4 correctable errors).
+        bound: u8,
+    },
 }
 
 #[cfg(test)]
