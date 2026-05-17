@@ -45,6 +45,34 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-codec-decode-with-correction-public-api` — promote BCH primitives + `decode_with_correction` for md HRP
+
+- **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 cycle (BCH error-correction launch).
+- **Where:** `crates/md-codec/src/bch.rs` (currently `pub(crate)`).
+- **What:** Promote `bch::polymod_run` / `bch::hrp_expand` / `bch::MD_REGULAR_CONST` to `pub`, OR add a `pub fn decode_with_correction(strings: &[&str]) -> Result<Descriptor>` wrapper. Either path lets toolkit `repair.rs` consume md-codec primitives instead of vendoring `MD_NUMS_TARGET = 0x0815c07747a3392e7`.
+- **Why deferred:** toolkit v0.22.0 vendored the constant and drift-gates it via `#[cfg(test)]` against an md1 stability suite (3 distinct valid md1 strings); promotion is a v0.23+ cleanup.
+- **Status:** open
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `md-codec-decode-with-correction-public-api`
+
+### `md-cli-repair-flag` — `md repair` subcommand mirroring toolkit's `mnemonic repair`
+
+- **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 brainstorm.
+- **Where:** `crates/md-cli/src/cmd/` (NEW subcommand).
+- **What:** Add `md repair <md1>...` for md1 BCH error-correction (regular code only; md-codec dropped long-code in v0.x). Mirrors toolkit's `mnemonic repair --md1` subcommand. Blocked on `md-codec-decode-with-correction-public-api`.
+- **Status:** open (blocked)
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `md-cli-repair-flag`
+
+### `toolkit-repair-consume-native-codec-api` — toolkit-side consumer of native md-codec correction API
+
+- **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 R1.
+- **Where:** cross-repo coordination point; informational mirror in this sibling.
+- **What:** Once `md-codec-decode-with-correction-public-api` lands, toolkit `repair.rs` will switch its md1 path from the vendored constant to the native md-codec API.
+- **Status:** open (blocked on `md-codec-decode-with-correction-public-api`)
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `toolkit-repair-consume-native-codec-api`
+
 ### `md-cli-vectors-manifest-inlined` — `crates/md-cli/src/cmd/vectors.rs::manifest::MANIFEST` is a working copy of `crates/md-codec/tests/vectors/manifest.rs`
 
 - **Surfaced:** 2026-05-15, v0.3 `mnemonic-gui` cycle crates.io publish round. `md-cli` `cargo publish --dry-run` rejected `include!(concat!(MANIFEST_DIR, "/../md-codec/tests/vectors/manifest.rs"))` because `cargo publish` refuses out-of-package source includes (the published `.crate` file must be self-contained). Quick-fix at commit `93937d4` inlined the 10-entry `Vector` struct + `MANIFEST` const directly into `crates/md-cli/src/cmd/vectors.rs`.
