@@ -12,7 +12,7 @@
 //! wrapping with HRP `"md"`. See `design/SPEC_v0_30_wire_format.md` for the
 //! normative spec.
 
-mod bch;
+pub mod bch;
 
 pub mod bitstream;
 pub mod canonical_origin;

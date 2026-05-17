@@ -4,7 +4,7 @@
 //! checksum + verify (long code dropped along with v0.x).
 
 /// BCH(93,80,8) generator polynomial coefficients (5 × 65-bit).
-const GEN_REGULAR: [u128; 5] = [
+pub const GEN_REGULAR: [u128; 5] = [
     0x19dc500ce73fde210,
     0x1bfae00def77fe529,
     0x1fbd920fffe7bee52,
@@ -14,7 +14,7 @@ const GEN_REGULAR: [u128; 5] = [
 
 /// MD-domain target residue (NUMS-style, top 65 bits of
 /// `SHA-256("shibbolethnums")`).
-const MD_REGULAR_CONST: u128 = 0x0815c07747a3392e7;
+pub const MD_REGULAR_CONST: u128 = 0x0815c07747a3392e7;
 
 const POLYMOD_INIT: u128 = 0x23181b3;
 const REGULAR_SHIFT: u32 = 60;
@@ -31,7 +31,13 @@ fn polymod_step(residue: u128, value: u128) -> u128 {
     new_residue
 }
 
-fn polymod_run(values: &[u8]) -> u128 {
+/// Run the BCH polymod over `values` starting from `POLYMOD_INIT`.
+///
+/// Returns the final residue; callers XOR against the per-HRP target
+/// constant (e.g. [`MD_REGULAR_CONST`]) to produce a checksum or to
+/// verify one. Inputs are 5-bit symbols (`u8` in `0..32`); larger
+/// values are reduced modulo 32 by the underlying step.
+pub fn polymod_run(values: &[u8]) -> u128 {
     let mut residue = POLYMOD_INIT;
     for &v in values {
         residue = polymod_step(residue, v as u128);
@@ -40,7 +46,7 @@ fn polymod_run(values: &[u8]) -> u128 {
 }
 
 /// BIP 173-style HRP expansion: `[c >> 5 for c in hrp] ++ [0] ++ [c & 31 for c in hrp]`.
-fn hrp_expand(hrp: &str) -> Vec<u8> {
+pub fn hrp_expand(hrp: &str) -> Vec<u8> {
     let bytes = hrp.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() * 2 + 1);
     for &c in bytes {
@@ -54,7 +60,7 @@ fn hrp_expand(hrp: &str) -> Vec<u8> {
 }
 
 /// 13-symbol regular-code BCH checksum over `hrp_expand(hrp) || data || [0; 13]`.
-pub(crate) fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
+pub fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data);
     input.extend(std::iter::repeat_n(0, 13));
@@ -67,7 +73,7 @@ pub(crate) fn bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13] {
 }
 
 /// Verify a regular-code BCH checksum over the data-part-with-checksum.
-pub(crate) fn bch_verify_regular(hrp: &str, data_with_checksum: &[u8]) -> bool {
+pub fn bch_verify_regular(hrp: &str, data_with_checksum: &[u8]) -> bool {
     if data_with_checksum.len() < 13 {
         return false;
     }
