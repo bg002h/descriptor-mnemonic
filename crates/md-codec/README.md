@@ -80,6 +80,44 @@ two-PolicyId story, scope), see the [crate-level rustdoc][rustdoc-crate].
 
 [rustdoc-crate]: https://docs.rs/md-codec
 
+## BCH error correction (v0.34.0+)
+
+md-codec v0.34.0 exposes a `decode_with_correction` wrapper that runs
+BCH error-correction (`BCH(93,80,8)`, `t=4`: up to four substitution
+errors per chunk) before the standard decode pipeline. Use it when a
+backup card may have a small number of damaged characters:
+
+```rust
+use md_codec::{decode_with_correction, CorrectionDetail};
+
+let inputs = vec!["md1q...", "md1q..."]; // possibly-corrupted chunks
+let (descriptor, corrections) = decode_with_correction(&inputs)?;
+for c in &corrections {
+    println!("chunk {} pos {}: {:?} -> {:?}", c.chunk_index, c.position, c.was, c.now);
+}
+# Ok::<(), md_codec::Error>(())
+```
+
+The underlying BCH primitives (`bch::polymod_run`, `bch::hrp_expand`,
+`bch::MD_REGULAR_CONST`, etc.) are also `pub` for downstream consumers
+that need direct access (e.g., the `mnemonic-toolkit` `repair.rs`
+delegates to `decode_with_correction` rather than reimplementing the
+BCH arithmetic). The newly-exposed `bch_decode` module contains the
+Berlekamp-Massey + Chien-search + Forney port (~450 LOC) that powers
+the wrapper.
+
+Multi-chunk inputs are processed atomically: if ANY chunk exceeds
+the `t=4` correction capacity, the call returns
+`Error::TooManyErrors { chunk_index, bound: 8 }` and no partial
+result is emitted (the failing chunk's index is named for diagnostics).
+
+**v0.34.0 limitation — chunked-form only:** `decode_with_correction`
+integrates via `chunk::split` + `chunk::reassemble`, which require
+chunked-form md1 input. Non-chunked single-string md1 (the form
+emitted by plain `encode` for small payloads) is rejected; use the
+standard `decode` for read-only inspection. Tracked at
+`design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`.
+
 ## Cargo features
 
 | Feature | Default? | Purpose |

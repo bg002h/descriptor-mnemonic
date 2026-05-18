@@ -51,7 +51,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-codec/src/bch.rs` (currently `pub(crate)`).
 - **What:** Promote `bch::polymod_run` / `bch::hrp_expand` / `bch::MD_REGULAR_CONST` to `pub`, OR add a `pub fn decode_with_correction(strings: &[&str]) -> Result<Descriptor>` wrapper. Either path lets toolkit `repair.rs` consume md-codec primitives instead of vendoring `MD_NUMS_TARGET = 0x0815c07747a3392e7`.
 - **Why deferred:** toolkit v0.22.0 vendored the constant and drift-gates it via `#[cfg(test)]` against an md1 stability suite (3 distinct valid md1 strings); promotion is a v0.23+ cleanup.
-- **Status:** open
+- **Status:** `resolved 56dc300` — v0.22.x follow-ups cycle Phase B.1+B.2: visibility promotions landed at `94069ea` (B.1: `pub const GEN_REGULAR` / `MD_REGULAR_CONST` / `pub fn polymod_run` / `hrp_expand` / `bch_create_checksum_regular` / `bch_verify_regular`); `decode_with_correction` wrapper + new `bch_decode` module (~450 LOC BM+Chien port) + `CorrectionDetail` + new `Error::TooManyErrors { chunk_index, bound: 8 }` variant + 12 unit cells landed at `56dc300` (B.2). md-codec v0.34.0. Toolkit-side consumer migration tracked at `toolkit-repair-consume-native-codec-api`. Follow-up: non-chunked-form md1 wire-format coverage tracked at new `md-codec-decode-with-correction-supports-non-chunked-md1` (this file).
 - **Tier:** `cross-repo`
 - **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `md-codec-decode-with-correction-public-api`
 
@@ -60,7 +60,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 brainstorm.
 - **Where:** `crates/md-cli/src/cmd/` (NEW subcommand).
 - **What:** Add `md repair <md1>...` for md1 BCH error-correction (regular code only; md-codec dropped long-code in v0.x). Mirrors toolkit's `mnemonic repair --md1` subcommand. Blocked on `md-codec-decode-with-correction-public-api`.
-- **Status:** open (blocked)
+- **Status:** `resolved d4fbe48` — v0.22.x follow-ups cycle Phase B.6: new `md-cli/src/cmd/repair.rs` with variadic `<MD1_STRINGS>...` positional + `--json` flag + atomic per-chunk semantics per plan §1 D28 (any chunk failing BCH capacity aborts the whole call with no partial output) + exit-code parity (`0` already valid / `5` REPAIR_APPLIED / `2` unrepairable) + cross-CLI `RepairJson` schema parity (D27). Wraps `md_codec::decode_with_correction` (B.2). 5 integration cells. md-cli v0.6.0.
 - **Tier:** `cross-repo`
 - **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `md-cli-repair-flag`
 
@@ -69,9 +69,19 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 R1.
 - **Where:** cross-repo coordination point; informational mirror in this sibling.
 - **What:** Once `md-codec-decode-with-correction-public-api` lands, toolkit `repair.rs` will switch its md1 path from the vendored constant to the native md-codec API.
-- **Status:** open (blocked on `md-codec-decode-with-correction-public-api`)
+- **Status:** `resolved b8ca6df` — v0.22.x follow-ups cycle Phase B.7: toolkit `repair.rs` deleted `MD_NUMS_TARGET` vendored constant + `(Self::Md1, BchCode::Regular)` arm in `target_residue()`; new `repair_via_md_codec` private helper delegates to `md_codec::decode_with_correction` (B.2) with `md_codec::Error` → `RepairError` translation per plan §2.B.4 D29 table; new `RepairError::PostCorrectionDecodeFailed { chunk_index: Option<usize>, detail: String }` catch-all variant absorbs orphan §4-rule decoder errors. mk1 branch unchanged (mk-codec primitives still consumed natively). mnemonic-toolkit v0.23.0.
 - **Tier:** `cross-repo`
 - **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `toolkit-repair-consume-native-codec-api`
+
+### `md-codec-decode-with-correction-supports-non-chunked-md1` — extend `decode_with_correction` to accept non-chunked-form md1 strings
+
+- **Surfaced:** 2026-05-17, v0.22.x follow-ups cycle Phase B.6 implementation (`d4fbe48`) + Phase B.7 toolkit migration (`b8ca6df`). md-codec v0.34.0's `decode_with_correction(&[&str]) -> Result<(Descriptor, Vec<CorrectionDetail>), Error>` integrates via `chunk::split` + `chunk::reassemble`, which only accept chunked-form md1 strings (those bearing a chunk header, as emitted by `md encode --force-chunked` or by automatic chunking when payload > 320 bits). Non-chunked single-string md1 (the form emitted by plain `md encode` for small payloads) is rejected with a wire-format error — `md repair` documents this in its `--help` epilog. Post-toolkit-migration (B.7), the toolkit's `mnemonic repair --md1` inherits the same constraint: users attempting to repair a non-chunked md1 see a wire-format-version-mismatch error instead of an attempted fix.
+- **Where:** `crates/md-codec/src/decode_with_correction.rs` (or wherever `decode_with_correction` integrates with `chunk::split`); `crates/md-cli/src/cmd/repair.rs` (--help epilog already documents the limitation).
+- **What:** Extend `decode_with_correction` to detect non-chunked-form md1 input and either (a) wrap it transparently as a single-chunk call to the existing BCH-correction pipeline (preferred — preserves single-call API), or (b) emit a structured error variant that downstream callers (md-cli + toolkit) can translate into a user-facing "non-chunked form not yet supported" message. Implementation likely requires teaching `chunk::split` to accept a single non-chunked string as a 1-chunk degenerate case, OR adding a `decode_with_correction_single(s: &str)` entry point that bypasses `chunk::split` and runs BCH correction directly against the payload before invoking the codec's non-chunked decoder.
+- **Why deferred:** v0.22.x follow-ups cycle locked the public API surface around the chunked-form pipeline; non-chunked support requires either a `chunk::split` API extension or a new public entry point, and adding either at B.6 would have widened the cycle scope. The chunked-form path covers the most common error-recovery use case (multi-chunk engravings where one chunk is corroded) — the non-chunked-form gap is a tail-case where users would otherwise just re-type the short string.
+- **Status:** open
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-toolkit` `design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1` (toolkit-side companion — consumer); `bg002h/mnemonic-secret` `design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1` (informational mirror — sibling-codec consistency tracking); `bg002h/mnemonic-gui` `FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1` (GUI-side companion — GUI users hit this through `mnemonic repair --md1`).
 
 ### `md-cli-vectors-manifest-inlined` — `crates/md-cli/src/cmd/vectors.rs::manifest::MANIFEST` is a working copy of `crates/md-codec/tests/vectors/manifest.rs`
 

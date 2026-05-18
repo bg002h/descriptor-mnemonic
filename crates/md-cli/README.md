@@ -45,6 +45,7 @@ cargo install --path crates/md-cli --no-default-features
 | `md bytecode <STRING>...` | Annotated dump of the raw payload bytes. |
 | `md address <STRING>...` (or `--template <T> --key @i=<XPUB>`) | Derive bitcoin addresses from a wallet-policy-mode descriptor. `--chain N` / `--change`, `--index N`, `--count K`, `--network mainnet\|testnet\|signet\|regtest`, `--json`. |
 | `md vectors [--out DIR]` | Regenerate the project's deterministic test-vector corpus (maintainer tool). |
+| `md repair <STRING>...` | BCH error-correct one or more chunked-form md1 strings (up to 4 substitution errors per chunk via `BCH(93,80,8)` `t=4` capacity). Atomic per-chunk semantics per plan §1 D28: ANY chunk failing capacity aborts the whole call. Exit 5 (`REPAIR_APPLIED`) on success, exit 0 if all inputs already valid, exit 2 on unrepairable input. `--json` emits a `RepairJson` envelope byte-matching `mnemonic repair --json`. **Chunked-form only** at md-cli v0.6.0; non-chunked single-string md1 input is rejected with a wire-format error (tracked at `design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`). |
 | `md compile <EXPR> --context tap\|segwitv0 [--unspendable-key <KEY>]` | Compile a sub-Miniscript-Policy expression into a BIP 388 template. Requires `cli-compiler` feature. `--unspendable-key` is a tap-context-only fallback hint; defaults to BIP-341 NUMS H-point when omitted. |
 
 ### Compile examples
@@ -90,6 +91,68 @@ format does not carry network — it's a CLI-side convenience for
 xpub/tpub validation and address rendering. `md decode`/`inspect`/`bytecode`
 are network-agnostic; pass `--network` to `md address` when rendering
 addresses from a phrase that was originally built with non-mainnet keys.
+
+### `md repair` — BCH error correction (v0.6.0)
+
+```sh
+# Single-chunk: corroded engraving (one or two letters illegible).
+md repair md1q...
+# stdout (text form):
+#   # Repair report
+#   #   md1 chunk 0: 1 correction at position 17: 'z' -> 'q'
+#   md1q...   # corrected chunk on the last line
+
+# Multi-chunk: variadic positional accepts every chunk of a chunked
+# encoding in a single call.
+md repair md1q... md1q... md1q...
+
+# JSON envelope (cross-CLI parser reuse: byte-matches
+# `mnemonic repair --json` / `ms repair --json` / `mk repair --json`):
+md repair --json md1q...
+
+# Stdin (one chunk per line):
+printf '%s\n%s\n' "$BAD_C0" "$BAD_C1" | md repair -
+```
+
+| Exit | Meaning |
+|---|---|
+| `0` | every chunk already valid; no correction applied; inputs echoed unchanged. |
+| `5` | `REPAIR_APPLIED` — at least one chunk corrected; stdout = repair report + corrected chunks. Consistent across all four CLIs per plan D26 (`mnemonic` / `mk` / `ms` / `md`). |
+| `2` | atomic-fail (plan §1 D28): ANY chunk exceeding BCH `t=4` capacity (or with a structural wire-format error) aborts the whole call; the failing chunk index is named on stderr; NO partial corrected output. |
+| `1` | I/O error or other generic failure. |
+
+JSON envelope schema (`schema_version: "1"`, `kind: "md1"`):
+
+```json
+{
+  "schema_version": "1",
+  "kind": "md1",
+  "corrected_chunks": ["md1q..."],
+  "repairs": [
+    {
+      "chunk_index": 0,
+      "original_chunk": "md1q...",
+      "corrected_chunk": "md1q...",
+      "corrected_positions": [{"position": 17, "was": "z", "now": "q"}]
+    }
+  ]
+}
+```
+
+`md repair` is the per-codec sibling of toolkit's `mnemonic repair`
+(see `mnemonic-toolkit/docs/manual/src/40-cli-reference/41-mnemonic.md`
+`## mnemonic repair`). It wraps `md_codec::decode_with_correction` from
+md-codec v0.34.0+ and shares the `RepairJson` envelope schema byte-exact
+with the other three CLIs (cross-CLI parser reuse per plan D27).
+
+**v0.6.0 limitation — chunked-form only:** `md repair` requires
+chunked-form md1 input (chunks bearing a chunk header, as emitted by
+`md encode --force-chunked` or by automatic chunking when the payload
+exceeds 320 bits). Non-chunked single-string md1 (the form emitted by
+plain `md encode` for small payloads) is rejected with a wire-format
+error. For non-chunked-form input, use `md decode` for read-only
+inspection. Tracked for resolution at
+`design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`.
 
 ## Cargo features
 
