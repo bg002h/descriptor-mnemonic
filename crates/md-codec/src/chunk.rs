@@ -497,6 +497,11 @@ pub fn decode_with_correction(
     }
 
     let mut corrected_strings: Vec<String> = Vec::with_capacity(strings.len());
+    // Track the post-correction 5-bit symbol vector of the first string so the
+    // single-string detection pre-pass below can inspect bit 0 of the first
+    // symbol (the chunked-flag per SPEC v0.30 §2.3) without re-parsing the
+    // wrapped string.
+    let mut first_corrected_symbols: Option<Vec<u8>> = None;
     let mut all_details: Vec<CorrectionDetail> = Vec::new();
 
     for (chunk_index, chunk) in strings.iter().enumerate() {
@@ -510,6 +515,9 @@ pub fn decode_with_correction(
         if residue == 0 {
             // Already valid — pass through unchanged.
             corrected_strings.push((*chunk).to_string());
+            if chunk_index == 0 {
+                first_corrected_symbols = Some(symbols);
+            }
             continue;
         }
 
@@ -562,7 +570,41 @@ pub fn decode_with_correction(
         }
 
         corrected_strings.push(encode_chunk_string(&corrected));
+        if chunk_index == 0 {
+            first_corrected_symbols = Some(corrected);
+        }
         all_details.extend(details);
+    }
+
+    // v0.35.0: single-string auto-dispatch per SPEC v0.30 §2.3. The first
+    // 5-bit symbol of the corrected payload carries the chunked-flag in
+    // bit 0 (0 = single-payload, 1 = chunked). When the sole input string
+    // decodes (post-BCH correction) as non-chunked, route it through the
+    // single-payload decode path rather than `reassemble`. When it
+    // decodes as chunked, fall through to the existing `reassemble`
+    // path — which naturally surfaces `ChunkSetIncomplete { got: 1,
+    // expected: count }` for any `count > 1` (the "chunked-bit set but
+    // only one chunk supplied" ambiguity edge per plan §2.D.1) while
+    // preserving the legitimate count==1 chunked-of-1 case shipped in
+    // v0.34.0.
+    if strings.len() == 1 {
+        // `first_corrected_symbols` is populated by the loop above (both
+        // the residue==0 pass-through and the correction-applied paths
+        // populate it for `chunk_index == 0`).
+        let symbols = first_corrected_symbols
+            .as_ref()
+            .expect("loop populates first_corrected_symbols when strings.len() >= 1");
+        let chunked_flag = symbols.first().map(|s| s & 0x01).unwrap_or(1);
+        if chunked_flag == 0 {
+            // Non-chunked: decode via the single-payload path. The
+            // corrected string passes BCH-verify (proven by the defensive
+            // re-verify above; or by residue == 0 in the pass-through
+            // branch), so `decode_md1_string` will not re-fail at the
+            // codex32 layer.
+            let descriptor = crate::decode::decode_md1_string(&corrected_strings[0])?;
+            return Ok((descriptor, all_details));
+        }
+        // chunked_flag == 1: fall through to `reassemble` below.
     }
 
     // Hand corrected strings to the existing reassembly path.

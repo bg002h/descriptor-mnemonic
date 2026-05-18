@@ -4,6 +4,43 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.35.0] — 2026-05-17
+
+Closes `md-codec-decode-with-correction-supports-non-chunked-md1`
+(filed at v0.22.x follow-ups cycle Phase B.8). Lockstep with
+`mnemonic-toolkit-v0.24.0` Tranche D.
+
+### Added
+
+- `decode_with_correction` non-chunked-form detection (`crates/md-codec/src/chunk.rs`).
+  Pre-pass routes `strings.len() == 1` inputs whose first-symbol bit-0 is
+  `0` (non-chunked header sentinel) directly into `decode_payload`,
+  bypassing the chunk-reassembly path. Falls through to the existing
+  `reassemble` for `len > 1` OR `len == 1 && bit-0 == 1` (preserves
+  v0.34.0 count-1-chunked-of-1 semantics; multi-strings-supplied-as-one
+  still surfaces `Error::ChunkSetIncomplete`).
+- 5 new unit cells in `crates/md-codec/tests/bch_decode.rs` covering the
+  non-chunked-form detection branch.
+
+### Fixed
+
+- `mnemonic repair --md1` / `md repair` invocations against non-chunked
+  single-string md1 (the form emitted by plain `md encode` for small
+  payloads) previously surfaced as wire-format-mismatch errors. They now
+  decode through the BCH correction pipeline like any other md1 input.
+
+### Notes
+
+- Wire-format change is purely additive: non-chunked md1 was previously
+  rejected by `decode_with_correction`; now decodable. No corpus refresh
+  required; no downstream-codec migration burden.
+
+### Resolved (FOLLOWUPS)
+
+- `md-codec-decode-with-correction-supports-non-chunked-md1` (cross-repo
+  primary). GUI + toolkit + ms-codec mirrors transition `open` →
+  `RESOLVED in md-codec-v0.35.0` lockstep.
+
 ## md-codec [0.33.1] — 2026-05-15
 
 Patch: add `///` doc-comments to the 5 `pub` fields of

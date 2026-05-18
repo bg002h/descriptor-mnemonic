@@ -8,9 +8,20 @@
 //!  4. `four_error_t_boundary` — BCH t=4 boundary.
 //!  5. `five_error_too_many` — exceeds capacity → `TooManyErrors`.
 //!  6. `multi_chunk_one_corrupted` — 1 chunk of a 3-chunk set corrupted.
+//!
+//! v0.35.0 (plan §2.D.1) adds 5 cells exercising single-string non-chunked
+//! md1 auto-dispatch in `decode_with_correction` per SPEC v0.30 §2.3:
+//!  7. `non_chunked_zero_error_passthrough` — valid non-chunked md1
+//!     decodes successfully.
+//!  8. `non_chunked_one_to_four_errors_corrected` — 1..=4 errors correct.
+//!  9. `non_chunked_five_errors_too_many` — 5+ errors → `TooManyErrors`.
+//! 10. `non_chunked_chunked_flag_corruption_yields_chunk_set_incomplete` —
+//!     post-correction chunked-flag bit set with only 1 string supplied.
+//! 11. `non_chunked_round_trip_parity_via_encode_md1_string` — full
+//!     encode_md1_string ↔ decode_with_correction round-trip.
 
 use md_codec::chunk::split;
-use md_codec::encode::Descriptor;
+use md_codec::encode::{Descriptor, encode_md1_string};
 use md_codec::error::Error;
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 use md_codec::tag::Tag;
@@ -261,4 +272,156 @@ fn multi_chunk_one_corrupted() {
     assert_eq!(det.position, 4);
     let original_char = chunks[target_idx].chars().nth(3 + 4).unwrap();
     assert_eq!(det.now, original_char);
+}
+
+// ===========================================================================
+// v0.35.0 — single-string non-chunked md1 auto-dispatch (plan §2.D.1).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Cell 7: non-chunked happy path — valid single-payload md1 decodes cleanly.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn non_chunked_zero_error_passthrough() {
+    let d = small_descriptor();
+    // `encode_md1_string` emits single-payload non-chunked form (no chunk
+    // header). The first 5-bit symbol's bit 0 (chunked-flag per SPEC v0.30
+    // §2.3) is 0 → `decode_with_correction` must auto-dispatch to the
+    // non-chunked decode path instead of `reassemble`.
+    let s = encode_md1_string(&d).expect("encode_md1_string");
+    let (decoded, details) =
+        decode_with_correction(&[s.as_str()]).expect("non-chunked decode succeeds");
+    assert_eq!(decoded, d, "round-trip preserves descriptor");
+    assert!(details.is_empty(), "no corrections expected for clean input");
+}
+
+// ---------------------------------------------------------------------------
+// Cell 8: non-chunked 1..=4 error correction across the BCH t-boundary.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn non_chunked_one_to_four_errors_corrected() {
+    let d = small_descriptor();
+    let s = encode_md1_string(&d).expect("encode_md1_string");
+    let dp_len = data_part_len(&s);
+
+    // Walk 1..=4 errors; for each error budget, corrupt that many
+    // well-spaced positions, expect a clean BCH correction back to the
+    // original descriptor. NOTE: position 0 is excluded so we don't flip
+    // bit 0 of the first 5-bit symbol (the chunked-flag); that case is
+    // covered by Cell 10 below.
+    for error_count in 1..=4usize {
+        let positions: Vec<usize> = (0..error_count)
+            .map(|i| 1 + ((dp_len - 2) * i) / error_count.max(1))
+            .collect();
+        let masks: [u8; 4] = [0b00001, 0b10000, 0b11111, 0b01010];
+        let mut bad = s.clone();
+        for (i, &p) in positions.iter().enumerate() {
+            bad = corrupt_chunk_at(&bad, p, masks[i]);
+        }
+        let (decoded, details) = decode_with_correction(&[bad.as_str()])
+            .unwrap_or_else(|e| panic!("{error_count}-error decode must succeed, got {e:?}"));
+        assert_eq!(
+            decoded, d,
+            "{error_count}-error corrected decode matches original"
+        );
+        assert_eq!(
+            details.len(),
+            error_count,
+            "{error_count}-error correction report length"
+        );
+        for det in &details {
+            assert_eq!(det.chunk_index, 0);
+            assert_ne!(det.was, det.now);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cell 9: non-chunked 5-error pattern → TooManyErrors (BCH t=4 boundary).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn non_chunked_five_errors_too_many() {
+    let d = small_descriptor();
+    let s = encode_md1_string(&d).expect("encode_md1_string");
+    let dp_len = data_part_len(&s);
+    // 5 distinct, well-spaced positions across the data-part (mirrors
+    // Cell 5's chunked-case pattern). Position 0 is included; the
+    // intent is to exercise the BCH-correction capacity exhaustion, not
+    // the chunked-flag-bit branch.
+    let positions: [usize; 5] = [0, dp_len / 5, 2 * dp_len / 5, 3 * dp_len / 5, dp_len - 1];
+    let masks: [u8; 5] = [0b00001, 0b00010, 0b00100, 0b01000, 0b10000];
+    let mut bad = s.clone();
+    for (&p, &m) in positions.iter().zip(&masks) {
+        bad = corrupt_chunk_at(&bad, p, m);
+    }
+    let err = decode_with_correction(&[bad.as_str()])
+        .expect_err("5-error pattern must not decode successfully");
+    match err {
+        Error::TooManyErrors { chunk_index, bound } => {
+            assert_eq!(chunk_index, 0, "the only chunk is index 0");
+            assert_eq!(bound, 8, "BCH(93,80,8) singleton bound is 8");
+        }
+        other => panic!("expected TooManyErrors, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cell 10: chunked-flag-set + only 1 string supplied → ChunkSetIncomplete.
+//
+// This is the SPEC v0.30 §2.3 ambiguity edge: post-correction, the first
+// 5-bit symbol's bit 0 is set (== 1 → chunked) but the caller provided only
+// 1 input string. Per plan §2.D.1, surface as the existing
+// `ChunkSetIncomplete` variant (no new error kind).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn non_chunked_chunked_flag_corruption_yields_chunk_set_incomplete() {
+    // Take a multi-chunk descriptor's chunked-form chunk[0] and supply it
+    // alone — the chunk header's chunked-flag bit is set, but only 1 string
+    // is provided, so `decode_with_correction` must reject with
+    // `ChunkSetIncomplete`.
+    let d = multi_chunk_descriptor();
+    let chunks = split(&d).expect("split multi-chunk");
+    assert!(
+        chunks.len() >= 2,
+        "multi-chunk descriptor must split into 2+ chunks; got {}",
+        chunks.len()
+    );
+    let single = &chunks[0];
+    let err = decode_with_correction(&[single.as_str()])
+        .expect_err("chunked-form with only 1 string must not decode");
+    match err {
+        Error::ChunkSetIncomplete { got, expected } => {
+            assert_eq!(got, 1, "exactly 1 string supplied");
+            assert_eq!(
+                expected,
+                chunks.len(),
+                "expected count matches chunk-set size"
+            );
+        }
+        other => panic!("expected ChunkSetIncomplete, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cell 11: full round-trip parity vs encode_md1_string (zero-error).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn non_chunked_round_trip_parity_via_encode_md1_string() {
+    // Confirms `encode_md1_string` ↔ `decode_with_correction(&[s])` is a
+    // bit-identity round-trip for non-chunked-form inputs.
+    let d = small_descriptor();
+    let s = encode_md1_string(&d).expect("encode_md1_string");
+    let (decoded, details) =
+        decode_with_correction(&[s.as_str()]).expect("non-chunked decode succeeds");
+    assert_eq!(decoded, d, "round-trip preserves descriptor");
+    assert!(details.is_empty(), "no corrections for clean round-trip");
+    // Sanity: re-encode the decoded form and compare with the original
+    // string to catch any subtle decode-side normalization drift.
+    let s2 = encode_md1_string(&decoded).expect("re-encode_md1_string");
+    assert_eq!(s, s2, "re-encoded string matches the original byte-for-byte");
 }
