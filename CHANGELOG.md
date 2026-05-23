@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [0.6.1] — 2026-05-23
 
-**SemVer-PATCH — process argv-hardening (`PR_SET_DUMPABLE`).** `md` now calls `prctl(PR_SET_DUMPABLE, 0)` at the top of `main()` (Linux; no-op elsewhere), making `/proc/$PID/` unreadable to OTHER non-root UIDs and disabling core dumps — so a secret passed inline on argv can no longer be harvested by another user via `/proc/$PID/cmdline` or a core file. Residual same-UID window documented + accepted. New `process_hardening` module + `libc` dep. Part of the m-format constellation argv-hardening rollout (mnemonic-toolkit v0.34.7 + ms-cli v0.4.1 + mk-cli v0.4.2). Companion FOLLOWUP `argv-hardening-pr-set-dumpable`.
+**SemVer-PATCH — process argv-hardening (`PR_SET_DUMPABLE`).** `md` now calls `prctl(PR_SET_DUMPABLE, 0)` at the top of `main()` (Linux; no-op elsewhere), making `/proc/$PID/` unreadable to OTHER non-root UIDs and disabling core dumps — so a secret passed inline on argv can no longer be harvested by another user via `/proc/$PID/cmdline` or a core file. Residual same-UID window documented + accepted. New `process_hardening` module + `libc` dep. Part of the m-format constellation argv-hardening rollout (mnemonic-toolkit v0.34.7 + ms-cli v0.4.1 + mk-cli v0.4.2). Tracked via the toolkit's `argv-overwrite-after-parse` FOLLOWUP closure.
 
 ## md-codec [0.35.0] — 2026-05-17
 
