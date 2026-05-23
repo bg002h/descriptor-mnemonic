@@ -6,6 +6,7 @@ mod compile;
 mod error;
 mod format;
 mod parse;
+mod process_hardening;
 
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
@@ -221,6 +222,8 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    // v0.6.1: deny other-UID /proc/$PID/cmdline reads + core dumps.
+    process_hardening::set_non_dumpable();
     let cli = Cli::parse();
     match dispatch(cli.command) {
         Ok(code) => ExitCode::from(code),
