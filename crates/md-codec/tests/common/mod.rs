@@ -239,7 +239,7 @@ pub fn descriptor_strategy() -> BoxedStrategy<Descriptor> {
         });
 
     let tr_multi_a = (2u8..=16u8, 1u8..=16u8)
-        .prop_filter("k<=n-1", |(n, k)| *k <= n - 1)
+        .prop_filter("k<=n-1", |(n, k)| *k < *n)
         .prop_map(|(n, k)| {
             let leaf = multikeys(Tag::MultiA, k, (1..n).collect());
             let tree = Node {
