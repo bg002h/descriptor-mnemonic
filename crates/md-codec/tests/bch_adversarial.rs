@@ -2,8 +2,11 @@
 mod common;
 
 use common::corrupt_chunk_at;
-use md_codec::chunk::{decode_with_correction, split};
+use md_codec::bitstream::{BitReader, BitWriter};
+use md_codec::chunk::{ChunkHeader, decode_with_correction, reassemble, split};
+use md_codec::codex32::{unwrap_string, wrap_payload};
 use md_codec::encode::Descriptor;
+use md_codec::error::Error;
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
@@ -197,4 +200,90 @@ fn t2i_one_chunk_over_t_never_returns_original() {
             "a 5-error chunk-0 corruption must never reassemble to the original"
         );
     }
+}
+
+// ── Cross-chunk validation (T2e/f/g) ────────────────────────────────────────
+// restamp_chunk_header: decode a chunk to (header, payload-bits), mutate the
+// 37-bit ChunkHeader, re-encode with a freshly recomputed BCH checksum (so the
+// per-chunk hard-verify passes and the mutated header reaches reassemble's
+// cross-chunk checks). The identity case `restamp(c, |_| {}) == c` is proven by
+// restamp_identity_round_trips below.
+fn restamp_chunk_header(chunk: &str, mutate: impl FnOnce(&mut ChunkHeader)) -> String {
+    let (bytes, bit_count) = unwrap_string(chunk).expect("valid chunk");
+    let mut reader = BitReader::with_bit_limit(&bytes, bit_count);
+    let mut header = ChunkHeader::read(&mut reader).expect("valid chunk header");
+    mutate(&mut header);
+    let mut writer = BitWriter::new();
+    header.write(&mut writer).expect("mutated header writes");
+    // copy the remaining data bits (bit_count - 37) verbatim, MSB-first
+    while reader.remaining_bits() > 0 {
+        let take = reader.remaining_bits().min(32);
+        let bits = reader.read_bits(take).expect("read remaining payload bits");
+        writer.write_bits(bits, take);
+    }
+    let new_bytes = writer.into_bytes();
+    wrap_payload(&new_bytes, bit_count).expect("re-wrap with recomputed BCH")
+}
+
+// Step-1a proof: the identity restamp reproduces every chunk byte-for-byte, AND
+// the fixture splits into >=3 chunks (T2f needs index-gap room).
+#[test]
+fn restamp_identity_round_trips() {
+    let chunks = split(&multi_chunk_descriptor()).unwrap();
+    assert!(
+        chunks.len() >= 3,
+        "fixture must split into >=3 chunks; got {}",
+        chunks.len()
+    );
+    for c in &chunks {
+        assert_eq!(
+            &restamp_chunk_header(c, |_| {}),
+            c,
+            "identity restamp must reproduce the chunk"
+        );
+    }
+}
+
+// T2e — count mismatch across the set → ChunkSetInconsistent (unit variant).
+#[test]
+fn t2e_reassemble_rejects_count_mismatch() {
+    let chunks = split(&multi_chunk_descriptor()).unwrap();
+    let mut cs = chunks.clone();
+    cs[0] = restamp_chunk_header(&cs[0], |h| h.count = h.count.wrapping_add(1));
+    let refs: Vec<&str> = cs.iter().map(String::as_str).collect();
+    assert!(matches!(
+        reassemble(&refs),
+        Err(Error::ChunkSetInconsistent)
+    ));
+}
+
+// T2f — duplicate index 0 → a gap at the missing index → ChunkIndexGap.
+#[test]
+fn t2f_reassemble_rejects_index_gap() {
+    let chunks = split(&multi_chunk_descriptor()).unwrap();
+    assert!(chunks.len() >= 3, "need >=3 chunks; enlarge the fixture");
+    let mut cs = chunks.clone();
+    cs[1] = restamp_chunk_header(&cs[1], |h| h.index = 0); // duplicate index 0
+    let refs: Vec<&str> = cs.iter().map(String::as_str).collect();
+    assert!(matches!(
+        reassemble(&refs),
+        Err(Error::ChunkIndexGap { .. })
+    ));
+}
+
+// T2g — every header carries a foreign csid (header-consistent) but the reassembled
+// payload derives a different csid → ChunkSetIdMismatch.
+#[test]
+fn t2g_reassemble_rejects_derived_csid_mismatch() {
+    let chunks = split(&multi_chunk_descriptor()).unwrap();
+    let foreign: u32 = 0x0_AAAA;
+    let cs: Vec<String> = chunks
+        .iter()
+        .map(|c| restamp_chunk_header(c, |h| h.chunk_set_id = foreign))
+        .collect();
+    let refs: Vec<&str> = cs.iter().map(String::as_str).collect();
+    assert!(matches!(
+        reassemble(&refs),
+        Err(Error::ChunkSetIdMismatch { .. })
+    ));
 }
