@@ -140,7 +140,10 @@ fn zero_error_passthrough() {
     let refs: Vec<&str> = chunks.iter().map(|s| s.as_str()).collect();
     let (decoded, details) = decode_with_correction(&refs).expect("clean decode");
     assert_eq!(decoded, d, "round-trip preserves descriptor");
-    assert!(details.is_empty(), "no corrections expected for clean input");
+    assert!(
+        details.is_empty(),
+        "no corrections expected for clean input"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +266,11 @@ fn multi_chunk_one_corrupted() {
     let refs: Vec<&str> = input.iter().map(|s| s.as_str()).collect();
     let (decoded, details) = decode_with_correction(&refs).expect("multi-chunk decode");
     assert_eq!(decoded, d, "round-trip restores descriptor");
-    assert_eq!(details.len(), 1, "exactly 1 correction across the chunk set");
+    assert_eq!(
+        details.len(),
+        1,
+        "exactly 1 correction across the chunk set"
+    );
     let det: &CorrectionDetail = &details[0];
     assert_eq!(
         det.chunk_index, target_idx,
@@ -293,7 +300,10 @@ fn non_chunked_zero_error_passthrough() {
     let (decoded, details) =
         decode_with_correction(&[s.as_str()]).expect("non-chunked decode succeeds");
     assert_eq!(decoded, d, "round-trip preserves descriptor");
-    assert!(details.is_empty(), "no corrections expected for clean input");
+    assert!(
+        details.is_empty(),
+        "no corrections expected for clean input"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -423,5 +433,8 @@ fn non_chunked_round_trip_parity_via_encode_md1_string() {
     // Sanity: re-encode the decoded form and compare with the original
     // string to catch any subtle decode-side normalization drift.
     let s2 = encode_md1_string(&decoded).expect("re-encode_md1_string");
-    assert_eq!(s, s2, "re-encoded string matches the original byte-for-byte");
+    assert_eq!(
+        s, s2,
+        "re-encoded string matches the original byte-for-byte"
+    );
 }

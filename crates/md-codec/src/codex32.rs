@@ -21,7 +21,7 @@ pub(crate) const REGULAR_CHECKSUM_SYMBOLS: usize = 13;
 /// final symbol with zeros if `bit_count` is not a multiple of 5. Returns
 /// `ceil(bit_count / 5)` symbols. Each output u8 contains a 5-bit value.
 fn bits_to_symbols(payload_bytes: &[u8], bit_count: usize) -> Result<Vec<u8>, Error> {
-    let symbol_count = (bit_count + 4) / 5;
+    let symbol_count = bit_count.div_ceil(5);
     let mut r = BitReader::with_bit_limit(payload_bytes, bit_count);
     let mut symbols = Vec::with_capacity(symbol_count);
     for _ in 0..symbol_count {

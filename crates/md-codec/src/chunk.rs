@@ -560,8 +560,7 @@ pub fn decode_with_correction(
         // that happen to produce a degree-≤4 locator with 4 valid roots).
         let mut verify_input = crate::bch::hrp_expand("md");
         verify_input.extend_from_slice(&corrected);
-        let verify_residue =
-            crate::bch::polymod_run(&verify_input) ^ crate::bch::MD_REGULAR_CONST;
+        let verify_residue = crate::bch::polymod_run(&verify_input) ^ crate::bch::MD_REGULAR_CONST;
         if verify_residue != 0 {
             return Err(Error::TooManyErrors {
                 chunk_index,

@@ -73,8 +73,7 @@ fn corrupt_at(chunk: &str, pos: usize, xor_mask: u8) -> String {
 fn extract_corrected_md1(stdout: &str) -> Option<String> {
     stdout
         .lines()
-        .filter(|l| !l.starts_with('#') && l.to_ascii_lowercase().starts_with("md1"))
-        .last()
+        .rfind(|l| !l.starts_with('#') && l.to_ascii_lowercase().starts_with("md1"))
         .map(String::from)
 }
 
@@ -145,8 +144,9 @@ fn parity_smoke_md_against_toolkit_v0_22_1() {
         stderr
     );
 
-    let toolkit_corrected = extract_corrected_md1(&stdout)
-        .unwrap_or_else(|| panic!("could not extract corrected md1 from toolkit stdout:\n{stdout}"));
+    let toolkit_corrected = extract_corrected_md1(&stdout).unwrap_or_else(|| {
+        panic!("could not extract corrected md1 from toolkit stdout:\n{stdout}")
+    });
 
     // 3. Cross-validate: toolkit's corrected chunk must equal md-codec's
     // re-encoded version. md-codec doesn't expose the corrected-string

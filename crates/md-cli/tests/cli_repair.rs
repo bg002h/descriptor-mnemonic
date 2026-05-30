@@ -50,7 +50,10 @@ fn encode_chunked(template: &str) -> Vec<String> {
         .filter(|l| l.starts_with("md1"))
         .map(String::from)
         .collect();
-    assert!(!chunks.is_empty(), "expected at least one chunk; got {chunks:?}");
+    assert!(
+        !chunks.is_empty(),
+        "expected at least one chunk; got {chunks:?}"
+    );
     chunks
 }
 
@@ -58,8 +61,7 @@ fn encode_chunked(template: &str) -> Vec<String> {
 /// hardened paths. Mirrors md-codec's `tests/bch_decode.rs::multi_chunk_descriptor`
 /// (per-cosigner path body ~180 bits × 4 cosigners ~720 bits — comfortably
 /// above the 320-bit single-string limit, so chunking is required).
-const MULTI_CHUNK_TEMPLATE: &str =
-    "wsh(sortedmulti(2,@0/1'/2'/3'/4'/5'/6'/7'/8'/9'/10'/11'/12'/13'/14'/15'/<0;1>/*,\
+const MULTI_CHUNK_TEMPLATE: &str = "wsh(sortedmulti(2,@0/1'/2'/3'/4'/5'/6'/7'/8'/9'/10'/11'/12'/13'/14'/15'/<0;1>/*,\
      @1/101'/102'/103'/104'/105'/106'/107'/108'/109'/110'/111'/112'/113'/114'/115'/<0;1>/*,\
      @2/201'/202'/203'/204'/205'/206'/207'/208'/209'/210'/211'/212'/213'/214'/215'/<0;1>/*,\
      @3/301'/302'/303'/304'/305'/306'/307'/308'/309'/310'/311'/312'/313'/314'/315'/<0;1>/*))";
@@ -348,7 +350,11 @@ fn repair_json_multi_chunk_envelope_shape() {
     let repairs = envelope["repairs"]
         .as_array()
         .expect("repairs must be a JSON array");
-    assert_eq!(repairs.len(), 1, "exactly 1 corrupted chunk → 1 repair entry");
+    assert_eq!(
+        repairs.len(),
+        1,
+        "exactly 1 corrupted chunk → 1 repair entry"
+    );
     let r0 = &repairs[0];
     assert_eq!(
         r0["chunk_index"],

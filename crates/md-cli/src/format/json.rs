@@ -14,6 +14,8 @@ fn hex(bytes: &[u8]) -> String {
     s
 }
 
+// Mirror surface added in v0.31.0; not yet wired into the JSON emit path.
+#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct JsonHeader {
     pub version: u8,
@@ -28,6 +30,7 @@ impl From<&Header> for JsonHeader {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct JsonChunkHeader {
     pub version: u8,

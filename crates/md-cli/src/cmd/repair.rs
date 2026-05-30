@@ -16,7 +16,7 @@
 //!   - 0 — every input chunk was already valid (no corrections applied)
 //!   - 5 — at least one chunk had corrections applied (REPAIR_APPLIED)
 //!   - 2 — atomic-fail: BCH-uncorrectable / HRP-mismatch / parse-reject;
-//!         caller's named-chunk error surfaces on stderr
+//!     caller's named-chunk error surfaces on stderr
 //!
 //! Text output mirrors `mnemonic repair`'s text-form report shape (see
 //! `mnemonic-toolkit/src/cmd/repair.rs::emit_repair_text`). JSON output
@@ -142,8 +142,7 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
     }
 
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
-    let corrected_chunks: Vec<String> =
-        reports.iter().map(|r| r.corrected_chunk.clone()).collect();
+    let corrected_chunks: Vec<String> = reports.iter().map(|r| r.corrected_chunk.clone()).collect();
 
     if args.json {
         emit_json(&corrected_chunks, &reports)?;

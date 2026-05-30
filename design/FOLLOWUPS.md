@@ -1842,3 +1842,12 @@ If you are **closing** an item, edit its entry from `Status: open` → `Status: 
 - **What:** The `mnemonic-gui` GUI mirrors this CLI's clap-derive flag surface at pinned tag `descriptor-mnemonic-md-cli-v0.4.3`. Any flag add / remove / rename / `conflicts_with` / `required_unless_present_any` change in this repo's CLI surface must land in lockstep with a companion `mnemonic-gui` PR that bumps the schema + the `pinned-upstream.toml` tag for this CLI. The `mnemonic-gui` CI gate runs `cargo install --locked --git <this-repo> --tag <pin>` + `cargo test --test schema_mirror`, so drift surfaces as a CI failure.
 - **Status:** `open` (mirror-invariant; tracking only — every flag-surface PR carries this lockstep work).
 - **Tier:** `v1 / mirror-invariant`
+
+---
+
+### `stable-rust-1-95-toolchain-fmt-clippy-drift` — origin/main pre-existing CI-red under stable rust 1.95.0
+
+- **Surfaced:** 2026-05-29, during the md-codec test-hardening cycle (Theme 1 execution). A stable-toolchain advance to rust 1.95.0 (rustfmt 1.9.0-stable, 2026-04-14) introduced new rustfmt wrapping rules + clippy lints that origin/main predates, so `cargo fmt --all --check` (`ci.yml:57`) AND `cargo clippy --workspace --all-targets -- -D warnings` (`ci.yml:47`) both fail on a *clean* origin/main — independent of any cycle change. This is the descriptor-mnemonic analog of the mk-codec cycle's `rustfmt-drift-fn-signature-collapse-3-files`.
+- **What shipped (2026-05-29).** A `chore` commit on `md-codec-test-hardening` brings the tree into stable-1.95.0 compliance: `cargo +stable fmt --all` (5 files: md-cli `repair.rs`/`cli_repair.rs`, md-codec `chunk.rs`/`bch_decode.rs`/`parity_smoke.rs`) + 4 clippy fixes — `manual_div_ceil` → `.div_ceil()` (`codex32.rs:24`); `filter(..).last()` → `.rfind(..)` (`parity_smoke.rs:74`); `doc_overindented_list_items` (`repair.rs:19` doc continuation); `dead_code` `#[allow]` on the unwired `JsonHeader`/`JsonChunkHeader` mirror structs (`format/json.rs`, added v0.31.0). All mechanical / no behavior change; full md-codec + md-cli suites stay green.
+- **Status:** resolved 2026-05-29 on the `md-codec-test-hardening` branch (lands on main with that branch's merge). NOTE: master/main remains latently CI-red under stable 1.95.0 until this branch merges.
+- **Tier:** repo-hygiene (toolchain-advance drift).
