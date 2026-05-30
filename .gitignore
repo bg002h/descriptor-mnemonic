@@ -15,3 +15,6 @@
 
 # Loose work-in-progress notes (not for the repo)
 debris/
+
+# proptest shrink-regression corpora (per-test-file, nested)
+**/proptest-regressions/
