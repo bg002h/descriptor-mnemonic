@@ -4,6 +4,10 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.6.2] — 2026-06-01
+
+**SemVer-PATCH — output-class advisory (Phase 2, Task B3).** Adds 3 inert-subcommand negative cells to `cli_output_class.rs`: `verify_emits_no_advisory`, `vectors_emits_no_advisory`, `gui_schema_emits_no_advisory`. Each asserts that `verify`, `vectors`, and `gui-schema` emit none of the three advisory lines on stderr. Part of the m-format constellation output-class advisory rollout (mnemonic-toolkit v0.38.2 + ms-cli v0.5.1). Test-only, no binary change.
+
 ## md-cli [0.6.1] — 2026-05-23
 
 **SemVer-PATCH — process argv-hardening (`PR_SET_DUMPABLE`).** `md` now calls `prctl(PR_SET_DUMPABLE, 0)` at the top of `main()` (Linux; no-op elsewhere), making `/proc/$PID/` unreadable to OTHER non-root UIDs and disabling core dumps — so a secret passed inline on argv can no longer be harvested by another user via `/proc/$PID/cmdline` or a core file. Residual same-UID window documented + accepted. New `process_hardening` module + `libc` dep. Part of the m-format constellation argv-hardening rollout (mnemonic-toolkit v0.34.7 + ms-cli v0.4.1 + mk-cli v0.4.2). Tracked via the toolkit's `argv-overwrite-after-parse` FOLLOWUP closure.

@@ -288,3 +288,43 @@ fn compile_json_emits_template() {
         "compile json: expected TEMPLATE_LINE on stderr"
     );
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// inert subcommands — must NOT emit any advisory line
+// ──────────────────────────────────────────────────────────────────────────
+
+fn assert_no_advisory(stderr: &str) {
+    for line in [PRIVATE_KEY_LINE, WATCH_ONLY_LINE, TEMPLATE_LINE] {
+        assert!(!stderr.contains(line), "inert command emitted an advisory: {stderr}");
+    }
+}
+
+#[test]
+fn verify_emits_no_advisory() {
+    // verify a known md1 against its template — exits 0 (OK), inert output.
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["verify", MD1_FIXTURE, "--template", "wpkh(@0/<0;1>/*)"])
+        .output()
+        .unwrap();
+    assert_no_advisory(&String::from_utf8(out.stderr).unwrap());
+}
+
+#[test]
+fn vectors_emits_no_advisory() {
+    // `md vectors` regenerates test-vector files; pass a tempdir to avoid cwd pollution.
+    let dir = tempfile::tempdir().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["vectors", "--out", dir.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_no_advisory(&String::from_utf8(out.stderr).unwrap());
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn gui_schema_emits_no_advisory() {
+    let out = Command::cargo_bin("md").unwrap().arg("gui-schema").output().unwrap();
+    assert_no_advisory(&String::from_utf8(out.stderr).unwrap());
+}
