@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [0.6.2] — 2026-06-01
 
-**SemVer-PATCH — output-class advisory (Phase 2, Task B3).** Adds 3 inert-subcommand negative cells to `cli_output_class.rs`: `verify_emits_no_advisory`, `vectors_emits_no_advisory`, `gui_schema_emits_no_advisory`. Each asserts that `verify`, `vectors`, and `gui-schema` emit none of the three advisory lines on stderr. Part of the m-format constellation output-class advisory rollout (mnemonic-toolkit v0.38.2 + ms-cli v0.5.1). Test-only, no binary change.
+**SemVer-PATCH — output-class stderr advisory (constellation cycle B, Phase 2).** `md decode`, `md encode`, `md inspect`, `md bytecode`, `md repair` (successful correction), and `md compile` now emit `note: stdout is a keyless descriptor template (no keys)` on stderr. `md address` (key-bound output) emits `note: stdout is watch-only — public keys only, cannot spend`. Inert subcommands (`verify`, `vectors`, `gui-schema`) emit no advisory. Adds `src/output_advisory.rs` with emit helpers; wires them across 7 handlers. stderr-only — no stdout change, no flag additions. Part of the m-format constellation output-class advisory rollout (mnemonic-toolkit v0.38.2 + ms-cli v0.5.1).
+
+- **Tests:** adds `cli_output_class.rs` integration suite covering text + `--json` advisory presence for each emitting handler, inert-subcommand negative cells (verify/vectors/gui-schema), and a `md repair` error-path cell asserting exit 2 + no advisory when input is irrecoverably corrupt.
 
 ## md-cli [0.6.1] — 2026-05-23
 

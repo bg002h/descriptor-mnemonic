@@ -289,6 +289,29 @@ fn compile_json_emits_template() {
     );
 }
 
+/// Error path: input exceeds BCH correction capacity → repair exits non-zero, no advisory.
+/// The load-bearing assertion is `assert_no_advisory`; exit 2 is the observed reliable code
+/// for "chunk has more than 8 errors; uncorrectable".
+#[test]
+fn repair_error_path_emits_no_advisory() {
+    // Corrupt 10+ symbols of MD1_FIXTURE (same 24-char length, valid codex32
+    // alphabet) — well beyond BCH capacity (t=4, 8-error budget), so repair
+    // exits 2 ("more than 8 errors; uncorrectable") with no advisory.
+    let irreparably_corrupt = "md1zqzqqzqqzztzhzzzznzzz";
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["repair", irreparably_corrupt])
+        .output()
+        .expect("invoke md repair");
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "expected exit 2 (irrecoverable); stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_no_advisory(&String::from_utf8(out.stderr).unwrap());
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // inert subcommands — must NOT emit any advisory line
 // ──────────────────────────────────────────────────────────────────────────
