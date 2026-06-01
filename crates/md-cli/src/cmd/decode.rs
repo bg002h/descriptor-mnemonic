@@ -21,11 +21,19 @@ pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
             serde_json::to_value(JsonDescriptor::from(&descriptor)).unwrap(),
         );
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        crate::output_advisory::emit_output_class_advisory(
+            crate::output_advisory::OutputClass::Template,
+            &mut std::io::stderr(),
+        );
         return Ok(0);
     }
     let _ = json;
 
     let template = text::descriptor_to_template(&descriptor)?;
     println!("{template}");
+    crate::output_advisory::emit_output_class_advisory(
+        crate::output_advisory::OutputClass::Template,
+        &mut std::io::stderr(),
+    );
     Ok(0)
 }

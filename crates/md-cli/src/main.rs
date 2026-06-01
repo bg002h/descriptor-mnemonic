@@ -5,6 +5,7 @@ mod cmd;
 mod compile;
 mod error;
 mod format;
+mod output_advisory;
 mod parse;
 mod process_hardening;
 
