@@ -1851,3 +1851,12 @@ If you are **closing** an item, edit its entry from `Status: open` → `Status: 
 - **What shipped (2026-05-29).** A `chore` commit on `md-codec-test-hardening` brings the tree into stable-1.95.0 compliance: `cargo +stable fmt --all` (5 files: md-cli `repair.rs`/`cli_repair.rs`, md-codec `chunk.rs`/`bch_decode.rs`/`parity_smoke.rs`) + 4 clippy fixes — `manual_div_ceil` → `.div_ceil()` (`codex32.rs:24`); `filter(..).last()` → `.rfind(..)` (`parity_smoke.rs:74`); `doc_overindented_list_items` (`repair.rs:19` doc continuation); `dead_code` `#[allow]` on the unwired `JsonHeader`/`JsonChunkHeader` mirror structs (`format/json.rs`, added v0.31.0). All mechanical / no behavior change; full md-codec + md-cli suites stay green.
 - **Status:** resolved 2026-05-29 on the `md-codec-test-hardening` branch (lands on main with that branch's merge). NOTE: master/main remains latently CI-red under stable 1.95.0 until this branch merges.
 - **Tier:** repo-hygiene (toolchain-advance drift).
+
+### `output-type-stderr-advisory-sibling-sweep-mk-md` — add the output-class stderr advisory to this CLI (constellation cycle B, Phase 2)
+
+- **Surfaced:** 2026-05-31, mnemonic-toolkit cycle B Phase 1 ship (mnemonic + ms shipped the always-emit 3-class stderr advisory).
+- **What:** Add the always-emit one-line stderr classification of stdout's security nature — byte-identical wording to `mnemonic-toolkit/crates/mnemonic-toolkit/src/secret_advisory.rs` (`warning: stdout carries private key material (can spend) …` / `note: stdout is watch-only …` / `note: stdout is a keyless descriptor template (no keys)`) — to every output-producing subcommand; inert subcommands emit nothing. mk → watch-only (decode/derive/address/inspect). md → template (decode/encode — md1 is the keyless template, the class's first real exercise) + watch-only (address). Cross-repo byte-parity test.
+- **Why deferred:** non-secret outputs; benign interim silence (over-caution, no fund-loss path) vs the secret-bearing mnemonic/ms surfaces shipped in Phase 1.
+- **Status:** open. PATCH (stderr-only); crates.io re-publish. Bound: close before the next `install.sh` sibling-pin bump.
+- **Tier:** `next-cycle`
+- **Companion:** `mnemonic-toolkit` FOLLOWUP `output-type-stderr-advisory-sibling-sweep-mk-md` + `output-type-stderr-advisory` (Phase 1).
