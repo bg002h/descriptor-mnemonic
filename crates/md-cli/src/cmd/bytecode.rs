@@ -27,6 +27,10 @@ pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
             "hex": hex,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
+        crate::output_advisory::emit_output_class_advisory(
+            crate::output_advisory::OutputClass::Template,
+            &mut std::io::stderr(),
+        );
         return Ok(0);
     }
     let _ = json;
@@ -38,5 +42,9 @@ pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
         print!("{b:02x}");
     }
     println!();
+    crate::output_advisory::emit_output_class_advisory(
+        crate::output_advisory::OutputClass::Template,
+        &mut std::io::stderr(),
+    );
     Ok(0)
 }

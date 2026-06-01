@@ -66,6 +66,10 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             );
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        crate::output_advisory::emit_output_class_advisory(
+            crate::output_advisory::OutputClass::Template,
+            &mut std::io::stderr(),
+        );
         return Ok(0);
     }
 
@@ -92,5 +96,9 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // effect. Status: wont-fix at v0.15.2 (FOLLOWUPS v0.15.1-phase-2-low-1).
     // Revisit only if a real long-code mode is reintroduced.
     let _ = args.force_long_code;
+    crate::output_advisory::emit_output_class_advisory(
+        crate::output_advisory::OutputClass::Template,
+        &mut std::io::stderr(),
+    );
     Ok(0)
 }

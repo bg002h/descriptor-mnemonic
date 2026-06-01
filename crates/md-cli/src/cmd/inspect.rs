@@ -39,6 +39,10 @@ pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
             serde_json::to_value(JsonHash::from(&pid)).unwrap(),
         );
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        crate::output_advisory::emit_output_class_advisory(
+            crate::output_advisory::OutputClass::Template,
+            &mut std::io::stderr(),
+        );
         return Ok(0);
     }
     let _ = json;
@@ -55,6 +59,10 @@ pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
     println!(
         "wallet-policy-id-fingerprint: {}",
         text::fmt_policy_id_fingerprint(&pid)
+    );
+    crate::output_advisory::emit_output_class_advisory(
+        crate::output_advisory::OutputClass::Template,
+        &mut std::io::stderr(),
     );
     Ok(0)
 }

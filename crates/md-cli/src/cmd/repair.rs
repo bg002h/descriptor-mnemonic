@@ -150,6 +150,10 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
         emit_text(&corrected_chunks, &reports);
     }
 
+    crate::output_advisory::emit_output_class_advisory(
+        crate::output_advisory::OutputClass::Template,
+        &mut std::io::stderr(),
+    );
     Ok(if any_correction { 5 } else { 0 })
 }
 

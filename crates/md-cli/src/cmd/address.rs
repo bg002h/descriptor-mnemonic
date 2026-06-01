@@ -54,6 +54,10 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
             "addresses": addresses,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
+        crate::output_advisory::emit_output_class_advisory(
+            crate::output_advisory::OutputClass::WatchOnly,
+            &mut std::io::stderr(),
+        );
         return Ok(0);
     }
     let _ = args.json;
@@ -62,6 +66,10 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
     for (_, _, addr) in &rows {
         println!("{addr}");
     }
+    crate::output_advisory::emit_output_class_advisory(
+        crate::output_advisory::OutputClass::WatchOnly,
+        &mut std::io::stderr(),
+    );
     Ok(0)
 }
 
