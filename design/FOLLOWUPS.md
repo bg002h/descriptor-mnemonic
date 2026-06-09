@@ -1870,3 +1870,13 @@ If you are **closing** an item, edit its entry from `Status: open` → `Status: 
 - **Status:** open (docs).
 - **Tier:** `docs`
 - **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::miniscript-compiler-optimize-policy` (re-scoped to "surface md's compiler") + `descriptor-builder-engine` (its deferred optimizer points here).
+
+### `md-codec-sortedmulti-a-to-miniscript-rendering-gap` — `to_miniscript` cannot render `SortedMultiA` (md-codec pins crates.io miniscript 13.0.0, which lacks the fragment)
+
+- **Surfaced:** 2026-06-08, toolkit Cycle A (`toolkit-trmultia-nums-internal-key`). Companion mirror filed 2026-06-09 (the toolkit-side primary is `mnemonic-toolkit/design/FOLLOWUPS.md::md-codec-sortedmulti-a-to-miniscript-rendering-gap`).
+- **Where:** `crates/md-codec/src/to_miniscript.rs:407-411` — `(Tag::SortedMultiA, Body::MultiKeys {..})` unconditionally `Err("…rust-miniscript v13 has no Terminal::SortedMultiA fragment")`. (`Tag::MultiA` at `:394-398` DOES render.) md-codec's `Cargo.toml` pins `miniscript = 13.0.0` (crates.io). NOTE: this is a md-codec **pin + missing-arm** gap, not a true upstream gap — rust-miniscript git rev `95fdd1c` HAS `Terminal::SortedMultiA` (the toolkit uses that rev and renders `tr(sortedmulti_a)` fine via its own `build_descriptor_string`).
+- **What:** a wallet-policy md1 whose tree is `Tr{…, SortedMultiA}` cannot be lowered to a `miniscript::Descriptor` by md-codec — so any consumer using `to_miniscript_descriptor`/`derive_address` on it errors. Options: (a) bump md-codec's miniscript pin to a rev with `SortedMultiA` + add the `to_miniscript.rs` arm; (b) lower `sortedmulti_a` → sorted `multi_a` at build time (semantically equivalent for taproot script-path; needs NO miniscript bump — md-codec already renders `multi_a`); (c) wontfix.
+- **NOTE — no longer blocks toolkit restore.** `mnemonic restore --md1` (toolkit v0.49.1, `restore-multisig-taproot-reconstruction`) now reconstructs `tr-sortedmulti-a` by routing AROUND md-codec entirely (reads the tree + builds/derives via the toolkit's own miniscript). This gap remains for md-codec-native consumers (`md address`, `md decode → derive`); option (b) is the recommended close.
+- **Status:** `open`
+- **Tier:** `next-cycle`
+- **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::md-codec-sortedmulti-a-to-miniscript-rendering-gap` (primary) + `restore-multisig-taproot-reconstruction` (now routes around this).
