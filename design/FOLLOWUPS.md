@@ -7,6 +7,17 @@ Single source of truth for items that surfaced during a review or implementation
 **Format for each entry:**
 
 ```markdown
+### `audit-2026-06-10-backlog` — verified findings from the first independent Fable constellation audit
+
+- **Surfaced:** 2026-06-10, the 23-agent read-only architecture audit (find → adversarial-verify → synthesize). 48 verified findings constellation-wide (0 critical); this repo's share below. **Full report + per-finding detail (claim/evidence/fix/disposition):** `../../mnemonic-toolkit/design/agent-reports/constellation-architecture-audit-2026-06-10.md` (committed in the toolkit repo). Promote any line to its own `### <id>` entry when worked; resolve here as fixed.
+- **This repo's verified findings (4):**
+  - **[minor]** `taptree-leaf-validator-shallow` — The tap-script-tree leaf validator descends only through Tag::TapTree internal nodes; for any non-TapTree node it treats the node as a leaf and checks ONLY that node's own root tag against is_forbidde (`crates/md-codec/src/validate.rs:145-169`)
+  - **[obs]** `multi-a-key-count-capped-at-32` — The multi-family wire layout encodes (k-1) and (n-1) in 5 bits each, so both k and n are limited to 1..=32. On encode, write_node validates (1..=32).contains for k and indices.len() and rejects larger (`crates/md-codec/src/tree.rs:106-121, crates/md-codec/src/tree.rs:226-237`)
+  - **[obs]** `sortedmulti-a-derive-gap-fenced` — A tr(sortedmulti_a(...)) md1 string encodes (tag 0x09), decodes back to the AST cleanly and passes decoder validation, but to_miniscript_descriptor cannot build an address because the pinned rust-mini (`crates/md-codec/src/to_miniscript.rs:406-411`)
+  - **[obs]** `tlv-rollback-7bit-tolerance` — On any TLV parse failure the decoder rolls back and treats the trailing bits as padding when remaining_at_entry_start <= 7. The codex32 single-string path only ever leaves <=4 bits of symbol-padding,  (`crates/md-codec/src/tlv.rs:286-302`)
+- **Status:** open (backlog index; individual items dispositioned in the report).
+- **Tier:** audit-backlog.
+
 ### `<short-id>` — <one-line title>
 
 - **Surfaced:** Phase X.Y review of commit <SHA>, or "inline TODO at <file>:<line>"
