@@ -26,9 +26,12 @@ pub enum OutputClass {
 /// byte-parity test). Inert outputs do NOT call this.
 pub fn emit_output_class_advisory<W: Write>(class: OutputClass, stderr: &mut W) {
     let line = match class {
-        OutputClass::PrivateKeyMaterial =>
-            "warning: stdout carries private key material (can spend) \u{2014} redirect or encrypt (e.g. '> file.txt' or '| age -e ...')",
-        OutputClass::WatchOnly => "note: stdout is watch-only \u{2014} public keys only, cannot spend",
+        OutputClass::PrivateKeyMaterial => {
+            "warning: stdout carries private key material (can spend) \u{2014} redirect or encrypt (e.g. '> file.txt' or '| age -e ...')"
+        }
+        OutputClass::WatchOnly => {
+            "note: stdout is watch-only \u{2014} public keys only, cannot spend"
+        }
         OutputClass::Template => "note: stdout is a keyless descriptor template (no keys)",
     };
     let _ = writeln!(stderr, "{line}");

@@ -21,23 +21,49 @@ const CODEX32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
 #[test]
 fn byte_parity_advisory_lines() {
-    assert_eq!(PRIVATE_KEY_LINE, "warning: stdout carries private key material (can spend) \u{2014} redirect or encrypt (e.g. '> file.txt' or '| age -e ...')");
-    assert_eq!(WATCH_ONLY_LINE, "note: stdout is watch-only \u{2014} public keys only, cannot spend");
-    assert_eq!(TEMPLATE_LINE, "note: stdout is a keyless descriptor template (no keys)");
+    assert_eq!(
+        PRIVATE_KEY_LINE,
+        "warning: stdout carries private key material (can spend) \u{2014} redirect or encrypt (e.g. '> file.txt' or '| age -e ...')"
+    );
+    assert_eq!(
+        WATCH_ONLY_LINE,
+        "note: stdout is watch-only \u{2014} public keys only, cannot spend"
+    );
+    assert_eq!(
+        TEMPLATE_LINE,
+        "note: stdout is a keyless descriptor template (no keys)"
+    );
 }
 
 #[test]
 fn decode_text_emits_template_advisory() {
-    let out = Command::cargo_bin("md").unwrap().args(["decode", MD1_FIXTURE]).output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["decode", MD1_FIXTURE])
+        .output()
+        .unwrap();
     assert!(out.status.success());
-    assert!(String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE));
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE)
+    );
 }
 
 #[test]
 fn decode_json_emits_template_advisory() {
-    let out = Command::cargo_bin("md").unwrap().args(["decode", "--json", MD1_FIXTURE]).output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["decode", "--json", MD1_FIXTURE])
+        .output()
+        .unwrap();
     assert!(out.status.success());
-    assert!(String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE), "json branch missed the advisory");
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
+        "json branch missed the advisory"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -51,9 +77,15 @@ fn encode_text_emits_template() {
         .args(["encode", "wpkh(@0/<0;1>/*)"])
         .output()
         .unwrap();
-    assert!(out.status.success(), "encode exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "encode exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "encode text: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -65,9 +97,15 @@ fn encode_json_emits_template() {
         .args(["encode", "--json", "wpkh(@0/<0;1>/*)"])
         .output()
         .unwrap();
-    assert!(out.status.success(), "encode --json exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "encode --json exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "encode json: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -83,9 +121,15 @@ fn inspect_text_emits_template() {
         .args(["inspect", MD1_FIXTURE])
         .output()
         .unwrap();
-    assert!(out.status.success(), "inspect exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "inspect exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "inspect text: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -97,9 +141,15 @@ fn inspect_json_emits_template() {
         .args(["inspect", "--json", MD1_FIXTURE])
         .output()
         .unwrap();
-    assert!(out.status.success(), "inspect --json exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "inspect --json exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "inspect json: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -115,9 +165,15 @@ fn bytecode_text_emits_template() {
         .args(["bytecode", MD1_FIXTURE])
         .output()
         .unwrap();
-    assert!(out.status.success(), "bytecode exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "bytecode exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "bytecode text: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -129,9 +185,15 @@ fn bytecode_json_emits_template() {
         .args(["bytecode", "--json", MD1_FIXTURE])
         .output()
         .unwrap();
-    assert!(out.status.success(), "bytecode --json exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "bytecode --json exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "bytecode json: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -178,7 +240,11 @@ fn corrupt_at_for_repair(chunk: &str, pos: usize, xor_mask: u8) -> String {
 #[test]
 fn repair_emits_template() {
     let chunks = encode_chunked_for_repair("wpkh(@0/<0;1>/*)");
-    assert_eq!(chunks.len(), 1, "single-chunk fixture must produce exactly 1 chunk; got {chunks:?}");
+    assert_eq!(
+        chunks.len(),
+        1,
+        "single-chunk fixture must produce exactly 1 chunk; got {chunks:?}"
+    );
     let valid = &chunks[0];
     // Corrupt position 10 (past the chunk-header region) — same idiom as cli_repair.rs.
     let corrupted = corrupt_at_for_repair(valid, 10, 0b10110);
@@ -195,7 +261,9 @@ fn repair_emits_template() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "repair: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -212,8 +280,7 @@ fn account_xpub(path: &str) -> String {
     use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
     use bitcoin::secp256k1::Secp256k1;
     use std::str::FromStr;
-    const ABANDON: &str =
-        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const ABANDON: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     let mn = bip39::Mnemonic::parse(ABANDON).unwrap();
     let seed = mn.to_seed("");
     let secp = Secp256k1::new();
@@ -229,12 +296,24 @@ fn address_text_emits_watch_only() {
     let key_arg = format!("@0={xpub}");
     let out = Command::cargo_bin("md")
         .unwrap()
-        .args(["address", "--template", "wpkh(@0/<0;1>/*)", "--key", &key_arg])
+        .args([
+            "address",
+            "--template",
+            "wpkh(@0/<0;1>/*)",
+            "--key",
+            &key_arg,
+        ])
         .output()
         .unwrap();
-    assert!(out.status.success(), "address exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(WATCH_ONLY_LINE),
+        out.status.success(),
+        "address exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(WATCH_ONLY_LINE),
         "address text: expected WATCH_ONLY_LINE on stderr (not template)"
     );
 }
@@ -245,12 +324,25 @@ fn address_json_emits_watch_only() {
     let key_arg = format!("@0={xpub}");
     let out = Command::cargo_bin("md")
         .unwrap()
-        .args(["address", "--json", "--template", "wpkh(@0/<0;1>/*)", "--key", &key_arg])
+        .args([
+            "address",
+            "--json",
+            "--template",
+            "wpkh(@0/<0;1>/*)",
+            "--key",
+            &key_arg,
+        ])
         .output()
         .unwrap();
-    assert!(out.status.success(), "address --json exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(WATCH_ONLY_LINE),
+        out.status.success(),
+        "address --json exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(WATCH_ONLY_LINE),
         "address json: expected WATCH_ONLY_LINE on stderr (not template)"
     );
 }
@@ -267,9 +359,15 @@ fn compile_emits_template() {
         .args(["compile", "pk(@0)", "--context", "segwitv0"])
         .output()
         .unwrap();
-    assert!(out.status.success(), "compile exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "compile exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "compile text: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -282,9 +380,15 @@ fn compile_json_emits_template() {
         .args(["compile", "--json", "pk(@0)", "--context", "segwitv0"])
         .output()
         .unwrap();
-    assert!(out.status.success(), "compile --json exited non-zero; stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        String::from_utf8(out.stderr).unwrap().contains(TEMPLATE_LINE),
+        out.status.success(),
+        "compile --json exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8(out.stderr)
+            .unwrap()
+            .contains(TEMPLATE_LINE),
         "compile json: expected TEMPLATE_LINE on stderr"
     );
 }
@@ -318,7 +422,10 @@ fn repair_error_path_emits_no_advisory() {
 
 fn assert_no_advisory(stderr: &str) {
     for line in [PRIVATE_KEY_LINE, WATCH_ONLY_LINE, TEMPLATE_LINE] {
-        assert!(!stderr.contains(line), "inert command emitted an advisory: {stderr}");
+        assert!(
+            !stderr.contains(line),
+            "inert command emitted an advisory: {stderr}"
+        );
     }
 }
 
@@ -348,6 +455,10 @@ fn vectors_emits_no_advisory() {
 #[cfg(feature = "json")]
 #[test]
 fn gui_schema_emits_no_advisory() {
-    let out = Command::cargo_bin("md").unwrap().arg("gui-schema").output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .arg("gui-schema")
+        .output()
+        .unwrap();
     assert_no_advisory(&String::from_utf8(out.stderr).unwrap());
 }
