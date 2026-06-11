@@ -1900,3 +1900,23 @@ If you are **closing** an item, edit its entry from `Status: open` → `Status: 
 - **Status:** `open`
 - **Tier:** `next-cycle`
 - **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::md-codec-sortedmulti-a-to-miniscript-rendering-gap` (primary) + `restore-multisig-taproot-reconstruction` (now routes around this).
+
+### `encode-accepts-k-greater-than-n` — encoder accepts k > n multi/thresh bodies that decode rejects (`KGreaterThanN`)
+
+- **Surfaced:** 2026-06-11, stress Cycle B (proptest fragment/domain/nesting expansion) P8, `design/BRAINSTORM_proptest_fragment_domain_expansion.md` [Q5] @ 69b7a74.
+- **Where:** `crates/md-codec/src/tree.rs:90-121` — `write_node`'s `Body::Variable`/`Body::MultiKeys` arms gate only the 1..=32 ranges for `k` and the child/index count; nothing enforces `k ≤ n`. Decode-side `tree.rs:229-231` (multi-family) and `:241-243` (thresh) reject `k > count` with `Error::KGreaterThanN`.
+- **What:** `encode_payload` (and therefore `encode_md1_string`/`split`) successfully encodes e.g. `wsh(multi(3, @0, @1))` — k=3-of-n=2 — producing an md1 string/chunk set that `decode_payload` then rejects. An **engrave-but-can't-restore** gap, same family as the toolkit Cycle-A find (`bundle-accepts-sortedmulti-in-combinator-restore-cannot`): a card can be engraved that no decoder will ever read back. Pinned LOUDLY by the characterization test `p8_encode_accepts_k_greater_than_n_decode_rejects` in `crates/md-codec/tests/proptest_to_miniscript.rs` (encode Ok + decode `Err(KGreaterThanN { k: 3, n: 2 })`); when the encoder gate lands the cell goes red — invert it and resolve this entry.
+- **Why deferred:** Cycle B is harness-only (test-only, NO-BUMP per the stress-program charter); adding the encoder-side `k ≤ n` gate is library code with its own wire-compat review — its own cycle.
+- **Status:** `open`
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::encode-accepts-k-greater-than-n` (toolkit-side companion, filed by the Cycle-B orchestrator per the cross-repo convention).
+
+### `upstream-miniscript-taptree-depth2-display-asymmetry` — pinned miniscript 13.0.0 Displays depth-2 taptrees as malformed strings its own parser rejects
+
+- **Surfaced:** 2026-06-11, stress Cycle B P6 bring-up (`design/BRAINSTORM_proptest_fragment_domain_expansion.md` @ 69b7a74) — the property went red on `tr(K,{{a,b},c})` shapes; reduced to a PURE-upstream repro (zero md-codec involvement), independently re-reproduced by the impl reviewer.
+- **Where (upstream):** rust-miniscript **13.0.0** (crates.io, md-codec's pin) — `TapTree::combine(TapTree::combine(a,b), c)` → `Descriptor::new_tr(K, Some(tree)).to_string()` emits `tr(K,{{pk(a),pk(b),pk(c)}})` instead of `tr(K,{{pk(a),pk(b)},pk(c)})`, and miniscript's OWN `Descriptor::from_str` rejects that output with `IncorrectNumberOfChildren { description: "taptree branch", n_children: 1, min: 2, max: 2 }`. The correctly-written depth-2 string parses Ok but re-Displays broken with the SAME checksum → Display is the faulty side. 2-leaf `{a,b}` is unaffected.
+- **What (md-codec exposure):** md-codec's wire round-trip, `to_miniscript_descriptor`, and `derive_address` are all UNAFFECTED (none transit the string form); the blast radius is any consumer that STRINGIFIES the converted descriptor for a ≥3-leaf taptree (export, display, cross-tool hand-off) — the string is unparseable by miniscript itself. Pinned LOUDLY by the characterization cell `upstream_taptree_depth2_display_asymmetry` (`crates/md-codec/tests/proptest_to_miniscript.rs` — converter+derivation+wire asserted Ok; reparse asserted Err with an "UPSTREAM FIXED?" flip message), and the Cycle-B T generator is minimally constrained to taptree depth ≤ 1 (`tests/common/mod.rs::t_tr_tree` doc comment).
+- **Actions on close:** (1) check upstream for/report the bug (precedent: `external-pr-1-hash-terminals` → rust-bitcoin/rust-miniscript#935); (2) on a miniscript bump past the fix: the flip cell goes red → invert it, restore the depth-2 arm in `t_tr_tree`, resolve this entry.
+- **Status:** `open`
+- **Tier:** `upstream`
+- **Companion:** none yet — `mnemonic-toolkit` pins a DIFFERENT miniscript (git rev `95fdd1c`); its exposure is unverified. Verify before mirroring (if 95fdd1c shares the Display bug, the toolkit's descriptor-string emit paths for ≥3-leaf taptrees are affected and a toolkit entry is due).

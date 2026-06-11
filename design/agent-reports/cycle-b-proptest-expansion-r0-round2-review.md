@@ -1,0 +1,61 @@
+# R0 Review — Cycle B proptest expansion (round 2)
+
+Reviewer: Fable 5 architect agent (ac2033981cff874ca), 2026-06-11.
+Target: design/BRAINSTORM_proptest_fragment_domain_expansion.md (R1 fold) @ 69b7a74.
+Persisted verbatim per CLAUDE.md convention BEFORE the fold.
+
+## Verdict: RED
+
+Working tree verified clean at HEAD `69b7a74` (only the spec + round-1 review untracked, unchanged from start; scratch test file deleted after run, nothing committed). Pinned deps re-verified from Cargo.lock: miniscript 13.0.0, bitcoin 0.32.8. The folds are substantially correct — 8 of 11 round-1 findings fully resolved, all fold-added citations check out, and the P6 oracle chain was proven viable end-to-end on concrete wsh / tr-NUMS / tr-multi_a(2-of-16) cases (PartialEq exists, NUMS reparses to an equal Descriptor, addresses agree). But one round-1 Critical is incompletely folded and the [Q6] fold introduced a real spurious-failure trap, both proven empirically.
+
+## Critical
+
+- **[C1′] The C1 fold's tap-sanity criterion — "every spend path is signature-bearing" — is NECESSARY but NOT SUFFICIENT: the Tr reparse branch also enforces NON-MALLEABILITY, and the folded grammar still generates failing leaves through the Bdu pool.** Two concrete holes, both proven against pinned 13.0.0:
+  1. The tap-leaf constraint (spec :216–220) restricts the **B-pool** ("drops bare locks/hashes and sigless or_i/thresh arms") but the combinator productions draw their dissatisfiable first args from the **global Bdu pool (:206–209), which includes hashlocks**. `tr(X,or_d(sha256(h),pk(Y)))` is generatable under the folded text and fails reparse with `AnalysisError(SiglessBranch)` — the preimage path carries no signature.
+  2. Even when every path IS sig-bearing, `sanity_check` rejects malleable leaves: `tr(X,andor(sha256(h),pk(Y),pk(Z)))` — both paths require a signature — **fails reparse with `AnalysisError(Malleable)`**. "Sig-bearing combinators only" does not encode this. (`thresh(1,sha256(h),s:pk)` also fails, `SiglessBranch`.)
+  Either shape makes P6's "MUST reparse" leg permanently red on tap cases through no codec bug. Fix: restate rule (a) as "every tap leaf must pass `sanity_check` — signature-bearing AND non-malleable"; concretely, the **tap-context Bdu pool is keys only** (`pk(@i)`, `pk_h(@i)`, `multi_a`, recursively `or_d(Bdu_tap, Bdu_tap)`) — hashlocks and timelocks appear in tap leaves ONLY under `v:` inside `and_v(v:<lock|hash>, <sig-B>)` (proven sane: `and_v(v:sha256(h),pk)` constructs, reparses, and derives — my t6). Each tap production retained in the final grammar must have an empirical sanity proof in the round-1/2 evidence or be re-verified at implementation time.
+
+## Important
+
+- **[I1′] The [Q6] W-tier TLV fold has no enforcement mechanism and no n cap — payload-budget overflow is reachable WITHIN all folded caps, proven: `Err(ChunkCountExceedsMax{needed:65})`.** Spec :159–163 budgets only TREE bits (≤24 nodes ≈ 6.3k) and the debug assertion enforces only the node count; :171–179 says "TLV bits count against the payload budget" but names no mechanism. A `Body::MultiKeys` leaf is ONE node carrying up to 32 indices (tree.rs:34–40), so the node cap does not bound n; the existing `n_strategy` pattern biases TOWARD 31/32. Measured: n=32 + pubkeys (≈16.9k bits) + fingerprints + divergent 3-deep paths + a 12-node tree with **2** hash leaves = 20,403 bits — 77 bits under the 20,480 cliff; with **3** hash leaves = 20,677 bits → `split` errors. That shape is decode-valid, ≤24 nodes, k≤n, "occasionally attaches" TLVs — i.e. the folded W strategy emits it, and P1/P4/P5's `.expect` red spuriously. Fix (pick one, state it): cap W-tier n ≤ 8 whenever pubkeys/fingerprints TLVs are attached, OR extend the debug assertion to measure `encode_payload(...).1 ≤ 20,480` (better: a margin, e.g. ≤ 18,000) per generated case.
+- **[I2′] P6 step 4's claim "the only oracle not derived from the converter under test" is FALSE — `derive_address` IS the converter under test plus two lines.** `Descriptor::derive_address` (derive.rs:92–133) calls `crate::to_miniscript::to_miniscript_descriptor(self, chain)` then `at_derivation_index(index).address(network)` — identical to what step 4's left side computes on the reparsed descriptor. Given step 3 (reparsed `==` constructed, PartialEq) and determinism, step 4's *equality* is implied; its real marginal value is only "derive_address succeeds end-to-end" (at_derivation_index + address don't error). The fold copied round-1 I4's own mis-premise. P6 therefore has **no independent address oracle** — unlike Cycle A's rust-miniscript differential. Fix: reword the rationale (the genuinely independent leg in P6 is `from_str` itself — rust-miniscript's parser); and anchor independence in the oracle self-test cells by pinning **golden address literals** for the fixed known-good descriptors (the address_derivation.rs golden-vector pattern), not just "through P6". Also fix the pseudo-signature: it is a method, `c.derive_address(chain, index, Network)` → `Address<NetworkUnchecked>` (`.assume_checked()` before comparing) — not `derive_address(&c, 0, 0)`.
+
+## Minor
+
+- **[M1] C3-for-tr mechanism is implied, not stated**: :153–158's two mechanisms are phrased for combinator roots; the tr parenthetical names the n=0 hazard but not the fix. Add: "for tr roots, the designated key-bearing branch is a taptree leaf drawn from the key-bearing pool (or use a non-NUMS `@0` internal key)."
+- **[M2] The per-descriptor timelock-class XOR (:222–224) is stricter than miniscript's actual rule — note it as a deliberate coverage trade.** Measured: mixing is checked **per spend path within the same class**; `older(144)` + `after(700000)` in ONE path reparses Ok (so the spec correctly permits rel+abs together), and rel-height in leaf A + rel-time in leaf B ALSO reparses Ok — which the spec's descriptor-wide XOR forgoes. Safe as written (no spurious failures); one sentence saying "stricter than required, intentionally" prevents a future cycle from "fixing" it blind.
+- **[M3] Citation micro-drift, cosmetic**: `KeyCountOutOfRange` Err is origin_path.rs:112 (range check at :111, cited 105–111 covers the doc+check); chunk.rs `>64` check at :250 with Err at :251. Both fine.
+
+## Fold verification table
+
+| Round-1 finding | Resolved? | Notes |
+|---|---|---|
+| C1 tap sanity-by-construction | **PARTIAL** | Timelock-class rule verified safe (stricter than per-path reality, allows rel+abs — both empirically confirmed); @i-at-most-once sufficient (distinct account xpubs; differential adds no collision since both sides share at_derivation_index). But sig-bearing ≠ sane: malleability unhandled + tap-Bdu hashlock hole → **C1′** |
+| C2 locktime domains | **YES** | :104–113 measured domains correct; P7 rel-bad = {0}∪{bit-31}; out-of-mask values pinned Ok with v0.53.9 citation (:110–113, :271–272); no stale BIP-68-mask framing anywhere (grep clean) |
+| C3 ≥1 key guarantee | **YES** (minor gap) | Two mechanisms stated :153–158; tr path acknowledged but mechanism implicit → M1 |
+| I1 or_d Bdu recursion | **YES** | Bdu pool has `or_d(Bdu, Bdu)` (:208); `or_d(Bdu, B)` remains only in the B-production list (:205), which is correct |
+| I2 per-context caps | **YES** | :194–198 (Legacy ≤15/depth 2/≤6 keys; Segwitv0 ≤20; tap ≤16); 21..=32 in P7 (:247–248); verified: wsh multi n=21 → clean `Err(AddressDerivationFailed{"…maximum size is 20"})`, no panic |
+| I3 payload budget | **PARTIAL** | T-tier n≤16 ✓ (t6b: n=16 encodes/derives fine); W-tier node cap + debug assertion ✓ for tree bits; TLV-attachment path unbudgeted → **I1′** (overflow proven) |
+| I4 P6 oracle | **PARTIAL** | Vacuous rendering oracle dropped ✓; reparse-PartialEq verified viable (PartialEq impl confirmed by compile; fixed-point holds for wsh, tr-NUMS, tr-multi_a-16) ✓; address differential works but independence claim false → **I2′** |
+| I5 key cap 32 | **YES** | :192 "derive **32**" |
+| M1–M4 | **YES** | decode.rs:36–44 ✓, validate.rs:164–169 ✓ (both re-verified at HEAD); dev-dep wording fixed :130–131; descriptor_from_tree reuse stated :133–136 and verified at common/mod.rs:166–196 |
+| Q5 P8 + k>n pin | **YES** | :250–257; encode range gates (tree.rs / origin_path.rs:111–112) return clean Err; FOLLOWUP named, scope-excluded from fixing (:283–284) |
+| Q6 W TLV randomization | **PARTIAL** | Present with correct constraints + citations; budget mechanism missing → **I1′** |
+
+Fold-added citation spot-check at HEAD — all good: canonicalize.rs:221–232 = exactly the four `remap_tlv_vec` TLV arms; chunk.rs:250–251 = `>64 → ChunkCountExceedsMax`; origin_path.rs:105–112 = `KeyCountOutOfRange` 1..=32 gate; common/mod.rs:166–196 = `descriptor_from_tree` renumber logic; validate.rs:117–138 = `validate_multipath_consistency` uniform alt-count.
+
+Scope/sequencing confirmed: NO-BUMP holds (test-only + a FOLLOWUPS.md docs entry for P8); `#![cfg(feature = "derive")]` on the new test file is correct AND mandatory — `to_miniscript` is itself `#[cfg(feature = "derive")]` (lib.rs:34–35), feature exists and is default-on (Cargo.toml:22–23).
+
+## Evidence log
+
+(scratch file `crates/md-codec/tests/r2_scratch.rs`, run via `cargo test -p md-codec --test r2_scratch -- --nocapture`, deleted after; 10/10 + rerun pass)
+
+- **t1**: `_assert_partialeq::<miniscript::Descriptor<DescriptorPublicKey>>()` compiles → PartialEq confirmed on pinned 13.0.0.
+- **t2** (timelock mixing, via `from_str` so the Tr sanity branch fires): rel+abs same path `and_v(v:older(144),and_v(v:after(700000),pk))` → **Ok**; rel-height+rel-time same path (`older(144)`+`older(0x00400090)`) → Err(HeightTimelockCombination); abs-height+abs-time same path → Err(HeightTimelockCombination); rel-height leaf A + rel-time leaf B (separate leaves) → **Ok** (spec rule stricter than needed → M2).
+- **t3**: tap `or_d(sha256(h),pk)` → **Err(SiglessBranch)**; tap `andor(sha256(h),pk,pk)` → **Err(Malleable)** ← the C1′ smoking gun; tap `thresh(1,sha256,s:pk)` → Err(SiglessBranch); same `or_d(sha256,pk)` under wsh → Ok (no sanity branch, as round 1 found).
+- **t5/t6/t6b** (P6 chain end-to-end: canon → encode/decode exact → `to_miniscript_descriptor(&c,0)` → to_string → from_str → PartialEq → `at_derivation_index(0).address(Bitcoin)` vs `c.derive_address(0,0,Bitcoin)`): wsh(and_v(v:pk(@0),older(144))) ✓ addr `bc1qjxmk4…`; tr(NUMS, and_v(v:sha256(h),pk(@0))) ✓ — NUMS renders as raw x-only hex, reparses to an EQUAL Descriptor — addr `bc1ptwhka…`; tr(NUMS, multi_a(2, @0..@15)) n=16 full-TLV ✓.
+- **t7/t8/t9** (P7 classes): wsh(and_v(v:sortedmulti(1,@0,@1),older(1))) and wsh(c:or_i(pk_k(@0),pk_h(@1))) both wire-round-trip EXACTLY (encode→decode == canon) and refuse cleanly (`AddressDerivationFailed`: "sole child of wsh/sh" / "cannot wrap a fragment of type B"); wsh(multi(2, 21 keys)) wire-round-trips and refuses "invalid threshold 2-of-21; maximum size is 20" — all clean Err, no panics.
+- **t10** (W budget): n=32 + 32 pubkeys + 32 fingerprints + divergent 3-deep + Multi(2,0..32) tree with 2 sha256 leaves → 20,403 bits, split **Ok** (64 chunks, 77 bits spare); with 3 sha256 leaves → 20,677 bits, split → **Err(ChunkCountExceedsMax{needed:65})** — within every folded W-tier cap (12 nodes ≪ 24).
+- Source reads at HEAD: derive.rs:92–133 (derive_address = pre-flight + `to_miniscript_descriptor(self, chain)` + at_derivation_index + address); to_miniscript.rs:53–62 (public fn, takes `&Descriptor, chain`), :304–323 (Check idempotence arm), :417–428 (SortedMulti/SortedMultiA refusals), :487–499 (`build_multi_threshold` → `Threshold::new` → `failed` = AddressDerivationFailed), :510–512; tree.rs:18–57 (Body::MultiKeys = indices not nodes; Body::Tr); lib.rs:34–35 (`#[cfg(feature="derive")] pub mod to_miniscript`); Cargo.toml:22–23 (`default=["derive"]`). Stale-text grep over the spec: no "BIP-68 mask" draft framing, no "33" xpub count, no string-equality P6 oracle, no `or_d(Bdu,B)`-in-Bdu — all clean.
+
+**Path to GREEN**: three folds — (1) tap Bdu = keys-only + sanity_check (not just sig-bearing) as the stated invariant [C1′]; (2) a concrete W-tier TLV/n budget mechanism [I1′]; (3) reword step-4 independence + golden-address anchor cells [I2′] — plus the two minor sentences. All are spec-text-only; no design direction changes.
