@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "md-codec"
-version = "0.35.0"
+version = "0.35.1"
 dependencies = [
  "bip39",
  "bitcoin",

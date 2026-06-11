@@ -303,6 +303,23 @@ where
         }
         (Tag::Check, Body::Children(children)) => {
             arity_eq(node.tag, children.len(), 1)?;
+            // Check-idempotence (`to-miniscript-check-pkh-double-wrap`): a
+            // `Tag::Check` over a BARE key tag denotes the same fragment as the
+            // bare tag — both mean `c:pk_k`/`c:pk_h` (type B), and the PkK/PkH
+            // arms above already re-apply `Check`. Wrapping a second `Check`
+            // yields `Check(Check(PkH))` = `c:` over type-B → "cannot wrap a
+            // fragment of type B". The toolkit walker (non-tap context) and
+            // pre-v0.30 md-cli cards both emit this `Tag::Check(Tag::PkK/PkH)`
+            // wire shape, and such cards are already engraved — the renderer
+            // must accept it. A `Tag::Check` whose child is NOT a bare key
+            // (`Check(Check(..))`, shape C `Check(or_i(pk_k,pk_k))`) still
+            // double-wraps below and correctly errors — never a wrong descriptor.
+            if matches!(
+                (&children[0].tag, &children[0].body),
+                (Tag::PkK | Tag::PkH, Body::KeyArg { .. })
+            ) {
+                return node_to_miniscript::<Ctx>(&children[0], keys);
+            }
             Terminal::Check(Arc::new(node_to_miniscript::<Ctx>(&children[0], keys)?))
         }
         (Tag::Verify, Body::Children(children)) => {

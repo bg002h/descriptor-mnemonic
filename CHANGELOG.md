@@ -4,6 +4,20 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.35.1] — 2026-06-11
+
+**SemVer-PATCH — `to_miniscript` accepts the `Tag::Check(Tag::PkK/PkH)` wire shape (renderer-tolerance; unblocks faithful restore of key-check policies).**
+
+### Fixed
+
+- **`to-miniscript-check-pkh-double-wrap`.** `node_to_miniscript` (`src/to_miniscript.rs`) rendered a key-check node twice: the `Tag::PkK`/`PkH` arms re-apply `Check` to the bare key (correct: `Check(PkK)` = `pk()`, type B), but the `Tag::Check` arm then wrapped a SECOND `Check` → `Check(Check(PkH))` = `c:` over type-B → "fragment «c:pkh(…)» cannot wrap a fragment of type B". A wire `Tag::Check(Tag::PkK/PkH)` — emitted by the `mnemonic-toolkit` walker in non-tap context and by pre-v0.30 md-cli cards (both already engraved on steel) — therefore failed to render. The `Tag::Check` arm now collapses idempotently: a `Check` over a BARE key tag returns the child's render directly (the PkK/PkH arms already apply `Check`). Strictly error→success — no currently-rendering input changes output; a `Check` over a non-bare-key child (`Check(Check(..))`, shape C `Check(or_i(pk_k,pk_k))`) still correctly errors (never a wrong descriptor). Multi-keyed policies were never affected (`multi()` keys bypass the key-check arms).
+- Unblocks `mnemonic-toolkit`'s v0.54.0 `restore --md1` faithful reconstruction for `pk(@N)`/`pkh(@N)`-keyed wallet policies (the toolkit surfaced a clear refusal citing this slug; after a `cargo update -p md-codec` they reconstruct through the existing general arm with no toolkit code change).
+- Tests (`tests/address_derivation.rs`): `wsh_check_pkh_renders_same_as_bare_pkh` + `wsh_check_pk_k_explicit_node_renders_same_as_bare` (RED-proven) assert the `Check(PkH)`/`Check(PkK)` wire renders identically to the bare md-cli-canonical form; `wsh_check_or_i_shape_c_still_errors` pins the deferred shape-C boundary (still errors, never mis-renders).
+
+### Notes
+
+No wire-format / encode / public-API change → renderer-tolerance PATCH. md-cli's `md-codec` exact-pin bumps `=0.35.0` → `=0.35.1` (md-cli unchanged; zero `to_miniscript` usage). SPEC + R0 GREEN: `design/SPEC_to_miniscript_check_pkh_double_wrap.md`, `design/agent-reports/to-miniscript-check-pkh-double-wrap-r0-round1-review.md`. Deferred A2 (type-directed `want_k` rendering, closes shape C) tracked as a follow-up. Companion: `mnemonic-toolkit` FOLLOWUP `to-miniscript-check-pkh-double-wrap` (PART 2 of the restore C1 fix).
+
 ## md-cli [0.6.2] — 2026-06-01
 
 **SemVer-PATCH — output-class stderr advisory (constellation cycle B, Phase 2).** `md decode`, `md encode`, `md inspect`, `md bytecode`, `md repair` (successful correction), and `md compile` now emit `note: stdout is a keyless descriptor template (no keys)` on stderr. `md address` (key-bound output) emits `note: stdout is watch-only — public keys only, cannot spend`. Inert subcommands (`verify`, `vectors`, `gui-schema`) emit no advisory. Adds `src/output_advisory.rs` with emit helpers; wires them across 7 handlers. stderr-only — no stdout change, no flag additions. Part of the m-format constellation output-class advisory rollout (mnemonic-toolkit v0.38.2 + ms-cli v0.5.1).

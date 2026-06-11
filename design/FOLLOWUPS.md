@@ -55,6 +55,14 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ---
 
+### `to-miniscript-check-pkh-double-wrap` — ✓ RESOLVED (md-codec 0.35.1, 2026-06-11)
+
+- **Surfaced:** 2026-06-11, the `mnemonic-toolkit` restore C1 deep-dive (companion to toolkit v0.54.0). `node_to_miniscript` (`src/to_miniscript.rs`) rendered a key-check node twice — the `Tag::PkK`/`PkH` arms re-apply `Check`, and the `Tag::Check` arm wrapped a SECOND `Check` → `Check(Check(PkH))` = `c:` over type-B → "cannot wrap a fragment of type B". A wire `Tag::Check(Tag::PkK/PkH)` (toolkit non-tap walker + pre-v0.30 md-cli cards, both already on steel) failed to render, blocking faithful restore of `pk(@N)`/`pkh(@N)`-keyed policies.
+- **Resolution:** Tier A1 Check-idempotence collapse in the `Tag::Check` arm — a `Check` over a BARE key tag returns the child's render directly (the PkK/PkH arms already apply `Check`). Strictly error→success; shape C (`Check(or_i(pk_k,pk_k))`) still errors (deferred to A2, never mis-renders). md-codec PATCH 0.35.1 + md-cli exact-pin `=0.35.1` (zero md-cli code). SPEC `design/SPEC_to_miniscript_check_pkh_double_wrap.md`; R0 GREEN r1 (`design/agent-reports/to-miniscript-check-pkh-double-wrap-r0-round1-review.md`). Tests in `tests/address_derivation.rs` (RED-proven).
+- **Companion:** `mnemonic-toolkit` FOLLOWUP `to-miniscript-check-pkh-double-wrap` (PART 2 of the restore C1 fix; after a `cargo update -p md-codec` the toolkit's v0.54.0 general arm reconstructs the flagship with no toolkit code change).
+- **Deferred A2** (type-directed `want_k` rendering — closes shape C `Check(or_i(pk_k,pk_k))`): file if a wallet policy with a key inside `or_i`-under-`c:` ever surfaces; A1 covers every toolkit-emitted bundle shape.
+- **Tier:** cross-repo (resolved).
+
 ## Open items
 
 ### `md-codec-decode-with-correction-public-api` — promote BCH primitives + `decode_with_correction` for md HRP
