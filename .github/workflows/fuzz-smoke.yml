@@ -49,13 +49,17 @@ jobs:
         with:
           toolchain: nightly-2026-04-27
           components: rust-src
+          targets: x86_64-unknown-linux-gnu
       - name: Install cargo-fuzz
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
       - name: Build all fuzz targets
         working-directory: fuzz
-        run: cargo +nightly-2026-04-27 fuzz build
+        # Pin the gnu target: on the runner cargo-fuzz otherwise defaults to
+        # the musl host triple, and ASan is incompatible with musl's static
+        # libc ("sanitizer is incompatible with statically linked libc").
+        run: cargo +nightly-2026-04-27 fuzz build --target x86_64-unknown-linux-gnu
 
   smoke:
     name: cargo fuzz run (60s smoke)
@@ -79,13 +83,15 @@ jobs:
         with:
           toolchain: nightly-2026-04-27
           components: rust-src
+          targets: x86_64-unknown-linux-gnu
       - name: Install cargo-fuzz
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
       - name: Smoke-run ${{ matrix.target }}
         working-directory: fuzz
-        run: cargo +nightly-2026-04-27 fuzz run ${{ matrix.target }} -- -max_total_time=60
+        # Pin the gnu target (see the build job's note re: musl/ASan).
+        run: cargo +nightly-2026-04-27 fuzz run ${{ matrix.target }} --target x86_64-unknown-linux-gnu -- -max_total_time=60
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v5
