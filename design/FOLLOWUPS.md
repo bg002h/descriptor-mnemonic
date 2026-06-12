@@ -920,6 +920,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **What:** Add a d: wrapper round-trip fixture using a Vz-type child (e.g., `d:v:older(144)` if v:older is V and z; or hand-construct the AST in `tests/taproot.rs`). Exercises `Tag::DupIf = 0x0F`. The wrapper byte is wire-format-supported and exercised by encoder/decoder symmetric arms; only the corpus pin is missing.
 - **Why deferred:** Same as `v06-corpus-or-c-coverage` and `v06-corpus-j-n-wrapper-coverage`. Not blocking ship; defensive corpus growth.
 - **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `d_wrapper_tap_leaf_byte_form` hand-AST test in `crates/md-codec/src/bytecode/hand_ast_coverage.rs`: pins wire bytes for `d:v:older(144)` (= `Terminal::DupIf(Verify(Older))`) including LEB128(144) = `[0x90, 0x01]`.
+- **NOTE 2026-06-12 (re-grounded):** `hand_ast_coverage.rs` was REMOVED in the v0.12.0 strip (`5350f8a`) — that bytecode-layer pin no longer exists. The RENDER-layer equivalent (decoded `Node` → miniscript `d:`) is now covered by `tests/proptest_to_miniscript.rs::self_test_wsh_or_i_dupif_v_older` (golden `dv:older(144)` + mainnet address) plus the `t_segwit_tree` `seven` production under the P6 property (post-0.35.2 NO-BUMP GAP-2 cycle).
 - **Tier:** v0.6.x (closed)
 
 ### `v06-corpus-or-c-coverage` — add or_c tap-leaf round-trip vector
@@ -929,6 +930,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **What:** Add an or_c fixture using a B-typed wrapping like `tr(@0/**, t:or_c(pk(@1/**), v:pk(@2/**)))` (where `t:` desugars to `and_v(X, 1)` = B-type) OR construct the AST hand-coded in a unit test rather than via Descriptor::from_str. The Tag::OrC byte form needs corpus coverage; the parser reject is a typing constraint, not a wire-format issue.
 - **Why deferred:** Plan's per-Terminal coverage rule; not blocking v0.6.0 ship since OrC byte is wire-format-supported and exercised by encoder/decoder symmetric arms, just not pinned in a fixture.
 - **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `or_c_unwrapped_tap_leaf_byte_form` (encoder wire-byte pin) and `t_or_c_tap_leaf_round_trips` (full encode→decode→re-encode round-trip via `t:or_c` wrap) hand-AST tests.
+- **NOTE 2026-06-12 (re-grounded):** `hand_ast_coverage.rs` was REMOVED in the v0.12.0 strip (`5350f8a`); those bytecode-layer pins are gone. The RENDER-layer equivalent (decoded `Node` → miniscript `or_c`) is now covered by `tests/proptest_to_miniscript.rs::self_test_wsh_t_or_c_true` (golden `t:or_c(pk,v:pk)` + mainnet address) plus the `t_segwit_tree` `seven` production under the P6 property (post-0.35.2 NO-BUMP GAP-2 cycle).
 - **Tier:** v0.6+ (closed)
 
 ### `v06-corpus-j-n-wrapper-coverage` — add j: and n: wrapper tap-leaf round-trip vectors
@@ -938,6 +940,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **What:** Add round-trip fixtures for Tag::NonZero (0x11) and Tag::ZeroNotEqual (0x12). If the BIP 388 source-form policies don't naturally produce these wrappers, hand-construct the AST via `Terminal::NonZero(Arc::new(child))` / `Terminal::ZeroNotEqual(Arc::new(child))` in unit tests. Encoder + decoder arms exist and are byte-symmetric; only the corpus pin is missing.
 - **Why deferred:** Same as `v06-corpus-or-c-coverage`. Not blocking ship; defensive corpus growth.
 - **Status:** resolved md-codec-v0.7.0 (Phase 2). Added `j_wrapper_tap_leaf_byte_form` (`j:pk_k(a)` = `Terminal::NonZero(PkK)`) and `n_wrapper_tap_leaf_byte_form` (`n:c:pk_k(a)` = `Terminal::ZeroNotEqual(Check(PkK))`) hand-AST tests pinning wire-byte form for both wrappers.
+- **NOTE 2026-06-12 (re-grounded):** `hand_ast_coverage.rs` was REMOVED in the v0.12.0 strip (`5350f8a`); those bytecode-layer pins are gone. The RENDER-layer equivalents (decoded `Node` → miniscript `j:`/`n:`) are now covered by `tests/proptest_to_miniscript.rs::self_test_wsh_nonzero_pk` (golden `j:pk`) and `::self_test_wsh_or_i_zne_and_v` (golden `n:and_v(...)`), plus the `t_segwit_tree` `seven` production under the P6 property (post-0.35.2 NO-BUMP GAP-2 cycle).
 - **Tier:** v0.6+ (closed)
 
 ### `v07-cli-validate-signer-subset` — `md validate --signer <name> <bytecode>` CLI mode

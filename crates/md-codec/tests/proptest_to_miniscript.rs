@@ -293,6 +293,172 @@ fn self_test_sh_or_d_multi_pk() {
 }
 
 /// LOUD characterization of an UPSTREAM rust-miniscript 13.0.0
+// ─── GAP-2: the seven previously-unrendered fragment arms ───────────────
+// `to_miniscript.rs` had ZERO render-layer test for DupIf/NonZero/
+// ZeroNotEqual/OrB/OrC/True/False — the W strategy wire-generates them but
+// the render leg P6 runs only over T, which omitted all seven. Each cell
+// hosts the fragment in a valid typed wsh descriptor and pins the rendered
+// form (sugar INCLUDED: `or_i(X,0)`→`u:`, `and_v(X,1)`→`t:`, fused `dv:`/`tv:`
+// — miniscript never Displays a literal 0/1, so pinning the sugar consumer IS
+// the True/False contract) + a golden mainnet address. The reparse
+// fixed-point inside `p6_chain` is the mis-render oracle. These are the
+// render-layer replacement for the byte-layer pins lost when
+// `hand_ast_coverage.rs` was removed in the v0.12.0 strip (5350f8a;
+// FOLLOWUPs `v06-corpus-{d-wrapper,or-c,j-n-wrapper}-coverage`).
+
+#[test]
+fn self_test_wsh_or_b_pk_s_pk() {
+    let d = descriptor_with_pubkeys(wrap(
+        Tag::Wsh,
+        node2(
+            Tag::OrB,
+            keyarg(Tag::PkK, 0),
+            wrap(Tag::Swap, keyarg(Tag::PkK, 1)),
+        ),
+    ));
+    let rendered = to_miniscript_descriptor(&canon(&d), 0).unwrap().to_string();
+    assert!(rendered.contains("or_b("), "render: {rendered}");
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1q2epc9vj8hy2mzmh9uyaz9adhp4q9yvu0aygw2httyngv6c7ct5wseumd3l"
+    );
+}
+
+#[test]
+fn self_test_wsh_t_or_c_true() {
+    let d = descriptor_with_pubkeys(wrap(
+        Tag::Wsh,
+        node2(
+            Tag::AndV,
+            node2(
+                Tag::OrC,
+                keyarg(Tag::PkK, 0),
+                wrap(Tag::Verify, keyarg(Tag::PkK, 1)),
+            ),
+            Node {
+                tag: Tag::True,
+                body: Body::Empty,
+            },
+        ),
+    ));
+    let rendered = to_miniscript_descriptor(&canon(&d), 0).unwrap().to_string();
+    assert!(rendered.contains("t:or_c("), "render: {rendered}");
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1qh3wd6a5nn5ccgqg4hj7aj7mjtgwc39gjakyen2m25my4fx3vdx0q9nhznw"
+    );
+}
+
+#[test]
+fn self_test_wsh_or_i_dupif_v_older() {
+    let d = descriptor_with_pubkeys(wrap(
+        Tag::Wsh,
+        node2(
+            Tag::OrI,
+            keyarg(Tag::PkK, 0),
+            wrap(Tag::DupIf, wrap(Tag::Verify, timelock(Tag::Older, 144))),
+        ),
+    ));
+    let rendered = to_miniscript_descriptor(&canon(&d), 0).unwrap().to_string();
+    assert!(rendered.contains("dv:older(144)"), "render: {rendered}");
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1qre28e06mc7r8fyam0my2uegn096eygzvx52v9jzg07avehev3lws5nf5qc"
+    );
+}
+
+#[test]
+fn self_test_wsh_nonzero_pk() {
+    let d = descriptor_with_pubkeys(wrap(Tag::Wsh, wrap(Tag::NonZero, keyarg(Tag::PkK, 0))));
+    let rendered = to_miniscript_descriptor(&canon(&d), 0).unwrap().to_string();
+    assert!(rendered.contains("j:pk("), "render: {rendered}");
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1qewdar8ze6tynzushrg7fmnedlw4xm6q7vj6tmcey2kalwryy7ens08c3x0"
+    );
+}
+
+#[test]
+fn self_test_wsh_or_i_zne_and_v() {
+    let d = descriptor_with_pubkeys(wrap(
+        Tag::Wsh,
+        node2(
+            Tag::OrI,
+            keyarg(Tag::PkK, 0),
+            wrap(
+                Tag::ZeroNotEqual,
+                node2(
+                    Tag::AndV,
+                    wrap(Tag::Verify, keyarg(Tag::PkK, 1)),
+                    timelock(Tag::Older, 144),
+                ),
+            ),
+        ),
+    ));
+    let rendered = to_miniscript_descriptor(&canon(&d), 0).unwrap().to_string();
+    assert!(rendered.contains("n:and_v("), "render: {rendered}");
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1qjnwlx28qetpwdp3wfrv3emhhpc3dc2cya75qy3gzqfmzmn2ea36q8fx4y4"
+    );
+}
+
+#[test]
+fn self_test_wsh_or_i_false_u_sugar() {
+    let d = descriptor_with_pubkeys(wrap(
+        Tag::Wsh,
+        node2(
+            Tag::OrI,
+            keyarg(Tag::PkK, 0),
+            Node {
+                tag: Tag::False,
+                body: Body::Empty,
+            },
+        ),
+    ));
+    let rendered = to_miniscript_descriptor(&canon(&d), 0).unwrap().to_string();
+    assert!(rendered.contains("u:pk("), "render: {rendered}");
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1qly5mzr0gwyquj5jwllans468wnmwc89u27sf9xnqjcldswqwcdxsfms2dk"
+    );
+}
+
+#[test]
+fn self_test_wsh_and_v_true_t_sugar() {
+    let d = descriptor_with_pubkeys(wrap(
+        Tag::Wsh,
+        node2(
+            Tag::AndV,
+            wrap(Tag::Verify, keyarg(Tag::PkK, 0)),
+            Node {
+                tag: Tag::True,
+                body: Body::Empty,
+            },
+        ),
+    ));
+    let rendered = to_miniscript_descriptor(&canon(&d), 0).unwrap().to_string();
+    assert!(rendered.contains("tv:pk("), "render: {rendered}");
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1q779rp8l2cy6v63ea5elayzeryqguxq89ez7rh3w8ajx6pgf33p7qanlqr5"
+    );
+}
+
 /// Display/parse asymmetry that P6 found during bring-up (NOT an md-codec
 /// bug — reproduced with pure miniscript, no md-codec involvement):
 /// a DEPTH-2 taptree built via `TapTree::combine(combine(a,b),c)` Displays
@@ -762,7 +928,7 @@ const W_TARGET_TAGS: [Tag; 34] = [
 ];
 
 /// All to_miniscript-supported tags the typed grammar emits.
-const T_TARGET_TAGS: [Tag; 23] = [
+const T_TARGET_TAGS: [Tag; 30] = [
     Tag::Wsh,
     Tag::Sh,
     Tag::Tr,
@@ -786,6 +952,15 @@ const T_TARGET_TAGS: [Tag; 23] = [
     Tag::OrD,
     Tag::OrI,
     Tag::Thresh,
+    // GAP-2: the seven previously-omitted fragment arms, now generated by
+    // `t_segwit_tree`'s `seven` production (FIXED proven shapes; common/mod.rs).
+    Tag::OrB,
+    Tag::OrC,
+    Tag::DupIf,
+    Tag::NonZero,
+    Tag::ZeroNotEqual,
+    Tag::True,
+    Tag::False,
 ];
 
 const T_BOUNDARY_AFTER: [u32; 7] = [

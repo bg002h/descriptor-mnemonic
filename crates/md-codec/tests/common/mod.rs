@@ -881,11 +881,74 @@ fn t_segwit_tree(rel_time: bool, abs_time: bool) -> BoxedStrategy<Node> {
         1 => thresh2,
     ]
     .boxed();
+    // GAP-2: the seven fragment arms T previously omitted (DupIf/NonZero/
+    // ZeroNotEqual/OrB/OrC/True/False), as FIXED proven shapes. R0-I2
+    // CONSTRAINT (load-bearing): children are ONLY keys + locks in these exact
+    // positions — do NOT route the leaf_any/bdu*/hash pools into or_b/or_c/j:/n:
+    // child slots; those compose type-invalid trees (e.g. or_b(older,s:pk),
+    // j:older) that P6 step-1 panics on (no prop_filter). All seven are B-type.
+    let seven = prop_oneof![
+        // or_b(pk, s:pk)
+        Just(node2(
+            Tag::OrB,
+            keyarg(Tag::PkK, 0),
+            wrap(Tag::Swap, keyarg(Tag::PkK, 0)),
+        )),
+        // t:or_c(pk, v:pk)  ==  and_v(or_c(pk, v:pk), True)
+        Just(node2(
+            Tag::AndV,
+            node2(
+                Tag::OrC,
+                keyarg(Tag::PkK, 0),
+                wrap(Tag::Verify, keyarg(Tag::PkK, 0)),
+            ),
+            Node {
+                tag: Tag::True,
+                body: Body::Empty,
+            },
+        )),
+        // or_i(pk, d:v:LOCK)
+        t_lock_node(rel_time, abs_time).prop_map(|l| node2(
+            Tag::OrI,
+            keyarg(Tag::PkK, 0),
+            wrap(Tag::DupIf, wrap(Tag::Verify, l)),
+        )),
+        // j:pk
+        Just(wrap(Tag::NonZero, keyarg(Tag::PkK, 0))),
+        // or_i(pk, n:and_v(v:pk, LOCK))
+        t_lock_node(rel_time, abs_time).prop_map(|l| node2(
+            Tag::OrI,
+            keyarg(Tag::PkK, 0),
+            wrap(
+                Tag::ZeroNotEqual,
+                node2(Tag::AndV, wrap(Tag::Verify, keyarg(Tag::PkK, 0)), l),
+            ),
+        )),
+        // u:pk  ==  or_i(pk, False)
+        Just(node2(
+            Tag::OrI,
+            keyarg(Tag::PkK, 0),
+            Node {
+                tag: Tag::False,
+                body: Body::Empty,
+            },
+        )),
+        // tv:pk ==  and_v(v:pk, True)
+        Just(node2(
+            Tag::AndV,
+            wrap(Tag::Verify, keyarg(Tag::PkK, 0)),
+            Node {
+                tag: Tag::True,
+                body: Body::Empty,
+            },
+        )),
+    ]
+    .boxed();
     // Standalone wide multi exercises Segwitv0 multi up to the T-tier
     // n ≤ 16 cap (the miniscript limit is 20; 17..=20 is P7 territory
     // because the TLV-attached key pool caps n at 16).
     let wide_multi = t_multi_node(Tag::Multi, 2, 16);
-    prop_oneof![5 => b2, 1 => wide_multi].boxed()
+    prop_oneof![5 => b2, 2 => seven, 1 => wide_multi].boxed()
 }
 
 /// Legacy (`sh`) typed tree: depth ≤ 2, ≤ 6 key slots, multi ≤ 6 keys
