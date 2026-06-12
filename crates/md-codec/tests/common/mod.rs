@@ -945,8 +945,11 @@ fn t_segwit_tree(rel_time: bool, abs_time: bool) -> BoxedStrategy<Node> {
     ]
     .boxed();
     // Standalone wide multi exercises Segwitv0 multi up to the T-tier
-    // n ≤ 16 cap (the miniscript limit is 20; 17..=20 is P7 territory
-    // because the TLV-attached key pool caps n at 16).
+    // n ≤ 16 cap (the miniscript limit is 20). The 16 is a deliberate T-tier
+    // key-BUDGET choice, NOT an infra limit — test_xpubs() has 32 keys and
+    // descriptor_with_pubkeys accepts 1..=32. The valid 17..=20 render/address
+    // window is pinned deterministically by the self_test_wsh_multi_17_of_*
+    // goldens; n ≥ 21 is P7 oversize-refusal territory.
     let wide_multi = t_multi_node(Tag::Multi, 2, 16);
     prop_oneof![5 => b2, 2 => seven, 1 => wide_multi].boxed()
 }

@@ -18,8 +18,8 @@ mod common;
 use bitcoin::Network;
 use common::{
     W_BOUNDARY_TIMELOCKS, canon, collect_tags_and_locks, descriptor_from_tree,
-    descriptor_with_pubkeys, hash32, keyarg, multikeys, node2, node3, thresh_node, timelock,
-    tr_node, typed_descriptor_strategy, wire_descriptor_strategy, wrap,
+    descriptor_with_pubkeys, hash20, hash32, keyarg, multikeys, node2, node3, thresh_node,
+    timelock, tr_node, typed_descriptor_strategy, wire_descriptor_strategy, wrap,
 };
 use md_codec::chunk::{reassemble, split};
 use md_codec::decode::{decode_md1_string, decode_payload};
@@ -185,6 +185,123 @@ fn self_test_tr_nums_and_v_sha256_pk() {
     assert_eq!(
         addr,
         "bc1psldl66p3tqj0lxcl7zm4eclrxaet4vz5ppqa6sxt5az8u4a6ef2qp5l03l"
+    );
+}
+
+// ─── GAP-5: minor coverage goldens (multi 17..20 / after / hash256 / ───────
+// ─── ripemd160 / hash160) — oracle-independent address anchors for valid
+// shapes that were P6-property-covered but golden-less (and, for multi
+// 17..=20, never render/address-tested at all — only wire-tier). Same
+// derive-once-then-pin discipline as the cells above.
+
+/// `wsh(multi(17,…20 keys))` — the upper edge of the VALID multi window
+/// (miniscript caps at 20; n ≥ 21 is the P7 refusal `:629`). The T-tier
+/// property caps at 16 (a key-budget choice), so 17..=20 had ZERO
+/// render/reparse/address coverage before this cell.
+#[test]
+fn self_test_wsh_multi_17_of_20() {
+    let d = descriptor_with_pubkeys(wrap(Tag::Wsh, multikeys(Tag::Multi, 17, (0..20).collect())));
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1qlq87tf75y8xlwqg4nv9g4434xesqrql06kvchzyd9ffeld4zlukqcp0xjl"
+    );
+}
+
+/// `wsh(multi(17,…17 keys))` — the cap+1 edge (first n above the T-tier 16
+/// key-budget), n = k = 17.
+#[test]
+fn self_test_wsh_multi_17_of_17() {
+    let d = descriptor_with_pubkeys(wrap(Tag::Wsh, multikeys(Tag::Multi, 17, (0..17).collect())));
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1qrd2ly6lk960h360kd8dw8ql4a3zk79awfvvkljnukrj7dk7r7fhsp2wcm3"
+    );
+}
+
+/// `wsh(and_v(v:pk,after(800000)))` — positive `after` golden (the oracle-
+/// independent anchor `older(144)` already has; catches an upstream
+/// `after`-Display shift the rust-miniscript differential can't, since both
+/// sides would move together).
+#[test]
+fn self_test_wsh_and_v_pk_after_800000() {
+    let d = descriptor_with_pubkeys(wrap(
+        Tag::Wsh,
+        node2(
+            Tag::AndV,
+            wrap(Tag::Verify, keyarg(Tag::PkK, 0)),
+            timelock(Tag::After, 800000),
+        ),
+    ));
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1q"), "expected P2WSH, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1q7wasuw8zanhkqlgq8gxa3p4yp92nt4sggx34y2glcrm48fg4lgcqj7yw9g"
+    );
+}
+
+/// `tr(NUMS,and_v(v:hash256,pk))` — hash256 golden (sha256 already has one;
+/// these three complete the four hashlock anchors).
+#[test]
+fn self_test_tr_nums_and_v_hash256_pk() {
+    let d = descriptor_with_pubkeys(tr_node(
+        true,
+        0,
+        Some(node2(
+            Tag::AndV,
+            wrap(Tag::Verify, hash32(Tag::Hash256, [0x22; 32])),
+            keyarg(Tag::PkK, 0),
+        )),
+    ));
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1p"), "expected P2TR, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1pc56rq4cvyxyguc9cma3ydyjt2rmclzf7x8rgd4xnu7utk790as6qujyeng"
+    );
+}
+
+/// `tr(NUMS,and_v(v:ripemd160,pk))` — ripemd160 golden.
+#[test]
+fn self_test_tr_nums_and_v_ripemd160_pk() {
+    let d = descriptor_with_pubkeys(tr_node(
+        true,
+        0,
+        Some(node2(
+            Tag::AndV,
+            wrap(Tag::Verify, hash20(Tag::Ripemd160, [0x33; 20])),
+            keyarg(Tag::PkK, 0),
+        )),
+    ));
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1p"), "expected P2TR, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1ps5fy26yhey556tuduck6gfu450kpxhq2h0d7lswe6nfzp7xwytmqksn0d5"
+    );
+}
+
+/// `tr(NUMS,and_v(v:hash160,pk))` — hash160 golden.
+#[test]
+fn self_test_tr_nums_and_v_hash160_pk() {
+    let d = descriptor_with_pubkeys(tr_node(
+        true,
+        0,
+        Some(node2(
+            Tag::AndV,
+            wrap(Tag::Verify, hash20(Tag::Hash160, [0x44; 20])),
+            keyarg(Tag::PkK, 0),
+        )),
+    ));
+    let addr = p6_chain(&d);
+    assert!(addr.starts_with("bc1p"), "expected P2TR, got {addr}");
+    assert_eq!(
+        addr,
+        "bc1pp8qa0h4vkhumj7fpqg5lf5y6cau0jdje4h4jprk54x7g3gp8u2yq23k6qa"
     );
 }
 
