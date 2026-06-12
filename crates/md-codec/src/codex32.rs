@@ -82,6 +82,27 @@ pub fn wrap_payload(payload_bytes: &[u8], bit_count: usize) -> Result<String, Er
     Ok(s)
 }
 
+/// BIP-173: a bech32/codex32 string must NOT mix upper and lower case. Returns
+/// true iff `s` (ignoring `-`/whitespace separators + digits, which are
+/// case-neutral) contains BOTH an ASCII-uppercase AND an ASCII-lowercase letter.
+/// All-upper, all-lower, and no-letters are fine. Mirrors mk-codec's
+/// `case_check` (`string_layer/bch.rs`); shared with `chunk::parse_chunk_symbols`.
+pub(crate) fn is_mixed_case(s: &str) -> bool {
+    let mut has_upper = false;
+    let mut has_lower = false;
+    for c in s.chars() {
+        if c.is_ascii_uppercase() {
+            has_upper = true;
+        } else if c.is_ascii_lowercase() {
+            has_lower = true;
+        }
+        if has_upper && has_lower {
+            return true;
+        }
+    }
+    false
+}
+
 /// Unwrap a v0.11 md1 string into (byte-padded payload bytes, symbol-aligned bit count).
 ///
 /// The returned `symbol_aligned_bit_count = 5 × data_symbol_count`. This is
@@ -90,6 +111,14 @@ pub fn wrap_payload(payload_bytes: &[u8], bit_count: usize) -> Result<String, Er
 /// `decode_payload`'s `bit_len` so the v11 decoder's TLV-rollback only sees
 /// ≤4 bits of trailing zero-padding (well under the 7-bit threshold).
 pub fn unwrap_string(s: &str) -> Result<(Vec<u8>, usize), Error> {
+    // BIP-173: reject mixed-case input (all-upper / all-lower both OK, the
+    // latter canonicalized below). md-codec was the one constellation codec
+    // that leniently accepted mixed case; mk-codec + ms-codec reject it.
+    if is_mixed_case(s) {
+        return Err(Error::Codex32DecodeError(
+            "string mixes upper and lower case (BIP-173 forbids mixed case)".to_string(),
+        ));
+    }
     // 1. Strip HRP + separator.
     let prefix = format!("{}1", HRP);
     if !s.to_ascii_lowercase().starts_with(&prefix) {

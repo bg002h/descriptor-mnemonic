@@ -4,6 +4,15 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.35.3] — 2026-06-12
+
+**SemVer-PATCH — decode rejects MIXED-case md1 per BIP-173 (md-codec was the one constellation codec accepting it; aligns with mk-codec + ms-codec).**
+
+### Fixed
+
+- **`md-codec-accepts-mixed-case-bip173-leniency`.** md-codec's md1 decode lowercased per-char with NO case-uniformity check, so a mixed-case string (`Md1…`, or any string with both upper and lower letters) decoded happily — violating BIP-173, which requires bech32/codex32 strings to be ALL-lower or ALL-upper. Now rejected with `Error::Codex32DecodeError("…mixes upper and lower case (BIP-173 forbids mixed case)")` at BOTH decode boundaries: `codex32::unwrap_string` (covers `decode_md1_string` + `chunk::reassemble`) and `chunk::parse_chunk_symbols` (the `decode_with_correction` correction path — a wholesale mixed-case string is a malformed encoding, not noise to correct, mirroring mk-codec's correcting decode). **All-UPPER (the QR form) and all-lower are unaffected** (round-trip preserved); a multi-chunk md1 with one wholly-upper chunk among lowercase siblings stays valid (BIP-173 is per-string → per-chunk). **Wire-compat: PATCH** — no valid card changes; only rejects malformed mixed-case input. The downstream `mnemonic`/`md inspect` md1 decode + `mnemonic repair --md1` inherit the reject (a mixed-case md1 now errors cleanly instead of silently lower-casing).
+- Tests (`tests/mixed_case_reject.rs`, 8 cells): mixed data-char + mixed-HRP reject; all-upper round-trip; per-chunk cross-chunk heterogeneity accept; internally-mixed-chunk reject (reassemble + correction); the correction-branch reject (mixed + a correctable symbol error — pins the second injection site) + the all-upper correction pass-through.
+
 ## md-codec [0.35.2] — 2026-06-12
 
 **SemVer-PATCH — encoder rejects `k > n` threshold/multi bodies (closes an engrave-but-can't-restore gap; symmetric with the existing decode-side reject).**

@@ -427,6 +427,16 @@ const HRP_PREFIX: &str = "md1";
 /// Returns the data-with-checksum symbols (i.e. all symbols after `md1`).
 /// Visual separators (whitespace + `-`) are stripped per codex32 convention.
 fn parse_chunk_symbols(chunk: &str, chunk_index: usize) -> Result<Vec<u8>, Error> {
+    // BIP-173: reject mixed-case (per chunk). The correction path rejects too —
+    // case is lowercased before symbol mapping, so a case-flip is a zero-symbol-
+    // error event never in the BCH channel; a wholesale mixed-case string is a
+    // malformed encoding, not noise to correct. (Mirrors mk-codec's correcting
+    // decode, which rejects MixedCase before correction.)
+    if crate::codex32::is_mixed_case(chunk) {
+        return Err(Error::Codex32DecodeError(format!(
+            "chunk {chunk_index}: string mixes upper and lower case (BIP-173 forbids mixed case)"
+        )));
+    }
     let lower = chunk.to_ascii_lowercase();
     if !lower.starts_with(HRP_PREFIX) {
         return Err(Error::Codex32DecodeError(format!(
