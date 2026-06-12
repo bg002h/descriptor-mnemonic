@@ -18,3 +18,8 @@ debris/
 
 # proptest shrink-regression corpora (per-test-file, nested)
 **/proptest-regressions/
+
+# cargo-fuzz transient output (corpus/ and Cargo.lock ARE committed).
+# fuzz/target is already covered by **/target/ above.
+fuzz/artifacts/
+fuzz/coverage/

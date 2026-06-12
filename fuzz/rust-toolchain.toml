@@ -1,0 +1,13 @@
+# Pinned nightly for the md-codec fuzz workspace (cargo-fuzz requires
+# nightly for -Zsanitizer / the libFuzzer runtime). This file is SCOPED to
+# fuzz/ — rustup resolves rust-toolchain.toml from cwd upward, so it does
+# not affect the repo root's 1.85.0 pin.
+#
+# Pinned to a dated nightly per the R0 design (M5); the constellation-wide
+# FOLLOWUP `fuzz-nightly-quarterly-bump` (toolkit repo) tracks refreshing
+# this quarterly. CI pins the same date via dtolnay/rust-toolchain in
+# .github/workflows/fuzz-smoke.yml.
+[toolchain]
+channel = "nightly-2026-04-27"
+components = ["rust-src"]
+profile = "minimal"

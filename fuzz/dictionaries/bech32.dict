@@ -1,0 +1,58 @@
+# libFuzzer dictionary for md1 / bech32-family fuzz targets.
+# md phase of the constellation stress-fuzz program (Cycle C).
+#
+# The 32-char bech32 / codex32 charset (qpzry9x8gf2tvdw0s3jn54khce6mua7l),
+# the md1 HRP, the separator, and a few structural tokens. These bias
+# libFuzzer's mutation toward bytes that land inside the valid alphabet.
+
+# md1 HRP + separator (the separator '1' is the last HRP char here).
+"md1"
+
+# Bech32 separator on its own.
+"1"
+
+# The chunk-set splitter sentinel (between-chunk newline for the
+# multi-chunk targets).
+"\x0a"
+
+# Individual bech32/codex32 alphabet characters.
+"q"
+"p"
+"z"
+"r"
+"y"
+"9"
+"x"
+"8"
+"g"
+"f"
+"2"
+"t"
+"v"
+"d"
+"w"
+"0"
+"s"
+"3"
+"j"
+"n"
+"5"
+"4"
+"k"
+"h"
+"c"
+"e"
+"6"
+"m"
+"u"
+"a"
+"7"
+"l"
+
+# A short run of the alphabet (helps seed multi-symbol mutations).
+"qpzry9x8gf2tvdw0"
+"s3jn54khce6mua7l"
+
+# Visual-separator tokens md1 strings tolerate (hyphen grouping, space).
+"-"
+" "
