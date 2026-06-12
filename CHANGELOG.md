@@ -4,6 +4,16 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.35.2] — 2026-06-12
+
+**SemVer-PATCH — encoder rejects `k > n` threshold/multi bodies (closes an engrave-but-can't-restore gap; symmetric with the existing decode-side reject).**
+
+### Fixed
+
+- **`encode-accepts-k-greater-than-n`.** `write_node` (`src/tree.rs`) gated only the `1..=32` ranges of k and n in its `Body::Variable` (thresh) and `Body::MultiKeys` (multi-family) arms, never `k ≤ n` — so a k-of-n body with `k > n` (e.g. `wsh(multi(3,@0,@1))`) ENCODED to a valid-looking md1 card that **no decoder will ever read back** (`decode` rejects `k > n` with `KGreaterThanN` at the same two tags). That is an engrave-but-can't-restore trap (same family as the Cycle-A `bundle-accepts-sortedmulti-in-combinator-restore-cannot`). Both encode arms now reject `k > n` with the existing `Error::KGreaterThanN { k, n }`, the exact mirror of the decode-side rejects. One gate covers all three encode doors (`encode_payload`, `encode_md1_string`, `chunk::split`). **Wire-compat: PATCH** — the gate only narrows the encode domain to inputs that were already undecodable; no valid card changes its bytes, and no decodable card is affected.
+- **md-cli inherits the refusal.** `md-cli` lexes `multi(k,@…)`/`thresh(k,…)` templates itself (not via rust-miniscript), so a `k > n` template input now errors cleanly with `KGreaterThanN` instead of emitting an unrestorable card. No `md-cli` flag/help change (no manual/schema mirror impact).
+- Tests (`tests/proptest_to_miniscript.rs`): the pre-wired characterization cell `p8_encode_accepts_k_greater_than_n_decode_rejects` is inverted to `p8_encode_rejects_k_greater_than_n` (MultiKeys arm) + a new `p8_encode_rejects_k_greater_than_n_thresh` (Variable arm), both RED-proven; `p8_encode_accepts_k_equal_n_boundary` pins that k=n still encodes (gate is `>`, not `>=`); and `p8_decode_still_rejects_k_greater_than_n` preserves decode-side `KGreaterThanN` coverage via a frozen pre-gate wire payload (the reject is no longer reachable through encode-then-decode).
+
 ## md-codec [0.35.1] — 2026-06-11
 
 **SemVer-PATCH — `to_miniscript` accepts the `Tag::Check(Tag::PkK/PkH)` wire shape (renderer-tolerance; unblocks faithful restore of key-check policies).**

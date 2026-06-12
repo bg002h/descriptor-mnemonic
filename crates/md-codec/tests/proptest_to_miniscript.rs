@@ -9,8 +9,8 @@
 //! P7: wire-valid-but-miniscript-invalid inputs refuse CLEANLY (Err, never
 //!     a panic) while the wire round-trip stays exact.
 //! P8: encoder-side clean errors on out-of-range k/n/children, plus the
-//!     loud k>n engrave-but-can't-restore characterization (FOLLOWUP
-//!     `encode-accepts-k-greater-than-n`).
+//!     k>n encode-reject regression gate + its frozen decode-side golden
+//!     (FOLLOWUP `encode-accepts-k-greater-than-n`, closed in md-codec 0.35.2).
 #![cfg(feature = "derive")]
 
 mod common;
@@ -639,30 +639,87 @@ fn p8_encode_rejects_more_than_32_distinct_keys() {
     );
 }
 
-/// LOUD characterization of the encoder-side k>n gap: a multi with k > n
-/// (both ≤ 32) ENCODES successfully — and the resulting wire payload is
-/// then REJECTED at decode with `KGreaterThanN`. This is an
-/// engrave-but-can't-restore gap in the same family as the Cycle-A find
-/// (`bundle-accepts-sortedmulti-in-combinator-restore-cannot`).
-///
-/// FOLLOWUP: `encode-accepts-k-greater-than-n` (design/FOLLOWUPS.md;
-/// companion entry in mnemonic-toolkit). Fixing the encoder gate is
-/// library code — its own cycle. If this cell starts failing because
-/// encode_payload begins REJECTING k > n, the gap was closed: resolve the
-/// FOLLOWUP and invert this cell.
+/// LOUD regression gate for the encoder-side k>n fix (`encode-accepts-k-greater-than-n`,
+/// md-codec 0.35.2; companion in mnemonic-toolkit). A multi with k > n (both ≤ 32)
+/// now FAILS to encode with `KGreaterThanN` — closing the engrave-but-can't-restore
+/// gap (Cycle-A family `bundle-accepts-sortedmulti-in-combinator-restore-cannot`).
+/// Pre-fix this cell asserted encode-Ok + decode-Err (the gap); the gate in
+/// `write_node`'s `Body::MultiKeys` arm (the mirror of the decode-side reject)
+/// inverts it. The decode-side reject's own coverage is preserved by
+/// `p8_decode_still_rejects_k_greater_than_n` below.
 #[test]
-fn p8_encode_accepts_k_greater_than_n_decode_rejects() {
+fn p8_encode_rejects_k_greater_than_n() {
     let d = descriptor_from_tree(wrap(Tag::Wsh, multikeys(Tag::Multi, 3, vec![0, 1])), true);
-    let (bytes, bits) =
-        encode_payload(&d).expect("CHARACTERIZATION: k=3-of-n=2 currently ENCODES (the gap)");
-    let err = decode_payload(&bytes, bits).expect_err("decode must reject k > n");
+    let err = encode_payload(&d).expect_err("encode must REJECT k=3-of-n=2 (gate landed)");
     assert!(
         matches!(err, Error::KGreaterThanN { k: 3, n: 2 }),
         "expected KGreaterThanN, got {err:?}"
     );
-    // The string form engraves too — same trap end-to-end.
-    let s = encode_md1_string(&d).expect("k>n string-encodes (the gap)");
-    assert!(decode_md1_string(&s).is_err(), "string decode must reject");
+    // The string door rejects too — same trap closed end-to-end.
+    let serr = encode_md1_string(&d).expect_err("string encode must reject k>n");
+    assert!(
+        matches!(serr, Error::KGreaterThanN { k: 3, n: 2 }),
+        "expected KGreaterThanN, got {serr:?}"
+    );
+}
+
+/// Companion to `p8_encode_rejects_k_greater_than_n` for the `Body::Variable`
+/// (thresh) arm — `multikeys`/`Tag::Multi` exercises only `Body::MultiKeys`, so
+/// the thresh arm of the gate needs its own red-first cell.
+#[test]
+fn p8_encode_rejects_k_greater_than_n_thresh() {
+    let tree = wrap(
+        Tag::Wsh,
+        thresh_node(3, vec![keyarg(Tag::PkK, 0), keyarg(Tag::PkK, 1)]),
+    );
+    let err = encode_payload(&descriptor_from_tree(tree, true))
+        .expect_err("thresh encode must REJECT k=3-of-n=2");
+    assert!(
+        matches!(err, Error::KGreaterThanN { k: 3, n: 2 }),
+        "expected KGreaterThanN, got {err:?}"
+    );
+}
+
+/// Boundary: k = n (the valid equal case) still ENCODES on both arms — proves
+/// the gate is `>` not `>=` and does not over-reject the legitimate equal case.
+#[test]
+fn p8_encode_accepts_k_equal_n_boundary() {
+    let multi = descriptor_from_tree(wrap(Tag::Wsh, multikeys(Tag::Multi, 2, vec![0, 1])), true);
+    assert!(
+        encode_payload(&multi).is_ok(),
+        "k=2-of-n=2 multi must encode"
+    );
+    let thresh = descriptor_from_tree(
+        wrap(
+            Tag::Wsh,
+            thresh_node(2, vec![keyarg(Tag::PkK, 0), keyarg(Tag::PkK, 1)]),
+        ),
+        true,
+    );
+    assert!(
+        encode_payload(&thresh).is_ok(),
+        "k=2-of-n=2 thresh must encode"
+    );
+}
+
+/// Coverage preservation: now that the encoder REFUSES k>n, the decode-side
+/// `KGreaterThanN` reject (`tree.rs` Multi/Thresh arms) is no longer reachable
+/// via encode-then-decode. This frozen wire payload is the exact pre-gate output
+/// of `encode_payload(wsh(multi(3,@0,@1)))` (captured 2026-06-12) — it pins that a
+/// corrupt/hostile card whose multi field carries k>n still decodes to a clean
+/// `KGreaterThanN` (never a wrong descriptor, never a panic). If the wire format
+/// changes, regenerate by encoding the same tree before the gate (or assert the
+/// new bytes still carry k=3,n=2).
+#[test]
+fn p8_decode_still_rejects_k_greater_than_n() {
+    let bytes = [
+        0xa0, 0x4e, 0x39, 0x52, 0xce, 0xf9, 0x6f, 0x9a, 0xf9, 0xe0, 0x01, 0x82, 0x18, 0x41, 0x40,
+    ];
+    let err = decode_payload(&bytes, 114).expect_err("decode must reject the k>n wire payload");
+    assert!(
+        matches!(err, Error::KGreaterThanN { k: 3, n: 2 }),
+        "expected KGreaterThanN, got {err:?}"
+    );
 }
 
 // ─── Anti-vacuity: generator coverage (fixed-seed TestRunner) ───────────

@@ -97,6 +97,15 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                     count: children.len(),
                 });
             }
+            // Reject k > n at encode, mirroring the decode-side reject below
+            // (KGreaterThanN). Without this the encoder emits a card no decoder
+            // will read back — an engrave-but-can't-restore gap.
+            if *k as usize > children.len() {
+                return Err(Error::KGreaterThanN {
+                    k: *k,
+                    n: children.len(),
+                });
+            }
             w.write_bits((*k - 1) as u64, 5);
             w.write_bits((children.len() - 1) as u64, 5);
             for c in children {
@@ -111,6 +120,15 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
             if !(1..=32).contains(&(indices.len() as u32)) {
                 return Err(Error::ChildCountOutOfRange {
                     count: indices.len(),
+                });
+            }
+            // Reject k > n at encode, mirroring the decode-side reject below
+            // (KGreaterThanN). Without this the encoder emits a card no decoder
+            // will read back — an engrave-but-can't-restore gap.
+            if *k as usize > indices.len() {
+                return Err(Error::KGreaterThanN {
+                    k: *k,
+                    n: indices.len(),
                 });
             }
             w.write_bits((*k - 1) as u64, 5);
