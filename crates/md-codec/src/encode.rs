@@ -91,22 +91,44 @@ pub fn encode_payload(d: &Descriptor) -> Result<(Vec<u8>, usize), Error> {
     Ok((w.into_bytes(), total_bits))
 }
 
-/// Render a codex32 string with optional N-char hyphen grouping for
-/// transcription aid. Per spec §10.2, every 4-5 chars optionally separated by
-/// `-` for human readability. `group_size = 0` returns the input unchanged
-/// (no grouping).
-pub fn render_codex32_grouped(s: &str, group_size: usize) -> String {
+/// True for any character treated as a display separator on intake: ALL Unicode
+/// whitespace plus `-` and `,`. SPEC §3.2 (mstring display-grouping). None of
+/// these appear in the codex32 alphabet (`qpzry9x8gf2tvdw0s3jn54khce6mua7l`) or
+/// the `ms`/`mk`/`md`/`1` structural chars (SPEC §4), so stripping is unambiguous.
+pub fn is_display_separator(c: char) -> bool {
+    c.is_whitespace() || c == '-' || c == ','
+}
+
+/// Insert `separator` after every `group_size` characters (SPEC §3.1).
+/// `group_size == 0` returns the input unchanged. Single line; ASCII-safe.
+pub fn render_grouped(s: &str, group_size: usize, separator: char) -> String {
     if group_size == 0 {
         return s.to_string();
     }
-    let mut out = String::new();
+    let mut out = String::with_capacity(s.len() + s.len() / group_size);
     for (i, ch) in s.chars().enumerate() {
         if i > 0 && i % group_size == 0 {
-            out.push('-');
+            out.push(separator);
         }
         out.push(ch);
     }
     out
+}
+
+/// Strip every display separator (SPEC §3.2) — used on intake before decode.
+/// Idempotent; strips ONLY separators (other chars pass through, so a malformed
+/// card is never silently "cleaned" into validity).
+pub fn strip_display_separators(s: &str) -> String {
+    s.chars().filter(|&c| !is_display_separator(c)).collect()
+}
+
+/// Render a codex32 string with optional N-char HYPHEN grouping for
+/// transcription aid (spec §10.2). `group_size = 0` returns the input unchanged.
+/// Back-compat wrapper over `render_grouped` (hyphen separator). Retained as
+/// public API (documented in the technical manual); new callers use
+/// `render_grouped` with an explicit separator.
+pub fn render_codex32_grouped(s: &str, group_size: usize) -> String {
+    render_grouped(s, group_size, '-')
 }
 
 /// Encode a Descriptor into a complete codex32 md1 string (HRP + payload + BCH checksum).
@@ -128,6 +150,34 @@ mod render_tests {
     #[test]
     fn render_zero_group_size_no_grouping() {
         assert_eq!(render_codex32_grouped("md1qpz9r4cy7", 0), "md1qpz9r4cy7");
+    }
+
+    #[test]
+    fn render_grouped_separators_and_unbroken() {
+        assert_eq!(render_grouped("abcdefghij", 5, ' '), "abcde fghij");
+        assert_eq!(render_grouped("abcdefghij", 5, '-'), "abcde-fghij");
+        assert_eq!(render_grouped("abcdefghij", 5, ','), "abcde,fghij");
+        assert_eq!(render_grouped("abcdefghij", 0, ' '), "abcdefghij");
+        assert_eq!(render_grouped("abcde", 5, ' '), "abcde");
+        assert_eq!(render_grouped("abcdefg", 3, '-'), "abc-def-g");
+        assert_eq!(render_grouped("", 5, ' '), "");
+    }
+
+    #[test]
+    fn render_codex32_grouped_still_hyphens() {
+        // back-compat wrapper: unchanged behavior
+        assert_eq!(render_codex32_grouped("abcdefghij", 5), "abcde-fghij");
+        assert_eq!(render_codex32_grouped("abcde", 0), "abcde");
+    }
+
+    #[test]
+    fn strip_display_separators_whitespace_hyphen_comma() {
+        assert_eq!(strip_display_separators("abcde fghij"), "abcdefghij");
+        assert_eq!(strip_display_separators("ab-cd,ef gh"), "abcdefgh");
+        assert_eq!(strip_display_separators("ab\tcd\r\nef"), "abcdef");
+        assert_eq!(strip_display_separators("ms1qpzry9x8"), "ms1qpzry9x8");
+        let once = strip_display_separators("a b-c,d");
+        assert_eq!(strip_display_separators(&once), once);
     }
 }
 
