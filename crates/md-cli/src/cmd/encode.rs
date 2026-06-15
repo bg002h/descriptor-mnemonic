@@ -87,7 +87,11 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     } else {
         println!(
             "{}",
-            render_grouped(&encode_md1_string(&descriptor)?, args.group_size, args.separator)
+            render_grouped(
+                &encode_md1_string(&descriptor)?,
+                args.group_size,
+                args.separator
+            )
         );
     }
     if args.policy_id_fingerprint {

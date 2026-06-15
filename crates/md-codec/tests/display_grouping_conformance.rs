@@ -27,7 +27,10 @@ fn sep_char(keyword: &str) -> char {
 
 #[test]
 fn conformance_vectors_pass() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../design/display-grouping-vectors.tsv");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../design/display-grouping-vectors.tsv"
+    );
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     let mut lines = text.lines();
     assert_eq!(
@@ -44,7 +47,9 @@ fn conformance_vectors_pass() {
         assert_eq!(c.len(), 6, "row {} not 6 fields: {line:?}", i + 2);
         let (op, input, gs, sep, expected, note) = (c[0], c[1], c[2], c[3], c[4], c[5]);
         let (input, expected) = (decode(input), decode(expected));
-        let gs: usize = gs.parse().unwrap_or_else(|_| panic!("row {}: bad group_size", i + 2));
+        let gs: usize = gs
+            .parse()
+            .unwrap_or_else(|_| panic!("row {}: bad group_size", i + 2));
         let got = match op {
             "render" => render_grouped(&input, gs, sep_char(sep)),
             "strip" => strip_display_separators(&input),
