@@ -4,6 +4,33 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.7.0] — 2026-06-15
+
+**SemVer-MINOR — `md encode` gains standardized mstring display-grouping flags; default text output is now space/5 print-once (was unbroken). Part of the cross-constellation `display-grouping-render-strip-v1` cycle (P1).**
+
+### Added
+
+- **`md encode --group-size <u16>`** (default `5`, `0` = unbroken) + **`--separator <space|hyphen|comma>`** (keyword or literal `" "|-|,`, default `space`) — insert a separator every N characters in the emitted md1 text. SPEC §3/§5 (`../../mnemonic-toolkit/design/SPEC_mstring_display_grouping.md`). The default `md encode` text output is now **space/5, single line, print-once** (previously unbroken) — a default-output change, hence MINOR. `--json` ALWAYS carries the canonical **unbroken** string; `md repair` output is ALWAYS unbroken (and takes no grouping flags).
+- **Separator-stripping intake on all six md1-intake surfaces** (`decode`, `bytecode`, `verify`, `inspect`, `address`, `repair`) via the shared `cmd::strip_md1_inputs` (and `repair`'s `read_md1_strings` on both the positional and `-`→stdin paths): a grouped or unbroken card both re-ingest. Strips ALL whitespace + `-` + `,` (SPEC §3.2). md-codec's codex32 layer already tolerated whitespace/hyphen (D11); the net-new coverage is comma + the `repair` decode path.
+- Conformance vectors `design/display-grouping-vectors.tsv` (byte-identical copy of the toolkit canonical) + `.sha256`, CI-pinned (`sha256sum -c` in the fmt job) + a driver test (`crates/md-codec/tests/display_grouping_conformance.rs`) over every row.
+
+### Notes
+
+stdout text was never a declared-stable interface and `--json` is unaffected (precedent: prior MINOR default-output changes). The `md-codec` exact-pin bumps `=0.35.3` → `=0.36.0`. Cross-repo lockstep (toolkit `format.rs` collapse + golden regen + both manuals; `mnemonic-gui` `schema_mirror` flags + separator keyword dropdown) lands in later phases; FOLLOWUP `display-grouping-render-strip-v1`.
+
+## md-codec [0.36.0] — 2026-06-15
+
+**SemVer-MINOR — adds `render_grouped` + `strip_display_separators` (standardized mstring display-grouping primitives). Part of the `display-grouping-render-strip-v1` cycle (P1).**
+
+### Added
+
+- **`encode::render_grouped(s, group_size, separator)`** — insert `separator` (a `char`) every `group_size` characters (`0` = unbroken). SPEC §3.1. **`encode::strip_display_separators(s)`** — strip every display separator (ALL Unicode whitespace + `-` + `,`; SPEC §3.2), idempotent, strips ONLY separators (a malformed card is never silently "cleaned" into validity). **`encode::is_display_separator(c)`** — the predicate. None of `{whitespace, -, ,}` appears in the codex32 alphabet / HRP / `1` separator, so stripping is unambiguous.
+- The pure fns live in `md-codec` (the lib) so the cross-repo conformance test can `use` them (md-cli is bin-only).
+
+### Changed
+
+- **`encode::render_codex32_grouped(s, group_size)`** is now a thin back-compat wrapper over `render_grouped(s, group_size, '-')` — unchanged behavior (hyphen grouping), retained public API (documented in the technical manual). Additive — no breaking change; MINOR for the new public surface.
+
 ## md-codec [0.35.3] — 2026-06-12
 
 **SemVer-PATCH — decode rejects MIXED-case md1 per BIP-173 (md-codec was the one constellation codec accepting it; aligns with mk-codec + ms-codec).**
