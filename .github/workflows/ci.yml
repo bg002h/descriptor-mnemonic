@@ -51,6 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: conformance-vector checksum pin
+        run: cd design && sha256sum -c display-grouping-vectors.tsv.sha256
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
