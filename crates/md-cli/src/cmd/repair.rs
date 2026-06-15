@@ -80,15 +80,18 @@ fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
                 .map_err(|e| CliError::BadArg(format!("stdin read: {e}")))?;
             for line in buf.lines() {
-                let s = line.trim();
+                // mstring display-grouping (SPEC §3.2): strip separators so a
+                // grouped or unbroken card both re-ingest. (repair OUTPUT stays
+                // unbroken — no grouping flags on `md repair`.)
+                let s = md_codec::encode::strip_display_separators(line);
                 if !s.is_empty() {
-                    out.push(s.to_string());
+                    out.push(s);
                 }
             }
         } else if a == "-" {
             // Already consumed stdin; ignore additional `-` markers.
         } else {
-            out.push(a.clone());
+            out.push(md_codec::encode::strip_display_separators(a));
         }
     }
     if out.is_empty() {

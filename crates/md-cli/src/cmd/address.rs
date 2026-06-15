@@ -103,11 +103,13 @@ fn build_descriptor(args: &AddressArgs<'_>) -> Result<Descriptor, CliError> {
             .collect::<Result<Vec<_>, _>>()?;
         return parse_template(template, &parsed_keys, &parsed_fps);
     }
-    // Phrase path
-    if args.phrases.len() == 1 {
-        Ok(decode_md1_string(&args.phrases[0])?)
+    // Phrase path. mstring display-grouping (SPEC §3.2): strip separators so a
+    // grouped or unbroken card both re-ingest.
+    let phrases = crate::cmd::strip_md1_inputs(args.phrases);
+    if phrases.len() == 1 {
+        Ok(decode_md1_string(&phrases[0])?)
     } else {
-        let refs: Vec<&str> = args.phrases.iter().map(String::as_str).collect();
+        let refs: Vec<&str> = phrases.iter().map(String::as_str).collect();
         Ok(reassemble(&refs)?)
     }
 }

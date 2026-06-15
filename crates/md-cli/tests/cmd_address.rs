@@ -84,6 +84,39 @@ fn address_template_mode_emits_bip84_receive_0() {
         ));
 }
 
+/// Insert a comma every 5 chars to simulate a grouped/transcribed card.
+/// Comma is the SPEC §3.2 separator md-codec's codex32 layer does NOT already
+/// tolerate (it strips whitespace/hyphen via D11), so this genuinely exercises
+/// the md-cli intake strip (applied inside `build_descriptor`).
+fn group5(s: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && i % 5 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[test]
+fn address_accepts_grouped_phrase() {
+    // mstring display-grouping (SPEC §3.2): a separator-bearing card re-ingests
+    // through `build_descriptor`'s strip.
+    let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
+    let key_arg = format!("@0={xpub}");
+    let phrase = encode_template_with_key("wpkh(@0/<0;1>/*)", &key_arg);
+    let grouped = group5(&phrase);
+    Command::cargo_bin("md")
+        .unwrap()
+        .args(["address", &grouped])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
+        ));
+}
+
 #[test]
 fn address_phrase_mode_round_trips_through_encode() {
     let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);

@@ -4,6 +4,9 @@ use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
 
 pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
+    // mstring display-grouping (SPEC §3.2): strip separators so a grouped or
+    // unbroken card both re-ingest.
+    let strings = crate::cmd::strip_md1_inputs(strings);
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {

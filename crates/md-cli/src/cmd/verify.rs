@@ -14,10 +14,12 @@ pub struct VerifyArgs<'a> {
 }
 
 pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
-    let decoded = if args.strings.len() == 1 {
-        decode_md1_string(&args.strings[0])?
+    // mstring display-grouping (SPEC §3.2): strip separators on intake.
+    let strings = crate::cmd::strip_md1_inputs(args.strings);
+    let decoded = if strings.len() == 1 {
+        decode_md1_string(&strings[0])?
     } else {
-        let refs: Vec<&str> = args.strings.iter().map(String::as_str).collect();
+        let refs: Vec<&str> = strings.iter().map(String::as_str).collect();
         reassemble(&refs)?
     };
     let ctx = ctx_for_template(args.template);

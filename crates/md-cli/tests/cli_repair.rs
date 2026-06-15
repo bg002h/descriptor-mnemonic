@@ -103,6 +103,71 @@ fn corrupt_many(chunk: &str, positions: &[(usize, u8)]) -> String {
         .fold(chunk.to_string(), |acc, &(p, m)| corrupt_at(&acc, p, m))
 }
 
+/// Insert a comma every 5 chars to simulate a grouped/transcribed card.
+/// Comma is the SPEC §3.2 separator the repair decode path does NOT already
+/// tolerate, so this genuinely exercises the `read_md1_strings` intake strip.
+fn group5(s: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && i % 5 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// mstring display-grouping (SPEC §3.2): a grouped/transcribed chunk re-ingests
+// on BOTH the positional and the `-`→stdin paths; repair output stays UNBROKEN.
+// ──────────────────────────────────────────────────────────────────────────
+#[test]
+fn repair_accepts_grouped_positional_chunk() {
+    let chunks = encode_chunked("wpkh(@0/<0;1>/*)");
+    let valid = &chunks[0];
+    let grouped = group5(valid);
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["repair", &grouped])
+        .output()
+        .expect("invoke md repair");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "valid grouped chunk → exit 0 (no corrections); stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("stdout utf-8");
+    assert!(
+        stdout.lines().any(|line| line == valid.as_str()),
+        "repair must strip separators and echo the UNBROKEN chunk; got {stdout:?}"
+    );
+}
+
+#[test]
+fn repair_accepts_grouped_stdin_chunk() {
+    let chunks = encode_chunked("wpkh(@0/<0;1>/*)");
+    let valid = &chunks[0];
+    let grouped = group5(valid);
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["repair", "-"])
+        .write_stdin(grouped)
+        .output()
+        .expect("invoke md repair -");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "valid grouped chunk via stdin → exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("stdout utf-8");
+    assert!(
+        stdout.lines().any(|line| line == valid.as_str()),
+        "repair stdin must strip separators and echo the UNBROKEN chunk; got {stdout:?}"
+    );
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Cell 1: single-chunk happy path — 1 char corruption, exit 5, correction
 // restores original chunk. Fixture is a small wpkh template encoded with
