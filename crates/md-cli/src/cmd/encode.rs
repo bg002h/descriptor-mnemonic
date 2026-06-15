@@ -5,7 +5,7 @@ use crate::parse::path::parse_path;
 use crate::parse::template::{ctx_for_template, parse_template, to_origin_path};
 
 use md_codec::chunk::{derive_chunk_set_id, split};
-use md_codec::encode::encode_md1_string;
+use md_codec::encode::{encode_md1_string, render_grouped};
 use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
 use md_codec::origin_path::PathDeclPaths;
 
@@ -21,6 +21,10 @@ pub struct EncodeArgs<'a> {
     pub network: bitcoin::Network,
     pub network_str: &'static str,
     pub force_chunked: bool,
+    /// mstring display-grouping (SPEC §3): insert `separator` every `group_size`
+    /// chars in the text emit (0 = unbroken). Display only — `--json` stays unbroken.
+    pub group_size: usize,
+    pub separator: char,
     pub force_long_code: bool,
     pub policy_id_fingerprint: bool,
     pub json: bool,
@@ -78,10 +82,13 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
         println!("chunk-set-id: 0x{csid:05x}");
         for s in &chunks {
-            println!("{s}");
+            println!("{}", render_grouped(s, args.group_size, args.separator));
         }
     } else {
-        println!("{}", encode_md1_string(&descriptor)?);
+        println!(
+            "{}",
+            render_grouped(&encode_md1_string(&descriptor)?, args.group_size, args.separator)
+        );
     }
     if args.policy_id_fingerprint {
         let id = compute_wallet_policy_id(&descriptor)?;

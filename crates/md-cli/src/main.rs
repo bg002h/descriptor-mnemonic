@@ -48,6 +48,20 @@ impl CliNetwork {
     }
 }
 
+/// Parse `--separator`: accepts a keyword (`space|hyphen|comma`) or the literal
+/// char (`" "|-|,`). Returns the separator char. SPEC §5 (mstring grouping).
+/// Rejection is a clap parse error (exit 2), before command dispatch.
+fn parse_separator(s: &str) -> Result<char, String> {
+    match s {
+        "space" | " " => Ok(' '),
+        "hyphen" | "-" => Ok('-'),
+        "comma" | "," => Ok(','),
+        other => Err(format!(
+            "invalid separator {other:?}; expected one of: space|hyphen|comma (or the literal char)"
+        )),
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "md", version, about = "Mnemonic Descriptor (MD) — engravable BIP 388 wallet policy backups", long_about = None)]
 struct Cli {
@@ -59,7 +73,7 @@ struct Cli {
 enum Command {
     /// Encode a wallet policy into MD backup string(s).
     #[command(
-        after_long_help = "EXAMPLES:\n  $ md encode wpkh(@0/<0;1>/*)\n  md1yqpqqxqq8xtwhw4xwn4qh"
+        after_long_help = "EXAMPLES:\n  $ md encode wpkh(@0/<0;1>/*) --group-size 0\n  md1yqpqqxqq8xtwhw4xwn4qh"
     )]
     Encode {
         /// BIP 388 template, e.g. `wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))`.
@@ -93,6 +107,13 @@ enum Command {
         /// Force chunked encoding even for short policies.
         #[arg(long)]
         force_chunked: bool,
+        /// Insert a separator every N characters in the emitted md1 string
+        /// (0 = unbroken). SPEC §3. Display only; --json stays unbroken.
+        #[arg(long, default_value_t = 5)]
+        group_size: u16,
+        /// Separator: space|hyphen|comma (keyword) or the literal " "|-|, . SPEC §5.
+        #[arg(long, default_value = "space", value_parser = parse_separator)]
+        separator: char,
         /// Force the long BCH code even when the regular code suffices.
         #[arg(long)]
         force_long_code: bool,
@@ -270,6 +291,8 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             fingerprints,
             network,
             force_chunked,
+            group_size,
+            separator,
             force_long_code,
             policy_id_fingerprint,
             json,
@@ -323,6 +346,8 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 network: network.into(),
                 network_str: network.as_str(),
                 force_chunked,
+                group_size: group_size as usize,
+                separator,
                 force_long_code,
                 policy_id_fingerprint,
                 json,

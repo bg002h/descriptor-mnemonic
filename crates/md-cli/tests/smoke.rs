@@ -14,7 +14,9 @@ fn encode_wpkh_default_phrase() {
     // (`md1qqpqqxqq0zkd22pw8dmd3` v0.18 → `md1yqpqqxqq8xtwhw4xwn4qh` v0.30)
     // due to 6-bit primary tags + 4-bit version + `is_nums` flag + kiw
     // formula change to ⌈log₂(n)⌉.
+    // `--group-size 0` keeps this wire canary an exact unbroken-stdout pin; the
+    // default md encode output is now space/5-grouped (mstring-grouping P1).
     let mut cmd = Command::cargo_bin("md").unwrap();
-    cmd.args(["encode", "wpkh(@0/<0;1>/*)"]);
+    cmd.args(["encode", "wpkh(@0/<0;1>/*)", "--group-size", "0"]);
     cmd.assert().success().stdout("md1yqpqqxqq8xtwhw4xwn4qh\n");
 }

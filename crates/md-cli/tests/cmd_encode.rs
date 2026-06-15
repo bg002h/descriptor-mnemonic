@@ -17,6 +17,88 @@ fn encode_template_only_emits_a_phrase() {
         .stdout(predicate::str::starts_with("md1"));
 }
 
+/// The canonical unbroken md1 for `wpkh(@0/<0;1>/*)` (wire canary; same value
+/// pinned in `smoke.rs`). Grouping is a display layer over this string.
+const WPKH_UNBROKEN: &str = "md1yqpqqxqq8xtwhw4xwn4qh";
+
+#[test]
+fn encode_default_groups_space_5() {
+    // mstring display-grouping (SPEC §3): default = space/5, single line.
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let line = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        line.chars().nth(5),
+        Some(' '),
+        "expected a space after the first 5 chars; got {line:?}"
+    );
+    let unbroken: String = line.chars().filter(|c| *c != ' ').collect();
+    assert_eq!(
+        unbroken, WPKH_UNBROKEN,
+        "space-stripped grouped form must equal the canonical md1"
+    );
+}
+
+#[test]
+fn encode_unbroken_group_size_0() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--group-size", "0"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let line = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(
+        !line.contains(' ') && !line.contains('-') && !line.contains(','),
+        "--group-size 0 must be unbroken; got {line:?}"
+    );
+    assert_eq!(line, WPKH_UNBROKEN);
+}
+
+#[test]
+fn encode_separator_hyphen() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--separator", "hyphen"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let line = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        line.chars().nth(5),
+        Some('-'),
+        "expected a hyphen after the first 5 chars; got {line:?}"
+    );
+}
+
+#[test]
+fn encode_rejects_bad_separator() {
+    Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--separator", "bogus"])
+        .assert()
+        .code(2);
+}
+
 #[test]
 fn encode_with_policy_id_fingerprint_prints_two_lines() {
     let mut cmd = Command::cargo_bin("md").unwrap();

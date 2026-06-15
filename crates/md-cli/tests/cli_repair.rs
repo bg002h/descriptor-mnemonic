@@ -35,8 +35,10 @@ const CODEX32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 /// every test fixture in this file uses the chunked encoding regardless
 /// of chunk count.
 fn encode_chunked(template: &str) -> Vec<String> {
+    // `--group-size 0`: repair fixtures must be UNBROKEN chunks (repair output is
+    // always unbroken; default md encode is now space/5-grouped). mstring-grouping P1.
     let out = StdCommand::new(assert_cmd::cargo::cargo_bin("md"))
-        .args(["encode", "--force-chunked", template])
+        .args(["encode", "--force-chunked", "--group-size", "0", template])
         .output()
         .expect("invoke md encode --force-chunked");
     assert!(
