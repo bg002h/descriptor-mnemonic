@@ -400,6 +400,187 @@ fn corpus() -> Vec<Shape> {
                 },
             }
         },
+        // 11. multisig wsh(multi(2,…)) — plain (UNSORTED) legacy-segwit
+        //     multisig. Mirrors shape 5 (sortedmulti) with Tag::Multi so the
+        //     key ORDER is preserved (not lexicographically sorted): catches
+        //     the class of bug where md-codec sorts when it must not.
+        {
+            let a = account_xpub_bytes("m/48'/0'/0'/2'");
+            let b = account_xpub_bytes("m/48'/0'/1'/2'");
+            let c = account_xpub_bytes("m/48'/0'/2'/2'");
+            Shape {
+                label: "wsh(multi 2-of-3, unsorted)",
+                desc: Descriptor {
+                    n: 3,
+                    path_decl: PathDecl {
+                        n: 3,
+                        paths: PathDeclPaths::Shared(origin(&[
+                            (true, 48),
+                            (true, 0),
+                            (true, 0),
+                            (true, 2),
+                        ])),
+                    },
+                    use_site_path: UseSitePath::standard_multipath(),
+                    tree: Node {
+                        tag: Tag::Wsh,
+                        body: Body::Children(vec![Node {
+                            tag: Tag::Multi,
+                            body: Body::MultiKeys {
+                                k: 2,
+                                indices: vec![0, 1, 2],
+                            },
+                        }]),
+                    },
+                    tlv: pubkeys(vec![(0u8, a), (1u8, b), (2u8, c)]),
+                },
+            }
+        },
+        // 12. hashlock wsh(and_v(v:pk, sha256(<h>))) — a SHA256 preimage
+        //     lock. Mirrors shape 9 (and_v(v:pk, older)) with the timelock
+        //     leg swapped for a Tag::Sha256 hash literal: exercises the
+        //     Body::Hash256Body construction + Terminal::Sha256 render.
+        Shape {
+            label: "wsh(and_v(v:pk, sha256))",
+            desc: Descriptor {
+                n: 1,
+                path_decl: PathDecl {
+                    n: 1,
+                    paths: PathDeclPaths::Shared(origin(&[(true, 84), (true, 0), (true, 0)])),
+                },
+                use_site_path: UseSitePath::standard_multipath(),
+                tree: Node {
+                    tag: Tag::Wsh,
+                    body: Body::Children(vec![Node {
+                        tag: Tag::AndV,
+                        body: Body::Children(vec![
+                            Node {
+                                tag: Tag::Verify,
+                                body: Body::Children(vec![pkk(0)]),
+                            },
+                            Node {
+                                tag: Tag::Sha256,
+                                body: Body::Hash256Body([0x42; 32]),
+                            },
+                        ]),
+                    }]),
+                },
+                tlv: pubkeys(vec![(0u8, account_xpub_bytes("m/84'/0'/0'"))]),
+            },
+        },
+        // 13. absolute-timelock wsh(and_v(v:pk, after(800000))) — a height
+        //     CLTV. Mirrors shape 9 with Tag::Older→Tag::After (the OTHER
+        //     Body::Timelock tag) at a block height < 500_000_000 so it is
+        //     interpreted as a height, not a unix time.
+        Shape {
+            label: "wsh(and_v(v:pk, after(800000)))",
+            desc: Descriptor {
+                n: 1,
+                path_decl: PathDecl {
+                    n: 1,
+                    paths: PathDeclPaths::Shared(origin(&[(true, 84), (true, 0), (true, 0)])),
+                },
+                use_site_path: UseSitePath::standard_multipath(),
+                tree: Node {
+                    tag: Tag::Wsh,
+                    body: Body::Children(vec![Node {
+                        tag: Tag::AndV,
+                        body: Body::Children(vec![
+                            Node {
+                                tag: Tag::Verify,
+                                body: Body::Children(vec![pkk(0)]),
+                            },
+                            Node {
+                                tag: Tag::After,
+                                body: Body::Timelock(800_000),
+                            },
+                        ]),
+                    }]),
+                },
+                tlv: pubkeys(vec![(0u8, account_xpub_bytes("m/84'/0'/0'"))]),
+            },
+        },
+        // 14. spending-policy wsh(or_d(pk, and_v(v:pk, older(144)))) — the
+        //     canonical "primary key OR (backup key after 144 blocks)"
+        //     recovery policy. Exercises the Tag::OrD combinator with a
+        //     non-trivial right branch over two distinct keys.
+        {
+            let a = account_xpub_bytes("m/84'/0'/0'");
+            let b = account_xpub_bytes("m/84'/0'/1'");
+            Shape {
+                label: "wsh(or_d(pk, and_v(v:pk, older(144))))",
+                desc: Descriptor {
+                    n: 2,
+                    path_decl: PathDecl {
+                        n: 2,
+                        paths: PathDeclPaths::Divergent(vec![
+                            origin(&[(true, 84), (true, 0), (true, 0)]),
+                            origin(&[(true, 84), (true, 0), (true, 1)]),
+                        ]),
+                    },
+                    use_site_path: UseSitePath::standard_multipath(),
+                    tree: Node {
+                        tag: Tag::Wsh,
+                        body: Body::Children(vec![Node {
+                            tag: Tag::OrD,
+                            body: Body::Children(vec![
+                                pkk(0),
+                                Node {
+                                    tag: Tag::AndV,
+                                    body: Body::Children(vec![
+                                        Node {
+                                            tag: Tag::Verify,
+                                            body: Body::Children(vec![pkk(1)]),
+                                        },
+                                        Node {
+                                            tag: Tag::Older,
+                                            body: Body::Timelock(144),
+                                        },
+                                    ]),
+                                },
+                            ]),
+                        }]),
+                    },
+                    tlv: pubkeys(vec![(0u8, a), (1u8, b)]),
+                },
+            }
+        },
+        // 15. branching-policy wsh(andor(pk, older(144), pk)) — "(key0 AND
+        //     older(144)) OR key1". Exercises the 3-ary Tag::AndOr combinator
+        //     (distinct from the 2-ary or_d above).
+        {
+            let a = account_xpub_bytes("m/84'/0'/0'");
+            let b = account_xpub_bytes("m/84'/0'/1'");
+            Shape {
+                label: "wsh(andor(pk, older(144), pk))",
+                desc: Descriptor {
+                    n: 2,
+                    path_decl: PathDecl {
+                        n: 2,
+                        paths: PathDeclPaths::Divergent(vec![
+                            origin(&[(true, 84), (true, 0), (true, 0)]),
+                            origin(&[(true, 84), (true, 0), (true, 1)]),
+                        ]),
+                    },
+                    use_site_path: UseSitePath::standard_multipath(),
+                    tree: Node {
+                        tag: Tag::Wsh,
+                        body: Body::Children(vec![Node {
+                            tag: Tag::AndOr,
+                            body: Body::Children(vec![
+                                pkk(0),
+                                Node {
+                                    tag: Tag::Older,
+                                    body: Body::Timelock(144),
+                                },
+                                pkk(1),
+                            ]),
+                        }]),
+                    },
+                    tlv: pubkeys(vec![(0u8, a), (1u8, b)]),
+                },
+            }
+        },
     ]
 }
 
