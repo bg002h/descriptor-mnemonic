@@ -118,8 +118,9 @@ The next development steps are tracked in `design/POLICY_BACKUP.md` §10:
 ## License
 
 The specification text in this repository and the reference implementation
-in `crates/md-codec/` and `crates/md-cli/` are released under the
-[MIT License](LICENSE).
+in `crates/md-codec/` and `crates/md-cli/` are dual-licensed, at your option,
+under either the [MIT License](LICENSE) or the [Unlicense](UNLICENSE)
+public-domain dedication — SPDX `MIT OR Unlicense`.
 
 ## Contact
 

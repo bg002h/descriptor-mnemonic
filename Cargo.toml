@@ -5,7 +5,7 @@ members = ["crates/md-codec", "crates/md-cli"]
 [workspace.package]
 edition = "2024"
 rust-version = "1.85"
-license = "MIT"
+license = "MIT OR Unlicense"
 repository = "https://github.com/bg002h/descriptor-mnemonic"
 
 [workspace.lints.rust]
