@@ -16,6 +16,19 @@ pub const GEN_REGULAR: [u128; 5] = [
 /// `SHA-256("shibbolethnums")`).
 pub const MD_REGULAR_CONST: u128 = 0x0815c07747a3392e7;
 
+/// Constellation-internal initial polymod residue, shared byte-for-byte with
+/// mk1 (`mk-codec`'s `string_layer::bch::POLYMOD_INIT`). It is deliberately
+/// **NOT** codex32/BIP-93's initial residue `1` — and that is harmless here:
+/// `md1` is a self-contained code (this same value seeds both
+/// [`bch_create_checksum_regular`] and [`bch_verify_regular`]), so the init's
+/// contribution cancels between create and verify and
+/// `polymod(valid codeword) == MD_REGULAR_CONST` holds at every length, for any
+/// fixed init. Only `ms1` must use `1`, because its checksum has to agree with
+/// the *external* rust-codex32 engine; the reverted ms-codec v0.2.1 bug was a
+/// non-codex32 init *paired with* an empirically-miscalibrated target that
+/// diverged from codex32 across lengths — NOT this value being intrinsically
+/// length-variant. See
+/// `mnemonic-secret/design/BUG_decode_with_correction_length_divergence.md`.
 const POLYMOD_INIT: u128 = 0x23181b3;
 const REGULAR_SHIFT: u32 = 60;
 const REGULAR_MASK: u128 = 0x0fffffffffffffff;
@@ -80,4 +93,31 @@ pub fn bch_verify_regular(hrp: &str, data_with_checksum: &[u8]) -> bool {
     let mut input = hrp_expand(hrp);
     input.extend_from_slice(data_with_checksum);
     polymod_run(&input) == MD_REGULAR_CONST
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::hashes::{Hash, sha256};
+
+    /// Drift-guard: `MD_REGULAR_CONST` must reproduce from its documented
+    /// NUMS rule — the top 65 bits of `SHA-256("shibbolethnums")`. Mirrors
+    /// mk-codec's `consts::tests::nums_constants_reproduce_from_domain`
+    /// (and ms-codec's `tests/bch_all_lengths.rs::ms_regular_const_is_secretshare32_packed`).
+    /// Catches accidental drift if the domain string or the constant is
+    /// edited without the other — without this, a silent edit to either would
+    /// break cross-format domain separation undetected.
+    #[test]
+    fn md_regular_const_reproduces_from_nums_domain() {
+        let digest = sha256::Hash::hash(b"shibbolethnums");
+        let bytes = digest.as_byte_array();
+        // Leading 128 bits of the 256-bit digest as a big-endian u128, then
+        // the top 65 bits (shift right by 128 - 65 = 63).
+        let hi = u128::from_be_bytes(bytes[0..16].try_into().unwrap());
+        let derived = hi >> 63;
+        assert_eq!(
+            derived, MD_REGULAR_CONST,
+            "MD_REGULAR_CONST drift from SHA-256(\"shibbolethnums\") top-65-bits",
+        );
+    }
 }
