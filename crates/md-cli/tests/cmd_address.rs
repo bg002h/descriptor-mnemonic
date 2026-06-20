@@ -371,3 +371,141 @@ fn address_mainnet_wsh_multi_2of2_receive_0() {
         .success()
         .stdout(predicates::str::contains(&expected));
 }
+
+/// FUNDS-SAFETY regression (`restore-md1-per-key-use-site-and-hardened-wildcard`):
+/// `md address` on a DIVERGENT-suffix multisig card — `@1` overrides the
+/// shared `<0;1>` baseline with `<2;3>` — must yield the CORRECT per-cosigner
+/// address. Pre-fix md-codec collapsed every key onto the baseline chain and
+/// `md address` SILENTLY returned the WRONG address (`@1` at `[0,0]` instead
+/// of its own `[2,0]`). The golden is computed OUTSIDE md-codec: each leaf
+/// pubkey via rust-bitcoin `Xpub::derive_pub` at the cosigner's OWN alt, then
+/// the `multi(2,…)` witnessScript / P2WSH address assembled by hand.
+#[test]
+fn address_divergent_use_site_override_yields_correct_address() {
+    use bitcoin::Address;
+    use bitcoin::bip32::ChildNumber;
+
+    // Two DISTINCT cosigner xpubs (different BIP-48 accounts).
+    let xpub0 = account_xpub("m/48'/0'/0'/2'", Network::Bitcoin);
+    let xpub1 = account_xpub("m/48'/0'/1'/2'", Network::Bitcoin);
+    let key0 = format!("@0={xpub0}");
+    let key1 = format!("@1={xpub1}");
+
+    // INDEPENDENT golden: @0 at its baseline alt[0]=0 → [0,0]; @1 at its OWN
+    // override alt[0]=2 → [2,0]. multi(2,…) is UNSORTED → template order.
+    let secp = Secp256k1::new();
+    let leaf = |xp: &Xpub, first: u32, second: u32| {
+        xp.derive_pub(
+            &secp,
+            &[
+                ChildNumber::Normal { index: first },
+                ChildNumber::Normal { index: second },
+            ],
+        )
+        .unwrap()
+        .public_key
+    };
+    let pk0 = bitcoin::PublicKey::new(leaf(&xpub0, 0, 0));
+    let pk1 = bitcoin::PublicKey::new(leaf(&xpub1, 2, 0)); // <2;3>/0 = [2,0]
+    let script = bitcoin::blockdata::script::Builder::new()
+        .push_int(2)
+        .push_key(&pk0)
+        .push_key(&pk1)
+        .push_int(2)
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKMULTISIG)
+        .into_script();
+    let expected = Address::p2wsh(&script, Network::Bitcoin).to_string();
+
+    // Sanity: the baseline-collapse (BUG) address differs from the golden, so
+    // a vacuous pass is impossible.
+    let pk1_wrong = bitcoin::PublicKey::new(leaf(&xpub1, 0, 0));
+    let wrong_script = bitcoin::blockdata::script::Builder::new()
+        .push_int(2)
+        .push_key(&pk0)
+        .push_key(&pk1_wrong)
+        .push_int(2)
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKMULTISIG)
+        .into_script();
+    let wrong = Address::p2wsh(&wrong_script, Network::Bitcoin).to_string();
+    assert_ne!(
+        expected, wrong,
+        "fixture sanity: golden != baseline-collapse"
+    );
+
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "address",
+            "--template",
+            "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))",
+            "--key",
+            &key0,
+            "--key",
+            &key1,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "md address failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let got = stdout.lines().next().unwrap_or("").trim();
+    assert_eq!(
+        got, expected,
+        "md address must derive @1 at its own <2;3>/0, not the baseline; got {got}"
+    );
+    assert_ne!(
+        got, wrong,
+        "md address must NOT silently return the baseline-collapse address"
+    );
+}
+
+/// A hardened wildcard (`/*h`) card → `md address` exits LOUDLY (exit 1,
+/// `hardened public-key derivation`), never silently. xpub-only restore
+/// cannot derive a hardened child (BIP 32).
+#[test]
+fn address_hardened_wildcard_card_refuses_loudly() {
+    let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
+    let key_arg = format!("@0={xpub}");
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "address",
+            "--template",
+            "wpkh(@0/<0;1>/*h)",
+            "--key",
+            &key_arg,
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicates::str::contains("hardened public-key derivation"));
+}
+
+/// A per-cosigner override that carries a hardened wildcard (`@1/<2;3>/*h`,
+/// baseline clean) → `md address` STILL refuses loudly via the shared
+/// `has_hardened_use_site` predicate (the override is inspected, not just the
+/// baseline). Pre-fix the override-hardened case slipped to a generic
+/// `AddressDerivationFailed`.
+#[test]
+fn address_override_hardened_wildcard_card_refuses_loudly() {
+    let xpub0 = account_xpub("m/48'/0'/0'/2'", Network::Bitcoin);
+    let xpub1 = account_xpub("m/48'/0'/1'/2'", Network::Bitcoin);
+    let key0 = format!("@0={xpub0}");
+    let key1 = format!("@1={xpub1}");
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "address",
+            "--template",
+            "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*h))",
+            "--key",
+            &key0,
+            "--key",
+            &key1,
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicates::str::contains("hardened public-key derivation"));
+}
