@@ -54,3 +54,7 @@ pub use origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 pub use phrase::Phrase;
 pub use tag::Tag;
 pub use tlv::TlvSection;
+#[cfg(feature = "derive")]
+pub use to_miniscript::{
+    has_hardened_use_site, to_miniscript_descriptor, to_miniscript_descriptor_multipath,
+};

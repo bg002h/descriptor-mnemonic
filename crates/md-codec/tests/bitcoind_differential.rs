@@ -36,7 +36,7 @@ use bitcoin::Network;
 use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
 use bitcoin::secp256k1::Secp256k1;
 use md_codec::tree::{Body, Node};
-use md_codec::use_site_path::UseSitePath;
+use md_codec::use_site_path::{Alternative, UseSitePath};
 use md_codec::{Descriptor, OriginPath, PathComponent, PathDecl, PathDeclPaths, Tag, TlvSection};
 use std::process::Command;
 use std::str::FromStr;
@@ -50,6 +50,16 @@ const N: u32 = 4;
 /// silently-wrong bitcoind connection can never make the test vacuously
 /// pass.
 const WPKH_CHAIN0_IDX0_GOLDEN: &str = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
+
+/// INDEPENDENT anti-vacuity golden for the per-cosigner-override divergent
+/// shape `wsh(multi(2, @0/<0;1>/*, @1/<2;3>/*))` at chain 0 / idx 0. `@0`
+/// derives at `[0,0]`; the diverging `@1` derives at its OWN `<2;3>/0` =
+/// `[2,0]` (NOT the baseline `[0,0]`). Computed OUTSIDE this differential
+/// (hand-rolled rust-bitcoin in `per_key_use_site_override.rs`, and
+/// independently re-derived by `bitcoind deriveaddresses`) — a vacuous
+/// same-render oracle can't make the divergent shape pass without it.
+const DIVERGENT_WSH_MULTI_CHAIN0_IDX0_GOLDEN: &str =
+    "bc1qja66mak5p34f6fhc3z8lt5at5ndayx5z9h8734z0qc8qr27ly9jskzxxcu";
 
 /// The well-known "abandon abandon … about" mnemonic — used by BIP
 /// 44/49/84/86 published test vectors (mfp 73c5da0a). Mirrors
@@ -581,6 +591,61 @@ fn corpus() -> Vec<Shape> {
                 },
             }
         },
+        // 16. PER-COSIGNER USE-SITE OVERRIDE (funds-safety): a divergent
+        //     `wsh(multi(2, @0/<0;1>/*, @1/<2;3>/*))`. `@1` overrides the
+        //     shared `<0;1>` baseline with `<2;3>`, so it MUST derive at its
+        //     own alt (chain0 → `/2/*`, chain1 → `/3/*`) — NOT the baseline.
+        //     Pre-fix md-codec collapsed every key onto the baseline chain
+        //     (silent wrong address). bitcoind (an independent C++ impl)
+        //     re-derives from md-codec's own single-chain render AND the
+        //     pinned `DIVERGENT_WSH_MULTI_CHAIN0_IDX0_GOLDEN` anchors the
+        //     diverging cosigner against an out-of-codec computation.
+        {
+            let a = account_xpub_bytes("m/48'/0'/0'/2'");
+            let b = account_xpub_bytes("m/48'/0'/1'/2'");
+            let mut tlv = pubkeys(vec![(0u8, a), (1u8, b)]);
+            tlv.use_site_path_overrides = Some(vec![(
+                1u8,
+                UseSitePath {
+                    multipath: Some(vec![
+                        Alternative {
+                            hardened: false,
+                            value: 2,
+                        },
+                        Alternative {
+                            hardened: false,
+                            value: 3,
+                        },
+                    ]),
+                    wildcard_hardened: false,
+                },
+            )]);
+            Shape {
+                label: "wsh(multi 2-of-2, @1 use-site override <2;3>)",
+                desc: Descriptor {
+                    n: 2,
+                    path_decl: PathDecl {
+                        n: 2,
+                        paths: PathDeclPaths::Divergent(vec![
+                            origin(&[(true, 48), (true, 0), (true, 0), (true, 2)]),
+                            origin(&[(true, 48), (true, 0), (true, 1), (true, 2)]),
+                        ]),
+                    },
+                    use_site_path: UseSitePath::standard_multipath(),
+                    tree: Node {
+                        tag: Tag::Wsh,
+                        body: Body::Children(vec![Node {
+                            tag: Tag::Multi,
+                            body: Body::MultiKeys {
+                                k: 2,
+                                indices: vec![0, 1],
+                            },
+                        }]),
+                    },
+                    tlv,
+                },
+            }
+        },
     ]
 }
 
@@ -671,6 +736,7 @@ fn bitcoind_address_differential() {
 
     let mut total_checks = 0usize;
     let mut golden_asserted = false;
+    let mut divergent_golden_asserted = false;
 
     for shape in corpus() {
         for chain in 0u32..=1 {
@@ -756,6 +822,22 @@ fn bitcoind_address_differential() {
                     golden_asserted = true;
                 }
 
+                // [I1] INDEPENDENT divergent golden: the per-cosigner-override
+                // shape's @1 derives at its OWN <2;3>/0 = [2,0]. The pinned
+                // golden is computed out-of-codec, so it catches a
+                // baseline-collapse regression that a same-render oracle would
+                // pass vacuously.
+                if shape.label == "wsh(multi 2-of-2, @1 use-site override <2;3>)"
+                    && chain == 0
+                    && index == 0
+                {
+                    assert_eq!(
+                        md_addr, DIVERGENT_WSH_MULTI_CHAIN0_IDX0_GOLDEN,
+                        "anti-vacuity divergent golden: @1 must derive at <2;3>/0, not the baseline"
+                    );
+                    divergent_golden_asserted = true;
+                }
+
                 let bitcoind_addr = &bitcoind_addrs[index as usize];
                 assert_eq!(
                     &md_addr, bitcoind_addr,
@@ -771,6 +853,10 @@ fn bitcoind_address_differential() {
     assert!(
         golden_asserted,
         "anti-vacuity golden was never asserted — the wpkh shape is missing from the corpus"
+    );
+    assert!(
+        divergent_golden_asserted,
+        "divergent anti-vacuity golden was never asserted — the per-cosigner-override shape is missing from the corpus"
     );
     eprintln!(
         "bitcoind differential PASS: {} shapes × 2 chains × {} indices = {} address checks \

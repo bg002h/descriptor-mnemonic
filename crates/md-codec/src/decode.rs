@@ -56,6 +56,13 @@ pub fn decode_payload(bytes: &[u8], total_bits: usize) -> Result<Descriptor, Err
     crate::validate::validate_placeholder_usage(&descriptor.tree, descriptor.n)?;
     if let Some(overrides) = &descriptor.tlv.use_site_path_overrides {
         crate::validate::validate_multipath_consistency(&descriptor.use_site_path, overrides)?;
+        // D5(a): reject non-canonical override shapes (an `@0` override, or a
+        // redundant override equal to the baseline) — never emitted by our
+        // encoders; defense-in-depth against hand-crafted wire.
+        crate::validate::validate_use_site_overrides_canonical(
+            &descriptor.use_site_path,
+            overrides,
+        )?;
     }
     if matches!(descriptor.tree.tag, crate::tag::Tag::Tr) {
         if let crate::tree::Body::Tr { tree: Some(t), .. } = &descriptor.tree.body {

@@ -114,6 +114,16 @@ fn walk_for_placeholders(
 /// Per spec §7, when multiple `UseSitePath` entries (the shared default plus any
 /// per-`@N` overrides) carry a multipath group, all groups MUST have the same
 /// number of alternatives.
+///
+/// D5(b): a `Some`-multipath baseline mixed with a `None`-multipath override
+/// (or vice-versa) is a **legal divergent STRUCTURE** (e.g. `@0/<0;1>/*` +
+/// `@1/*`), NOT a reject — a `None` entry simply carries no multipath group,
+/// so it is skipped by the alt-count check below (the `if let Some(alts)`
+/// guard). The C2 faithful reconstruction
+/// (`crate::to_miniscript::to_miniscript_descriptor_multipath`) handles the
+/// `None`-override by emitting a single-path `XPub` for that key while sibling
+/// keys stay `MultiXPub`. Only two multipath groups with DIFFERENT alt-counts
+/// are rejected.
 pub fn validate_multipath_consistency(
     shared: &UseSitePath,
     overrides: &[(u8, UseSitePath)],
@@ -132,6 +142,35 @@ pub fn validate_multipath_consistency(
                     });
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// D5(a) decode canonical-form check for `use_site_path_overrides`.
+///
+/// Our encoders only push an override entry for `i ≥ 1` and only when it
+/// DIFFERS from the resolved baseline (`Descriptor::use_site_path`). Two
+/// non-canonical / adversarial wire shapes are therefore rejected at decode
+/// (defense in depth — they are never emitted, only hand-crafted):
+///
+/// 1. An entry keyed on `@0` — the baseline cannot be overridden →
+///    [`Error::BaselineUseSiteOverride`].
+/// 2. An entry whose `UseSitePath` equals `baseline` — a redundant
+///    (non-canonical) override → [`Error::RedundantUseSiteOverride`].
+///
+/// The `@0` check runs first so an adversarial `@0` entry that ALSO happens
+/// to equal the baseline surfaces as the more-specific `BaselineUseSiteOverride`.
+pub fn validate_use_site_overrides_canonical(
+    baseline: &UseSitePath,
+    overrides: &[(u8, UseSitePath)],
+) -> Result<(), Error> {
+    for (idx, usp) in overrides {
+        if *idx == 0 {
+            return Err(Error::BaselineUseSiteOverride { idx: *idx });
+        }
+        if usp == baseline {
+            return Err(Error::RedundantUseSiteOverride { idx: *idx });
         }
     }
     Ok(())

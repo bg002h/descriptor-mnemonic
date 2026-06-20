@@ -95,20 +95,24 @@ impl Descriptor {
         index: u32,
         network: Network,
     ) -> Result<Address<NetworkUnchecked>, Error> {
-        // Pre-flight: hardened wildcard rejection (BIP-32 forbids).
-        if self.use_site_path.wildcard_hardened {
+        // Pre-flight: hardened public-key derivation rejection (BIP-32
+        // forbids). The shared `has_hardened_use_site` predicate (Point B)
+        // covers BOTH the baseline use-site path AND every per-`@N`
+        // override — a hardened wildcard OR any hardened multipath
+        // alternative, anywhere. The pre-fix baseline-only checks missed a
+        // hardened alternative inside an override, which then surfaced only
+        // as a generic `AddressDerivationFailed` deep in the converter.
+        if crate::to_miniscript::has_hardened_use_site(self) {
             return Err(Error::HardenedPublicDerivation);
         }
-        // Pre-flight: chain index in range.
+        // Pre-flight: chain index in range (resolved against the baseline
+        // use-site multipath alt-count, which bounds the supported chains).
         if let Some(alts) = &self.use_site_path.multipath {
             if (chain as usize) >= alts.len() {
                 return Err(Error::ChainIndexOutOfRange {
                     chain,
                     alt_count: alts.len(),
                 });
-            }
-            if alts[chain as usize].hardened {
-                return Err(Error::HardenedPublicDerivation);
             }
         } else if chain != 0 {
             return Err(Error::ChainIndexOutOfRange {

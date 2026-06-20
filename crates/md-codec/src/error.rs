@@ -186,6 +186,28 @@ pub enum Error {
         got: usize,
     },
 
+    /// A `use_site_path_overrides` entry was keyed on `@0`. `@0` is the
+    /// canonical baseline (`Descriptor::use_site_path`) and cannot be
+    /// overridden — an `@0` entry is a non-canonical / adversarial wire
+    /// (our encoders only push overrides for `i ≥ 1`). Per the D5(a) decode
+    /// canonical-form check (`restore-md1-per-key-use-site` SPEC §4.1).
+    #[error("use-site override keyed on baseline @{idx}; @0 cannot be overridden")]
+    BaselineUseSiteOverride {
+        /// The offending index (always 0).
+        idx: u8,
+    },
+
+    /// A `use_site_path_overrides` entry's `UseSitePath` equaled the
+    /// resolved baseline (`Descriptor::use_site_path`). A redundant override
+    /// is non-canonical (our encoders push an override only when it DIFFERS
+    /// from the baseline) and is rejected at decode. Per the D5(a) decode
+    /// canonical-form check.
+    #[error("redundant use-site override for @{idx}; equals the baseline use-site path")]
+    RedundantUseSiteOverride {
+        /// The placeholder index whose override duplicates the baseline.
+        idx: u8,
+    },
+
     /// Tap-script-tree leaf has a tag that is forbidden per spec §6.3.1.
     #[error("forbidden tap-script-tree leaf tag: 0x{tag:02x}")]
     ForbiddenTapTreeLeaf {
