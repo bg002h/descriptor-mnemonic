@@ -4,6 +4,35 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.37.0] — 2026-06-19
+
+**SemVer-MINOR — faithful per-cosigner use-site override reconstruction + a shared hardened-anywhere derivation guard. FUNDS-SAFETY: closes a silent-wrong-address class where a wallet card carrying divergent per-cosigner use-site derivation suffixes was reconstructed/derived against ONE shared baseline suffix, yielding wrong addresses for the diverging cosigners.**
+
+### Added
+
+- **`pub fn has_hardened_use_site(d: &Descriptor) -> bool`** — scans the baseline `use_site_path` AND every `use_site_path_overrides` entry for a hardened wildcard (`/*h`) or any hardened alternative. Wired into `derive_address` as the single hardened-derivation guard (replaces the prior baseline-only checks), so an override-carried hardened path now yields a clean `HardenedPublicDerivation` error instead of a generic failure. Exported for downstream (toolkit) reuse so the guard and any consumer advisory key off ONE predicate.
+- **`pub fn to_miniscript_descriptor_multipath(d: &Descriptor) -> Result<Descriptor<DescriptorPublicKey>, Error>`** — builds the descriptor STRING with each `@N` key carrying its OWN resolved per-cosigner multipath suffix (`MultiXPub` per `@N`, or single-path `XPub` for a `None`-multipath key), where `@N` == `expand_per_at_n` position. Faithful for divergent-suffix and `Some`/`None`-mix cards.
+
+### Fixed
+
+- **`to_miniscript_descriptor` / `derive_address` now use each key's resolved per-`@N` `use_site_path`** (not the shared baseline) and honor its own `wildcard_hardened`. Previously a card like `wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))` derived `@1` against the baseline `<0;1>` → wrong address (silent). Now `@1` derives at `<2;3>` faithfully. Verified by independent-golden address-equivalence (offline rust-bitcoin BIP-32 derivation) across `wsh(multi)`, `wsh(sortedmulti)`, and the `Some`/`None` mix.
+
+### Added (decode hardening)
+
+- Decode now rejects two malformed `use_site_path_overrides` shapes: an `idx == 0` baseline-as-override → `Error::BaselineUseSiteOverride { idx }`; an override equal to the resolved baseline → `Error::RedundantUseSiteOverride { idx }`. Canonical encoders never emit either; all existing corpus cards round-trip unchanged.
+
+### Notes
+
+The single-path `to_miniscript_descriptor(d, chain)` (the address-derivation entry) is retained with its per-`@N` VALUE fix; the new `*_multipath` builder is the descriptor-STRING entry. The hardened-alt reject in `use_site_to_derivation_path` is unchanged (hardened cards route to a loud refusal via `has_hardened_use_site` before any render). Companion toolkit work (`restore`/advisory) pins this `0.37.0`; the taproot use-site override leg is tracked separately (FOLLOWUP `restore-md1-taproot-use-site-override-arm`).
+
+## md-cli [0.7.1] — 2026-06-19
+
+**SemVer-PATCH — dependency bump to `md-codec =0.37.0`; inherits the faithful per-cosigner use-site reconstruction + the clean hardened refusal. FUNDS-SAFETY: `md address` on a divergent-suffix wallet card now derives the CORRECT per-cosigner addresses (previously silently wrong against the shared baseline).**
+
+### Fixed
+
+- `md address` on a card carrying per-cosigner use-site overrides now yields the correct per-`@N` addresses (inherited from `md-codec` `to_miniscript_descriptor`). A `/*h` or override-hardened card exits cleanly with a hardened-public-key-derivation error rather than a generic failure. Regression tests added.
+
 ## md-cli [0.7.0] — 2026-06-15
 
 **SemVer-MINOR — `md encode` gains standardized mstring display-grouping flags; default text output is now space/5 print-once (was unbroken). Part of the cross-constellation `display-grouping-render-strip-v1` cycle (P1).**
