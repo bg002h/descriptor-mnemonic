@@ -304,12 +304,25 @@ pub fn resolve_placeholders(
             by_i.insert(occ.i, occ);
         }
     }
-    let n = (by_i
+    // M2 (cycle-9): bound the max index BEFORE the `as u8` cast. `n` is the
+    // placeholder COUNT (max + 1); for max=255, `(255 + 1) as u8` wraps to 0,
+    // the density loop below becomes 0..0 (skipped), and `by_i[&0]` panics
+    // (@0 absent) or n=0 collapses silently into the encoder (@0 present). A
+    // template may declare at most 255 keys: @0..=@254.
+    let max = by_i
         .keys()
         .max()
         .copied()
-        .ok_or_else(|| CliError::TemplateParse("no placeholders".into()))? as usize
-        + 1) as u8;
+        .ok_or_else(|| CliError::TemplateParse("no placeholders".into()))?;
+    // `max` is a u8, so `max == 255` is the only count that overflows the
+    // `(max + 1) as u8` placeholder-count cast (256 wraps to 0).
+    if max == 255 {
+        return Err(CliError::TemplateParse(format!(
+            "placeholder index @{max} out of range: at most @254 \
+             (a template may declare at most 255 keys, @0..=@254)"
+        )));
+    }
+    let n = (max as usize + 1) as u8;
     for i in 0..n {
         if !by_i.contains_key(&i) {
             return Err(CliError::TemplateParse(format!(
@@ -317,11 +330,17 @@ pub fn resolve_placeholders(
             )));
         }
     }
-    let at0 = by_i[&0];
+    // Defense-in-depth (M2): checked gets instead of bracket-index panics, in
+    // case any future path reaches here with a sparse map.
+    let at0 = *by_i.get(&0).ok_or_else(|| {
+        CliError::TemplateParse("internal: @0 missing after density check".into())
+    })?;
     let use_site_path = make_use_site_path(at0)?;
     let mut use_site_path_overrides = Vec::new();
     for i in 1..n {
-        let occ = by_i[&i];
+        let occ = *by_i.get(&i).ok_or_else(|| {
+            CliError::TemplateParse(format!("internal: @{i} missing after density check"))
+        })?;
         let usp_i = make_use_site_path(occ)?;
         if usp_i != use_site_path {
             use_site_path_overrides.push((i, usp_i));
@@ -444,6 +463,57 @@ mod resolve_tests {
         let err = resolve_placeholders(&occs).unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("inconsistent"), "got: {msg}");
+    }
+
+    // ─── M2 (cycle-9): @255 placeholder-count u8 overflow → panic ─────────
+    // `n = (max + 1) as u8` wraps to 0 for max=255, the density loop is
+    // skipped, and `by_i[&0]` bracket-indexes panic (@0 absent) or silently
+    // collapse n=0 into the encoder (@0 present). Fix: bound max <= 254 BEFORE
+    // the cast + checked gets. A previously-panicking input now errors cleanly.
+
+    #[test]
+    fn rejects_at255_no_panic_at0_absent() {
+        // @255 present, @0 absent: today panics at `by_i[&0]`.
+        let occs = lex_placeholders("wpkh(@255/*)").unwrap();
+        let err = resolve_placeholders(&occs).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            matches!(err, CliError::TemplateParse(_)),
+            "expected TemplateParse, got {err:?}"
+        );
+        assert!(
+            msg.contains("254") && msg.contains("out of range"),
+            "error must name the @254 bound; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_at255_no_silent_n0_at0_present() {
+        // @0 present too (dense-looking): must still reject at the bound, not
+        // silently flow n=0 into the encoder.
+        let occs = lex_placeholders("wsh(multi(2,@0/*,@255/*))").unwrap();
+        let err = resolve_placeholders(&occs).unwrap_err();
+        assert!(
+            matches!(err, CliError::TemplateParse(_)),
+            "expected TemplateParse, got {err:?}"
+        );
+        assert!(format!("{err}").contains("254"));
+    }
+
+    #[test]
+    fn accepts_at254_boundary() {
+        // @254 is the highest legal index (255 keys, @0..=@254). Build a dense
+        // @0..=@254 occurrence set directly (lexing 255 placeholders is verbose).
+        let occs: Vec<PlaceholderOccurrence> = (0u32..=254)
+            .map(|i| PlaceholderOccurrence {
+                i: i as u8,
+                origin_path: None,
+                multipath_alts: vec![0, 1],
+                wildcard_hardened: false,
+            })
+            .collect();
+        let r = resolve_placeholders(&occs).unwrap();
+        assert_eq!(r.n, 255);
     }
 }
 
