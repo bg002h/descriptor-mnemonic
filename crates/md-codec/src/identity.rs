@@ -169,13 +169,20 @@ impl WalletPolicyId {
 ///
 /// `path_decl.paths` is always populated post-decode (v0.11 wire
 /// invariant). Canonical-fill into `path_decl` happens at encode time
-/// only (per spec §6.3). Consequently this function does NOT consult
-/// [`crate::canonical_origin::canonical_origin`] for path resolution at
-/// hash time — it reads `OriginPathOverrides[idx]` if present, else
-/// `path_decl.paths` resolved per the divergent_paths flag, via
-/// [`expand_per_at_n`]. Any future change that elides `path_decl` on
-/// the wire requires re-introducing `canonical_origin` lookups in both
-/// this function and [`expand_per_at_n`].
+/// only (per spec §6.3). For a decoded wire this function therefore
+/// reads `OriginPathOverrides[idx]` if present, else `path_decl.paths`
+/// resolved per the divergent_paths flag, via [`expand_per_at_n`].
+///
+/// L14 (cycle-10): for an in-memory `Descriptor` built with an ELIDED
+/// (empty-components) origin — which `expand_per_at_n` surfaces as an
+/// empty `e.origin_path` — this function canonical-fills that single
+/// empty case from [`crate::canonical_origin::canonical_origin`] so the
+/// policy-id honors its documented "stable across origin-elision"
+/// invariant (an elided origin hashes identically to the explicit form).
+/// Decoded wires are unaffected (their `path_decl` is always populated,
+/// so the empty-origin branch is never taken). Any future change that
+/// elides `path_decl` on the wire would extend this canonical_origin
+/// lookup to the decode path here and in [`expand_per_at_n`].
 pub fn compute_wallet_policy_id(d: &Descriptor) -> Result<WalletPolicyId, Error> {
     // Step 1: canonicalize on a clone so callers don't have to remember
     // the precondition and we never mutate the caller's descriptor.
