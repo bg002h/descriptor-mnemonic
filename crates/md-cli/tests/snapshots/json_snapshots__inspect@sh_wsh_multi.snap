@@ -67,7 +67,7 @@ expression: body
     "hex": "ed9b6a1d5a268b12b6d20c3e5d90d39b"
   },
   "wallet_policy_id": {
-    "fingerprint": "0xb09626e9",
-    "hex": "b09626e9677126f24d98541eb28de5c4"
+    "fingerprint": "0x7eb6facb",
+    "hex": "7eb6facb31258880114f9b1dfd66bd72"
   }
 }

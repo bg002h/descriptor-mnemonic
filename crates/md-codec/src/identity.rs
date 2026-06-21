@@ -71,6 +71,13 @@ impl WalletDescriptorTemplateId {
 pub fn compute_wallet_descriptor_template_id(
     d: &Descriptor,
 ) -> Result<WalletDescriptorTemplateId, Error> {
+    // L15: canonicalize placeholder ordering on a clone first (mirror
+    // compute_wallet_policy_id) so the WDT-id is invariant to placeholder
+    // index permutation. The identity fast-path leaves already-canonical
+    // inputs (the toolkit's @0,@1,… ordering) byte-identical.
+    let mut d_canonical = d.clone();
+    canonicalize_placeholder_indices(&mut d_canonical)?;
+    let d = &d_canonical;
     let mut w = BitWriter::new();
     // Per spec §8.1: use-site-path-decl bits || tree bits || UseSitePathOverrides TLV bits
     let kiw = d.key_index_width();
@@ -189,8 +196,23 @@ pub fn compute_wallet_policy_id(d: &Descriptor) -> Result<WalletPolicyId, Error>
     for e in &expanded {
         // Origin path bits (scratch BitWriter; bit_len() captures unpadded
         // length, into_bytes() zero-pads to the next byte boundary).
+        //
+        // L14: canonical-fill an elided (empty) origin so the policy-id
+        // honors its documented "stable across origin-elision" invariant.
+        // An empty resolved origin with a canonical wrapper hashes
+        // identically to the explicit form. expand_per_at_n already returns
+        // explicit paths verbatim, so only the empty case needs the fill;
+        // when canonical_origin is None the empty path is structurally
+        // precluded upstream (MissingExplicitOrigin), so the unwrap_or_else
+        // fallback is unreachable-but-safe.
+        let origin_for_hash = if e.origin_path.components.is_empty() {
+            crate::canonical_origin::canonical_origin(&d.tree)
+                .unwrap_or_else(|| e.origin_path.clone())
+        } else {
+            e.origin_path.clone()
+        };
         let mut path_scratch = BitWriter::new();
-        e.origin_path.write(&mut path_scratch)?;
+        origin_for_hash.write(&mut path_scratch)?;
         let path_bit_len = path_scratch.bit_len();
         let path_bytes = path_scratch.into_bytes();
 
@@ -359,6 +381,58 @@ mod tests {
         let id2 = compute_wallet_descriptor_template_id(&d2).unwrap();
         // Fingerprints are excluded from WDT-Id hash domain
         assert_eq!(id1, id2);
+    }
+
+    /// L15: the WDT-id must be invariant to placeholder-index permutation,
+    /// mirroring the policy-id's canonicalization. `wsh(multi(2,@1,@0))`
+    /// (non-canonical placeholder ordering) and `wsh(multi(2,@0,@1))`
+    /// (canonical) describe the same template and MUST share a WDT-id.
+    /// RED today (raw `*idx` is hashed without canonicalization); GREEN
+    /// after compute_wallet_descriptor_template_id canonicalizes a clone.
+    #[test]
+    fn wdt_id_invariant_to_placeholder_ordering() {
+        let mk_d = |indices: Vec<u8>| Descriptor {
+            n: 2,
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Shared(OriginPath {
+                    components: vec![
+                        PathComponent {
+                            hardened: true,
+                            value: 48,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 0,
+                        },
+                        PathComponent {
+                            hardened: true,
+                            value: 2,
+                        },
+                    ],
+                }),
+            },
+            use_site_path: UseSitePath::standard_multipath(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::Multi,
+                    body: Body::MultiKeys { k: 2, indices },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        // Non-canonical: tree first-occurrence is @1 then @0.
+        let d_non_canonical = mk_d(vec![1, 0]);
+        // Canonical: tree first-occurrence is @0 then @1.
+        let d_canonical = mk_d(vec![0, 1]);
+        let id_nc = compute_wallet_descriptor_template_id(&d_non_canonical).unwrap();
+        let id_c = compute_wallet_descriptor_template_id(&d_canonical).unwrap();
+        assert_eq!(id_nc, id_c);
     }
 
     // ---- v0.13 WalletPolicyId tests ----
@@ -570,21 +644,25 @@ mod tests {
     /// invariant for the trivial case.)
     #[test]
     fn walletpolicyid_stable_across_origin_elision() {
+        // Explicit: wpkh(@0) with path_decl = Shared(m/84'/0'/0').
         let d_explicit = cell_7_wpkh_descriptor();
-        // Wallet B: same path supplied via OriginPathOverrides[0]
-        // instead of a Shared(BIP84) baseline — final canonical-record
-        // origin path is identical, so the IDs MUST match.
-        let mut d_override = cell_7_wpkh_descriptor();
-        let bip84 = match &d_override.path_decl.paths {
-            PathDeclPaths::Shared(p) => p.clone(),
-            _ => panic!(),
+        // Elided: same wpkh(@0) wallet, but path_decl is a genuinely EMPTY
+        // Shared origin (no explicit path). The canonical wrapper
+        // (wpkh → m/84'/0'/0') supplies the path at hash time via the L14
+        // canonical-fill. RED today (the empty path hashes a 0000 length
+        // prefix + no components, differing from the explicit component
+        // bits); GREEN after the L14 fill.
+        let mut d_elided = cell_7_wpkh_descriptor();
+        d_elided.path_decl = PathDecl {
+            n: 1,
+            paths: PathDeclPaths::Shared(OriginPath { components: vec![] }),
         };
-        d_override.tlv.origin_path_overrides = Some(vec![(0u8, bip84)]);
-        // Override beats baseline in expand_per_at_n; produces the same
-        // canonical record bytes either way.
-        let id1 = compute_wallet_policy_id(&d_explicit).unwrap();
-        let id2 = compute_wallet_policy_id(&d_override).unwrap();
-        assert_eq!(id1, id2);
+        let id_explicit = compute_wallet_policy_id(&d_explicit).unwrap();
+        let id_elided = compute_wallet_policy_id(&d_elided).unwrap();
+        // The documented "stable across origin-elision" invariant: the
+        // elided form, canonical-filled, must hash identically to the
+        // explicit form.
+        assert_eq!(id_explicit, id_elided);
     }
 
     /// Use-site path supplied as the descriptor baseline vs supplied via
