@@ -4,6 +4,36 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.9.1] — 2026-06-21
+
+**SemVer-PATCH — re-release pinning `md-codec =0.39.0` (constellation bug-hunt cycle-10 library cluster); no `md-cli` code change.**
+
+### Notes
+
+- Pin bump only: `md-codec = "=0.38.0" → "=0.39.0"`. No `md-cli` source change, no flag/option/subcommand/output-shape change → no manual-mirror.
+- `inspect` / `encode` id display reflects the cycle-10 `md-codec` L14/L15 id-VALUE changes (display-only): an elided-origin card's `wallet_policy_id` now equals its explicit-origin form; a non-canonical-placeholder-ordering input's `wallet_descriptor_template_id` now equals its canonical form. These are in-memory id comparisons only and are NOT embedded in the `md1` wire payload. Companion: `md-codec [0.39.0]`.
+
+## md-codec [0.39.0] — 2026-06-21
+
+**SemVer-MINOR — library cluster: funds-availability chain-gate widening + identity-stability canonicalization + a typed panic guard. Constellation bug-hunt cycle-10 (M3 / L14 / L15 / L17 / L6).**
+
+> **RELEASE NOTE — id-VALUE change (in-memory ONLY, NOT on the wire).** L15 (and L14 for elided-origin inputs) change the *value* returned by `compute_wallet_descriptor_template_id` / `compute_wallet_policy_id` for NON-canonical-placeholder-ordering / elided-origin inputs. These 128-bit identifiers are **in-memory comparison/bind/search keys only** — `encode_md1_string` emits NO id, so **no engraved/persisted `md1` card changes**. Canonical-ordering, explicit-origin inputs (what the toolkit always builds) are byte-identical pre/post.
+
+### Fixed
+
+- **M3 (funds-availability):** `Descriptor::derive_address`'s chain-range pre-flight bounded `chain` solely by the baseline `use_site_path.multipath`, rejecting every non-zero `chain` for a legal `None`-baseline + per-`@N` `<0;1>`-override wallet (`ChainIndexOutOfRange { alt_count: 0 }`) — even though the overridden key's change (chain-1) address is real and fundable. The gate now bounds `chain` by the MAX alt-count across the baseline AND every per-`@N` use-site override (`None` → alt-count 1). The per-key authority (`use_site_to_derivation_path`) still fail-closes per key, so the widening can only let a valid request derive correctly or still reject — never a wrong subtree.
+- **L14 (identity-stability):** `compute_wallet_policy_id` hashed an elided (empty) resolved origin verbatim, so an elided `wpkh(@0)` card hashed DIFFERENTLY from the explicit `m/84'/0'/0'` form despite the documented "stable across origin-elision" invariant. An empty resolved origin is now canonical-filled from the wrapper (`canonical_origin(&d.tree)`) before hashing.
+- **L15 (identity-stability):** `compute_wallet_descriptor_template_id` hashed raw placeholder indices without canonicalization (asymmetric vs the policy-id), so `wsh(multi(2,@1,@0))` and `wsh(multi(2,@0,@1))` — the same template — produced different WDT-ids. It now canonicalizes a clone first (mirroring the policy-id), invariant to placeholder permutation; the identity fast-path leaves canonical inputs byte-identical.
+- **L6 (panic guard, library boundary):** `canonicalize_placeholder_indices` panicked with an out-of-bounds index on a hand-built `Descriptor` carrying a short `Divergent` path vector (`len < n`) under a non-identity permutation. It now returns a typed `DivergentPathCountMismatch`, mirroring the guard `expand_per_at_n` already has. Not wire-reachable (`PathDecl::read` always reads exactly `n`).
+
+### Internal
+
+- **L17:** de-vacuified `walletpolicyid_stable_across_origin_elision` — the test now constructs a genuinely elided empty `path_decl` and asserts it hashes identically to the explicit form (the RED→GREEN gate for L14); the prior test compared two byte-identical explicit operands and never exercised elision.
+
+### Notes
+
+No CLI-surface change in any of the four constellation CLIs → no `schema_mirror`, no manual-mirror, no sibling-codec FOLLOWUP companion for the in-scope items.
+
 ## md-cli [0.9.0] — 2026-06-21
 
 **SemVer-MINOR — lexer/parser robustness + template-classification fixes (constellation bug-hunt cycle-9).**
