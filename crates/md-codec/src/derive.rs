@@ -105,19 +105,29 @@ impl Descriptor {
         if crate::to_miniscript::has_hardened_use_site(self) {
             return Err(Error::HardenedPublicDerivation);
         }
-        // Pre-flight: chain index in range (resolved against the baseline
-        // use-site multipath alt-count, which bounds the supported chains).
-        if let Some(alts) = &self.use_site_path.multipath {
-            if (chain as usize) >= alts.len() {
-                return Err(Error::ChainIndexOutOfRange {
-                    chain,
-                    alt_count: alts.len(),
-                });
-            }
-        } else if chain != 0 {
+        // Pre-flight: chain index in range. Bound by the MAX alt-count across
+        // the baseline use-site path AND every per-`@N` override (None →
+        // alt-count 1, i.e. only chain 0). The per-key path
+        // (use_site_to_derivation_path) is the real authority and STILL
+        // fail-closes per key; this coarse gate must not be narrower than the
+        // widest key, or a valid override change chain is rejected.
+        let baseline_alts = self
+            .use_site_path
+            .multipath
+            .as_ref()
+            .map(|a| a.len())
+            .unwrap_or(1);
+        let max_alts = self
+            .tlv
+            .use_site_path_overrides
+            .iter()
+            .flatten()
+            .map(|(_, p)| p.multipath.as_ref().map(|a| a.len()).unwrap_or(1))
+            .fold(baseline_alts, std::cmp::max);
+        if (chain as usize) >= max_alts {
             return Err(Error::ChainIndexOutOfRange {
                 chain,
-                alt_count: 0,
+                alt_count: max_alts,
             });
         }
 
@@ -299,5 +309,84 @@ mod tests {
         };
         let err = d.derive_address(0, 0, Network::Bitcoin).unwrap_err();
         assert!(matches!(err, Error::HardenedPublicDerivation));
+    }
+
+    /// Build a legal D5(b)-shaped `wpkh(@0)` descriptor with a `None`
+    /// baseline use-site (alt-count modeled as 1) plus a per-`@0` use-site
+    /// override carrying a `<0;1>` multipath (alt-count 2). `@0` has an
+    /// xpub so addresses resolve.
+    fn none_baseline_override_change_descriptor() -> Descriptor {
+        Descriptor {
+            n: 1,
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(bip84_origin()),
+            },
+            use_site_path: UseSitePath {
+                multipath: None,
+                wildcard_hardened: false,
+            },
+            tree: Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            },
+            tlv: {
+                let mut t = TlvSection::new_empty();
+                t.use_site_path_overrides = Some(vec![(
+                    0u8,
+                    UseSitePath {
+                        multipath: Some(vec![
+                            Alternative {
+                                hardened: false,
+                                value: 0,
+                            },
+                            Alternative {
+                                hardened: false,
+                                value: 1,
+                            },
+                        ]),
+                        wildcard_hardened: false,
+                    },
+                )]);
+                t.pubkeys = Some(vec![(0u8, one_test_xpub_bytes())]);
+                t
+            },
+        }
+    }
+
+    #[test]
+    fn derive_address_override_change_chain_derivable() {
+        // Funds-availability (M3): a `None`-baseline + `Some(<0;1>)`-override
+        // wallet must derive its change (chain-1) address. The pre-fix gate
+        // bounds `chain` ONLY by the baseline (`None` → only chain 0) and
+        // rejects chain=1 with `alt_count: 0`. The per-key path resolves
+        // `@0`'s own override multipath and derives correctly post-fix.
+        let d = none_baseline_override_change_descriptor();
+        // Receive (chain 0) control: derivable in both pre- and post-fix.
+        assert!(d.derive_address(0, 0, Network::Bitcoin).is_ok());
+        // Change (chain 1): RED today → GREEN after the gate widening.
+        let change = d.derive_address(1, 0, Network::Bitcoin);
+        assert!(
+            change.is_ok(),
+            "override change chain must derive, got {change:?}"
+        );
+    }
+
+    #[test]
+    fn derive_address_override_chain_over_max_still_rejects() {
+        // Positive control / no over-widening: chain=2 is beyond the
+        // override's 2-alt max (max_alts == 2) → still rejected.
+        let d = none_baseline_override_change_descriptor();
+        let err = d.derive_address(2, 0, Network::Bitcoin).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::ChainIndexOutOfRange {
+                    chain: 2,
+                    alt_count: 2
+                }
+            ),
+            "over-max chain must still reject with alt_count=2, got {err:?}"
+        );
     }
 }
