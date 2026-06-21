@@ -461,6 +461,21 @@ pub enum Error {
         /// The maximum legal codeword length (93).
         max: usize,
     },
+
+    /// Decode-side cap, non-correcting path (cycle-4 I1 / §5.2.3): a single
+    /// md1 string handed to the non-correcting primitive (`unwrap_string` /
+    /// `decode_md1_string`) had more than 93 symbols. A clean (residue == 0)
+    /// over-length word is BCH-verifiable by the length-agnostic
+    /// `bch_verify_regular` but is structurally out-of-domain for the regular
+    /// code; reject it before BCH verification (fail-closed). No chunk index
+    /// (single string, not a chunk).
+    #[error("string has {symbols} symbols; the codex32 regular code caps a string at {max}")]
+    StringSymbolCountOutOfRange {
+        /// The over-length symbol count actually supplied.
+        symbols: usize,
+        /// The maximum legal codeword length (93).
+        max: usize,
+    },
 }
 
 #[cfg(test)]

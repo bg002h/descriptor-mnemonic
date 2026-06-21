@@ -166,6 +166,18 @@ pub fn unwrap_string(s: &str) -> Result<(Vec<u8>, usize), Error> {
         symbols.push(sym);
     }
 
+    // cycle-4 I1 (§5.2.3): reject an over-93-symbol codeword BEFORE the
+    // length-agnostic BCH verify. A clean (residue==0) over-length word is
+    // BCH-verifiable but structurally out-of-domain for the regular code
+    // (β has order 93). Symmetric with the too-short floor below; fail-closed
+    // so a non-correcting `decode` cannot accept an out-of-domain payload.
+    if symbols.len() > REGULAR_CODE_SYMBOLS_MAX {
+        return Err(Error::StringSymbolCountOutOfRange {
+            symbols: symbols.len(),
+            max: REGULAR_CODE_SYMBOLS_MAX,
+        });
+    }
+
     // 3. BCH-verify.
     if !crate::bch::bch_verify_regular(HRP, &symbols) {
         return Err(Error::Codex32DecodeError(
@@ -300,5 +312,53 @@ mod tests {
         let s = wrap_payload(&bytes, bit_count).expect("80 data symbols is in-domain");
         // HRP "md1" (3) + 80 data + 13 checksum = 96 chars (93-symbol codeword).
         assert_eq!(s.chars().count(), 3 + 80 + REGULAR_CHECKSUM_SYMBOLS);
+    }
+
+    // ── I1 (cycle-4, §5.2.3): non-correcting decode 93-symbol-codeword cap ────
+    // `unwrap_string` (the `decode_md1_string` primitive) BCH-verifies via the
+    // length-agnostic `bch_verify_regular` and only had a too-SHORT floor. A
+    // CLEAN (residue==0, BCH-valid) over-93-symbol md1 must fail closed, not
+    // decode an out-of-domain payload.
+
+    /// Build a CLEAN (BCH-valid, residue==0) md1 string with `data_symbols`
+    /// arbitrary data symbols, bypassing `wrap_payload`'s H6 cap by calling the
+    /// raw BCH primitive directly. Used to forge over-93-codeword strings.
+    fn clean_md1_with_data_symbols(data_symbols: usize) -> String {
+        let data: Vec<u8> = (0..data_symbols).map(|i| (i as u8) & 0x1F).collect();
+        let checksum = crate::bch::bch_create_checksum_regular(HRP, &data);
+        let mut s = String::new();
+        s.push_str(HRP);
+        s.push('1');
+        for &sym in data.iter().chain(checksum.iter()) {
+            s.push(symbol_to_char(sym));
+        }
+        s
+    }
+
+    #[test]
+    fn unwrap_string_rejects_clean_over_93_symbol_string() {
+        // 90 data + 13 checksum = 103 codeword symbols (> 93), residue == 0.
+        let s = clean_md1_with_data_symbols(90);
+        let codeword_symbols = 90 + REGULAR_CHECKSUM_SYMBOLS;
+        assert_eq!(codeword_symbols, 103);
+        match crate::decode::decode_md1_string(&s) {
+            Err(Error::StringSymbolCountOutOfRange { symbols, max }) => {
+                assert_eq!(symbols, codeword_symbols);
+                assert_eq!(max, 93);
+            }
+            other => panic!(
+                "clean over-93-symbol string must be rejected with StringSymbolCountOutOfRange, got {other:?}"
+            ),
+        }
+    }
+
+    #[test]
+    fn unwrap_string_accepts_exactly_93_symbol_codeword() {
+        // 80 data + 13 checksum = 93 codeword symbols (the maximal legal value).
+        let s = clean_md1_with_data_symbols(80);
+        assert_eq!(s.chars().count(), 3 + 80 + REGULAR_CHECKSUM_SYMBOLS);
+        let (_bytes, bit_count) =
+            unwrap_string(&s).expect("a 93-symbol legal codeword must still decode");
+        assert_eq!(bit_count, 5 * 80);
     }
 }
