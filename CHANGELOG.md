@@ -4,6 +4,23 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.9.0] — 2026-06-21
+
+**SemVer-MINOR — lexer/parser robustness + template-classification fixes (constellation bug-hunt cycle-9).**
+
+### Fixed
+
+- **M5 (funds):** a non-final `<a;b>` BIP-389 multipath in a template (e.g. `wpkh(@0/<2;3>/0'/*)`) is now REJECTED. The lexer and the substitution regexes previously disagreed — the descriptor carried a multipath over a single-path tree → a WRONG address. This is an md1/use-site representability limit (BIP-389 permits the form; md1 cannot represent it), so a typed reject is the only safe outcome.
+- **M10:** a bare BIP-86 single-key `tr(@0)` template is now accepted (was misclassified as multisig → depth-gate false-reject). Script-path `tr(...,{...})` / `multi_a` forms stay classified as multisig.
+- **M2:** a placeholder index `@255` no longer panics (`(N+1) as u8` overflow) — `@N` for `N > 254` is now a typed reject.
+- **M11:** an off-curve xpub is rejected at parse (secp256k1 point check) rather than deferred to derive.
+- **L4 / L19:** watch-only / keyed `md1` output is no longer mislabeled as a "keyless template".
+- **L7:** the stale `md repair` help-epilog claim that non-chunked `md1` is "rejected" is removed (non-chunked has been supported since `md-codec` v0.35.0).
+
+### Notes
+
+No `md-codec` change this cycle. All fixes are confined to the `md-cli` lexer / parser / template-classifier and help text.
+
 ## md-cli [0.8.1] — 2026-06-21
 
 **SemVer-PATCH — dependency bump to `md-codec =0.38.0`; inherits the funds-safety domain caps (H6 encode 80-data-symbol cap, M4 correcting-decode + I1 non-correcting-decode `>93` codeword caps). Constellation bug-hunt cycle-4, md-cli leg.**
