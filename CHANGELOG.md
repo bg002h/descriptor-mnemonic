@@ -4,6 +4,32 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.8.1] — 2026-06-21
+
+**SemVer-PATCH — dependency bump to `md-codec =0.38.0`; inherits the funds-safety domain caps (H6 encode 80-data-symbol cap, M4 correcting-decode + I1 non-correcting-decode `>93` codeword caps). Constellation bug-hunt cycle-4, md-cli leg.**
+
+### Fixed
+
+- An over-domain `md1` (an over-length single string, or a `>93`-symbol chunk fed to `md decode` / `md repair` / restore / inspect / bundle) is now REJECTED rather than encoded un-decodably or mis-corrected at an aliased BCH root. The new `md-codec` rejects surface through the opaque `CliError::Codec` wrapper at exit 1; no new CLI flag or output-shape change. Companion: `md-codec [0.38.0]`.
+
+## md-codec [0.38.0] — 2026-06-21
+
+**SemVer-MINOR — FUNDS-SAFETY: domain caps on the codex32 regular code BCH(93, 80, 8), fail-closed on out-of-domain `md1` at both encode and decode. Constellation bug-hunt cycle-4 (H6 / M4 / I1).**
+
+### Added
+
+- Three additive `Error` variants — `PayloadTooLongForSingleString { data_symbols, max }`, `ChunkSymbolCountOutOfRange { chunk_index, symbols, max }`, `StringSymbolCountOutOfRange { symbols, max }` — for the new domain rejects (additive → MINOR).
+
+### Fixed
+
+- **H6 (encode side):** `wrap_payload` now caps at `REGULAR_DATA_SYMBOLS_MAX = 80` data symbols (`80 + 13` checksum `== 93`, the single-string codeword length). The default (non-chunked) encode path could previously emit an over-length, un-decodable / aliasing-prone single string; it now fails closed at the lowest shared chokepoint, directing callers to chunked encoding. `encode_md1_string` inherits the guard.
+- **M4 (correcting-decode side):** the codex32 regular code generator `β` has order 93, so polynomial degrees `d` and `d+93` alias in `chien_search`. A `>93`-symbol chunk fed to the repair path could mis-correct at an aliased root. A typed reject (`ChunkSymbolCountOutOfRange`) now fires at the `decode_with_correction` boundary BEFORE any residue/correction logic, backed by internal `None`-floors in `decode_regular_errors` / `chien_search` (defense-in-depth). New `REGULAR_CODE_SYMBOLS_MAX == 93` constant.
+- **I1 (non-correcting-decode side):** `unwrap_string` (the read-only `md decode` / restore / inspect / bundle primitive) BCH-verifies via the length-agnostic `bch_verify_regular` and previously had only a too-SHORT floor — a CLEAN (residue `== 0`) over-93-symbol `md1` was accepted and decoded out-of-domain. It now caps at `REGULAR_CODE_SYMBOLS_MAX` → `StringSymbolCountOutOfRange`, governing BOTH decode entry points consistently with the regular-code 93-symbol domain.
+
+### Notes
+
+Existing single-string round-trip tests for oversize wallet-policy descriptors (populated 65-byte xpub TLVs) are re-routed to the chunked path (the contractual remedy). All in-domain corpus cards round-trip unchanged. Companion: `md-cli [0.8.1]` (inherits via the exact-pin bump).
+
 ## md-cli [0.8.0] — 2026-06-20
 
 **SemVer-MINOR — FUNDS-SAFETY: reject hardened multipath in descriptor templates (constellation bug hunt H13, md-cli leg; lockstep with `mnemonic-toolkit 0.61.0`).**
