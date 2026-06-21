@@ -447,3 +447,35 @@ fn repair_json_multi_chunk_envelope_shape() {
     assert!(p0["now"].is_string(), "now must be a string");
     assert_ne!(p0["was"], p0["now"], "was != now for a real correction");
 }
+
+/// L7 (cycle-9): the `md repair --help` epilog must NOT carry the stale claim
+/// that non-chunked single-string md1 are "rejected with a wire-format error".
+/// md-codec v0.35.0 added single-string auto-dispatch — both chunked and
+/// non-chunked md1 are now repaired. The ATOMIC SEMANTICS note stays.
+#[test]
+fn repair_help_epilog_has_no_stale_rejection_claim() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["repair", "--help"])
+        .output()
+        .unwrap();
+    let help = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        !help.contains("rejected with a wire-format error"),
+        "stale L7 claim still present in repair --help:\n{help}"
+    );
+    assert!(
+        !help.contains("are rejected"),
+        "stale L7 rejection prose still present in repair --help:\n{help}"
+    );
+    // The accurate replacement: both forms are accepted.
+    assert!(
+        help.contains("non-chunked") || help.contains("Non-chunked"),
+        "repair --help should mention non-chunked acceptance:\n{help}"
+    );
+    // The still-accurate atomic-semantics note must remain.
+    assert!(
+        help.contains("ATOMIC SEMANTICS"),
+        "ATOMIC SEMANTICS note must remain in repair --help:\n{help}"
+    );
+}

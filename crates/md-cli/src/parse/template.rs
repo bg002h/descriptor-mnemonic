@@ -1926,9 +1926,52 @@ pub fn ctx_for_template(template: &str) -> ScriptCtx {
     let head = template.trim_start();
     if head.starts_with("wpkh(") || head.starts_with("pkh(") || head.starts_with("sh(wpkh(") {
         ScriptCtx::SingleSig
+    } else if is_bare_keypath_tr(head) {
+        // M10 (cycle-9): a bare single-key key-path taproot `tr(@i[/path])` is
+        // a BIP-86 single-key P2TR whose account xpub is depth 3 (m/86'/0'/0').
+        // Classify it SingleSig so the depth gate accepts a depth-3 xpub. A
+        // `tr(` WITH a script tree (top-level `,` or `{`) keeps MultiSig so the
+        // depth gate stays strict for depth-4 script-path keys.
+        ScriptCtx::SingleSig
     } else {
         ScriptCtx::MultiSig
     }
+}
+
+/// True iff `head` is a bare key-path taproot — `tr( <internal-key> )` with NO
+/// script tree: the `tr(...)` argument list contains no `{` and no top-level
+/// (depth-0 within the argument list) `,`. A top-level comma in a `tr()`
+/// separates the internal key from a script tree or `multi_a` cosigners, and a
+/// `{` opens a tap-tree branch — either makes it a script-path taproot
+/// (MultiSig depth-4), NOT a bare key-path one. Used ONLY for the SingleSig
+/// classification; over-acceptance here would loosen the depth gate, so the
+/// scope is deliberately strict.
+fn is_bare_keypath_tr(head: &str) -> bool {
+    let Some(rest) = head.strip_prefix("tr(") else {
+        return false;
+    };
+    // Scan the argument list of the outer `tr(...)`. Track paren depth relative
+    // to the argument list; the matching `)` of `tr(` closes the list at depth
+    // 0. A `{` anywhere, or a `,` at depth 0, disqualifies the bare form.
+    let mut depth: i32 = 0;
+    for c in rest.chars() {
+        match c {
+            '{' => return false,
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    // Reached the matching `)` of the outer `tr(` — argument
+                    // list ended with no `{` and no depth-0 `,`: bare key-path.
+                    return true;
+                }
+                depth -= 1;
+            }
+            ',' if depth == 0 => return false,
+            _ => {}
+        }
+    }
+    // Malformed (no closing `)`): be conservative and do NOT classify SingleSig.
+    false
 }
 
 #[cfg(test)]
@@ -1968,5 +2011,71 @@ mod entry_tests {
     #[test]
     fn ctx_for_wsh_is_multisig() {
         assert_eq!(ctx_for_template("wsh(multi(2,...))"), ScriptCtx::MultiSig);
+    }
+
+    // ─── M10 (cycle-9): bare single-key key-path tr(@0) is BIP-86 SingleSig ──
+    // A single-key P2TR account xpub lives at m/86'/0'/0' = depth 3. The
+    // classifier previously routed every `tr(` to MultiSig(depth-4), so a
+    // depth-3 BIP-86 account xpub was falsely rejected at the depth gate. A
+    // bare key-path taproot (`tr(@i[/path])` — exactly one `@i`, no top-level
+    // script tree `,` and no `{`) is now classified SingleSig(depth-3). A `tr(`
+    // WITH a script tree stays MultiSig(depth-4) so the depth gate stays strict.
+
+    #[test]
+    fn ctx_for_bare_keypath_tr_is_singlesig() {
+        assert_eq!(ctx_for_template("tr(@0/<0;1>/*)"), ScriptCtx::SingleSig);
+    }
+
+    #[test]
+    fn ctx_for_bare_tr_at0_is_singlesig() {
+        assert_eq!(ctx_for_template("tr(@0)"), ScriptCtx::SingleSig);
+        assert_eq!(ctx_for_template("tr(@0/*)"), ScriptCtx::SingleSig);
+    }
+
+    #[test]
+    fn ctx_for_tr_with_script_tree_stays_multisig() {
+        // Over-acceptance guard: a script-path taproot keeps MultiSig(depth-4).
+        assert_eq!(
+            ctx_for_template("tr(@0,{pk(@1),pk(@2)})"),
+            ScriptCtx::MultiSig
+        );
+        assert_eq!(
+            ctx_for_template("tr(NUMS,multi_a(2,@0,@1,@2))"),
+            ScriptCtx::MultiSig
+        );
+        assert_eq!(
+            ctx_for_template(&format!(
+                "tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0,@1,@2))"
+            )),
+            ScriptCtx::MultiSig
+        );
+        // tr with a single leaf script (has a top-level comma) → MultiSig.
+        assert_eq!(
+            ctx_for_template("tr(@0/<0;1>/*,pk(@1/<0;1>/*))"),
+            ScriptCtx::MultiSig
+        );
+    }
+
+    #[test]
+    fn bare_keypath_tr_accepts_depth3_bip86_xpub() {
+        // m/86'/0'/0' BIP-86 single-key P2TR account xpub = depth 3. Build it
+        // from the abandon mnemonic; previously rejected ("expected depth 4").
+        use crate::parse::keys::parse_key;
+        use bitcoin::Network;
+        use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
+        use bitcoin::secp256k1::Secp256k1;
+        const ABANDON: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let mn = bip39::Mnemonic::parse(ABANDON).unwrap();
+        let seed = mn.to_seed("");
+        let secp = Secp256k1::new();
+        let master = Xpriv::new_master(Network::Bitcoin, &seed).unwrap();
+        let dp = DerivationPath::from_str("m/86'/0'/0'").unwrap();
+        let xpriv = master.derive_priv(&secp, &dp).unwrap();
+        let xpub = Xpub::from_priv(&secp, &xpriv).to_string();
+
+        let ctx = ctx_for_template("tr(@0/<0;1>/*)");
+        assert_eq!(ctx, ScriptCtx::SingleSig);
+        let parsed = parse_key(&format!("@0={xpub}"), ctx, Network::Bitcoin).unwrap();
+        assert_eq!(parsed.i, 0);
     }
 }

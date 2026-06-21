@@ -75,6 +75,15 @@ pub fn parse_key(
             why: format!("expected depth {expected_depth} for this script context, got {depth}"),
         });
     }
+    // M11 (cycle-9): reject an off-curve compressed pubkey at parse. The xpub
+    // layout is version(4) ‖ depth(1) ‖ parent_fp(4) ‖ child(4) ‖ chaincode(32)
+    // ‖ pubkey(33), so the compressed point is `bytes[45..78]`. A valid BIP-32
+    // serialized xpub carries an on-curve point; a corrupt / all-zero point
+    // previously slipped through intake and only failed later at derivation.
+    bitcoin::secp256k1::PublicKey::from_slice(&bytes[45..78]).map_err(|e| CliError::BadXpub {
+        i,
+        why: format!("xpub public key is not a valid secp256k1 point: {e}"),
+    })?;
     let mut payload = [0u8; 65];
     payload.copy_from_slice(&bytes[13..78]);
     Ok(ParsedKey { i, payload })
@@ -233,6 +242,70 @@ mod tests {
         .unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("expected mainnet"), "got: {msg}");
+    }
+
+    // ─── M11 (cycle-9): off-curve xpub point check at parse ───────────────
+    // `parse_key` validates base58check / length / version / depth but never
+    // checked that the embedded compressed pubkey (`bytes[45..78]`) is a valid
+    // secp256k1 point. An off-curve / all-zero pubkey passed intake and only
+    // failed later at derive_address. Fix: reject at parse with `BadXpub`.
+
+    /// Re-encode a real xpub with its compressed-pubkey bytes (`bytes[45..78]`)
+    /// replaced by `new_key`, preserving version / depth / chaincode so ONLY
+    /// the point check can reject it.
+    fn xpub_with_pubkey(xpub_str: &str, new_key: [u8; 33]) -> String {
+        let mut bytes = base58::decode_check(xpub_str).unwrap();
+        assert_eq!(bytes.len(), XPUB_LEN);
+        bytes[45..78].copy_from_slice(&new_key);
+        base58::encode_check(&bytes)
+    }
+
+    #[test]
+    fn rejects_off_curve_all_zero_pubkey() {
+        // 0x02 || 32 zero bytes — well-formed compressed encoding, but the
+        // x-coordinate 0 is NOT on secp256k1, so it must reject at parse.
+        let mut bad = [0u8; 33];
+        bad[0] = 0x02;
+        let bad_xpub = xpub_with_pubkey(XPUB_DEPTH4, bad);
+        let err = parse_key(
+            format!("@2={bad_xpub}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::BadXpub { i: 2, .. }),
+            "got: {err:?}"
+        );
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("secp256k1 point"),
+            "error must name the point check; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn accepts_real_depth4_xpub_point_check_positive_control() {
+        // The real fixture's pubkey IS on-curve → still parses after the check.
+        let p = parse_key(
+            format!("@2={XPUB_DEPTH4}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        assert_eq!(p.i, 2);
+    }
+
+    #[test]
+    fn accepts_real_depth3_tpub_point_check_positive_control() {
+        // A real depth-3 BIP-84 tpub (on-curve) still parses.
+        let p = parse_key(
+            format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+            ScriptCtx::SingleSig,
+            bitcoin::Network::Testnet,
+        )
+        .unwrap();
+        assert_eq!(p.i, 0);
     }
 }
 

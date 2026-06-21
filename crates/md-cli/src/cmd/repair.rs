@@ -115,7 +115,7 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
     // chunks or returns Err naming the first failing chunk. We do NOT
     // emit any partial output on stdout in the Err branch.
     let str_refs: Vec<&str> = strings.iter().map(String::as_str).collect();
-    let (_descriptor, details) = match md_codec::decode_with_correction(&str_refs) {
+    let (descriptor, details) = match md_codec::decode_with_correction(&str_refs) {
         Ok(t) => t,
         Err(e) => {
             // Surface the codec error on stderr (with the chunk_index
@@ -153,10 +153,16 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
         emit_text(&corrected_chunks, &reports);
     }
 
-    crate::output_advisory::emit_output_class_advisory(
-        crate::output_advisory::OutputClass::Template,
-        &mut std::io::stderr(),
-    );
+    // L4 (cycle-9): branch the output class on whether the decoded md1 carries
+    // watch-only key material. A wallet-policy md1 (non-empty Pubkeys TLV) is
+    // WatchOnly; a keyless md1 is a Template. Previously labeled Template
+    // unconditionally, mislabeling watch-only cards.
+    let class = if descriptor.is_wallet_policy() {
+        crate::output_advisory::OutputClass::WatchOnly
+    } else {
+        crate::output_advisory::OutputClass::Template
+    };
+    crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
     Ok(if any_correction { 5 } else { 0 })
 }
 

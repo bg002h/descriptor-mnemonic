@@ -123,7 +123,8 @@ fn encode_malformed_hardened_multipath_rejects() {
             .to_owned();
         let code = out.status.code().unwrap_or(-1);
         assert_eq!(
-            code, 1,
+            code,
+            1,
             "malformed double-marker body `{body}` must reject with exit 1 \
              (typed TemplateParse), got exit {code}; stderr: {}",
             String::from_utf8_lossy(&out.stderr)

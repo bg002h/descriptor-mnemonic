@@ -110,6 +110,74 @@ fn encode_json_emits_template() {
     );
 }
 
+// L19 (cycle-9): `md encode --key …` carries watch-only (public) key material
+// in the Pubkeys TLV → the advisory must be WatchOnly, NOT the keyless-template
+// label. Keyless `md encode <template>` (above) stays Template.
+
+#[test]
+fn encode_text_keyed_emits_watch_only() {
+    let xpub = account_xpub("m/84'/0'/0'");
+    let key_arg = format!("@0={xpub}");
+    // A keyed wpkh exceeds the 80-symbol single-string cap → --force-chunked.
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "--force-chunked",
+            "--key",
+            &key_arg,
+            "wpkh(@0/<0;1>/*)",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "encode keyed exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stderr.contains(WATCH_ONLY_LINE),
+        "encode text keyed: expected WATCH_ONLY_LINE; got: {stderr}"
+    );
+    assert!(
+        !stderr.contains(TEMPLATE_LINE),
+        "encode text keyed: must NOT emit the keyless-template line; got: {stderr}"
+    );
+}
+
+#[test]
+fn encode_json_keyed_emits_watch_only() {
+    let xpub = account_xpub("m/84'/0'/0'");
+    let key_arg = format!("@0={xpub}");
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "--json",
+            "--force-chunked",
+            "--key",
+            &key_arg,
+            "wpkh(@0/<0;1>/*)",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "encode --json keyed exited non-zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stderr.contains(WATCH_ONLY_LINE),
+        "encode json keyed: expected WATCH_ONLY_LINE; got: {stderr}"
+    );
+    assert!(
+        !stderr.contains(TEMPLATE_LINE),
+        "encode json keyed: must NOT emit the keyless-template line; got: {stderr}"
+    );
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // inspect
 // ──────────────────────────────────────────────────────────────────────────
@@ -265,6 +333,62 @@ fn repair_emits_template() {
             .unwrap()
             .contains(TEMPLATE_LINE),
         "repair: expected TEMPLATE_LINE on stderr"
+    );
+}
+
+/// Encode a KEYED (wallet-policy) template with --force-chunked. Returns the
+/// chunk strings. The Pubkeys TLV is non-empty → `is_wallet_policy()` is true.
+fn encode_keyed_chunked_for_repair(template: &str, key_arg: &str) -> Vec<String> {
+    let out = StdCommand::new(assert_cmd::cargo::cargo_bin("md"))
+        .args(["encode", "--force-chunked", "--key", key_arg, template])
+        .output()
+        .expect("invoke md encode --force-chunked --key");
+    assert!(
+        out.status.success(),
+        "md encode --force-chunked --key {template:?} failed: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let s = String::from_utf8(out.stdout).expect("stdout utf-8");
+    s.lines()
+        .filter(|l| l.starts_with("md1"))
+        .map(String::from)
+        .collect()
+}
+
+#[test]
+fn repair_keyed_emits_watch_only() {
+    // L4 (cycle-9): a watch-only (keyed) md1 repaired by `md repair` must label
+    // WatchOnly, not the keyless-template line.
+    let xpub = account_xpub("m/84'/0'/0'");
+    let key_arg = format!("@0={xpub}");
+    let chunks = encode_keyed_chunked_for_repair("wpkh(@0/<0;1>/*)", &key_arg);
+    assert!(!chunks.is_empty(), "expected >=1 chunk; got {chunks:?}");
+    // Corrupt position 10 of the FIRST chunk; remaining chunks stay valid → the
+    // call is atomic and applies a correction → exit 5, advisory emitted.
+    let mut corrupted = chunks.clone();
+    corrupted[0] = corrupt_at_for_repair(&chunks[0], 10, 0b10110);
+
+    let mut args = vec!["repair".to_string()];
+    args.extend(corrupted.iter().cloned());
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(&args)
+        .output()
+        .expect("invoke md repair");
+    assert_eq!(
+        out.status.code(),
+        Some(5),
+        "expected exit 5 (REPAIR_APPLIED); stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stderr.contains(WATCH_ONLY_LINE),
+        "repair keyed: expected WATCH_ONLY_LINE; got: {stderr}"
+    );
+    assert!(
+        !stderr.contains(TEMPLATE_LINE),
+        "repair keyed: must NOT emit the keyless-template line; got: {stderr}"
     );
 }
 
