@@ -35,18 +35,24 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         // Captures:
         //   1: @i index digits
         //   2: optional origin path (e.g. "/48'/0'/0'/2'")
-        //   3: optional multipath body (e.g. "0;1", or hardened "0';1'")
+        //   3: optional multipath body — captured PERMISSIVELY (`[^>]*`)
+        //      whenever a `/<…>` delimiter is present, then STRICTLY validated
+        //      in the parse loop below.
         //   4: wildcard with optional hardening (e.g. "*", "*'", "*h")
         //
-        // H13 (cycle-1): group 3 is a strict per-alt alternation that ALSO
-        // captures a hardened marker (`'`/`h`) on each alt, so a hardened
-        // multipath body is SEEN at lex rather than silently failing the
-        // `[0-9;]`-only class and collapsing to a bare `/*` single-path key.
-        // The capture is so we can REJECT it (typed `TemplateParse`); a
-        // hardened multipath is un-derivable on an xpub (BIP-32). The strict
-        // alternation (vs a looser `[0-9;'h]+`) yields the primary typed reject
-        // on a malformed body rather than a generic catch-all parse error.
-        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<((?:\d+(?:'|h)?)(?:;\d+(?:'|h)?)*)>)?(/\*(?:'|h)?)?")
+        // H13 (cycle-1) + C1 fix (impl-review round-1): a PRESENT `<…>`
+        // multipath delimiter is MUST-be-valid. A prior strict-alternation
+        // capture inside the OPTIONAL group skip-matched empty on a malformed
+        // body (e.g. `<0'';1>`, `<0'h;1>`) — the placeholder then lexed as if
+        // there were no multipath, and the residual `<…>` got silently stripped
+        // downstream, SILENTLY COLLAPSING to a bare `/*` single-path key
+        // (wrong-address / un-restorable). Capturing the body permissively
+        // guarantees the validator below SEES every present body and can REJECT
+        // it (typed `TemplateParse`) — covering hardened (`<0';1'>`), malformed
+        // double-marker (`<0'';1>`), and any other non-`[0-9;]` residue, while
+        // still ACCEPTING valid `<0;1>` / `<0;1;2>`. A hardened multipath is
+        // un-derivable on an xpub (BIP-32), so it can NEVER fail open.
+        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<([^>]*)>)?(/\*(?:'|h)?)?")
             .expect("static regex compiles")
     });
     let mut out = Vec::new();
@@ -69,24 +75,33 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
             None
         };
         let multipath_alts = if let Some(m) = caps.get(3) {
+            // C1 fix: the body is captured PERMISSIVELY, so a PRESENT `<…>` is
+            // validated STRICTLY here. Every `;`-split alternative MUST be a
+            // bare, non-empty unsigned integer with NO hardened marker and no
+            // stray residue. This single robust check rejects hardened
+            // (`<0';1'>`), malformed double-marker (`<0'';1>`, `<0'h;1>`,
+            // `<0h';1>`), and any other non-`[0-9;]` residue — fail-closed and
+            // loud — while accepting valid `<0;1>` / `<0;1;2>`. md1 cosigner
+            // keys are xpubs (watch-only) and BIP-32 forbids hardened public
+            // derivation, so a hardened-multipath card is permanently
+            // un-restorable: NEVER silently collapse to a bare `/*`.
             m.as_str()
                 .split(';')
                 .map(|n| {
-                    // H13 (cycle-1): a hardened multipath alt (`'`/`h`) is now
-                    // captured (group 3 widened); REJECT it with a typed parse
-                    // error. md1 cosigner keys are xpubs (watch-only) and BIP-32
-                    // forbids hardened derivation from a public key, so such a
-                    // card is permanently un-restorable — never silently
-                    // collapse to a bare `/*`. Mirrors the `wildcard_hardened`
-                    // detect idiom below.
                     if n.ends_with('\'') || n.ends_with('h') {
                         return Err(CliError::TemplateParse(format!(
                             "@{i} multipath alt `{n}` is hardened; hardened derivation is \
                              impossible on a watch-only (xpub) card"
                         )));
                     }
+                    // Bare unsigned integer only: rejects empty alts and any
+                    // residue (e.g. the leading `0'` of a malformed `0'';1`
+                    // splits into `0'` (hardened, caught above) — but a body
+                    // like `0x;1` or `0 ;1` lands here as a non-`u32` reject).
                     n.parse::<u32>().map_err(|_| {
-                        CliError::TemplateParse(format!("@{i} multipath alt `{n}` not u32"))
+                        CliError::TemplateParse(format!(
+                            "@{i} multipath alt `{n}` is not a bare unsigned integer"
+                        ))
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?
@@ -207,6 +222,25 @@ mod lex_tests {
         // Only the second alt is hardened; reject if ANY alt is hardened.
         let err = lex_placeholders("wpkh(@0/<0;1'>/*)").unwrap_err();
         assert!(matches!(err, CliError::TemplateParse(_)));
+    }
+
+    #[test]
+    fn lex_rejects_malformed_double_marker_multipath() {
+        // C1 (H13 impl-review round-1): MALFORMED double-marker bodies
+        // (`<0'';1>`, `<0'h;1>`, `<0h';1>`) must be a typed REJECT at lex —
+        // never silently skip-match + strip to a bare `/*` collapse. The
+        // permissive capture `/<([^>]*)>` guarantees the validator SEES the body
+        // even when it does not match the strict integer-alternation shape.
+        for body in ["<0'';1>", "<0'h;1>", "<0h';1>"] {
+            let template = format!("wsh(multi(2,@0/{body}/*,@1/{body}/*))");
+            match lex_placeholders(&template) {
+                Ok(v) => panic!("malformed body `{body}` lexed OK: {v:?}"),
+                Err(err) => assert!(
+                    matches!(err, CliError::TemplateParse(_)),
+                    "malformed body `{body}`: expected TemplateParse, got {err:?}"
+                ),
+            }
+        }
     }
 
     #[test]
@@ -451,16 +485,17 @@ fn substitute_synthetic(
 ) -> Result<(String, std::collections::BTreeMap<String, u8>), CliError> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        // H13 (cycle-1): the multipath strip class includes `'`/`h` so a
-        // hardened body (e.g. `<0';1'>`) is matched-and-stripped here rather
-        // than leaving a residual `'>` that yields a confusing *secondary*
-        // miniscript parse error. Defense-in-depth for direct `pub`/test
-        // callers of `substitute_synthetic`: on the production `parse_template`
-        // path the primary lexer reject (`lex_placeholders` →
-        // `CliError::TemplateParse`) fires FIRST, so this strip never sees
-        // hardened input there. Keep this class in sync with the group-3 lexer
-        // capture above (bug-hunt M5 family — two regexes, one syntax).
-        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;'h]+>)?(?:/\*(?:'|h)?)?")
+        // C1 fix (impl-review round-1): the multipath strip class is `[0-9;]`
+        // (REVERTED from the H13 widening to `[0-9;'h]`). The widening was the
+        // direct silencer of the malformed-double-marker regression — it
+        // matched-and-stripped a residual `<0'';1>` cleanly, turning a loud
+        // error into a silent bare-`/*` collapse. It is moot now that the lexer
+        // (`lex_placeholders`) rejects hardened / malformed bodies FIRST with a
+        // typed `CliError::TemplateParse`: on the production `parse_template`
+        // path (lex → resolve → substitute_synthetic) this strip never sees a
+        // marker-bearing body. Keep this class in sync with the group-3 lexer
+        // ACCEPT set (`[0-9;]`) — both reject the same residue.
+        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;]+>)?(?:/\*(?:'|h)?)?")
             .expect("static regex compiles")
     });
     let mut key_map = std::collections::BTreeMap::new();

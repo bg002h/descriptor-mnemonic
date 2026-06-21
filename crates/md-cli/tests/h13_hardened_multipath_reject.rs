@@ -90,6 +90,52 @@ fn encode_hardened_multipath_mixed_rejects() {
         .stdout(predicate::str::contains("md1").not());
 }
 
+/// (b'') MALFORMED double-marker bodies (`<0'';1>`, `<0'h;1>`, `<0h';1>`) must
+/// ALSO reject with exit 1 / typed `TemplateParse`, NOT silently collapse to a
+/// bare-`/*` single-path card (`wsh(multi(2,@0/*,@1/*))`). This is the C1
+/// regression-guard (H13 impl-review round-1): pre-fix the strict-alternation
+/// capture skip-matched these empty and the widened strip class silently
+/// stripped the residue → exit 0 with the multipath dropped (wrong-address,
+/// un-restorable). The fix captures the body permissively and validates it
+/// strictly, so any non-`[0-9;]` body (double markers, single markers, stray
+/// residue) fails closed and loud.
+#[test]
+fn encode_malformed_hardened_multipath_rejects() {
+    for body in ["<0'';1>", "<0'h;1>", "<0h';1>"] {
+        let template = format!("wsh(multi(2,@0/{body}/*,@1/{body}/*))");
+        let out = Command::cargo_bin("md")
+            .unwrap()
+            .args([
+                "encode",
+                &template,
+                "--key",
+                &format!("@0={TPUB48}"),
+                "--key",
+                &format!("@1={TPUB48}"),
+                "--network",
+                "regtest",
+            ])
+            .assert()
+            .failure() // non-zero exit — NEVER exit 0 / silent collapse
+            // Must NOT silently emit a (collapsed) md1 phrase on stdout.
+            .stdout(predicate::str::contains("md1").not())
+            .get_output()
+            .to_owned();
+        let code = out.status.code().unwrap_or(-1);
+        assert_eq!(
+            code, 1,
+            "malformed double-marker body `{body}` must reject with exit 1 \
+             (typed TemplateParse), got exit {code}; stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("template parse error"),
+            "malformed body `{body}` must surface a typed template parse error; stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 /// (c) CLEAN-NEGATIVE / regression: a non-hardened `<0;1>` multipath MUST still
 /// encode successfully (exit 0) and decode back to the same multipath template
 /// byte-for-byte. The reject must NOT over-fire on legitimate non-hardened
