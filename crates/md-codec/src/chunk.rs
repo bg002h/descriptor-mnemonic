@@ -13,6 +13,7 @@
 //! output.
 
 use crate::bitstream::{BitReader, BitWriter};
+use crate::codex32::REGULAR_CODE_SYMBOLS_MAX;
 use crate::error::Error;
 use crate::header::Header;
 
@@ -516,6 +517,21 @@ pub fn decode_with_correction(
 
     for (chunk_index, chunk) in strings.iter().enumerate() {
         let symbols = parse_chunk_symbols(chunk, chunk_index)?;
+
+        // cycle-4 M4: reject any chunk longer than the codex32 regular code's
+        // 93-symbol codeword BEFORE the residue/correction logic. β has order
+        // 93, so degrees d and d+93 alias in chien_search for an over-93-symbol
+        // word — the correcting decoder would otherwise mis-correct at an
+        // aliased root. This precedes the residue==0 pass-through, so a clean
+        // over-length md1 is rejected on `repair` too (the correct domain gate;
+        // composes with H6's encode cap). Fail-closed.
+        if symbols.len() > REGULAR_CODE_SYMBOLS_MAX {
+            return Err(Error::ChunkSymbolCountOutOfRange {
+                chunk_index,
+                symbols: symbols.len(),
+                max: REGULAR_CODE_SYMBOLS_MAX,
+            });
+        }
 
         // Polymod residue against md1's target constant.
         let mut input = crate::bch::hrp_expand("md");

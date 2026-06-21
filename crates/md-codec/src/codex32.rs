@@ -24,6 +24,14 @@ pub(crate) const REGULAR_CHECKSUM_SYMBOLS: usize = 13;
 /// cannot carry them. Enforced at the top of [`wrap_payload`] (cycle-4 H6).
 pub(crate) const REGULAR_DATA_SYMBOLS_MAX: usize = 80;
 
+/// Maximum total codeword length (data + checksum) for a single codex32
+/// regular-code string: `REGULAR_DATA_SYMBOLS_MAX + REGULAR_CHECKSUM_SYMBOLS
+/// == 93`. The generator `β` has order 93, so a word longer than this aliases
+/// under the BCH decoder. Enforced on the decode boundaries (cycle-4 M4 in
+/// `chunk::decode_with_correction`; cycle-4 I1 in [`unwrap_string`]).
+pub(crate) const REGULAR_CODE_SYMBOLS_MAX: usize =
+    REGULAR_DATA_SYMBOLS_MAX + REGULAR_CHECKSUM_SYMBOLS;
+
 /// Pack `bit_count` bits from `payload_bytes` into 5-bit symbols. Pads the
 /// final symbol with zeros if `bit_count` is not a multiple of 5. Returns
 /// `ceil(bit_count / 5)` symbols. Each output u8 contains a 5-bit value.

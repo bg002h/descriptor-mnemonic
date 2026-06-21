@@ -443,6 +443,24 @@ pub enum Error {
         /// The maximum legal data-symbol count (80).
         max: usize,
     },
+
+    /// Decode-side cap, correcting path (cycle-4 M4): a chunk handed to the
+    /// BCH-correcting decoder (`decode_with_correction`) had more than 93
+    /// symbols. The codex32 regular code's generator `β` has order 93, so a
+    /// degree `d` and `d + 93` alias in `chien_search` for an over-93-symbol
+    /// word — the correcting decoder would mis-correct at an aliased root.
+    /// Reject the out-of-domain chunk before correction (fail-closed).
+    #[error(
+        "chunk {chunk_index} has {symbols} symbols; the codex32 regular code caps a string at {max}"
+    )]
+    ChunkSymbolCountOutOfRange {
+        /// 0-indexed position of the offending chunk in the caller's slice.
+        chunk_index: usize,
+        /// The over-length symbol count actually supplied.
+        symbols: usize,
+        /// The maximum legal codeword length (93).
+        max: usize,
+    },
 }
 
 #[cfg(test)]

@@ -91,6 +91,74 @@ fn encode_md1_string_rejects_oversize_descriptor() {
     );
 }
 
+// ── M4 (cycle-4): decode-side `len > 93` rejection (correcting path) ─────────
+const M4_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+/// Forge a CLEAN (residue==0, BCH-valid) md1 string with `data_symbols`
+/// arbitrary data symbols, bypassing wrap_payload's H6 cap via the raw BCH
+/// primitive — used to build over-93-codeword words.
+fn forge_clean_md1(data_symbols: usize) -> String {
+    let data: Vec<u8> = (0..data_symbols).map(|i| (i as u8) & 0x1F).collect();
+    let checksum = md_codec::bch::bch_create_checksum_regular("md", &data);
+    let mut s = String::from("md1");
+    for &sym in data.iter().chain(checksum.iter()) {
+        s.push(M4_ALPHABET[(sym & 0x1F) as usize] as char);
+    }
+    s
+}
+
+// M4 test #1 — a > 93-symbol chunk carrying ≥1 transcription error (residue ≠ 0)
+// must be REJECTED with the typed ChunkSymbolCountOutOfRange. Today the
+// uncapped symbols.len() enters the unbounded chien_search loop and the decoder
+// mis-corrects at an aliased root (β has order 93 → degrees alias for len > 93).
+#[test]
+fn decode_with_correction_rejects_over_93_symbol_chunk() {
+    // 90 data + 13 checksum = 103 codeword symbols (> 93).
+    let clean = forge_clean_md1(90);
+    assert_eq!(clean.chars().count(), 3 + 103);
+    // Introduce one transcription error in the data region (residue != 0).
+    let corrupted = corrupt_chunk_at(&clean, 7, 0x1F);
+    let refs = [corrupted.as_str()];
+    match decode_with_correction(&refs) {
+        Err(Error::ChunkSymbolCountOutOfRange {
+            chunk_index,
+            symbols,
+            max,
+        }) => {
+            assert_eq!(chunk_index, 0);
+            assert_eq!(symbols, 103);
+            assert_eq!(max, 93);
+        }
+        other => panic!(
+            "over-93-symbol chunk with an error must reject with ChunkSymbolCountOutOfRange, got {other:?}"
+        ),
+    }
+}
+
+// M4 test #4 — positive control: a legitimate chunked md1 set (each chunk
+// ≤ 93 symbols) with a single in-capacity error per chunk still repairs.
+#[test]
+fn valid_chunked_md1_still_repairs() {
+    let d = multi_chunk_descriptor();
+    let chunks = split(&d).unwrap();
+    // Each split chunk is ≤ 64 data + 13 checksum = 77 ≤ 93 → unaffected.
+    for c in &chunks {
+        assert!(
+            c.chars().count() <= 3 + 93,
+            "split chunk must be within the 93-symbol cap"
+        );
+    }
+    let mut cs = chunks.clone();
+    cs[0] = corrupt_chunk_at(&cs[0], 2, 0x1F);
+    let refs: Vec<&str> = cs.iter().map(String::as_str).collect();
+    let (got, details) = decode_with_correction(&refs).expect("valid chunked set must repair");
+    assert_eq!(
+        got, d,
+        "chunked repair must recover the original descriptor"
+    );
+    assert!(!details.is_empty(), "the injected error must be corrected");
+}
+
 // T2a — 1..=4-error correction across 3 lengths, through public decode_with_correction.
 #[test]
 fn t2a_correct_1_to_4_errors_across_lengths() {

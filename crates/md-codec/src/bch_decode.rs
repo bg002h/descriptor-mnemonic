@@ -35,6 +35,8 @@
 //! are kept here for parity with the mk-codec source and to support any
 //! future internal verification needs.)
 
+use crate::codex32::REGULAR_CODE_SYMBOLS_MAX;
+
 // ---------------------------------------------------------------------------
 // GF(32) — same field as `crate::bch::GEN_REGULAR` symbols.
 // ---------------------------------------------------------------------------
@@ -282,6 +284,12 @@ fn berlekamp_massey(syndromes: &[Gf1024; 8]) -> Vec<Gf1024> {
 /// Returns `None` if the number of distinct roots found does not equal
 /// `deg(Λ)`.
 fn chien_search(lambda: &[Gf1024], data_with_checksum_len: usize) -> Option<Vec<usize>> {
+    // cycle-4 M4 internal floor: β has order 93, so degrees d and d+93 alias
+    // for an over-93-symbol word. Never enter the unbounded scan out-of-domain
+    // (belt-and-suspenders beneath the typed chunk-boundary reject).
+    if data_with_checksum_len > REGULAR_CODE_SYMBOLS_MAX {
+        return None;
+    }
     let deg = lambda.len() - 1;
     if deg == 0 {
         return Some(Vec::new());
@@ -404,6 +412,14 @@ pub fn decode_regular_errors(
     residue_xor_const: u128,
     data_with_checksum_len: usize,
 ) -> Option<(Vec<usize>, Vec<Gf32>)> {
+    // cycle-4 M4 internal floor: reject out-of-domain lengths (> 93) before the
+    // syndrome/correction machinery, so an over-length word can never alias
+    // into a wrong correction. The typed user-facing reject lives at the
+    // `chunk::decode_with_correction` boundary; this is the belt-and-suspenders
+    // internal guard for any caller that bypassed it.
+    if data_with_checksum_len > REGULAR_CODE_SYMBOLS_MAX {
+        return None;
+    }
     let syndromes = compute_syndromes_regular(residue_xor_const);
 
     // All-zero syndromes ⇒ no errors (caller usually detects earlier).
@@ -546,5 +562,50 @@ mod tests {
             corrected[*p] ^= m;
         }
         assert_eq!(corrected, original);
+    }
+
+    // ── M4 (cycle-4): decode-side `len > 93` internal None-floor ──────────────
+    // β has order 93, so degrees `d` and `d + 93` alias in chien_search for an
+    // over-93-symbol word. The correcting decoder must never enter its unbounded
+    // loop out-of-domain: both decode_regular_errors and chien_search return
+    // None for `data_with_checksum_len > 93` (belt-and-suspenders floors beneath
+    // the typed chunk-boundary reject in chunk.rs).
+
+    #[test]
+    fn decode_regular_errors_returns_none_for_len_over_93() {
+        // Forge a genuine single-error residue over a 94-symbol "codeword"
+        // (81 data + 13 checksum = 94 > 93). Without the length floor this
+        // residue produces a valid degree-1 locator and decode proceeds into
+        // chien_search — where degree d and d+93 alias. The floor must return
+        // None on length alone, BEFORE that aliasing path.
+        let hrp = "md";
+        let data: Vec<u8> = (0..81u8).map(|i| i & 0x1F).collect();
+        let checksum = bch_create_checksum_regular(hrp, &data);
+        let mut codeword = data.clone();
+        codeword.extend_from_slice(&checksum);
+        assert_eq!(codeword.len(), 94, "forged codeword must be 94 symbols");
+        codeword[5] ^= 0b10101; // single-symbol error → residue != 0
+
+        let mut input = hrp_expand(hrp);
+        input.extend_from_slice(&codeword);
+        let residue = polymod_run(&input) ^ MD_REGULAR_CONST;
+        assert_ne!(residue, 0, "single error must yield a non-zero residue");
+
+        assert!(
+            decode_regular_errors(residue, codeword.len()).is_none(),
+            "len=94 (> 93) must return None before the aliasing chien_search"
+        );
+    }
+
+    #[test]
+    fn chien_search_returns_none_for_len_over_93() {
+        // A degree-1 locator (deg == 1) searched over an out-of-domain length
+        // must return None rather than scan the aliasing loop. lambda = [1, x]
+        // (any non-trivial locator); the floor fires on length alone.
+        let lambda = vec![Gf1024::ONE, BETA];
+        assert!(
+            chien_search(&lambda, 94).is_none(),
+            "len=94 (> 93) must return None before the unbounded loop"
+        );
     }
 }
