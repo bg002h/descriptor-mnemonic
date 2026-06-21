@@ -35,9 +35,18 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         // Captures:
         //   1: @i index digits
         //   2: optional origin path (e.g. "/48'/0'/0'/2'")
-        //   3: optional multipath body (e.g. "0;1")
+        //   3: optional multipath body (e.g. "0;1", or hardened "0';1'")
         //   4: wildcard with optional hardening (e.g. "*", "*'", "*h")
-        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<([0-9;]+)>)?(/\*(?:'|h)?)?")
+        //
+        // H13 (cycle-1): group 3 is a strict per-alt alternation that ALSO
+        // captures a hardened marker (`'`/`h`) on each alt, so a hardened
+        // multipath body is SEEN at lex rather than silently failing the
+        // `[0-9;]`-only class and collapsing to a bare `/*` single-path key.
+        // The capture is so we can REJECT it (typed `TemplateParse`); a
+        // hardened multipath is un-derivable on an xpub (BIP-32). The strict
+        // alternation (vs a looser `[0-9;'h]+`) yields the primary typed reject
+        // on a malformed body rather than a generic catch-all parse error.
+        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<((?:\d+(?:'|h)?)(?:;\d+(?:'|h)?)*)>)?(/\*(?:'|h)?)?")
             .expect("static regex compiles")
     });
     let mut out = Vec::new();
@@ -63,6 +72,19 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
             m.as_str()
                 .split(';')
                 .map(|n| {
+                    // H13 (cycle-1): a hardened multipath alt (`'`/`h`) is now
+                    // captured (group 3 widened); REJECT it with a typed parse
+                    // error. md1 cosigner keys are xpubs (watch-only) and BIP-32
+                    // forbids hardened derivation from a public key, so such a
+                    // card is permanently un-restorable — never silently
+                    // collapse to a bare `/*`. Mirrors the `wildcard_hardened`
+                    // detect idiom below.
+                    if n.ends_with('\'') || n.ends_with('h') {
+                        return Err(CliError::TemplateParse(format!(
+                            "@{i} multipath alt `{n}` is hardened; hardened derivation is \
+                             impossible on a watch-only (xpub) card"
+                        )));
+                    }
                     n.parse::<u32>().map_err(|_| {
                         CliError::TemplateParse(format!("@{i} multipath alt `{n}` not u32"))
                     })
@@ -149,6 +171,69 @@ mod lex_tests {
     fn rejects_template_with_no_placeholders() {
         assert!(lex_placeholders("wpkh(xpubAAAAA)").is_err());
     }
+
+    // ─── H13: hardened multipath alternative → typed REJECT (cycle-1) ─────
+    // A `<...>` multipath body carrying a hardened marker (`'` or `h`) cannot
+    // be derived from an xpub (BIP-32 forbids hardened public derivation), so
+    // it must be captured at lex and rejected with a typed `TemplateParse` —
+    // never silently collapsed to a bare `/*` single-path key.
+
+    #[test]
+    fn lex_rejects_hardened_multipath_apostrophe() {
+        let err = lex_placeholders("wsh(multi(2,@0/<0';1'>/*,@1/<0';1'>/*))").unwrap_err();
+        assert!(
+            matches!(err, CliError::TemplateParse(_)),
+            "expected TemplateParse, got {err:?}"
+        );
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("hardened"),
+            "error must name the hardened alt; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn lex_rejects_hardened_multipath_h_form() {
+        let err = lex_placeholders("wsh(multi(2,@0/<0h;1h>/*,@1/<0h;1h>/*))").unwrap_err();
+        assert!(
+            matches!(err, CliError::TemplateParse(_)),
+            "expected TemplateParse, got {err:?}"
+        );
+        assert!(format!("{err}").contains("hardened"));
+    }
+
+    #[test]
+    fn lex_rejects_mixed_hardened_multipath() {
+        // Only the second alt is hardened; reject if ANY alt is hardened.
+        let err = lex_placeholders("wpkh(@0/<0;1'>/*)").unwrap_err();
+        assert!(matches!(err, CliError::TemplateParse(_)));
+    }
+
+    #[test]
+    fn lex_accepts_nonhardened_multipath() {
+        // CLEAN-NEGATIVE: non-hardened multipath must NOT be over-rejected.
+        let v = lex_placeholders("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))").unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].multipath_alts, vec![0, 1]);
+        assert_eq!(v[1].multipath_alts, vec![0, 1]);
+    }
+
+    #[test]
+    fn make_use_site_path_nonhardened_alts_are_normal() {
+        // The construction path is now reached only by non-hardened bodies; the
+        // built `Alternative`s carry `hardened: false`.
+        let occ = PlaceholderOccurrence {
+            i: 0,
+            origin_path: None,
+            multipath_alts: vec![0, 1],
+            wildcard_hardened: false,
+        };
+        let usp = make_use_site_path(&occ).unwrap();
+        let alts = usp.multipath.unwrap();
+        assert_eq!(alts.len(), 2);
+        assert!(alts.iter().all(|a| !a.hardened));
+        assert_eq!(alts.iter().map(|a| a.value).collect::<Vec<_>>(), vec![0, 1]);
+    }
 }
 
 use bitcoin::bip32::ChildNumber;
@@ -218,6 +303,10 @@ pub fn resolve_placeholders(
 }
 
 fn make_use_site_path(occ: &PlaceholderOccurrence) -> Result<UseSitePath, CliError> {
+    // H13 (cycle-1): the literal `hardened: false` is sound because a hardened
+    // multipath alt is rejected upstream in `lex_placeholders` (typed
+    // `TemplateParse`) — only genuinely non-hardened bodies reach construction
+    // here, so this is no longer a silent hardened→non-hardened collapse.
     let alts: Vec<Alternative> = occ
         .multipath_alts
         .iter()
@@ -362,7 +451,16 @@ fn substitute_synthetic(
 ) -> Result<(String, std::collections::BTreeMap<String, u8>), CliError> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;]+>)?(?:/\*(?:'|h)?)?")
+        // H13 (cycle-1): the multipath strip class includes `'`/`h` so a
+        // hardened body (e.g. `<0';1'>`) is matched-and-stripped here rather
+        // than leaving a residual `'>` that yields a confusing *secondary*
+        // miniscript parse error. Defense-in-depth for direct `pub`/test
+        // callers of `substitute_synthetic`: on the production `parse_template`
+        // path the primary lexer reject (`lex_placeholders` →
+        // `CliError::TemplateParse`) fires FIRST, so this strip never sees
+        // hardened input there. Keep this class in sync with the group-3 lexer
+        // capture above (bug-hunt M5 family — two regexes, one syntax).
+        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<[0-9;'h]+>)?(?:/\*(?:'|h)?)?")
             .expect("static regex compiles")
     });
     let mut key_map = std::collections::BTreeMap::new();
