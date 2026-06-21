@@ -108,6 +108,33 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         } else {
             Vec::new()
         };
+        // M5 (cycle-9, FUNDS): reject any unconsumed path residue after the
+        // placeholder match. The lexer regex stops at `>` for a post-multipath
+        // fixed step (`@0/<2;3>/0'/*` → residue `/0'/*`) and at the first
+        // non-origin char for an `h`-bearing origin step (`@0/48h/…` → residue
+        // `h/…`); the trailing steps are silently dropped while the lexer still
+        // records the multipath, producing a DIVERGENT card. md1's UseSitePath
+        // models the multipath as the single final pre-wildcard step and has no
+        // field for post-multipath fixed steps, so the form is un-representable
+        // → fail-closed REJECT (an md1/UseSitePath limit, NOT a BIP-389 ban).
+        //
+        // PLACED AFTER the group-3 validator above so a hardened/malformed body
+        // (`<0'';1>/0'/*`) hits H13's typed reject FIRST (ordering guarantee);
+        // this check operates ONLY on path text OUTSIDE `<…>` — the residue
+        // after the matched span. A legitimately-consumed placeholder is always
+        // followed by a descriptor terminator (`)`, `,`, `}`) or end-of-string;
+        // anything else (`/`, a digit, `'`, `h`, `<`, …) is unconsumed path
+        // residue.
+        let match_end = caps.get(0).map(|m| m.end()).unwrap_or(0);
+        if let Some(next) = template[match_end..].chars().next() {
+            if !matches!(next, ')' | ',' | '}') && !next.is_whitespace() {
+                return Err(CliError::TemplateParse(format!(
+                    "@{i}: derivation steps after the multipath group are not \
+                     representable in md1; the multipath `<…>` must be the final \
+                     derivation step before the wildcard"
+                )));
+            }
+        }
         let wildcard_hardened = caps
             .get(4)
             .map(|m| m.as_str().ends_with('\'') || m.as_str().ends_with('h'))
@@ -267,6 +294,74 @@ mod lex_tests {
         assert_eq!(alts.len(), 2);
         assert!(alts.iter().all(|a| !a.hardened));
         assert_eq!(alts.iter().map(|a| a.value).collect::<Vec<_>>(), vec![0, 1]);
+    }
+
+    // ─── M5 (cycle-9, FUNDS): multipath-not-last / unconsumed suffix REJECT ──
+    // The lexer regex match ends at `>` for a post-multipath fixed step like
+    // `@0/<2;3>/0'/*`; the trailing `/0'/*` is left unconsumed and the lexer
+    // records multipath=[2,3] over a key the substitution renders single-path.
+    // md1's UseSitePath cannot represent post-multipath fixed steps, so the form
+    // is REJECTED (fail-closed) rather than silently mis-encoded. NOTE: this is
+    // an md1/UseSitePath representability limit, NOT a BIP-389 prohibition.
+
+    #[test]
+    fn lex_rejects_post_multipath_fixed_step() {
+        let err = lex_placeholders("wpkh(@0/<2;3>/0'/*)").unwrap_err();
+        assert!(
+            matches!(err, CliError::TemplateParse(_)),
+            "expected TemplateParse, got {err:?}"
+        );
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("multipath") && msg.contains("final"),
+            "error must name the multipath-not-final cause; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn lex_rejects_post_multipath_normal_step() {
+        // Non-hardened post-multipath step `/0/*` is equally un-representable.
+        let err = lex_placeholders("wpkh(@0/<2;3>/0/*)").unwrap_err();
+        assert!(matches!(err, CliError::TemplateParse(_)), "{err:?}");
+    }
+
+    #[test]
+    fn lex_rejects_h_in_origin_residue() {
+        // `h`-bearing origin step: origin class is `/\d+'?` (apostrophe only),
+        // so `/48h` leaves the `h…` unconsumed → reject (today: malformed
+        // XPUBh/…). This is the same residue family.
+        let err = lex_placeholders("wpkh(@0/48h/0h/0h/<0;1>/*)").unwrap_err();
+        assert!(matches!(err, CliError::TemplateParse(_)), "{err:?}");
+    }
+
+    #[test]
+    fn lex_fused_hardened_body_with_suffix_hits_h13_first() {
+        // ORDERING GUARANTEE: a hardened/malformed body `<0'';1>` followed by a
+        // post-multipath suffix `/0'/*` must error with H13's hardened/malformed
+        // message (group-3 validator fires FIRST), NOT the M5 suffix message.
+        let err = lex_placeholders("wsh(multi(2,@0/<0'';1>/0'/*,@1/<0'';1>/0'/*))").unwrap_err();
+        assert!(matches!(err, CliError::TemplateParse(_)), "{err:?}");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("hardened") || msg.contains("bare unsigned integer"),
+            "fused case must hit H13's group-3 validator first; got: {msg}"
+        );
+        assert!(
+            !msg.contains("final derivation step"),
+            "fused case must NOT surface the M5 suffix message; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn lex_accepts_multipath_last_no_residue() {
+        // POSITIVE CONTROL: canonical multipath-last has no post-`>` residue.
+        let v = lex_placeholders("wpkh(@0/<0;1>/*)").unwrap();
+        assert_eq!(v[0].multipath_alts, vec![0, 1]);
+        let v = lex_placeholders("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))").unwrap();
+        assert_eq!(v.len(), 2);
+        // Origin path BEFORE the multipath is still fine (consumed by group-2).
+        let v = lex_placeholders("wpkh(@0/48'/0'/0'/2'/<0;1>/*)").unwrap();
+        assert_eq!(v[0].multipath_alts, vec![0, 1]);
     }
 }
 
@@ -1940,6 +2035,7 @@ mod tr_tests {
 use crate::parse::keys::{ParsedFingerprint, ParsedKey};
 use md_codec::encode::Descriptor;
 use md_codec::tlv::TlvSection;
+use miniscript::ForEachKey;
 
 pub fn parse_template(
     template: &str,
@@ -1954,6 +2050,43 @@ pub fn parse_template(
     let ms_desc = MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
         .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
     let tree = walk_root(&ms_desc, &key_map)?;
+
+    // M5 (cycle-9, D4) — lexer/substitution cross-validation belt. Edit-1's
+    // residue reject is the real fix; this is the checkable drift guard against
+    // future regex drift between the lexer (`:55`) and substitution (`:498`)
+    // regexes. ARCHITECTURE NOTE: `substitute_synthetic` strips EVERY
+    // placeholder suffix (`/<…>` multipath + `/*` wildcard + origin steps) and
+    // replaces the whole span with a BARE synthetic xpub, so the multipath is
+    // carried ONLY by the lexer view (`use_site_path`), never by the
+    // substituted `DescriptorPublicKey`s — every substituted key is single-path
+    // (`XPub`/`Single`), and the per-key multipath count is structurally 0 (see
+    // `substitution_strips_at_i_suffix`). The constructible, non-vacuous drift
+    // invariant is therefore: NO substituted key may be a `MultiXPub`. A
+    // surviving `MultiXPub` means the substitution regex failed to strip a
+    // `<…>` body the lexer recorded (or the two regexes matched divergent
+    // spans) — exactly the divergence class M5 guards. Refuse rather than ship
+    // a card whose use-site path and structural tree disagree. (The spec's
+    // edit-2 framing as "compare the substituted key's multipath-step count to
+    // the lexer alt-count" is unconstructible here precisely because
+    // substitution drops the multipath; this `MultiXPub`-survivor check is the
+    // faithful, non-vacuous realization of D4's drift-belt intent.)
+    let mut survivor: Option<u8> = None;
+    ms_desc.for_each_key(|k| {
+        if matches!(k, DescriptorPublicKey::MultiXPub(_)) {
+            // Map the survivor back to its @i for the message (best-effort).
+            let rendered = k.to_string();
+            let base = rendered.split('/').next().unwrap_or(&rendered);
+            survivor = Some(key_map.get(base).copied().unwrap_or(0));
+            return false; // stop early
+        }
+        true
+    });
+    if let Some(i) = survivor {
+        return Err(CliError::TemplateParse(format!(
+            "internal: lexer/substitution divergence for @{i} — a multipath key \
+             survived substitution; refusing to emit a divergent card"
+        )));
+    }
 
     // TLV encoder (md_codec::tlv) requires strict ascending @i; sort before populating.
     let pubkeys = if keys.is_empty() {
@@ -2147,5 +2280,58 @@ mod entry_tests {
         assert_eq!(ctx, ScriptCtx::SingleSig);
         let parsed = parse_key(&format!("@0={xpub}"), ctx, Network::Bitcoin).unwrap();
         assert_eq!(parsed.i, 0);
+    }
+
+    // ─── M5 (cycle-9, FUNDS): parse_template rejects multipath-not-last ──────
+    // Today `wpkh(@0/<2;3>/0'/*)` builds a Descriptor whose use_site_path
+    // records multipath=[2,3] (from the LEXER) over a `tree` the SUBSTITUTION
+    // rendered single-path (the `/0'/*` was left literal) → a DIVERGENT card,
+    // exit 0. After the fix the form is REJECTED with a typed TemplateParse.
+
+    #[test]
+    fn parse_template_rejects_multipath_not_last_funds() {
+        let err = parse_template("wpkh(@0/<2;3>/0'/*)", &[], &[]).unwrap_err();
+        assert!(
+            matches!(err, CliError::TemplateParse(_)),
+            "expected TemplateParse, got {err:?}"
+        );
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("multipath") && msg.contains("final"),
+            "error must name the multipath-not-final cause; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_template_rejects_h_in_origin_funds() {
+        let err = parse_template("wpkh(@0/48h/0h/0h/<0;1>/*)", &[], &[]).unwrap_err();
+        assert!(matches!(err, CliError::TemplateParse(_)), "{err:?}");
+    }
+
+    #[test]
+    fn parse_template_multipath_last_still_builds_and_preserves_multipath() {
+        // POSITIVE CONTROL: canonical multipath-last round-trips; the use-site
+        // multipath is preserved and the D4 cross-check (lexer alt-count ==
+        // substituted DescriptorPublicKey multipath-step count) holds.
+        let d = parse_template("wpkh(@0/<0;1>/*)", &[], &[]).unwrap();
+        assert_eq!(d.n, 1);
+        let alts = d
+            .use_site_path
+            .multipath
+            .as_ref()
+            .expect("multipath-last preserves the multipath");
+        assert_eq!(alts.len(), 2);
+
+        let d = parse_template("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", &[], &[]).unwrap();
+        assert_eq!(d.n, 2);
+        assert!(d.use_site_path.multipath.is_some());
+    }
+
+    #[test]
+    fn parse_template_singlepath_no_multipath_still_builds() {
+        // No `<…>` at all → no multipath, no residue → builds fine.
+        let d = parse_template("wpkh(@0/*)", &[], &[]).unwrap();
+        assert_eq!(d.n, 1);
+        assert!(d.use_site_path.multipath.is_none());
     }
 }
