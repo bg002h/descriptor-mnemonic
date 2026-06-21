@@ -4,6 +4,14 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.8.0] — 2026-06-20
+
+**SemVer-MINOR — FUNDS-SAFETY: reject hardened multipath in descriptor templates (constellation bug hunt H13, md-cli leg; lockstep with `mnemonic-toolkit 0.61.0`).**
+
+### Fixed
+
+- **Hardened multipath alternatives (`<0';1'>` / `<0h;1h>`) in a `--template` are now REJECTED with a typed `CliError::TemplateParse`, not silently collapsed to a bare single-path key.** The lexer previously dropped the hardened marker and encoded a different, derivable wallet (a silent policy-collapse → wrong addresses). Hardened derivation is cryptographically impossible from a watch-only xpub (BIP-32 / BIP-389), so error is the only safe outcome. Malformed double-marker bodies (`<0'';1>`) are also rejected. Companion: `mnemonic-toolkit` FOLLOWUP `h13-hardened-multipath-reject`.
+
 ## md-codec [0.37.0] — 2026-06-19
 
 **SemVer-MINOR — faithful per-cosigner use-site override reconstruction + a shared hardened-anywhere derivation guard. FUNDS-SAFETY: closes a silent-wrong-address class where a wallet card carrying divergent per-cosigner use-site derivation suffixes was reconstructed/derived against ONE shared baseline suffix, yielding wrong addresses for the diverging cosigners.**
