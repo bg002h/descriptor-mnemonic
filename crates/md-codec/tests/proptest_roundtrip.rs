@@ -41,13 +41,21 @@ proptest! {
         let _ = reassemble(&[s.as_str()]);
     }
 
-    // P4 — string-level round-trip.
+    // P4 — string-level round-trip. cycle-4 H6: a descriptor whose payload
+    // exceeds the 80-data-symbol single-string cap legitimately rejects the
+    // single-string encode (the chunked round-trip is covered by P5); for any
+    // descriptor that DOES fit a single string the round-trip must hold.
     #[test]
     fn p4_string_round_trip(d in descriptor_strategy()) {
         let c = canon(&d);
-        let s = encode_md1_string(&c).expect("string encodes");
-        let back = decode_md1_string(&s).expect("string decodes");
-        prop_assert_eq!(back, c);
+        match encode_md1_string(&c) {
+            Ok(s) => {
+                let back = decode_md1_string(&s).expect("string decodes");
+                prop_assert_eq!(back, c);
+            }
+            Err(md_codec::Error::PayloadTooLongForSingleString { .. }) => { /* chunked-only; see P5 */ }
+            Err(e) => prop_assert!(false, "unexpected string-encode error: {e:?}"),
+        }
     }
 
     // P5 — chunk round-trip.
@@ -88,13 +96,19 @@ proptest! {
         prop_assert_eq!(back, c);
     }
 
-    // P4(W) — string-level round-trip.
+    // P4(W) — string-level round-trip. cycle-4 H6: oversize descriptors reject
+    // the single-string encode (chunked round-trip covered by P5(W)).
     #[test]
     fn p4_w_string_round_trip(d in wire_descriptor_strategy()) {
         let c = canon(&d);
-        let s = encode_md1_string(&c).expect("string encodes");
-        let back = decode_md1_string(&s).expect("string decodes");
-        prop_assert_eq!(back, c);
+        match encode_md1_string(&c) {
+            Ok(s) => {
+                let back = decode_md1_string(&s).expect("string decodes");
+                prop_assert_eq!(back, c);
+            }
+            Err(md_codec::Error::PayloadTooLongForSingleString { .. }) => { /* chunked-only; see P5(W) */ }
+            Err(e) => prop_assert!(false, "unexpected string-encode error: {e:?}"),
+        }
     }
 
     // P5(W) — chunk round-trip.

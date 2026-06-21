@@ -426,6 +426,23 @@ pub enum Error {
         /// The BCH singleton bound `2t = 8` (i.e. 4 correctable errors).
         bound: u8,
     },
+
+    /// Encode-side cap (cycle-4 H6): a single codex32 string's data part
+    /// exceeded the regular code's `REGULAR_DATA_SYMBOLS_MAX = 80` symbols.
+    /// The codex32 regular code is BCH(93, 80, 8); a single string therefore
+    /// carries at most 80 data symbols + 13 checksum = 93. `wrap_payload`
+    /// rejects an over-length payload (fail-closed) rather than emit an
+    /// un-decodable / aliasing-prone single string — callers needing more
+    /// capacity must use chunked encoding (`--force-chunked` / `split()`).
+    #[error(
+        "payload is {data_symbols} data symbols; the codex32 regular code caps single strings at {max} (use chunked encoding / --force-chunked)"
+    )]
+    PayloadTooLongForSingleString {
+        /// The over-length data-symbol count actually computed.
+        data_symbols: usize,
+        /// The maximum legal data-symbol count (80).
+        max: usize,
+    },
 }
 
 #[cfg(test)]

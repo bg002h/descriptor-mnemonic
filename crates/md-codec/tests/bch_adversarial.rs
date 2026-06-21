@@ -69,6 +69,28 @@ fn multi_chunk_descriptor() -> Descriptor {
     }
 }
 
+// H6 (cycle-4) — encode-side: an oversize descriptor (one that needs chunking)
+// must REJECT the default single-string encode with the typed cap error, while
+// the chunked path (`split`) succeeds. `multi_chunk_descriptor` splits into ≥3
+// chunks → its single-string payload is far over the 80-data-symbol cap.
+#[test]
+fn encode_md1_string_rejects_oversize_descriptor() {
+    let d = multi_chunk_descriptor();
+    assert!(
+        matches!(
+            md_codec::encode_md1_string(&d),
+            Err(Error::PayloadTooLongForSingleString { .. })
+        ),
+        "an oversize descriptor must fail closed on the single-string encode path"
+    );
+    // The contractual remedy (chunked) still works.
+    let chunks = split(&d).expect("chunked encode of an oversize descriptor succeeds");
+    assert!(
+        chunks.len() >= 2,
+        "oversize descriptor must produce >1 chunk"
+    );
+}
+
 // T2a — 1..=4-error correction across 3 lengths, through public decode_with_correction.
 #[test]
 fn t2a_correct_1_to_4_errors_across_lengths() {

@@ -8,15 +8,18 @@
 
 mod common;
 
-use common::{descriptor_with_pubkeys, keyarg, multikeys, wrap};
+use common::{descriptor_from_tree, descriptor_with_pubkeys, keyarg, multikeys, wrap};
 use md_codec::Tag;
 use md_codec::chunk::{decode_with_correction, reassemble, split};
 use md_codec::decode::decode_md1_string;
 use md_codec::encode::encode_md1_string;
 
 /// Single-chunk descriptor (`wsh(pk)`) for the single-string decode cells.
+/// Template-mode (empty TLV, no 65-byte xpub) so its payload stays under the
+/// codex32 regular code's 80-data-symbol single-string cap (cycle-4 H6); a
+/// pubkeys-populated `wsh(pk)` overflows that cap and must be chunked.
 fn one_chunk() -> md_codec::Descriptor {
-    descriptor_with_pubkeys(wrap(Tag::Wsh, keyarg(Tag::PkK, 0)))
+    descriptor_from_tree(wrap(Tag::Wsh, keyarg(Tag::PkK, 0)), false)
 }
 
 /// A descriptor large enough to `split()` into ≥2 chunks (wide multi).

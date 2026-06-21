@@ -983,8 +983,20 @@ fn round_trip_then_derive_address() {
         .assume_checked()
         .to_string();
 
-    let s = md_codec::encode_md1_string(&d).unwrap();
-    let decoded = md_codec::decode_md1_string(&s).unwrap();
+    // This wallet-policy descriptor carries a populated 65-byte xpub TLV, whose
+    // payload exceeds the codex32 regular code's 80-data-symbol single-string
+    // cap (cycle-4 H6) → encode_md1_string now fails closed. Round-trip via the
+    // chunked path (`split` → `reassemble`), the contractual remedy.
+    assert!(
+        matches!(
+            md_codec::encode_md1_string(&d),
+            Err(md_codec::Error::PayloadTooLongForSingleString { .. })
+        ),
+        "an oversize wallet-policy descriptor must reject the single-string encode"
+    );
+    let chunks = md_codec::chunk::split(&d).unwrap();
+    let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
+    let decoded = md_codec::chunk::reassemble(&refs).unwrap();
     let after = decoded
         .derive_address(0, 0, Network::Bitcoin)
         .unwrap()

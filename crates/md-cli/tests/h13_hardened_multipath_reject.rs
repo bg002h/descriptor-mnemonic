@@ -144,6 +144,10 @@ fn encode_malformed_hardened_multipath_rejects() {
 fn encode_nonhardened_multipath_roundtrips() {
     let template = "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))";
 
+    // cycle-4 H6: this 2-of-2 wallet-policy (two 65-byte xpub TLVs) exceeds the
+    // 80-data-symbol single-string cap, so encode via the chunked path
+    // (`--force-chunked --group-size 0`); H13's non-hardened-multipath accept is
+    // orthogonal to the length cap and must still hold through chunked encode.
     let encode_out = Command::cargo_bin("md")
         .unwrap()
         .args([
@@ -155,6 +159,9 @@ fn encode_nonhardened_multipath_roundtrips() {
             &format!("@1={TPUB48}"),
             "--network",
             "regtest",
+            "--force-chunked",
+            "--group-size",
+            "0",
         ])
         .output()
         .unwrap();
@@ -163,23 +170,28 @@ fn encode_nonhardened_multipath_roundtrips() {
         "non-hardened <0;1> multipath must encode (exit 0); stderr: {}",
         String::from_utf8_lossy(&encode_out.stderr)
     );
-    let phrase = String::from_utf8(encode_out.stdout)
+    let chunks: Vec<String> = String::from_utf8(encode_out.stdout)
         .unwrap()
         .lines()
-        .next()
-        .unwrap()
-        .to_string();
+        .filter(|l| l.starts_with("md1"))
+        .map(|l| l.to_string())
+        .collect();
     assert!(
-        phrase.starts_with("md1"),
-        "expected an md1 phrase, got: {phrase}"
+        !chunks.is_empty() && chunks.iter().all(|c| c.starts_with("md1")),
+        "expected md1 chunk phrases, got: {chunks:?}"
     );
 
+    let mut decode_args: Vec<String> = vec!["decode".to_string()];
+    decode_args.extend(chunks);
     let decode_out = Command::cargo_bin("md")
         .unwrap()
-        .args(["decode", &phrase])
+        .args(&decode_args)
         .output()
         .unwrap();
-    assert!(decode_out.status.success(), "decode of non-hardened phrase failed");
+    assert!(
+        decode_out.status.success(),
+        "decode of non-hardened phrase failed"
+    );
     let decoded = String::from_utf8(decode_out.stdout)
         .unwrap()
         .lines()

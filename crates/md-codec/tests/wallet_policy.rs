@@ -24,6 +24,24 @@ use md_codec::validate::{validate_explicit_origin_required, validate_placeholder
 
 // ─── Constructors ────────────────────────────────────────────────────────
 
+/// Round-trip `d` through the wire string and return the decoded descriptor.
+/// cycle-4 H6: a full wallet-policy descriptor (populated 65-byte xpub TLVs)
+/// exceeds the codex32 regular code's 80-data-symbol single-string cap, so
+/// `encode_md1_string` fails closed with `PayloadTooLongForSingleString`; for
+/// those the chunked path (`split`/`reassemble`) is the authoritative wire
+/// round-trip. Template-mode (no xpubs) descriptors still fit a single string.
+fn roundtrip_via_string_or_chunks(d: &Descriptor) -> Descriptor {
+    match encode_md1_string(d) {
+        Ok(s) => decode_md1_string(&s).expect("single-string decodes"),
+        Err(Error::PayloadTooLongForSingleString { .. }) => {
+            let chunks = split(d).expect("oversize descriptor chunks");
+            let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
+            reassemble(&refs).expect("chunked reassembles")
+        }
+        Err(e) => panic!("unexpected string-encode error: {e:?}"),
+    }
+}
+
 fn bip84_path() -> OriginPath {
     OriginPath {
         components: vec![
@@ -244,8 +262,7 @@ fn cell_1_wpkh_template_only() -> Descriptor {
 #[test]
 fn smoke_1of1_cell_7_wpkh_round_trip() {
     let d = cell_7_wpkh_full();
-    let s = encode_md1_string(&d).unwrap();
-    let d2 = decode_md1_string(&s).unwrap();
+    let d2 = roundtrip_via_string_or_chunks(&d);
     assert_eq!(d, d2);
     assert!(d2.is_wallet_policy(), "cell-7 must be wallet-policy mode");
 }
@@ -253,8 +270,7 @@ fn smoke_1of1_cell_7_wpkh_round_trip() {
 #[test]
 fn smoke_2of3_cell_7_wsh_sortedmulti_round_trip() {
     let d = cell_7_wsh_2of3_full();
-    let s = encode_md1_string(&d).unwrap();
-    let d2 = decode_md1_string(&s).unwrap();
+    let d2 = roundtrip_via_string_or_chunks(&d);
     assert_eq!(d, d2);
     assert!(d2.is_wallet_policy(), "cell-7 must be wallet-policy mode");
 }
@@ -290,8 +306,7 @@ fn canonicalization_stability_wpkh_explicit_vs_redundant_override() {
 
     // Sanity: the round-trip path also works for the redundant-override
     // version.
-    let s_b = encode_md1_string(&d_b).unwrap();
-    let d_b_decoded = decode_md1_string(&s_b).unwrap();
+    let d_b_decoded = roundtrip_via_string_or_chunks(&d_b);
     assert_eq!(d_b, d_b_decoded);
 }
 
@@ -313,8 +328,7 @@ fn partial_keys_2of2_at0_cell7_at1_cell1() {
     d_partial.tlv.fingerprints = Some(vec![(0u8, [0xAA; 4])]);
     d_partial.tlv.pubkeys = Some(vec![(0u8, make_xpub(0x55))]);
 
-    let s = encode_md1_string(&d_partial).unwrap();
-    let d2 = decode_md1_string(&s).unwrap();
+    let d2 = roundtrip_via_string_or_chunks(&d_partial);
     assert_eq!(d_partial, d2);
     assert!(
         d2.is_wallet_policy(),
@@ -550,8 +564,7 @@ fn divergent_paths_wallet_policy_2of2_round_trip() {
     d.tlv.pubkeys = Some(vec![(0u8, make_xpub(0x77)), (1u8, make_xpub(0x88))]);
 
     // Round-trip.
-    let s = encode_md1_string(&d).unwrap();
-    let d2 = decode_md1_string(&s).unwrap();
+    let d2 = roundtrip_via_string_or_chunks(&d);
     assert_eq!(d, d2);
     assert!(d2.is_wallet_policy());
 
@@ -816,8 +829,18 @@ fn encoder_determinism_2of3_cell_7_byte_identical_emit() {
     assert_eq!(bits_1, bits_2);
     assert_eq!(bytes_1, bytes_2);
 
-    // The codex32-wrapped string form is also deterministic.
-    let s_1 = encode_md1_string(&d).unwrap();
-    let s_2 = encode_md1_string(&d).unwrap();
+    // The codex32-wrapped wire form is also deterministic. cycle-4 H6: this
+    // full cell-7 wallet-policy descriptor exceeds the 80-data-symbol
+    // single-string cap, so it emits via the chunked path — which is equally
+    // deterministic.
+    assert!(
+        matches!(
+            encode_md1_string(&d),
+            Err(Error::PayloadTooLongForSingleString { .. })
+        ),
+        "oversize cell-7 must reject the single-string encode"
+    );
+    let s_1 = split(&d).unwrap();
+    let s_2 = split(&d).unwrap();
     assert_eq!(s_1, s_2);
 }

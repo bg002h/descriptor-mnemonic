@@ -240,6 +240,9 @@ fn encode_json_network_field_default_mainnet() {
 #[cfg(feature = "json")]
 #[test]
 fn encode_json_network_field_testnet() {
+    // cycle-4 H6: a keyed wallet-policy descriptor (65-byte xpub TLV) exceeds
+    // the 80-data-symbol single-string cap → use the chunked path; the `network`
+    // JSON field (the assertion under test) is emitted in both forms.
     Command::cargo_bin("md")
         .unwrap()
         .args([
@@ -250,10 +253,48 @@ fn encode_json_network_field_testnet() {
             "--key",
             &format!("@0={TPUB_FIXTURE}"),
             "--json",
+            "--force-chunked",
         ])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"network\": \"testnet\""));
+}
+
+/// cycle-4 H6: a keyed wallet-policy descriptor overflows the codex32 regular
+/// code's 80-data-symbol single-string cap, so the default (non-chunked)
+/// `md encode` fails closed (non-zero exit) and directs the user to chunked
+/// encoding; `--force-chunked` is the live remedy and succeeds.
+#[test]
+fn md_encode_default_rejects_oversize() {
+    // Default single-string path → reject, message names `--force-chunked`.
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wpkh(@0/<0;1>/*)",
+            "--network",
+            "testnet",
+            "--key",
+            &format!("@0={TPUB_FIXTURE}"),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--force-chunked"));
+
+    // The chunked remedy succeeds.
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wpkh(@0/<0;1>/*)",
+            "--network",
+            "testnet",
+            "--key",
+            &format!("@0={TPUB_FIXTURE}"),
+            "--force-chunked",
+        ])
+        .assert()
+        .success();
 }
 
 #[test]

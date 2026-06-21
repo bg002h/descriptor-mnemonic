@@ -34,6 +34,26 @@ use std::str::FromStr;
 
 // ─── P6 oracle chain (shared by the property and the golden cells) ──────
 
+/// Single-string wire-round-trip assertion that tolerates the cycle-4 H6 cap:
+/// a descriptor whose payload exceeds the 80-data-symbol single-string limit
+/// (e.g. any wallet-policy descriptor carrying a 65-byte xpub TLV) legitimately
+/// rejects `encode_md1_string` with `PayloadTooLongForSingleString` — that is
+/// the contractual fail-closed outcome, and the chunked round-trip (asserted
+/// separately by the callers) is the authoritative wire check for it. When the
+/// descriptor DOES fit a single string, the round-trip must be exact.
+fn assert_string_round_trip_or_oversize_reject(c: &Descriptor, ctx: &str) {
+    match encode_md1_string(c) {
+        Ok(s) => assert_eq!(
+            &decode_md1_string(&s).unwrap_or_else(|e| panic!("{ctx}: string decodes: {e:?}")),
+            c,
+            "{ctx}: string round-trip must be exact"
+        ),
+        Err(Error::PayloadTooLongForSingleString { .. }) => { /* chunked-only; chunk RT asserted by caller */
+        }
+        Err(e) => panic!("{ctx}: unexpected string-encode error: {e:?}"),
+    }
+}
+
 /// Run the full P6 chain on `d` and return the derived mainnet receive
 /// address string:
 /// 1. `to_miniscript_descriptor(&canon(d), 0)` succeeds (failure is RED,
@@ -59,12 +79,7 @@ fn p6_chain(d: &Descriptor) -> String {
         c,
         "P6 step 2: payload round-trip must be exact"
     );
-    let s = encode_md1_string(&c).expect("P6 step 2: string encodes");
-    assert_eq!(
-        decode_md1_string(&s).expect("P6 step 2: string decodes"),
-        c,
-        "P6 step 2: string round-trip must be exact"
-    );
+    assert_string_round_trip_or_oversize_reject(&c, "P6 step 2");
     let chunks = split(&c).expect("P6 step 2: splits");
     let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
     assert_eq!(
@@ -112,12 +127,7 @@ fn assert_p7_clean_refusal(d: &Descriptor) {
         c,
         "P7: payload round-trip must stay exact"
     );
-    let s = encode_md1_string(&c).expect("P7: string encodes");
-    assert_eq!(
-        decode_md1_string(&s).expect("P7: string decodes"),
-        c,
-        "P7: string round-trip must stay exact"
-    );
+    assert_string_round_trip_or_oversize_reject(&c, "P7");
     let chunks = split(&c).expect("P7: splits");
     let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
     assert_eq!(
@@ -610,8 +620,7 @@ fn upstream_taptree_depth2_display_asymmetry() {
         .assume_checked()
         .to_string();
     assert!(addr.starts_with("bc1p"), "expected P2TR, got {addr}");
-    let s = encode_md1_string(&c).expect("encodes");
-    assert_eq!(decode_md1_string(&s).expect("decodes"), c);
+    assert_string_round_trip_or_oversize_reject(&c, "depth-2 taptree");
     // …but the rendered STRING is not reparseable under pinned 13.0.0.
     let rendered_str = rendered.to_string();
     assert!(

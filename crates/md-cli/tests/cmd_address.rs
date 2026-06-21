@@ -44,10 +44,24 @@ fn expected_wpkh_address(account_xpub: &Xpub, chain: u32, index: u32, network: N
     Address::p2wpkh(&cpk, network).to_string()
 }
 
-fn encode_template_with_key(template: &str, key_arg: &str) -> String {
+/// Encode a keyed wallet-policy template and return the emitted md1 phrase(s).
+/// cycle-4 H6: a keyed wallet-policy descriptor (carrying a 65-byte xpub TLV)
+/// exceeds the codex32 regular code's 80-data-symbol single-string cap, so the
+/// default single-string `md encode` fails closed — use the chunked path
+/// (`--force-chunked`), the contractual remedy, and return every chunk line.
+/// `--group-size 0` keeps the strings ungrouped (no separators).
+fn encode_template_with_key(template: &str, key_arg: &str) -> Vec<String> {
     let out = Command::cargo_bin("md")
         .unwrap()
-        .args(["encode", template, "--key", key_arg])
+        .args([
+            "encode",
+            template,
+            "--key",
+            key_arg,
+            "--force-chunked",
+            "--group-size",
+            "0",
+        ])
         .output()
         .unwrap();
     assert!(
@@ -55,12 +69,13 @@ fn encode_template_with_key(template: &str, key_arg: &str) -> String {
         "encode failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    // Skip the `chunk-set-id: 0x…` header; keep the md1 chunk lines.
     String::from_utf8(out.stdout)
         .unwrap()
         .lines()
-        .next()
-        .unwrap()
-        .to_string()
+        .filter(|l| l.starts_with("md1"))
+        .map(|l| l.to_string())
+        .collect()
 }
 
 #[test]
@@ -105,11 +120,13 @@ fn address_accepts_grouped_phrase() {
     // through `build_descriptor`'s strip.
     let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
     let key_arg = format!("@0={xpub}");
-    let phrase = encode_template_with_key("wpkh(@0/<0;1>/*)", &key_arg);
-    let grouped = group5(&phrase);
+    let phrases = encode_template_with_key("wpkh(@0/<0;1>/*)", &key_arg);
+    let grouped: Vec<String> = phrases.iter().map(|p| group5(p)).collect();
+    let mut args: Vec<String> = vec!["address".to_string()];
+    args.extend(grouped);
     Command::cargo_bin("md")
         .unwrap()
-        .args(["address", &grouped])
+        .args(&args)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -121,10 +138,12 @@ fn address_accepts_grouped_phrase() {
 fn address_phrase_mode_round_trips_through_encode() {
     let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
     let key_arg = format!("@0={xpub}");
-    let phrase = encode_template_with_key("wpkh(@0/<0;1>/*)", &key_arg);
+    let phrases = encode_template_with_key("wpkh(@0/<0;1>/*)", &key_arg);
+    let mut args: Vec<String> = vec!["address".to_string()];
+    args.extend(phrases);
     Command::cargo_bin("md")
         .unwrap()
-        .args(["address", &phrase])
+        .args(&args)
         .assert()
         .success()
         .stdout(predicates::str::contains(

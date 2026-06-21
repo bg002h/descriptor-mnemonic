@@ -17,6 +17,13 @@ const HRP: &str = "md";
 /// Regular-BCH checksum length, in 5-bit symbols.
 pub(crate) const REGULAR_CHECKSUM_SYMBOLS: usize = 13;
 
+/// Maximum data-symbol count for a single codex32 regular-code string.
+/// The codex32 regular code is BCH(93, 80, 8): `REGULAR_DATA_SYMBOLS_MAX +
+/// REGULAR_CHECKSUM_SYMBOLS == 93` (80 data + 13 checksum). Payloads exceeding
+/// this cap MUST be chunked (`split()` / `--force-chunked`); a single string
+/// cannot carry them. Enforced at the top of [`wrap_payload`] (cycle-4 H6).
+pub(crate) const REGULAR_DATA_SYMBOLS_MAX: usize = 80;
+
 /// Pack `bit_count` bits from `payload_bytes` into 5-bit symbols. Pads the
 /// final symbol with zeros if `bit_count` is not a multiple of 5. Returns
 /// `ceil(bit_count / 5)` symbols. Each output u8 contains a 5-bit value.
@@ -66,6 +73,17 @@ fn char_to_symbol(c: char) -> Option<u8> {
 /// into a complete codex32 md1 string with HRP and BCH checksum, symbol-aligned.
 pub fn wrap_payload(payload_bytes: &[u8], bit_count: usize) -> Result<String, Error> {
     let data_symbols = bits_to_symbols(payload_bytes, bit_count)?;
+    // cycle-4 H6: enforce the regular-code 80-data-symbol cap at the lowest
+    // shared chokepoint (every `wrap_payload` caller inherits it, including
+    // `encode_md1_string`). An over-length single string is un-decodable under
+    // the BCH(93, 80, 8) regular code, so fail closed and direct the caller to
+    // chunked encoding rather than emit an aliasing-prone card.
+    if data_symbols.len() > REGULAR_DATA_SYMBOLS_MAX {
+        return Err(Error::PayloadTooLongForSingleString {
+            data_symbols: data_symbols.len(),
+            max: REGULAR_DATA_SYMBOLS_MAX,
+        });
+    }
     // v0.x exposes `bch_create_checksum_regular(hrp: &str, data: &[u8]) -> [u8; 13]`.
     let checksum: [u8; 13] = crate::bch::bch_create_checksum_regular(HRP, &data_symbols);
 
@@ -227,5 +245,52 @@ mod tests {
             }
         }
         let _ = unwrap_string(&grouped).unwrap();
+    }
+
+    // ── H6 (cycle-4): encode-side 80-data-symbol cap ─────────────────────────
+    // The codex32 regular code is BCH(93, 80, 8): a single string carries at
+    // most 80 data symbols + 13 checksum = 93. `wrap_payload` is the lowest
+    // shared chokepoint; it MUST reject an over-80-data-symbol payload rather
+    // than emit an un-decodable / aliasing-prone single string.
+
+    #[test]
+    fn wrap_payload_rejects_over_80_data_symbols() {
+        // 405 bits → ceil(405/5) = 81 data symbols (one past the cap).
+        let bit_count = 81 * 5;
+        let mut w = BitWriter::new();
+        // Fill with arbitrary non-zero bits, 32 at a time.
+        let mut remaining = bit_count;
+        while remaining > 0 {
+            let take = remaining.min(32);
+            w.write_bits(0xDEAD_BEEF_u64 & ((1u64 << take) - 1), take);
+            remaining -= take;
+        }
+        let bytes = w.into_bytes();
+        let got = wrap_payload(&bytes, bit_count);
+        assert_eq!(
+            got,
+            Err(Error::PayloadTooLongForSingleString {
+                data_symbols: 81,
+                max: 80,
+            }),
+            "81 data symbols must be rejected with the typed cap error"
+        );
+    }
+
+    #[test]
+    fn wrap_payload_accepts_exactly_80_data_symbols() {
+        // 400 bits → ceil(400/5) = 80 data symbols (the maximal LEGAL value).
+        let bit_count = 80 * 5;
+        let mut w = BitWriter::new();
+        let mut remaining = bit_count;
+        while remaining > 0 {
+            let take = remaining.min(32);
+            w.write_bits(0x1234_5678_u64 & ((1u64 << take) - 1), take);
+            remaining -= take;
+        }
+        let bytes = w.into_bytes();
+        let s = wrap_payload(&bytes, bit_count).expect("80 data symbols is in-domain");
+        // HRP "md1" (3) + 80 data + 13 checksum = 96 chars (93-symbol codeword).
+        assert_eq!(s.chars().count(), 3 + 80 + REGULAR_CHECKSUM_SYMBOLS);
     }
 }
