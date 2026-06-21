@@ -203,7 +203,21 @@ pub fn canonicalize_placeholder_indices(d: &mut Descriptor) -> Result<(), Error>
     // Atomically apply the permutation to every index-bearing field.
     remap_indices(&mut d.tree, &perm);
 
+    // Bind `d.n` before the mutable borrow of `d.path_decl.paths` below so
+    // the error payload (which wants the `u8`) does not re-borrow `d` while
+    // `paths` is live.
+    let n_keys = d.n;
     if let PathDeclPaths::Divergent(paths) = &mut d.path_decl.paths {
+        // L6: a hand-built Descriptor can carry a short Divergent vector;
+        // guard before indexing old_paths[inverse[new_idx]] to surface a
+        // typed error instead of an out-of-bounds panic (mirror
+        // expand_per_at_n's length check).
+        if paths.len() != n {
+            return Err(Error::DivergentPathCountMismatch {
+                n: n_keys,
+                got: paths.len(),
+            });
+        }
         // paths[old_idx] becomes paths[perm[old_idx]] — i.e. new_paths[new_idx] = old_paths[old_idx]
         // where perm[old_idx] = new_idx. We need new_paths[new_idx] = old_paths[inverse_perm[new_idx]].
         let mut inverse = vec![0u8; n];
@@ -678,6 +692,85 @@ mod tests {
             }
             _ => panic!("expected divergent paths"),
         }
+    }
+
+    /// L6: a hand-built Descriptor with a SHORT Divergent vector
+    /// (length 1, but `n = 2`) and a NON-canonical tree ordering ([1, 0],
+    /// so the identity fast-path is bypassed) panics today at the
+    /// `old_paths[inverse[new_idx]]` index (OOB). After the length guard
+    /// it must surface a typed `DivergentPathCountMismatch` instead.
+    #[test]
+    fn canonicalize_short_divergent_returns_typed_error() {
+        let one_path = OriginPath {
+            components: vec![PathComponent {
+                hardened: true,
+                value: 84,
+            }],
+        };
+        let mut d = Descriptor {
+            n: 2,
+            path_decl: PathDecl {
+                n: 2,
+                // Length 1 ≠ n=2 — malformed/short Divergent vector.
+                paths: PathDeclPaths::Divergent(vec![one_path]),
+            },
+            use_site_path: no_multipath(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::Multi,
+                    body: Body::MultiKeys {
+                        k: 2,
+                        // Non-canonical: @1 first → non-identity perm,
+                        // so the Divergent reorder branch IS reached.
+                        indices: vec![1, 0],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        let err = canonicalize_placeholder_indices(&mut d).unwrap_err();
+        assert!(
+            matches!(err, Error::DivergentPathCountMismatch { n: 2, got: 1 }),
+            "expected DivergentPathCountMismatch{{n:2,got:1}}, got {err:?}"
+        );
+    }
+
+    /// L6 scope-bound regression: a CANONICAL-ordering descriptor with a
+    /// short Divergent vector returns `Ok(())` via the identity fast-path
+    /// ([`canonicalize_placeholder_indices`] line ~200) WITHOUT reaching
+    /// the Divergent reorder branch — so the new guard does not over-reject
+    /// the fast-path. (The guard fires only on a NON-identity permutation.)
+    #[test]
+    fn canonicalize_identity_short_divergent_not_reached() {
+        let one_path = OriginPath {
+            components: vec![PathComponent {
+                hardened: true,
+                value: 84,
+            }],
+        };
+        let mut d = Descriptor {
+            n: 2,
+            path_decl: PathDecl {
+                n: 2,
+                paths: PathDeclPaths::Divergent(vec![one_path]),
+            },
+            use_site_path: no_multipath(),
+            tree: Node {
+                tag: Tag::Wsh,
+                body: Body::Children(vec![Node {
+                    tag: Tag::Multi,
+                    body: Body::MultiKeys {
+                        k: 2,
+                        // Canonical ordering: @0 first → identity perm →
+                        // early return before the Divergent branch/guard.
+                        indices: vec![0, 1],
+                    },
+                }]),
+            },
+            tlv: TlvSection::new_empty(),
+        };
+        assert!(canonicalize_placeholder_indices(&mut d).is_ok());
     }
 
     /// `use_site_path_overrides` keys are remapped consistently with
