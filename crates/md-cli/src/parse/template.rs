@@ -631,8 +631,20 @@ fn synthetic_xpub_for(i: u8, ctx: ScriptCtx) -> String {
     // Deterministic per (i, depth); domain-separated tag keeps test fixtures stable.
     let seed = sha256::Hash::hash(&[b'm', b'd', b'-', b'v', b'0', b'.', b'1', b'5', i, depth]);
     let chain_code = sha256::Hash::hash(&[b'c', b'c', i, depth]).to_byte_array();
-    let secret = SecretKey::from_slice(&seed.to_byte_array()).expect("hash is valid scalar");
+    // DEFENSIVE-UNIFORMITY scrub (FOLLOWUP `md-cli-synthetic-xpub-secretkey-not-zeroized`).
+    // `secret` here is NOT secret material: it is a fully deterministic,
+    // domain-separated PUBLIC placeholder scalar (no entropy, no user seed),
+    // reproducible from this source, used only to satisfy miniscript's
+    // curve-membership parser. We still scrub the transient scalar bytes — the
+    // `SecretKey` itself and the 32-byte source array — to hold a consistent
+    // "no bare SecretKey left un-zeroized on the stack" line, so any future copy
+    // of this pattern into a real-key path is caught. This does NOT change the
+    // emitted (public) xpub; see `synthetic_xpub_goldens_are_stable`.
+    let mut seed_bytes = seed.to_byte_array();
+    let mut secret = SecretKey::from_slice(&seed_bytes).expect("hash is valid scalar");
     let pubkey = secret.public_key(&Secp256k1::new()).serialize(); // 33-byte compressed
+    secret.non_secure_erase(); // secp256k1 in-place scalar wipe (secret no longer used)
+    seed_bytes.fill(0); // scrub the transient source bytes too
     let mut bytes = [0u8; 78];
     bytes[0..4].copy_from_slice(&MAINNET_XPUB_VERSION);
     bytes[4] = depth;
@@ -727,6 +739,28 @@ mod sub_tests {
         assert_eq!(km.len(), 1);
         let key = synthetic_xpub_for(0, ScriptCtx::MultiSig);
         assert_eq!(s.matches(&key).count(), 2);
+    }
+
+    /// Golden no-behavior-change guard for the defensive transient-scrub
+    /// (`md-cli-synthetic-xpub-secretkey-not-zeroized`). The synthetic xpub is a
+    /// fully deterministic, domain-separated PUBLIC placeholder; scrubbing the
+    /// transient secret-scalar bytes after the public-key multiply MUST NOT
+    /// change the emitted xpub. These three goldens pin the exact pre-scrub
+    /// strings across both depths and indices so any drift fails loudly.
+    #[test]
+    fn synthetic_xpub_goldens_are_stable() {
+        assert_eq!(
+            synthetic_xpub_for(0, ScriptCtx::MultiSig),
+            "xpub6DXuQW1FgeHbfmexToxaz2g1mAAGf1sV2Kd38U6yKMU6oqgww1T3rFuHqLs5p8WjcgzE5PDx8Q97evkWfksE2jnMddmQwrrjz7B5aEXCWAX",
+        );
+        assert_eq!(
+            synthetic_xpub_for(1, ScriptCtx::MultiSig),
+            "xpub6DXuQW1FgeHbgJuoYhP5anCiJz9fqn4xNA2SXgzXV1S8JZbrsB7gnMZrJGDBuGR6BwmnRL6Ytu8YnCteVjTFjkCGsQvMXkhMhS4bhDQeURQ",
+        );
+        assert_eq!(
+            synthetic_xpub_for(0, ScriptCtx::SingleSig),
+            "xpub6BemYiVEULcbqF34sTQgz3c2MzCoNmz8ZJieEwjH6HwnZ54tYQmnFgEwRb24pDkUsqbvoXtQh78jGD4PUVmW5Eh9VL5c1PckfFfsT37MBR2",
+        );
     }
 }
 

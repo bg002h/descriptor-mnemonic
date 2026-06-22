@@ -4,6 +4,14 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.9.2] — 2026-06-21
+
+**SemVer-PATCH — defensive transient-scrub of the synthetic-xpub placeholder scalar (hardening; no behavior change). Constellation secret-keymat sweep FOLLOWUP `md-cli-synthetic-xpub-secretkey-not-zeroized`.**
+
+### Internal
+
+- `parse::template::synthetic_xpub_for` now scrubs its transient secret-scalar bytes after deriving the public key: the `secp256k1::SecretKey` is wiped in place via `non_secure_erase()` and the 32-byte source hash array is zeroed (`fill(0)`). This is a **defensive-uniformity** wrap of a value that is NOT secret material — the scalar is a fully deterministic, domain-separated **PUBLIC placeholder** (no entropy, no user seed), reproducible from source, used only to satisfy miniscript's curve-membership parser. The wrap holds a consistent "no bare `SecretKey` left un-zeroized on the stack" line so any future copy of this pattern into a real-key path is caught. The emitted xpub is byte-identical (golden `synthetic_xpub_goldens_are_stable` pins all three pre/post values). No flag/option/subcommand/output-shape change → no manual-mirror, no `schema_mirror`. `md-codec` UNTOUCHED.
+
 ## md-cli [0.9.1] — 2026-06-21
 
 **SemVer-PATCH — re-release pinning `md-codec =0.39.0` (constellation bug-hunt cycle-10 library cluster); no `md-cli` code change.**
