@@ -55,13 +55,13 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ---
 
-### `display-grouping-render-strip-v1` — standardized mstring display-grouping (`md-codec` `render_grouped`/`strip_display_separators`; `md` CLI flags + intake strip)
+### `display-grouping-render-strip-v1` — ✓ RESOLVED (full cycle shipped; reconciled 2026-06-22) — standardized mstring display-grouping (`md-codec` `render_grouped`/`strip_display_separators`; `md` CLI flags + intake strip)
 
 - **Surfaced:** 2026-06-15, the cross-constellation **mstring display-grouping** cycle (P1 = descriptor-mnemonic). User-requested standardization of `ms1`/`mk1`/`md1` display output across all four CLIs (`mnemonic`/`md`/`ms`/`mk`).
 - **Where:** `crates/md-codec/src/encode.rs` (`render_grouped`, `strip_display_separators`, `is_display_separator`; `render_codex32_grouped` now a thin hyphen wrapper); `crates/md-cli/src/cmd/mod.rs` (`strip_md1_inputs`); `md encode` flags in `crates/md-cli/src/main.rs`; intake strip on all six md1-intake surfaces (`cmd/{decode,bytecode,verify,inspect,address,repair}.rs`); canonical vectors `design/display-grouping-vectors.tsv` (+ `.sha256`, CI-pinned).
 - **What (SHIPPED this cycle, md-codec 0.36.0 + md-cli 0.7.0):** `md encode` gains `--group-size <u16>` (default 5, `0`=unbroken) + `--separator <space|hyphen|comma>` (default space); text output is now space/5 print-once; `--json` + `repair` output stay UNBROKEN. Every md1-intake surface strips display separators (whitespace + `-` + `,`) so grouped/unbroken/any-separator cards re-ingest. Drift control = copy-with-checksum conformance vectors (canonical TSV authored in the toolkit; this repo carries a byte-identical copy + `.sha256`; CI `sha256sum -c` + a driver test over every row).
 - **Why deferred / residual:** the cross-repo pieces land in their own phases — toolkit pin-bump + `format.rs` collapse + golden regen + both manuals (P4), and `mnemonic-gui` `schema_mirror` flags + separator keyword dropdown (P5). The end-user manual entry for the `md` flags lives in the TOOLKIT repo's `docs/manual` (md has no own manual) and lands in P4. The canonical-vector checksum is a **lagging** drift gate (only fires once a sibling has copied the file); the leading control is the paired-PR discipline.
-- **Status:** open (P1 shipped on branch `feature/mstring-display-grouping`; P2–P5 pending).
+- **Status:** ✓ RESOLVED (reconciled 2026-06-22) — full cross-repo cycle shipped: P1 md-codec 0.36.0 / md-cli 0.7.0 (this repo), P2 ms-cli 0.8.0, P3 mk-cli 0.9.0, P4 toolkit v0.56.0, P5 mnemonic-gui v0.41.0. Verified at reconcile: `md encode --group-size/--separator` live; vectors + `.sha256` present. Canonical record: `../../mnemonic-toolkit/design/FOLLOWUPS.md` (`display-grouping-render-strip-v1`).
 - **Tier:** `cross-repo`.
 - **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md` (`display-grouping-render-strip-v1`, to be filed in P4 with the toolkit pin-bump) + sibling `mnemonic-secret` / `mnemonic-key` companions (P2/P3). Canonical spec: `../../mnemonic-toolkit/design/SPEC_mstring_display_grouping.md`.
 
