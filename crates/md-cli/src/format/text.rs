@@ -683,14 +683,16 @@ mod tests {
         assert_eq!(descriptor_to_template(&d).unwrap(), canonical);
     }
 
-    /// v0.4.3 — bare `Tag::RawPkH` rendering. The walker doesn't emit
-    /// `Tag::RawPkH` from any BIP 388 wallet-policy input (no
-    /// `Terminal::RawPkH` walker arm), so this path is unreachable via
-    /// `parse_template`. Construct the Node directly and call private
-    /// `render_node` to pin the rendering invariant. Asserts the output
-    /// matches `Terminal::Check(Terminal::RawPkH)`'s parser-accepted
-    /// Display form `expr_raw_pkh(<hex>)` — see the doc-comment on the
-    /// arm at `render_node`'s Tag::RawPkH match for the rationale.
+    /// v0.4.3 — bare `Tag::RawPkH` rendering, unit-pinned at the `render_node`
+    /// level. Since v0.10.0 the walker DOES emit `Tag::RawPkH` (for the parseable
+    /// `wsh(c:expr_raw_pkh(<hash>))` form → `Wsh → Check → RawPkH`); the walk half
+    /// is pinned by `walk_rawpkh_wsh_check_emits_rawpkh_node` in `parse::template`.
+    /// This test still constructs the Node directly to pin the bare-node rendering
+    /// invariant in isolation (no `@N` placeholder is involved, so the full
+    /// `parse_template` pipeline — which requires placeholders — is not the entry
+    /// point here). Asserts the output matches the parser-accepted Display form
+    /// `expr_raw_pkh(<hex>)` — see the doc-comment on the arm at `render_node`'s
+    /// Tag::RawPkH match for the rationale.
     #[test]
     fn render_bare_rawpkh_emits_expr_raw_pkh() {
         let node = Node {

@@ -4,6 +4,18 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.10.0] — 2026-06-23
+
+**SemVer-MINOR — `walk_miniscript_node` gains the final missing `Terminal::RawPkH` arm; widens the accepted input set (a previously-erroring valid descriptor now encodes). `md-codec` UNTOUCHED (wire `Tag::RawPkH`/`Body::Hash160Body` + decode already existed; the render half already shipped in v0.4.3).**
+
+### Added
+
+- `parse::template::walk_miniscript_node` now translates `Terminal::RawPkH(h)` → `Node { tag: Tag::RawPkH, body: Body::Hash160Body(h.to_byte_array()) }`, completing the encode half of the `expr_raw_pkh` round-trip. `wsh(c:expr_raw_pkh(<20-byte-hash>))` (the only parseable shape — bare `expr_raw_pkh(...)` is a non-T and rejected by miniscript) now walks to `Wsh → Check → RawPkH` and `descriptor_to_template` renders it back to the string `wsh(c:expr_raw_pkh(<hex>))`. RawPkH was the LAST missing `Terminal` arm in md-cli's walker (27 already present, now 28 — full encode-side parity). Since this was the final uncovered variant, the walker's `_ =>` catch-all is now unreachable; it is retained behind `#[allow(unreachable_patterns)]` so a future miniscript variant still hits a graceful `TemplateParse` error. No new flag/option/subcommand/output-shape → no manual-mirror, no toolkit cross-tool-differential cascade (pinned at frozen tag v0.7.1). `md-codec` stays `=0.39.0`.
+
+### Scope note
+
+- This closes the **descriptor → walk → Node → render-string** loop (`descriptor_to_template` → `wsh(c:expr_raw_pkh(<hex>))`). It does **NOT** make a full `descriptor → md1 → descriptor` codec round-trip work: md-codec's md1→miniscript DECODE path (`to_miniscript.rs:614`) STILL intentionally refuses `Tag::RawPkH` ("not constructible through miniscript's public API"). A full codec round-trip is out of scope and not claimed. Closes md FOLLOWUP `terminal-rawpkh-walker-arm-missing` and toolkit FOLLOWUP `walker-backport-to-md-cli`.
+
 ## md-cli [0.9.2] — 2026-06-21
 
 **SemVer-PATCH — defensive transient-scrub of the synthetic-xpub placeholder scalar (hardening; no behavior change). Constellation secret-keymat sweep FOLLOWUP `md-cli-synthetic-xpub-secretkey-not-zeroized`.**

@@ -1061,6 +1061,10 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             tag: Tag::Hash160,
             body: Body::Hash160Body(h.to_byte_array()),
         }),
+        Terminal::RawPkH(h) => Ok(Node {
+            tag: Tag::RawPkH,
+            body: Body::Hash160Body(h.to_byte_array()),
+        }),
         // Single-arity stack-permutation / control-flow wrappers. Each takes
         // Body::Children([1]). These unblock the more interesting fragments
         // — Thresh / OrB / AndB position-2+ children all get s:-wrapped by
@@ -1127,6 +1131,12 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             })
         }
         // Other miniscript fragments — TemplateParse error until BIP 388 templates need them.
+        // RawPkH was the LAST uncovered `Terminal` variant (miniscript 13.0.0's
+        // `Terminal` is NOT `#[non_exhaustive]`), so this catch-all is now provably
+        // unreachable. Retained behind `#[allow(unreachable_patterns)]` so a future
+        // miniscript variant still lands on a graceful `TemplateParse` error rather
+        // than a hard compile failure under `-D warnings`.
+        #[allow(unreachable_patterns)]
         _ => Err(CliError::TemplateParse(format!(
             "unsupported miniscript fragment: {ms}"
         ))),
@@ -1299,6 +1309,36 @@ mod root_tests {
         let err = build_multi_node(Tag::SortedMultiA, 33, &[], &km).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("k=33 out of range 1..=32"), "got: {msg}");
+    }
+
+    /// v0.10.0 — `Terminal::RawPkH` walker arm. `wsh(c:expr_raw_pkh(<hash>))`
+    /// PARSES through miniscript 13.0.0's descriptor parser and walks to
+    /// `Wsh → Check → RawPkH` (the `c:`/Check wrapper does NOT collapse for a
+    /// RawPkH child — only for PkK/PkH). Closes the encode half of the round-trip
+    /// whose render half already ships (md-cli format/text.rs Tag::RawPkH arm).
+    /// NOTE: this form has no `@N` placeholder, so it CANNOT go through
+    /// `parse_template` (that path refuses "template contains no @i placeholders");
+    /// the walker is reached via `MsDescriptor::from_str` + `walk_root`, mirroring
+    /// `wpkh_root`.
+    #[test]
+    fn walk_rawpkh_wsh_check_emits_rawpkh_node() {
+        let s = "wsh(c:expr_raw_pkh(0000000000000000000000000000000000000000))";
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(s).expect("parse");
+        let km = std::collections::BTreeMap::<String, u8>::new();
+        let root = walk_root(&d, &km).expect("walk_root must succeed post-RawPkH-arm");
+        assert_eq!(root.tag, Tag::Wsh);
+        // Wsh → Check → RawPkH
+        let check = match &root.body {
+            Body::Children(ch) => ch[0].clone(),
+            _ => panic!("Wsh body must be Children"),
+        };
+        assert_eq!(check.tag, Tag::Check);
+        let rawpkh = match &check.body {
+            Body::Children(ch) => ch[0].clone(),
+            _ => panic!("Check body must be Children"),
+        };
+        assert_eq!(rawpkh.tag, Tag::RawPkH);
+        assert!(matches!(rawpkh.body, Body::Hash160Body(h) if h == [0u8; 20]));
     }
 }
 
