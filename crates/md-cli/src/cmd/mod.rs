@@ -15,6 +15,7 @@ pub mod bytecode;
 pub mod compile;
 pub mod decode;
 pub mod encode;
+pub mod gen_man;
 #[cfg(feature = "json")]
 pub mod gui_schema;
 pub mod inspect;

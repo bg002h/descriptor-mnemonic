@@ -241,6 +241,18 @@ enum Command {
         after_long_help = "ATOMIC SEMANTICS (multi-chunk):\n  When more than one md1 chunk is supplied, the call is atomic per plan\n  §1 D28: if ANY chunk fails BCH error-correction capacity (> 4 errors),\n  the WHOLE call exits 2 with the failing chunk index named on stderr.\n  NO partial corrected chunks are emitted on stdout.\n\nINPUT FORMAT:\n  Accepts BOTH chunked-form md1 strings (those bearing a chunk header, as\n  emitted by `md encode --force-chunked` or by automatic chunking when the\n  payload exceeds 320 bits) AND non-chunked single-string md1 (those\n  emitted by plain `md encode` for small payloads). Since md-codec v0.35.0,\n  single-string md1 are repaired directly — no need to fall back to\n  `md decode`.\n\nEXAMPLES:\n  $ md repair md1qq...\n  $ md repair md1qq... md1qq... md1qq...\n  $ md repair --json md1qq..."
     )]
     Repair(cmd::repair::RepairArgs),
+    /// Generate roff man pages for the whole `md` CLI tree into a directory.
+    ///
+    /// Writes one `<name>.1` page per (sub)command via `clap_mangen`, rendered
+    /// directly from the compiled clap `Command` tree (binary-faithful by
+    /// construction). `scripts/install.sh` invokes this post-install to drop
+    /// pages into the user manpath (no sudo, no system files).
+    #[command(name = "gen-man")]
+    GenMan {
+        /// Directory to write `*.1` man pages into (created if absent).
+        #[arg(long, value_name = "DIR")]
+        out: std::path::PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -427,5 +439,6 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
         #[cfg(feature = "json")]
         Command::GuiSchema => cmd::gui_schema::run(),
         Command::Repair(a) => cmd::repair::run(a),
+        Command::GenMan { out } => cmd::gen_man::run(out),
     }
 }

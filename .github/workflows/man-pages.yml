@@ -1,0 +1,61 @@
+name: man-pages
+
+# Builds the `md` CLI and attaches a `md-man.tar.gz` roff man-page bundle to
+# the GitHub release for each `descriptor-mnemonic-md-cli-v*` tag. The pages are
+# clap-generated (`md gen-man`), hence binary-faithful by construction — there
+# is no content-fidelity gate (see SPEC §1). Modeled on the toolkit's
+# `manual.yml` release-asset step.
+#
+# Tag pushes always trigger regardless of which files the tag's commit touches —
+# the upload step must run on every tag push.
+
+on:
+  push:
+    tags:
+      - 'descriptor-mnemonic-md-cli-v*'
+  workflow_dispatch:
+
+jobs:
+  man-pages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.85.0
+
+      - name: Build md
+        run: cargo build --release -p md-cli
+
+      - name: Generate man pages
+        run: |
+          ./target/release/md gen-man --out man
+          # NEGATIVE canary (SPEC §2 C-1): an accidental pre-`.build()` would
+          # poison the bundle with `*-help*.1` shadow pages. Fail loudly here.
+          if ls man/*-help*.1 >/dev/null 2>&1; then
+            echo "ERROR: spurious *-help*.1 man pages produced" >&2
+            exit 1
+          fi
+          tar czf md-man.tar.gz -C man .
+
+      - name: Ensure release exists
+        if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$REF_NAME" >/dev/null 2>&1; then
+            gh release create "$REF_NAME" --title "$REF_NAME" --generate-notes
+          fi
+
+      - name: Upload man-page bundle
+        if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: gh release upload "$REF_NAME" md-man.tar.gz --clobber

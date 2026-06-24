@@ -4,6 +4,20 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.11.0] — 2026-06-23
+
+**SemVer-MINOR — new `md gen-man --out <DIR>` subcommand: self-emit roff man pages for the whole `md` CLI tree. Constellation man-pages cycle (SPEC `SPEC_constellation_man_pages`). `md-codec` UNTOUCHED.**
+
+### Added
+
+- `md gen-man --out <DIR>` — writes one `<name>.1` roff man page per (sub)command into `<DIR>` (created if absent) via `clap_mangen::generate_to`, rendered directly from the compiled clap `Command` tree. The pages are **binary-faithful by construction** — clap_mangen reads the same `clap::Command` the binary parses, so a page cannot drift from the actual flag surface (no content-fidelity gate needed). `scripts/install.sh` (in the toolkit repo) invokes `md gen-man` post-install to drop pages into the user manpath (no sudo, no system files). The call is the bare naive form (`generate_to(Cli::command(), …)` with NO pre-`.build()`); a pre-build would poison the output with `*-help*.1` shadow pages, so a negative-canary test (and the release-workflow guard) assert ZERO `*-help*.1` pages are produced.
+- New dependency `clap_mangen = "0.3"` (requires clap `^4.0`; md-cli is clap 4.6.1 — no clap bump).
+- New `.github/workflows/man-pages.yml`: on each `descriptor-mnemonic-md-cli-v*` tag, builds `md`, runs `md gen-man`, and attaches a `md-man.tar.gz` bundle to the GitHub release (modeled on the toolkit `manual.yml` release-asset step).
+
+### Notes
+
+- `gen-man` is a **visible** subcommand (a public CLI-surface addition → MINOR). The sibling `gui-schema` test (`cmd_gui_schema.rs::gui_schema_lists_all_documented_subcommands`) uses a `names.contains` SUBSET check, so it tolerates the new `gen-man` page with no test edit. The `--out` flag is a plain `PathBuf` (no `ValueEnum`/dropdown), so the GUI schema-mirror entry is trivially minimal.
+
 ## md-cli [0.10.0] — 2026-06-23
 
 **SemVer-MINOR — `walk_miniscript_node` gains the final missing `Terminal::RawPkH` arm; widens the accepted input set (a previously-erroring valid descriptor now encodes). `md-codec` UNTOUCHED (wire `Tag::RawPkH`/`Body::Hash160Body` + decode already existed; the render half already shipped in v0.4.3).**
