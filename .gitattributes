@@ -3,3 +3,15 @@
 # match across platforms. Without this rule, Windows checkout converts
 # LF → CRLF and the on-disk byte sequence diverges from the locked SHA.
 crates/md-codec/tests/vectors/*.json text eol=lf
+
+# Committed `cargo vendor` tree (reproducible-builds-musl cycle, P3b) — store
+# EVERY vendored file VERBATIM, byte-for-byte. `cargo vendor` writes a
+# `.cargo-checksum.json` per crate carrying the SHA-256 of each file's ORIGINAL
+# bytes; the `--locked --offline` reproducible build verifies those checksums.
+# git's default text/eol handling would CRLF→LF-normalize the vendored files
+# that ship with CRLF (e.g. `vendor/zerocopy/win-cargo.bat`) on commit, mutating
+# their bytes out from under the committed checksum → a clean checkout would fail
+# the offline build with a checksum mismatch. `-text` disables all EOL
+# normalization + binary/text detection for the vendor tree so the committed
+# bytes match what `cargo vendor` emitted (and what the checksums pin).
+vendor/** -text
