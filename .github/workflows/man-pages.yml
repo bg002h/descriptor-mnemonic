@@ -96,7 +96,7 @@ jobs:
   # the empty default falls back to the CALLER's SHA, which does not exist in the
   # toolkit repo (the recipe checkout would 404).
   repro:
-    uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@f7e17c430f42d585ae2850a151204b2224fed6f3
+    uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@6e37b18e50f9f857e439db1ebe2748fc91a54612
     permissions:
       contents: read
       packages: write
@@ -110,7 +110,7 @@ jobs:
       # md is fork-free ⇒ EMPTY rev selects the TWO-block --config form.
       miniscript_rev: ""
       # Source the centralized recipe from the toolkit at the P3a enabling commit.
-      toolkit_ref: f7e17c430f42d585ae2850a151204b2224fed6f3
+      toolkit_ref: 6e37b18e50f9f857e439db1ebe2748fc91a54612
 
   # Static, dependency-free `md` binaries for air-gapped / Alpine / musl boxes.
   # Builds both musl targets and attaches a static tarball per arch + a per-arch
