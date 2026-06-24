@@ -86,6 +86,18 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `bsd-process-hardening-parity-procctl-rlimit-core` — `md`'s `set_non_dumpable()` was a silent no-op on the BSDs (companion)
+
+- **Surfaced:** 2026-06-23, the constellation-wide musl/BSD secret-hygiene recon (toolkit `design/SPEC_bsd_hygiene_and_freebsd_gate.md`, Cycle A). `md`'s `set_non_dumpable()` in `crates/md-cli/src/process_hardening.rs` was fenced `#[cfg(target_os = "linux")]` and a silent no-op on FreeBSD/OpenBSD/NetBSD — the anti-core-dump + anti-ptrace-introspection protection did not run, so a `md` process on a BSD could be ptrace/ktrace-introspected and could drop a core file a secret (passed inline on argv/heap) spills into.
+- **Status:** ✓ **RESOLVED (`md-cli` 0.11.1, 2026-06-23).** Added a BYTE-IDENTICAL (across all four CLI crates) BSD cfg arm: `#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]` doing (i) FreeBSD-only `procctl(P_PID, 0, PROC_TRACE_CTL, PROC_TRACE_CTL_DISABLE)` and (ii) all-three-BSD `setrlimit(RLIMIT_CORE, {0, 0})`. Best-effort. macOS/Windows remain a documented no-op. No `libc` bump. `md-codec` NO-BUMP. No CLI flag / subcommand / output-shape change → manual-mirror UNTOUCHED. Linux behavior unchanged.
+- **Tier:** `cross-repo`. **Companion:** `mnemonic-toolkit` (primary spec author) + `mnemonic-secret` + `mnemonic-key` `design/FOLLOWUPS.md` `bsd-process-hardening-parity-procctl-rlimit-core`.
+
+### `freebsd-compile-gate-ci` — no CI leg compile-checked `md`'s FreeBSD build / BSD hardening arm (companion)
+
+- **Surfaced:** 2026-06-23, the BSD recon (Cycle C). Nothing in `md`'s CI caught a Linux-only syscall/cfg/crate breaking the `cargo install`-on-FreeBSD path or the new BSD hardening arm.
+- **Status:** ✓ **RESOLVED (NO-BUMP CI infra, 2026-06-23).** Added a `freebsd-compile-gate` job to `.github/workflows/ci.yml` running WHOLE-CRATE `cargo check --target x86_64-unknown-freebsd -p md-cli` (NEVER `--lib` — `md-cli` is bin-only with no `src/lib.rs`; `process_hardening` lives in the bin target, so `--lib` would be silent false-green). `x86_64-unknown-freebsd` is Tier 2 with Host Tools; bare `rustup target add` validated locally (the cross-rs fallback was not needed).
+- **Tier:** `cross-repo` / `infra`. **Companion:** `mnemonic-toolkit` (toolkit-primary, `--lib`-correct) + `mnemonic-secret` + `mnemonic-key` `design/FOLLOWUPS.md` `freebsd-compile-gate-ci`.
+
 ### `md-codec-decode-with-correction-public-api` — promote BCH primitives + `decode_with_correction` for md HRP
 
 - **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 cycle (BCH error-correction launch).

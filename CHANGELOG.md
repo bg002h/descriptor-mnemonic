@@ -4,6 +4,15 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.11.1] — 2026-06-23
+
+**SemVer-PATCH — BSD secret-hygiene parity + FreeBSD compile-gate. `set_non_dumpable()` (in `crates/md-cli/src/process_hardening.rs`) was fenced `#[cfg(target_os = "linux")]` and a silent no-op on the BSDs, so a `md` process on FreeBSD/OpenBSD/NetBSD could be ptrace/ktrace-introspected and could drop a core file a secret (passed inline on argv/heap) spills into. A second cfg arm restores parity. No new CLI flag / subcommand / output-shape → no manual-mirror change. Linux behavior unchanged (the new arm is cfg-gated off everywhere but the BSDs). `md-codec` UNTOUCHED. Shipped in lockstep with `mnemonic-toolkit` 0.73.1 / `ms-cli` 0.13.1 / `mk-cli` 0.11.1 (byte-identical executable arm in all four CLI crates).**
+
+### Changed
+
+- **`set_non_dumpable()` gains a BSD parity arm** (`crates/md-cli/src/process_hardening.rs`). Keeps the Linux `prctl(PR_SET_DUMPABLE, 0)` arm; adds a `#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]` arm that does (i) on FreeBSD only, `procctl(P_PID, 0, PROC_TRACE_CTL, PROC_TRACE_CTL_DISABLE)` (disables ptrace/ktrace introspection AND core dumping) and (ii) on all three BSDs, `setrlimit(RLIMIT_CORE, {0, 0})` (hard-zeros the core-dump size). Best-effort (return values ignored). macOS/Windows remain a documented no-op. No `libc` version bump (all symbols present in the locked libc). Compile-gated BSD unit tests added (compile-checked but never executed by the chosen CI).
+- **FreeBSD compile-gate added to CI** (`.github/workflows/ci.yml`, new `freebsd-compile-gate` job). Runs a WHOLE-CRATE `cargo check --target x86_64-unknown-freebsd -p md-cli` (NOT `--lib` — md-cli is bin-only and its `process_hardening` lives in the bin target; a `--lib` check would be silent false-green). Compile-covers the BSD hardening arm. Tier 2 with Host Tools; bare `rustup target add`, validated locally.
+
 ## md-cli [0.11.0] — 2026-06-23
 
 **SemVer-MINOR — new `md gen-man --out <DIR>` subcommand: self-emit roff man pages for the whole `md` CLI tree. Constellation man-pages cycle (SPEC `SPEC_constellation_man_pages`). `md-codec` UNTOUCHED.**

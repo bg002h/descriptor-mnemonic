@@ -73,3 +73,34 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps --document-private-items
+
+  freebsd-compile-gate:
+    # Cycle C — FreeBSD compile-gate. Catches the day a Linux-only syscall /
+    # cfg / crate breaks the `cargo install`-on-FreeBSD path, and compile-covers
+    # the BSD secret-hygiene arm in `src/process_hardening.rs`
+    # (procctl/setrlimit). `x86_64-unknown-freebsd` is Tier 2 with Host Tools,
+    # so `rustup target add` ships a precompiled std on the ubuntu runner; no
+    # apt cross-compiler step is needed (cargo check stops before link; the only
+    # C step is the vendored libsecp256k1 cc compile, which builds against the
+    # Tier-2 std — validated locally with bare rustup). Fallback if that ever
+    # needs a freebsd sysroot: switch to `cross check --target …` (cross-rs
+    # bundles a freebsd container).
+    #
+    # CRITICAL — this MUST be a WHOLE-CRATE check (`cargo check --target …`),
+    # NEVER `--lib`. md-cli is a BIN-ONLY crate (no `src/lib.rs`); its
+    # `process_hardening` lives only in the bin target (`mod process_hardening;`
+    # in `main.rs`). A `cargo check --lib` would compile nothing relevant and
+    # give silent false-green coverage of the entire BSD hardening arm. Only the
+    # bare whole-crate check reaches `main.rs` and therefore the hardening
+    # module. (The toolkit's `--lib` row is a special case that works only
+    # because the toolkit alone declares `process_hardening` as `pub mod` in
+    # `src/lib.rs`.)
+    name: freebsd compile-gate (whole-crate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: x86_64-unknown-freebsd
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --target x86_64-unknown-freebsd -p md-cli
