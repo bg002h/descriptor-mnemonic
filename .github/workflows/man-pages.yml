@@ -51,7 +51,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           if ! gh release view "$REF_NAME" >/dev/null 2>&1; then
-            gh release create "$REF_NAME" --title "$REF_NAME" --generate-notes
+            gh release create "$REF_NAME" --title "$REF_NAME" --generate-notes || true
           fi
 
       - name: Upload man-page bundle
@@ -121,7 +121,7 @@ jobs:
       - name: ensure-release
         env:
           REF_NAME: ${{ github.ref_name }}
-        run: gh release view "$REF_NAME" >/dev/null 2>&1 || gh release create "$REF_NAME" --title "$REF_NAME" --generate-notes
+        run: gh release view "$REF_NAME" >/dev/null 2>&1 || gh release create "$REF_NAME" --title "$REF_NAME" --generate-notes || true
       - name: upload
         env:
           REF_NAME: ${{ github.ref_name }}
