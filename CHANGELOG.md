@@ -4,6 +4,15 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.11.2] — 2026-06-23
+
+**SemVer-PATCH — musl static-binary release asset + musl build/test CI leg. Ships the first fully-static, dependency-free `md` Linux binaries (`x86_64-unknown-linux-musl` + `aarch64-unknown-linux-musl`) as GitHub-release tarballs on the `descriptor-mnemonic-md-cli-v*` tag, each with a per-arch `SHA256SUMS.<arch>` for offline / air-gapped verification. Also adds a musl compile/test CI leg to `ci.yml` (a separate `musl-check` job, scoped `-p md-cli` so it is fork-free — it does NOT need the patched-miniscript fork the `--workspace` test job clones). `md-codec` UNTOUCHED. No crate source / API / `--json` / CLI-flag / subcommand change. NOT published to crates.io (binary-asset-only PATCH; the tag ships the binary). The shipped guarantee is *static + checksummed*, not bit-for-bit reproducible.**
+
+### Added
+
+- **musl static-binary release-asset job** (`.github/workflows/man-pages.yml`, new `musl-binaries` job). On each `descriptor-mnemonic-md-cli-v*` tag it builds `md` for `x86_64-unknown-linux-musl` (natively with `musl-tools` + `CC_x86_64_unknown_linux_musl=musl-gcc`) and `aarch64-unknown-linux-musl` (via `cross`), tarballs each as `md-<version>-<arch>-linux-musl.tar.gz`, emits a per-arch `SHA256SUMS.<arch>`, and attaches them to the same release via `gh release upload --clobber` (alongside `md-man.tar.gz`). Scoped `-p md-cli --bin md` (fork-free, the same scope `man-pages.yml` already builds). `crt-static` left at its musl default (ON); `-Ctarget-feature=-crt-static` never set (per `rust#135244`). Toolchain pinned `@1.85.0`. The only C dep is the vendored libsecp256k1 in `secp256k1-sys`.
+- **musl compile/test CI leg** (`.github/workflows/ci.yml`, new `musl-check` job). Scoped `cargo test -p md-cli --target x86_64-unknown-linux-musl` (native, `musl-tools` + `CC_*=musl-gcc`) + `cross build` for aarch64-musl (build-only). `-p md-cli`-scoped so it is fork-free — it does NOT clone the `md-codec-local-stack` miniscript fork the `--workspace` test job needs. Pinned `@1.85.0`.
+
 ## md-cli [0.11.1] — 2026-06-23
 
 **SemVer-PATCH — BSD secret-hygiene parity + FreeBSD compile-gate. `set_non_dumpable()` (in `crates/md-cli/src/process_hardening.rs`) was fenced `#[cfg(target_os = "linux")]` and a silent no-op on the BSDs, so a `md` process on FreeBSD/OpenBSD/NetBSD could be ptrace/ktrace-introspected and could drop a core file a secret (passed inline on argv/heap) spills into. A second cfg arm restores parity. No new CLI flag / subcommand / output-shape → no manual-mirror change. Linux behavior unchanged (the new arm is cfg-gated off everywhere but the BSDs). `md-codec` UNTOUCHED. Shipped in lockstep with `mnemonic-toolkit` 0.73.1 / `ms-cli` 0.13.1 / `mk-cli` 0.11.1 (byte-identical executable arm in all four CLI crates).**

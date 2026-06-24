@@ -59,3 +59,72 @@ jobs:
         env:
           REF_NAME: ${{ github.ref_name }}
         run: gh release upload "$REF_NAME" md-man.tar.gz --clobber
+
+  # Static, dependency-free `md` binaries for air-gapped / Alpine / musl boxes.
+  # Builds both musl targets and attaches a static tarball per arch + a per-arch
+  # SHA256SUMS to the SAME `descriptor-mnemonic-md-cli-v*` release the man
+  # tarball lands on.
+  #
+  # crt-static is ON BY DEFAULT for musl; NEVER pass
+  # `-Ctarget-feature=-crt-static` (rust#135244 silently links host glibc). The
+  # only C dep is the vendored libsecp256k1 in `secp256k1-sys`: x86_64-musl
+  # native needs `musl-tools` (`musl-gcc`) + `CC_x86_64_unknown_linux_musl=
+  # musl-gcc`; aarch64-musl uses `cross` (bundles the musl cross C toolchain).
+  # Scoped `-p md-cli --bin md` (fork-free — does NOT need the patched-miniscript
+  # fork). Toolchain pinned `@1.85.0`.
+  #
+  # Security note: this job uses only GitHub-provided trusted context. No
+  # interpolation of untrusted user input.
+  musl-binaries:
+    name: musl-binary (${{ matrix.target }})
+    if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            musl_native: true
+            arch: x86_64
+          - target: aarch64-unknown-linux-musl
+            cross: true
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: ${{ matrix.target }}
+      - if: ${{ matrix.musl_native }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - if: ${{ matrix.cross }}
+        run: cargo install --locked cross
+      - name: build-native
+        if: ${{ matrix.musl_native }}
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo build --release --target ${{ matrix.target }} -p md-cli --bin md
+      - name: build-cross
+        if: ${{ matrix.cross }}
+        run: cross build --release --target ${{ matrix.target }} -p md-cli --bin md
+      - name: package
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VER="${REF_NAME##*-v}"
+          tar czf "md-${VER}-${{ matrix.arch }}-linux-musl.tar.gz" \
+            -C "target/${{ matrix.target }}/release" md
+          sha256sum "md-${VER}-${{ matrix.arch }}-linux-musl.tar.gz" > "SHA256SUMS.${{ matrix.arch }}"
+      - name: ensure-release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: gh release view "$REF_NAME" >/dev/null 2>&1 || gh release create "$REF_NAME" --title "$REF_NAME" --generate-notes
+      - name: upload
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          gh release upload "$REF_NAME" md-*-${{ matrix.arch }}-linux-musl.tar.gz --clobber
+          gh release upload "$REF_NAME" "SHA256SUMS.${{ matrix.arch }}" --clobber

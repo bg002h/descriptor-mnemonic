@@ -104,3 +104,56 @@ jobs:
           targets: x86_64-unknown-freebsd
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --target x86_64-unknown-freebsd -p md-cli
+
+  musl-check:
+    # musl target coverage (static air-gapped binary cycle). Both musl targets
+    # are Tier 2 with Host Tools and `unix` + Linux, so every `#[cfg(unix)]` /
+    # `#[cfg(target_os = "linux")]` path compiles + is functional on musl with
+    # ZERO source change.
+    #
+    # FORK-FREE SCOPE — this job is scoped `-p md-cli` and does NOT clone the
+    # `md-codec-local-stack` patched-miniscript fork the `--workspace` test job
+    # needs. `-p md-cli` resolves the registry miniscript 13.0.0 and is the same
+    # scope `man-pages.yml` already builds successfully without the fork. Do NOT
+    # run a `--workspace` musl test here without replicating the ci.yml
+    # fork-clone step.
+    #
+    #   * x86_64-musl — built + tested natively. Needs `musl-tools` (`musl-gcc`)
+    #     + `CC_x86_64_unknown_linux_musl=musl-gcc` so cc-rs builds the ONLY C
+    #     dep (the vendored libsecp256k1 in `secp256k1-sys`) against musl.
+    #   * aarch64-musl — `cross build`-only (cross bundles the musl cross C
+    #     toolchain; build coverage, no emulated test run).
+    #
+    # crt-static left at its musl default (ON). NEVER pass
+    # `-Ctarget-feature=-crt-static` (rust#135244 silently links host glibc).
+    # Toolchain pinned `@1.85.0` (matches `rust-toolchain.toml`).
+    name: musl compile/test (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            musl_native: true
+          - target: aarch64-unknown-linux-musl
+            cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: install musl-tools (x86_64-musl native)
+        if: ${{ matrix.musl_native }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: install cross (aarch64-musl)
+        if: ${{ matrix.cross }}
+        run: cargo install --locked cross
+      - name: cargo test -p md-cli --target x86_64-musl (native, fork-free)
+        if: ${{ matrix.musl_native }}
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo test -p md-cli --target ${{ matrix.target }}
+      - name: cross build -p md-cli --target aarch64-musl (build-only)
+        if: ${{ matrix.cross }}
+        run: cross build --release -p md-cli --target ${{ matrix.target }}
