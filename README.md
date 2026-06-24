@@ -66,6 +66,28 @@ versions) cosigners' extended public keys.
 - **For comparison with existing formats:** `design/PRIOR_ART.md`.
 - **For what real miniscripts look like under MD encoding:** `design/CORPUS.md` and the locked test vectors at `crates/md-codec/tests/vectors/` (per-shape `{template, phrase.txt, bytes.hex, descriptor.json}` quadruples; manifest at `manifest.rs`).
 
+## Man pages
+
+`md` ships man pages generated from its own clap definition — the same source as `--help` — so they cannot drift from the binary. Three ways to install them:
+
+1. **Automatic (default).** The [constellation installer](https://github.com/bg002h/mnemonic-toolkit) installs them alongside the binary into `~/.local/share/man/man1` — no sudo, no system files:
+
+   ```sh
+   sh -c "$(curl -fsSL https://raw.githubusercontent.com/bg002h/mnemonic-toolkit/master/scripts/install.sh)"
+   ```
+
+   Then `man md` works (and `man md-<subcommand>` for each subcommand). Pass `--no-man` to skip, or `--man-dir <dir>` to relocate.
+
+2. **By hand.** If you installed the binary directly (`cargo install`), emit them yourself:
+
+   ```sh
+   md gen-man --out ~/.local/share/man/man1
+   ```
+
+3. **Download.** Each release attaches a `md-man.tar.gz` asset — extract it into your manpath.
+
+If `man md` can't find them (older `man-db`, or macOS/BSD `man` that doesn't auto-read `~/.local/share/man`): `man -M ~/.local/share/man md`.
+
 ## What MD is for
 
 Bitcoin wallets that use arbitrary miniscript spending policies — multisig, timelocks, decaying conditions, inheritance schemes — must back up the policy structure separately from the seed. The seed alone is insufficient to recover funds because the wallet doesn't know what spending conditions to enforce.
