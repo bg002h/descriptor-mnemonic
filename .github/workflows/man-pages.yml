@@ -8,6 +8,13 @@ name: man-pages
 #
 # Tag pushes always trigger regardless of which files the tag's commit touches —
 # the upload step must run on every tag push.
+#
+# ── workflow_dispatch = the REPRODUCIBILITY GATE, runnable WITHOUT a tag ─────
+# A bare "Run workflow" click drives the `repro` caller job (the toolkit-homed
+# reproducibility gate) against the current branch so md's offline two-block
+# reproducibility can be CI-verified BEFORE any release tag relies on it. On a
+# `workflow_dispatch` event the man-pages build + the release-upload steps are
+# `if:`-guarded OFF (there is no release to attach to); only the repro gate runs.
 
 on:
   push:
@@ -29,12 +36,15 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust toolchain
+        if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
         uses: dtolnay/rust-toolchain@1.85.0
 
       - name: Build md
+        if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
         run: cargo build --release -p md-cli
 
       - name: Generate man pages
+        if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
         run: |
           ./target/release/md gen-man --out man
           # NEGATIVE canary (SPEC §2 C-1): an accidental pre-`.build()` would
@@ -60,6 +70,48 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: gh release upload "$REF_NAME" md-man.tar.gz --clobber
 
+  # ── REPRODUCIBILITY: the toolkit-homed gate (the FIRST codec re-home) ───────
+  # Calls the centralized reusable workflow from mnemonic-toolkit (F6: ONE
+  # source of truth for Dockerfile.repro + ci/repro/*.sh + the gate jobs). The
+  # caller's `actions/checkout` provides md's source + committed `vendor/`; each
+  # gate job additionally checks out the toolkit at the PINNED `toolkit_ref` for
+  # the recipe. The `musl-binaries` x86_64 leg below consumes
+  # `needs.repro.outputs.image` so the PUBLISHED artifact is produced by the
+  # IDENTICAL container the gate measured.
+  #
+  # md does NOT depend on the miniscript [patch.crates-io] fork → it passes
+  # `miniscript_rev: ""` to select the TWO-block `--config` form (crates-io +
+  # vendored-sources only; NO git-fork stanza). Empirically verified offline:
+  # the two-block form resolves md-cli fully from committed `vendor/` (EXIT 0),
+  # and dropping `vendored-sources.directory` REDs (EXIT 101) — the directory
+  # block is load-bearing.
+  #
+  # run_aarch64: false — the x86_64 gate runs inline; the slow (~30-60min QEMU)
+  # aarch64 byte-gate is exercised on demand via the toolkit reusable workflow's
+  # own `workflow_dispatch` (run_aarch64 default true). md's PUBLISHED aarch64
+  # artifact is STILL reproducible — the `musl-binaries` cross leg below is
+  # re-homed onto the digest-pinned Cross.toml recipe.
+  #
+  # toolkit_ref is a CONCRETE SHA (P3a's enabling commit). It MUST be concrete:
+  # the empty default falls back to the CALLER's SHA, which does not exist in the
+  # toolkit repo (the recipe checkout would 404).
+  repro:
+    uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@f7e17c430f42d585ae2850a151204b2224fed6f3
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      crate: md-cli
+      bin: md
+      target: x86_64-unknown-linux-musl
+      arch: x86_64
+      run_aarch64: false
+      # md is fork-free ⇒ EMPTY rev selects the TWO-block --config form.
+      miniscript_rev: ""
+      # Source the centralized recipe from the toolkit at the P3a enabling commit.
+      toolkit_ref: f7e17c430f42d585ae2850a151204b2224fed6f3
+
   # Static, dependency-free `md` binaries for air-gapped / Alpine / musl boxes.
   # Builds both musl targets and attaches a static tarball per arch + a per-arch
   # SHA256SUMS to the SAME `descriptor-mnemonic-md-cli-v*` release the man
@@ -67,22 +119,51 @@ jobs:
   #
   # crt-static is ON BY DEFAULT for musl; NEVER pass
   # `-Ctarget-feature=-crt-static` (rust#135244 silently links host glibc). The
-  # only C dep is the vendored libsecp256k1 in `secp256k1-sys`: x86_64-musl
-  # native needs `musl-tools` (`musl-gcc`) + `CC_x86_64_unknown_linux_musl=
-  # musl-gcc`; aarch64-musl uses `cross` (bundles the musl cross C toolchain).
-  # Scoped `-p md-cli --bin md` (fork-free — does NOT need the patched-miniscript
-  # fork). Toolchain pinned `@1.85.0`.
+  # only C dep is the vendored libsecp256k1 in `secp256k1-sys`.
+  #
+  # ── REPRODUCIBLE RE-HOME (toolkit-led `reproducible-builds-musl` cycle) ─────
+  # The x86_64 leg's BUILD + PACKAGE now run INSIDE the digest-pinned repro
+  # container (needs.repro.outputs.image, a ghcr.io/<owner>/repro-musl@sha256:…)
+  # at the fixed /build/src with CARGO_HOME=/cargo and the full reproducibility
+  # ENV (--remap-path-prefix, SOURCE_DATE_EPOCH off the COMMIT SHA, CFLAGS, the
+  # TWO-block job-scoped [source] activation, gzip -n -9). So the published
+  # SHA256 IS the hash the gate measured. The split-brain host `musl-tools` +
+  # `CC_x86_64_unknown_linux_musl` are REMOVED — the container's musl-gcc
+  # (pinned by the BUILT digest) is the only musl toolchain on this leg.
+  #
+  # MATRIX-SCOPE CONSTRAINT: this is a SINGLE combined x86_64+aarch64 matrix job;
+  # a JOB-LEVEL `container:` is forbidden (it would wrap the aarch64 `cross` leg
+  # into docker-in-docker). The re-home is therefore a per-STEP
+  # `docker run --network=none <image>@sha256` on the x86_64 (`musl_native`) leg
+  # ONLY. The aarch64 (`cross`) leg stays on the host runner (it is digest-pinned
+  # via Cross.toml, NOT a docker-run re-home — cross already runs its own
+  # digest-pinned container).
+  #
+  # NETWORK-ISOLATION BOUNDARY: `--network=none` wraps ONLY the in-container
+  # build+package (proving the committed-vendor/ offline build touches no live
+  # host). actions/checkout, ensure-release, and gh release upload REMAIN host
+  # steps WITH network; they read the container-built .tar.gz + SHA256SUMS off
+  # the bind-mounted workspace.
+  #
+  # Per-arch `SHA256SUMS.<arch>` + `PROVENANCE.<arch>.txt` (each matrix job is
+  # independent + `--clobber`-based, so a per-arch file avoids a clobber race).
   #
   # Security note: this job uses only GitHub-provided trusted context. No
   # interpolation of untrusted user input.
   musl-binaries:
     name: musl-binary (${{ matrix.target }})
     if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
+    needs: repro
     runs-on: ubuntu-latest
+    # `contents: write` to upload release assets; `packages: read` so the
+    # x86_64 (musl_native) leg can authenticate to GHCR and `docker pull` the
+    # private-by-default BUILT repro image (the re-homed build runs INSIDE it).
     permissions:
       contents: write
+      packages: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPRO_IMAGE: ${{ needs.repro.outputs.image }}
     strategy:
       fail-fast: false
       matrix:
@@ -95,29 +176,129 @@ jobs:
             arch: aarch64
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.85.0
+
+      # ── aarch64 (cross) leg — RE-HOMED reproducible ────────────────────────
+      # The aarch64 musl binary has no native runner, so it is built via `cross`
+      # under QEMU. The PUBLISHED aarch64 artifact is the REPRODUCIBLE one:
+      #   * the cross runtime IMAGE is DIGEST-PINNED via the committed Cross.toml
+      #     (cross reads it from the build CWD = the workspace root here);
+      #   * the full reproducibility ENV reaches the QEMU container via Cross.toml
+      #     [build.env] passthrough — SOURCE_DATE_EPOCH (off the COMMIT SHA),
+      #     CFLAGS/CFLAGS_<triple> (-ffile-prefix-map), CARGO_BUILD_RUSTFLAGS
+      #     (--remap-path-prefix), LC_ALL/TZ;
+      #   * the remap FROM-side is cross's FIXED internal mount /project (cross
+      #     v0.2.5 bind-mounts the workspace to /project), NOT the host path;
+      #   * --locked --offline + the TWO-block job-scoped [source] activation
+      #     against committed vendor/ (md is fork-free → NO git-fork block);
+      #   * gzip-pinned tar + a published PROVENANCE.aarch64.txt tuple.
+      - if: ${{ matrix.cross }}
+        uses: dtolnay/rust-toolchain@1.85.0
         with:
           targets: ${{ matrix.target }}
-      - if: ${{ matrix.musl_native }}
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - if: ${{ matrix.cross }}
         run: cargo install --locked cross
-      - name: build-native
-        if: ${{ matrix.musl_native }}
-        env:
-          CC_x86_64_unknown_linux_musl: musl-gcc
-        run: cargo build --release --target ${{ matrix.target }} -p md-cli --bin md
-      - name: build-cross
+      - name: build+package-cross (reproducible, digest-pinned via Cross.toml)
         if: ${{ matrix.cross }}
-        run: cross build --release --target ${{ matrix.target }} -p md-cli --bin md
-      - name: package
         env:
           REF_NAME: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
         run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$PWD"
           VER="${REF_NAME##*-v}"
-          tar czf "md-${VER}-${{ matrix.arch }}-linux-musl.tar.gz" \
-            -C "target/${{ matrix.target }}/release" md
-          sha256sum "md-${VER}-${{ matrix.arch }}-linux-musl.tar.gz" > "SHA256SUMS.${{ matrix.arch }}"
+          EPOCH="$(git show -s --format=%ct HEAD)"
+          # The determinism-bearing env is EXPORTED so `cross` forwards it into
+          # the QEMU container via Cross.toml [build.env] passthrough. The remap
+          # from-side is cross's internal /project mount (NOT the host path).
+          REMAP="--remap-path-prefix=/project=/build --remap-path-prefix=/cargo=/cargo"
+          CFMAP="-ffile-prefix-map=/project=/build -ffile-prefix-map=/cargo=/cargo"
+          umask 022
+          env \
+            SOURCE_DATE_EPOCH="$EPOCH" \
+            LC_ALL=C TZ=UTC \
+            CARGO_BUILD_RUSTFLAGS="$REMAP" \
+            CFLAGS="$CFMAP" \
+            CFLAGS_aarch64_unknown_linux_musl="$CFMAP" \
+            cross build --locked --offline --release \
+              --target "$TARGET" -p md-cli --bin md \
+              --config 'source.crates-io.replace-with="vendored-sources"' \
+              --config 'source.vendored-sources.directory="vendor"'
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" \
+            -cf - -C "target/${TARGET}/release" md \
+            | gzip -n -9 > "md-${VER}-${ARCH}-linux-musl.tar.gz"
+          sha256sum "md-${VER}-${ARCH}-linux-musl.tar.gz" > "SHA256SUMS.${ARCH}"
+          # Publish the provenance tuple. The cross runtime image digest is the
+          # canonical pin in Cross.toml.
+          CROSS_IMG="$(grep -E '^image *=' Cross.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          {
+            echo "artifact: md-${VER}-${ARCH}-linux-musl.tar.gz"
+            echo "sha256:  $(cut -d' ' -f1 < "SHA256SUMS.${ARCH}")"
+            echo "source_commit: $(git rev-parse HEAD)"
+            echo "source_date_epoch: ${EPOCH}"
+            echo "cross_image: ${CROSS_IMG}"
+          } > "PROVENANCE.${ARCH}.txt"
+          cat "PROVENANCE.${ARCH}.txt"
+
+      # ── GHCR auth for the x86_64 leg's `docker pull` of the BUILT image ─────
+      # The repro image is GHCR private-by-default; the per-step `docker run`
+      # form needs an explicit `docker login` BEFORE the pull below.
+      - name: Log in to GHCR (for the re-homed image pull)
+        if: ${{ matrix.musl_native }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      # ── x86_64 (native) leg — RE-HOMED inside the digest-pinned container ───
+      # docker run --network=none mounts the host workspace at /build/src,
+      # builds with the full reproducibility env + the TWO-block job-scoped
+      # [source] activation, packages with the gzip-pinned tar, and writes
+      # target/ + the .tar.gz + SHA256SUMS back to the host via the bind mount.
+      # SOURCE_DATE_EPOCH is keyed off the COMMIT SHA.
+      - name: build+package (re-homed, --network=none, in @${{ needs.repro.outputs.image }})
+        if: ${{ matrix.musl_native }}
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "$PWD"
+          VER="${REF_NAME##*-v}"
+          EPOCH="$(git show -s --format=%ct HEAD)"
+          docker pull "$REPRO_IMAGE"
+          docker run --rm --network=none \
+            -v "$PWD":/build/src -w /build/src \
+            -e CARGO_HOME=/cargo \
+            -e SOURCE_DATE_EPOCH="$EPOCH" \
+            -e LC_ALL=C -e TZ=UTC \
+            -e CARGO_BUILD_RUSTFLAGS="--remap-path-prefix=/build/src=/build --remap-path-prefix=/cargo=/cargo" \
+            -e CFLAGS="-ffile-prefix-map=/build/src=/build -ffile-prefix-map=/cargo=/cargo" \
+            -e "CFLAGS_x86_64_unknown_linux_musl=-ffile-prefix-map=/build/src=/build -ffile-prefix-map=/cargo=/cargo" \
+            -e VER="$VER" -e ARCH="$ARCH" -e TARGET="$TARGET" \
+            "$REPRO_IMAGE" \
+            bash -euxo pipefail -c '
+              umask 022
+              cargo build --locked --offline --release \
+                --target "$TARGET" -p md-cli --bin md \
+                --config '"'"'source.crates-io.replace-with="vendored-sources"'"'"' \
+                --config '"'"'source.vendored-sources.directory="vendor"'"'"'
+              tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
+                -cf - -C "target/$TARGET/release" md \
+                | gzip -n -9 > "md-${VER}-${ARCH}-linux-musl.tar.gz"
+              sha256sum "md-${VER}-${ARCH}-linux-musl.tar.gz" > "SHA256SUMS.${ARCH}"
+            '
+          # Publish the provenance tuple alongside the artifacts.
+          {
+            echo "artifact: md-${VER}-${ARCH}-linux-musl.tar.gz"
+            echo "sha256:  $(cut -d' ' -f1 < "SHA256SUMS.${ARCH}")"
+            echo "source_commit: $(git rev-parse HEAD)"
+            echo "source_date_epoch: ${EPOCH}"
+            echo "container_image: ${REPRO_IMAGE}"
+          } > "PROVENANCE.${ARCH}.txt"
+          cat "PROVENANCE.${ARCH}.txt"
+
       - name: ensure-release
         env:
           REF_NAME: ${{ github.ref_name }}
@@ -128,3 +309,6 @@ jobs:
         run: |
           gh release upload "$REF_NAME" md-*-${{ matrix.arch }}-linux-musl.tar.gz --clobber
           gh release upload "$REF_NAME" "SHA256SUMS.${{ matrix.arch }}" --clobber
+          if [ -f "PROVENANCE.${{ matrix.arch }}.txt" ]; then
+            gh release upload "$REF_NAME" "PROVENANCE.${{ matrix.arch }}.txt" --clobber
+          fi
