@@ -121,8 +121,16 @@ jobs:
     #   * x86_64-musl — built + tested natively. Needs `musl-tools` (`musl-gcc`)
     #     + `CC_x86_64_unknown_linux_musl=musl-gcc` so cc-rs builds the ONLY C
     #     dep (the vendored libsecp256k1 in `secp256k1-sys`) against musl.
-    #   * aarch64-musl — `cross build`-only (cross bundles the musl cross C
-    #     toolchain; build coverage, no emulated test run).
+    #   * aarch64-musl — `cross test` under QEMU user-mode emulation (cross
+    #     bundles the musl cross C toolchain AND the qemu-aarch64 runner). This
+    #     RUNS the package test suite on aarch64-Linux so the md1/descriptor/
+    #     address golden vectors are output-verified for the shipped aarch64
+    #     binary, not merely compiled. Stays `-p md-cli` (the FORK-FREE SCOPE
+    #     above) — same registry-miniscript resolution as the native leg, which
+    #     already passes fork-free; QEMU only changes the RUN target, not the
+    #     dependency set. No `--skip` needed: md-cli has NO `mlock` module
+    #     (only `process_hardening`, whose sole Linux test exercises
+    #     `prctl(PR_SET_DUMPABLE)`, which qemu-user forwards to the host).
     #
     # crt-static left at its musl default (ON). NEVER pass
     # `-Ctarget-feature=-crt-static` (rust#135244 silently links host glibc).
@@ -154,6 +162,10 @@ jobs:
         env:
           CC_x86_64_unknown_linux_musl: musl-gcc
         run: cargo test -p md-cli --target ${{ matrix.target }}
-      - name: cross build -p md-cli --target aarch64-musl (build-only)
+      # Run the package test suite on aarch64-Linux under QEMU user-mode so the
+      # md1/descriptor/address golden vectors are OUTPUT-verified for the
+      # shipped aarch64 binary. Stays `-p md-cli` (fork-free scope, per the job
+      # header). No `--skip` needed (no `mlock` module).
+      - name: cross test -p md-cli --target aarch64-musl (QEMU; output goldens, fork-free)
         if: ${{ matrix.cross }}
-        run: cross build --release -p md-cli --target ${{ matrix.target }}
+        run: cross test --release -p md-cli --target ${{ matrix.target }}
