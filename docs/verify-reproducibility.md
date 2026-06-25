@@ -63,18 +63,18 @@ the Debian mirror serves that day).
 
 ```sh
 # From PROVENANCE.x86_64.txt:
-CONTAINER_IMAGE=ghcr.io/bg002h/repro-musl@sha256:<BUILT-DIGEST>
+CONTAINER_IMAGE=ghcr.io/bg002h/repro-musl-descriptor-mnemonic@sha256:<BUILT-DIGEST>
 docker pull "$CONTAINER_IMAGE"      # no auth needed — the package is PUBLIC
 ```
 
-> **Maintainer one-time setup — the `repro-musl` GHCR package MUST be Public.**
+> **Maintainer one-time setup — the `repro-musl-descriptor-mnemonic` GHCR package MUST be Public.**
 > GHCR container packages are **private by default**, and an external rebuilder
 > pulling by digest does so **without a token** — so the package has to be
 > public for this provenance model to work. The toolkit's
 > `reproducible-musl-build.yml` `build-container` job attempts to self-promote it
 > to public (it is `|| true`, never hard-failing). If the self-promotion does not
 > take, an admin sets it **once** by hand on the toolkit repo: GitHub →
-> Packages → `repro-musl` → Package settings → Danger Zone → Change visibility →
+> Packages → `repro-musl-descriptor-mnemonic` → Package settings → Danger Zone → Change visibility →
 > Public.
 
 - **Base image** (recorded in the toolkit's `Dockerfile.repro`): the official
@@ -168,7 +168,7 @@ Each release attaches, per arch:
   sha256:            <hash>
   source_commit:     <full 40-char SHA>
   source_date_epoch: <epoch>
-  container_image:   ghcr.io/bg002h/repro-musl@sha256:<BUILT-DIGEST>
+  container_image:   ghcr.io/bg002h/repro-musl-descriptor-mnemonic@sha256:<BUILT-DIGEST>
   ```
 
   For aarch64 the tuple cites the **`cross` image digest** instead (see §9):
