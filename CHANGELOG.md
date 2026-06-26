@@ -4,6 +4,22 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.39.1] — 2026-06-26
+
+**SemVer-PATCH — purely additive.** Adds two `pub fn`s on `Descriptor` for downstream
+consumers (the `mnemonic-toolkit` Word-Card BIP-39-word re-encoding): wire format and all
+existing APIs are byte-identical to 0.39.0.
+
+### Added
+
+- `Descriptor::canonical_payload_bytes(&self) -> Result<(Vec<u8>, usize), Error>` — the
+  deterministic packed payload, returning the exact `total_bits` (the payload is
+  bit-aligned; the decoder absorbs ≤7 trailing zero pad-bits, so the bit count is
+  load-bearing for a faithful round-trip), and the inverse
+  `Descriptor::from_canonical_payload_bytes(&[u8], usize) -> Result<Descriptor, Error>`.
+  Thin facades over the existing `encode_payload` / `decode_payload`; no visibility
+  widening, no behavior change. New KATs in `tests/canonical_payload.rs`.
+
 ## md-cli [0.11.2] — 2026-06-23
 
 **SemVer-PATCH — musl static-binary release asset + musl build/test CI leg. Ships the first fully-static, dependency-free `md` Linux binaries (`x86_64-unknown-linux-musl` + `aarch64-unknown-linux-musl`) as GitHub-release tarballs on the `descriptor-mnemonic-md-cli-v*` tag, each with a per-arch `SHA256SUMS.<arch>` for offline / air-gapped verification. Also adds a musl compile/test CI leg to `ci.yml` (a separate `musl-check` job, scoped `-p md-cli` so it is fork-free — it does NOT need the patched-miniscript fork the `--workspace` test job clones). `md-codec` UNTOUCHED. No crate source / API / `--json` / CLI-flag / subcommand change. NOT published to crates.io (binary-asset-only PATCH; the tag ships the binary). The shipped guarantee is *static + checksummed*, not bit-for-bit reproducible.**
