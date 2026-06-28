@@ -28,6 +28,11 @@ pub mod header;
 pub mod identity;
 pub mod origin_path;
 pub mod phrase;
+// The `@N`-template renderer shares `to_miniscript`'s NUMS H-point const, so
+// it carries the same `derive` feature gate. All real consumers (`md` CLI,
+// `mnemonic` toolkit) build with default features (`derive` on).
+#[cfg(feature = "derive")]
+pub mod render;
 pub mod tag;
 pub mod test_vectors;
 pub mod tlv;
@@ -52,6 +57,8 @@ pub use identity::{
 };
 pub use origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 pub use phrase::Phrase;
+#[cfg(feature = "derive")]
+pub use render::{RenderError, descriptor_to_template};
 pub use tag::Tag;
 pub use tlv::TlvSection;
 #[cfg(feature = "derive")]

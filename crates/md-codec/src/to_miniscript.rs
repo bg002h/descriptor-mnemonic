@@ -31,7 +31,12 @@ use std::sync::Arc;
 
 /// BIP-341 NUMS H-point x-only coordinate. Used as the internal key when
 /// `Body::Tr { is_nums: true, .. }`.
-const NUMS_H_POINT_X_ONLY_HEX: &str =
+///
+/// `pub(crate)` so the canonical `@N`-template renderer in [`crate::render`]
+/// shares this single source of truth (it emits the literal x-only hex for a
+/// NUMS-flagged taproot internal key). Value is byte-identical to md-cli's
+/// `parse::template::NUMS_H_POINT_X_ONLY_HEX`; sharing changes nothing.
+pub(crate) const NUMS_H_POINT_X_ONLY_HEX: &str =
     "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
 /// Convert an md1 [`Descriptor`] AST to a
