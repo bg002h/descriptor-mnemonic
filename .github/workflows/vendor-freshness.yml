@@ -1,0 +1,52 @@
+name: vendor-freshness
+
+# THE LEADING (PR-time) vendor-freshness gate. Ported from mnemonic-toolkit.
+#
+# REDs iff the committed `vendor/` tree cannot satisfy the current `Cargo.lock`
+# under the reproducible build's `--offline --locked` source-replacement config.
+#
+# WHY THIS EXISTS. mnemonic-toolkit v0.74.0 shipped with NO reproducible musl
+# binary: a dep bump rewrote Cargo.lock but did not re-run `cargo vendor`, so the
+# committed `vendor/` tree was stale and the TAG-triggered `--offline --locked`
+# repro build could not resolve it. That gate is LAGGING — it fires only at the
+# release tag. This repo commits its own `vendor/` tree and has the SAME latent
+# bug; this is the missing OFFLINE-vendor check that makes a forgotten re-vendor
+# fail FAST on the PR (and on direct pushes to the default branch that skip a
+# PR), not at the next release. It does NOT re-prove bit-for-bit reproducibility
+# (that stays with the toolkit-homed repro recipe).
+#
+# CODEC two-block form: this crate is fork-free, so ci/repro/vendor-freshness.sh
+# uses the TWO-block source config (no miniscript git-fork stanza).
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'crates/**/Cargo.toml'
+      - 'vendor/**'
+      - 'ci/repro/vendor-freshness.sh'
+      - '.github/workflows/vendor-freshness.yml'
+  pull_request:
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'crates/**/Cargo.toml'
+      - 'vendor/**'
+      - 'ci/repro/vendor-freshness.sh'
+      - '.github/workflows/vendor-freshness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  vendor-freshness:
+    name: vendor/ satisfies Cargo.lock (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `cargo metadata` resolution only — no compile, no musl target, no Docker.
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Resolve Cargo.lock against committed vendor/ (offline, locked)
+        run: bash ci/repro/vendor-freshness.sh
