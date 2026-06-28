@@ -17,8 +17,8 @@
 //! `md_codec::Error` stays a pure wire/decode taxonomy.
 
 use crate::encode::Descriptor;
+use crate::nums::NUMS_H_POINT_X_ONLY_HEX;
 use crate::tag::Tag;
-use crate::to_miniscript::NUMS_H_POINT_X_ONLY_HEX;
 use crate::tree::{Body, Node};
 use crate::use_site_path::UseSitePath;
 use std::fmt::Write as _;

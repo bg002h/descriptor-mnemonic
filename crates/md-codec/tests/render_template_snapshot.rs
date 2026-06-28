@@ -20,7 +20,6 @@
 //!   render_tap_node, render_multi, render_key, render_hash256, render_hash160,
 //!   render_binary — plus the NUMS literal, non-NUMS taproot, raw-pkh (covered
 //!   by the relocated unit test in `src/render.rs`), and use-site overrides.
-#![cfg(feature = "derive")]
 
 use md_codec::decode::decode_md1_string;
 use md_codec::descriptor_to_template;
