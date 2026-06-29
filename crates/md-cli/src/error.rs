@@ -3,6 +3,11 @@ use std::fmt;
 #[derive(Debug)]
 pub enum CliError {
     Codec(md_codec::Error),
+    /// A `@N`-template render failure from `md_codec`'s canonical renderer.
+    /// Distinct from [`CliError::Codec`] (which wraps `md_codec::Error`, the
+    /// wire/decode taxonomy): `md_codec::RenderError` is a separate type for
+    /// the renderer's fail-closed structural guards.
+    Render(md_codec::RenderError),
     TemplateParse(String),
     BadXpub {
         i: u8,
@@ -25,6 +30,7 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CliError::Codec(e) => write!(f, "codec error: {e}"),
+            CliError::Render(e) => write!(f, "template render error: {e}"),
             CliError::TemplateParse(m) => write!(f, "template parse error: {m}"),
             CliError::BadXpub { i, why } => write!(f, "--key @{i}: {why}"),
             CliError::BadFingerprint { i, why } => write!(f, "--fingerprint @{i}: {why}"),
@@ -40,6 +46,12 @@ impl std::error::Error for CliError {}
 impl From<md_codec::Error> for CliError {
     fn from(e: md_codec::Error) -> Self {
         CliError::Codec(e)
+    }
+}
+
+impl From<md_codec::RenderError> for CliError {
+    fn from(e: md_codec::RenderError) -> Self {
+        CliError::Render(e)
     }
 }
 

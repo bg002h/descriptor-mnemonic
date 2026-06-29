@@ -4,6 +4,40 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.11.3] — 2026-06-28
+
+**SemVer-PATCH — internal refactor, output byte-identical to 0.11.2.** `md-cli` no
+longer owns the descriptor→`@N`-template renderer: `format::text::descriptor_to_template`
+is now a thin delegate to `md_codec::descriptor_to_template` (the renderer was lifted
+into md-codec 0.40.0 as the single source of truth), and the ~250-line local
+`render_node` cluster was deleted. `md decode` / `md inspect` / `gui-schema` output is
+**byte-identical** to 0.11.2 (proven by the unchanged round-trip goldens). Bumps the
+md-codec dep to `=0.40.0`.
+
+### Changed
+
+- `format::text::descriptor_to_template` delegates to `md_codec::descriptor_to_template`;
+  the ten local render fns removed. New `CliError::Render(md_codec::RenderError)` variant
+  maps the codec render error. No CLI flag / subcommand / `--json` / output change.
+
+## md-codec [0.40.0] — 2026-06-28
+
+**SemVer-MINOR — purely additive public API.** Adds the canonical descriptor→template
+renderer so downstream consumers (the `mnemonic` toolkit's `inspect` command, and `md-cli`)
+share one source of truth instead of each carrying a copy. Wire format, corpus, and all
+existing APIs are byte-identical to 0.39.1.
+
+### Added
+
+- `pub fn descriptor_to_template(&Descriptor) -> Result<String, RenderError>` (new
+  `md_codec::render` module) — renders a decoded `Descriptor` to its keyless BIP-388
+  `@N`-placeholder wallet-policy template (the same text `md decode` emits). Pure AST
+  string-walking, no miniscript/`derive` dependency — available with or without the
+  `derive` feature (the shared NUMS H-point const moved to a new internal `nums` module).
+- `pub enum RenderError` — a dedicated render-error type, kept separate from the
+  wire/decode `md_codec::Error` taxonomy. New `tests/render_template_snapshot.rs` freezes
+  the output byte-identical to md-cli 0.11.2 across a 14-card corpus.
+
 ## md-codec [0.39.1] — 2026-06-26
 
 **SemVer-PATCH — purely additive.** Adds two `pub fn`s on `Descriptor` for downstream
