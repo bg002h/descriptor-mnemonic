@@ -1,11 +1,11 @@
 <pre>
-  BIP: ? (3993 or 3939 suggested)
+  BIP: ?
   Layer: Applications
   Title: Mnemonic Descriptor
   Author: bg002h <bcg@pm.me>
   Comments-Summary: No comments yet.
-  Comments-URI:
-  Status: Pre-Draft, AI + reference implementation, awaiting human review
+  Comments-URI: https://github.com/bitcoin/bips/wiki/Comments:BIP-XXXX
+  Status: Draft
   Type: Standards Track
   Created: 2026-04-26
   License: CC0-1.0
@@ -15,7 +15,7 @@
 
 This BIP defines the '''Mnemonic Descriptor''' (MD) format: an encoding for bitcoin wallet policies that is compact, error-correcting, and designed for hand-transcription onto durable media (paper, steel). Where BIP 39 standardizes the mnemonic encoding of HD seed entropy, MD standardizes the analogous encoding for the ''wallet structure'' — the BIP 388 wallet policy template, derivation paths, and (when needed) foreign extended public keys — such that the structural information necessary to reconstruct a wallet can survive independently of any digital archive.
 
-The format consists of three layers: (a) a compact bytecode for BIP 380 output descriptors and BIP 388 wallet policies, extending the tag-based encoding pioneered by the public-domain <code>descriptor-codec</code> project; (b) a codex32-derived (BIP 93) encoding layer that reuses the bech32 alphabet and BCH error-correction polynomials but introduces a new human-readable part, header structure, and multi-string chunking for arbitrary-length payloads; and (c) a mandatory guided-recovery flow combining BCH ECC with structural knowledge to recover heavily damaged backups beyond the BCH limit.
+The format consists of three layers: (a) a compact bytecode for BIP 380 output descriptors and BIP 388 wallet policies, extending the tag-based encoding pioneered by the public-domain <code>descriptor-codec</code> project; (b) a codex32-derived (BIP 93) encoding layer that reuses the bech32 alphabet and BCH error-correction polynomials but introduces a new human-readable part, header structure, and multi-string chunking for arbitrary-length payloads; and (c) BCH substitution-error correction over each string (up to 4 character substitutions), with an OPTIONAL structure-guided recovery flow (future work) for damage beyond the BCH substitution limit.
 
 ==Motivation==
 
@@ -48,10 +48,10 @@ The following terms are used throughout this document:
 * '''Foreign xpub''' — an xpub belonging to the policy that is ''not'' derivable from any seed the user holds (typically a cosigner's key).
 * '''Owned seed''' — a BIP 39, SLIP 39, codex32, or other seed for which the user has the recovery material.
 * '''Template Card''' — an MD-encoded backup of a wallet's template, derivation paths, and (optionally) master fingerprints. Always required.
-* '''Xpub Card''' — an MD-encoded backup of one foreign xpub with its origin information. Required only when the policy contains foreign xpubs (deferred to v1+; see "Versioning" below).
+* '''Xpub Card''' — an MD-encoded backup of one foreign xpub with its origin information. Required only when the policy contains foreign xpubs (the standalone Xpub Card type is deferred to v1+).
 * '''Codex32''' — the BIP 93 encoding for hand-transcribed bitcoin secrets. MD reuses codex32's bech32 alphabet and BCH polynomials.
 * '''bech32 alphabet''' — the 32-character set defined in BIP 173: <code>qpzry9x8gf2tvdw0s3jn54khce6mua7l</code>.
-* '''Canonical bytecode''' — the unique, deterministic byte sequence produced by encoding a given wallet policy under the MD bytecode rules. Round-trip identity: <code>decode(encode(policy)) == policy</code> in canonical form.
+* '''Canonical bytecode''' — the deterministic byte sequence produced by encoding a given wallet policy under the MD bytecode rules. Round-trip identity: <code>decode(encode(policy)) == policy</code> in canonical form. Uniqueness is a consequence of the canonicalization rules stated normatively elsewhere in this document — ascending placeholder-index renumbering (§"Round-trip canonical form"), minimal-length LP4-ext varints (§"LP4-ext varint"), the shared-vs-divergent origin-path mode selection (§"Origin path declaration"), and ascending-tag ordering of TLV entries including preserved unknown TLVs (§"TLV section") — not an independent axiom.
 * '''Chunk''' — one of one or more codex32-derived strings that together encode a single Template Card.
 
 Bytes are written in hexadecimal as <code>0xNN</code>. Byte sequences are concatenated left-to-right in the order written. The bytecode layer is a packed bit stream (see §"Bytecode layer / General structure"); fixed-width bit fields are MSB-first, and variable-length integer fields use the LP4-ext varint encoding defined in §"LP4-ext varint". All character positions in encoded strings are 0-indexed.
@@ -62,9 +62,9 @@ An MD backup of a wallet consists of one or more cards, where each card is a str
 
 # '''Template Card''' (this BIP, v0): encodes the wallet's template, derivation paths, and optional master fingerprints. Always required. May span one or more chunks.
 # '''Xpub Card''' (deferred to v1+): encodes one foreign xpub with origin information. One per foreign xpub. Not specified in v0.
-# '''Policy ID''' (optional): a short identifier derived from the canonical bytecode, used for cross-verifying digital copies of the policy against the engraved Template Card. May be stamped separately.
+# '''Policy ID''' (optional): a short identifier derived from the wallet policy (the <code>WalletPolicyId</code>; see §"Policy identifier"), used for cross-verifying digital copies of the policy against the engraved Template Card. May be stamped separately.
 
-The v0 specification scope (this document) covers wallets where the user holds every seed referenced by the policy (no foreign xpubs) and all <code>@i</code> placeholders use a single shared derivation path. Wallets meeting these criteria require only a Template Card. Foreign xpubs and per-placeholder paths are deferred to a future version of this specification.
+The v0.30 specification scope (this document) covers wallets where the user holds every seed referenced by the policy. Per-<code>@i</code> derivation-path divergence — distinct origin and/or use-site paths per placeholder — '''is''' supported via the divergent-paths header flag (§"Origin path declaration") and the per-<code>@N</code> override TLVs, and on-card cosigner/foreign xpubs '''are''' supported via the TLV section (tags 0x00–0x03; carrying an xpub promotes the card to BIP 388 wallet-policy mode). Only the standalone '''Xpub Card''' type — a separate card encoding one foreign xpub with its own origin, one per xpub — remains deferred to a future version. Wallets meeting these criteria require only a Template Card.
 
 ''See §"Top-level descriptor scope" for the normative allow-list and §"Frequently Asked Questions" for design choices.''
 
@@ -72,8 +72,11 @@ Forward compatibility is preserved: MD v0 readers MUST reject backups marked wit
 
 ==Top-level descriptor scope==
 
-Conformant encoders MUST accept exactly the following top-level descriptor
-templates as input:
+MD is a recovery-first format: its decoder accepts the full BIP 388 top-level
+surface so that any card a user may have engraved can be read back (see
+"Permissive decode" below). The primary, modern top-level descriptor templates
+— the shapes MD is designed around, and for which encoders emit no advisory —
+are:
 
 * '''<code>wpkh(KEY)</code>''' — BIP 84 native-segwit single-sig.
 * '''<code>wsh(SCRIPT)</code>''' — native-segwit script (multisig and miniscript
@@ -97,75 +100,131 @@ and address-construction to a BIP-380 implementation
 does not itself prescribe an address-derivation algorithm beyond the
 BIP-380/BIP-388 semantics inherited via the AST encoding.
 
-Conformant MD encoders MUST reject the following BIP-388-permitted top-level
-forms; MD's accepted scope is narrower than BIP 388:
+MD additionally decodes the remaining BIP-388-permitted top-level forms, so a
+recovery tool can read any legitimately-engraved card:
 
-* '''<code>pkh(KEY)</code>''' — legacy P2PKH single-sig (BIP 388 admits; MD rejects)
+* '''<code>pkh(KEY)</code>''' — legacy P2PKH single-sig. Fully supported: it is
+  the BIP 44 default and ships in the reference test corpus (<code>pkh_basic</code>).
 * '''<code>sh(multi(K, ...))</code>''', '''<code>sh(sortedmulti(K, ...))</code>''',
-  '''<code>sh(KEY)</code>''' — legacy P2SH (BIP 388 admits; MD rejects)
-* '''<code>bare(SCRIPT)</code>''' — pre-2014 raw script (BIP 388 also excludes;
-  MD inherits)
+  '''<code>sh(KEY)</code>''' — legacy P2SH. Decoded for recovery; the encoder
+  emits an advisory (see "Encode-time advisory" below).
 
-See §"Frequently Asked Questions: Why is MD narrower than BIP 388?" for the rationale.
+The only genuinely-rejected top-level form is:
 
-Decoders MUST reject these forms with a structured error distinguishable from
-generic checksum failure and from generic bytecode-parse failure. Reserved-tag
-rejections are surfaced via <code>Error::TagOutOfRange</code>; tap-leaf scope
-violations via <code>Error::ForbiddenTapTreeLeaf</code>; depth overflow via
-<code>Error::DecodeRecursionDepthExceeded</code>. Pre-decode parser/walker
-rejections (bare <code>SCRIPT</code>, unsupported top-level type, sh-inner
-type mismatch) are reference-implementation-specific and surfaced at the
-parse layer rather than the wire-decode layer. Cross-implementations MUST
-reject the listed forms but MAY structure the diagnostic at parse vs decode
-boundary as fits their architecture; the rejection SHOULD identify the
-offending top-level type (or <code>sh(...)</code> inner type) so consumers
-can disambiguate "top-level rejection" from "sh-inner rejection" from
-"reserved-tag rejection".
+* '''<code>bare(SCRIPT)</code>''' — pre-2014 raw script (no address; BIP 388 also
+  excludes it). It has no allocated top-level tag; the reference encoder rejects
+  it at the parse layer.
+
+=====Permissive decode=====
+
+A conformant decoder's root-tag allow-list is
+<code>{sh, wsh, wpkh, pkh, tr}</code>. A wire whose root tag is outside this set
+is rejected with <code>Error::OperatorContextViolation { context: TopLevel }</code>.
+Inside a top-level <code>sh(...)</code>, the decoder does '''not''' peek-and-reject
+the inner tag: <code>sh</code> may wrap <code>wpkh</code> (BIP 49 nested-segwit
+single-sig), <code>wsh</code> (BIP 48/1' nested-segwit multisig), or a legacy
+<code>multi</code>/<code>sortedmulti</code> body (legacy P2SH multisig) — all
+decode. This is a deliberate recovery-safety choice: refusing to decode a
+legacy form would strand funds for a user who engraved it. Reserved-tag values
+(<code>Error::TagOutOfRange</code>), forbidden tap-leaf tags
+(<code>Error::ForbiddenTapTreeLeaf</code>, §"Taproot tree"), and over-depth
+recursion (<code>Error::DecodeRecursionDepthExceeded</code>) are still rejected;
+each rejection is distinguishable from generic checksum failure and from generic
+bytecode-parse failure so conformance suites can pin the error path.
+
+=====Encode-time advisory=====
+
+Because MD decodes the legacy forms, the safety signal moves to encode time.
+Encoders SHOULD emit a warn-only advisory to stderr when asked to encode a
+top-level legacy P2SH multisig (<code>sh(multi(...))</code> or
+<code>sh(sortedmulti(...))</code>): third-party txid malleability, the ~520-byte
+redeemScript ceiling, no witness discount, and the address-prefix footgun
+described in §"Frequently Asked Questions: Why does MD warn on legacy P2SH
+multisig?". The advisory does not change the card: stdout still carries the
+encoded string. <code>pkh</code> and all modern forms
+(<code>wpkh</code>/<code>wsh</code>/<code>tr</code>/<code>sh(wpkh)</code>/<code>sh(wsh)</code>)
+encode silently.
 
 All accepted forms follow the existing canonical form rules (no whitespace,
 <code>/**</code> expansion, ascending placeholder order, <code>'</code> for
 hardened). No type-specific canonicalization.
 
-===Sh wrapper restriction matrix===
+===Sh wrapper inner shapes===
 
 When a decoder consumes a top-level <code>sh</code> bytecode tag
-(primary code <code>0x03</code>), the next bytecode tag determines admission:
+(primary code <code>0x03</code>), the inner bytecode tag classifies the
+descriptor:
 
 {| class="wikitable"
 |+ Tag values are 6-bit primary codes per the v0.30 bytecode wire format (see §"Tag table").
-! Inner tag !! Inner type !! Action
+! Inner tag !! Inner type !! Classification
 |-
-| <code>0x00</code> || <code>wpkh</code> || Decoder MUST recurse — admit as BIP 49 single-sig
+| <code>0x00</code> || <code>wpkh</code> || BIP 49 nested-segwit single-sig
 |-
-| <code>0x02</code> || <code>wsh</code> || Decoder MUST recurse — admit as BIP 48/1' multisig
+| <code>0x02</code> || <code>wsh</code> || BIP 48/1' nested-segwit multisig
 |-
-| Any other || any other || Decoder MUST reject with a structured error per §"Top-level descriptor scope"
+| <code>0x06</code>/<code>0x07</code> || <code>multi</code>/<code>sortedmulti</code> || legacy P2SH multisig (encode-time advisory per §"Top-level descriptor scope")
+|-
+| Any other || any other || decoded structurally; classified per the inner operator
 |}
 
-Decoders MUST peek the inner tag BEFORE recursive descent into the sh subtree.
-This prevents recursion-bomb hostile inputs (e.g., <code>sh(sh(sh(...)))</code>
-of arbitrary depth) — same hostile-input class as the malformed-payload-padding
-defense in §"Payload".
+The reference decoder does not gate the inner tag: every <code>sh(...)</code>
+shape that parses is decoded (permissive decode, §"Top-level descriptor scope").
+Hostile deeply-nested inputs (e.g., <code>sh(sh(sh(...)))</code> of arbitrary
+depth) are bounded not by an sh-specific peek but by the general recursion
+depth gate, which rejects trees exceeding
+<code>MAX_DECODE_DEPTH = 128</code> with
+<code>Error::DecodeRecursionDepthExceeded</code> (§"Taproot tree").
 
-===Default derivation paths===
+===Elided origins and canonical-default paths===
 
-When neither a caller-supplied path (Tier 0) nor a key-origin-extracted path (Tier 1) is available, encoders pick a per-top-level-type default path:
+When an origin path is not supplied explicitly, an encoder MAY '''elide''' it by
+writing a depth-0 origin (the 4-bit zero-depth field of §"origin-path-encoding").
+A depth-0 origin does '''not''' mean "derive at the master node <code>m</code>":
+it is a signal to resolve the derivation path from the ''canonical-origin table''
+keyed on the top-level wrapper shape.
 
 {| class="wikitable"
-! Top-level !! Default path !! Reference
+! Wrapper shape !! Canonical origin !! Reference
 |-
-| <code>wsh</code> || <code>m/48'/0'/0'/2'</code> || BIP 48 mainnet multisig P2WSH
+| <code>pkh(@N)</code> single-key || <code>m/44'/0'/0'</code> || BIP 44 (P2PKH)
 |-
-| <code>tr</code> || <code>m/86'/0'/0'</code> || BIP 86 mainnet (P2TR)
+| <code>wpkh(@N)</code> single-key || <code>m/84'/0'/0'</code> || BIP 84 (P2WPKH)
 |-
-| <code>wpkh</code> || <code>m/84'/0'/0'</code> || BIP 84 mainnet (P2WPKH)
+| <code>sh(wpkh(@N))</code> single-key || <code>m/49'/0'/0'</code> || BIP 49 (P2SH-P2WPKH)
 |-
-| <code>sh(wpkh)</code> || <code>m/49'/0'/0'</code> || BIP 49 mainnet (P2SH-P2WPKH)
+| <code>tr(@N)</code> key-path only (no TapTree) || <code>m/86'/0'/0'</code> || BIP 86 (P2TR)
 |-
-| <code>sh(wsh)</code> || <code>m/48'/0'/0'/1'</code> || BIP 48 mainnet multisig P2SH-P2WSH
+| <code>wsh(multi(...))</code> / <code>wsh(sortedmulti(...))</code> || <code>m/48'/0'/0'/2'</code> || BIP 48 P2WSH
+|-
+| <code>sh(wsh(multi(...)))</code> / <code>sh(wsh(sortedmulti(...)))</code> || <code>m/48'/0'/0'/1'</code> || BIP 48 P2SH-P2WSH
 |}
 
-The path is encoded explicitly into the §"Origin path declaration" using the depth-prefixed component encoding; the v0.30 wire format does not carry a path dictionary, so a default path costs the same number of bits as any other path of the same depth.
+This table reproduces the reference implementation's canonical-origin map
+(<code>crates/md-codec/src/canonical_origin.rs</code>), which is the single source
+of truth. '''A decoder MUST resolve a depth-0 origin, on any wrapper shape listed
+in this table, through the corresponding canonical origin before deriving keys.'''
+Deriving at the literal master node instead would recover the wrong wallet. Most
+of the reference test corpus — and hence this BIP's §"Test Vectors" table —
+carries an elided (depth-0) origin resolved this way.
+
+An '''explicit''' origin — a non-zero-depth path written out via the
+depth-prefixed §"origin-path-encoding" — is equally legal, and for a wrapper in
+the table MUST resolve to the same keys as the elided form. Encoders MAY emit
+either form; a change of origin (e.g. a different account index) is written
+explicitly. A per-<code>@N</code> origin that differs from the wrapper default is
+carried in the <code>OriginPathOverrides</code> TLV (tag <code>0x03</code>,
+§"TLV section").
+
+'''Shapes with no canonical entry.''' A top-level shape with no row in the table
+above — <code>tr</code> with a script tree, legacy <code>sh(sortedmulti)</code> /
+<code>sh(multi)</code>, a bare <code>wsh(@N)</code> / <code>sh(@N)</code>, or an
+arbitrary miniscript body — cannot resolve a depth-0 (elided) origin from the
+table. Pathless / non-canonical backup handling for these shapes is under
+separate design; the current reference decoder rejects an elided origin on such a
+wrapper with <code>Error::MissingExplicitOrigin { idx }</code>, requiring an
+explicit origin for every <code>@N</code> (supplied via the origin path
+declaration or an <code>OriginPathOverrides</code> entry).
 
 ==Specification==
 
@@ -198,12 +257,12 @@ For '''single-string Template Cards''' (the common case for small wallets), the 
 * Bit 4: divergent-paths flag.
 * Bits 3–0: version (v0.30 = <code>0b0100</code> = 4). The 4-bit field absorbs the bit that v0.x reserved.
 
-For '''chunked Template Cards''', the header is 37 bits (occupying eight bech32 characters with 3 bits of trailing slack absorbed by the symbol grid):
+For '''chunked Template Cards''', the header is 37 bits. It is '''contiguous''' with the fragment that follows: the header does not pad up to a symbol boundary, so bits 37–39 of the eighth 5-bit symbol are already the first fragment bits (see §"Chunk fragment"). The 37 header bits are:
 
 * Bits 36–33: version (v0.30 = <code>0b0100</code>). 4-bit field.
 * Bit 32: chunked flag, MUST be <code>1</code>. This is the bit-0 discriminator of the first 5-bit symbol; auto-dispatch sees it before any other field.
 * Bits 31–12: chunk-set identifier (CSI), 20 bits. A deterministic per-encoding identifier shared by all chunks of one Template Card, derived from the encoding's <code>Md1EncodingId</code> (defined immediately below). Used to detect chunks from different Template Cards being mixed during reassembly.
-* Bits 11–6: total chunk count, 6 bits, encoded as <code>count − 1</code>. Range <code>1..64</code>. Encoders SHOULD use the smallest count that fits the payload.
+* Bits 11–6: total chunk count, 6 bits, encoded as <code>count − 1</code>. Range <code>1..64</code>. The count is fixed by the normative sizing formula in §"Chunking" (<code>count = ⌈padded_payload_bits / 320⌉</code>); encoders MUST NOT vary it.
 * Bits 5–0: chunk index, 6 bits, 0-indexed. Range <code>0..(count − 1)</code>.
 
 The chunk-set identifier is normatively bound to the canonical encoding. Define <code>Md1EncodingId</code> as the leading 16 bytes of <code>SHA-256</code> over the canonical bit-packed payload bytecode of the Template Card — the bytecode produced by the encoder for the assembled (single-string-equivalent) payload (see §"Payload" and §"Bytecode layer"). Encoders MUST derive <code>chunk_set_id</code> from <code>Md1EncodingId</code> by taking the leading 20 bits, MSB-first:
@@ -214,15 +273,15 @@ The chunk-set identifier is normatively bound to the canonical encoding. Define 
 
 This deterministic binding makes md1 encoding bit-reproducible — any two conforming encoders given the same canonical bytecode produce identical Template Card strings — and lets downstream toolchains SHA-pin regression corpora. Decoders MUST verify, after reassembly and bytecode decode, that the wire <code>chunk_set_id</code> matches the value derived from the reassembled encoding's <code>Md1EncodingId</code>; mismatch MUST be rejected with an error specifically identifying the chunk-set-id derivation check. The reference implementation surfaces this as <code>Error::ChunkSetIdMismatch { expected, derived }</code>.
 
-<code>Md1EncodingId</code> is distinct from the Tier-3 <code>PolicyId</code> (§"Policy identifier") and from <code>WalletInstanceId</code> (§"Wallet Instance ID"): it covers the full Template Card payload (including any TLV blocks present in wallet-policy mode), whereas <code>PolicyId</code> covers only the BIP 388 template + path layout. The two values coincide for template-only cards but diverge once wallet-policy mode adds concrete pubkeys.
+<code>Md1EncodingId</code> is the hash of the '''raw bit-packed payload bytecode''' and serves solely as the chunk-set-identifier source. It is a '''distinct value''' from the engraved policy anchor <code>WalletPolicyId</code> (§"Policy identifier"), which is hashed over a different, canonical-expanded wallet-policy preimage (template tree bits plus per-<code>@N</code> origin / use-site / fingerprint / xpub records — '''not''' the raw payload). The two are computed over different preimages; neither is a truncation of the other. See §"Policy identifier" for the anchor's construction.
 
-'''Naming note:''' the field was called "wallet identifier" in MD versions ≤ 0.8.x. The v0.8 rename (which renamed Tier-3 "wallet ID" → "Policy ID" — see §"Naming note" under "Policy ID" below for that rename's rationale) mechanically renamed this chunk-header field to ''ChunkPolicyId'' as collateral, but on review for the sibling Mnemonic Key (MK) format that name was misleading: the chunk-header field is neither a Policy ID (which lives at Tier 3 and identifies a policy template) nor a Wallet Instance ID (which identifies a template + xpub set); it identifies a chunk-set assembly and nothing more. v0.9 corrects the name to "chunk-set identifier" / <code>chunk_set_id</code>. Wire format and bit layout are unchanged across the v0.8 → v0.9 rename.
+'''Naming note:''' the field was called "wallet identifier" in MD versions ≤ 0.8.x. The v0.8 "wallet ID" → "Policy ID" rename mechanically renamed this chunk-header field to ''ChunkPolicyId'' as collateral, but on review for the sibling Mnemonic Key (MK) format that name was misleading: the chunk-header field is neither the policy anchor (§"Policy identifier") nor a per-instance identity — it identifies a chunk-set assembly and nothing more. v0.9 corrects the name to "chunk-set identifier" / <code>chunk_set_id</code>. Wire format and bit layout are unchanged across the v0.8 → v0.9 rename.
 
 =====Auto-dispatch and safe rejection=====
 
 Decoders dispatch between single-payload and chunked layouts by reading bit 0 of the first 5-bit symbol:
 
-* <code>bit 0 = 0</code> → single-payload mode; treat bits 4..1 as <code>paths</code> flag (bit 4) and version low bits (bits 3..1) and bit 0 as version's low bit <code>v0 = 0</code>.
+* <code>bit 0 = 0</code> → single-payload mode; the first symbol is <code>[paths (bit 4)][v3 (bit 3)][v2 (bit 2)][v1 (bit 1)][v0 (bit 0)]</code> — bit 4 is the divergent-<code>paths</code> flag, bits 3..1 are the version's high bits (v3, v2, v1), and bit 0 is the version's low bit <code>v0 = 0</code>.
 * <code>bit 0 = 1</code> → chunked mode; treat bits 4..1 as the 4-bit version field, consume 32 more bits as chunk-header continuation.
 
 The 4-bit version field has 16 representable values but the auto-dispatch constrains the usable subset: redesigned wire-format versions MUST have <code>v0 = 0</code> (even values), because <code>v0 = 1</code> would be mis-classified as chunked. Additionally <code>version = 0</code> collides with v0.x single-payload, and <code>version = 2</code> collides with v0.x chunked (which a v0.30 decoder reads as single-payload with version=2 — see below). The usable v0.30-family WF-redesign version set is therefore '''{4, 8, 12}'''. v0.30 uses <code>version = 4</code>; future major breaks would use 8 then 12.
@@ -239,49 +298,48 @@ v0.x payloads are rejected cleanly without silent mis-decode. The auto-dispatch 
 | v0.30 single-payload || <code>[paths][0][1][0][0]</code> || bit 0 = 0 → single-payload; version = 4 → accepted
 |-
 | v0.30 chunked || <code>[0][1][0][0][1]</code> || bit 0 = 1 → chunked; version = 4 → accepted
+|-
+| v0.30 chunked read WITHOUT dispatch (non-conforming decoder routes it through the single-payload header) || <code>[0][1][0][0][1]</code> || bits 3–0 read as a single-payload version = <code>1001</code> = 9 → <code>Error::WireVersionMismatch { got: 9 }</code> — the misleading mis-parse that auto-dispatch prevents
 |}
+
+In-band auto-dispatch is '''normative''' (Decoder requirements #3, §"Decoder requirements"): a conformant decoder MUST read bit 0 of the first 5-bit symbol before interpreting any other field, and dispatch single-payload vs chunked on it — never by caller role. A decoder that skips this step and feeds a chunked string to the single-payload header path surfaces the misleading <code>got 9</code> error in the last row above. The reference <code>md decode</code> performs the bit-0 dispatch and reads single-string and chunked cards through the same entry point.
 
 ====Payload====
 
-The payload is the canonical bit-packed bytecode (defined in §"Bytecode layer", below) of the Template Card, encoded directly as 5-bit codex32 symbols. For chunked Template Cards, each chunk's payload is one fragment of the assembled bit stream; chunking splits the bit stream into fragments at encoder-chosen bit boundaries (no byte-aligned framing).
+The payload is the canonical bit-packed bytecode (defined in §"Bytecode layer", below) of the Template Card, encoded directly as 5-bit codex32 symbols. For chunked Template Cards, each chunk's payload is a fragment of the assembled bytecode: the assembled payload is byte-padded (zero-padded to a whole-byte boundary) and split into '''whole-byte''' fragments, one per chunk. See §"Chunking" for the byte-aligned framing.
 
 The bytecode is bit-packed (MSB-first); 5-bit symbols are emitted directly from the bit stream with no intermediate byte-aligned conversion. The final symbol may carry up to 4 bits of trailing zero padding to align the bit count with the codex32 symbol grid.
 
-Decoders MUST reject any MD string whose trailing-padding bits (after BCH checksum verification and bit-stream consumption by the decoder) are non-zero, except via the rollback-as-padding tolerance at the TLV-section boundary (§"TLV section / End-of-section detection"). Mid-stream non-zero pad bits cannot have been produced by a conforming encoder. The reference implementation surfaces this rejection as <code>Error::InvalidBytecode { kind: BytecodeErrorKind::MalformedPayloadPadding }</code>; cross-implementations MUST surface a semantically equivalent rejection — distinguishable from generic checksum failure and from generic bytecode-parse failure — so that conformance tests can pin the error path.
+Decoders MUST reject an MD card whose '''assembled bytecode stream''' carries non-zero trailing padding bits. Because the bytecode is bit-packed and the codex32 layer emits 5-bit symbols, a conforming encoder leaves up to 7 trailing bits of '''zero''' padding after the last bytecode field (≤4 bits from the 5-bit symbol grid, plus the byte-boundary pad), tolerated at the TLV-section boundary via the rollback-as-padding mechanism (§"TLV section / End-of-section detection"). Those ≤7 rollback bits MUST be zero: a conforming encoder never emits non-zero padding, so a decoder MUST reject an assembled stream whose trailing rollback bits are non-zero rather than silently accept it. The reference implementation surfaces this rejection as <code>Error::&lt;PAD_ERROR_VARIANT_TBD_P2&gt;</code> — the exact variant name is finalized in the implementation phase — and cross-implementations MUST surface a semantically equivalent rejection, distinguishable from generic checksum failure and from generic bytecode-parse failure, so conformance tests can pin the error path. (This check applies to the '''reassembled''' bytecode stream. The ≤4 bits of per-chunk symbol-alignment padding that each chunked string carries after its fragment are discarded during reassembly (§"Reassembly") and are not conformance-checked; a conforming encoder emits them as zero.)
 
 ====Checksum====
 
-The checksum is computed using a BCH error-correcting code with HRP-mixing applied in the BIP 173 style. The polymod algorithm is BIP 93's <code>ms32_polymod</code> (regular code) or <code>ms32_long_polymod</code> (long code), applied to the concatenation of:
+The checksum is computed using a BCH error-correcting code with HRP-mixing applied in the BIP 173 style. The polymod algorithm is BIP 93's <code>ms32_polymod</code>, applied to the concatenation of:
 
 # The HRP-expansion of <code>"md"</code>, computed exactly as in BIP 173 §"Bech32": for each HRP character <code>c</code> emit <code>ord(c) >> 5</code>; emit a single zero; for each HRP character emit <code>ord(c) & 31</code>. For the lowercase HRP <code>"md"</code> this yields the five 5-bit values <code>[3, 3, 0, 13, 4]</code> (length = 2 × len(HRP) + 1 = 5). Derivation: <code>ord('m') = 109 = 0x6d; 109 >> 5 = 3; 109 & 31 = 13</code>. <code>ord('d') = 100 = 0x64; 100 >> 5 = 3; 100 & 31 = 4</code>. The separator zero falls between the high-half list <code>[3, 3]</code> and the low-half list <code>[13, 4]</code>.
 # The data part: header + payload as a sequence of 5-bit values from the bech32 alphabet.
-# A pad of zero values during encoding (13 for regular, 15 for long) or the actual checksum during verification.
+# A pad of 13 zero values during encoding, or the actual 13-symbol checksum during verification.
 
-An MD string is valid when <code>polymod(input) == T_C</code>, where <code>T_C</code> is the target residue constant for the chosen code variant:
+An MD string is valid when <code>polymod(input) == T_REGULAR</code>:
 
-* '''Regular code''' (BCH(93,80,8)): for total data lengths up to and including 93 characters; checksum length: 13 characters. <code>T_REGULAR = 0x0815c07747a3392e7</code> (65 bits).
-* '''Long code''' (BCH(108,93,8)): for total data lengths from 96 through 108 characters; checksum length: 15 characters. <code>T_LONG = 0x205701dd1e8ce4b9f47</code> (75 bits).
+* '''Regular code''' (BCH(93,80,8)): the only MD code. Checksum length is 13 symbols. <code>T_REGULAR = 0x0815c07747a3392e7</code> (65 bits).
 
-The derivation of <code>T_REGULAR</code> and <code>T_LONG</code> is documented in §"Why new target constants?" below.
-
-A total data length of 94 or 95 characters is invalid. Encoders MUST NOT produce strings of these lengths. Decoders MUST reject them.
-
-The choice of code (regular vs long) is determined by the actual data length after encoding. Encoders that produce a header + payload exceeding 93 characters MUST use the long code.
+The 93-symbol length is a bound on the '''data part''' — header + payload + the 13-symbol checksum — and '''excludes''' the 3-character HRP-plus-separator prefix, matching BIP 93's data-part accounting. A single string therefore carries at most 80 data symbols (400 payload bits) plus the 13-symbol checksum: a 93-symbol codeword. Payloads exceeding 400 bits MUST be chunked (§"Chunking"); MD has no long code (its removal from the v0.x line is recorded in §"Backwards Compatibility"). The derivation of <code>T_REGULAR</code> is documented in §"Why new target constants?" below.
 
 ====Error-correction guarantees====
 
-Both codes guarantee:
+The regular code (BCH(93,80,8)) guarantees, per single string:
 
-* Detection of any error pattern affecting up to 8 characters within a single string.
-* Correction of up to 4 character substitutions.
-* Correction of up to 8 erasures (positions known to be damaged).
-* Correction of up to 13 (regular) or 15 (long) consecutive erasures (burst damage to a contiguous range of characters).
+* Detection of any error pattern affecting up to 8 characters.
+* '''Correction of up to 4 character substitutions''' (normative; implemented by the reference decoder).
 
-Detection of error patterns affecting more than 8 characters is probabilistic. The expected probability that a randomly damaged string of more than 8 errors decodes to a valid codeword is bounded by approximately 2<sup>−65</sup> (regular code) or 2<sup>−75</sup> (long code).
+Detection of error patterns affecting more than 8 characters is probabilistic. The expected probability that a randomly damaged string of more than 8 errors decodes to a valid codeword is bounded by approximately 2<sup>−65</sup>.
 
-Conformant decoders MUST report which correction was applied (clean / N substitutions corrected / N erasures corrected / structure-aided / failed) per "Decoder reporting", below.
+The code's minimum distance also admits erasure decoding — up to 8 known-position erasures, and longer contiguous bursts (a cyclic <code>n−k</code>-parity argument) — but '''erasure-aware decoding is not implemented by the reference decoder''', which performs substitution-error correction only. Erasure decoding is described in this document as future work (see §"Guided recovery" and FOLLOWUP <code>impl-bch-erasure-decoding-md-mk</code>); the erasure counts above are theoretical properties of the code, not a claim about the current implementation.
 
-Implementations claiming v0.2-or-later support SHOULD use Berlekamp–Massey to derive the error-locator polynomial and Forney's algorithm to derive error magnitudes, working in the field <code>GF(1024) = GF(32)[ζ] / (ζ² − ζ − P)</code> with primitive elements <code>β = G·ζ</code> (regular code, order 93) and <code>γ = E + X·ζ</code> (long code, order 1023). The eight syndromes are computed at <code>{β<sup>77</sup>, …, β<sup>84</sup>}</code> for the regular code and <code>{γ<sup>1019</sup>, …, γ<sup>1026</sup>}</code> for the long code, matching the 8-consecutive-roots windows of the generator polynomial as specified in BIP 93 §"Generation of valid checksum". This canonical decoder makes the <code>Correction.corrected</code> values byte-identical across implementations on the same input. Alternative algorithms (e.g., brute-force enumeration up to <code>t = 4</code>) are permitted but MAY produce different but equally-valid corrections when multiple weight-≤ 4 codewords are equidistant from the received word; the canonical decoder breaks ties by ascending position index.
+Decoders SHOULD report which correction was applied (clean / N substitutions corrected / failed) per §"Decoder reporting".
+
+Substitution correction SHOULD use Berlekamp–Massey to derive the error-locator polynomial and Forney's algorithm to derive error magnitudes, working in the field <code>GF(1024) = GF(32)[ζ] / (ζ² − ζ − P)</code> with primitive element <code>β = G·ζ</code> (order 93). The eight syndromes are computed at <code>{β<sup>77</sup>, …, β<sup>84</sup>}</code>, matching the 8-consecutive-roots window of the generator polynomial as specified in BIP 93 §"Generation of valid checksum". This canonical decoder makes the correction outputs byte-identical across implementations on the same input. Alternative algorithms (e.g., brute-force enumeration up to <code>t = 4</code>) are permitted but MAY produce different but equally-valid corrections when multiple weight-≤ 4 codewords are equidistant from the received word; the canonical decoder breaks ties by ascending position index.
 
 ====Alphabet====
 
@@ -295,21 +353,15 @@ This is the same 32-character set used by BIP 173 segwit addresses, BIP 350 bech
 
 ====Length envelope====
 
-A codex32 character is one 5-bit symbol from the bech32 alphabet. The data part of a Template Card string consists of HRP + separator (3 characters) + payload bits + BCH checksum (13 characters for the regular code; 15 for the long code), with the total string length capped at 93 (regular) or 108 (long) characters.
+A codex32 character is one 5-bit symbol from the bech32 alphabet. A Template Card string is the 3-character HRP-plus-separator prefix (<code>md1</code>) followed by the data part: payload symbols plus the 13-symbol BCH checksum. The 93-symbol codeword cap is on the '''data part''' and '''excludes''' the HRP prefix (BIP 93 accounting), so a single string is at most 96 characters (3 + 93).
 
 For a single-string Template Card, the payload is the canonical bit-packed bytecode (5-bit header + origin-path-decl + use-site-path-decl + tree + TLV section), MSB-first, with up to 4 bits of trailing zero padding to align with the 5-bit codex32 symbol grid.
 
-Maximum payload bits:
-* Regular: (93 − 3 − 13) × 5 = 385 bits ≈ 48 bytes
-* Long: (108 − 3 − 15) × 5 = 450 bits ≈ 56 bytes
+Maximum single-string payload: <code>(93 − 13) × 5 = 400 bits</code> (80 data symbols, ≈ 50 bytes). Payloads above 400 bits MUST be chunked.
 
-For a chunked Template Card, each chunk's data part is HRP + separator (3 characters) + 37-bit chunk header (8 characters; 3 bits of trailing slack absorbed by the symbol grid) + fragment bits + checksum.
+For a chunked Template Card, each chunk's data part is the 37-bit chunk header (§"Chunk header") '''immediately followed''' by the chunk's whole-byte fragment (§"Chunk fragment"), packed contiguously into 5-bit symbols (up to 4 bits of trailing zero padding), then the 13-symbol checksum. There is no inter-field slack between the header and the fragment.
 
-Maximum fragment bits per chunk:
-* Regular: (93 − 3 − 8 − 13) × 5 − 3 = 342 bits
-* Long: (108 − 3 − 8 − 15) × 5 − 3 = 407 bits
-
-The −3 term subtracts the chunk-header's 3 bits of post-header symbol-grid slack. With up to 64 long-code chunks, a Template Card can carry approximately 64 × 407 ≈ 26,000 bits of assembled payload — far more than needed for any practical wallet policy. The v0.30 wire format does NOT carry a separate cross-chunk hash field; cross-chunk integrity is derived from the assembled-payload SHA-256 (see §"Chunking").
+Maximum fragment per chunk: the 37-bit header plus the fragment must fit the 80-data-symbol (400-bit) regular-code budget, so at most <code>⌊(400 − 37) / 8⌋ = 45</code> whole bytes (360 bits) of fragment fit per chunk. The reference encoder uses a more conservative per-chunk budget of 320 bits (64 data symbols) to size the chunk count (§"Chunking"), leaving headroom for the 37-bit header. With up to 64 chunks, a Template Card can carry far more assembled payload than any practical wallet policy requires. The v0.30 wire format does NOT carry a separate cross-chunk hash field; cross-chunk integrity is derived from the assembled-payload SHA-256 (see §"Chunking").
 
 ===Bytecode layer===
 
@@ -327,7 +379,7 @@ A single-string Template Card carries the bytecode in this order:
 # Tree — variable, recursive.
 # TLV section — variable, may be empty.
 
-For chunked Template Cards, each chunk's bit stream begins with a 37-bit chunk header (carrying the chunk-set identifier, total chunk count, and this chunk's index) instead of the 5-bit payload header. The chunked and single-string layouts have distinguishable bit prefixes (see §"Header" and §"Chunking" for the full layouts) but the encoder/decoder dispatch is by reader role rather than by an in-band discriminator bit — see §"Header" for the rejection paths a mis-classifying decoder takes. After all chunks in a set are reassembled, the joined bit stream begins with the same 5-bit payload header and follows the same five-section layout above. Cross-chunk integrity is via the 20-bit chunk-set identifier carried in every chunk header (derived from the assembled payload's <code>Md1EncodingId</code>); see §"Chunking".
+For chunked Template Cards, each chunk's bit stream begins with a 37-bit chunk header (carrying the chunk-set identifier, total chunk count, and this chunk's index) instead of the 5-bit payload header. The chunked and single-string layouts have distinguishable bit prefixes (see §"Header" and §"Chunking" for the full layouts); dispatch between them is '''in-band''' — a decoder reads bit 0 of the first 5-bit symbol (the chunked flag) and dispatches on it, with no caller hint (§"Auto-dispatch and safe rejection"). After all chunks in a set are reassembled, the joined bit stream begins with the same 5-bit payload header and follows the same five-section layout above. Cross-chunk integrity is via the 20-bit chunk-set identifier carried in every chunk header (derived from the assembled payload's <code>Md1EncodingId</code>); see §"Chunking".
 
 ====Bytecode header====
 
@@ -365,11 +417,11 @@ Each origin-path-encoding is:
 
   <code>[depth: 4 bits] [component × depth]</code>
 
-''depth'' is the number of BIP 32 derivation components in the path, range <code>0..15</code>. Decoders MUST reject <code>depth > 15</code> with <code>Error::PathDepthExceeded { got, max: 15 }</code>; encoders MUST symmetrically reject longer paths before serialization. The cap is defense-in-depth — no real-world BIP path family exceeds 6 components (BIP 48 + change/index = 6); 15 leaves generous headroom.
+''depth'' is the number of BIP 32 derivation components in the path, held in a 4-bit field, so the wire cannot represent a depth above 15. This is therefore an '''encoder-side''' constraint: encoders MUST reject paths deeper than 15 before serialization (<code>Error::PathDepthExceeded { got, max: 15 }</code>); a decoder reading this 4-bit field can never observe an out-of-range depth. The cap is defense-in-depth — no real-world BIP path family exceeds 6 components (BIP 48 + change/index = 6); 15 leaves generous headroom.
 
-A path of depth <code>0</code> (the master node <code>m</code>) encodes as just the 4-bit zero-depth field with no following components.
+A depth-<code>0</code> encoding (the 4-bit zero-depth field with no following components) does '''not''' denote deriving at the literal master node <code>m</code>: it marks an '''elided''' origin, resolved through the canonical-origin table for the wrapper shape (§"Elided origins and canonical-default paths"). For a wrapper with no canonical entry, a depth-0 origin is handled per that section.
 
-The v0.30 wire format does not carry a path dictionary; every origin path is encoded explicitly using the depth-prefixed form above. (Historical context: pre-v0.11 versions carried a 1-byte indicator that selected between well-known BIP 44 / 48 / 84 / 86 / 87 paths and an explicit encoding; that mechanism was retired by the v0.11 wire-format reset and has never returned.)
+The v0.30 wire format does not carry a path dictionary; a non-elided origin path is encoded via the depth-prefixed form above, and an elided origin is the depth-0 form resolved via the canonical-origin table. (Historical context: pre-v0.11 versions carried a 1-byte indicator that selected between well-known BIP 44 / 48 / 84 / 86 / 87 paths and an explicit encoding; that mechanism was retired by the v0.11 wire-format reset and has never returned.)
 
 =====component=====
 
@@ -425,7 +477,7 @@ Bytecode primary codes occupy a 6-bit space (values <code>0x00</code>–<code>0x
 |-
 | <code>0x02</code> || <code>wsh()</code> || — || 1 || Top-level: ACTIVE. As <code>sh(wsh)</code> inner: ACTIVE.
 |-
-| <code>0x03</code> || <code>sh()</code> || — || 1 || Top-level: ACTIVE per §"Sh wrapper restriction matrix".
+| <code>0x03</code> || <code>sh()</code> || — || 1 || Top-level: ACTIVE per §"Sh wrapper inner shapes".
 |-
 | <code>0x04</code> || <code>pkh()</code> || <code>key_index</code> (kiw bits) || 0 || Top-level: REJECTED. Not used in any nested context in MD's accepted surface.
 |-
@@ -557,7 +609,7 @@ Each TLV entry is:
 
   <code>[tag: 5 bits] [length: LP4-ext varint, in BITS] [payload: length bits]</code>
 
-The ''length'' field gives the payload size in '''bits''' (not bytes). Entries appear in strictly ascending tag-value order; duplicates and out-of-order entries are rejected. Unknown tags (those not allocated below) are skipped via length-prefix advancement (forward-compat).
+The ''length'' field gives the payload size in '''bits''' (not bytes). Entries appear in strictly ascending tag-value order; duplicates and out-of-order entries are rejected. Unknown tags (those not allocated below) are '''preserved verbatim''': a decoder MUST buffer each unknown entry's payload bits unchanged and re-emit it on re-encode, in ascending tag-value order interleaved with the known entries. A decoder MUST NOT drop an unknown entry — dropping one changes the re-encoded bytecode and breaks the chunk-set-identifier check for any chunked card that carries a reserved-tag TLV (§"Chunking"). (This is a stricter contract than plain length-prefix skipping, which would silently discard the entry.)
 
 =====TLV tag allocations=====
 
@@ -572,7 +624,7 @@ The ''length'' field gives the payload size in '''bits''' (not bytes). Entries a
 |-
 | <code>0x03</code> || <code>OriginPathOverrides</code> || Sparse <code>(idx: kiw bits, origin-path-encoding: per §"origin-path-encoding")</code> list. Overrides the canonical origin path for the listed <code>@N</code> when the wrapper origin is non-canonical or undefined.
 |-
-| <code>0x04</code>–<code>0x1F</code> || ''reserved'' || Reserved for future TLV allocations. Decoders MUST forward-compat-skip unknown tags via the length-prefix.
+| <code>0x04</code>–<code>0x1F</code> || ''reserved'' || Reserved for future TLV allocations. Decoders MUST preserve unknown tags verbatim (buffer the payload via the length-prefix and re-emit in ascending tag order); they MUST NOT drop them.
 |}
 
 ''kiw'' (key-index width) is <code>⌈log₂(n)⌉</code> per §"Key references", identical to the tree's <code>key_index</code> field width. Sparse-TLV invariants (uniform across all four sparse TLVs):
@@ -596,7 +648,7 @@ Decoders SHOULD use a save/restore-position mechanism on the bit-reader so that 
 # Before parsing each candidate TLV entry, save the bit-reader position.
 # Attempt to read <code>[tag: 5 bits] [length: LP4-ext varint] [payload: length bits]</code> plus any per-tag inner-record validation.
 # On any parse failure, restore the bit-reader to the saved position and inspect the bits remaining at that position.
-# '''If <code>remaining_bits ≤ 7</code>''', those bits are zero-padding from the codex32 symbol-aligned encoding and MUST be tolerated: the decoder treats the failure as a clean end-of-section marker and stops.
+# '''If <code>remaining_bits ≤ 7</code>''', inspect those bits: if '''all are zero''' they are the codex32 symbol-alignment padding and the decoder treats the failure as a clean end-of-section marker and stops; if '''any is non-zero''' the decoder MUST reject the card per §"Payload" (<code>Error::&lt;PAD_ERROR_VARIANT_TBD_P2&gt;</code>).
 # '''If <code>remaining_bits > 7</code>''', the failure represents a genuinely malformed input and the original parse error is propagated.
 
 The 7-bit padding tolerance accommodates the symbol-aligned wire's worst-case trailing slack. Encoders MUST omit empty TLVs; decoders therefore treat any zero-length TLV at end-of-stream as padding via the rollback path rather than as a valid empty entry.
@@ -670,6 +722,8 @@ LP4-ext is the variable-length integer encoding used for path-component values, 
 
 In single-form, ''L'' bits of payload follow the 4-bit length prefix MSB-first. In extension-form (signaled by <code>L = 15</code>), an additional 4-bit ''L_high'' selects 1..15 extra payload bits beyond the 14-bit ''payload_low''; the full value is reassembled as <code>(payload_high << 14) | payload_low</code>. Total payload capacity is up to <code>14 + 15 = 29</code> bits, encoding values <code>0..2^29 − 1</code>. Out-of-range values are rejected with <code>Error::VarintOverflow { value }</code>.
 
+'''Canonicality.''' Encoders MUST use the minimal-length encoding for every value: the smallest <code>L</code> that fits it (single-form for values needing ≤ 14 payload bits), and extension-form only when the value needs more than 14 payload bits (with <code>L_high ≥ 1</code>). Decoders are '''lenient''': they accept a non-minimal encoding (an over-long <code>L</code>, or extension-form with <code>L_high = 0</code>) with no decode-side minimality check. Enforcing minimality on decode would flip a previously-decodable single-string wire to a reject, violating the recovery-safety invariant. A non-minimal encoding is nonetheless never silently ratified for a '''chunked''' card: reassembly re-encodes the decoded policy minimally, so a non-minimal wire produces a derived chunk-set identifier that differs from the wire value and is rejected with <code>Error::ChunkSetIdMismatch</code> (§"Chunking").
+
 Bit costs for representative values: <code>0</code> is 4 bits (L=0, no payload); <code>1</code> is 5 bits (L=1, 1-bit payload); <code>84</code> is 11 bits (L=7, 7-bit payload); <code>16383</code> is 18 bits (L=14, 14-bit payload, single-form boundary); <code>16384</code> is 23 bits (extension-form, L_high=1).
 
 Note: LP4-ext applies to variable-range fields only — path-component values, use-site-path alternative values, and TLV length values. The <code>multi</code>, <code>sortedmulti</code>, <code>multi_a</code>, <code>sortedmulti_a</code>, and <code>thresh</code> threshold (<code>k − 1</code>) and count (<code>n − 1</code>) fields use '''fixed 5-bit''' encoding, NOT LP4-ext: bounded by the BIP 388 wallet-policy cap of ≤ 32 keys, fixed-5 is bit-efficient for every realistic value 1..31 (saves 11 bits across the 17-wallet validation corpus relative to LP4-ext throughout). Timelock values (<code>after</code>, <code>older</code>) are encoded as raw 32-bit fields per BIP 68 / BIP 113.
@@ -701,7 +755,7 @@ The responsibility chain is:
 
 If an MD-encoded backup contains operators a recovery-time signer will not sign, recovery may require either a different signer or manual signing infrastructure (Bitcoin Core, custom signing pipelines).
 
-Implementations MAY provide opt-in signer-subset validators as a layered concern. Such validators are tracked separately from this specification — see for example the named subsets maintained for Coldcard (firmware/edge <code>docs/taproot.md</code>) and Ledger (<code>LedgerHQ/vanadium</code> <code>apps/bitcoin/common/src/bip388/cleartext.rs</code>). A reference Rust implementation of the layered checker pattern ships as the <code>md-signer-compat</code> crate (workspace member alongside <code>md-codec</code>; v0.7.0+) with <code>COLDCARD_TAP</code> and <code>LEDGER_TAP</code> subsets, a <code>validate_tap_tree</code> walker that threads DFS-pre-order leaf indices through each per-leaf check, and a <code>md-signer-compat validate --signer &lt;name&gt; ...</code> CLI binary.
+Implementations MAY provide opt-in signer-subset validators as a layered concern. Such validators are tracked separately from this specification — see for example the named subsets maintained for Coldcard (firmware/edge <code>docs/taproot.md</code>) and Ledger (<code>LedgerHQ/vanadium</code> <code>apps/bitcoin/common/src/bip388/cleartext.rs</code>). The reference implementation does not currently ship such a validator; were one added it would sit above <code>md-codec</code> as a separate layered checker, not as part of the wire format.
 
 =====Bit-layout examples=====
 
@@ -748,7 +802,9 @@ Encoders MUST produce canonical form. Decoders MUST accept canonical form and SH
 
 ===Chunking===
 
-When a Template Card's canonical bytecode exceeds the maximum payload of a single long-code codex32 string, the encoding MUST be chunked. Encoders MAY also chunk smaller bytecodes for ergonomic reasons (e.g., to fit on physical media) but SHOULD prefer single-string encoding when the payload fits.
+When a Template Card's canonical bytecode exceeds the single-string regular-code cap (80 data symbols = 400 payload bits, §"Length envelope"), the encoding MUST be chunked. Encoders MAY also chunk a smaller bytecode for ergonomic reasons (e.g., to fit on physical media) but SHOULD prefer single-string encoding when the payload fits; the reference <code>md encode</code> CLI requires an explicit <code>--force-chunked</code> flag to chunk a payload that would fit in a single string.
+
+'''Chunk-count sizing and fragment split (normative — deterministic).''' The chunk count is fixed by a per-chunk budget of 320 payload bits (64 data symbols): <code>count = ⌈padded_payload_bits / 320⌉</code>, where <code>padded_payload_bits</code> is the assembled payload zero-padded to a whole byte. If <code>count > 64</code> the encoder MUST reject the payload (too large to chunk). This 320-bit budget is deliberately below the 360-bit theoretical per-chunk maximum (§"Length envelope") so the 37-bit chunk header always fits alongside the fragment inside one regular-code codeword. The assembled payload (byte length <code>plen</code>) is then split into exactly <code>count</code> whole-byte fragments with <code>bytes_per_chunk = ⌈plen / count⌉</code>: fragment <code>i</code> is the byte slice <code>[i · bytes_per_chunk, min((i+1) · bytes_per_chunk, plen))</code> — the leading fragments each carry <code>bytes_per_chunk</code> bytes and the final fragment carries the (possibly shorter) remainder. Because both the count and the split are fully determined by the assembled payload, any two conforming encoders emit '''identical''' chunk strings for the same policy.
 
 ====Chunk header (37 bits)====
 
@@ -770,7 +826,9 @@ Each chunk is a complete codex32-derived string. In place of the 5-bit payload h
 
 ====Chunk fragment====
 
-After the 37-bit chunk header, each chunk carries an arbitrary fragment of the assembled payload's bit stream. Encoders SHOULD divide the canonical payload bit stream into fragments of approximately equal size; the exact division is implementation-defined, provided each chunk's bit-stream length fits within the codex32 size envelope chosen for the chunk's BCH code (regular or long). Decoders MUST accept any valid division. The boundary between header and fragment is exactly bit 37; the fragment runs from bit 37 to the end of the chunk's payload bits.
+After the 37-bit chunk header, each chunk carries a '''whole-byte fragment''' of the assembled payload. The assembled payload — the same canonical bit-packed bytecode a single string would carry, zero-padded to a whole-byte boundary — is split into <code>count</code> near-equal whole-byte slices, one per chunk; slice ''i'' is written as its bytes (8 bits each) immediately after chunk ''i'''s 37-bit header. The header/fragment boundary is exactly bit 37, '''contiguous''' (no slack): the first fragment byte's high bits share the eighth 5-bit symbol with the last header bits. The division is therefore fixed deterministically by the near-equal whole-byte split — there is no encoder-chosen bit-boundary freedom — and a decoder recovers each slice as <code>⌊(symbol-aligned-bit-count − 37) / 8⌋</code> whole bytes (the ≤4 trailing symbol-padding bits per chunk are discarded).
+
+'''Note — do not cross-import mk1's framing.''' The sibling Mnemonic Key (MK / <code>mk1</code>) format chunks with a '''fixed 53-byte''' fragment per chunk (one xpub-sized record); md1 does '''not'''. An md1 chunk carries a variable, near-equal whole-byte slice sized from the payload and the 320-bit budget above. Implementers MUST NOT apply mk1's fixed-53-byte framing to md1 chunks.
 
 The chunk-set identifier serves the cross-chunk integrity role that a separate appended hash served in earlier wire formats. Because the CSI is derived from the assembled-payload SHA-256, an encoder that draws a non-conforming CSI produces a string whose CSI cannot be reproduced by a conforming decoder; mismatch is detected at reassembly (see below). v0.30 does NOT carry a separate cross-chunk hash field.
 
@@ -783,59 +841,42 @@ Decoders reassemble a chunked Template Card by:
 # Verifying all chunks declare the same total chunk count; reject if inconsistent.
 # Sorting chunks by chunk index; reject if any index appears multiple times or is missing.
 # Verifying the highest index equals (count − 1); reject if not.
-# Concatenating each chunk's fragment bits in index order to reconstruct the canonical payload bit stream.
+# Concatenating each chunk's fragment '''bytes''' in index order to reconstruct the byte-padded canonical payload.
 # Decoding the assembled payload as a Template Card (5-bit header at bit offset 0, then the standard five-section layout).
 # Computing <code>Md1EncodingId</code> from the canonical bit-packed re-encoding of the decoded Template Card and verifying that the chunk-headers' wire chunk-set identifier matches the value derived from <code>Md1EncodingId</code> per §"Chunk header"; reject on mismatch with an error specifically identifying the derivation check (the reference implementation surfaces this as <code>Error::ChunkSetIdMismatch</code>). This ratifies that the encoder followed the deterministic-CSI contract; a non-conforming encoder that drew a random value would produce a string unreadable by conforming decoders.
 
-===Policy identifier (Tier 3)===
+===Policy identifier===
 
-A Policy ID is a derived identifier MAY be engraved on a separate medium for offline cross-verification of a digital backup of the policy against the engraved Template Card. The Policy ID is computed as:
+The engraved policy anchor is the '''<code>WalletPolicyId</code>''' — a 16-byte identifier that MAY be rendered as a 12-word BIP 39 phrase and stamped on a separate medium for offline cross-verification of a digital backup against the engraved Template Card. It is a canonical-expanded hash of the wallet ''policy'' — the template tree plus the per-<code>@N</code> origin / use-site / fingerprint / xpub records — so that two engravings of the same logical wallet produce the same anchor whether they elide canonical paths or write them out explicitly.
 
-<pre>
-  policy_id = SHA-256(canonical_bytecode)[0..16]
-</pre>
+'''Preimage (byte-exact; reference: <code>crates/md-codec/src/identity.rs</code>).''' The <code>WalletPolicyId</code> is <code>SHA-256(preimage)[0..16]</code>, where <code>preimage = canonical_template_tree_bytes || concat(records)</code> is built as:
 
-The first 16 bytes of the SHA-256 of the canonical bytecode (the same bit-packed payload that is encoded as the Template Card; the chunk-set identifier carried in chunk headers is derived from the same hash, see §"Chunking"). Policy IDs are encoded as 12-word BIP 39 mnemonic phrases (128 bits, including a 4-bit checksum word).
+# '''Canonicalize''' placeholder indices (ascending first-occurrence renumbering) so the anchor is invariant to placeholder permutation.
+# '''<code>canonical_template_tree_bytes</code>''' — write the placeholder-form tree (§"Tree operators") into a fresh bit stream and finalize (zero-pad to a whole byte). These are the tree bits ONLY — no header, no path declaration, no TLVs.
+# Expand to per-<code>@N</code> records in ascending index order. For each record, resolve then serialize:
+#* '''Resolve the origin path''': an explicit path verbatim, or — for an elided (depth-0) origin on a canonical wrapper — the canonical-origin table value (§"Elided origins and canonical-default paths"). This resolution is what makes the anchor stable across origin-elision.
+#* '''Record bytes''': into a fresh bit stream write <code>varint(origin_path_bit_len)</code> (LP4-ext varint, length in '''bits'''), then the origin-path bits MSB-first, then <code>varint(use_site_bit_len)</code>, then the use-site-path bits; finalize (single whole-byte pad).
+#* '''<code>presence_byte</code>''' <code>= (fp_present | (xpub_present << 1)) & 0b0000_0011</code> — bit 0 set iff a fingerprint is present for this <code>@N</code>, bit 1 set iff an xpub is present; bits 2–7 are reserved and MUST be 0.
+#* Append <code>presence_byte || record_bytes || fingerprint? || xpub?</code>, where <code>fingerprint</code> is 4 bytes and <code>xpub</code> is the 65-byte wire form (32-byte chain code || 33-byte compressed pubkey) when present.
 
-A Policy ID is OPTIONAL and never required for recovery from the Template Card alone. It serves only as a cryptographic anchor for verifying that a supplemental digital copy of the policy is authentic.
+The anchor is therefore stable across origin- and use-site-path elision, and '''presence-significant''' on the fingerprint and xpub axes: two cards carrying the same template + paths but a different set of concrete xpubs (or fingerprints) produce different anchors, and a template-only card differs from the same wallet with concrete cosigner xpubs.
 
-'''Engraving — MAY, not SHOULD.''' The 12-word PolicyId phrase MAY be engraved on a separate metal anchor for offline cross-verification with a digital backup of the codex32 string. Users who maintain only the codex32 Template Card itself need not engrave the phrase — the codex32 string carries the policy directly with BCH error correction; the phrase is a redundant integrity check rather than a recovery primitive. For users who want a minimal-cost identifier, the '''PolicyId fingerprint''' (top 4 bytes of <code>PolicyId</code>, rendered as 8 lowercase hex characters, parallel to BIP 32 master-key fingerprints) is offered as an 8-character display form. The reference implementation exposes this as <code>PolicyId::fingerprint() -> [u8; 4]</code> (v0.10+).
+A <code>WalletPolicyId</code> is OPTIONAL and never required for recovery from the Template Card alone; it serves only as a cryptographic anchor for verifying that a supplemental digital copy of the policy is authentic.
 
-'''Naming note:''' the value previously called "wallet ID" was renamed to "Policy ID" in v0.8 to reflect what it actually identifies. The 16-byte hash covers the BIP 388 wallet-policy ''template'' (with <code>@N</code> placeholders) but not the concrete cosigner xpubs that map placeholders to keys. Two distinct wallets that share an identical policy template (same multisig shape and shared path, different cosigner sets) therefore share a Policy ID. The Policy ID is a ''template-level'' identifier; the per-instance cryptographic identifier is the Wallet Instance ID defined below.
+'''Engraving — MAY, not SHOULD.''' The 12-word <code>WalletPolicyId</code> phrase (<code>WalletPolicyId::to_phrase()</code>) encodes the 16-byte (128-bit) identifier as 12 BIP 39 words — 132 bits total: the 128 identifier bits plus a 4-bit checksum. It MAY be engraved on a separate metal anchor for offline cross-verification with a digital backup. Users who maintain only the codex32 Template Card need not engrave the phrase — the codex32 string carries the policy directly with BCH error correction; the phrase is a redundant integrity check, not a recovery primitive. For a minimal-cost identifier, the top 4 bytes of the <code>WalletPolicyId</code>, rendered as 8 lowercase hex characters (parallel to a BIP 32 master-key fingerprint), are offered as a short display form; the reference CLI exposes it via <code>md encode --policy-id-fingerprint</code> and <code>md inspect</code>. (<code>WalletPolicyId</code> has no dedicated <code>fingerprint()</code> method; the short form is the first 4 bytes of its <code>as_bytes()</code>.)
 
-====PolicyId types (Type 0 / Type 1)====
+The <code>WalletPolicyId</code> is a distinct value from <code>Md1EncodingId</code> (§"Header"), which hashes the '''raw bit-packed payload bytecode''' and is the chunk-set-identifier source. The reference implementation also defines a <code>WalletDescriptorTemplateId</code> (template content only — use-site-path-decl bits, tree bits, and use-site-override TLV bits — excluding the origin paths and fingerprints); it is not engraved and is out of scope for this section.
 
-MD defines two cryptographic wallet-identifying hashes at different levels of specificity. We refer to them as '''types of PolicyId''' for ease of reference:
+====Template-level vs instance-level identity====
 
-* '''Type 1 — <code>PolicyId</code>.''' <code>SHA-256(canonical_bytecode)[0..16]</code>. Identifies the wallet ''template + path layout'': the BIP 388 script structure plus the per-<code>@N</code> origin paths (which for v0.x ≤ 0.9 was a single shared path; for v0.10+ admits per-<code>@N</code> paths). Two wallets with the same template and same path layout but ''different'' concrete cosigner xpubs share a Type-1 <code>PolicyId</code>. Engraved as the optional 12-word BIP 39 phrase (see "Engraving — MAY, not SHOULD" above).
-* '''Type 0 — <code>WalletInstanceId</code>.''' <code>SHA-256(canonical_bytecode || canonical_xpub_serialization)[0..16]</code>. Identifies the wallet ''instance'': template + paths + concrete cosigner xpubs. Two wallets are distinct even if they share a template and path layout, as long as their cosigner xpub sets differ. Computed at recovery time from policy + assembled xpubs; not engraved on any physical card. See §"Wallet Instance ID" below.
+The single <code>WalletPolicyId</code> anchor spans both levels of specificity because its preimage is '''presence-significant''' on the xpub axis (see the construction above):
 
-Type 1 answers "what shape of wallet is this?"; Type 0 answers "which specific wallet instance is this?" Type 1 is the engraved anchor (Tier 3, MAY-engrave). Type 0 is the cryptographic check at recovery time. The two are not interchangeable: a Type-1 collision is expected and acceptable (two cosigners' wallets sharing a multisig shape); a Type-0 collision would indicate identical wallet instances. The reference implementation's <code>PolicyId</code> Rust type carries the Type-1 semantics; <code>WalletInstanceId</code> the Type-0; the names carry the type so no separate <code>Type1PolicyId</code> / <code>Type0PolicyId</code> aliases are introduced.
+* '''Template-level''' — a Template Card carrying no concrete xpubs (no <code>Pubkeys</code> TLV). Its <code>WalletPolicyId</code> identifies the wallet ''template + path layout'': the BIP 388 script structure plus the per-<code>@N</code> origin paths. Two wallets with the same template and path layout but different concrete cosigner xpubs share this template-level anchor.
+* '''Instance-level''' — a card that also carries concrete xpubs. The 65-byte xpub bytes fold into the preimage, so the <code>WalletPolicyId</code> now distinguishes wallet ''instances'': two wallets are distinct even if they share a template and path layout, as long as their cosigner xpub sets differ.
 
-'''Path-divergence injectivity.''' Two policies with the same script template but different per-cosigner accounts (e.g., one cosigner on BIP 48 account 0' vs the same wallet on account 1') hash to ''different'' Type-1 <code>PolicyId</code>s in v0.10+ — they are different wallet shapes. In v0.x ≤ 0.9 such policies silently collided on Type-1 <code>PolicyId</code> because the canonical bytecode lossily flattened them to a single shared path. v0.10 closed that collision via the per-<code>@N</code> divergent-path encoding (originally byte-aligned <code>Tag::OriginPaths = 0x36</code>; replaced in v0.11 by the divergent-paths header bit and the bit-aligned origin-path-encoding described in §"Origin path declaration"). The bug fix is preserved across both encoding mechanisms; the divergent-path Type-1 <code>PolicyId</code> for such wallets in v0.10+ differs from the (incorrect, lossily-computed) v0.9 <code>PolicyId</code>. Users who computed PolicyIds on divergent-path policies under v0.x ≤ 0.9 SHOULD re-engrave under v0.10+.
+There is '''no''' separate on-card "Wallet Instance ID" value and no separate hash domain: the per-instance identity is the same <code>WalletPolicyId</code>, computed over a preimage that includes the xpubs when they are present. The wire carries only the 65-byte (chain-code || compressed-pubkey) xpub entries of TLV <code>0x02</code>; the full 78-byte BIP 32 extended-key serialization is '''not''' reconstructible from card data (the parent fingerprint and depth are not on the wire), so any identity computation MUST use the 65-byte wire form, as the preimage above does.
 
-===Wallet Instance ID===
-
-A Wallet Instance ID is a derived 16-byte identifier that distinguishes wallets sharing an identical policy template but differing in their cosigner xpub set. Unlike the Policy ID, the Wallet Instance ID is '''not''' carried by any physical card — it is a recovery-time computation. Tools that have the policy card (template) plus the cosigner xpubs (whether from a digital backup, the wallet itself, or — in foreign-xpub multisig — engraved <code>mk1</code> key cards) compute it on demand:
-
-<pre>
-  wallet_instance_id = SHA-256(canonical_bytecode || canonical_xpub_serialization)[0..16]
-</pre>
-
-where:
-
-<pre>
-  canonical_xpub_serialization = concat(
-      bip32_serialize(xpub_for_@0),
-      bip32_serialize(xpub_for_@1),
-      ...
-      bip32_serialize(xpub_for_@(N-1))
-  )
-</pre>
-
-<code>bip32_serialize</code> is the canonical 78-byte BIP 32 serialization of an extended public key (the binary form of a Base58Check-decoded xpub). Xpubs are concatenated in placeholder-index order (<code>@0</code>, then <code>@1</code>, ..., <code>@(N-1)</code>); ordering is significant. <code>canonical_bytecode</code> is the Template Card's bytecode, identical to the input of the Policy ID computation.
-
-Wallet Instance IDs are useful for recovery tools that need to disambiguate same-template wallets, for downstream consistency between cross-tool implementations, and for digital-backup verification at the per-instance level. The construction does not introduce any new Tier-3 anchor; the existing 12-word Policy ID mnemonic anchor remains the only optional physical-medium anchor in the spec (and even that anchor is MAY-engrave, not SHOULD-engrave; see §"Policy identifier (Tier 3)").
+'''Path-divergence injectivity.''' Two policies with the same script template but different per-cosigner origin paths (e.g. one cosigner on BIP 48 account 0' vs account 1') hash to different <code>WalletPolicyId</code>s, because the per-<code>@N</code> origin bits are part of the preimage — they are different wallet shapes. (Historical note: MD versions ≤ 0.9 lossily flattened divergent per-<code>@N</code> paths to a single shared path and so collided such wallets; the per-<code>@N</code> origin encoding of v0.10+ closed that. See §"Backwards Compatibility".)
 
 ===Decoder requirements===
 
@@ -845,16 +886,17 @@ Conformant MD decoders MUST:
 # Reject mixed-case strings.
 # Auto-dispatch single-payload vs chunked by reading bit 0 of the first 5-bit symbol (§"Auto-dispatch and safe rejection"); reject WF-version mismatch cleanly.
 # Reject reserved-range tag values and structurally-invalid operator-context positions per the error taxonomy below.
-# Implement BCH error correction for both regular and long codes per the polynomials specified above.
-# Implement erasure-aware decoding when the user supplies known-bad positions.
+# Implement BCH substitution-error correction for the regular code per the polynomials specified above (up to 4 character substitutions).
 # Verify the chunk-set identifier on reassembled chunks (compute <code>Md1EncodingId</code> from the assembled payload and reject if its top 20 bits differ from the chunk headers' wire <code>chunk_set_id</code>).
-# Validate the bytecode against the tag table; reject unknown tags or malformed structure.
+# Validate the bytecode against the tag table (reject reserved-range operator tags; preserve unknown TLV tags verbatim per §"TLV section") and enforce the decoder canonical-form validators (§"Decoder canonical-form validators").
+# Reject non-zero trailing padding (§"Payload").
 # Round-trip with BIP 388 canonical form.
 
 Decoders SHOULD:
 
-# Implement structure-aware candidate filtering during recovery (see "Guided recovery", below).
-# Provide informational reporting on every decode attempt.
+# Implement erasure-aware decoding when the user supplies known-bad positions ('''future work''' — the reference decoder performs substitution correction only; FOLLOWUP <code>impl-bch-erasure-decoding-md-mk</code>).
+# Implement structure-aware candidate filtering during recovery (see §"Guided recovery"; '''future work''' — FOLLOWUP <code>impl-guided-recovery-md-mk</code>).
+# Provide informational reporting on every decode attempt (§"Decoder reporting").
 # Display the bech32 alphabet and example characters during user transcription.
 
 ====Error taxonomy====
@@ -880,7 +922,7 @@ Conformant decoders MUST distinguish the following structurally-defined error ca
 |-
 | <code>PlaceholderIndexOutOfRange { idx, n }</code> || Key index ≥ <code>n</code> in non-<code>tr()</code> context (or in any <code>idx</code> field of a multi-family body / TLV entry).
 |-
-| <code>PathDepthExceeded { got, max }</code> || Path depth (origin or use-site) exceeds the spec's `MAX_PATH_COMPONENTS = 15` cap.
+| <code>PathDepthExceeded { got, max }</code> || Path depth exceeds the `MAX_PATH_COMPONENTS = 15` cap. Encoder-side: the 4-bit depth field cannot represent a depth above 15, so a conformant encoder raises this before serialization; a decoder reading that field can never observe an out-of-range depth (§"origin-path-encoding"). Likewise <code>KeyCountOutOfRange</code>, <code>AltCountOutOfRange</code>, and <code>ChunkCountOutOfRange</code> guard <code>x−1</code>-coded fields whose wire range is already bounded, so they too are encoder-side checks.
 |-
 | <code>KGreaterThanN { k, n }</code> || Multi-family or Thresh body decoded with <code>k > n</code>.
 |-
@@ -889,38 +931,57 @@ Conformant decoders MUST distinguish the following structurally-defined error ca
 | <code>ChunkSetIdMismatch { expected, derived }</code> || After reassembling a chunked payload, the chunk-set-id declared by the chunks doesn't match the SHA-256-derived id of the reassembled payload.
 |}
 
+====Decoder canonical-form validators====
+
+Beyond the structural errors above, a conformant decoder enforces the following canonical-form rules on a decoded payload. They are additive acceptance rules — a good-faith encoder never violates them — and the reference implementation runs them in <code>crates/md-codec/src/validate.rs</code>. Cross-implementations MUST apply equivalent checks so the accepted set matches.
+
+{| class="wikitable"
+! Rule (error variant) !! Trigger
+|-
+| <code>PlaceholderNotReferenced { idx, n }</code> || Some <code>@i</code> with <code>0 ≤ i < n</code> never appears in the tree.
+|-
+| <code>PlaceholderFirstOccurrenceOutOfOrder { expected_first, got_first }</code> || The first occurrences (pre-order) of distinct placeholder indices are not in ascending order <code>@0, @1, @2, …</code>.
+|-
+| <code>MultipathAltCountMismatch { expected, got }</code> || The shared use-site multipath and any per-<code>@N</code> override multipath groups do not all share the same alternative count. (A <code>None</code>-multipath entry is a legal divergent structure and is skipped, not rejected.)
+|-
+| <code>BaselineUseSiteOverride { idx }</code> || A <code>UseSitePathOverrides</code> entry keyed on <code>@0</code> — the baseline cannot be overridden.
+|-
+| <code>RedundantUseSiteOverride { idx }</code> || A <code>UseSitePathOverrides</code> entry whose path equals the baseline — a redundant (non-canonical) override.
+|-
+| <code>ForbiddenTapTreeLeaf { tag }</code> || A tap-script leaf whose tag is in the forbidden set <code>{wpkh, tr, wsh, sh, pkh, multi, sortedmulti}</code> — none of these are BIP-342 tapscript leaves (use <code>multi_a</code> / <code>sortedmulti_a</code> inside a tap leaf).
+|-
+| <code>MissingExplicitOrigin { idx }</code> || A non-canonical wrapper (§"Elided origins and canonical-default paths") with an elided (depth-0) origin for some <code>@N</code> and no explicit origin supplied via the path declaration or an <code>OriginPathOverrides</code> entry.
+|-
+| <code>InvalidXpubBytes { idx }</code> || A <code>Pubkeys</code> TLV entry whose 33-byte compressed-pubkey field (bytes 32..65) does not parse as a valid secp256k1 point. (The 32-byte chain-code prefix is unvalidated.)
+|-
+| <code>OverrideOrderViolation { prev, current }</code> || Sparse-TLV <code>(idx, …)</code> entries not in strictly-ascending <code>idx</code> order.
+|-
+| <code>EmptyTlvEntry { tag }</code> || A present sparse TLV that carries no <code>(idx, value)</code> pairs (encoders MUST omit empty TLVs).
+|}
+
 ===Decoder reporting===
 
-For every decode attempt, conformant decoders MUST report:
+For every decode attempt, decoders SHOULD report:
 
 {| class="wikitable"
 ! Field !! Values !! Notes
 |-
-| Outcome || clean / auto-corrected / erasure-corrected / structure-aided / failed || Required
+| Outcome || clean / substitution-corrected / failed || Recommended
 |-
-| Errors corrected || integer 0–N, with positions || Required when applicable
+| Errors corrected || integer 0–N, with positions || Recommended when applicable
 |-
-| Correction method || which technique succeeded || Required
+| Correction method || which technique succeeded || Recommended
 |-
-| Verification status || which post-decode checks passed || Required (chunk-set-identifier check for multi-chunk decodes, seed-derived xpub match, blockchain history if performed)
-|-
-| Confidence || Confirmed / High / Probabilistic / Failed || Required (see "Recovery confidence", below)
+| Verification status || which post-decode checks passed || Recommended (chunk-set-identifier check for multi-chunk decodes; seed-derived xpub match if performed)
 |}
 
-A decoder MUST NOT report "Confirmed" confidence unless ALL of:
-
-* BCH decode succeeded with at most 4 errors corrected total
-* Chunk-set identifier verified (if multi-chunk)
-* All <code>@i</code> placeholders matched user's seeds at recovered paths
-* User explicitly confirmed the recovered policy structure matches expectation
-
-Lower confidence levels MUST be reported with specific qualifiers identifying which guarantees did not hold.
+'''Confidence tiers are informative and not yet implemented.''' A future revision MAY add a confidence ladder (e.g. Confirmed / High / Probabilistic / Failed), where "Confirmed" would require ALL of: BCH decode succeeded with at most 4 substitutions corrected, chunk-set identifier verified (if multi-chunk), every <code>@i</code> matched the user's seeds at the recovered paths, and explicit user confirmation of the recovered structure; lower tiers would carry qualifiers identifying which guarantees did not hold. The reference decoder does not currently report confidence tiers, nor the <code>erasure-corrected</code> / <code>structure-aided</code> outcomes (they depend on the future erasure and guided-recovery work — FOLLOWUP <code>impl-confidence-tier-reporting-md-mk</code>).
 
 ===Guided recovery===
 
-A guided recovery flow is REQUIRED in any MD-conformant tool. The flow combines BCH ECC, erasure decoding, user-supplied structural knowledge, and seed-derived xpub verification to recover damaged backups.
+A guided recovery flow is '''RECOMMENDED''' (SHOULD) for an MD tool, but it is '''not yet implemented''' by the reference implementation, which performs BCH substitution-error correction only. The flow described here is '''informative''' — a design sketch for future work (FOLLOWUP <code>impl-guided-recovery-md-mk</code>, with its erasure-decoding dependency <code>impl-bch-erasure-decoding-md-mk</code>). When implemented it combines BCH ECC, erasure decoding, user-supplied structural knowledge, and seed-derived xpub verification to recover damaged backups.
 
-The flow MUST proceed through these stages, in order:
+When implemented, the flow would proceed through these stages, in order:
 
 # '''Damage assessment.''' Accept the user's transcribed string(s). Display per-position character status. Allow user to mark positions as unreadable (erasures).
 # '''Standard decode.''' Attempt BCH decoding with no user input. If successful, report and stop.
@@ -931,7 +992,7 @@ The flow MUST proceed through these stages, in order:
 # '''Optional blockchain verification.''' With explicit user consent, derive the candidate's first N receive addresses and check on-chain history. Disclose privacy implications before this step.
 # '''Result presentation.''' Display the recovered wallet policy in BIP 388 form, the Policy ID, derived xpubs, and the confidence level per "Decoder reporting".
 
-Tools MUST disclose privacy implications before any blockchain query and SHOULD default to offline operation. Tools MUST NOT transmit recovered policy material to external services without explicit user consent.
+A tool that implements the optional blockchain-verification stage MUST disclose privacy implications before any blockchain query, SHOULD default to offline operation, and MUST NOT transmit recovered policy material to external services without explicit user consent.
 
 ==Rationale==
 
@@ -956,24 +1017,23 @@ The two-character HRP <code>md</code> was chosen as a compact, readable abbrevia
 
 ===Why new target constants?===
 
-The target residue constants <code>T_REGULAR</code> and <code>T_LONG</code> are derived NUMS-style ("Nothing Up My Sleeve") as truncations of <code>SHA-256("shibbolethnums")</code> to 65 and 75 bits respectively, taking the most significant bits of the hash interpreted as a big-endian 256-bit integer.
+The target residue constant <code>T_REGULAR</code> is derived NUMS-style ("Nothing Up My Sleeve") as a truncation of <code>SHA-256("shibbolethnums")</code> to the most significant 65 bits, interpreting the hash as a big-endian 256-bit integer. (MD has only the regular code; the long code was removed, so no <code>T_LONG</code> is defined.)
 
-The string <code>shibbolethnums</code> combines this proposal's working name during early development with the conventional <code>nums</code> suffix used in cryptographic constructions to indicate that the value was chosen via a public hash and not through opaque selection. The string itself is the audit trail: any reader can recompute the SHA-256 and verify that the constants follow from it.
+The string <code>shibbolethnums</code> combines this proposal's working name during early development with the conventional <code>nums</code> suffix used in cryptographic constructions to indicate that the value was chosen via a public hash and not through opaque selection. The string itself is the audit trail: any reader can recompute the SHA-256 and verify that the constant follows from it.
 
-We chose new constants rather than reusing BIP 93's <code>MS32_CONST</code> values for two reasons. First, although the HRP-mixing recipe (BIP 173 <code>hrp_expand</code>) produces residues that differ between any two HRPs sharing this polynomial, picking distinct target constants provides residue-level separation as well: damage that maps an MD string toward codex32-style validity is statistically prevented by the combination. Second, signaling matters — reusing codex32's specific target constant verbatim would invite the misreading that MD is "codex32 with a different HRP" rather than a distinct format that borrows codex32's polynomial.
+We chose a new constant rather than reusing BIP 93's <code>MS32_CONST</code> value for two reasons. First, although the HRP-mixing recipe (BIP 173 <code>hrp_expand</code>) produces residues that differ between any two HRPs sharing this polynomial, picking a distinct target constant provides residue-level separation as well: damage that maps an MD string toward codex32-style validity is statistically prevented by the combination. Second, signaling matters — reusing codex32's specific target constant verbatim would invite the misreading that MD is "codex32 with a different HRP" rather than a distinct format that borrows codex32's polynomial.
 
-The constants are reproducible by any SHA-256 implementation:
+The constant is reproducible by any SHA-256 implementation:
 
 <source lang="python">
 import hashlib
 h = hashlib.sha256(b"shibbolethnums").digest()
 T_REGULAR = int.from_bytes(h, 'big') >> (256 - 65)  # = 0x0815c07747a3392e7
-T_LONG    = int.from_bytes(h, 'big') >> (256 - 75)  # = 0x205701dd1e8ce4b9f47
 </source>
 
 ===Why descriptor-codec for the bytecode?===
 
-<code>descriptor-codec</code> is a public-domain (CC0-1.0) Rust library that encodes BIP 380 output descriptors using a compact tag-based format with claimed 30–40% size reduction relative to plaintext. Its tag table covers all miniscript fragments and produces deterministic round-tripping bytecode. MD extends this with BIP 388 wallet-policy framing (<code>@i</code> placeholders), shared-path declarations, and a path dictionary, but reuses the underlying tag values for compatibility.
+<code>descriptor-codec</code> is a public-domain (CC0-1.0) Rust library that encodes BIP 380 output descriptors using a compact tag-based format with claimed 30–40% size reduction relative to plaintext. Its tag table covers all miniscript fragments and produces deterministic round-tripping bytecode. MD adopts the same tag-based approach and extends it with BIP 388 wallet-policy framing (<code>@i</code> placeholders) and bit-aligned origin / use-site path declarations. MD's v0.30 tag table is its own 6-bit primary tag space (§"Tag table"; authoritative source <code>crates/md-codec/src/tag.rs</code>) — it does not carry a path dictionary (§"origin-path-encoding") and is not byte-compatible with descriptor-codec's byte-aligned tags.
 
 This design choice means: (a) MD does not invent a new bytecode for descriptors that are already correctly handled by an existing public-domain implementation; (b) implementations of MD that wish to also handle inline-key descriptors (a v1+ extension) can do so by adopting the existing reserved tags; (c) the MD extensions MAY be upstreamed into <code>descriptor-codec</code> if the maintainer accepts.
 
@@ -981,15 +1041,13 @@ This design choice means: (a) MD does not invent a new bytecode for descriptors 
 
 The placeholder framing has three advantages over inline keys:
 
-# '''Compactness.''' Each <code>@i</code> reference encodes as 2 bytes vs 78 bytes for an inline xpub. For a 6-key policy, this saves ~456 bytes of bytecode — making the difference between fitting one engraved plate and fitting many.
+# '''Compactness.''' Each <code>@i</code> reference encodes as an inline <code>key_index</code> field of just <code>kiw = ⌈log₂(n)⌉</code> bits (0–5 bits for up to 32 keys, §"Key references"), versus the ~65-byte on-wire xpub an inline key would need. For a 6-key policy this saves hundreds of bytes of bytecode — the difference between fitting one engraved plate and fitting many.
 # '''Separation of structure from key material.''' The Template Card contains zero key material in v0; it can be backed up independently of seeds and xpub cards. Loss or compromise of a Template Card does not compromise key secrecy.
 # '''Standard alignment.''' BIP 388 already defines the placeholder framing for hardware-signer wallet-policy registration. Aligning MD's bytecode with BIP 388's framing minimizes work for wallets that already produce BIP 388 wallet policies.
 
-===Why mandate guided recovery in the spec?===
+===Why is guided recovery recommended rather than mandated?===
 
-The format's robustness story has two layers: BCH error correction (always present) and structure-aware recovery (when structural knowledge is available). The latter substantially extends the correction envelope but requires implementations to expose it. If guided recovery were optional, different MD tools would offer different recovery success rates for the same damaged input, undermining the format's reliability promise.
-
-By specifying guided recovery as a conformance requirement, all MD tools provide consistent recovery semantics. Users with damaged backups are not at the mercy of which tool they happen to be using.
+The format's robustness story has two layers: BCH substitution-error correction (always present, and implemented) and structure-aware recovery (a design sketch — §"Guided recovery"). An earlier draft made guided recovery a conformance MUST, but the reference implementation does not yet provide it, so a MUST would render the reference non-conformant with its own spec. Guided recovery is therefore RECOMMENDED (SHOULD) and described as future work. If adopted broadly it would give MD tools consistent recovery semantics so users with damaged backups are not at the mercy of which tool they happen to use. See FOLLOWUPs <code>impl-guided-recovery-md-mk</code> and <code>impl-bch-erasure-decoding-md-mk</code>.
 
 ===Why no compression?===
 
@@ -1017,20 +1075,15 @@ For single-string Template Cards, no chunk-set identifier is needed because ther
 
 ==Frequently Asked Questions==
 
-===Why is MD narrower than BIP 388?===
+===Why does MD warn on legacy P2SH multisig?===
 
-BIP 388 admits six top-level wallet-policy shapes: <code>pkh(KEY)</code>, <code>wpkh(KEY)</code>, <code>sh(wpkh(KEY))</code>, <code>wsh(SCRIPT)</code>, <code>sh(wsh(SCRIPT))</code>, and <code>tr(KEY[, TREE])</code>. It also admits <code>sh(multi(...))</code> and <code>sh(sortedmulti(...))</code> as legacy P2SH multisig forms. MD accepts a strict subset, rejecting:
+BIP 388 admits six top-level wallet-policy shapes — <code>pkh(KEY)</code>, <code>wpkh(KEY)</code>, <code>sh(wpkh(KEY))</code>, <code>wsh(SCRIPT)</code>, <code>sh(wsh(SCRIPT))</code>, <code>tr(KEY[, TREE])</code> — plus legacy <code>sh(multi(...))</code> / <code>sh(sortedmulti(...))</code>. MD '''decodes''' all of them (recovery-first; §"Top-level descriptor scope"), but its encoder emits a warn-only advisory for legacy P2SH multisig and treats <code>pkh</code> as low marginal value. The reasons:
 
-* <code>pkh(KEY)</code> — legacy P2PKH single-sig
-* <code>sh(KEY)</code>, <code>sh(multi(...))</code>, <code>sh(sortedmulti(...))</code> — legacy P2SH
+# '''Address-prefix ambiguity is a recovery footgun.''' Both <code>sh(multi(K, ...))</code> (legacy P2SH multisig, 2014–2017 era) and <code>sh(wsh(...))</code> (BIP 48/1' modern nested-segwit multisig) produce <code>3...</code> addresses. A user cannot disambiguate them from an address alone; engraving the wrong type derives the wrong addresses on recovery. The encode-time advisory surfaces this the moment a legacy card is minted, while the decoder still reads such a card so an already-engraved backup is never stranded.
+# '''Engravable steel backup adds little for legacy single-sig.''' BIP 39 seed words alone reconstruct a <code>pkh(KEY)</code> wallet; the policy template adds no recovery information. So <code>pkh</code> is fully supported (and ships in the corpus) but the encoder emits no advisory — the value proposition simply does not apply.
+# '''Little new pre-segwit deployment.''' Modern hardware wallets emit post-segwit forms by default; realistic users engraving 2015-era P2SH multisig are few.
 
-Rationale (three reasons, weighted):
-
-# '''Address-prefix ambiguity creates a recovery footgun.''' Both <code>sh(multi(K, ...))</code> (legacy P2SH multisig, 2014–2017 era) and <code>sh(wsh(...))</code> (BIP 48/1' modern nested-segwit multisig) produce addresses with the <code>3...</code> prefix. A user looking at a <code>3...</code> address from cold storage often cannot disambiguate which descriptor type produced it. Engraving the wrong type would derive the wrong addresses on recovery — silent fund loss. MD eliminates this footgun by rejecting <code>sh(multi)</code> at the spec level.
-# '''Engravable steel backup is overkill for legacy single-sig.''' BIP 39 seed words alone are sufficient backup for <code>pkh(KEY)</code> wallets; the policy template adds no recovery information. MD's value proposition (engravable backup of policies hard to reconstruct) doesn't apply.
-# '''No deployment of new pre-segwit wallets.''' Modern hardware wallets (Coldcard, Trezor, Ledger) emit modern post-segwit forms by default. Realistic users wanting to engrave 2015-era cold storage are vanishingly few; most pre-segwit wallets have either been swept to native segwit or sit dormant.
-
-The three reasons combine: a category with high footgun risk, low marginal recovery value, and negligible new deployment is permanently excluded by design. This is a deliberate narrowing of BIP 388, not a future deferral.
+This is a deliberate '''encode-time''' safety signal, not a decode-time refusal: a spec-conforming recovery tool reads every legitimately-engraved card, and refusing to decode a legacy form would strand funds.
 
 ===Why is multi-leaf TapTree deferred (vs excluded)?===
 
@@ -1063,10 +1116,6 @@ Single-key taproot (<code>tr(KEY)</code>) and single-leaf taproot (<code>tr(KEY,
 
 Matches the 2-character convention of BIP 93's <code>ms</code> HRP for codex32. Shorter HRPs leave more capacity in the BCH-bounded data part for policy bytecode. The earlier <code>wdm</code> HRP was renamed to <code>md</code> at v0.3.0 — see CHANGELOG.
 
-===Why is the family-stable generator string <code>"md-codec X.Y"</code> rather than the full crate version?===
-
-Family-stability across patch versions: any v0.4.x build regenerating <code>v0.2.json</code> produces a byte-identical SHA, so downstream conformance suites pinning the SHA see no churn within a v0.4.x line. Patch-version traceability is preserved in <code>gen_vectors --output</code>'s stderr log. Family token bumps at minor version boundaries (v0.3 → v0.4 shifts <code>"md-codec 0.3"</code> to <code>"md-codec 0.4"</code>).
-
 ==Backwards Compatibility==
 
 MD is a new format; there is no prior version to be compatible with.
@@ -1090,7 +1139,7 @@ Users who computed PolicyIds on divergent-path policies under v0.x ≤ 0.9 SHOUL
 
 ==Test Vectors==
 
-The v0.30 reference test corpus lives at <code>crates/md-codec/tests/vectors/</code> in the reference implementation. Each vector is a tuple of three plain-text files sharing a common stem <code>{name}</code>:
+The v0.30 reference test corpus is defined by <code>crates/md-codec/src/test_vectors.rs::MANIFEST</code> — the single source of truth — and materialized to files under <code>crates/md-codec/tests/vectors/</code> by the <code>md vectors --out &lt;dir&gt;</code> subcommand. Each <code>MANIFEST</code> entry is a <code>Vector</code> struct (<code>name</code>, <code>template</code>, <code>keys</code>, <code>fingerprints</code>, <code>force_chunked</code>, and — added for non-canonical shapes that require an explicit origin — an optional <code>path</code> field). Each vector materializes as '''four''' plain-text files sharing a common stem <code>{name}</code>:
 
 {| class="wikitable"
 ! File !! Contents
@@ -1104,7 +1153,7 @@ The v0.30 reference test corpus lives at <code>crates/md-codec/tests/vectors/</c
 | <code>{name}.bytes.hex</code> || The raw bit-packed payload bytes (hex), pre-codex32-wrap. Used for byte-level cross-implementation checks.
 |}
 
-A loader (<code>crates/md-codec/tests/vectors/manifest.rs</code>) enumerates the corpus at build time. Conformance tests round-trip each vector: <code>encode(template) == phrase</code> and <code>decode(phrase) == descriptor</code>. Independent implementations SHOULD verify against the committed file tuples for the MD version they target.
+The <code>md vectors --out</code> runner enumerates <code>MANIFEST</code> and writes the four files per vector. For a <code>force_chunked</code> vector, the <code>{name}.phrase.txt</code> file carries an extra leading <code>chunk-set-id: 0x…</code> line before the per-chunk strings (each chunk on its own line). Conformance tests round-trip each vector: <code>encode(template) == phrase</code> and <code>decode(phrase) == descriptor</code>. Independent implementations SHOULD verify against the committed file tuples for the MD version they target.
 
 ===v0.30 corpus===
 
@@ -1149,18 +1198,16 @@ The four committed corpus vectors closest in shape to the bit-layout examples ar
 
 ===Regeneration===
 
-The committed corpus is regenerated by the test binary at <code>crates/md-codec/tests/vectors/manifest.rs</code>; running <code>cargo test -p md-codec --test vectors -- --ignored vectors_regenerate</code> rewrites the file tuples from a fresh encode pass and pins the BCH checksums. Conformance test runs (the default <code>cargo test</code>) compare the committed bytes against the live encoder output and fail on drift.
+The committed corpus is regenerated by running <code>md vectors --out crates/md-codec/tests/vectors</code>, which rewrites the four-file tuples from a fresh encode pass of <code>src/test_vectors.rs::MANIFEST</code> and pins the BCH checksums. Conformance test runs (the default <code>cargo test</code>) compare the committed bytes against the live encoder output and fail on drift.
 
 ==Reference Implementation==
 
 The reference implementation is published at [https://github.com/bg002h/descriptor-mnemonic github.com/bg002h/descriptor-mnemonic] and is:
 
-* Written in Rust, building on <code>rust-miniscript</code> (with one upstream patch in flight at [https://github.com/apoelstra/rust-miniscript/pull/1 apoelstra/rust-miniscript#1] for hash-terminal support in <code>WalletPolicy</code>) and the <code>descriptor-codec</code> tag table for compatibility
+* Written in Rust, building on <code>rust-miniscript</code>
 * Licensed CC0-1.0 to match this specification
 * Accompanied by the test vector suite linked above
-* Released with the <code>md</code> CLI binary (<code>md encode</code>, <code>md decode</code>, <code>md verify</code>, <code>md inspect</code>, <code>md bytecode</code>, <code>md vectors</code>)
-
-Bindings for Python and TypeScript via standard FFI tooling are planned for v0.2.
+* Released with the <code>md</code> CLI binary (<code>md encode</code>, <code>md decode</code>, <code>md verify</code>, <code>md inspect</code>, <code>md bytecode</code>, <code>md vectors</code>, <code>md repair</code>, <code>md address</code>, <code>md compile</code>, <code>md gen-man</code>)
 
 ==Acknowledgments==
 
