@@ -1,0 +1,53 @@
+---
+source: crates/md-cli/tests/json_snapshots.rs
+expression: body
+---
+{
+  "descriptor": {
+    "n": 2,
+    "path_decl": {
+      "data": "m/48'/0'/0'/2'",
+      "tag": "Shared"
+    },
+    "tlv": {
+      "fingerprints": null,
+      "origin_path_overrides": null,
+      "pubkeys": null,
+      "unknown": [],
+      "use_site_path_overrides": null
+    },
+    "tree": {
+      "body": {
+        "data": {
+          "is_nums": false,
+          "key_index": 0,
+          "tree": {
+            "body": {
+              "data": {
+                "index": 1
+              },
+              "kind": "KeyArg"
+            },
+            "tag": "PkK"
+          }
+        },
+        "kind": "Tr"
+      },
+      "tag": "Tr"
+    },
+    "use_site_path": {
+      "multipath": [
+        {
+          "hardened": false,
+          "value": 0
+        },
+        {
+          "hardened": false,
+          "value": 1
+        }
+      ],
+      "wildcard_hardened": false
+    }
+  },
+  "schema": "md-cli/1"
+}

@@ -1157,10 +1157,10 @@ The <code>md vectors --out</code> runner enumerates <code>MANIFEST</code> and wr
 
 ===v0.30 corpus===
 
-The committed v0.30 corpus carries 10 vectors:
+The committed v0.30 corpus carries 15 vectors. Path-carrying (non-canonical) vectors pin the '''template+path pair''': the origin is not recoverable from <code>{name}.template</code> alone — it enters via the encoder's <code>--path</code> override and is materialized in <code>{name}.descriptor.json</code>'s <code>path_decl</code>. An independent reader reproduces such a vector by encoding the template with the listed origin path.
 
 {| class="wikitable"
-! Name !! Template !! md1 string
+! Name !! Template (and explicit origin, if any) !! md1 string
 |-
 | <code>wpkh_basic</code> || <code>wpkh(@0/<0;1>/*)</code> || <code>md1yqpqqxqq8xtwhw4xwn4qh</code>
 |-
@@ -1180,10 +1180,20 @@ The committed v0.30 corpus carries 10 vectors:
 |-
 | <code>wsh_divergent_paths</code> || <code>wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))</code> (per-<code>@N</code> use-site-path override via TLV 0x00) || <code>md1yppqqxppsg2qknq2zc2ktzhwekmddzh</code>
 |-
-| <code>wsh_multi_chunked</code> || <code>wsh(multi(3,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))</code> (chunked envelope demo) || <code>md1fz4awqqpqsgqpsgvyyxqql8saf74dwdyqv</code>
+| <code>wsh_multi_chunked</code> || <code>wsh(multi(3,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))</code> (<code>force_chunked</code>; chunk-set-of-one) || chunk-set-id <code>0x157ae</code>; <code>md1fz4awqqpqsgqpsgvyyxqql8saf74dwdyqv</code>
+|-
+| <code>sh_wpkh</code> || <code>sh(wpkh(@0/<0;1>/*))</code> (elided origin; canonical <code>m/49'/0'/0'</code> resolved via <code>canonical_origin</code>) || <code>md1yqpqqxpsq258xsks3kh0ye</code>
+|-
+| <code>tr_with_leaf</code> || <code>tr(@0/<0;1>/*,pk(@1/<0;1>/*))</code> — non-canonical <code>tr()</code>+leaf; explicit origin <code>--path m/48'/0'/0'/2'</code> (<code>path_decl = Shared(m/48'/0'/0'/2')</code>) || <code>md1ypfdsssj5qqczf2s3zwfsvk6dgpe</code>
+|-
+| <code>nums_taproot</code> || <code>tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))</code> — internal key = BIP-341 NUMS H-point (<code>is_nums = 1</code> wire flag, script-path-only); explicit origin <code>--path m/48'/0'/0'/2'</code> || <code>md1yzfdsssj5qqcrjqgscr0d2p5nx48qxf</code>
+|-
+| <code>wsh_sortedmulti_2chunk</code> || <code>wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*,@3/<0;1>/*,@4/<0;1>/*,@5/<0;1>/*,@6/<0;1>/*,@7/<0;1>/*))</code> + Fingerprints TLV on all 8 keys (<code>@0=01020304</code>, <code>@1=02030405</code>, <code>@2=03040506</code>, <code>@3=04050607</code>, <code>@4=05060708</code>, <code>@5=06070809</code>, <code>@6=0708090a</code>, <code>@7=08090a0b</code>); genuine 2-member chunk set — <code>force_chunked</code> (the 47-byte / 376-bit payload FITS a single string, below the 400-bit regular-code cap; <code>--force-chunked</code> routes it through <code>split</code>, whose 320-bit per-chunk sizing budget then yields 2 chunks) || chunk-set-id <code>0xe492f</code>; <code>md1fujf0qsppcgqpsgwzwpfewuxvvqqgzqvzzqsrqsz5qcyq5srf0tn67rd3va</code>, <code>md1fujf0qsgvcyq5rq0q9qcrs3gxquyqns8pqys4cgpy9qkqt2cxjz4rtdyjk</code>
+|-
+| <code>single_string_boundary</code> || <code>wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*,@3/<0;1>/*,@4/<0;1>/*,@5/<0;1>/*,@6/<0;1>/*,@7/<0;1>/*,@8/<0;1>/*))</code> + Fingerprints TLV on 8 of 9 keys (<code>@0=01020304</code> … <code>@7=08090a0b</code>; <code>@8</code> none) — single-string regular-code boundary: 79 of the 80 max data symbols, '''95 chars''' (<code>md1</code> + 79 data + 13 checksum), NOT chunked, NOT long-code || <code>md1ygpqqxppc2qpydzk0qxvsqqypqxpqsyqcyq5srqszsvvzq2ps8gpgxquy9qcrssztqwzqfpfcgpy9qk3s85sn9eadh98</code>
 |}
 
-The corpus exercises all top-level descriptor types in MD's admit set, multi-family operators (multi, sortedmulti), the Fingerprints TLV, divergent use-site-path overrides, and the chunked envelope dispatch path. Negative-vector coverage lives in unit tests (<code>crates/md-codec/src/*</code>) and integration tests (<code>crates/md-codec/tests/*</code>) rather than the file-tuple corpus.
+The corpus exercises all top-level descriptor types in MD's admit set, multi-family operators (multi, sortedmulti, multi_a), the Fingerprints TLV, divergent use-site-path overrides, elided-origin canonical resolution (<code>sh_wpkh</code> → <code>m/49'/0'/0'</code>), explicit-origin non-canonical <code>tr()</code>+tree shapes (<code>tr_with_leaf</code>, <code>nums_taproot</code>), the NUMS-taproot <code>is_nums</code> wire flag, the single-string regular-code boundary at 79/80 data symbols (<code>single_string_boundary</code>, 95 chars, un-chunked), and both the chunk-set-of-one (<code>wsh_multi_chunked</code>) and a genuine ≥2-chunk split (<code>wsh_sortedmulti_2chunk</code>). Negative-vector coverage lives in unit tests (<code>crates/md-codec/src/*</code>) and integration tests (<code>crates/md-codec/tests/*</code>) rather than the file-tuple corpus.
 
 ===Reference vector walkthroughs===
 

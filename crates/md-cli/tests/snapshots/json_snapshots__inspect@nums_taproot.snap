@@ -1,0 +1,68 @@
+---
+source: crates/md-cli/tests/json_snapshots.rs
+expression: body
+---
+{
+  "descriptor": {
+    "n": 3,
+    "path_decl": {
+      "data": "m/48'/0'/0'/2'",
+      "tag": "Shared"
+    },
+    "tlv": {
+      "fingerprints": null,
+      "origin_path_overrides": null,
+      "pubkeys": null,
+      "unknown": [],
+      "use_site_path_overrides": null
+    },
+    "tree": {
+      "body": {
+        "data": {
+          "is_nums": true,
+          "key_index": 0,
+          "tree": {
+            "body": {
+              "data": {
+                "indices": [
+                  0,
+                  1,
+                  2
+                ],
+                "k": 2
+              },
+              "kind": "MultiKeys"
+            },
+            "tag": "MultiA"
+          }
+        },
+        "kind": "Tr"
+      },
+      "tag": "Tr"
+    },
+    "use_site_path": {
+      "multipath": [
+        {
+          "hardened": false,
+          "value": 0
+        },
+        {
+          "hardened": false,
+          "value": 1
+        }
+      ],
+      "wildcard_hardened": false
+    }
+  },
+  "md1_encoding_id": {
+    "hex": "69de33e513f1014463a34ae2614c9ea9"
+  },
+  "schema": "md-cli/1",
+  "wallet_descriptor_template_id": {
+    "hex": "585422bf5c61f4da1649bca061c43334"
+  },
+  "wallet_policy_id": {
+    "fingerprint": "0xcddaf3ce",
+    "hex": "cddaf3cef3b60f96201cdb41e52a6215"
+  }
+}

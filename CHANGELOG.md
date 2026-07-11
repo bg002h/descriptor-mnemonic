@@ -4,6 +4,23 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.41.0] — 2026-07-10
+
+**SemVer-minor — BIP-alignment cycle: decode-behavior changes + new error variant. No wire-format change.**
+
+- `sh(wpkh(@N))` now resolves to the canonical BIP49 origin `m/49'/0'/0'`, so an elided-origin `sh(wpkh)` card round-trips (previously `md encode` minted a card `md decode` rejected).
+- Non-zero trailing payload padding is now rejected with the new `Error::MalformedPayloadPadding` variant (appended at the end of the insertion-ordered enum).
+- `decode_md1_string` auto-dispatches a chunked single string (was `WireVersionMismatch { got: 9 }`).
+- Comment/message corrections: `bch.rs` POLYMOD_INIT narrative (`0x23181b3` IS BIP-93's `ms32_polymod` init); `TooManyErrors` states the `t=4` correction capacity.
+- md1 BIP (`bip/bip-mnemonic-descriptor.mediawiki`) aligned to the shipped byte-aligned chunking + elided-origin + scope + downgrades; 5 new corpus vectors (`sh_wpkh`, `tr_with_leaf`, `nums_taproot`, `wsh_sortedmulti_2chunk`, `single_string_boundary`) via a new `Vector.path` field. Existing vectors byte-identical.
+
+## md-cli [0.12.0] — 2026-07-10
+
+**SemVer-minor — BIP-alignment cycle CLI surface. Consumes md-codec 0.41.0.**
+
+- `--force-long-code` is now a hard error (exit 2) instead of a silent no-op — the long BCH code was removed in v0.12.0.
+- New warn-only stderr advisory for legacy P2SH multisig (`sh(multi)` / `sh(sortedmulti)`); stdout unchanged.
+
 ## md-cli [0.11.3] — 2026-06-28
 
 **SemVer-PATCH — internal refactor, output byte-identical to 0.11.2.** `md-cli` no

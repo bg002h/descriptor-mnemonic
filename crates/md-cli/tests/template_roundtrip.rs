@@ -38,7 +38,12 @@ fn round_trip_each_manifest_entry() {
         if v.force_chunked {
             continue;
         } // multi-chunk handled separately
-        let phrase = encode(v.template);
+        // Path-carrying (non-canonical) vectors need the explicit origin at
+        // encode time, else they mint a decode-rejecting card.
+        let phrase = match v.path {
+            Some(p) => encode_with_path(v.template, p),
+            None => encode(v.template),
+        };
         let back = decode(&phrase);
         assert_eq!(
             back, v.template,
@@ -204,9 +209,22 @@ fn reencode_round_trip_each_manifest_entry() {
         if v.force_chunked {
             continue;
         }
-        let phrase = encode(v.template);
-        let decoded = decode(&phrase);
-        let phrase_again = encode(&decoded);
+        // Path-carrying (non-canonical) vectors need the explicit origin on
+        // every encode pass, else the re-encode would trip the decode gate.
+        let (phrase, decoded, phrase_again) = match v.path {
+            Some(p) => {
+                let phrase = encode_with_path(v.template, p);
+                let decoded = decode(&phrase);
+                let again = encode_with_path(&decoded, p);
+                (phrase, decoded, again)
+            }
+            None => {
+                let phrase = encode(v.template);
+                let decoded = decode(&phrase);
+                let again = encode(&decoded);
+                (phrase, decoded, again)
+            }
+        };
         assert_eq!(
             phrase, phrase_again,
             "[{}] re-encode of decoded text produced a different phrase: \

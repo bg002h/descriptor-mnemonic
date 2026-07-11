@@ -1,6 +1,8 @@
 use crate::error::CliError;
 use crate::parse::keys::ParsedFingerprint;
-use crate::parse::template::parse_template;
+use crate::parse::path::parse_path;
+use crate::parse::template::{parse_template, to_origin_path};
+use md_codec::origin_path::PathDeclPaths;
 use std::fs;
 use std::path::PathBuf;
 
@@ -33,7 +35,16 @@ pub fn run(out: Option<String>) -> Result<u8, CliError> {
             .iter()
             .map(|(i, fp)| ParsedFingerprint { i: *i, fp: *fp })
             .collect();
-        let descriptor = parse_template(v.template, &[], &fps)?;
+        let mut descriptor = parse_template(v.template, &[], &fps)?;
+        // Apply the explicit shared origin for path-carrying (non-canonical)
+        // vectors, mirroring `cmd/encode.rs`'s `--path` override. Without this
+        // the emitted card would be a decode-rejecting "dead card" for shapes
+        // whose `canonical_origin` is `None` (tr()+tree, NUMS-taproot), and
+        // the `.descriptor.json`'s `path_decl` would not reflect the origin.
+        if let Some(p_arg) = v.path {
+            let dp = parse_path(p_arg)?;
+            descriptor.path_decl.paths = PathDeclPaths::Shared(to_origin_path(Some(&dp)));
+        }
         let (bytes, _bits) = md_codec::encode::encode_payload(&descriptor)?;
 
         write_lf(&out_dir.join(format!("{}.template", v.name)), v.template)?;
