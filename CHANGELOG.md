@@ -4,6 +4,24 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.42.0] — 2026-07-11
+
+**SemVer-minor — pathless/dead-card partial-decode. Additive API; no wire-format change; every prior card decodes byte-identically.**
+
+- New partial-allowing decode: `DecodeOpts { allow_unresolved_origin }` (`#[non_exhaustive]`, `Default` = strict, `DecodeOpts::partial()`) threaded through `decode_payload_with_opts`, `decode_md1_string_with_opts`, `reassemble_with_opts`. With `allow_unresolved_origin: true`, a `canonical_origin == None` shape with an empty origin decodes (returns the `Descriptor`) instead of rejecting `MissingExplicitOrigin` — relaxing ONLY that gate; per-chunk BCH, chunk-header consistency, index-gap, and the cross-chunk content-id (`ChunkSetIdMismatch`) check all stay enforced. The existing strict entry points (`decode_payload` / `decode_md1_string` / `reassemble`) are unchanged (default strict).
+- `Descriptor::unresolved_origin_indices() -> Vec<u8>` — the `@N` indices with an empty, non-canonical origin (built on `validate_explicit_origin_required` semantics).
+- New `Error::EmptyOriginOverride { idx }` — a present-but-empty `OriginPathOverrides[idx]` entry is now rejected consistently by both the decode gate (unconditionally, incl. under partial mode) and `expand_per_at_n` (closes a latent decode/expand divergence where an empty override silently resolved to no origin).
+- New public `validate_no_empty_origin_overrides` (symmetric with `validate_explicit_origin_required`).
+
+## md-cli [0.13.0] — 2026-07-11
+
+**SemVer-minor — pathless/dead-card partial-decode surface. Consumes md-codec 0.42.0.**
+
+- `md decode` / `md inspect` PARTIAL-DECODE a `canonical_origin == None` dead card (empty origin): render the template + `origin: «unspecified — supply on restore»` (text) / an additive `partial: { reason, unresolved_indices }` (`--json`), exit **4** (VERIFY-ME). `md inspect` omits the origin-derived outputs (`wallet-policy-id`, `wallet-policy-id-fingerprint`, `wallet_policy_id`) on partial. Successful (canonical) decodes are byte-identical, exit 0.
+- `md encode` prints a loud stderr advisory when the encoded descriptor is not fully origin-resolvable (`!unresolved_origin_indices().is_empty()` on the final `--path`-applied descriptor), nudging an explicit origin for a fully-decodable backup. Card bytes unchanged, exit 0.
+- Origin-resolving operations stay fail-closed: `md verify`, `md address`, `md bytecode`, `md repair` (and `inspect`'s policy-id) reject/refuse an unresolved origin as before.
+- md1 BIP: the "pathless/non-canonical backup handling is under separate design" placeholder replaced with the partial-decode contract (render + VERIFY-ME exit 4; origin-resolving ops fail-closed / must not report a verified result).
+
 ## md-codec [0.41.0] — 2026-07-10
 
 **SemVer-minor — BIP-alignment cycle: decode-behavior changes + new error variant. No wire-format change.**

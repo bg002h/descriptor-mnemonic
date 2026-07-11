@@ -19,6 +19,7 @@ pub mod gen_man;
 #[cfg(feature = "json")]
 pub mod gui_schema;
 pub mod inspect;
+pub mod partial;
 pub mod repair;
 pub mod vectors;
 pub mod verify;

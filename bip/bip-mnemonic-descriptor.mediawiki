@@ -216,15 +216,42 @@ explicitly. A per-<code>@N</code> origin that differs from the wrapper default i
 carried in the <code>OriginPathOverrides</code> TLV (tag <code>0x03</code>,
 §"TLV section").
 
-'''Shapes with no canonical entry.''' A top-level shape with no row in the table
-above — <code>tr</code> with a script tree, legacy <code>sh(sortedmulti)</code> /
-<code>sh(multi)</code>, a bare <code>wsh(@N)</code> / <code>sh(@N)</code>, or an
-arbitrary miniscript body — cannot resolve a depth-0 (elided) origin from the
-table. Pathless / non-canonical backup handling for these shapes is under
-separate design; the current reference decoder rejects an elided origin on such a
-wrapper with <code>Error::MissingExplicitOrigin { idx }</code>, requiring an
-explicit origin for every <code>@N</code> (supplied via the origin path
-declaration or an <code>OriginPathOverrides</code> entry).
+'''Shapes with no canonical entry (partial decode).''' A top-level shape with
+no row in the table above — <code>tr</code> with a script tree, legacy
+<code>sh(sortedmulti)</code> / <code>sh(multi)</code>, a bare
+<code>wsh(@N)</code> / <code>sh(@N)</code>, or an arbitrary miniscript body —
+cannot resolve a depth-0 (elided) origin from the table. Such a card ("a dead
+card") is still fully renderable: every <code>@N</code>, use-site path, and
+tap-script tree the wire carries is already decoded by the time the origin
+check would run — only the derivation origin itself has no canonical default
+and none was supplied explicitly.
+
+'''Render paths''' (the reference <code>decode</code> and <code>inspect</code>
+commands, and any consumer opting into the equivalent partial-allowing decode
+entry point) therefore render the template as usual and mark the affected
+<code>@N</code>'s origin as unspecified, instead of hard-rejecting. This is a
+'''VERIFY-ME''' result, not a pass: the command exits '''4''' (distinct from
+the exit-0 success case), signaling that the origin must be confirmed
+out-of-band (e.g. from a paired non-engraved note, or by re-deriving with a
+known candidate path and matching addresses) before the card is relied on for
+recovery. A wallet-policy-id or any other value computed FROM the resolved
+origin (fingerprint-keyed identifiers, derived keys, addresses) is never
+computed or displayed on this path — only origin-independent identifiers
+(e.g. the raw wire-encoding id and the wallet-descriptor-template id) are
+safe to show.
+
+'''All other consumers stay fail-closed.''' Any operation that resolves the
+origin to derive or verify against actual keys — address derivation, wallet-
+policy-id computation, backup verification against a reference wallet, and
+BCH error-correction/repair — MUST NOT proceed as if the origin were known:
+it either rejects the elided origin outright (the reference decoder's strict
+path raises <code>Error::MissingExplicitOrigin { idx }</code>) or, for a
+verification surface, MUST NOT report a verified result — instead surfacing
+the same VERIFY-ME / unresolved-origin outcome (never a pass). An explicit
+origin for every <code>@N</code> (supplied via the origin path declaration
+or an <code>OriginPathOverrides</code> entry) is required before any of
+these operations can succeed. Permissive rendering of a dead card MUST NOT
+be conflated with a verified, spendable resolution of one.
 
 ==Specification==
 

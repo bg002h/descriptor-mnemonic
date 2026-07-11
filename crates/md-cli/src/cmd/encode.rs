@@ -5,7 +5,7 @@ use crate::parse::path::parse_path;
 use crate::parse::template::{ctx_for_template, parse_template, to_origin_path};
 
 use md_codec::chunk::{derive_chunk_set_id, split};
-use md_codec::encode::{encode_md1_string, render_grouped};
+use md_codec::encode::{Descriptor, encode_md1_string, render_grouped};
 use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
 use md_codec::origin_path::PathDeclPaths;
 use md_codec::tag::Tag;
@@ -85,6 +85,10 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         // F-A4: legacy-P2SH-multisig footgun advisory (stderr, warn-only).
         // Must fire on the --json branch too (parity with the text branch).
         emit_legacy_p2sh_advisory(&descriptor.tree, &mut std::io::stderr());
+        // P1.2 (pathless/dead-card partial-decode): loud advisory when the
+        // FINAL descriptor (post `--path`) still has an unresolvable origin.
+        // Must fire on the --json branch too (parity with the text branch).
+        emit_pathless_advisory(&descriptor, &mut std::io::stderr());
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -123,6 +127,9 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
 
     // F-A4: legacy-P2SH-multisig footgun advisory (stderr, warn-only).
     emit_legacy_p2sh_advisory(&descriptor.tree, &mut std::io::stderr());
+    // P1.2 (pathless/dead-card partial-decode): loud advisory when the FINAL
+    // descriptor (post `--path`) still has an unresolvable origin.
+    emit_pathless_advisory(&descriptor, &mut std::io::stderr());
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -161,4 +168,33 @@ fn emit_legacy_p2sh_advisory<W: std::io::Write>(tree: &Node, stderr: &mut W) {
              prefer wsh(...) or sh(wsh(...))"
         );
     }
+}
+
+/// P1.2 (pathless/dead-card partial-decode): emit a loud stderr advisory
+/// when the FINAL descriptor (`--path` already applied) still carries an
+/// unresolvable origin — i.e. `descriptor.unresolved_origin_indices()` is
+/// non-empty, the EXACT same P0 query `md decode`/`md inspect` use to decide
+/// partial. This keys on actual resolvability, NOT a `canonical_origin ==
+/// None` + `--path.is_none()` heuristic (I-1 whole-diff fix), so:
+///   - an inline per-`@N` explicit origin (e.g.
+///     `sh(sortedmulti(2,@0/48'/0'/0'/1'/<0;1>/*,…))`) with no `--path`
+///     FULL-decodes (exit 0) and is therefore NOT falsely warned; and
+///   - a `--path m` (zero-component) override on a dead shape, which still
+///     partial-decodes at exit 4, IS warned (the footgun is not bypassed by
+///     the presence of a `--path` flag alone).
+///
+/// A warned card still mints fine (exit 0, unchanged) — the advisory nudges
+/// the encoder-side fix (a real `--path`) at mint time, mirroring the F-A4
+/// footgun-advisory tone. Warn-only; never affects stdout or the exit code.
+fn emit_pathless_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
+    if descriptor.unresolved_origin_indices().is_empty() {
+        return;
+    }
+    let _ = writeln!(
+        stderr,
+        "warning: this template's top-level wrapper has no canonical default derivation path \
+         \u{2014} without an explicit origin, `md decode`/`md inspect` will only PARTIAL-DECODE \
+         this card (origin unspecified, exit 4) and it cannot be reliably restored on its own; \
+         supply --path (e.g. --path bip48) for a fully-decodable backup"
+    );
 }
