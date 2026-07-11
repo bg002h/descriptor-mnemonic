@@ -8,6 +8,8 @@ use md_codec::chunk::{derive_chunk_set_id, split};
 use md_codec::encode::{encode_md1_string, render_grouped};
 use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
 use md_codec::origin_path::PathDeclPaths;
+use md_codec::tag::Tag;
+use md_codec::tree::{Body, Node};
 
 pub struct EncodeArgs<'a> {
     pub template: &'a str,
@@ -31,6 +33,16 @@ pub struct EncodeArgs<'a> {
 }
 
 pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
+    // F-A3: the long BCH code was removed in v0.12.0; md1 is regular-code-only
+    // (payloads that don't fit a single string are chunked). The flag is kept
+    // in the clap surface (no flag-NAME removal) but referencing it is now a
+    // hard error rather than a silent no-op — a flag pointing at a nonexistent
+    // mode must not exit 0.
+    if args.force_long_code {
+        return Err(CliError::BadArg(
+            "the long BCH code was removed in v0.12.0; md1 is regular-code-only (payloads >400 bits are chunked)".into(),
+        ));
+    }
     let ctx = ctx_for_template(args.template);
     let parsed_keys = args
         .keys
@@ -70,6 +82,9 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             );
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        // F-A4: legacy-P2SH-multisig footgun advisory (stderr, warn-only).
+        // Must fire on the --json branch too (parity with the text branch).
+        emit_legacy_p2sh_advisory(&descriptor.tree, &mut std::io::stderr());
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -106,11 +121,8 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         );
     }
 
-    // --force-long-code: long-code mode was dropped in v0.12.0; the flag is
-    // accepted for forward-compat (so older scripts don't break) but has no
-    // effect. Status: wont-fix at v0.15.2 (FOLLOWUPS v0.15.1-phase-2-low-1).
-    // Revisit only if a real long-code mode is reintroduced.
-    let _ = args.force_long_code;
+    // F-A4: legacy-P2SH-multisig footgun advisory (stderr, warn-only).
+    emit_legacy_p2sh_advisory(&descriptor.tree, &mut std::io::stderr());
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -120,4 +132,33 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     };
     crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
     Ok(0)
+}
+
+/// F-A4: is `tree` a top-level bare legacy P2SH multisig — `sh(multi(...))`
+/// or `sh(sortedmulti(...))` (the multi body directly under `sh`, NOT nested
+/// in `wsh`)? These carry known footguns and are superseded by segwit forms.
+fn is_legacy_p2sh_multisig(tree: &Node) -> bool {
+    tree.tag == Tag::Sh
+        && matches!(
+            &tree.body,
+            Body::Children(children)
+                if children.len() == 1
+                    && matches!(children[0].tag, Tag::Multi | Tag::SortedMulti)
+        )
+}
+
+/// F-A4: emit the legacy-P2SH-multisig footgun advisory to `stderr` when
+/// `tree` is a top-level bare `sh(multi)` / `sh(sortedmulti)`. Warn-only —
+/// the card is still emitted on stdout. Modern forms (`wsh(multi)`, `wpkh`,
+/// `tr`), `sh(wsh(...))`, and the canonical BIP44 `pkh` default are SILENT.
+fn emit_legacy_p2sh_advisory<W: std::io::Write>(tree: &Node, stderr: &mut W) {
+    if is_legacy_p2sh_multisig(tree) {
+        let _ = writeln!(
+            stderr,
+            "warning: sh(multi)/sh(sortedmulti) is legacy P2SH multisig \u{2014} \
+             susceptible to third-party txid malleability, the 520-byte redeemScript \
+             limit caps you near ~15 keys, and it gets no segwit witness discount; \
+             prefer wsh(...) or sh(wsh(...))"
+        );
+    }
 }

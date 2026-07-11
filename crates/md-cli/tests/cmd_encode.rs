@@ -166,6 +166,44 @@ fn encode_with_explicit_path_raw_template_differs_from_baseline() {
     );
 }
 
+/// F-A3: `--force-long-code` is now a hard error (the long BCH code was
+/// removed in v0.12.0). The flag stays in the clap surface but referencing it
+/// exits non-zero with an explanatory message.
+#[test]
+fn encode_force_long_code_hard_errors() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--force-long-code"])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "--force-long-code must exit non-zero"
+    );
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stderr.contains("long BCH code was removed in v0.12.0"),
+        "expected long-code-removed message; got: {stderr}"
+    );
+    // Nothing on stdout — the error fires before any card is emitted.
+    assert!(
+        out.stdout.is_empty(),
+        "no stdout on hard error; got: {:?}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+/// F-A3: without the flag, encode is unchanged (emits the md1 card).
+#[test]
+fn encode_without_force_long_code_unchanged() {
+    Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("md1"));
+}
+
 #[cfg(feature = "cli-compiler")]
 #[test]
 fn encode_from_policy_segwitv0() {

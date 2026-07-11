@@ -519,12 +519,12 @@ fn compile_json_emits_template() {
 
 /// Error path: input exceeds BCH correction capacity → repair exits non-zero, no advisory.
 /// The load-bearing assertion is `assert_no_advisory`; exit 2 is the observed reliable code
-/// for "chunk has more than 8 errors; uncorrectable".
+/// for "exceeds the BCH correction capacity of t=4 substitution errors; uncorrectable".
 #[test]
 fn repair_error_path_emits_no_advisory() {
     // Corrupt 10+ symbols of MD1_FIXTURE (same 24-char length, valid codex32
-    // alphabet) — well beyond BCH capacity (t=4, 8-error budget), so repair
-    // exits 2 ("more than 8 errors; uncorrectable") with no advisory.
+    // alphabet) — well beyond BCH capacity (t=4 correction), so repair
+    // exits 2 ("exceeds the BCH correction capacity of t=4 ...") with no advisory.
     let irreparably_corrupt = "md1zqzqqzqqzztzhzzzznzzz";
     let out = Command::cargo_bin("md")
         .unwrap()

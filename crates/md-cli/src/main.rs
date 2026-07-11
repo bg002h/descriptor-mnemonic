@@ -114,7 +114,8 @@ enum Command {
         /// Separator: space|hyphen|comma (keyword) or the literal " "|-|, . SPEC §5.
         #[arg(long, default_value = "space", value_parser = parse_separator)]
         separator: char,
-        /// Force the long BCH code even when the regular code suffices.
+        /// Removed in v0.12.0; now a hard error. md1 is regular-code-only
+        /// (payloads over 400 bits are chunked).
         #[arg(long)]
         force_long_code: bool,
         /// Print the freshly-computed PolicyId fingerprint after the phrase.

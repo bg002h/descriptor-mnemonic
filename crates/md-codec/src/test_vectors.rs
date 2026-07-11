@@ -33,11 +33,14 @@ pub struct Vector {
 
 /// The canonical 10-entry corpus.
 ///
-/// `tr_with_leaf` and `sh_wpkh` are intentionally omitted: their round-trip
-/// via the v0.14+ codec is asymmetric (encode requires explicit origin;
-/// decode strips canonical 86'/0'/0' resp. 49'/0'/0'). Coverage for those
-/// wrappers is preserved by `parse::template` unit tests
-/// (`tr_with_one_leaf`, `sh_wpkh_nested`).
+/// `tr_with_leaf` and `sh_wpkh` are omitted here pending the Part-3 corpus
+/// regeneration (this Phase-2 change only adds the `sh(wpkh)`→`m/49'/0'/0'`
+/// canonical arm; the vectors land later). Since F-A1, `sh_wpkh` round-trips
+/// symmetrically in elided form (`canonical_origin(sh(wpkh))` = `49'/0'/0'`),
+/// so it becomes a corpus ADDITION rather than an asymmetric omission.
+/// Meanwhile coverage for both wrappers is preserved by `parse::template`
+/// unit tests (`tr_with_one_leaf`, `sh_wpkh_nested`) and by the F-A1
+/// round-trip test (`tests/sh_wpkh_canonical.rs`).
 #[rustfmt::skip]
 pub const MANIFEST: &[Vector] = &[
     Vector { name: "wpkh_basic",         template: "wpkh(@0/<0;1>/*)",                                   keys: &[], fingerprints: &[], force_chunked: false },
