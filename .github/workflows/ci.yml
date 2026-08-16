@@ -2,7 +2,25 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `ci/**` is built so a commit can earn its required contexts BEFORE it
+    # lands. A required status check binds to a COMMIT SHA, not a branch, so a
+    # commit pushed straight to `main` carries no check when the protection rule
+    # is evaluated: it reports "expected" and the push is BYPASSED rather than
+    # satisfied. `strict: false` is what makes that fixable — GitHub asks only
+    # whether the commit carries a passing context — so let the SHA earn one:
+    #
+    #     git push origin main:refs/heads/ci/staging
+    #     gh run watch <id> --repo bg002h/descriptor-mnemonic
+    #     git push origin main          # no bypass message = satisfied
+    #     git push origin --delete ci/staging
+    #
+    # Required contexts here: `cargo test (ubuntu-latest)` and `cargo clippy`.
+    #
+    # `enforce_admins` is false DELIBERATELY — the maintainer's own escape hatch
+    # (ruled 2026-08-15), and it is not to be flipped. The staging path is what
+    # AUTOMATION uses: the no-bypass rule binds agents, not the human. Without a
+    # `ci/**` trigger an agent has no compliant way to push here at all.
+    branches: [main, 'ci/**']
   pull_request:
 
 env:
