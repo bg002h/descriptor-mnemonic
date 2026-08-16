@@ -80,13 +80,32 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
     let bracketed = BRACKETED_ORIGIN
         .get_or_init(|| Regex::new(r"\[([^\]]*)\]@(\d+)").expect("static regex compiles"));
     if let Some(c) = bracketed.captures(template) {
-        let origin = &c[1];
+        let inner = &c[1];
         let i = &c[2];
+        // Echo the caller's OWN path back rather than a canned BIP-48 one: a
+        // hardcoded `48'/0'/0'/2'` is wrong guidance for a wpkh or tr template
+        // and invites pasting a path the caller did not mean.
+        //
+        // A descriptor prefix is `[FINGERPRINT/path]`, so split the fingerprint
+        // off before suggesting the remainder. No '/' means the bracket is a
+        // bare fingerprint and there is no path to echo.
+        let (fp, path) = match inner.split_once('/') {
+            Some((fp, path)) => (fp, Some(path)),
+            None => (inner, None),
+        };
+        let suggestion = match path {
+            Some(p) => format!("`@{i}/{p}/…`"),
+            None => format!("`@{i}/<origin path>/…`"),
+        };
+        // Name the fingerprint half explicitly. A reader who moves only the path
+        // silently abandons the fingerprint the bracket also carried — md models
+        // it separately, so it does NOT travel with the origin.
         return Err(CliError::TemplateParse(format!(
-            "@{i} carries a descriptor-style origin prefix `[{origin}]`; md \
+            "@{i} carries a descriptor-style origin prefix `[{inner}]`; md \
              templates take the origin AFTER the placeholder — write \
-             `@{i}/48'/0'/0'/2'/<0;1>/*` (per-key origins may differ; that is \
-             how a Divergent path declaration is expressed)"
+             {suggestion} (per-key origins may differ; that is how a Divergent \
+             path declaration is expressed). The fingerprint `{fp}` is NOT part \
+             of the template: pass it as `--fingerprint @{i}={fp}`."
         )));
     }
 

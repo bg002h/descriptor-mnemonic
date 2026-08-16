@@ -95,6 +95,30 @@ fn divergent_origins_survive_a_decode_round_trip() {
             "decoded output does not carry origin {want}:\n{text}"
         );
     }
+
+    // ORDER, not just presence — the origins must map to the placeholders that
+    // declared them. `path_decl.data` is positional: index i is @i's origin.
+    //
+    // Review finding I1. The two asserts above pass while @0 and @1 have their
+    // origins SWAPPED, which is a wrong policy in the same funds class as the
+    // silent drop this test was written to catch. Proven, not supposed: building
+    // the Divergent vector with `(0..n).rev()` in `make_path_decl` left the
+    // ENTIRE md-cli suite green.
+    //
+    // "Both values survived" is not "each value went where it belongs".
+    let decoded: serde_json::Value =
+        serde_json::from_str(&text).expect("md decode --json emits JSON");
+    let paths = decoded
+        .pointer("/descriptor/path_decl/data")
+        .and_then(|v| v.as_array())
+        .expect("decoded descriptor carries a positional path_decl.data array");
+    let got: Vec<&str> = paths.iter().filter_map(|v| v.as_str()).collect();
+    assert_eq!(
+        got,
+        vec!["m/48'/0'/0'/2'", "m/48'/0'/1'/2'"],
+        "origins are present but MIS-MAPPED: @0 and @1 did not keep the origins \
+         they declared, so the engraved policy watches the wrong accounts"
+    );
 }
 
 /// Descriptor-style bracketed origins must be REFUSED CLEARLY — never accepted
@@ -119,8 +143,24 @@ fn bracketed_descriptor_origins_are_refused_with_the_correct_syntax_named() {
          tool bug rather than a rejected input:\n{stderr}"
     );
     assert!(
-        stderr.contains("@0/48'") || stderr.contains("after the placeholder"),
+        stderr.contains("@0/48h/0h/0h/2h") || stderr.contains("after the placeholder"),
         "the refusal does not name the correct syntax, so the reader cannot act \
          on it:\n{stderr}"
+    );
+    // Review Minor: the bracket carries a FINGERPRINT as well as a path, and md
+    // models it separately. A reader who moves only the path silently abandons
+    // it, so the refusal must say where it goes.
+    assert!(
+        stderr.contains("--fingerprint @0=73c5da0a"),
+        "the refusal does not say where the bracket's FINGERPRINT half goes, so \
+         a reader who follows it drops the fingerprint silently:\n{stderr}"
+    );
+    // The echoed path must be the caller's OWN, not a canned BIP-48 one: canned
+    // guidance is wrong for a wpkh or tr template and invites pasting a path the
+    // caller never meant.
+    assert!(
+        !stderr.contains("48'/0'/0'/2'"),
+        "the refusal suggests a hardcoded BIP-48 path instead of echoing the \
+         caller's own:\n{stderr}"
     );
 }
