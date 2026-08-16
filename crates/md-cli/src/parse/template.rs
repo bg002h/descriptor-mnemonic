@@ -55,6 +55,41 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<([^>]*)>)?(/\*(?:'|h)?)?")
             .expect("static regex compiles")
     });
+
+    // REFUSE a descriptor-style origin PREFIX before it can confuse anyone.
+    //
+    // md templates carry a key's origin AFTER the placeholder — `@0/48'/0'/0'/2'`
+    // — captured by group 2 above. A caller who writes the DESCRIPTOR form
+    // instead, `[fingerprint/48'/0'/0'/2']@0/…`, is not using this syntax at all.
+    //
+    // Without this check the prefix survives placeholder substitution, miniscript
+    // parses it as a real origin, and the failure surfaces far downstream in
+    // `lookup_key` as `internal: synthetic key [fingerprint not found in key map`
+    // — because splitting the rendered key on '/' lands inside the origin path.
+    // That message is actively misleading: `internal:` reads as a tool bug rather
+    // than a rejected input, and it appears only AFTER md has rendered the
+    // descriptor correctly, so everything looks right up to the failure. It cost
+    // a downstream consumer a wrong conclusion — that md could not encode
+    // divergent origins at all — when the capability was there all along.
+    //
+    // NOT "helpfully" accepted. Stripping the bracket would make md encode the
+    // template with the origins SILENTLY DROPPED (`path_decl` comes back empty),
+    // turning a loud wrong-syntax error into a quiet wrong-policy on an encoder
+    // that describes where money lives. Refusing is the safe direction.
+    static BRACKETED_ORIGIN: OnceLock<Regex> = OnceLock::new();
+    let bracketed = BRACKETED_ORIGIN
+        .get_or_init(|| Regex::new(r"\[([^\]]*)\]@(\d+)").expect("static regex compiles"));
+    if let Some(c) = bracketed.captures(template) {
+        let origin = &c[1];
+        let i = &c[2];
+        return Err(CliError::TemplateParse(format!(
+            "@{i} carries a descriptor-style origin prefix `[{origin}]`; md \
+             templates take the origin AFTER the placeholder — write \
+             `@{i}/48'/0'/0'/2'/<0;1>/*` (per-key origins may differ; that is \
+             how a Divergent path declaration is expressed)"
+        )));
+    }
+
     let mut out = Vec::new();
     for caps in re.captures_iter(template) {
         let i: u8 = caps[1].parse().map_err(|_| {
