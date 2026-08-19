@@ -94,17 +94,97 @@ pub fn compile_policy_to_template(
             let desc = policy
                 .compile_tr(unspendable)
                 .map_err(|e| CompileError::Compile(format!("{e}")))?;
-            // Descriptor::to_string() includes a trailing #<8-char-checksum>
-            // (rust-miniscript's BIP-380 descriptor checksum); md1's encode
-            // pipeline does not consume this. Strip via split_once('#').
-            let rendered = desc.to_string();
-            let template = rendered
-                .split_once('#')
-                .map(|(t, _)| t.to_string())
-                .unwrap_or(rendered);
-            Ok(template)
+            render_tr_template(&desc)
         }
     }
+}
+
+/// Render a compiled `tr(...)` descriptor to a BIP-388 template string.
+///
+/// **Why this exists instead of `Descriptor::to_string()`.** rust-miniscript
+/// 13.0.0's `TapTree` `Display` (`descriptor/tr/taptree.rs`) tracks only the
+/// depth *change between adjacent leaves*, which loses which leaves are
+/// siblings whenever the leaf-depth sequence decreases or stays flat across a
+/// subtree boundary. It then emits a run of leaves under a single brace pair,
+/// and the result does not re-parse. Measured before this function existed:
+///
+/// ```text
+/// thresh(1,pk(@0)..pk(@4))  ->  tr(@4,{{pk(@3),pk(@2),pk(@1),pk(@0)}})
+/// or(pk(@0),or(pk(@1),or(pk(@2),pk(@3))))
+///                           ->  tr(@0,{{pk(@3),pk(@2),pk(@1)}})
+/// ```
+///
+/// Both are malformed, so a plain 1-of-5 taproot wallet could not be compiled
+/// at all. Upstream fixed this in PR #953 (merged 2026-05-25), which is in **no
+/// released version through 13.1.0** — and the pin cannot simply be advanced,
+/// because `md-cli` does not compile against those revisions (two PR #915 API
+/// breaks). So the corrected algorithm lives here.
+///
+/// It is #953's approach: an explicit child-count stack that closes a subtree
+/// exactly when it has emitted both children. Note that #953 drops the old
+/// trailing "close whatever is still open" loop and relies on the tree being a
+/// proper binary tree; rather than inherit that assumption silently, an unclosed
+/// stack is reported as an error below. `compile_tr` cannot produce such a tree,
+/// which is precisely why a violation would mean something is wrong.
+///
+/// When a release carrying #953 lands and the pin moves, this becomes redundant
+/// rather than wrong, and can be deleted in favour of `to_string()`.
+///
+/// Only the *tree* formatter was ever broken — the internal key and each leaf's
+/// miniscript render correctly — so leaves are still rendered by their own
+/// `Display`. Building the string here also means no BIP-380 `#checksum` is ever
+/// appended, so there is nothing to strip.
+fn render_tr_template(desc: &miniscript::Descriptor<String>) -> Result<String, CompileError> {
+    let tr = match desc {
+        miniscript::Descriptor::Tr(tr) => tr,
+        // compile_tr always yields Tr; keep the old checksum-stripping path for
+        // anything else rather than silently mis-rendering it.
+        other => {
+            let rendered = other.to_string();
+            return Ok(rendered
+                .split_once('#')
+                .map(|(t, _)| t.to_string())
+                .unwrap_or(rendered));
+        }
+    };
+
+    let internal = tr.internal_key();
+    let Some(tree) = tr.tap_tree() else {
+        return Ok(format!("tr({internal})"));
+    };
+
+    let mut out = String::new();
+    let mut child_counts: Vec<u8> = Vec::new();
+    for leaf in tree.leaves() {
+        let depth = usize::from(leaf.depth());
+        if !child_counts.is_empty() {
+            out.push(',');
+        }
+        while child_counts.len() < depth {
+            out.push('{');
+            child_counts.push(0);
+        }
+        out.push_str(&leaf.miniscript().to_string());
+        if let Some(c) = child_counts.last_mut() {
+            *c += 1;
+        }
+        while let Some(2) = child_counts.last() {
+            out.push('}');
+            child_counts.pop();
+            if let Some(c) = child_counts.last_mut() {
+                *c += 1;
+            }
+        }
+    }
+
+    if !child_counts.is_empty() {
+        return Err(CompileError::Compile(format!(
+            "internal error: taptree left {} node(s) unclosed; refusing to emit a malformed template (partial: tr({internal},{out})",
+            child_counts.len()
+        )));
+    }
+
+    Ok(format!("tr({internal},{out})"))
 }
 
 #[cfg(test)]
@@ -122,6 +202,118 @@ mod tests {
     #[test]
     fn bad_context() {
         assert!("xpub".parse::<ScriptContext>().is_err());
+    }
+
+    /// Assert that what `compile_policy_to_template` emits actually re-parses.
+    ///
+    /// This is the property that was silently missing: the function returned
+    /// `Ok(<malformed string>)` and the failure only surfaced downstream, in
+    /// `parse_template`, as `miniscript parse failed: taptree branch must have
+    /// 2 children, but found 1`.
+    fn compiles_and_reparses(expr: &str) -> String {
+        let t = compile_policy_to_template(expr, ScriptContext::Tap, None)
+            .unwrap_or_else(|e| panic!("compile failed for {expr}: {e}"));
+        crate::parse::template::parse_template(&t, &[], &[])
+            .unwrap_or_else(|e| panic!("compile emitted an unparseable template for {expr}\n  emitted: {t}\n  error:   {e}"));
+        t
+    }
+
+    /// A plain **1-of-5 taproot wallet** — the smallest realistic trigger.
+    ///
+    /// `compile_tr` builds a taptree whose leaf-depth sequence DECREASES, and
+    /// rust-miniscript 13.0.0's `Display` (which this module used to
+    /// round-trip through) tracks only the depth change between ADJACENT
+    /// leaves, so it emits a flat run of leaves under one brace pair. Fixed
+    /// upstream by PR #953, which is merged but in no release through 13.1.0.
+    #[test]
+    fn compile_thresh_1_of_5_tap_reparses() {
+        compiles_and_reparses("thresh(1,pk(@0),pk(@1),pk(@2),pk(@3),pk(@4))");
+    }
+
+    /// Right-skewed `or` chain over four keys — the other measured trigger.
+    #[test]
+    fn compile_or_chain_four_keys_tap_reparses() {
+        compiles_and_reparses("or(pk(@0),or(pk(@1),or(pk(@2),pk(@3))))");
+    }
+
+    /// The shapes that already worked must keep working — these are
+    /// caterpillar trees (leaf depths never decrease), which the buggy
+    /// formatter happened to render correctly.
+    #[test]
+    fn compile_caterpillar_shapes_still_reparse() {
+        assert_eq!(compiles_and_reparses("or(pk(@0),pk(@1))"), "tr(@1,pk(@0))");
+        compiles_and_reparses("thresh(1,pk(@0),pk(@1),pk(@2))");
+        compiles_and_reparses("or(4@pk(@0),1@or(pk(@1),pk(@2)))");
+        compiles_and_reparses("or(1@or(pk(@0),pk(@1)),1@or(pk(@2),pk(@3)))");
+    }
+
+    /// Pin the EXACT rendering across the four topology classes, so a
+    /// regression shows up as a wrong tree rather than merely a parse failure.
+    ///
+    /// The classes are chosen from the leaf-depth sequence, which is what the
+    /// old formatter got wrong:
+    ///
+    /// | policy | leaf depths | class |
+    /// |---|---|---|
+    /// | `or(pk,pk)` | `[0]` | single bare leaf |
+    /// | `thresh(1,pk,pk,pk)` | `[1,1]` | flat pair |
+    /// | `or(pk,or(pk,or(pk,pk)))` | `[2,2,1]` | **decreasing** |
+    /// | `thresh(1,pk×5)` | `[2,2,2,2]` | **balanced** |
+    ///
+    /// The last two are the ones that were broken.
+    #[test]
+    fn render_tr_template_pins_every_topology_class() {
+        let cases = [
+            ("or(pk(@0),pk(@1))", "tr(@1,pk(@0))"),
+            ("thresh(1,pk(@0),pk(@1),pk(@2))", "tr(@2,{pk(@1),pk(@0)})"),
+            (
+                "or(pk(@0),or(pk(@1),or(pk(@2),pk(@3))))",
+                "tr(@0,{{pk(@3),pk(@2)},pk(@1)})",
+            ),
+            (
+                "thresh(1,pk(@0),pk(@1),pk(@2),pk(@3),pk(@4))",
+                "tr(@4,{{pk(@3),pk(@2)},{pk(@1),pk(@0)}})",
+            ),
+        ];
+        for (policy, expected) in cases {
+            let got = compile_policy_to_template(policy, ScriptContext::Tap, None)
+                .unwrap_or_else(|e| panic!("compile failed for {policy}: {e}"));
+            assert_eq!(got, expected, "wrong taptree rendering for {policy}");
+        }
+    }
+
+    /// **Tripwire, not a bug report.** Asserts that upstream's `Display` is
+    /// still broken for a non-caterpillar tree — which is the entire reason
+    /// `render_tr_template` exists.
+    ///
+    /// Per this project's "pin the gap, don't fail forever" rule, this asserts
+    /// the gap's *exact shape* rather than tolerating it. **When this test
+    /// starts failing, that is good news:** it means the miniscript pin has
+    /// moved to a release carrying PR #953, and `render_tr_template` can be
+    /// deleted in favour of `Descriptor::to_string()` (minus its `#checksum`).
+    #[test]
+    fn upstream_display_is_still_broken_delete_local_renderer_when_this_fails() {
+        use miniscript::policy::concrete::Policy;
+        let policy: Policy<String> = "thresh(1,pk(@0),pk(@1),pk(@2),pk(@3),pk(@4))"
+            .parse()
+            .unwrap();
+        let desc = policy
+            .compile_tr(Some(NUMS_H_POINT_X_ONLY_HEX.to_string()))
+            .unwrap();
+        let upstream = desc.to_string();
+        let upstream = upstream.split_once('#').map(|(t, _)| t).unwrap_or(&upstream);
+
+        assert_eq!(
+            upstream, "tr(@4,{{pk(@3),pk(@2),pk(@1),pk(@0)}})",
+            "upstream Display no longer flattens this taptree — check whether the \
+             miniscript pin moved past PR #953; if so, delete render_tr_template"
+        );
+        // ...and confirm the flattened form is genuinely unusable, so this test
+        // is about a real defect and not a cosmetic difference.
+        assert!(
+            crate::parse::template::parse_template(upstream, &[], &[]).is_err(),
+            "upstream's flattened taptree unexpectedly re-parsed"
+        );
     }
 
     /// Spike-verified: `pk(@0)` with auto-NUMS default → extract wins → `tr(@0)`.
