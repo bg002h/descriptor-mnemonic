@@ -177,6 +177,67 @@ mod tests {
     // and called the local `render_node` directly) moved to md-codec
     // `src/render.rs` when the renderer cluster was lifted there — the local
     // `render_node` no longer exists in md-cli.
+
+    /// Round-trip **property** over a table, rather than one hand-written `fn`
+    /// per shape.
+    ///
+    /// **Why this exists.** The tests above are individually fine and
+    /// collectively blind: every `v:` among them sits directly on a `pk`, where
+    /// the renderer's `pk`-shorthand path happens to emit the right thing. Not
+    /// one puts `v:` *above another wrapper* — and that is exactly where the
+    /// renderer emitted `v:j:` instead of `vj:`, a doubled colon that
+    /// rust-miniscript's own parser rejects. md-codec's frozen KAT had the same
+    /// hole for the same reason: its only chain case was `snj:`, which contains
+    /// no `v`. **A corpus assembled shape-by-shape only ever covers the shapes
+    /// somebody thought of.**
+    ///
+    /// The property asserted here is strictly stronger than equality with a
+    /// frozen string:
+    ///
+    /// 1. `parse(t) -> render` MUST equal `t` — the render is canonical, and
+    ///    stable; and
+    /// 2. the rendered output MUST itself **re-parse**.
+    ///
+    /// Clause 2 is the one that matters. It makes "emit a string no consumer
+    /// can read back" impossible to pass, *whatever the shape* — including
+    /// shapes nobody has thought of yet. Adding coverage is one line here,
+    /// not a new function.
+    #[test]
+    fn render_roundtrip_property_over_wrapper_chains() {
+        const CASES: &[&str] = &[
+            // --- `v:` ABOVE ANOTHER WRAPPER — the class that was broken. ---
+            "wsh(and_v(vj:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))",
+            "wsh(and_v(vn:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))",
+            // --- `v:` directly on a key — the shorthand path, always correct.
+            // Kept so a future "simplification" that breaks it is caught here.
+            "wsh(and_v(v:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))",
+            // --- multi-letter chains without `v`, and with `v` nested inside.
+            "wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@1/<0;1>/*),snj:and_v(v:pk(@2/<0;1>/*),older(144))))",
+            "wsh(and_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))",
+            "wsh(or_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))",
+            // --- tap context, so the property is not segwit-only.
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))",
+            "tr(@0/<0;1>/*,or_d(pk(@1/<0;1>/*),and_v(v:pk(@2/<0;1>/*),older(144))))",
+        ];
+
+        for t in CASES {
+            let d = parse_template(t, &[], &[])
+                .unwrap_or_else(|e| panic!("case is not a valid template: {t}\n  error: {e}"));
+
+            let rendered = descriptor_to_template(&d)
+                .unwrap_or_else(|e| panic!("render failed for {t}\n  error: {e}"));
+
+            assert_eq!(
+                &rendered, t,
+                "renderer did not reproduce its input canonically"
+            );
+
+            // The clause that closes the class.
+            parse_template(&rendered, &[], &[]).unwrap_or_else(|e| {
+                panic!("renderer emitted a template that does NOT re-parse\n  input:    {t}\n  rendered: {rendered}\n  error:    {e}")
+            });
+        }
+    }
 }
 
 use md_codec::chunk::ChunkHeader;

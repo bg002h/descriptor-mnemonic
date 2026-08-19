@@ -147,20 +147,6 @@ fn render_node(
             out.push(')');
             Ok(())
         }
-        Tag::Verify => {
-            // `v:` wrapper — prefix syntax (no parens). The wrapped child is
-            // rendered inline; e.g. `v:pk(@1)`.
-            let inner = match &node.body {
-                Body::Children(v) if v.len() == 1 => &v[0],
-                _ => {
-                    return Err(RenderError::MalformedTree(
-                        "Verify body must be Children([1])".into(),
-                    ));
-                }
-            };
-            out.push_str("v:");
-            render_node(inner, n, default_usp, overrides, out)
-        }
         Tag::Older => {
             let v = match node.body {
                 Body::Timelock(v) => v,
@@ -214,9 +200,19 @@ fn render_node(
         Tag::Hash256 => render_hash256("hash256", &node.body, out),
         Tag::Ripemd160 => render_hash160("ripemd160", &node.body, out),
         Tag::Hash160 => render_hash160("hash160", &node.body, out),
-        Tag::Check | Tag::Swap | Tag::Alt | Tag::DupIf | Tag::NonZero | Tag::ZeroNotEqual => {
-            render_wrapper_chain(node, n, default_usp, overrides, out)
-        }
+        // `Tag::Verify` belongs HERE, not in an arm of its own. It used to have
+        // one, which pushed a literal `"v:"` and recursed into `render_node` —
+        // so a `v:` sitting above another wrapper emitted a second colon,
+        // rendering `vj:` as `v:j:`. A doubled colon is not canonical
+        // miniscript and rust-miniscript's own parser REJECTS it, meaning the
+        // renderer could return a string no consumer could read back.
+        Tag::Check
+        | Tag::Swap
+        | Tag::Alt
+        | Tag::DupIf
+        | Tag::NonZero
+        | Tag::ZeroNotEqual
+        | Tag::Verify => render_wrapper_chain(node, n, default_usp, overrides, out),
         Tag::True => {
             out.push('1');
             Ok(())
@@ -335,7 +331,7 @@ fn render_hash160(name: &str, body: &Body, out: &mut String) -> Result<(), Rende
 ///
 /// Reachable from exactly one site: the wrapper-chain dispatch arm in
 /// [`render_node`] for tags `Check | Swap | Alt | DupIf | NonZero |
-/// ZeroNotEqual`. The function MUST NOT be called with any other tag —
+/// ZeroNotEqual | Verify`. The function MUST NOT be called with any other tag —
 /// its first-iteration loop body relies on the head being a wrapper, and
 /// passing a non-wrapper would emit a malformed bare `:` followed by the
 /// inner render. The `debug_assert!` below pins this invariant in tests
@@ -371,7 +367,13 @@ fn render_wrapper_chain(
     debug_assert!(
         matches!(
             node.tag,
-            Tag::Check | Tag::Swap | Tag::Alt | Tag::DupIf | Tag::NonZero | Tag::ZeroNotEqual
+            Tag::Check
+                | Tag::Swap
+                | Tag::Alt
+                | Tag::DupIf
+                | Tag::NonZero
+                | Tag::ZeroNotEqual
+                | Tag::Verify
         ),
         "render_wrapper_chain called on non-wrapper tag {:?}",
         node.tag
@@ -386,6 +388,7 @@ fn render_wrapper_chain(
             Tag::DupIf => Some('d'),
             Tag::NonZero => Some('j'),
             Tag::ZeroNotEqual => Some('n'),
+            Tag::Verify => Some('v'),
             _ => None,
         };
         match letter {
