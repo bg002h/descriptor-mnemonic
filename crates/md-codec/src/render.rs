@@ -620,8 +620,10 @@ mod tests {
         };
         let usp = UseSitePath::standard_multipath();
         let mut out = String::new();
-        render_node(&node, /* n */ 1, &usp, /* overrides */ None, &mut out)
-            .expect("render_node Verify(Check(PkK)) must succeed");
+        render_node(
+            &node, /* n */ 1, &usp, /* overrides */ None, &mut out,
+        )
+        .expect("render_node Verify(Check(PkK)) must succeed");
         assert_eq!(
             out, "v:pk(@0/<0;1>/*)",
             "a multi-letter chain ending in `c` must still take the pk shorthand"

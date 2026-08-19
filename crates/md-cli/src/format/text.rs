@@ -255,26 +255,27 @@ mod tests {
                 for emb in EMBEDDINGS {
                     let candidate = emb.replace("CHAIN", &format!("{chain}:{base}"));
 
-                // Ill-typed chains are not inputs — miniscript rejects them,
-                // and that is correct, not a failure of this test.
-                let Ok(d) = parse_template(&candidate, &[], &[]) else {
-                    continue;
-                };
-                accepted += 1;
+                    // Ill-typed chains are not inputs — miniscript rejects them,
+                    // and that is correct, not a failure of this test.
+                    let Ok(d) = parse_template(&candidate, &[], &[]) else {
+                        continue;
+                    };
+                    accepted += 1;
 
-                let r1 = descriptor_to_template(&d)
-                    .unwrap_or_else(|e| panic!("render failed\n  input: {candidate}\n  err: {e}"));
+                    let r1 = descriptor_to_template(&d).unwrap_or_else(|e| {
+                        panic!("render failed\n  input: {candidate}\n  err: {e}")
+                    });
 
-                let d2 = parse_template(&r1, &[], &[]).unwrap_or_else(|e| {
-                    panic!(
-                        "render emitted a template that does NOT re-parse\n  \
+                    let d2 = parse_template(&r1, &[], &[]).unwrap_or_else(|e| {
+                        panic!(
+                            "render emitted a template that does NOT re-parse\n  \
                          input:    {candidate}\n  rendered: {r1}\n  error:    {e}"
-                    )
-                });
+                        )
+                    });
 
-                let r2 = descriptor_to_template(&d2).unwrap_or_else(|e| {
-                    panic!("re-render failed\n  input: {candidate}\n  r1: {r1}\n  err: {e}")
-                });
+                    let r2 = descriptor_to_template(&d2).unwrap_or_else(|e| {
+                        panic!("re-render failed\n  input: {candidate}\n  r1: {r1}\n  err: {e}")
+                    });
 
                     assert_eq!(
                         r1, r2,

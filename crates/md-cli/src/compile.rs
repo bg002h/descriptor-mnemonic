@@ -237,8 +237,11 @@ mod tests {
     fn compiles_and_reparses(expr: &str) -> String {
         let t = compile_policy_to_template(expr, ScriptContext::Tap, None)
             .unwrap_or_else(|e| panic!("compile failed for {expr}: {e}"));
-        crate::parse::template::parse_template(&t, &[], &[])
-            .unwrap_or_else(|e| panic!("compile emitted an unparseable template for {expr}\n  emitted: {t}\n  error:   {e}"));
+        crate::parse::template::parse_template(&t, &[], &[]).unwrap_or_else(|e| {
+            panic!(
+                "compile emitted an unparseable template for {expr}\n  emitted: {t}\n  error:   {e}"
+            )
+        });
         t
     }
 
@@ -341,7 +344,10 @@ mod tests {
             .compile_tr(Some(NUMS_H_POINT_X_ONLY_HEX.to_string()))
             .unwrap();
         let upstream = desc.to_string();
-        let upstream = upstream.split_once('#').map(|(t, _)| t).unwrap_or(&upstream);
+        let upstream = upstream
+            .split_once('#')
+            .map(|(t, _)| t)
+            .unwrap_or(&upstream);
 
         assert_eq!(
             upstream, "tr(@4,{{pk(@3),pk(@2),pk(@1),pk(@0)}})",
