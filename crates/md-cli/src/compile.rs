@@ -137,8 +137,18 @@ pub fn compile_policy_to_template(
 fn render_tr_template(desc: &miniscript::Descriptor<String>) -> Result<String, CompileError> {
     let tr = match desc {
         miniscript::Descriptor::Tr(tr) => tr,
-        // compile_tr always yields Tr; keep the old checksum-stripping path for
-        // anything else rather than silently mis-rendering it.
+        // N2: this branch is **proven unreachable**, and is kept as defensive
+        // cover rather than because anything depends on it. The proof chain,
+        // recorded so a future reader need not re-derive it: this function has
+        // exactly one call site (the `compile_tr` result above); `compile_tr`
+        // returns `Descriptor::new_tr(...)`
+        // (`vendor/miniscript/src/policy/concrete.rs:246`); and `new_tr` is
+        // `Ok(Descriptor::Tr(Tr::new(key, script)?))`
+        // (`vendor/miniscript/src/descriptor/mod.rs:246-248`). So the variant
+        // can only ever be `Tr`.
+        //
+        // The body is the verbatim pre-fix checksum-stripping code, so it would
+        // still be correct if some future call site made it reachable.
         other => {
             let rendered = other.to_string();
             return Ok(rendered
@@ -177,9 +187,23 @@ fn render_tr_template(desc: &miniscript::Descriptor<String>) -> Result<String, C
         }
     }
 
+    // N4: this branch is asserted by NO test, deliberately and unavoidably.
+    // Mutation confirmed it: deleting the whole branch leaves every test green.
+    // It cannot be exercised through the public surface either — `TapTree`'s
+    // `depths_leaves` field is private
+    // (`vendor/miniscript/src/descriptor/tr/taptree.rs:30`) and every
+    // constructor preserves properness, so no caller can hand us an improper
+    // tree. It is recorded as untested rather than quietly assumed sound: it is
+    // this function's one deliberate departure from upstream PR #953, which
+    // drops the equivalent guard and simply trusts the invariant.
     if !child_counts.is_empty() {
+        // N1: the partial render is deliberately shown *without* balancing
+        // parens — it is a truncated prefix, and pretending otherwise by
+        // appending a `)` would misrepresent what was actually built. The
+        // `[truncated: ...]` framing says so, rather than leaving the reader
+        // to wonder whether the missing `)` is the bug being reported.
         return Err(CompileError::Compile(format!(
-            "internal error: taptree left {} node(s) unclosed; refusing to emit a malformed template (partial: tr({internal},{out})",
+            "internal error: taptree left {} node(s) unclosed; refusing to emit a malformed template [truncated render: tr({internal},{out} ...]",
             child_counts.len()
         )));
     }
@@ -291,6 +315,22 @@ mod tests {
     /// starts failing, that is good news:** it means the miniscript pin has
     /// moved to a release carrying PR #953, and `render_tr_template` can be
     /// deleted in favour of `Descriptor::to_string()` (minus its `#checksum`).
+    ///
+    /// **N5 — read the failure carefully before acting on it.** The exact
+    /// string pins *three* independent upstream behaviours, not just the
+    /// `Display` bug: which key `extract_key` promotes to the internal
+    /// position, the `BinaryHeap` tie-break inside `with_huffman_tree`
+    /// (`vendor/miniscript/src/policy/concrete.rs:955-978`), and the
+    /// `fmt_helper` flattening defect. So a release that changed leaf
+    /// *ordering* without fixing #953 would fire this test with a misleading
+    /// message.
+    ///
+    /// Disambiguate with its sibling: `render_tr_template_pins_every_topology_class`
+    /// drives the **same** policy through the **same** compiler, so an ordering
+    /// change fires *both* tests, while a genuine #953 landing fires only this
+    /// one. Measured at the time of writing: under miniscript 13.1.0 — what a
+    /// build *without* `--locked` resolves to — all tests here still pass, so
+    /// the hazard is hypothetical at the current pin.
     #[test]
     fn upstream_display_is_still_broken_delete_local_renderer_when_this_fails() {
         use miniscript::policy::concrete::Policy;
@@ -385,9 +425,20 @@ mod tests {
         assert_eq!(s, "tr(@0)");
     }
 
-    /// Checksum strip: rust-miniscript's Descriptor::to_string() emits a
-    /// trailing #<8-char-checksum> that md1 doesn't consume. The split_once
-    /// strip MUST drop it.
+    /// No `#<8-char-checksum>` may reach md1's encode pipeline.
+    ///
+    /// **N3 — what this test guards changed, and the old comment lied about
+    /// it.** It used to say "the `split_once` strip MUST drop it". On the tap
+    /// path there is no longer a `split_once` strip: `render_tr_template`
+    /// builds the string with `format!`, so a `#` is never produced in the
+    /// first place. The test is **not** vacuous — mutating the keypath-only
+    /// return to `desc.to_string()` turns it red — but the claim it now proves
+    /// is *"the keypath-only branch does not fall back to `to_string()`"*.
+    ///
+    /// Scope note, measured by mutation: this exercises only the
+    /// `tap_tree() == None` branch. Appending a bogus `#deadbeef` to the
+    /// **tree** output leaves this test green while killing 8 others — the
+    /// tree path is covered, just not here.
     #[test]
     fn compile_strips_descriptor_checksum() {
         let s = compile_policy_to_template("pk(@0)", ScriptContext::Tap, None).unwrap();
