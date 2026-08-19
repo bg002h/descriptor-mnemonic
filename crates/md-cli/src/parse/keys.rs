@@ -5,12 +5,17 @@ const XPUB_LEN: usize = 78;
 pub(crate) const MAINNET_XPUB_VERSION: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
 pub(crate) const TESTNET_XPUB_VERSION: [u8; 4] = [0x04, 0x35, 0x87, 0xCF];
 
-/// Script-context expectation for depth validation.
+/// Script context of the key being parsed.
+///
+/// Since 2026-08-19 this no longer *gates* depth — `parse_key` admits depth 3
+/// or 4 in either context (see the admission comment there). It records which
+/// convention the context follows, so a rejection can name it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptCtx {
-    /// Single-sig: depth 3 expected (e.g. wpkh, pkh).
+    /// Single-sig (e.g. wpkh, pkh). Conventionally depth 3 — BIP-44/49/84/86.
     SingleSig,
-    /// Multisig / taproot: depth 4 expected (e.g. wsh, sh-wsh, tr).
+    /// Multisig / taproot (e.g. wsh, sh-wsh, tr). Conventionally depth 4 —
+    /// BIP-48. But BIP-87 multisig accounts are depth 3 and are also valid.
     MultiSig,
 }
 
@@ -64,15 +69,52 @@ pub fn parse_key(
             ),
         });
     }
+    // DEPTH ADMISSION — both account-level depths, either context.
+    //
+    // OPERATOR STOPGAP 2026-08-19, widening a previous exact match (SingleSig
+    // == 3, MultiSig == 4) that was wrong in BOTH directions:
+    //
+    //   TOO STRICT — BIP-87 (Complete, *Hierarchy for Deterministic Multisig
+    //   Wallets*) publishes `wsh(sortedmulti(2,[xfpForA/87'/0'/0']XpubA/0/*,…))`,
+    //   a DEPTH-3 xpub in multisig, which the old rule rejected outright.
+    //   BIP-388's own vector uses a depth-5 xpub inside `sortedmulti_a`.
+    //
+    //   TOO LOOSE — depth 4 is not evidence of BIP-48. `44'/0'/0'/100'` passed,
+    //   and so did `m/1/2/3/4`, so the rule failed at the very thing it existed
+    //   to do while rejecting valid keys.
+    //
+    // The old rule's stated rationale was "Depth tracks BIP 388 expectation".
+    // BIP-388 does not contain the word "depth"; neither does BIP-87. Full
+    // working, with source quotations, in the constellation recon report
+    // `mnemonic-engrave/design/agent-reports/recon-protocol-multisig-xpub-depth.md`.
+    //
+    // WHAT THIS STILL CATCHES: a master key (depth 0), and any leaf or
+    // address-level key (depth ≥ 5) — the gross paste-the-wrong-xpub errors.
+    // WHAT IT NO LONGER CATCHES, deliberately: an account key at the *other*
+    // standard's depth, e.g. a BIP-84 depth-3 key handed to a multisig slot.
+    // The invariant that would catch that without rejecting BIP-87 is
+    // `depth == origin_path.len()`, which is NOT reachable here — `parse_key`
+    // receives only `@i=XPUB` and never sees an origin. Reaching it means
+    // plumbing origin through the CLI, which is a cycle, not a stopgap.
+    //
+    // Widening admission cannot move a wallet id or change an encoded md1
+    // string: the payload below is `bytes[13..78]`, so depth never reaches it.
+    // `depth_does_not_affect_the_encoded_payload` pins that.
     let depth = bytes[4];
-    let expected_depth = match ctx {
-        ScriptCtx::SingleSig => 3,
-        ScriptCtx::MultiSig => 4,
+    // Used for the error message only — the admitted set is the same either
+    // way. Kept per-context so a rejection still names the convention the
+    // operator was probably reaching for.
+    let conventional = match ctx {
+        ScriptCtx::SingleSig => 3, // BIP-44/49/84/86: m/purpose'/coin'/account'
+        ScriptCtx::MultiSig => 4,  // BIP-48: m/48'/coin'/account'/script'
     };
-    if depth != expected_depth {
+    if !matches!(depth, 3 | 4) {
         return Err(CliError::BadXpub {
             i,
-            why: format!("expected depth {expected_depth} for this script context, got {depth}"),
+            why: format!(
+                "expected an account-level xpub at depth 3 or 4 \
+                 (this script context conventionally uses {conventional}), got {depth}"
+            ),
         });
     }
     // M11 (cycle-9): reject an off-curve compressed pubkey at parse. The xpub
@@ -142,27 +184,129 @@ mod tests {
         assert_eq!(parsed.payload.len(), 65);
     }
 
+    /// Re-stamp an xpub's depth byte, keeping base58check valid.
+    ///
+    /// Depth is byte 4 of the 78-byte payload; chaincode and the on-curve
+    /// pubkey are untouched, so this isolates the depth check from every other
+    /// gate in `parse_key` and lets a test reach depths no fixture provides.
+    fn with_depth(xpub: &str, depth: u8) -> String {
+        let mut bytes = base58::decode_check(xpub).expect("fixture must decode");
+        bytes[4] = depth;
+        base58::encode_check(&bytes)
+    }
+
+    /// WAS `rejects_depth4_xpub_in_singlesig_context`, inverted deliberately by
+    /// the 2026-08-19 stopgap. A depth-4 key in a single-sig context is no
+    /// longer an error — see the admission comment in `parse_key`.
     #[test]
-    fn rejects_depth4_xpub_in_singlesig_context() {
-        let err = parse_key(
+    fn accepts_depth4_xpub_in_singlesig_context() {
+        let p = parse_key(
             format!("@0={XPUB_DEPTH4}").as_str(),
             ScriptCtx::SingleSig,
             bitcoin::Network::Bitcoin,
         )
-        .unwrap_err();
-        let msg = format!("{err:?}");
-        assert!(msg.contains("depth 3"), "got: {msg}");
+        .expect("depth 4 is admitted in either context since the stopgap");
+        assert_eq!(p.i, 0);
+    }
+
+    /// The BIP-87 case the old rule rejected: a depth-3 account key used for
+    /// multisig. This is the whole reason the rule was widened.
+    #[test]
+    fn accepts_depth3_xpub_in_multisig_context() {
+        let p = parse_key(
+            format!("@0={ABANDON_TPUB_DEPTH3_BIP84}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Testnet,
+        )
+        .expect("BIP-87 multisig accounts are depth 3 and must be admitted");
+        assert_eq!(p.i, 0);
+    }
+
+    /// Both admitted depths, both contexts — the full 2×2, so a regression that
+    /// re-narrows either arm fails here rather than in a journey.
+    #[test]
+    fn accepts_both_account_depths_in_both_contexts() {
+        for ctx in [ScriptCtx::SingleSig, ScriptCtx::MultiSig] {
+            for d in [3u8, 4] {
+                parse_key(
+                    format!("@0={}", with_depth(XPUB_DEPTH4, d)).as_str(),
+                    ctx,
+                    bitcoin::Network::Bitcoin,
+                )
+                .unwrap_or_else(|e| panic!("ctx {ctx:?} depth {d} must be admitted: {e:?}"));
+            }
+        }
+    }
+
+    /// The stopgap is a WIDENING, not a removal. A master key and any
+    /// leaf/address-level key are still refused — those are the gross
+    /// paste-the-wrong-xpub errors the check exists for.
+    #[test]
+    fn still_rejects_depths_outside_3_and_4() {
+        for d in [0u8, 1, 2, 5, 6, 255] {
+            let err = parse_key(
+                format!("@0={}", with_depth(XPUB_DEPTH4, d)).as_str(),
+                ScriptCtx::MultiSig,
+                bitcoin::Network::Bitcoin,
+            )
+            .unwrap_err();
+            let msg = format!("{err:?}");
+            assert!(msg.contains("depth 3 or 4"), "depth {d} gave: {msg}");
+            assert!(msg.contains(&format!("got {d}")), "depth {d} gave: {msg}");
+        }
+    }
+
+    /// THE SAFETY PROPERTY that makes this a stopgap rather than a wire change.
+    ///
+    /// `payload` is `bytes[13..78]` — chaincode ‖ pubkey — so depth, parent
+    /// fingerprint and child number never reach it. Admitting more keys
+    /// therefore cannot move a wallet id, change an encoded md1 string, or
+    /// alter a policy-id stub: the same xpub yields the same 65 bytes whatever
+    /// its depth byte says.
+    #[test]
+    fn depth_does_not_affect_the_encoded_payload() {
+        let d3 = parse_key(
+            format!("@0={}", with_depth(XPUB_DEPTH4, 3)).as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        let d4 = parse_key(
+            format!("@0={}", with_depth(XPUB_DEPTH4, 4)).as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        assert_eq!(
+            d3.payload, d4.payload,
+            "depth must not reach the payload; if this fails the stopgap is a wire change"
+        );
     }
 
     /// Abandon-mnemonic tpub at m/84'/1'/0' (BIP 84 testnet account, depth 3).
     pub(crate) const ABANDON_TPUB_DEPTH3_BIP84: &str = "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M";
     /// Abandon-mnemonic tpub at m/48'/1'/0'/2' (BIP 48 testnet account, depth 4).
-    /// Reserved for a future wsh-multi testnet test fixture (currently unused).
-    /// `#[allow(dead_code)]` is required in test builds because the lint sees
-    /// the const compiled-in but unread; the v0.15.1 review claim that the
-    /// `#[cfg(test)]` enclosure made the allow redundant was a false positive.
-    #[allow(dead_code)]
+    ///
+    /// Was `#[allow(dead_code)]`, "reserved for a future wsh-multi testnet test
+    /// fixture (currently unused)". The 2026-08-19 depth stopgap is that test:
+    /// `accepts_real_bip48_depth4_tpub_in_multisig` below reads it, so the lint
+    /// suppression is no longer needed and has been removed rather than left to
+    /// hide a genuinely unused fixture later.
     pub(crate) const ABANDON_TPUB_DEPTH4_BIP48: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
+
+    /// A REAL BIP-48 depth-4 testnet account key, not a depth-restamped one —
+    /// so the 2×2 above is backed by at least one genuine fixture per depth.
+    #[test]
+    fn accepts_real_bip48_depth4_tpub_in_multisig() {
+        let p = parse_key(
+            format!("@0={ABANDON_TPUB_DEPTH4_BIP48}").as_str(),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Testnet,
+        )
+        .expect("a real BIP-48 depth-4 account key must be admitted");
+        assert_eq!(p.i, 0);
+        assert_eq!(p.payload.len(), 65);
+    }
 
     #[test]
     fn strips_optional_at_prefix() {
