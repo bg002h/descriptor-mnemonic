@@ -191,51 +191,125 @@ mod tests {
     /// no `v`. **A corpus assembled shape-by-shape only ever covers the shapes
     /// somebody thought of.**
     ///
-    /// The property asserted here is strictly stronger than equality with a
-    /// frozen string:
+    /// **The corpus is GENERATED, not listed.** An exec review proved the
+    /// earlier hand-written version of this test could not do what its comment
+    /// claimed: it asserted `render == input` *first*, so the follow-up
+    /// re-parse was unreachable as a failure — if the render was wrong the
+    /// equality fired first, and if it was right, re-parsing a string already
+    /// proven equal to a successfully-parsed input is a tautology. Deleting
+    /// the re-parse gave byte-identical behaviour. Coverage was still just the
+    /// eight cases somebody thought of.
     ///
-    /// 1. `parse(t) -> render` MUST equal `t` — the render is canonical, and
-    ///    stable; and
-    /// 2. the rendered output MUST itself **re-parse**.
+    /// The fix is to stop hand-picking shapes and stop comparing against the
+    /// input. This enumerates every wrapper chain of length 1–3 over the seven
+    /// wrapper letters `c s a d j n v`, applied to two key bases, keeps the
+    /// ones the parser accepts, and asserts the **fixpoint** property:
     ///
-    /// Clause 2 is the one that matters. It makes "emit a string no consumer
-    /// can read back" impossible to pass, *whatever the shape* — including
-    /// shapes nobody has thought of yet. Adding coverage is one line here,
-    /// not a new function.
+    /// ```text
+    ///   r1 = render(parse(candidate))
+    ///   r2 = render(parse(r1))          <- parse(r1) is a REAL check: r1 may
+    ///   assert r1 == r2                    legitimately differ from candidate
+    /// ```
+    ///
+    /// Because a non-canonical input renders to something *different*
+    /// (`vc:pk_k(K)` → `v:pk(K)`), `parse(r1)` is genuinely reachable as a
+    /// failure — which is exactly what the old clause 2 was not. Any shape
+    /// whose render cannot be read back fails here, including shapes nobody
+    /// has thought of.
+    ///
+    /// The `accepted` floor exists because an empty corpus is also what a
+    /// broken generator looks like: if the parser started rejecting
+    /// everything, a test with no floor would pass silently.
     #[test]
-    fn render_roundtrip_property_over_wrapper_chains() {
-        const CASES: &[&str] = &[
-            // --- `v:` ABOVE ANOTHER WRAPPER — the class that was broken. ---
-            "wsh(and_v(vj:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))",
-            "wsh(and_v(vn:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))",
-            // --- `v:` directly on a key — the shorthand path, always correct.
-            // Kept so a future "simplification" that breaks it is caught here.
-            "wsh(and_v(v:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))",
-            // --- multi-letter chains without `v`, and with `v` nested inside.
-            "wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@1/<0;1>/*),snj:and_v(v:pk(@2/<0;1>/*),older(144))))",
-            "wsh(and_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))",
-            "wsh(or_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))",
-            // --- tap context, so the property is not segwit-only.
-            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))",
-            "tr(@0/<0;1>/*,or_d(pk(@1/<0;1>/*),and_v(v:pk(@2/<0;1>/*),older(144))))",
+    fn render_is_a_fixpoint_over_generated_wrapper_chains() {
+        const LETTERS: [char; 7] = ['c', 's', 'a', 'd', 'j', 'n', 'v'];
+        const BASES: [&str; 2] = ["pk(@0/<0;1>/*)", "pk_k(@0/<0;1>/*)"];
+
+        let mut chains: Vec<String> = Vec::new();
+        for a in LETTERS {
+            chains.push(a.to_string());
+            for b in LETTERS {
+                chains.push(format!("{a}{b}"));
+                for c in LETTERS {
+                    chains.push(format!("{a}{b}{c}"));
+                }
+            }
+        }
+
+        // Several embeddings, because miniscript's type system accepts a chain
+        // only in a position matching its resulting type. A single embedding
+        // is not a corpus: `and_v(X,…)` demands a V-typed X, which rejected
+        // all but 10 of 798 candidates when this test was first written — the
+        // `accepted` floor below caught that on the first run.
+        const EMBEDDINGS: [&str; 5] = [
+            "wsh(and_v(CHAIN,pk(@1/<0;1>/*)))", // V position
+            "wsh(and_b(pk(@1/<0;1>/*),CHAIN))", // W position
+            "wsh(or_d(CHAIN,pk(@1/<0;1>/*)))",  // Bd position
+            "wsh(or_i(CHAIN,pk(@1/<0;1>/*)))",  // B position
+            "wsh(CHAIN)",                       // top level
         ];
 
-        for t in CASES {
-            let d = parse_template(t, &[], &[])
-                .unwrap_or_else(|e| panic!("case is not a valid template: {t}\n  error: {e}"));
+        let mut accepted = 0usize;
+        for chain in &chains {
+            for base in BASES {
+                for emb in EMBEDDINGS {
+                    let candidate = emb.replace("CHAIN", &format!("{chain}:{base}"));
 
-            let rendered = descriptor_to_template(&d)
-                .unwrap_or_else(|e| panic!("render failed for {t}\n  error: {e}"));
+                // Ill-typed chains are not inputs — miniscript rejects them,
+                // and that is correct, not a failure of this test.
+                let Ok(d) = parse_template(&candidate, &[], &[]) else {
+                    continue;
+                };
+                accepted += 1;
 
-            assert_eq!(
-                &rendered, t,
-                "renderer did not reproduce its input canonically"
-            );
+                let r1 = descriptor_to_template(&d)
+                    .unwrap_or_else(|e| panic!("render failed\n  input: {candidate}\n  err: {e}"));
 
-            // The clause that closes the class.
-            parse_template(&rendered, &[], &[]).unwrap_or_else(|e| {
-                panic!("renderer emitted a template that does NOT re-parse\n  input:    {t}\n  rendered: {rendered}\n  error:    {e}")
-            });
+                let d2 = parse_template(&r1, &[], &[]).unwrap_or_else(|e| {
+                    panic!(
+                        "render emitted a template that does NOT re-parse\n  \
+                         input:    {candidate}\n  rendered: {r1}\n  error:    {e}"
+                    )
+                });
+
+                let r2 = descriptor_to_template(&d2).unwrap_or_else(|e| {
+                    panic!("re-render failed\n  input: {candidate}\n  r1: {r1}\n  err: {e}")
+                });
+
+                    assert_eq!(
+                        r1, r2,
+                        "render is not a fixpoint\n  input: {candidate}\n  r1: {r1}\n  r2: {r2}"
+                    );
+                }
+            }
+        }
+
+        // MEASURED 2026-08-18: 3990 candidates generated, **93 accepted** by the
+        // parser. The floor is set below that with headroom so an incidental
+        // typing change does not false-fail, while still catching a collapse —
+        // the first version of this test, with a single embedding, accepted
+        // only 10, and this assertion is what surfaced it.
+        assert!(
+            accepted >= 75,
+            "only {accepted} generated shapes were accepted (expected ~93) — the \
+             generator or the parser changed, and an empty corpus passes vacuously"
+        );
+    }
+
+    /// Named regression anchors for the two shapes that were actually broken.
+    ///
+    /// The generated property above subsumes these, but a generator can drift;
+    /// these name the defect so a failure says *what* regressed rather than
+    /// "some chain of length 2".
+    #[test]
+    fn verify_above_a_wrapper_renders_without_a_doubled_colon() {
+        for (t, why) in [
+            ("wsh(and_v(vj:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))", "vj:"),
+            ("wsh(and_v(vn:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))", "vn:"),
+        ] {
+            let d = parse_template(t, &[], &[]).expect("anchor must parse");
+            let r = descriptor_to_template(&d).expect("anchor must render");
+            assert_eq!(&r, t, "{why} regressed to a doubled-colon form");
         }
     }
 }

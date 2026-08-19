@@ -359,8 +359,8 @@ fn render_wrapper_chain(
     out: &mut String,
 ) -> Result<(), RenderError> {
     // The single dispatch arm at render_node guarantees `node.tag` is one of
-    // the six wrapper tags (Check/Swap/Alt/DupIf/NonZero/ZeroNotEqual), so the
-    // first iteration of the loop below always assigns a non-None letter.
+    // the SEVEN wrapper tags (Check/Swap/Alt/DupIf/NonZero/ZeroNotEqual/Verify),
+    // so the first iteration of the loop below always assigns a non-None letter.
     // Guard the empty-prefix case in debug builds to make the invariant
     // explicit (release builds skip the assertion; the invariant is upheld by
     // the dispatch site, not by render_wrapper_chain itself).
@@ -592,6 +592,42 @@ mod tests {
     ///
     /// Relocated from `md-cli` `format/text.rs` when the renderer moved into
     /// md-codec (the md-cli copy called the now-removed local `render_node`).
+    /// Pins the `pk`-shorthand collapse for a **multi-letter** chain ending in
+    /// `c` — `Verify(Check(PkK))` → `v:pk(K)`, not `vc:pk_k(K)`.
+    ///
+    /// **Why this is a fabricated node rather than a `parse_template` case.**
+    /// Since v0.30 the md-cli walker emits a **bare** `Tag::PkK` at every
+    /// key-leaf position, so no wire the current encoder produces ever carries
+    /// an explicit `Tag::Check` above a key. The shorthand branch therefore
+    /// exists only as defensive coverage for foreign, legacy or
+    /// test-fabricated wires — and was, until this test, **reachable by
+    /// nothing**: an exec review mutated `prefix.ends_with('c')` to
+    /// `prefix == "c"` and all 782 tests stayed green.
+    ///
+    /// That mutation is exactly what this test kills: under it the chain `vc`
+    /// no longer takes the shorthand and renders `vc:pk_k(@0/<0;1>/*)`.
+    #[test]
+    fn render_verify_over_check_pkk_uses_pk_shorthand() {
+        let node = Node {
+            tag: Tag::Verify,
+            body: Body::Children(vec![Node {
+                tag: Tag::Check,
+                body: Body::Children(vec![Node {
+                    tag: Tag::PkK,
+                    body: Body::KeyArg { index: 0 },
+                }]),
+            }]),
+        };
+        let usp = UseSitePath::standard_multipath();
+        let mut out = String::new();
+        render_node(&node, /* n */ 1, &usp, /* overrides */ None, &mut out)
+            .expect("render_node Verify(Check(PkK)) must succeed");
+        assert_eq!(
+            out, "v:pk(@0/<0;1>/*)",
+            "a multi-letter chain ending in `c` must still take the pk shorthand"
+        );
+    }
+
     #[test]
     fn render_bare_rawpkh_emits_expr_raw_pkh() {
         let node = Node {
