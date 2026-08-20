@@ -596,8 +596,28 @@ where
             ));
         }
         (Tag::SortedMultiA, Body::MultiKeys { .. }) => {
+            // TWO DIFFERENT REFUSALS SHARE THIS ARM, and conflating them is a
+            // regression this comment exists to prevent (2026-08-20).
+            //
+            // Reaching here NESTED inside a fragment is a standards refusal:
+            // BIP-386 puts sortedmulti_a in BIP-387's category, a sibling of the
+            // Miniscript fragments, so it cannot be a sub-expression.
+            //
+            // Reaching here at a TAP-LEAF ROOT is NOT — that position is exactly
+            // where BIP-386/387 admit it. It arrives here only because
+            // `tree_to_taptree` delegates its leaf to this generic converter and
+            // no SortedMultiA conversion has been written yet (R5).
+            //
+            // The message must not claim a standards violation for the legal
+            // position. It briefly did: the older wording said "rust-miniscript
+            // v13 has no Terminal::SortedMultiA fragment", which was true and
+            // became false at the ff4732e pin (#910 added one); rewording it to
+            // cite the BIP then mislabelled the legal case. It says what is
+            // actually true instead — unimplemented, not forbidden.
             return Err(failed(
-                "Tag::SortedMultiA must be a tap-leaf root child (BIP-386/387); cannot appear nested inside a miniscript fragment"
+                "Tag::SortedMultiA is not yet converted: legal only as a tap-leaf root child \
+                 (BIP-386/387), and that conversion is unimplemented (R5); nested inside a \
+                 miniscript fragment it is forbidden outright"
                     .to_string(),
             ));
         }
