@@ -40,3 +40,34 @@ The end-user manual for the m-format constellation lives in the sibling `bg002h/
 - The reference implementation is in `crates/md-codec/`. Sibling crates: `crates/md-signer-compat/`.
 - Implementation plans live in `design/IMPLEMENTATION_PLAN_v0_X_*.md`; per-phase opus reviews persist to `design/agent-reports/`.
 - Per-phase TDD discipline: tests written before impl; the `superpowers:executing-plans` skill is the canonical sub-skill for plan execution in this repo.
+
+## Parallel execution — this machine has 24 CPU cores
+
+**Standing directive (2026-08-19): consider parallel execution for ALL tests,
+cache generation and long calculations.** The defaults use almost none of the
+box. Measured constellation-wide the same day: **824s → 204s (~4×)**.
+
+- **Rust — `cargo nextest run --locked`**, not `cargo test`. `cargo test` runs
+  each test *binary* serially; nextest spreads them over all cores. Per-repo
+  measurements: mnemonic-toolkit 256s→49s, descriptor-mnemonic 40s→27s,
+  mnemonic-engrave 33s→16s, mnemonic-secret 2s→0.3s. `cargo-nextest` 0.9.140 is
+  installed.
+- **Go — shard the package.** `-parallel` does NOTHING unless tests call
+  `t.Parallel()`; the fork's `gui` package has 886 test funcs and zero of them.
+  `mnemonic-engrave/scripts/gui-shard-test.sh <pkg> 24` took `./gui/` from 493s
+  to 112s. It enumerates its partition from `go test -list` and **asserts the
+  union is exhaustive before running**, so it cannot silently drop a test — any
+  replacement must do the same.
+- **Long independent work** — cache/corpus generation, fixture derivation, batch
+  rendering — is a candidate too. Ask whether it is CPU-bound and independent
+  before running it in a loop.
+
+**Two measured cautions.** `--release` is ~32× faster at test *execution*
+(25.4s → 0.775s on one workspace) but drops `debug_assertions`; suites relying
+on overflow checks or assertion panics — mutation tests especially — stop
+detecting things. Use it for iteration, never as the gate. And check what
+`/tmp` is before building there: on this box it is a 32 GB tmpfs, and a scratch
+worktree's `target/` filled it and killed a running test.
+
+**Never run the same suite twice** to collect counts and failures separately.
+Capture once to a file, then grep it — otherwise every measurement costs double.
