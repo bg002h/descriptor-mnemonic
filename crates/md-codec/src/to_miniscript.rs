@@ -694,3 +694,103 @@ fn hash160_from_bytes(h: &[u8; 20]) -> Result<bitcoin::hashes::hash160::Hash, Er
     use bitcoin::hashes::Hash;
     Ok(bitcoin::hashes::hash160::Hash::from_byte_array(*h))
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #953-correct descriptor rendering (2026-08-19)
+//
+// `miniscript::Descriptor`'s own `Display` MANGLES a non-caterpillar taptree:
+// it flattens the nesting. Measured against Bitcoin Core v25 by adding a
+// depth-2 shape to the bitcoind differential corpus —
+// `tr(@0,{{pk(@1),pk(@2)},pk(@3)})` rendered as
+//
+//     tr(KEY/0/*,{{pk(A/0/*),pk(B/0/*),pk(C/0/*)}})
+//
+// i.e. ONE inner brace holding THREE leaves, which Core rejects outright with
+// "tr(): expected '}' after script expression". Shapes 1..=16 (all depth ≤ 1)
+// were unaffected, which is why this survived: the corpus had no nested tree.
+//
+// Upstream PR #953 fixes it, is MERGED, and is in NO release — verified with
+// `git merge-base --is-ancestor`: ff4732e is not an ancestor of
+// miniscript-13.1.0. So this ports #953's algorithm rather than waiting.
+// `md-cli/src/compile.rs: render_tr_template` already did the same for
+// TEMPLATE rendering; this is the concrete-key half, which nothing covered.
+//
+// WHY THIS MATTERED BEYOND COSMETICS: address derivation never goes through
+// `Display`, so md computed the RIGHT addresses and then handed out a
+// descriptor string no other wallet could parse. That is exactly the
+// "recovery is not possible with shipped tooling" that DD6's EXPERIMENTAL
+// advisory describes.
+//
+// When the pin moves to a release carrying #953, delete this and go back to
+// `to_string()`; `render_matches_upstream_for_caterpillar_trees` below is the
+// tripwire that will tell you it is safe.
+
+/// Render a descriptor to its BIP-380 string, WITH checksum, correcting
+/// upstream's taptree formatting.
+///
+/// Non-`tr` descriptors delegate to upstream `Display`, which is correct for
+/// them; only the taptree branch is re-implemented.
+pub fn render_descriptor(d: &miniscript::Descriptor<DescriptorPublicKey>) -> Result<String, Error> {
+    let body = match d {
+        miniscript::Descriptor::Tr(tr) => {
+            let internal = tr.internal_key();
+            match tr.tap_tree() {
+                None => format!("tr({internal})"),
+                Some(tree) => {
+                    // #953's child-count stack: walk leaves in order, opening a
+                    // brace each time the depth increases and closing one as
+                    // soon as a node has both its children.
+                    let mut out = String::new();
+                    let mut child_counts: Vec<u8> = Vec::new();
+                    for leaf in tree.leaves() {
+                        let depth = usize::from(leaf.depth());
+                        if !child_counts.is_empty() {
+                            out.push(',');
+                        }
+                        while child_counts.len() < depth {
+                            out.push('{');
+                            child_counts.push(0);
+                        }
+                        out.push_str(&leaf.miniscript().to_string());
+                        if let Some(c) = child_counts.last_mut() {
+                            *c += 1;
+                        }
+                        while let Some(2) = child_counts.last() {
+                            out.push('}');
+                            child_counts.pop();
+                            if let Some(c) = child_counts.last_mut() {
+                                *c += 1;
+                            }
+                        }
+                    }
+                    if !child_counts.is_empty() {
+                        // Unreachable via any public constructor (TapTree keeps
+                        // its `depths_leaves` private and every constructor
+                        // preserves properness), but refusing beats emitting a
+                        // string that would parse as a DIFFERENT wallet.
+                        return Err(Error::AddressDerivationFailed {
+                            detail: format!(
+                                "taptree left {} node(s) unclosed; refusing to emit a malformed descriptor",
+                                child_counts.len()
+                            ),
+                        });
+                    }
+                    format!("tr({internal},{out})")
+                }
+            }
+        }
+        // Upstream `Display` appends `#csum`; strip it so the checksum is
+        // computed once, below, over whatever body we ended up with.
+        other => {
+            let s = other.to_string();
+            s.rsplit_once('#').map(|(b, _)| b.to_string()).unwrap_or(s)
+        }
+    };
+
+    let mut eng = miniscript::descriptor::checksum::Engine::new();
+    eng.input(&body)
+        .map_err(|e| Error::AddressDerivationFailed {
+            detail: format!("descriptor checksum: {e}"),
+        })?;
+    Ok(format!("{body}#{}", eng.checksum()))
+}

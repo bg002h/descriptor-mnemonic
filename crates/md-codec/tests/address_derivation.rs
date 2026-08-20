@@ -1132,3 +1132,109 @@ fn wsh_check_or_i_shape_c_still_errors() {
         "shape C (Check over or_i) must still error, not mis-render"
     );
 }
+
+/// REGRESSION, bitcoind-free: a depth-2 taptree must render with its nesting
+/// intact.
+///
+/// The bitcoind differential proves this against Bitcoin Core, but it is
+/// `#[ignore]`d and only the daily job runs it. This runs on every push.
+///
+/// What it guards: `miniscript::Descriptor`'s `Display` FLATTENS a
+/// non-caterpillar taptree. Measured 2026-08-19 against Core v25 —
+/// `tr(@0,{{pk(@1),pk(@2)},pk(@3)})` came out as
+/// `tr(KEY,{{pk(A),pk(B),pk(C)}})`: one inner brace holding THREE leaves,
+/// which Core rejects with "tr(): expected '}' after script expression".
+/// Upstream PR #953 fixes it and is in no release, so
+/// `to_miniscript::render_descriptor` ports the algorithm.
+///
+/// Addresses were never wrong — derivation does not go through `Display` — so
+/// md computed correct addresses and emitted a descriptor no other wallet
+/// could parse. That is the "not recoverable with shipped tooling" the DD6
+/// advisory names.
+#[test]
+fn nested_taptree_renders_with_nesting_intact() {
+    let xpub_a = account_xpub_bytes("m/86'/0'/0'");
+    let xpub_b = account_xpub_bytes("m/86'/0'/1'");
+    let xpub_c = account_xpub_bytes("m/86'/0'/2'");
+    let xpub_d = account_xpub_bytes("m/86'/0'/3'");
+
+    let d = Descriptor {
+        n: 4,
+        path_decl: PathDecl {
+            n: 4,
+            paths: PathDeclPaths::Divergent(vec![
+                origin(&[(true, 86), (true, 0), (true, 0)]),
+                origin(&[(true, 86), (true, 0), (true, 1)]),
+                origin(&[(true, 86), (true, 0), (true, 2)]),
+                origin(&[(true, 86), (true, 0), (true, 3)]),
+            ]),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        // {{A,B},C} — an UNBALANCED tree on purpose. Its leaf depths are
+        // (2,2,1), a DECREASING sequence, which is exactly the shape the
+        // pre-#953 formatter gets wrong. A balanced {{A,B},{C,D}} round-trips
+        // even with the bug and would prove nothing.
+        tree: Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                is_nums: false,
+                key_index: 0,
+                tree: Some(Box::new(Node {
+                    tag: Tag::TapTree,
+                    body: Body::Children(vec![
+                        Node {
+                            tag: Tag::TapTree,
+                            body: Body::Children(vec![pkk(1), pkk(2)]),
+                        },
+                        pkk(3),
+                    ]),
+                })),
+            },
+        },
+        tlv: {
+            let mut t = TlvSection::new_empty();
+            t.pubkeys = Some(vec![
+                (0u8, xpub_a),
+                (1u8, xpub_b),
+                (2u8, xpub_c),
+                (3u8, xpub_d),
+            ]);
+            t
+        },
+    };
+
+    let desc = md_codec::to_miniscript::to_miniscript_descriptor(&d, 0)
+        .expect("depth-2 taptree must convert");
+    let rendered =
+        md_codec::to_miniscript::render_descriptor(&desc).expect("depth-2 taptree must render");
+
+    // The structural assertion: an inner brace pair closes BEFORE the third
+    // leaf. Counting braces alone would pass on the flattened form too.
+    let body = rendered
+        .split_once("*,")
+        .map(|(_, rest)| rest)
+        .unwrap_or(&rendered);
+    assert!(
+        body.starts_with("{{"),
+        "nested taptree must open two braces: {rendered}"
+    );
+    assert!(
+        body.contains("},pk("),
+        "the inner branch must CLOSE before the third leaf — flattened render? {rendered}"
+    );
+    assert_eq!(
+        body.matches("pk(").count(),
+        3,
+        "three leaves expected: {rendered}"
+    );
+
+    // TRIPWIRE. Upstream's Display is still broken; when this starts failing
+    // the pin has moved to a release carrying #953 and render_descriptor can
+    // be deleted in favour of to_string().
+    assert_ne!(
+        desc.to_string(),
+        rendered,
+        "upstream Display now agrees — #953 has landed in the pinned release; \
+         delete render_descriptor and use to_string()"
+    );
+}
