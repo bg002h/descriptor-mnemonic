@@ -927,13 +927,7 @@ fn walk_sh(
                 index: lookup_key(&wp.as_inner().to_string(), km)?,
             },
         },
-        ShInner::Ms(ms) => walk_miniscript_node(ms, km)?,
-        ShInner::SortedMulti(sm) => build_multi_node(
-            Tag::SortedMulti,
-            sm.k(),
-            &sm.pks().iter().collect::<Vec<_>>(),
-            km,
-        )?,
+        ShInner::Ms(ms) => walk_script_root(ms, km)?,
     };
     Ok(wrap_children(Tag::Sh, inner))
 }
@@ -942,15 +936,52 @@ fn walk_wsh_inner(
     w: &miniscript::descriptor::Wsh<DescriptorPublicKey>,
     km: &std::collections::BTreeMap<String, u8>,
 ) -> Result<Node, CliError> {
-    use miniscript::descriptor::WshInner;
-    match w.as_inner() {
-        WshInner::Ms(ms) => walk_miniscript_node(ms, km),
-        WshInner::SortedMulti(sm) => build_multi_node(
+    // `WshInner` NO LONGER EXISTS (PR #915): `Wsh` holds the miniscript
+    // directly, and `sortedmulti` arrives as a Terminal at its root instead of
+    // as a descriptor-level enum variant.
+    walk_script_root(w.as_inner(), km)
+}
+
+/// Walk a miniscript that sits at a SCRIPT ROOT — the sole child of `wsh`/`sh`,
+/// or a taproot leaf — where the sorted-multi forms are legitimate.
+///
+/// THIS FUNCTION IS WHERE A BIP RULE IS STRUCTURAL RATHER THAN CHECKED.
+/// BIP-388 l.138 admits `sortedmulti` "(inside `sh` or `wsh` only)", BIP-383
+/// l.37 says the same, and BIP-379 does not list it as a Miniscript fragment at
+/// all; BIP-386 puts `sortedmulti_a` in BIP-387's category, a sibling of the
+/// Miniscript fragments, and it is legitimate at a taproot LEAF (as a sibling
+/// of miniscript expressions in the tree, never nested inside one).
+///
+/// So the sorted forms are accepted HERE, at the only positions that can reach
+/// this function, and `walk_miniscript_node` refuses them everywhere else. A
+/// depth counter would have been a check that could be got wrong; making the
+/// position unreachable cannot be.
+///
+/// Upstream at `ff4732e` is MORE PERMISSIVE than the standard — it dispatches
+/// `sortedmulti` through its generic recursive expression parser with no depth
+/// guard — so this is a place the implementation must not be followed.
+fn walk_script_root<C: miniscript::ScriptContext>(
+    ms: &miniscript::Miniscript<DescriptorPublicKey, C>,
+    km: &std::collections::BTreeMap<String, u8>,
+) -> Result<Node, CliError> {
+    use miniscript::miniscript::decode::Terminal;
+    // Which of the two can appear is settled by the script context upstream
+    // already type-checked: `sortedmulti` is segwitv0/legacy, `sortedmulti_a`
+    // is tapscript. Both are matched here because they share one enum.
+    match &ms.node {
+        Terminal::SortedMulti(thresh) => build_multi_node(
             Tag::SortedMulti,
-            sm.k(),
-            &sm.pks().iter().collect::<Vec<_>>(),
+            thresh.k(),
+            &thresh.data().iter().collect::<Vec<_>>(),
             km,
         ),
+        Terminal::SortedMultiA(thresh) => build_multi_node(
+            Tag::SortedMultiA,
+            thresh.k(),
+            &thresh.data().iter().collect::<Vec<_>>(),
+            km,
+        ),
+        _ => walk_miniscript_node(ms, km),
     }
 }
 
@@ -985,6 +1016,25 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
             &thresh.data().iter().collect::<Vec<_>>(),
             km,
         ),
+        // REFUSED AT DEPTH, BY THE STANDARD AND NOT BY PREFERENCE. `sortedmulti`
+        // is admitted by BIP-388 l.138 "(inside sh or wsh only)" and is not a
+        // BIP-379 Miniscript fragment; `sortedmulti_a` belongs to BIP-387 and is
+        // legitimate at a taproot LEAF. Reaching either here means it is nested
+        // inside a combinator, which no BIP permits — and which rust-miniscript
+        // itself will now parse, because #915 left its recursive parser without
+        // a depth guard. `walk_script_root` accepts them at the positions that
+        // are legal.
+        Terminal::SortedMulti(_) => Err(CliError::BadArg(
+            "sortedmulti() is valid only as the sole child of sh() or wsh() \
+             (BIP-388 §Descriptor Templates, BIP-383); it cannot be nested \
+             inside a miniscript fragment"
+                .into(),
+        )),
+        Terminal::SortedMultiA(_) => Err(CliError::BadArg(
+            "sortedmulti_a() is valid only as a taproot leaf (BIP-386/387); it \
+             cannot be nested inside a miniscript fragment"
+                .into(),
+        )),
         // `c:` wrapper. v0.30 SPEC §5.1 (Q12 — walker normalization): emit
         // bare `Tag::PkK` / `Tag::PkH` at every key-check position regardless
         // of context (tap-leaf and segwitv0 alike). `Tag::Check` is only
@@ -1282,7 +1332,9 @@ fn walk_tap_tree(
 ) -> Result<Node, CliError> {
     let mut stack: Vec<(u8, Node)> = Vec::new();
     for leaf in tt.leaves() {
-        let leaf_node = walk_miniscript_node(leaf.miniscript(), km)?;
+        // A TAP LEAF IS A SCRIPT ROOT, which is the one position BIP-386/387
+        // makes `sortedmulti_a` legitimate in.
+        let leaf_node = walk_script_root(leaf.miniscript(), km)?;
         stack.push((leaf.depth(), leaf_node));
         // Coalesce: while top two stack entries share the same depth, wrap
         // them as a Tag::TapTree branch at depth-1. miniscript's TapTree

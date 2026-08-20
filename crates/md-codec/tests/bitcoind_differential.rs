@@ -827,9 +827,11 @@ fn bitcoind_address_differential() {
             // /0/* or /1/*, checksummed) — bitcoind's input is derived
             // from exactly the string md-codec derives from. NEVER the
             // <0;1> multipath form (bitcoind rejects it).
-            // render_descriptor, NOT .to_string(): upstream's Display flattens
-            // a non-caterpillar taptree (see to_miniscript.rs). Shape 17 is the
-            // case that proves it, and it is why this call changed.
+            // `.to_string()` again since the ff4732e pin: PR #953 fixed
+            // upstream's Display, which used to flatten a non-caterpillar
+            // taptree, and md-codec's `render_descriptor` port is gone. Shape 17
+            // is the depth-2 case that proves the nesting survives, and it runs
+            // against Bitcoin Core here.
             let d = md_codec::to_miniscript::to_miniscript_descriptor(&shape.desc, chain)
                 .unwrap_or_else(|e| {
                     panic!(
@@ -837,12 +839,7 @@ fn bitcoind_address_differential() {
                         shape.label
                     )
                 });
-            let desc = md_codec::to_miniscript::render_descriptor(&d).unwrap_or_else(|e| {
-                panic!(
-                    "render_descriptor failed for {} chain {chain}: {e}",
-                    shape.label
-                )
-            });
+            let desc = d.to_string();
 
             // [I3a] Checksum round-trip: bitcoind's computed checksum MUST
             // equal the #csum md-codec/miniscript already put in `desc`.

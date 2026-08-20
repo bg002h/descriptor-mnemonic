@@ -18,3 +18,27 @@ all = "warn"
 miniscript = { version = "13.0.0", default-features = false, features = ["std"] }
 bitcoin = "0.32"
 bip39 = "2.2.2"
+
+# PINNED to rust-miniscript master rev ff4732e, for PR #953 (taptree Display).
+#
+# WHY A GIT REV. #953 fixes `Descriptor`'s Display, which FLATTENS a
+# non-caterpillar taptree -- `tr(K,{{pk(A),pk(B)},pk(C)})` came out as
+# `tr(K,{{pk(A),pk(B),pk(C)}})`, which Bitcoin Core rejects. md derived correct
+# addresses and emitted a descriptor no other wallet could parse, which is the
+# "not recoverable with shipped tooling" the DD6 advisory named. The fix is
+# merged upstream and is in NO release through 13.1.0 -- verified by
+# `git merge-base --is-ancestor` against all three tags -- so a crates.io
+# version cannot carry it.
+#
+# This rev also carries PR #915, which moved `sortedmulti` out of the descriptor
+# enums into a miniscript Terminal. That is an INTERNAL cleanup upstream, not a
+# standards change: BIP-388 l.138 says `sortedmulti` is valid "inside sh or wsh
+# only", BIP-379 does not list it as a Miniscript fragment at all, and #915's own
+# body notes it "cannot be decoded into from Script". At this rev upstream
+# dispatches it through its generic recursive parser with no depth guard, so
+# rust-miniscript is MORE PERMISSIVE than the standard here. md-codec holds the
+# BIP rule -- see to_miniscript.rs.
+#
+# Matches mnemonic-toolkit, which patched to a git rev for the same reason.
+[patch.crates-io]
+miniscript = { git = "https://github.com/rust-bitcoin/rust-miniscript", rev = "ff4732e5f75aa555682343cb180fa72ee3e8e9d5" }

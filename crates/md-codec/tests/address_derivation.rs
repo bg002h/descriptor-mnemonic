@@ -442,7 +442,7 @@ fn xpub_bytes_to_string(bytes: &[u8; 65]) -> String {
 }
 
 /// Independent miniscript-direct derivation: parse `descriptor_str`,
-/// `.at_derivation_index(index).address(network).to_string()`.
+/// `.derive_at_index(index).address(network).to_string()`.
 fn miniscript_direct_address(
     descriptor_str: &str,
     chain: u32,
@@ -467,7 +467,7 @@ fn miniscript_direct_address(
     } else {
         desc
     };
-    let definite = single.at_derivation_index(index).expect("derivation idx");
+    let definite = single.derive_at_index(index).expect("derivation idx");
     definite.address(network).expect("address").to_string()
 }
 
@@ -1144,8 +1144,9 @@ fn wsh_check_or_i_shape_c_still_errors() {
 /// `tr(@0,{{pk(@1),pk(@2)},pk(@3)})` came out as
 /// `tr(KEY,{{pk(A),pk(B),pk(C)}})`: one inner brace holding THREE leaves,
 /// which Core rejects with "tr(): expected '}' after script expression".
-/// Upstream PR #953 fixes it and is in no release, so
-/// `to_miniscript::render_descriptor` ports the algorithm.
+/// Upstream PR #953 fixes it, and since the ff4732e pin it is IN the pinned
+/// rev — so md-codec's `render_descriptor` port has been deleted and this test
+/// now guards upstream's own `Display` instead.
 ///
 /// Addresses were never wrong — derivation does not go through `Display` — so
 /// md computed correct addresses and emitted a descriptor no other wallet
@@ -1205,8 +1206,7 @@ fn nested_taptree_renders_with_nesting_intact() {
 
     let desc = md_codec::to_miniscript::to_miniscript_descriptor(&d, 0)
         .expect("depth-2 taptree must convert");
-    let rendered =
-        md_codec::to_miniscript::render_descriptor(&desc).expect("depth-2 taptree must render");
+    let rendered = desc.to_string();
 
     // The structural assertion: an inner brace pair closes BEFORE the third
     // leaf. Counting braces alone would pass on the flattened form too.
@@ -1228,13 +1228,21 @@ fn nested_taptree_renders_with_nesting_intact() {
         "three leaves expected: {rendered}"
     );
 
-    // TRIPWIRE. Upstream's Display is still broken; when this starts failing
-    // the pin has moved to a release carrying #953 and render_descriptor can
-    // be deleted in favour of to_string().
-    assert_ne!(
+    // THE TRIPWIRE WAS INVERTED, NOT DELETED (2026-08-20).
+    //
+    // It used to assert that upstream's Display DISAGREED with md-codec's
+    // corrected `render_descriptor`, and it fired the moment the pin moved to
+    // ff4732e — which is how we knew #953 had landed and the port could go.
+    //
+    // Deleting it with the port would have retired the only check that upstream
+    // still nests correctly, in the exact place a regression would be silent:
+    // addresses do not go through Display, so a re-flattened taptree would
+    // produce right addresses and an unparseable descriptor again. The
+    // assertions above ARE that guard now; this line keeps the pairing honest
+    // by pinning that the string under test is upstream's own.
+    assert_eq!(
         desc.to_string(),
         rendered,
-        "upstream Display now agrees — #953 has landed in the pinned release; \
-         delete render_descriptor and use to_string()"
+        "this test must exercise upstream's Display, not a local re-render"
     );
 }
