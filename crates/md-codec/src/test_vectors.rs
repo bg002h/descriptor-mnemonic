@@ -66,6 +66,59 @@ pub struct Vector {
 ///   holds right at the codex32 BCH(93,80) cap — NOT chunked, NOT long-code.
 #[rustfmt::skip]
 pub const MANIFEST: &[Vector] = &[
+    // ── KEYED CONFORMANCE VECTORS (R3, 2026-08-20) ─────────────────────────────
+    //
+    // Every entry above is KEYLESS, and `Vector::keys` was read by no code at all
+    // -- `cmd/vectors.rs` passed `&[]` unconditionally -- so the corpus pinned
+    // template bytes and nothing else. A Go port could agree with Rust about every
+    // byte on the wire and still derive a different ADDRESS, and no vector would
+    // say so. These entries close that: each one carries real xpubs, so the export
+    // can emit descriptor strings, both wallet ids and per-chain addresses.
+    //
+    // THE KEYS ARE PUBLIC BY CONSTRUCTION and reproducible in one command. They are
+    // BIP-39's own published test mnemonic --
+    // "abandon abandon ... about" -- at `bip48-p2wsh` accounts 0..3:
+    //
+    // printf 'abandon abandon abandon abandon abandon abandon abandon \
+    // abandon abandon abandon abandon about' \
+    // | ms derive --phrase - --template bip48-p2wsh --account N
+    //
+    // Master fingerprint 73c5da0a. NEVER put funds behind them.
+    //
+    // ALL KEYED ENTRIES ARE `force_chunked`, and not as a style choice: real
+    // xpubs push the payload past the codex32 regular code's 80-data-symbol cap
+    // for a single string. A keyed 2-of-3 measures 474 symbols. Chunking is what a
+    // full-policy card actually is.
+    //
+    // The keyless entries above are deliberately NOT converted: they pin the
+    // template-mode wire bytes, which is a different contract, and rewriting them
+    // would churn the whole committed corpus to test one more thing.
+    Vector { name: "keyed_wpkh",          template: "wpkh(@0/<0;1>/*)",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
+    Vector { name: "keyed_wsh_multi_2of3", template: "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
+    Vector { name: "keyed_wsh_sortedmulti_2of3", template: "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
+    Vector { name: "keyed_tr_keyonly",     template: "tr(@0/<0;1>/*)",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
+    // THE SHAPE THE WHOLE CYCLE IS ABOUT, and the one no keyless vector could
+    // price: a taproot script tree. It needs an explicit `path` because its
+    // `canonical_origin` is None -- exactly the case R4's `--path` on
+    // address/verify exists to reach.
+    Vector { name: "keyed_tr_with_leaf",   template: "tr(@0/<0;1>/*,pk(@1/<0;1>/*))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
+    // DEPTH-2, unbalanced: leaf depths (2,2,1). This is the shape the pre-#953
+    // renderer flattened, so before the ff4732e pin it could not have had a
+    // conformance record at all -- the descriptor string would have been
+    // unparseable.
+    Vector { name: "keyed_tr_depth2",      template: "tr(@0/<0;1>/*,{{pk(@1/<0;1>/*),pk(@2/<0;1>/*)},pk(@3/<0;1>/*)})",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR"), (3, "xpub6E6Z3Ss5TXJYNJp4U1q3NZ3pCn82i7KXQAKUtNnzLJ3cCdchQeSdFvXemizaHUF7wNwRQAB8mPdoZhGHLiv49cWPtCnoJY3Az3E8JKxH9Mq")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a]), (3, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
     Vector { name: "wpkh_basic",         template: "wpkh(@0/<0;1>/*)",                                   keys: &[], fingerprints: &[], force_chunked: false, path: None },
     Vector { name: "pkh_basic",          template: "pkh(@0/<0;1>/*)",                                    keys: &[], fingerprints: &[], force_chunked: false, path: None },
     Vector { name: "wsh_multi_2of2",     template: "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",                keys: &[], fingerprints: &[], force_chunked: false, path: None },
