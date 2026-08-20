@@ -1,5 +1,6 @@
 use crate::error::CliError;
 use crate::parse::keys::{parse_fingerprint, parse_key};
+use crate::parse::path::apply_path_override;
 use crate::parse::template::{ctx_for_template, parse_template};
 use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
@@ -10,6 +11,8 @@ pub struct VerifyArgs<'a> {
     pub template: &'a str,
     pub keys: &'a [String],
     pub fingerprints: &'a [String],
+    /// Shared origin-path override, mirroring `md encode --path`.
+    pub path: Option<&'a str>,
     pub network: bitcoin::Network,
 }
 
@@ -33,7 +36,10 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let expected = parse_template(args.template, &parsed_keys, &parsed_fps)?;
+    let mut expected = parse_template(args.template, &parsed_keys, &parsed_fps)?;
+    // Mirrors `md encode --path`; see cmd/address.rs for why a verify without it
+    // cannot reach a non-canonical wrapper at all.
+    apply_path_override(&mut expected, args.path)?;
     let (decoded_bytes, decoded_bits) = encode_payload(&decoded)?;
     let (expected_bytes, expected_bits) = encode_payload(&expected)?;
     if decoded_bytes != expected_bytes || decoded_bits != expected_bits {

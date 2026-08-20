@@ -1,5 +1,6 @@
 use crate::error::CliError;
 use crate::parse::keys::{ParsedFingerprint, parse_fingerprint, parse_key};
+use crate::parse::path::apply_path_override;
 use crate::parse::template::{ctx_for_template, parse_template};
 use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
@@ -10,6 +11,8 @@ pub struct AddressArgs<'a> {
     pub template: Option<&'a str>,
     pub keys: &'a [String],
     pub fingerprints: &'a [String],
+    /// Shared origin-path override, mirroring `md encode --path`.
+    pub path: Option<&'a str>,
     pub network: bitcoin::Network,
     pub network_str: &'static str,
     pub chain: u32,
@@ -101,7 +104,16 @@ fn build_descriptor(args: &AddressArgs<'_>) -> Result<Descriptor, CliError> {
             .iter()
             .map(|s| parse_fingerprint(s))
             .collect::<Result<Vec<_>, _>>()?;
-        return parse_template(template, &parsed_keys, &parsed_fps);
+        let mut descriptor = parse_template(template, &parsed_keys, &parsed_fps)?;
+        // THE SAME OVERRIDE `md encode --path` APPLIES, and for the same reason:
+        // a non-canonical wrapper refuses with "non-canonical wrapper requires
+        // explicit origin for @N", and until this flag existed there was no way
+        // to give it one here. Which meant exactly the shapes that need an
+        // explicit origin -- taproot with a script tree, and the miniscript
+        // wrappers generally -- could be ENCODED but never had their addresses
+        // derived from a template.
+        apply_path_override(&mut descriptor, args.path)?;
+        return Ok(descriptor);
     }
     // Phrase path. mstring display-grouping (SPEC §3.2): strip separators so a
     // grouped or unbroken card both re-ingest.

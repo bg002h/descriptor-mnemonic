@@ -1,11 +1,38 @@
-// `--path` parsing for the `md encode` flag. Accepts named forms
+// `--path` parsing, shared by `md encode`, `md address` and `md verify`. Accepts named forms
 // (`bip44`, `bip48`, `bip49`, `bip84`, `bip86`), hex form (`0xNN`), or
 // a literal `m/...` path. Routed through `cmd::encode::run` to override
 // `descriptor.path_decl.paths` with a Shared origin path.
 
 use crate::error::CliError;
+use crate::parse::template::to_origin_path;
 use bitcoin::bip32::DerivationPath;
+use md_codec::Descriptor;
+use md_codec::origin_path::PathDeclPaths;
 use std::str::FromStr;
+
+/// Apply a `--path` override to a parsed descriptor, if one was supplied.
+///
+/// ONE IMPLEMENTATION, THREE CALLERS. `encode` carried this inline and
+/// `address`/`verify` had no `--path` at all, which meant the shapes that
+/// REQUIRE an explicit origin -- taproot with a script tree, and non-canonical
+/// wrappers generally -- could be encoded but never had an address derived or a
+/// backup verified from their template:
+///
+///     md: codec error: non-canonical wrapper requires explicit origin for @0,
+///         but none provided
+///
+/// Three copies of a rule about how a descriptor's origin is decided is exactly
+/// the shape that drifts, and origin drift moves funds to the wrong addresses.
+pub fn apply_path_override(
+    descriptor: &mut Descriptor,
+    path: Option<&str>,
+) -> Result<(), CliError> {
+    if let Some(arg) = path {
+        let dp = parse_path(arg)?;
+        descriptor.path_decl.paths = PathDeclPaths::Shared(to_origin_path(Some(&dp)));
+    }
+    Ok(())
+}
 
 /// Parse a `--path <PATH>` argument: a name, a hex indicator, or a literal path.
 pub fn parse_path(arg: &str) -> Result<DerivationPath, CliError> {

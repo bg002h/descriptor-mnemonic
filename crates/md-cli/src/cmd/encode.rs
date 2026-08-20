@@ -1,13 +1,12 @@
 use crate::error::CliError;
 use crate::format::text;
 use crate::parse::keys::{parse_fingerprint, parse_key};
-use crate::parse::path::parse_path;
-use crate::parse::template::{ctx_for_template, parse_template, to_origin_path};
+use crate::parse::path::apply_path_override;
+use crate::parse::template::{ctx_for_template, parse_template};
 
 use md_codec::chunk::{derive_chunk_set_id, split};
 use md_codec::encode::{Descriptor, encode_md1_string, render_grouped};
 use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
-use md_codec::origin_path::PathDeclPaths;
 use md_codec::tag::Tag;
 use md_codec::tree::{Body, Node};
 
@@ -55,10 +54,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
     let mut descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
-    if let Some(p_arg) = args.path {
-        let dp = parse_path(p_arg)?;
-        descriptor.path_decl.paths = PathDeclPaths::Shared(to_origin_path(Some(&dp)));
-    }
+    apply_path_override(&mut descriptor, args.path)?;
 
     #[cfg(feature = "json")]
     if args.json {

@@ -147,6 +147,16 @@ enum Command {
         keys: Vec<String>,
         #[arg(long = "fingerprint", value_name = "@i=HEX")]
         fingerprints: Vec<String>,
+        /// Override the inferred origin path with a single shared path
+        /// (flattens Divergent mode to Shared). Accepts named (bip44|48|49|84|86),
+        /// hex (0xNN), or literal (m/...) forms.
+        ///
+        /// Mirrors `md encode --path`. Without it the non-canonical wrappers this
+        /// flag exists for are unreachable here: they refuse with "non-canonical
+        /// wrapper requires explicit origin for @N", and there was no way to
+        /// supply one.
+        #[arg(long, value_name = "PATH")]
+        path: Option<String>,
         /// Network for xpub validation.
         #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
         network: CliNetwork,
@@ -202,6 +212,16 @@ enum Command {
         /// Master-key fingerprint for placeholder @i. Repeatable. Requires --template.
         #[arg(long = "fingerprint", value_name = "@i=HEX", requires = "template")]
         fingerprints: Vec<String>,
+        /// Override the inferred origin path with a single shared path
+        /// (flattens Divergent mode to Shared). Accepts named (bip44|48|49|84|86),
+        /// hex (0xNN), or literal (m/...) forms.
+        ///
+        /// Mirrors `md encode --path`. Without it the non-canonical wrappers this
+        /// flag exists for are unreachable here: they refuse with "non-canonical
+        /// wrapper requires explicit origin for @N", and there was no way to
+        /// supply one.
+        #[arg(long, value_name = "PATH", requires = "template")]
+        path: Option<String>,
         /// Network for xpub validation and address rendering.
         #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
         network: CliNetwork,
@@ -372,12 +392,14 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             template,
             keys,
             fingerprints,
+            path,
             network,
         } => cmd::verify::run(cmd::verify::VerifyArgs {
             strings: &strings,
             template: &template,
             keys: &keys,
             fingerprints: &fingerprints,
+            path: path.as_deref(),
             network: network.into(),
         }),
         Command::Inspect { strings, json } => cmd::inspect::run(&strings, json),
@@ -416,6 +438,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             template,
             keys,
             fingerprints,
+            path,
             network,
             chain,
             change,
@@ -428,6 +451,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 phrases: &phrases,
                 template: template.as_deref(),
                 keys: &keys,
+                path: path.as_deref(),
                 fingerprints: &fingerprints,
                 network: network.into(),
                 network_str: network.as_str(),
