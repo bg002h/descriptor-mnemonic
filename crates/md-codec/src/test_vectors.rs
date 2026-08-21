@@ -135,6 +135,29 @@ pub const MANIFEST: &[Vector] = &[
     // terminator (CHECKSIG -> CHECKSIGVERIFY, EQUAL -> EQUALVERIFY) rather than
     // appending OP_VERIFY, so an emitter that always appends produces a script
     // that still looks plausible and hashes to a different address.
+    // THE DEGRADING-MULTISIG IDIOM: a 2-of-2 today, or one key after a
+    // relative timelock. `or_d` is the fragment that makes it work, and its
+    // script form (OP_IFDUP OP_NOTIF) is unlike every other or_*.
+    Vector { name: "keyed_wsh_or_d_degrading", template: "wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*),and_v(v:older(65535),pk(@2/<0;1>/*))))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
+    // `thresh` over sub-policies, with the `s:` (OP_SWAP) wrapper on all but
+    // the first -- the canonical thresh shape. k=2 of 3 branches, so a
+    // mutation that emits the branch count instead of the threshold shows.
+    Vector { name: "keyed_wsh_thresh", template: "wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@1/<0;1>/*),s:pk(@2/<0;1>/*)))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
+    // `or_b` (OP_BOOLOR) with `s:`. Kept separate from thresh because they
+    // share the `s:` wrapper but differ in terminator, so one vector could
+    // pass while the other's rule was wrong.
+    Vector { name: "keyed_wsh_or_b", template: "wsh(or_b(pk(@0/<0;1>/*),s:pk(@1/<0;1>/*)))",
+        // TWO keys, because the template uses two. The first draft reused a
+        // three-key block and produced a card carrying a pubkey for @2 that the
+        // template never references -- which Rust encoded and the Go port
+        // REFUSED on re-encode ("override order violation"). Filed as F-213;
+        // the vector is not the place to exercise that disagreement.
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
     Vector { name: "keyed_wsh_timelock_hashlock", template: "wsh(or_i(and_v(v:after(1000000),and_v(v:sha256(a84dce40975727c398023cfbd50d5db3b9662375521d0f1ac62dbd829b9a08ad),multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))),and_v(v:older(65535),multi(1,@1/<0;1>/*,@2/<0;1>/*))))",
         keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
         fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
