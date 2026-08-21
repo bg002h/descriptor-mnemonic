@@ -264,6 +264,96 @@ pub fn validate_xpub_bytes(d: &Descriptor) -> Result<(), Error> {
     Ok(())
 }
 
+/// Validate that no two `@N` slots claim the SAME key origin while carrying
+/// DIFFERENT keys (F-217).
+///
+/// BIP-32 is deterministic: a `(master fingerprint, derivation path)` pair
+/// identifies exactly ONE extended key. A card binding one such pair to two
+/// different xpubs therefore describes a wallet that cannot exist, and saying so
+/// takes no seed, no network and no derivation — it is a pure function of the
+/// card.
+///
+/// WHY THIS HAS TO BE ITS OWN CHECK. Nothing else can see it. Addresses derive
+/// from the xpubs a card CARRIES, never from the origin it declares, so every
+/// address comparison — including cross-language conformance over the whole
+/// corpus — passes identically whether the origins are right or nonsense. The
+/// origin is what a *signer* uses to find its key, so an unchecked contradiction
+/// surfaces for the first time when someone tries to spend.
+///
+/// It was found the hard way: `md encode --path` flattens per-key ("Divergent")
+/// origins to a single shared one, and **9 of 9** multi-key keyed conformance
+/// vectors were contradictory, with zero consistent. The corpus that gates the
+/// Go port against Rust pinned an impossible shape in every entry where the
+/// question could be asked.
+///
+/// SCOPE, stated rather than implied:
+/// - Both slots must carry a fingerprint. Without one, the origin path names no
+///   master, so no contradiction is provable and none is claimed.
+/// - Both slots must carry an xpub. A template has no keys to disagree about.
+/// - Two slots holding the SAME xpub at the same origin are CONSISTENT here.
+///   That is key reuse across slots, a different hazard with a different
+///   remedy (F-218), and conflating them would make one refusal explain two
+///   problems badly.
+pub fn validate_origin_key_consistency(d: &Descriptor) -> Result<(), Error> {
+    // AN EXPANSION FAILURE IS NOT THIS CHECK'S ERROR TO RAISE. expand_per_at_n
+    // fails for its own reasons — a missing explicit origin, a dead card — and
+    // propagating those from here turned twenty unrelated tests red, including
+    // the whole partial-decode suite, by converting "this validator had nothing
+    // to look at" into "encoding failed". If the keys cannot be expanded there
+    // is no contradiction to prove, and whichever validator owns that failure
+    // will report it in its own words.
+    let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
+        return Ok(());
+    };
+    for (i, a) in expanded.iter().enumerate() {
+        let (Some(fp_a), Some(x_a)) = (a.fingerprint, a.xpub) else {
+            continue;
+        };
+        for b in &expanded[i + 1..] {
+            let (Some(fp_b), Some(x_b)) = (b.fingerprint, b.xpub) else {
+                continue;
+            };
+            if fp_a != fp_b || a.origin_path != b.origin_path || x_a == x_b {
+                continue;
+            }
+            return Err(Error::OriginKeyContradiction {
+                a: a.idx,
+                b: b.idx,
+                fingerprint: hex_fingerprint(&fp_a),
+                path: render_origin_path(&a.origin_path),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn hex_fingerprint(fp: &[u8; 4]) -> String {
+    use std::fmt::Write as _;
+    fp.iter().fold(String::with_capacity(8), |mut acc, b| {
+        let _ = write!(acc, "{b:02x}");
+        acc
+    })
+}
+
+/// Render an origin path in BIP-32 notation, for a refusal an operator can
+/// match against what their coordinator shows.
+fn render_origin_path(p: &crate::origin_path::OriginPath) -> String {
+    if p.components.is_empty() {
+        return "m".into();
+    }
+    p.components
+        .iter()
+        .map(|c| {
+            if c.hardened {
+                format!("{}'", c.value)
+            } else {
+                c.value.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Validate that no `OriginPathOverrides[idx]` entry is present-but-empty
 /// (zero path components). Per spec v0.13 §6.3 (I-1 hardening, P0
 /// pathless/dead-card partial-decode).

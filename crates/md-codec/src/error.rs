@@ -356,6 +356,32 @@ pub enum Error {
         reserved_bits: u8,
     },
 
+    /// Two `@N` slots declare the SAME master fingerprint and the SAME
+    /// origin path while carrying DIFFERENT xpubs. That is impossible:
+    /// BIP-32 is deterministic, so a `(fingerprint, path)` pair identifies
+    /// exactly one extended key.
+    ///
+    /// Detectable from the card alone — no seed, no network, no
+    /// derivation — which is why it is refused rather than warned about.
+    /// Nothing downstream can catch it: addresses derive from the xpubs a
+    /// card CARRIES, not from the origin it declares, so every address
+    /// check passes either way and the failure surfaces only when someone
+    /// asks a signer to find the key. See F-217.
+    #[error(
+        "@{a} and @{b} declare the same key origin ([{fingerprint}/{path}]) but different xpubs; \
+         one origin identifies exactly one key, so this card describes a wallet that cannot exist"
+    )]
+    OriginKeyContradiction {
+        /// The lower placeholder index of the conflicting pair.
+        a: u8,
+        /// The higher placeholder index of the conflicting pair.
+        b: u8,
+        /// The shared master fingerprint, hex.
+        fingerprint: String,
+        /// The shared origin path, rendered.
+        path: String,
+    },
+
     /// A `Pubkeys` TLV entry's 33-byte compressed-pubkey field (bytes
     /// 32..65 of the 65-byte xpub payload) failed to parse as a valid
     /// secp256k1 point. The 32-byte chain code prefix is unvalidated.

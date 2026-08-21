@@ -109,6 +109,13 @@ pub fn encode_payload(d: &Descriptor) -> Result<(Vec<u8>, usize), Error> {
             crate::validate::validate_tap_script_tree(t)?;
         }
     }
+    // F-217: refuse to MINT a card that declares one key origin for two
+    // different keys. Enforced on encode rather than on decode, deliberately:
+    // this stops new impossible cards without making already-written ones
+    // unreadable, and a card that cannot be read is a backup that cannot be
+    // restored. The decode-side refusal waits until the conformance corpus is
+    // regenerated, so no gate is ever red while it lands.
+    crate::validate::validate_origin_key_consistency(d)?;
 
     let mut w = BitWriter::new();
     let header = Header {
