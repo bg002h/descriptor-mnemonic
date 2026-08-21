@@ -2217,6 +2217,53 @@ use md_codec::encode::Descriptor;
 use md_codec::tlv::TlvSection;
 use miniscript::ForEachKey;
 
+/// Refuse a `--key`/`--fingerprint` bound to a placeholder the template never
+/// uses (F-213).
+///
+/// WHY THIS IS FAIL-CLOSED AND NOT A WARNING. Without it, `md encode` accepted
+/// `--key @2=<xpub>` on a two-placeholder template and minted a card whose
+/// Pubkeys TLV carried three entries against `n = 2`. The card looks normal, and
+/// the SeedHammer fork refuses to read it ("override order violation") — so the
+/// failure surfaces at RESTORE, long after the card is steel. The irreversible
+/// step sits between the mistake and its discovery.
+///
+/// A key bound to no placeholder is not partial data, it is meaningless data:
+/// there is nothing for it to bind to, no way to render it, and no way for a
+/// decoder to attribute it. Dropping it silently would be worse than refusing —
+/// an operator who typed `@2` meant something, and guessing which slot they
+/// meant is not this tool's job.
+///
+/// The check is on the LEXED placeholder set rather than `n`, so it is exact for
+/// a template that skips an index instead of merely counting them.
+fn reject_unreferenced_bindings(
+    occs: &[PlaceholderOccurrence],
+    keys: &[ParsedKey],
+    fingerprints: &[ParsedFingerprint],
+) -> Result<(), CliError> {
+    let present: std::collections::BTreeSet<u8> = occs.iter().map(|o| o.i).collect();
+    let mut named: Vec<String> = present.iter().map(|i| format!("@{i}")).collect();
+    named.sort();
+    let listed = named.join(", ");
+    for k in keys {
+        if !present.contains(&k.i) {
+            return Err(CliError::BadArg(format!(
+                "--key @{} does not appear in this template (it uses {}); a key bound to no \
+                 placeholder cannot be encoded, and a card carrying one is rejected on decode",
+                k.i, listed
+            )));
+        }
+    }
+    for f in fingerprints {
+        if !present.contains(&f.i) {
+            return Err(CliError::BadArg(format!(
+                "--fingerprint @{} does not appear in this template (it uses {})",
+                f.i, listed
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_template(
     template: &str,
     keys: &[ParsedKey],
@@ -2224,6 +2271,7 @@ pub fn parse_template(
 ) -> Result<Descriptor, CliError> {
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
+    reject_unreferenced_bindings(&occs, keys, fingerprints)?;
     let resolved = resolve_placeholders(&occs)?;
 
     let (substituted, key_map) = substitute_synthetic(template, ctx)?;
