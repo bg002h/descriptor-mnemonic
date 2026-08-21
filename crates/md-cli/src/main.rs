@@ -197,6 +197,47 @@ enum Command {
         json: bool,
     },
     /// Derive bitcoin addresses from a wallet-policy-mode descriptor.
+    /// Emit the CONCRETE output descriptor -- real xpubs, key origins and the
+    /// BIP-380 checksum -- for pasting into a coordinator.
+    ///
+    /// Everything else this CLI prints for a wallet policy is a TEMPLATE (@0,
+    /// @1, ...) or an address. Neither is what "paste your descriptor" means.
+    /// Multipath (<0;1>) by default, which is the form a coordinator wants;
+    /// --chain collapses it.
+    #[command(after_long_help = "EXAMPLES:\n  $ md descriptor md1qq...\n  wsh(...)#checksum",
+              group = clap::ArgGroup::new("descriptor_input").required(true).args(["phrases", "template"]))]
+    Descriptor {
+        /// One or more md1 phrases. Mutually exclusive with --template.
+        #[arg(num_args = 0..)]
+        phrases: Vec<String>,
+        /// BIP 388 template. Requires at least one --key. Mutually exclusive with phrases.
+        #[arg(long, value_name = "TEMPLATE", conflicts_with = "phrases")]
+        template: Option<String>,
+        /// Concrete xpub for placeholder @i. Repeatable. Requires --template.
+        #[arg(long = "key", value_name = "@i=XPUB", requires = "template")]
+        keys: Vec<String>,
+        /// Master-key fingerprint for placeholder @i. Repeatable. Requires --template.
+        #[arg(long = "fingerprint", value_name = "@i=HEX", requires = "template")]
+        fingerprints: Vec<String>,
+        /// Override the inferred origin path with a single shared path. Mirrors
+        /// `md encode --path`; without it a non-canonical wrapper refuses.
+        #[arg(long, value_name = "PATH", requires = "template")]
+        path: Option<String>,
+        /// Network for xpub validation.
+        #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
+        network: CliNetwork,
+        /// Collapse the multipath group to ONE chain (0 = receive, 1 = change).
+        /// Omit for the multipath <0;1> form.
+        #[arg(long)]
+        chain: Option<u32>,
+        /// Sugar for --chain 1.
+        #[arg(long, conflicts_with = "chain")]
+        change: bool,
+        /// Emit JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+
     #[command(after_long_help = "EXAMPLES:\n  $ md address md1qq...\n  bc1q...",
               group = clap::ArgGroup::new("address_input").required(true).args(["phrases", "template"]))]
     Address {
@@ -432,6 +473,30 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 Err(CliError::BadArg(
                 "compile requires the cli-compiler feature; rebuild with --features cli-compiler".into()))
             }
+        }
+        Command::Descriptor {
+            phrases,
+            template,
+            keys,
+            fingerprints,
+            path,
+            network,
+            chain,
+            change,
+            json,
+        } => {
+            let chain = if change { Some(1) } else { chain };
+            cmd::descriptor::run(cmd::descriptor::DescriptorArgs {
+                phrases: &phrases,
+                template: template.as_deref(),
+                keys: &keys,
+                fingerprints: &fingerprints,
+                path: path.as_deref(),
+                network: network.into(),
+                network_str: network.as_str(),
+                chain,
+                json,
+            })
         }
         Command::Address {
             phrases,

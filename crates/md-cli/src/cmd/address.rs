@@ -1,10 +1,4 @@
 use crate::error::CliError;
-use crate::parse::keys::{ParsedFingerprint, parse_fingerprint, parse_key};
-use crate::parse::path::apply_path_override;
-use crate::parse::template::{ctx_for_template, parse_template};
-use md_codec::chunk::reassemble;
-use md_codec::decode::decode_md1_string;
-use md_codec::encode::Descriptor;
 
 pub struct AddressArgs<'a> {
     pub phrases: &'a [String],
@@ -22,7 +16,15 @@ pub struct AddressArgs<'a> {
 }
 
 pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
-    let descriptor = build_descriptor(&args)?;
+    let descriptor = crate::cmd::build::build_descriptor(&crate::cmd::build::DescriptorInput {
+        phrases: args.phrases,
+        template: args.template,
+        keys: args.keys,
+        fingerprints: args.fingerprints,
+        path: args.path,
+        network: args.network,
+        cmd: "address",
+    })?;
     if !descriptor.is_wallet_policy() {
         return Err(CliError::BadArg(
             "address requires wallet-policy mode (Pubkeys TLV); supply --key @i=XPUB or use a wallet-policy-mode phrase".into(),
@@ -74,54 +76,4 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
         &mut std::io::stderr(),
     );
     Ok(0)
-}
-
-fn build_descriptor(args: &AddressArgs<'_>) -> Result<Descriptor, CliError> {
-    // Defense in depth — clap's ArgGroup::required(true) is the primary
-    // guard; this catches the case where it ever fails (clap regression,
-    // custom invocation bypassing the parser, etc.) and routes the user
-    // to a clean exit-2 BadArg instead of a confusing exit-1 from
-    // reassemble(&[]).
-    if args.phrases.is_empty() && args.template.is_none() {
-        return Err(CliError::BadArg(
-            "address requires either positional <STRING>... or --template <T> --key @i=<XPUB>; clap should have caught this — please report a bug".into(),
-        ));
-    }
-    if let Some(template) = args.template {
-        if args.keys.is_empty() {
-            return Err(CliError::BadArg(
-                "--key @i=<XPUB> required when --template is supplied".into(),
-            ));
-        }
-        let ctx = ctx_for_template(template);
-        let parsed_keys = args
-            .keys
-            .iter()
-            .map(|k| parse_key(k, ctx, args.network))
-            .collect::<Result<Vec<_>, _>>()?;
-        let parsed_fps: Vec<ParsedFingerprint> = args
-            .fingerprints
-            .iter()
-            .map(|s| parse_fingerprint(s))
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut descriptor = parse_template(template, &parsed_keys, &parsed_fps)?;
-        // THE SAME OVERRIDE `md encode --path` APPLIES, and for the same reason:
-        // a non-canonical wrapper refuses with "non-canonical wrapper requires
-        // explicit origin for @N", and until this flag existed there was no way
-        // to give it one here. Which meant exactly the shapes that need an
-        // explicit origin -- taproot with a script tree, and the miniscript
-        // wrappers generally -- could be ENCODED but never had their addresses
-        // derived from a template.
-        apply_path_override(&mut descriptor, args.path)?;
-        return Ok(descriptor);
-    }
-    // Phrase path. mstring display-grouping (SPEC §3.2): strip separators so a
-    // grouped or unbroken card both re-ingest.
-    let phrases = crate::cmd::strip_md1_inputs(args.phrases);
-    if phrases.len() == 1 {
-        Ok(decode_md1_string(&phrases[0])?)
-    } else {
-        let refs: Vec<&str> = phrases.iter().map(String::as_str).collect();
-        Ok(reassemble(&refs)?)
-    }
 }

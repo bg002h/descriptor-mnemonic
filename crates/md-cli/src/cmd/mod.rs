@@ -10,10 +10,12 @@ pub fn strip_md1_inputs(strings: &[String]) -> Vec<String> {
 }
 
 pub mod address;
+pub mod build;
 pub mod bytecode;
 #[cfg(feature = "cli-compiler")]
 pub mod compile;
 pub mod decode;
+pub mod descriptor;
 pub mod encode;
 pub mod gen_man;
 #[cfg(feature = "json")]
