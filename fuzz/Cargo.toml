@@ -22,6 +22,22 @@ libfuzzer-sys = "0.4"
 [dependencies.md-codec]
 path = "../crates/md-codec"
 
+# THE PIN HAS TO BE REPEATED HERE, and the reason is the line above the
+# `[workspace]` key: this is its OWN workspace, so it inherits nothing from the
+# repo root -- including root Cargo.toml's `[patch.crates-io]`. Without it,
+# md-codec is built here against a crates.io miniscript 13.x that has neither
+# PR #953's taptree Display nor PR #910's `Terminal::SortedMultiA`, and the
+# fuzz targets fail to compile with `no variant ... SortedMultiA`,
+# `no method named derive_at_index`, `no method named into_definite`.
+#
+# THAT IS EXACTLY WHAT HAPPENED. `fuzz-smoke` went red at 75032c2f -- the commit
+# that lifted the pin -- and stayed red through eight commits, because the only
+# REQUIRED status context is `cargo test (ubuntu-latest)`. A job that is red but
+# not required is a job whose signal nobody reads. Keep this rev in lockstep
+# with the root's.
+[patch.crates-io]
+miniscript = { git = "https://github.com/rust-bitcoin/rust-miniscript", rev = "ff4732e5f75aa555682343cb180fa72ee3e8e9d5" }
+
 [profile.release]
 debug = 1
 
