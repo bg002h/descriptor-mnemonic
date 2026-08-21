@@ -120,6 +120,24 @@ pub const MANIFEST: &[Vector] = &[
     // Stage 3, encodable but not derivable. Order-invariant by construction,
     // which is what distinguishes it from `multi_a` and what the address in this
     // record pins.
+    // THE PATHOLOGICAL JOURNEY'S OWN FRAGMENT SET, at three keys instead of
+    // eleven: or_i + and_v + the `v:` wrapper + after + older + sha256 + multi.
+    // That policy is a real wsh() wallet this repo already engraves and
+    // documents, so it is the honest target for a segwit-v0 script emitter --
+    // and every fragment here appears in it.
+    //
+    // BOTH multis use k != n (2-of-3 and 1-of-2), and that is deliberate. With
+    // 2-of-2 and 1-of-1 a mutation that emits `n` before `k` is INVISIBLE --
+    // measured: it passed. A fixture has to distinguish the parameters it
+    // claims to cover.
+    //
+    // The `v:` wrapper is the subtle one: it MERGES into the wrapped fragment's
+    // terminator (CHECKSIG -> CHECKSIGVERIFY, EQUAL -> EQUALVERIFY) rather than
+    // appending OP_VERIFY, so an emitter that always appends produces a script
+    // that still looks plausible and hashes to a different address.
+    Vector { name: "keyed_wsh_timelock_hashlock", template: "wsh(or_i(and_v(v:after(1000000),and_v(v:sha256(a84dce40975727c398023cfbd50d5db3b9662375521d0f1ac62dbd829b9a08ad),multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))),and_v(v:older(65535),multi(1,@1/<0;1>/*,@2/<0;1>/*))))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
     Vector { name: "keyed_tr_sortedmulti_a", template: "tr(@0/<0;1>/*,sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*))",
         keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
         fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
