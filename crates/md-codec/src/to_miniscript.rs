@@ -429,6 +429,39 @@ fn tree_to_taptree(
         return miniscript::descriptor::TapTree::combine(l, r)
             .map_err(|e| failed(format!("TapTree depth: {e}")));
     }
+    // `sortedmulti_a` IS LEGAL HERE AND ONLY HERE (R5, 2026-08-20).
+    //
+    // BIP-386 places `sortedmulti_a()` in BIP-387's category — a SIBLING of the
+    // Miniscript fragments, not a member — so it is admissible as a taproot LEAF
+    // and forbidden as a sub-expression. That is exactly the split this function
+    // boundary already draws: a leaf arrives here, a nested fragment arrives at
+    // `node_to_miniscript`, which refuses it.
+    //
+    // So the conversion lives HERE rather than as an arm in the generic
+    // node→Terminal converter. Putting it there would have made a standards
+    // refusal positional-blind and admitted `sortedmulti_a` inside combinators,
+    // which no BIP permits and which rust-miniscript's own parser would now
+    // accept (it dispatches these through a recursive parser with no depth
+    // guard — more permissive than the standard, see the pin comment).
+    //
+    // Writable at all only since the ff4732e pin: `Terminal::SortedMultiA`
+    // arrived upstream with PR #910. Before that the refusal was an
+    // implementation limit; now the limit is gone and only the positional rule
+    // remains.
+    if let (Tag::SortedMultiA, Body::MultiKeys { k, indices }) = (&node.tag, &node.body) {
+        let thresh = build_multi_threshold::<{ MAX_PUBKEYS_IN_CHECKSIGADD }>(
+            *k,
+            indices,
+            keys,
+            "sortedmulti_a",
+        )?;
+        let ms = miniscript::Miniscript::<DescriptorPublicKey, Tap>::from_ast(
+            Terminal::SortedMultiA(thresh),
+        )
+        .map_err(|e| failed(format!("sortedmulti_a: {e}")))?;
+        return Ok(miniscript::descriptor::TapTree::leaf(Arc::new(ms)));
+    }
+
     // Single bare leaf — including the v0.30 single-leaf wire optimization
     // where `Body::Tr { tree: Some(<bare PkK Node>) }` skips the `Tag::TapTree`
     // wrap.

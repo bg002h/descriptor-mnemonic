@@ -652,20 +652,39 @@ fn upstream_taptree_depth2_display_asymmetry() {
 
 #[test]
 fn self_test_bad_sortedmultia_wsh_leaf() {
-    // SortedMultiA anywhere — rust-miniscript v13 has no Terminal
-    // (FOLLOWUP `md-codec-sortedmulti-a-to-miniscript-rendering-gap`).
+    // STILL A REFUSAL, and now for the RIGHT reason. It used to be refused
+    // because "rust-miniscript v13 has no Terminal" — an implementation limit
+    // that ended at the ff4732e pin. `sortedmulti_a` is TAPSCRIPT-ONLY
+    // (BIP-386/387), so inside `wsh` it is invalid by the standard, not by our
+    // capability. Its tap-leaf sibling below now converts; this one must not,
+    // or the fix widened admission into segwit v0.
     let d = descriptor_with_pubkeys(wrap(Tag::Wsh, multikeys(Tag::SortedMultiA, 1, vec![0, 1])));
     assert_p7_clean_refusal(&d);
 }
 
+/// FLIPPED 2026-08-20 (R5, Stage 3): a tap-leaf `sortedmulti_a` now CONVERTS.
+///
+/// This was a known-bad cell asserting a clean refusal, which was right while
+/// the conversion did not exist. BIP-386 places `sortedmulti_a()` in BIP-387's
+/// category — a sibling of the Miniscript fragments — so the taproot leaf is
+/// exactly where it is admissible, and upstream gained `Terminal::SortedMultiA`
+/// in the pinned rev. Encode already accepted this shape; only derive refused,
+/// so the CLI admitted a card it could not verify.
 #[test]
-fn self_test_bad_sortedmultia_tap_leaf() {
+fn self_test_sortedmultia_tap_leaf_converts() {
     let d = descriptor_with_pubkeys(tr_node(
         false,
         0,
         Some(multikeys(Tag::SortedMultiA, 2, vec![1, 2])),
     ));
-    assert_p7_clean_refusal(&d);
+    // p6_chain runs the full converter + wire round-trip and returns the first
+    // address, so a silent regression to "refused" fails here rather than
+    // passing as a skipped cell.
+    let addr = p6_chain(&d);
+    assert!(
+        addr.starts_with("bc1p"),
+        "a tap-leaf sortedmulti_a must derive a taproot address, got {addr}"
+    );
 }
 
 #[test]
