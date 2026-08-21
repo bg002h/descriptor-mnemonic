@@ -164,6 +164,19 @@ pub const MANIFEST: &[Vector] = &[
     Vector { name: "keyed_tr_sortedmulti_a", template: "tr(@0/<0;1>/*,sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*))",
         keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
         fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
+    // UNSORTED multi_a, and it is the ONLY order-SENSITIVE tap leaf in the
+    // corpus. Every other multi-key leaf here is sortedmulti_a, which sorts on
+    // the derived keys and therefore reads the same whichever order a consumer
+    // walks them in -- so until this vector existed, "preserve the WRITTEN key
+    // order in a tap leaf" was asserted by nothing. Found by mutation: reversing
+    // a leaf's key indices in the Go port passed the entire suite.
+    //
+    // Two keys is enough. Any permutation of two is a reversal, and a reversal
+    // changes the emitted script, so a wrong order cannot round-trip to the same
+    // address.
+    Vector { name: "keyed_tr_multi_a", template: "tr(@0/<0;1>/*,multi_a(2,@0/<0;1>/*,@1/<0;1>/*))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: Some("48'/0'/0'/2'") },
     // RIGHT-SPINE depth-2: {A,{B,C}}, leaf depths (1,2,2) -- the MIRROR of
     // keyed_tr_depth2's (2,2,1). Both are needed because a tree-rebuilding bug
     // can be chirality-dependent: mutation testing showed that "combine the top
