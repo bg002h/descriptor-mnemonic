@@ -116,6 +116,8 @@ pub fn encode_payload(d: &Descriptor) -> Result<(Vec<u8>, usize), Error> {
     // restored. The decode-side refusal waits until the conformance corpus is
     // regenerated, so no gate is ever red while it lands.
     crate::validate::validate_origin_key_consistency(d)?;
+    // F-218: refuse to mint a policy that names more cosigners than it has.
+    crate::validate::validate_no_duplicate_key_slots(d)?;
 
     let mut w = BitWriter::new();
     let header = Header {

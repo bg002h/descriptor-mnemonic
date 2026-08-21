@@ -26,6 +26,15 @@ use predicates::prelude::*;
 /// Abandon-mnemonic tpub at m/48'/1'/0'/2' (BIP 48 testnet account, depth 4).
 const TPUB48: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
 
+/// A SECOND, DISTINCT key for slot @1.
+///
+/// Every fixture here used TPUB48 twice, which is a 2-of-2 one key can satisfy
+/// alone — the shape F-218's encoder check now refuses. Nothing these tests
+/// assert needs the two slots to hold the same key; the duplication was
+/// incidental filler, and it made the fixtures describe a wallet nobody would
+/// want.
+const TPUB48_B: &str = "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M";
+
 /// (a) THE FUNDS CASE: a post-multipath fixed step `@0/<2;3>/0'/*` must reject
 /// with exit 1 and a typed template-parse error naming the multipath-not-final
 /// cause — NOT exit 0 with a silently-divergent md1 phrase on stdout. Keyless
@@ -71,7 +80,7 @@ fn encode_fused_hardened_body_with_suffix_hits_h13_first() {
             "--key",
             &format!("@0={TPUB48}"),
             "--key",
-            &format!("@1={TPUB48}"),
+            &format!("@1={TPUB48_B}"),
             "--network",
             "regtest",
         ])
@@ -101,7 +110,7 @@ fn encode_multipath_last_still_encodes() {
             "--key",
             &format!("@0={TPUB48}"),
             "--key",
-            &format!("@1={TPUB48}"),
+            &format!("@1={TPUB48_B}"),
             "--network",
             "regtest",
         ])

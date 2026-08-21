@@ -21,6 +21,15 @@ use predicates::prelude::*;
 /// testnet version bytes).
 const TPUB48: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
 
+/// A SECOND, DISTINCT key for slot @1.
+///
+/// Every fixture here used TPUB48 twice, which is a 2-of-2 one key can satisfy
+/// alone — the shape F-218's encoder check now refuses. Nothing these tests
+/// assert needs the two slots to hold the same key; the duplication was
+/// incidental filler, and it made the fixtures describe a wallet nobody would
+/// want.
+const TPUB48_B: &str = "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M";
+
 /// (a) A well-formed hardened multipath alternative `<0';1'>` must be rejected
 /// with exit 1 and a typed template-parse error naming the hardened alt — NOT
 /// exit 0 with a silently-collapsed bare-`/*` md1 phrase.
@@ -34,7 +43,7 @@ fn encode_hardened_multipath_apostrophe_rejects() {
             "--key",
             &format!("@0={TPUB48}"),
             "--key",
-            &format!("@1={TPUB48}"),
+            &format!("@1={TPUB48_B}"),
             "--network",
             "regtest",
         ])
@@ -57,7 +66,7 @@ fn encode_hardened_multipath_h_form_rejects() {
             "--key",
             &format!("@0={TPUB48}"),
             "--key",
-            &format!("@1={TPUB48}"),
+            &format!("@1={TPUB48_B}"),
             "--network",
             "regtest",
         ])
@@ -80,7 +89,7 @@ fn encode_hardened_multipath_mixed_rejects() {
             "--key",
             &format!("@0={TPUB48}"),
             "--key",
-            &format!("@1={TPUB48}"),
+            &format!("@1={TPUB48_B}"),
             "--network",
             "regtest",
         ])
@@ -111,7 +120,7 @@ fn encode_malformed_hardened_multipath_rejects() {
                 "--key",
                 &format!("@0={TPUB48}"),
                 "--key",
-                &format!("@1={TPUB48}"),
+                &format!("@1={TPUB48_B}"),
                 "--network",
                 "regtest",
             ])
@@ -157,7 +166,7 @@ fn encode_nonhardened_multipath_roundtrips() {
             "--key",
             &format!("@0={TPUB48}"),
             "--key",
-            &format!("@1={TPUB48}"),
+            &format!("@1={TPUB48_B}"),
             "--network",
             "regtest",
             "--force-chunked",

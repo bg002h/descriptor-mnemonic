@@ -356,6 +356,34 @@ pub enum Error {
         reserved_bits: u8,
     },
 
+    /// Two `@N` slots carry the SAME key AND the same use-site, so they
+    /// derive an identical child at every address index.
+    ///
+    /// The policy reads as k-of-n and is satisfiable by fewer parties than it
+    /// names: with one key seated twice, its holder can produce two of the
+    /// required signatures alone. Legal script, misleading wallet.
+    ///
+    /// The comparison is the 65-byte `chain code ‖ compressed pubkey` PLUS the
+    /// use-site. Not the fingerprint, which identifies a MASTER rather than a
+    /// key and would refuse the legitimate multi-account cosigner; not the
+    /// base58 xpub, which carries depth/parent metadata that differs between
+    /// two sources of the same key. And not the key alone: the same xpub at
+    /// two different multipath branches derives DIFFERENT children at every
+    /// index, which is a different wallet, not a duplicate. Measured —
+    /// `<0;1>` and `<2;3>` over one xpub give different addresses.
+    #[error(
+        "@{a} and @{b} carry the same key at the same use-site: this policy names \
+         {n} cosigners but one of them holds two of the seats"
+    )]
+    DuplicateKeySlots {
+        /// The lower placeholder index of the duplicated pair.
+        a: u8,
+        /// The higher placeholder index.
+        b: u8,
+        /// How many `@N` slots the policy declares.
+        n: u8,
+    },
+
     /// Two `@N` slots declare the SAME master fingerprint and the SAME
     /// origin path while carrying DIFFERENT xpubs. That is impossible:
     /// BIP-32 is deterministic, so a `(fingerprint, path)` pair identifies

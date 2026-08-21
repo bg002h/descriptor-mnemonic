@@ -264,6 +264,50 @@ pub fn validate_xpub_bytes(d: &Descriptor) -> Result<(), Error> {
     Ok(())
 }
 
+/// Validate that no two `@N` slots carry the same key at the same use-site
+/// (F-218).
+///
+/// Such a policy reads as k-of-n and is satisfiable by fewer parties than it
+/// names: one key seated twice lets its holder produce two of the required
+/// signatures. The script is legal; the wallet is not what it looks like.
+///
+/// THE COMPARISON IS `(xpub, use_site_path)`, and each half is load-bearing:
+///
+/// - The 65-byte `chain code ‖ compressed pubkey` rather than the fingerprint
+///   (which identifies a MASTER, so it would refuse the legitimate cosigner
+///   contributing two accounts) or the base58 string (which carries
+///   depth/parent metadata differing between two sources of one key, so it
+///   would MISS a real duplicate that arrived by two routes).
+/// - The use-site, because the same xpub at two different multipath branches
+///   derives a different child at every index — `<0;1>` and `<2;3>` over one
+///   key are two different wallets, not a duplicate. Measured, not assumed.
+///
+/// DISTINCT FROM [`validate_origin_key_consistency`], and the pair is easy to
+/// conflate: one origin bound to two DIFFERENT keys is IMPOSSIBLE and refused
+/// as malformed; one key in two slots is merely UNSAFE. Separate errors,
+/// because one message explaining both would explain neither.
+pub fn validate_no_duplicate_key_slots(d: &Descriptor) -> Result<(), Error> {
+    // As in the sibling check: an expansion failure belongs to whichever
+    // validator owns it, not to this one.
+    let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
+        return Ok(());
+    };
+    for (i, a) in expanded.iter().enumerate() {
+        let Some(xa) = a.xpub else { continue };
+        for b in &expanded[i + 1..] {
+            let Some(xb) = b.xpub else { continue };
+            if xa == xb && a.use_site_path == b.use_site_path {
+                return Err(Error::DuplicateKeySlots {
+                    a: a.idx,
+                    b: b.idx,
+                    n: d.n,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Validate that no two `@N` slots claim the SAME key origin while carrying
 /// DIFFERENT keys (F-217).
 ///
