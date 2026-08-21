@@ -1,6 +1,8 @@
 use crate::cmd::partial::{ORIGIN_UNSPECIFIED_MARKER, emit_partial_stderr_note};
 use crate::error::CliError;
 use crate::format::text;
+use std::fmt::Write as _;
+
 use md_codec::chunk::reassemble_with_opts;
 use md_codec::decode::{DecodeOpts, decode_md1_string_with_opts};
 use md_codec::identity::{
@@ -91,6 +93,42 @@ pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
         "wallet-descriptor-template-id: {}",
         text::fmt_template_id(&tpl)
     );
+    // THE ORIGINS, IN THE TEXT OUTPUT (F-219).
+    //
+    // `--json` has carried these all along, as `path_decl`; the text output —
+    // the one an operator actually reads off a terminal — did not. The two
+    // surfaces disagreed about what the card contains, and the origin is the
+    // field a signer uses to FIND its key, so its absence is the difference
+    // between a restorable backup and a puzzle.
+    //
+    // Printed per `@N` rather than as a `Shared`/`Divergent` tag, because that
+    // is the question being asked: *where does slot N live?* A reader comparing
+    // against a coordinator's key list should not have to know which encoding
+    // the card happened to use.
+    match md_codec::canonicalize::expand_per_at_n(&descriptor) {
+        Ok(expanded) if !expanded.is_empty() => {
+            println!("origins:");
+            for e in &expanded {
+                let path = fmt_origin_path(&e.origin_path);
+                match e.fingerprint {
+                    Some(fp) => println!(
+                        "  @{}: [{}/{}]",
+                        e.idx,
+                        fp.iter().fold(String::with_capacity(8), |mut a, b| {
+                            let _ = write!(a, "{b:02x}");
+                            a
+                        }),
+                        path.trim_start_matches("m/")
+                    ),
+                    None => println!("  @{}: {path}", e.idx),
+                }
+            }
+        }
+        // An expansion failure is not this section's error to raise — a dead or
+        // pathless card is reported by the markers above, and printing a second
+        // complaint here would say the same thing in different words.
+        _ => {}
+    }
     if let Some(pid) = &pid {
         println!("wallet-policy-id: {}", text::fmt_policy_id(pid));
         println!(
@@ -106,4 +144,22 @@ pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
         emit_partial_stderr_note(&unres, &mut std::io::stderr());
     }
     Ok(if partial { 4 } else { 0 })
+}
+
+/// Render an `OriginPath` in `m/...` notation.
+///
+/// Deliberately identical to `format::json::format_origin_path` — the whole
+/// point of F-219's fix is that the text and JSON surfaces agree about what a
+/// card says, so they must render it the same way. `OriginPath` implements no
+/// `Display`, which is why each formats it locally.
+fn fmt_origin_path(p: &md_codec::origin_path::OriginPath) -> String {
+    let mut s = String::from("m");
+    for c in &p.components {
+        s.push('/');
+        s.push_str(&c.value.to_string());
+        if c.hardened {
+            s.push('\'');
+        }
+    }
+    s
 }
