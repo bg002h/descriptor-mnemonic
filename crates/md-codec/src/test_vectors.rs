@@ -183,6 +183,27 @@ pub const MANIFEST: &[Vector] = &[
     // two nodes unconditionally, ignoring depth" produces the CORRECT root for a
     // left-heavy tree and a wrong one here. With only the left-heavy vector the
     // mutation passed; the pair catches it.
+    // THE PATHOLOGICAL WALLET, in taproot form -- the most demanding vector in
+    // this corpus and the reason it exists. Four tiers of a degrading vault as
+    // a DEPTH-3 taproot tree: two `sha256` hashlocks, all four Bitcoin timelock
+    // flavours across `after`/`older`, `multi_a` at thresholds 3/2/2/1, and the
+    // NUMS internal key (script paths only, no key-path spend).
+    //
+    // Every leaf is `and_v(v:...)` wrapping a timelock or hashlock, which is
+    // precisely the shape F-214 was filed for: the fork's tap-leaf DESCRIBER
+    // named only pk / multi_a / sortedmulti_a, so it refused all four while the
+    // primary derived them without complaint. This vector is what stops that
+    // divergence coming back.
+    //
+    // Depth 3 also matters on its own: every other tr vector here is depth <= 2,
+    // so the tree-shape arithmetic was untested one level down.
+    //
+    // ELEVEN DISTINCT accounts, 48'/0'/N'/2' for N in 0..10, each declared in
+    // the TEMPLATE rather than via --path -- eleven keys under one master is
+    // exactly where F-217's flattening would bind one origin to eleven keys.
+    Vector { name: "keyed_tr_pathological", template: "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,{and_v(v:after(1000000),and_v(v:sha256(a84dce40975727c398023cfbd50d5db3b9662375521d0f1ac62dbd829b9a08ad),multi_a(3,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))),{and_v(v:after(1893456000),and_v(v:sha256(a84dce40975727c398023cfbd50d5db3b9662375521d0f1ac62dbd829b9a08ad),multi_a(2,@3/48'/0'/3'/2'/<0;1>/*,@4/48'/0'/4'/2'/<0;1>/*,@5/48'/0'/5'/2'/<0;1>/*))),{and_v(v:older(65535),multi_a(2,@6/48'/0'/6'/2'/<0;1>/*,@7/48'/0'/7'/2'/<0;1>/*)),and_v(v:older(4255898),multi_a(1,@8/48'/0'/8'/2'/<0;1>/*,@9/48'/0'/9'/2'/<0;1>/*,@10/48'/0'/10'/2'/<0;1>/*))}}})",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR"), (3, "xpub6E6Z3Ss5TXJYNJp4U1q3NZ3pCn82i7KXQAKUtNnzLJ3cCdchQeSdFvXemizaHUF7wNwRQAB8mPdoZhGHLiv49cWPtCnoJY3Az3E8JKxH9Mq"), (4, "xpub6EhpCqtVqedgGvswhRdYH3pTh3z7SXMKQWX5LWiAafipEJXvZsoH5RbtQcj2QZV2sT77KmUHpHF9Yh72N47vCqYGuqpw9bjBoFcdeiV7kyM"), (5, "xpub6EzwjvpuQiAFs6x3n1CKaBy8ZSdDyRsJWAMYzSLLbJ1PWZa7CHREmJVQZrixNrYsZ2gwEcPpQGAHXpYzf7evYbKxGL8hBBw5uma8tM6JTos"), (6, "xpub6EoPBmSpHj5nnnRje1Y6LHRGKgG16FSL4HKwDaiY1sKBJecAi6UTtbWU7ZF7G5HeHxgd6Dn7XbHqmbAVMBCFogZFVw7WDVRfWxqVeNwPf3x"), (7, "xpub6ErD7N4g3RwvUsj9zk5SseA2JYpR9izv9SDQMst26jL1htYXgQaLUNDdx7uK4tjYa5m5ztYMJX53njGKZYv9iRQ7Ninwjwc7URhXefMDhV6"), (8, "xpub6EQuyDGuE2bnFfgUcSSUBgfc5Xj4bZZ3qJLdHYDsXGBPiwm7ux2zpZurcVV7C4WS9kSjxetdsNDn4znDC9LogP8e9WBeA5zRPPEPZ6e2Vb9"), (9, "xpub6Dx8Loh39ugPD29DFTkre9XoVHBnQt9Knzx7ZN5deYd4oQxKrveQgS9sUQtJ1M8W6nFmQVwayV1t9QD5oQYAym96MHu6TY4Snm7LkYS1GgD"), (10, "xpub6DkyqSfHVB9mjk1MyTSUcHH1YCu6tL18b2sD36stDRdd8TfX6gL2r2scLsc42MZqZxVFJhvh5mzZyCQve4WbeKGUhzkvxuvqnWiWkB4ZNNE")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a]), (3, [0x73, 0xc5, 0xda, 0x0a]), (4, [0x73, 0xc5, 0xda, 0x0a]), (5, [0x73, 0xc5, 0xda, 0x0a]), (6, [0x73, 0xc5, 0xda, 0x0a]), (7, [0x73, 0xc5, 0xda, 0x0a]), (8, [0x73, 0xc5, 0xda, 0x0a]), (9, [0x73, 0xc5, 0xda, 0x0a]), (10, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
     Vector { name: "keyed_tr_depth2_rightspine", template: "tr(@0/48'/0'/0'/2'/<0;1>/*,{pk(@1/48'/0'/1'/2'/<0;1>/*),{pk(@2/48'/0'/2'/2'/<0;1>/*),pk(@3/48'/0'/3'/2'/<0;1>/*)}})",
         keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR"), (3, "xpub6E6Z3Ss5TXJYNJp4U1q3NZ3pCn82i7KXQAKUtNnzLJ3cCdchQeSdFvXemizaHUF7wNwRQAB8mPdoZhGHLiv49cWPtCnoJY3Az3E8JKxH9Mq")],
         fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a]), (3, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
