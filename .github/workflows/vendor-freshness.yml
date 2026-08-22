@@ -20,7 +20,16 @@ name: vendor-freshness
 
 on:
   push:
-    branches: [main, master]
+    # `ci/**` so the ci/staging push ritual can gate this BEFORE the commit
+    # lands on main. The `pull_request:` trigger below already makes this a
+    # leading gate for a PR flow — but this constellation pushes directly to
+    # main through `scripts/push-master.sh`, so that trigger never fires here
+    # and the gate could only ever report on work already published.
+    #
+    # F-226: this gate went red on the miniscript pin (2026-08-20) and the
+    # failure sat unacted-on for two days, because the only place it could
+    # speak was after the fact.
+    branches: [main, master, 'ci/**']
     paths:
       - 'Cargo.lock'
       - 'Cargo.toml'
