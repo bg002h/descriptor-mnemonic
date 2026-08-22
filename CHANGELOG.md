@@ -4,6 +4,55 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased] — authoring gate for consensus-masked `older()`
+
+### Fixed
+
+- **`md encode` refuses an `older()` value BIP-68 will not enforce.**
+
+  BIP-68 reads bit 31 (disable), bit 22 (units) and bits **0-15** of a relative
+  locktime and discards everything else. So a descriptor can say one thing and
+  the chain enforce another, with nothing in the pipeline objecting:
+
+  | written | enforced |
+  | --- | --- |
+  | `older(65535)` | 65535 blocks |
+  | `older(65536)` | **0 — no lock at all** |
+  | `older(210000)` | 13392 blocks |
+  | `older(420000)` | 26784 blocks |
+
+  Found while designing a wallet whose tiers were specified as 210,000 and
+  420,000 blocks. Written as relative locks they would have been enforced at
+  13,392 and 26,784 — roughly three and six months instead of four and eight
+  years — on plates asserting otherwise. A relative lock cannot express those
+  delays at all (65535 blocks, or 65535 x 512s ~ 388 days), so the fix is
+  always an absolute `after(height)`.
+
+### Unchanged, deliberately
+
+- **md-codec stays lenient.** rust-miniscript 13.0.0 accepts these values and
+  `proptest_to_miniscript::self_test_older_0x10000_miniscript_leniency` pins
+  that on purpose: a codec must round-trip whatever the descriptor layer
+  accepts, and refusing in `encode_payload` breaks the round-trip property
+  rather than protecting anyone. The first attempt at this fix DID gate the
+  codec and turned 10 proptests red, which is exactly the signal those tests
+  exist to give.
+
+  The gate belongs on the AUTHORING surface, and that split is not new here —
+  `mnemonic-toolkit` specified it in `SPEC_older_timelock_mask_gate.md` (a
+  blocking gate when authoring) and `SPEC_older_timelock_advisory.md` (a
+  non-blocking advisory on intake, scoped "toolkit-only, no md-codec changes").
+  This is the same gate on md's authoring surface.
+
+- **The Go port needs no equivalent.** `md/encode_singlesig.go` and
+  `md/encode_multisig.go` build single-sig and sortedmulti policies and emit no
+  timelock at all, so the fork has no authoring surface that can produce a
+  masked `older()`. Its decoder handles `tagOlder` and stays lenient, matching
+  Rust.
+
+- `md_codec::validate::validate_relative_timelocks` is public and called by
+  `md encode` only — an opt-in helper, not codec behaviour.
+
 ## md-cli [Unreleased]
 
 ### Changed — `md encode` chunks automatically on overflow (F-136)

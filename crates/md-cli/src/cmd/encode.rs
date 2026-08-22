@@ -96,6 +96,25 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         return Ok(0);
     }
 
+    // AUTHORING GATE: refuse an `older()` that consensus will not enforce.
+    //
+    // BIP-68 reads bit 31, bit 22 and bits 0-15 of a relative locktime and
+    // discards the rest, so `older(210000)` locks for 13392 blocks and
+    // `older(65536)` locks for nothing at all -- while rust-miniscript accepts
+    // both and this codec round-trips them faithfully. That leniency is
+    // deliberate and pinned (`proptest_to_miniscript`'s
+    // `self_test_older_0x10000_miniscript_leniency`): a codec must represent
+    // whatever the descriptor layer accepts.
+    //
+    // But `md encode` AUTHORS an artifact that gets engraved in metal and read
+    // for years, and a plate asserting a four-year lock the chain releases in
+    // three months is a funds-safety defect. `mnemonic-toolkit` already split
+    // it exactly this way -- a blocking gate on its authoring surface
+    // (SPEC_older_timelock_mask_gate.md) and a non-blocking advisory on intake
+    // (SPEC_older_timelock_advisory.md, scoped "toolkit-only") -- and this is
+    // the same gate on md's authoring surface.
+    md_codec::validate::validate_relative_timelocks(&descriptor.tree)?;
+
     // Single string when it fits, chunked when it does not -- AUTOMATICALLY.
     //
     // A payload over the codex32 regular code's 80-data-symbol cap used to be a

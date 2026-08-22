@@ -509,6 +509,32 @@ pub enum Error {
         bound: u8,
     },
 
+    /// An `older()` value carrying bits that BIP-68 consensus IGNORES, so the
+    /// written number is not the delay that is enforced.
+    ///
+    /// BIP-68 reads only bit 31 (disable), bit 22 (units: blocks vs 512s) and
+    /// bits 0-15 (the value). Every other bit is discarded. `older(210000)`
+    /// therefore enforces `210000 & 0xFFFF` = 13392 blocks, and
+    /// `older(65536)` enforces ZERO — no timelock at all — while both
+    /// round-trip through this codec unchanged.
+    ///
+    /// Refused at encode because the artifact is engraved in metal: a plate
+    /// asserting a four-year lock the chain will release in three months is
+    /// a funds-safety defect, not a rendering one. A relative lock simply
+    /// cannot express a delay above 65535 blocks (or 65535 x 512s ~ 388 days);
+    /// use an absolute `after()` height instead.
+    #[error(
+        "older({written}) is not what consensus enforces: BIP-68 reads only the low 16 bits (and bit 22 for units), so this locks for {enforced} {units}, not {written}. A relative timelock cannot exceed 65535 {units} -- use an absolute after() height for longer delays"
+    )]
+    RelativeTimelockTruncated {
+        /// The value written in the descriptor.
+        written: u32,
+        /// What BIP-68 actually enforces.
+        enforced: u32,
+        /// "blocks" or "512-second units".
+        units: &'static str,
+    },
+
     /// Encode-side cap (cycle-4 H6): a single codex32 string's data part
     /// exceeded the regular code's `REGULAR_DATA_SYMBOLS_MAX = 80` symbols.
     /// The codex32 regular code is BCH(93, 80, 8); a single string therefore

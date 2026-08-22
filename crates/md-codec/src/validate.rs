@@ -177,6 +177,77 @@ pub fn validate_use_site_overrides_canonical(
 }
 
 /// Validate that all leaves in a tap-script-tree are permitted-leaf tags per §6.3.1.
+/// Refuse an `older()` whose written value is not the delay consensus enforces.
+///
+/// BIP-68 gives a relative locktime only 16 bits of magnitude plus a units
+/// flag: bit 31 disables, bit 22 selects blocks-vs-512-second-units, bits 0-15
+/// carry the value, and **every other bit is ignored**. Writing a larger number
+/// does not fail anywhere -- it silently means something else:
+///
+/// | written | enforced |
+/// | --- | --- |
+/// | `older(65535)` | 65535 blocks |
+/// | `older(65536)` | **0** -- no lock at all |
+/// | `older(210000)` | 13392 blocks |
+/// | `older(420000)` | 26784 blocks |
+///
+/// The codec round-trips all of them faithfully, and rust-miniscript accepts
+/// them, so nothing downstream notices. That is tolerable for a string and not
+/// tolerable for a plate: an engraved backup asserting a four-year lock that
+/// the chain releases in three months is a funds-safety defect.
+///
+/// A relative lock cannot express a longer delay at all (65535 blocks ~ 1.25
+/// years; 65535 x 512s ~ 388 days), so the fix is always an absolute
+/// `after(height)`, never a bigger `older()`.
+///
+/// **This codec does NOT call it, deliberately.** A codec's job is to
+/// round-trip anything the descriptor layer accepts, and rust-miniscript 13.0.0
+/// accepts these values -- `proptest_to_miniscript`'s
+/// `self_test_older_0x10000_miniscript_leniency` pins exactly that, so a
+/// refusal here would break the round-trip property rather than protect
+/// anyone. The same split is already specified in `mnemonic-toolkit`
+/// (`SPEC_older_timelock_mask_gate.md`, a blocking gate on the AUTHORING
+/// surface; `SPEC_older_timelock_advisory.md`, a non-blocking advisory on
+/// INTAKE surfaces, scoped "toolkit-only, no md-codec changes").
+///
+/// So this is an opt-in helper for the surfaces that MINT an artifact --
+/// `md encode` calls it, because a plate is authored once and read for years.
+pub fn validate_relative_timelocks(root: &Node) -> Result<(), Error> {
+    // The bits BIP-68 actually reads. Anything outside this mask is discarded
+    // by consensus, so its presence means the written value is misleading.
+    const CONSENSUS_BITS: u32 = 0xFFFF | (1 << 22);
+    walk_older(root, CONSENSUS_BITS)
+}
+
+fn walk_older(node: &Node, consensus_bits: u32) -> Result<(), Error> {
+    if matches!(node.tag, Tag::Older) {
+        if let Body::Timelock(v) = &node.body {
+            if v & !consensus_bits != 0 {
+                let time_based = v & (1 << 22) != 0;
+                return Err(Error::RelativeTimelockTruncated {
+                    written: *v,
+                    enforced: v & 0xFFFF,
+                    units: if time_based {
+                        "512-second units"
+                    } else {
+                        "blocks"
+                    },
+                });
+            }
+        }
+    }
+    match &node.body {
+        Body::Children(children) => {
+            for c in children {
+                walk_older(c, consensus_bits)?;
+            }
+        }
+        Body::Tr { tree: Some(t), .. } => walk_older(t, consensus_bits)?,
+        _ => {}
+    }
+    Ok(())
+}
+
 pub fn validate_tap_script_tree(node: &Node) -> Result<(), Error> {
     walk_tap_tree_leaves(node)
 }
@@ -469,6 +540,72 @@ impl Descriptor {
 
 #[cfg(test)]
 mod tests {
+
+    /// BIP-68 gives a relative lock 16 bits plus a units flag. Anything above
+    /// that is silently reinterpreted, so it is refused at encode.
+    ///
+    /// `older(65536)` is the sharpest case: consensus reads ZERO, i.e. no lock
+    /// at all, on a plate that claims one. Found while designing a wallet whose
+    /// tiers were written as 210000 and 420000 blocks and would have been
+    /// enforced at 13392 and 26784.
+    #[test]
+    fn relative_timelock_above_16_bits_is_refused() {
+        for (written, enforced) in [(65536u32, 0u32), (210_000, 13_392), (420_000, 26_784)] {
+            let node = Node {
+                tag: Tag::Older,
+                body: Body::Timelock(written),
+            };
+            match validate_relative_timelocks(&node) {
+                Err(Error::RelativeTimelockTruncated {
+                    written: w,
+                    enforced: e,
+                    units,
+                }) => {
+                    assert_eq!(w, written);
+                    assert_eq!(e, enforced, "older({written}) is enforced as {enforced}");
+                    assert_eq!(units, "blocks");
+                }
+                other => panic!("older({written}) must be refused, got {other:?}"),
+            }
+        }
+    }
+
+    /// The faithful values still encode: the whole 16-bit block range, and a
+    /// time-based lock (bit 22 set) whose value also fits 16 bits.
+    #[test]
+    fn faithful_relative_timelocks_are_accepted() {
+        for v in [1u32, 32_768, 65_535, (1 << 22) | 1, (1 << 22) | 65_535] {
+            let node = Node {
+                tag: Tag::Older,
+                body: Body::Timelock(v),
+            };
+            assert!(
+                validate_relative_timelocks(&node).is_ok(),
+                "older({v}) is faithful under BIP-68 and must encode"
+            );
+        }
+    }
+
+    /// The walk reaches a timelock nested inside a taproot tree, which is where
+    /// this project's wallets actually put them.
+    #[test]
+    fn relative_timelock_is_checked_inside_a_tap_tree() {
+        let bad = Node {
+            tag: Tag::Older,
+            body: Body::Timelock(210_000),
+        };
+        let tree = Node {
+            tag: Tag::TapTree,
+            body: Body::Children(vec![bad]),
+        };
+        assert!(
+            matches!(
+                validate_relative_timelocks(&tree),
+                Err(Error::RelativeTimelockTruncated { .. })
+            ),
+            "a truncating older() nested in a taptree must still be refused"
+        );
+    }
     use super::*;
     use crate::tag::Tag;
     use crate::tree::{Body, Node};

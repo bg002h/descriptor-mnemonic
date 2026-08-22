@@ -740,3 +740,63 @@ fn force_chunked_still_chunks_a_short_policy() {
         "the flag must still force chunking"
     );
 }
+
+/// `md encode` refuses an `older()` that BIP-68 consensus will not enforce.
+///
+/// The codec stays lenient on purpose — rust-miniscript accepts these values
+/// and `proptest_to_miniscript` pins that, because a codec must round-trip
+/// whatever the descriptor layer accepts. The refusal belongs on the AUTHORING
+/// surface: this command mints an artifact that gets engraved in metal and read
+/// for years, and `older(210000)` locks for 13392 blocks while `older(65536)`
+/// locks for nothing at all.
+///
+/// Same split `mnemonic-toolkit` specified — blocking gate when authoring,
+/// advisory on intake.
+#[test]
+fn encode_refuses_a_relative_timelock_consensus_would_truncate() {
+    const NUMS: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+    let policy =
+        |n: u32| format!("tr({NUMS},{{pk(@0/<0;1>/*),and_v(v:older({n}),pk(@1/<0;1>/*))}})");
+    let enc = |n: u32| {
+        Command::cargo_bin("md")
+            .unwrap()
+            .args([
+                "encode",
+                &policy(n),
+                "--path",
+                "m/270028h/0h/0h/0h",
+                "--group-size",
+                "0",
+            ])
+            .output()
+            .unwrap()
+    };
+
+    // Faithful: the whole 16-bit block range encodes.
+    for n in [1u32, 32_768, 65_535] {
+        assert!(
+            enc(n).status.success(),
+            "older({n}) is faithful and must encode"
+        );
+    }
+    // Faithful time-based: bit 22 set, value still inside 16 bits.
+    assert!(
+        enc((1 << 22) | 1_000).status.success(),
+        "a 512s-unit lock must encode"
+    );
+
+    // Truncating: refused, and the message says what consensus would do.
+    for (n, enforced) in [(65_536u32, "0"), (210_000, "13392"), (420_000, "26784")] {
+        let out = enc(n);
+        assert!(!out.status.success(), "older({n}) must be refused");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains(enforced),
+            "the refusal must name what consensus enforces ({enforced}): {err}"
+        );
+        assert!(
+            err.contains("after()"),
+            "the refusal must point at the fix (an absolute after()): {err}"
+        );
+    }
+}
