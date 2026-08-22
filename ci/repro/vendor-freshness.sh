@@ -31,10 +31,12 @@ cd "$REPO_ROOT"
 # It used to be the two-block CODEC form with a guard that failed closed the
 # moment any git source appeared -- which it did when the tr/wsh cycle pinned
 # miniscript at ff4732e. Correct behaviour from the guard, wrong config for the
-# crate: the gate could no longer pass at all, and because the workflow is
-# path-filtered to Cargo.lock / vendor/** / this script, it never ran to say so.
-# A gate that cannot pass AND does not fire is indistinguishable from one that
-# passes (F-226, 2026-08-21).
+# crate: from that day the gate could no longer pass.
+#
+# It DID fire and it DID say so -- this workflow ran on the pin commit itself
+# (5b4d20ad, 2026-08-20) and failed. The failure then sat unacted-on for two
+# days. So the lesson is not "a silent gate": a red gate nobody watches costs
+# exactly as much as one that cannot run (F-226, 2026-08-21).
 
 # Derive the fork rev from Cargo.lock -- authoritative and comment-free -- so
 # the config auto-tracks the pin instead of drifting from it. Fail CLOSED on an
