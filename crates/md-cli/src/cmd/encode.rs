@@ -96,22 +96,44 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         return Ok(0);
     }
 
-    if args.force_chunked {
-        let chunks = split(&descriptor)?;
-        let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
-        println!("chunk-set-id: 0x{csid:05x}");
-        for s in &chunks {
-            println!("{}", render_grouped(s, args.group_size, args.separator));
-        }
+    // Single string when it fits, chunked when it does not -- AUTOMATICALLY.
+    //
+    // A payload over the codex32 regular code's 80-data-symbol cap used to be a
+    // hard error telling the operator to retry with `--force-chunked`. Every
+    // keyed wallet policy is over that cap (a 2-of-2 is 246 data symbols), so
+    // the first encounter with a real multisig read as "this policy is
+    // unsupported". Two places already described the dispatch as automatic --
+    // this flag's own help ("even for SHORT policies", implying long ones are
+    // automatic) and `--force-long-code`'s ("payloads over 400 bits are
+    // chunked"). The documentation was right about the intent; the encoder was
+    // what disagreed. F-136.
+    //
+    // `--force-chunked` keeps its documented meaning: chunk even when a single
+    // string would fit.
+    //
+    // The fallback matches ONLY the overflow error. Any other encode failure
+    // still propagates -- silently chunking around an unrelated fault would
+    // turn a diagnosable error into a surprising output shape.
+    let single = if args.force_chunked {
+        None
     } else {
-        println!(
-            "{}",
-            render_grouped(
-                &encode_md1_string(&descriptor)?,
-                args.group_size,
-                args.separator
-            )
-        );
+        match encode_md1_string(&descriptor) {
+            Ok(s) => Some(s),
+            Err(md_codec::error::Error::PayloadTooLongForSingleString { .. }) => None,
+            Err(e) => return Err(e.into()),
+        }
+    };
+
+    match single {
+        Some(s) => println!("{}", render_grouped(&s, args.group_size, args.separator)),
+        None => {
+            let chunks = split(&descriptor)?;
+            let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
+            println!("chunk-set-id: 0x{csid:05x}");
+            for s in &chunks {
+                println!("{}", render_grouped(s, args.group_size, args.separator));
+            }
+        }
     }
     if args.policy_id_fingerprint {
         let id = compute_wallet_policy_id(&descriptor)?;

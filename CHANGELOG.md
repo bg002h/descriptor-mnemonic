@@ -4,6 +4,55 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased]
+
+### Changed — `md encode` chunks automatically on overflow (F-136)
+
+A payload over the codex32 regular code's 80-data-symbol cap used to be a HARD
+ERROR directing the operator to retry with `--force-chunked`:
+
+```
+md: codec error: payload is 246 data symbols; the codex32 regular code caps
+    single strings at 80 (use chunked encoding / --force-chunked)
+```
+
+Every keyed wallet policy is over that cap — a 2-of-2 measures 246 data
+symbols — so the first encounter with a real multisig read as "this policy is
+unsupported", and every operator journey in the constellation carried the flag
+as a workaround.
+
+**Two places already documented the behaviour as automatic**, and both are now
+true rather than aspirational: `--force-chunked`'s own help ("Force chunked
+encoding even for SHORT policies", which implies long ones need no flag) and
+`--force-long-code`'s ("md1 is regular-code-only (payloads over 400 bits are
+chunked)"). The documentation was right about the intent; the encoder was what
+disagreed.
+
+- **No wire change.** Auto-chunked output is byte-identical to what
+  `--force-chunked` produced for the same input — pinned by a test. What
+  changed is which inputs are ACCEPTED, never which bytes come out.
+- **`--force-chunked` keeps its documented meaning**: chunk even when a single
+  string would fit. Short policies still emit one string by default.
+- **The fallback matches ONLY `Error::PayloadTooLongForSingleString`.** Any
+  other encode failure still propagates — silently chunking around an unrelated
+  fault would turn a diagnosable error into a surprising output shape.
+- **The codec's fail-closed guarantee is untouched.** `wrap_payload` still
+  refuses to emit an over-length single string; md-codec's 464 tests are
+  unaffected. Only the CLI's response to that refusal changed.
+
+The pre-existing `md_encode_default_rejects_oversize` test pinned the ERROR,
+which was the mechanism rather than the guarantee. Restated as
+`md_encode_never_emits_an_oversize_single_string`: an over-cap policy emits a
+chunk SET, every chunk fits the regular-code envelope, and the set decodes back.
+That holds across this change and still catches a regression that emitted one
+long string — which is what cycle-4 H6 was actually protecting.
+
+Noted for the record: the Go port (`seedhammer` `md/encode_singlesig.go`,
+`encode_multisig.go`) has always routed through `split` unconditionally and
+never had a single-string-or-error mode, so it never carried this defect. That
+is the second time in one cycle the strictly-downstream port was already right
+where the primary was not.
+
 ## md-codec [0.42.0] — 2026-07-11
 
 **SemVer-minor — pathless/dead-card partial-decode. Additive API; no wire-format change; every prior card decodes byte-identically.**

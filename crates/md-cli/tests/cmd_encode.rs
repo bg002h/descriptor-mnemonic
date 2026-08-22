@@ -298,14 +298,22 @@ fn encode_json_network_field_testnet() {
         .stdout(predicate::str::contains("\"network\": \"testnet\""));
 }
 
-/// cycle-4 H6: a keyed wallet-policy descriptor overflows the codex32 regular
-/// code's 80-data-symbol single-string cap, so the default (non-chunked)
-/// `md encode` fails closed (non-zero exit) and directs the user to chunked
-/// encoding; `--force-chunked` is the live remedy and succeeds.
+/// cycle-4 H6, restated for F-136: an over-cap payload must never become a
+/// single string — it must become a valid CHUNK SET.
+///
+/// H6's property is FAIL-CLOSED: `wrap_payload` refuses an over-length payload
+/// rather than emit an un-decodable, aliasing-prone single string. That
+/// property is unchanged and still enforced in the codec. What changed is the
+/// CLI's response to it: this used to be a hard error naming
+/// `--force-chunked`, and now it chunks automatically (F-136).
+///
+/// The old test asserted the ERROR, which is the mechanism, not the guarantee.
+/// This asserts the guarantee — no single over-cap string is ever emitted, and
+/// what IS emitted decodes back — so it keeps holding across the change and
+/// would still catch a regression that emitted one long string.
 #[test]
-fn md_encode_default_rejects_oversize() {
-    // Default single-string path → reject, message names `--force-chunked`.
-    Command::cargo_bin("md")
+fn md_encode_never_emits_an_oversize_single_string() {
+    let out = Command::cargo_bin("md")
         .unwrap()
         .args([
             "encode",
@@ -314,23 +322,39 @@ fn md_encode_default_rejects_oversize() {
             "testnet",
             "--key",
             &format!("@0={TPUB_FIXTURE}"),
+            "--group-size",
+            "0",
         ])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--force-chunked"));
-
-    // The chunked remedy succeeds.
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "an over-cap policy now chunks rather than failing: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let chunks: Vec<&str> = stdout.lines().filter(|l| l.starts_with("md1")).collect();
+    assert!(
+        chunks.len() > 1,
+        "over-cap output must be a chunk SET, never one long string; got {} line(s)",
+        chunks.len()
+    );
+    // Every chunk is within the regular code's reach, which is the whole point
+    // of chunking rather than emitting one over-length string.
+    for c in &chunks {
+        assert!(
+            c.len() <= 93 + 4,
+            "chunk of {} chars exceeds the codex32 regular code envelope: {c}",
+            c.len()
+        );
+    }
+    // And it decodes back — the fail-closed guarantee is about never emitting
+    // something un-decodable, so read-back is the assertion that matters.
+    let mut dec = vec!["decode".to_string()];
+    dec.extend(chunks.iter().map(|c| (*c).to_string()));
     Command::cargo_bin("md")
         .unwrap()
-        .args([
-            "encode",
-            "wpkh(@0/<0;1>/*)",
-            "--network",
-            "testnet",
-            "--key",
-            &format!("@0={TPUB_FIXTURE}"),
-            "--force-chunked",
-        ])
+        .args(&dec)
         .assert()
         .success();
 }
@@ -589,5 +613,130 @@ fn encode_decode_roundtrip_inheritance_pattern_with_explicit_path() {
     assert!(
         template.contains("older(144)"),
         "decoded must include older(144). Got: {template}"
+    );
+}
+
+/// An 11-key xpub from the pathological-wallet corpus, enough to push a keyed
+/// policy well past the single-string cap.
+const KEYED_XPUB_A: &str = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
+const KEYED_XPUB_B: &str = "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk";
+
+fn keyed_policy_args() -> Vec<String> {
+    vec![
+        "encode".into(),
+        "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))".into(),
+        "--key".into(),
+        format!("@0={KEYED_XPUB_A}"),
+        "--key".into(),
+        format!("@1={KEYED_XPUB_B}"),
+        "--fingerprint".into(),
+        "@0=73c5da0a".into(),
+        "--fingerprint".into(),
+        "@1=aabbccdd".into(),
+        "--path".into(),
+        "m/48h/0h/0h/2h".into(),
+        "--group-size".into(),
+        "0".into(),
+    ]
+}
+
+/// A policy over the single-string cap CHUNKS AUTOMATICALLY (F-136).
+///
+/// It used to be a hard error telling the operator to retry with
+/// `--force-chunked`. Every keyed wallet policy is over the cap — 246 data
+/// symbols against a limit of 80 — so the first encounter with a real
+/// multisig looked like the policy was unsupported. Two docs described the
+/// dispatch as automatic while the encoder refused; the docs were right about
+/// the intent and the code was what disagreed.
+#[test]
+fn a_policy_over_the_single_string_cap_chunks_without_the_flag() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(keyed_policy_args())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "an over-cap policy must encode, not refuse: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let chunks: Vec<&str> = stdout.lines().filter(|l| l.starts_with("md1")).collect();
+    assert!(
+        chunks.len() > 1,
+        "must be chunked, got {} line(s)",
+        chunks.len()
+    );
+    assert!(
+        stdout.contains("chunk-set-id:"),
+        "auto-chunked output must carry the chunk-set-id header, like --force-chunked"
+    );
+}
+
+/// Auto-chunking is byte-identical to what `--force-chunked` produced, so the
+/// change is which INPUTS are accepted, never which bytes come out.
+#[test]
+fn auto_chunked_output_equals_force_chunked_output() {
+    let auto = Command::cargo_bin("md")
+        .unwrap()
+        .args(keyed_policy_args())
+        .output()
+        .unwrap();
+    let mut forced_args = keyed_policy_args();
+    forced_args.push("--force-chunked".into());
+    let forced = Command::cargo_bin("md")
+        .unwrap()
+        .args(forced_args)
+        .output()
+        .unwrap();
+    assert!(auto.status.success() && forced.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&auto.stdout),
+        String::from_utf8_lossy(&forced.stdout),
+        "auto-chunking must emit exactly what --force-chunked emits"
+    );
+}
+
+/// A SHORT policy still emits ONE string by default — auto-chunking triggers on
+/// overflow only, and does not change the common case.
+#[test]
+fn a_short_policy_still_emits_a_single_string() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--group-size", "0"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        stdout.lines().filter(|l| l.starts_with("md1")).count(),
+        1,
+        "a short policy must stay a single string"
+    );
+    assert!(
+        !stdout.contains("chunk-set-id:"),
+        "no chunk header for a single string"
+    );
+}
+
+/// `--force-chunked` keeps its documented meaning: chunk even a SHORT policy.
+#[test]
+fn force_chunked_still_chunks_a_short_policy() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wpkh(@0/<0;1>/*)",
+            "--group-size",
+            "0",
+            "--force-chunked",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("chunk-set-id:"),
+        "the flag must still force chunking"
     );
 }
