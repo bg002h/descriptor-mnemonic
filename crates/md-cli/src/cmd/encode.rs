@@ -104,6 +104,8 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         // FINAL descriptor (post `--path`) still has an unresolvable origin.
         // Must fire on the --json branch too (parity with the text branch).
         emit_pathless_advisory(&descriptor, &mut std::io::stderr());
+        // F-227: unseatable keyless template (stderr, warn-only).
+        emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -186,6 +188,8 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // P1.2 (pathless/dead-card partial-decode): loud advisory when the FINAL
     // descriptor (post `--path`) still has an unresolvable origin.
     emit_pathless_advisory(&descriptor, &mut std::io::stderr());
+    // F-227: unseatable keyless template (stderr, warn-only).
+    emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -242,6 +246,130 @@ fn emit_legacy_p2sh_advisory<W: std::io::Write>(tree: &Node, stderr: &mut W) {
 /// A warned card still mints fine (exit 0, unchanged) — the advisory nudges
 /// the encoder-side fix (a real `--path`) at mint time, mirroring the F-A4
 /// footgun-advisory tone. Warn-only; never affects stdout or the exit code.
+/// F-227: warn when a KEYLESS template's slots cannot be told apart.
+///
+/// A keyless template names its slots by origin and is restored by seating one
+/// mk1 key card per slot. SeedHammer II's rule (`gui/key_card_seating.go`)
+/// matches a card to a slot on the slot's declared **origin**, plus its
+/// **fingerprint only when the template declares one**, and refuses every state
+/// it cannot decide. So two slots sharing a declaration make the template
+/// **unseatable**: every card matches both, the device refuses
+/// (`errSeatSlotContested`), and the operator finds out on attempting a restore
+/// — after the plate is cut.
+///
+/// THE PREDICATE IS THE DEVICE'S, not a heuristic. Slots collide iff
+/// `(fingerprint-when-declared, origin path)` are equal. That is why declaring
+/// a fingerprint on only SOME of a colliding group does not help: a slot with
+/// no declaration still matches any card at that path.
+///
+/// WARN, DO NOT REFUSE. A bare template is legal, and an operator may
+/// deliberately record slot order out of band. Exit stays 0 and the card is
+/// still emitted, matching the pathless and legacy-P2SH advisories.
+///
+/// Keyed cards are exempt: they carry their own keys, so nothing is ever seated
+/// onto them and the warning would be pure noise.
+fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
+    if descriptor.is_wallet_policy() {
+        return;
+    }
+    let Ok(expanded) = md_codec::canonicalize::expand_per_at_n(descriptor) else {
+        // An expansion failure is not this advisory's error to raise — the
+        // pathless advisory above already speaks for a dead or pathless card,
+        // and a second complaint about the same defect is noise.
+        return;
+    };
+    if expanded.len() < 2 {
+        return;
+    }
+
+    // AMBIGUITY IS NOT EQUALITY OF DECLARATIONS, and getting that wrong is the
+    // whole subtlety here. Two slots are ambiguous iff ONE CARD CAN MATCH BOTH:
+    //
+    //     same origin path, AND NOT (both declare a fingerprint and differ)
+    //
+    // because `slotMatchesCard` checks the fingerprint only when the slot
+    // declares one. So an undeclared slot is ambiguous with EVERY slot at its
+    // path, whatever they declare — grouping by `(fingerprint, path)` would
+    // put them in different buckets and report nothing.
+    //
+    // Note the relation is not transitive: @0=[X], @1=[-], @2=[Y] at one path
+    // has @0~@1 and @1~@2 but not @0~@2. Reported per PATH rather than as
+    // components, because the path is what the operator has to act on and the
+    // remedy — declare the missing fingerprints — is the same either way.
+    /// Slots sharing one origin path: `(slot index, declared fingerprint)`.
+    type SlotsAtPath = Vec<(u8, Option<[u8; 4]>)>;
+    let mut by_path: std::collections::BTreeMap<String, SlotsAtPath> =
+        std::collections::BTreeMap::new();
+    for e in &expanded {
+        let mut path = String::from("m");
+        for c in &e.origin_path.components {
+            path.push('/');
+            path.push_str(&c.value.to_string());
+            if c.hardened {
+                path.push('\'');
+            }
+        }
+        by_path.entry(path).or_default().push((e.idx, e.fingerprint));
+    }
+
+    let mut collisions: Vec<(String, Vec<u8>)> = Vec::new();
+    for (path, slots) in &by_path {
+        if slots.len() < 2 {
+            continue;
+        }
+        let any_undeclared = slots.iter().any(|(_, fp)| fp.is_none());
+        let ambiguous: Vec<u8> = if any_undeclared {
+            // One undeclared slot is ambiguous with every other slot here, so
+            // the whole path is undecidable.
+            slots.iter().map(|(i, _)| *i).collect()
+        } else {
+            // All declared: only slots sharing a fingerprint collide.
+            let mut counts: std::collections::BTreeMap<[u8; 4], usize> =
+                std::collections::BTreeMap::new();
+            for (_, fp) in slots {
+                *counts.entry(fp.expect("checked declared")).or_default() += 1;
+            }
+            slots
+                .iter()
+                .filter(|(_, fp)| counts[&fp.expect("checked declared")] > 1)
+                .map(|(i, _)| *i)
+                .collect()
+        };
+        if ambiguous.len() > 1 {
+            let mut idxs = ambiguous;
+            idxs.sort_unstable();
+            collisions.push((path.clone(), idxs));
+        }
+    }
+    if collisions.is_empty() {
+        return;
+    }
+    collisions.sort_by_key(|(_, idxs)| idxs[0]);
+
+    let detail = collisions
+        .iter()
+        .map(|(path, idxs)| {
+            let slots = idxs
+                .iter()
+                .map(|i| format!("@{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{slots} all declare {path}")
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    let _ = writeln!(
+        stderr,
+        "warning: this keyless template's slots cannot be told apart \u{2014} {detail}. \
+         Restoring seats one key card per slot by matching the slot's declared origin \
+         (and its fingerprint, when declared), so a card here matches several slots and \
+         a device that will not guess must refuse the whole set. Pass one \
+         --fingerprint @N=HEX per slot to make them distinguishable; it costs about \
+         one extra md1 chunk and changes no path, no key and no policy."
+    );
+}
+
 fn emit_pathless_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
     if descriptor.unresolved_origin_indices().is_empty() {
         return;

@@ -4,6 +4,51 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased] — advisory for an unseatable keyless template
+
+### Added
+
+- **`md encode` warns when a keyless template's slots cannot be told apart.**
+
+  A keyless template names its slots by origin, and restoring it means seating
+  one mk1 key card per slot. SeedHammer II matches a card to a slot on the
+  slot's declared **origin**, plus its **fingerprint only when the template
+  declares one** (`gui/key_card_seating.go`), refusing every state it cannot
+  decide. So two slots sharing a declaration make the template unseatable: a
+  card matches both, the device refuses, and the operator finds out on
+  attempting a restore — after the plate is cut.
+
+  Not exotic. `48'/0'/0'/2'` is *the* standard multisig account path, so
+  cosigners collide by default:
+
+  | template | slots | distinct origins | fingerprints |
+  | --- | --- | --- | --- |
+  | hashlock vault | 6 | 1 | 0 |
+  | pathological (tr and wsh) | 11 | 4 | 0 |
+
+  The advisory names the colliding slots, their path, and the remedy:
+
+  ```
+  warning: this keyless template's slots cannot be told apart — @0, @4, @8 all
+  declare m/48'/0'/0'/2'; @1, @5, @9 all declare m/48'/0'/1'/2'; … Pass one
+  --fingerprint @N=HEX per slot to make them distinguishable; it costs about
+  one extra md1 chunk and changes no path, no key and no policy.
+  ```
+
+  **Ambiguity is not equality of declarations.** Slots collide iff one card can
+  match both — same path, and *not* both declaring a distinct fingerprint. A
+  slot with no declared fingerprint is therefore ambiguous with every slot at
+  its path whatever they declare, so declaring fingerprints on only *some* of a
+  colliding group does not help. Grouping by `(fingerprint, path)` gets this
+  wrong and reports nothing; there is a test for exactly that case.
+
+  Warn-only: a bare template is legal and an operator may record slot order out
+  of band. stderr, exit stays 0, card still emitted — matching the pathless and
+  legacy-P2SH advisories, and firing on the `--json` branch too.
+
+  Keyed cards are exempt: they carry their own keys, so nothing is seated onto
+  them.
+
 ## md-cli [Unreleased] — authoring gate for consensus-masked `older()`
 
 ### Fixed
