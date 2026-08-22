@@ -124,6 +124,18 @@ enum Command {
         /// Emit JSON output.
         #[arg(long)]
         json: bool,
+        /// Admit a spend path that requires NO signature (e.g. a hashlock +
+        /// timelock recovery tier).
+        ///
+        /// rust-miniscript refuses these by default with "All spend paths must
+        /// require a signature" — a safety policy, not a language rule; the
+        /// script is well-formed and valid. This relaxes ONLY that rule:
+        /// malleability, resource limits, repeated keys and timelock mixing are
+        /// still enforced. Whoever learns the preimage of a keyless path can
+        /// spend it alone, so if that preimage is engraved, the plate is bearer
+        /// access. Prints a warning on every use.
+        #[arg(long)]
+        experimental: bool,
     },
     /// Decode one or more MD backup strings into a wallet policy template.
     #[command(
@@ -370,6 +382,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             force_long_code,
             policy_id_fingerprint,
             json,
+            experimental,
         } => {
             let template_str: String = if let Some(expr) = from_policy {
                 #[cfg(feature = "cli-compiler")]
@@ -425,6 +438,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 force_long_code,
                 policy_id_fingerprint,
                 json,
+                experimental,
             })
         }
         Command::Decode { strings, json } => cmd::decode::run(&strings, json),

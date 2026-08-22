@@ -2,7 +2,7 @@ use crate::error::CliError;
 use crate::format::text;
 use crate::parse::keys::{parse_fingerprint, parse_key};
 use crate::parse::path::apply_path_override;
-use crate::parse::template::{ctx_for_template, parse_template};
+use crate::parse::template::{ctx_for_template, parse_template_ext};
 
 use md_codec::chunk::{derive_chunk_set_id, split};
 use md_codec::encode::{Descriptor, encode_md1_string, render_grouped};
@@ -29,6 +29,12 @@ pub struct EncodeArgs<'a> {
     pub force_long_code: bool,
     pub policy_id_fingerprint: bool,
     pub json: bool,
+    /// Relax rust-miniscript's SIGNATURE sanity rule, admitting a spend path
+    /// that requires no key (e.g. a hashlock + timelock recovery tier).
+    ///
+    /// Only `top_unsafe` is relaxed; malleability, resource limits, repeated
+    /// keys and timelock mixing still apply. See `parse_template_ext`.
+    pub experimental: bool,
 }
 
 pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
@@ -53,7 +59,20 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut descriptor = parse_template(args.template, &parsed_keys, &parsed_fps)?;
+    let mut descriptor =
+        parse_template_ext(args.template, &parsed_keys, &parsed_fps, args.experimental)?;
+    if args.experimental {
+        // LOUD, on stderr, every time. This authors a card for a wallet whose
+        // guarantees rust-miniscript declines to vouch for, and the card itself
+        // carries no record that a flag was used to create it — the operator's
+        // memory and this line are the only trace.
+        eprintln!(
+            "warning: --experimental relaxed the signature rule. This descriptor has at least \
+             one spend path that needs NO key, so whoever learns its preimage can spend it \
+             alone. If that preimage is engraved, THE PLATE IS BEARER ACCESS. Malleability, \
+             resource limits, repeated keys and timelock mixing were still checked."
+        );
+    }
     apply_path_override(&mut descriptor, args.path)?;
 
     #[cfg(feature = "json")]

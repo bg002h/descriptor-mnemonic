@@ -2269,14 +2269,68 @@ pub fn parse_template(
     keys: &[ParsedKey],
     fingerprints: &[ParsedFingerprint],
 ) -> Result<Descriptor, CliError> {
+    parse_template_ext(template, keys, fingerprints, false)
+}
+
+/// `parse_template`, with an opt-out from rust-miniscript's SIGNATURE rule.
+///
+/// `Descriptor::from_str` runs `sanity_check()` plus a per-leaf
+/// `ext_check(ExtParams::sane())`, and the first rule applied is
+/// `requires_sig()` — so a spend path with no key is refused with "All spend
+/// paths must require a signature".
+///
+/// That is a SAFETY POLICY, not a property of the language.
+/// `and_v(v:after(N),sha256(H))` is well-formed miniscript that compiles to
+/// valid script; rust-miniscript says as much beside the check ("Most functions
+/// of the library would still work, but results cannot be relied upon") and
+/// ships `ExtParams` precisely so individual rules can be relaxed. Note also
+/// the upstream FIXME at the call site: the gate runs only for `tr`, which
+/// rust-miniscript itself calls "weird/broken behavior from 12.x" (issue #734).
+///
+/// With `experimental`, ONLY `top_unsafe` is relaxed. Malleability, resource
+/// limits, repeated keys and timelock mixing are still enforced per leaf —
+/// relaxing those would admit scripts that are UNSPENDABLE rather than merely
+/// unguaranteed, which is a different and worse class of mistake.
+///
+/// Callers must warn loudly; see `md encode --experimental`.
+pub fn parse_template_ext(
+    template: &str,
+    keys: &[ParsedKey],
+    fingerprints: &[ParsedFingerprint],
+    experimental: bool,
+) -> Result<Descriptor, CliError> {
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
     reject_unreferenced_bindings(&occs, keys, fingerprints)?;
     let resolved = resolve_placeholders(&occs)?;
 
     let (substituted, key_map) = substitute_synthetic(template, ctx)?;
-    let ms_desc = MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
+    let ms_desc = if experimental {
+        // Parse the tree WITHOUT `from_str`'s tr-only sanity gate, then re-apply
+        // every rule except `top_unsafe` ourselves, per leaf.
+        let tree = miniscript::expression::Tree::from_str(&substituted)
+            .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+        let d = <MsDescriptor<DescriptorPublicKey> as miniscript::expression::FromTree>::from_tree(
+            tree.root(),
+        )
         .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+        if let MsDescriptor::Tr(ref inner) = d {
+            let relaxed = miniscript::miniscript::analyzable::ExtParams::new().top_unsafe();
+            for item in inner.leaves() {
+                item.miniscript().ext_check(&relaxed).map_err(|e| {
+                    CliError::TemplateParse(format!(
+                        "miniscript parse failed even with --experimental: {e} \
+                         (--experimental relaxes ONLY the signature rule; malleability, \
+                         resource limits, repeated keys and timelock mixing still apply)"
+                    ))
+                })?;
+            }
+        }
+        d
+    } else {
+        MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
+            .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?
+    };
     let tree = walk_root(&ms_desc, &key_map)?;
 
     // M5 (cycle-9, D4) — lexer/substitution cross-validation belt. Edit-1's

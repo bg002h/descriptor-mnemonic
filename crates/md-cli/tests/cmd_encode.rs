@@ -800,3 +800,117 @@ fn encode_refuses_a_relative_timelock_consensus_would_truncate() {
         );
     }
 }
+
+const NUMS_KEY: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+
+/// `--experimental` admits a spend path that requires no signature.
+///
+/// rust-miniscript refuses these by default ("All spend paths must require a
+/// signature"), but that is a SAFETY POLICY, not a language rule — the script
+/// is well-formed and valid, and the library ships `ExtParams` precisely so
+/// individual rules can be relaxed. A hashlock-plus-timelock recovery tier is a
+/// legitimate design; refusing to express it is a tooling limit, not a
+/// consensus one.
+#[test]
+fn experimental_admits_a_keyless_spend_path() {
+    let policy = format!(
+        "tr({NUMS_KEY},{{pk(@0/<0;1>/*),and_v(v:after(1383520),sha256(\
+         a84dce40975727c398023cfbd50d5db3b9662375521d0f1ac62dbd829b9a08ad))}})"
+    );
+    let run = |extra: &[&str]| {
+        let mut args = vec![
+            "encode",
+            &policy,
+            "--path",
+            "m/270028h/0h/0h/0h",
+            "--group-size",
+            "0",
+        ];
+        args.extend_from_slice(extra);
+        Command::cargo_bin("md")
+            .unwrap()
+            .args(&args)
+            .output()
+            .unwrap()
+    };
+
+    let refused = run(&[]);
+    assert!(
+        !refused.status.success(),
+        "a keyless path must be refused by default"
+    );
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("must require a signature"),
+        "the default refusal must name the signature rule"
+    );
+
+    let allowed = run(&["--experimental"]);
+    assert!(
+        allowed.status.success(),
+        "--experimental must admit it: {}",
+        String::from_utf8_lossy(&allowed.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&allowed.stdout)
+            .lines()
+            .any(|l| l.starts_with("md1")),
+        "it must actually encode"
+    );
+    // Loud, every time — the card carries no record that a flag made it.
+    let warn = String::from_utf8_lossy(&allowed.stderr);
+    assert!(warn.contains("--experimental relaxed"), "must warn: {warn}");
+    assert!(
+        warn.contains("BEARER ACCESS"),
+        "must name the engraving hazard: {warn}"
+    );
+}
+
+/// `--experimental` relaxes ONLY the signature rule. The other four sanity
+/// rules still apply, because relaxing those admits scripts that are
+/// UNSPENDABLE rather than merely unguaranteed — a different, worse class.
+#[test]
+fn experimental_still_enforces_the_other_sanity_rules() {
+    let cases = [
+        (
+            "timelock mixing",
+            format!(
+                "tr({NUMS_KEY},{{pk(@0/<0;1>/*),and_v(v:after(1000),\
+                 and_v(v:after(1600000000),pk(@1/<0;1>/*)))}})"
+            ),
+            "heightlock and timelock",
+        ),
+        (
+            "repeated keys",
+            format!("tr({NUMS_KEY},{{pk(@0/<0;1>/*),and_v(v:pk(@1/<0;1>/*),pk(@1/<0;1>/*))}})"),
+            "repeated pubkeys",
+        ),
+    ];
+    for (label, policy, needle) in cases {
+        let out = Command::cargo_bin("md")
+            .unwrap()
+            .args([
+                "encode",
+                &policy,
+                "--path",
+                "m/270028h/0h/0h/0h",
+                "--group-size",
+                "0",
+                "--experimental",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            !out.status.success(),
+            "{label} must still be refused under --experimental"
+        );
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains(needle),
+            "{label}: refusal must name the rule, got: {err}"
+        );
+        assert!(
+            err.contains("relaxes ONLY the signature rule"),
+            "{label}: the refusal must state what --experimental does and does not do"
+        );
+    }
+}
