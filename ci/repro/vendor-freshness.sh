@@ -24,24 +24,57 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-# Fail CLOSED if a git source ever appears in Cargo.lock: the two-block config
-# would not redirect it, so `--offline` would silently reach the live host (or
-# mis-resolve) instead of REDing. If this trips, the crate gained a git dep and
-# needs the toolkit's three-block form (a per-source git-fork stanza).
-if grep -qE '^source = "git\+' Cargo.lock; then
-  echo "::error::vendor-freshness: Cargo.lock now has a git source — the codec two-block" \
-       "config can't redirect it. Add a per-source git-fork [source] stanza (see the" \
-       "toolkit ci/repro/vendor-freshness.sh three-block form)." >&2
+# This crate carries a miniscript git fork (`[patch.crates-io]`), so the source
+# config is the THREE-block form: crates-io + the git fork + vendored-sources,
+# all redirected at the committed vendor/ tree.
+#
+# It used to be the two-block CODEC form with a guard that failed closed the
+# moment any git source appeared -- which it did when the tr/wsh cycle pinned
+# miniscript at ff4732e. Correct behaviour from the guard, wrong config for the
+# crate: the gate could no longer pass at all, and because the workflow is
+# path-filtered to Cargo.lock / vendor/** / this script, it never ran to say so.
+# A gate that cannot pass AND does not fire is indistinguishable from one that
+# passes (F-226, 2026-08-21).
+
+# Derive the fork rev from Cargo.lock -- authoritative and comment-free -- so
+# the config auto-tracks the pin instead of drifting from it. Fail CLOSED on an
+# empty match: a missing rev would silently drop the git-fork stanza and let
+# resolution mis-resolve into a false GREEN.
+MINISCRIPT_REV="$(grep -oE 'rust-miniscript\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}' || true)"
+if [ -z "$MINISCRIPT_REV" ]; then
+  echo "::error::vendor-freshness: could not derive the miniscript fork rev from Cargo.lock" \
+       "(expected a 'rust-miniscript?rev=<40-hex>' source line). Failing closed." >&2
   exit 1
 fi
 
-# Two-block source-replacement: crates-io -> vendored-sources -> committed vendor/.
+# Fail CLOSED on any git source this config does NOT redirect.
+#
+# The three-block form covers exactly one fork. A SECOND git dependency would
+# not be redirected, so `--offline` would mis-resolve or reach the live host --
+# the same false-GREEN the original two-block guard existed to prevent, just
+# one dependency further along. Keeping the guard means gaining a git dep still
+# trips a loud error instead of silently weakening the gate.
+UNCOVERED="$(grep -oE '^source = "git\+[^"]+"' Cargo.lock \
+  | grep -v "rust-miniscript?rev=${MINISCRIPT_REV}" || true)"
+if [ -n "$UNCOVERED" ]; then
+  echo "::error::vendor-freshness: Cargo.lock has a git source this config does not" \
+       "redirect, so --offline resolution would not be constrained by vendor/:" >&2
+  printf '%s\n' "$UNCOVERED" >&2
+  echo "::error::Add a per-source [source] stanza for it to SRC_CONFIG below." >&2
+  exit 1
+fi
+
+# 3-block source-replacement: crates-io + the miniscript git fork +
+# vendored-sources -> the committed vendor/ tree.
 SRC_CONFIG=(
   --config 'source.crates-io.replace-with="vendored-sources"'
+  --config "source.\"git+https://github.com/rust-bitcoin/rust-miniscript?rev=${MINISCRIPT_REV}\".git=\"https://github.com/rust-bitcoin/rust-miniscript\""
+  --config "source.\"git+https://github.com/rust-bitcoin/rust-miniscript?rev=${MINISCRIPT_REV}\".rev=\"${MINISCRIPT_REV}\""
+  --config "source.\"git+https://github.com/rust-bitcoin/rust-miniscript?rev=${MINISCRIPT_REV}\".replace-with=\"vendored-sources\""
   --config 'source.vendored-sources.directory="vendor"'
 )
 
-echo "vendor-freshness: resolving Cargo.lock against committed vendor/ (offline, locked) ..."
+echo "vendor-freshness: resolving Cargo.lock against committed vendor/ (offline, locked; miniscript rev ${MINISCRIPT_REV}) ..."
 if cargo metadata --format-version 1 --locked --offline "${SRC_CONFIG[@]}" >/dev/null; then
   echo "vendor-freshness: OK — vendor/ satisfies Cargo.lock."
 else
