@@ -248,6 +248,7 @@ fn walk_older(node: &Node, consensus_bits: u32) -> Result<(), Error> {
     Ok(())
 }
 
+/// Validate that all leaves in a tap-script-tree are permitted-leaf tags per §6.3.1.
 pub fn validate_tap_script_tree(node: &Node) -> Result<(), Error> {
     walk_tap_tree_leaves(node)
 }
