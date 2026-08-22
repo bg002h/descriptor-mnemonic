@@ -172,6 +172,14 @@ enum Command {
         /// Network for xpub validation.
         #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
         network: CliNetwork,
+        /// Accept a template with a spend path that requires no signature,
+        /// mirroring `md encode --experimental`.
+        ///
+        /// Without this, a card authored with `--experimental` cannot be
+        /// verified at all — the operator would hold a plate and have no way to
+        /// check it, which is worse than not authoring it.
+        #[arg(long)]
+        experimental: bool,
     },
     /// Decode + pretty-print everything the codec sees.
     Inspect {
@@ -449,6 +457,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             fingerprints,
             path,
             network,
+            experimental,
         } => cmd::verify::run(cmd::verify::VerifyArgs {
             strings: &strings,
             template: &template,
@@ -456,6 +465,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             fingerprints: &fingerprints,
             path: path.as_deref(),
             network: network.into(),
+            experimental,
         }),
         Command::Inspect { strings, json } => cmd::inspect::run(&strings, json),
         Command::Bytecode { strings, json } => cmd::bytecode::run(&strings, json),

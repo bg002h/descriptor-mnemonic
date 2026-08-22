@@ -1,7 +1,7 @@
 use crate::error::CliError;
 use crate::parse::keys::{parse_fingerprint, parse_key};
 use crate::parse::path::apply_path_override;
-use crate::parse::template::{ctx_for_template, parse_template};
+use crate::parse::template::{ctx_for_template, parse_template_ext};
 use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
 use md_codec::encode::encode_payload;
@@ -14,6 +14,12 @@ pub struct VerifyArgs<'a> {
     /// Shared origin-path override, mirroring `md encode --path`.
     pub path: Option<&'a str>,
     pub network: bitcoin::Network,
+    /// Mirrors `md encode --experimental`.
+    ///
+    /// Verify must accept every template encode accepts, or a card authored
+    /// with the flag becomes unverifiable — which is worse than not authoring
+    /// it, because the operator has a plate and no way to check it.
+    pub experimental: bool,
 }
 
 pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
@@ -36,7 +42,8 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut expected = parse_template(args.template, &parsed_keys, &parsed_fps)?;
+    let mut expected =
+        parse_template_ext(args.template, &parsed_keys, &parsed_fps, args.experimental)?;
     // Mirrors `md encode --path`; see cmd/address.rs for why a verify without it
     // cannot reach a non-canonical wrapper at all.
     apply_path_override(&mut expected, args.path)?;
