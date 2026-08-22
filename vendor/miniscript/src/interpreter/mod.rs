@@ -130,6 +130,8 @@ impl MiniscriptKey for BitcoinKey {
             BitcoinKey::XOnlyPublicKey(_) => false,
         }
     }
+    fn is_x_only_key(&self) -> bool { false }
+    fn num_der_paths(&self) -> usize { 0 }
 }
 
 impl<'txin> Interpreter<'txin> {
@@ -866,7 +868,7 @@ where
                         None => return Some(Err(Error::UnexpectedStackEnd)),
                     }
                 }
-                Terminal::MultiA(ref thresh) => {
+                Terminal::MultiA(ref thresh) | Terminal::SortedMultiA(ref thresh) => {
                     if node_state.n_evaluated == thresh.n() {
                         if node_state.n_satisfied == thresh.k() {
                             self.stack.push(stack::Element::Satisfied);
@@ -907,7 +909,9 @@ where
                         }
                     }
                 }
-                Terminal::Multi(ref thresh) if node_state.n_evaluated == 0 => {
+                Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh)
+                    if node_state.n_evaluated == 0 =>
+                {
                     let len = self.stack.len();
                     if len < thresh.k() + 1 {
                         return Some(Err(Error::InsufficientSignaturesMultiSig));
@@ -954,7 +958,7 @@ where
                         }
                     }
                 }
-                Terminal::Multi(ref thresh) => {
+                Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh) => {
                     if node_state.n_satisfied == thresh.k() {
                         //multi-sig bug: Pop extra 0
                         if let Some(stack::Element::Dissatisfied) = self.stack.pop() {
@@ -1211,7 +1215,7 @@ mod tests {
         assert_eq!(
             older_satisfied.unwrap(),
             vec![SatisfiedConstraint::RelativeTimelock {
-                n: crate::RelLockTime::from_height(1000).into()
+                n: crate::RelLockTime::from_height(1000).unwrap().into()
             }]
         );
 

@@ -33,6 +33,9 @@ keywords = [
 license = "CC0-1.0"
 repository = "https://github.com/rust-bitcoin/rust-miniscript/"
 
+[package.metadata.rbmt.lint]
+allowed_duplicates = ["hex-conservative"]
+
 [features]
 base64 = ["bitcoin/base64"]
 compiler = []
@@ -134,6 +137,9 @@ package = "hex-conservative"
 version = "1.0.103"
 optional = true
 
+[dev-dependencies]
+serde_test = "1.0.147"
+
 [dev-dependencies.bitcoin]
 version = "0.32.0"
 features = ["base64"]
@@ -142,5 +148,9 @@ features = ["base64"]
 version = "0.29.0"
 features = ["rand-std"]
 
-[dev-dependencies.serde_test]
-version = "1.0.147"
+[workspace]
+members = ["fuzz"]
+exclude = [
+    "embedded",
+    "bitcoind-tests",
+]

@@ -455,6 +455,7 @@ pub trait PsbtExt {
     ///
     /// - Returns a mutated psbt with all inputs `finalize_mut` could finalize
     /// - A vector of input errors, one of each of failed finalized input
+    #[allow(clippy::result_large_err)]
     fn finalize<C: secp256k1::Verification>(
         self,
         secp: &secp256k1::Secp256k1<C>,
@@ -467,6 +468,7 @@ pub trait PsbtExt {
     ) -> Result<(), Vec<Error>>;
 
     /// Same as [PsbtExt::finalize], but allows for malleable satisfactions
+    #[allow(clippy::result_large_err)]
     fn finalize_mall<C: secp256k1::Verification>(
         self,
         secp: &Secp256k1<C>,
@@ -1162,9 +1164,7 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
                     *item.redeem_script() = Some(wsh.inner_script().to_p2wsh());
                 }
                 descriptor::ShInner::Wpkh(..) => *item.redeem_script() = Some(sh.inner_script()),
-                descriptor::ShInner::SortedMulti(_) | descriptor::ShInner::Ms(_) => {
-                    *item.redeem_script() = Some(sh.inner_script())
-                }
+                descriptor::ShInner::Ms(_) => *item.redeem_script() = Some(sh.inner_script()),
             },
             Descriptor::Wsh(wsh) => *item.witness_script() = Some(wsh.inner_script()),
             Descriptor::Tr(_) => unreachable!("Tr is dealt with separately"),
@@ -1453,7 +1453,7 @@ mod tests {
         .unwrap();
         let first_leaf_hash = {
             let ms =
-                Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!("pkh({})", &key_0_1)).unwrap();
+                Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!("pkh({})", key_0_1)).unwrap();
             let first_script = ms.encode();
             assert!(psbt_input
                 .tap_scripts

@@ -125,7 +125,9 @@ mod private {
                         Terminal::Thresh(thresh.map_ref(|_| stack.pop().unwrap()))
                     }
                     Terminal::Multi(ref thresh) => Terminal::Multi(thresh.clone()),
+                    Terminal::SortedMulti(ref thresh) => Terminal::SortedMulti(thresh.clone()),
                     Terminal::MultiA(ref thresh) => Terminal::MultiA(thresh.clone()),
+                    Terminal::SortedMultiA(ref thresh) => Terminal::SortedMultiA(thresh.clone()),
                 };
 
                 stack.push(Arc::new(Miniscript {
@@ -281,6 +283,17 @@ mod private {
             }
         }
 
+        // non-const because Thresh::n is not because Vec::len is not (needs Rust 1.87)
+        /// The `sortedmulti` combinator.
+        pub fn sortedmulti(thresh: crate::Threshold<Pk, MAX_PUBKEYS_PER_MULTISIG>) -> Self {
+            Self {
+                ty: types::Type::sortedmulti(),
+                ext: types::extra_props::ExtData::sortedmulti(&thresh),
+                node: Terminal::SortedMulti(thresh),
+                phantom: PhantomData,
+            }
+        }
+
         // non-const because Thresh::n is not because Vec::len is not
         /// The `multi` combinator.
         pub fn multi_a(thresh: crate::Threshold<Pk, MAX_PUBKEYS_IN_CHECKSIGADD>) -> Self {
@@ -288,6 +301,17 @@ mod private {
                 ty: types::Type::multi_a(),
                 ext: types::extra_props::ExtData::multi_a(thresh.k(), thresh.n()),
                 node: Terminal::MultiA(thresh),
+                phantom: PhantomData,
+            }
+        }
+
+        // non-const because Thresh::n is not because Vec::len is only const in 1.87
+        /// The `sortedmulti_a` combinator.
+        pub fn sortedmulti_a(thresh: crate::Threshold<Pk, MAX_PUBKEYS_IN_CHECKSIGADD>) -> Self {
+            Self {
+                ty: types::Type::sortedmulti_a(),
+                ext: types::extra_props::ExtData::sortedmulti_a(thresh.k(), thresh.n()),
+                node: Terminal::SortedMultiA(thresh),
                 phantom: PhantomData,
             }
         }
@@ -377,13 +401,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
                         + thresh.n() // ADD
                         - 1 // no ADD on first element
                 }
-                Terminal::Multi(ref thresh) => {
+                Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh) => {
                     script_num_size(thresh.k())
                         + 1
                         + script_num_size(thresh.n())
                         + thresh.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>()
                 }
-                Terminal::MultiA(ref thresh) => {
+                Terminal::MultiA(ref thresh) | Terminal::SortedMultiA(ref thresh) => {
                     script_num_size(thresh.k())
                         + 1 // NUMEQUAL
                         + thresh.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>() // n keys
@@ -424,12 +448,24 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         Ctx::max_satisfaction_size(self).ok_or(Error::ImpossibleSatisfaction)
     }
 
+    #[allow(unsafe_code)]
+    fn downcast<NarrowedCtx: ScriptContext>(&self) -> Option<&Miniscript<Pk, NarrowedCtx>> {
+        use core::any::TypeId;
+        if TypeId::of::<Ctx>() == TypeId::of::<NarrowedCtx>() {
+            // SAFETY: this pointer cast is a no-op, as guaranteed by the if guard
+            // In Rust 1.76 we can use core::ptr::from_ref in place of this cast.
+            Some(unsafe { &*(self as *const Self).cast() }) // cast needed til Rust 1.76
+        } else {
+            None
+        }
+    }
+
     /// Helper function to produce Taproot leaf hashes
-    fn leaf_hash_internal(&self) -> TapLeafHash
+    fn leaf_hash_internal(&self) -> Option<TapLeafHash>
     where
         Pk: ToPublicKey,
     {
-        TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript)
+        self.downcast::<Tap>().map(Miniscript::<Pk, Tap>::leaf_hash)
     }
 
     /// Attempt to produce non-malleable satisfying witness for the
@@ -440,10 +476,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     {
         // Only satisfactions for default versions (0xc0) are allowed.
         let satisfaction = satisfy::Satisfaction::satisfy(
-            &self.node,
+            self,
             &satisfier,
             self.ty.mall.safe,
-            &self.leaf_hash_internal(),
+            self.leaf_hash_internal(),
         );
         self._satisfy(satisfaction)
     }
@@ -458,10 +494,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         let satisfaction = satisfy::Satisfaction::satisfy_mall(
-            &self.node,
+            self,
             &satisfier,
             self.ty.mall.safe,
-            &self.leaf_hash_internal(),
+            self.leaf_hash_internal(),
         );
         self._satisfy(satisfaction)
     }
@@ -487,10 +523,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         satisfy::Satisfaction::build_template(
-            &self.node,
+            self,
             provider,
             self.ty.mall.safe,
-            &self.leaf_hash_internal(),
+            self.leaf_hash_internal(),
         )
     }
 
@@ -503,19 +539,21 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         satisfy::Satisfaction::build_template_mall(
-            &self.node,
+            self,
             provider,
             self.ty.mall.safe,
-            &self.leaf_hash_internal(),
+            self.leaf_hash_internal(),
         )
     }
 }
 
-impl Miniscript<<Tap as ScriptContext>::Key, Tap> {
+impl<Pk: ToPublicKey> Miniscript<Pk, Tap> {
     /// Returns the leaf hash used within a Taproot signature for this script.
     ///
     /// Note that this method is only implemented for Taproot Miniscripts.
-    pub fn leaf_hash(&self) -> TapLeafHash { self.leaf_hash_internal() }
+    pub fn leaf_hash(&self) -> TapLeafHash {
+        TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript)
+    }
 }
 
 impl<Ctx: ScriptContext> Miniscript<Ctx::Key, Ctx> {
@@ -628,27 +666,23 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Miniscript<Pk, Ct
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool {
         for ms in self.pre_order_iter() {
             match ms.node {
-                Terminal::PkK(ref p) => {
-                    if !pred(p) {
-                        return false;
-                    }
+                Terminal::PkK(ref p) if !pred(p) => {
+                    return false;
                 }
-                Terminal::PkH(ref p) => {
-                    if !pred(p) {
-                        return false;
-                    }
+                Terminal::PkH(ref p) if !pred(p) => {
+                    return false;
                 }
                 // These branches cannot be combined since technically the two `thresh`es
                 // have different types (have different maximum values).
-                Terminal::Multi(ref thresh) => {
-                    if !thresh.iter().all(&mut pred) {
-                        return false;
-                    }
+                Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh)
+                    if !thresh.iter().all(&mut pred) =>
+                {
+                    return false;
                 }
-                Terminal::MultiA(ref thresh) => {
-                    if !thresh.iter().all(&mut pred) {
-                        return false;
-                    }
+                Terminal::MultiA(ref thresh) | Terminal::SortedMultiA(ref thresh)
+                    if !thresh.iter().all(&mut pred) =>
+                {
+                    return false;
                 }
                 _ => {}
             }
@@ -726,8 +760,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
                     Terminal::Thresh(thresh.map_ref(|_| translated.pop().unwrap()))
                 }
                 Terminal::Multi(ref thresh) => Terminal::Multi(thresh.translate_ref(|k| t.pk(k))?),
+                Terminal::SortedMulti(ref thresh) => {
+                    Terminal::SortedMulti(thresh.translate_ref(|k| t.pk(k))?)
+                }
                 Terminal::MultiA(ref thresh) => {
                     Terminal::MultiA(thresh.translate_ref(|k| t.pk(k))?)
+                }
+                Terminal::SortedMultiA(ref thresh) => {
+                    Terminal::SortedMultiA(thresh.translate_ref(|k| t.pk(k))?)
                 }
             };
             let new_ms = Miniscript::from_ast(new_term).map_err(TranslateErr::OuterError)?;
@@ -779,7 +819,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
                     Terminal::Thresh(thresh.map_ref(|_| stack.pop().unwrap()))
                 }
                 Terminal::Multi(ref thresh) => Terminal::Multi(thresh.clone()),
+                Terminal::SortedMulti(ref thresh) => Terminal::SortedMulti(thresh.clone()),
                 Terminal::MultiA(ref thresh) => Terminal::MultiA(thresh.clone()),
+                Terminal::SortedMultiA(ref thresh) => Terminal::SortedMultiA(thresh.clone()),
             };
 
             stack.push(Arc::new(Miniscript::from_components_unchecked(
@@ -873,7 +915,7 @@ impl<Pk: FromStrKey, Ctx: ScriptContext> FromTree for Miniscript<Pk, Ctx> {
                     .map_err(From::from)
                     .map_err(Error::Parse)?;
 
-                if parent_name == "multi" || parent_name == "multi_a" {
+                if matches!(parent_name, "multi" | "sortedmulti" | "multi_a" | "sortedmulti_a") {
                     continue;
                 }
                 if parent_name == "thresh" && node.is_first_child() {
@@ -971,9 +1013,17 @@ impl<Pk: FromStrKey, Ctx: ScriptContext> FromTree for Miniscript<Pk, Ctx> {
                     .verify_threshold(|sub| sub.verify_terminal("public_key").map_err(Error::Parse))
                     .map(Terminal::Multi)
                     .and_then(Miniscript::from_ast),
+                "sortedmulti" => node
+                    .verify_threshold(|sub| sub.verify_terminal("public_key").map_err(Error::Parse))
+                    .map(Terminal::SortedMulti)
+                    .and_then(Miniscript::from_ast),
                 "multi_a" => node
                     .verify_threshold(|sub| sub.verify_terminal("public_key").map_err(Error::Parse))
                     .map(Terminal::MultiA)
+                    .and_then(Miniscript::from_ast),
+                "sortedmulti_a" => node
+                    .verify_threshold(|sub| sub.verify_terminal("public_key").map_err(Error::Parse))
+                    .map(Terminal::SortedMultiA)
                     .and_then(Miniscript::from_ast),
                 x => {
                     Err(Error::Parse(crate::ParseError::Tree(crate::ParseTreeError::UnknownName {
@@ -1428,10 +1478,10 @@ mod tests {
         let mut abs = miniscript.lift().unwrap();
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(2));
-        abs = abs.at_age(RelLockTime::from_height(10000).into());
+        abs = abs.at_age(RelLockTime::from_height(10000).unwrap().into());
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(2));
-        abs = abs.at_age(RelLockTime::from_height(9999).into());
+        abs = abs.at_age(RelLockTime::from_height(9999).unwrap().into());
         assert_eq!(abs.n_keys(), 3);
         assert_eq!(abs.minimum_n_keys(), Some(3));
         abs = abs.at_age(RelLockTime::ZERO.into());
@@ -1601,15 +1651,25 @@ mod tests {
         type Segwitv0Ms = Miniscript<String, Segwitv0>;
         type TapMs = Miniscript<String, Tap>;
         let segwit_multi_a_ms = Segwitv0Ms::from_str_insane("multi_a(1,A,B,C)");
+        let segwit_sortedmulti_a_ms = Segwitv0Ms::from_str_insane("sortedmulti_a(1,A,B,C)");
         assert_eq!(
             segwit_multi_a_ms.unwrap_err().to_string(),
             "Multi a(CHECKSIGADD) only allowed post tapscript"
         );
+        assert_eq!(
+            segwit_sortedmulti_a_ms.unwrap_err().to_string(),
+            "Multi a(CHECKSIGADD) only allowed post tapscript"
+        );
         let tap_multi_a_ms = TapMs::from_str_insane("multi_a(1,A,B,C)").unwrap();
+        let tap_sortedmulti_a_ms = TapMs::from_str_insane("sortedmulti_a(1,A,B,C)").unwrap();
         assert_eq!(tap_multi_a_ms.to_string(), "multi_a(1,A,B,C)");
+        assert_eq!(tap_sortedmulti_a_ms.to_string(), "sortedmulti_a(1,A,B,C)");
 
         // Test encode/decode and translation tests
         let tap_ms = tap_multi_a_ms
+            .translate_pk(&mut StrXOnlyKeyTranslator::new())
+            .unwrap();
+        let tap_ms_sorted = tap_sortedmulti_a_ms
             .translate_pk(&mut StrXOnlyKeyTranslator::new())
             .unwrap();
         // script rtt test
@@ -1617,8 +1677,16 @@ mod tests {
             Miniscript::<XOnlyPublicKey, Tap>::decode_consensus(&tap_ms.encode()).unwrap(),
             tap_ms
         );
+        // This won't work cause we won't ever be able to deduce the original
+        // ordering of keys in the descriptor
+        // assert_eq!(
+        //     Miniscript::<XOnlyPublicKey, Tap>::decode_consensus(&tap_ms_sorted.encode()).unwrap(),
+        //     tap_ms_sorted
+        // );
         assert_eq!(tap_ms.script_size(), 104);
+        assert_eq!(tap_ms_sorted.script_size(), 104);
         assert_eq!(tap_ms.encode().len(), tap_ms.script_size());
+        assert_eq!(tap_ms_sorted.encode().len(), tap_ms_sorted.script_size());
 
         // Test satisfaction code
         struct SimpleSatisfier(secp256k1::schnorr::Signature);
@@ -1640,11 +1708,16 @@ mod tests {
         let schnorr_sig = secp256k1::schnorr::Signature::from_str("84526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f0784526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f07").unwrap();
         let s = SimpleSatisfier(schnorr_sig);
         let template = tap_ms.build_template(&s);
+        let template_sorted = tap_ms_sorted.build_template(&s);
         assert_eq!(template.absolute_timelock, None);
+        assert_eq!(template_sorted.absolute_timelock, None);
         assert_eq!(template.relative_timelock, None);
+        assert_eq!(template_sorted.relative_timelock, None);
 
         let wit = tap_ms.satisfy(&s).unwrap();
+        let wit_sorted = tap_ms_sorted.satisfy(&s).unwrap();
         assert_eq!(wit, vec![schnorr_sig.as_ref().to_vec(), vec![], vec![]]);
+        assert_eq!(wit_sorted, vec![schnorr_sig.as_ref().to_vec(), vec![], vec![]]);
     }
 
     #[test]
@@ -1791,7 +1864,7 @@ mod tests {
             (
                 format!("or_d(pk({}),and_v(v:pk({}),older(12960)))", key_missing, key_present),
                 None,
-                Some(RelLockTime::from_height(12960)),
+                Some(RelLockTime::from_height(12960).unwrap()),
             ),
             (
                 format!(
@@ -1799,12 +1872,12 @@ mod tests {
                     key_present, key_missing
                 ),
                 Some(AbsLockTime::from_consensus(11).unwrap()),
-                Some(RelLockTime::from_height(10)),
+                Some(RelLockTime::from_height(10).unwrap()),
             ),
             (
                 format!("and_v(v:and_v(v:pk({}),older(10)),older(20))", key_present),
                 None,
-                Some(RelLockTime::from_height(20)),
+                Some(RelLockTime::from_height(20).unwrap()),
             ),
             (
                 format!(
@@ -1812,7 +1885,7 @@ mod tests {
                     key_present, key_missing
                 ),
                 None,
-                Some(RelLockTime::from_height(10)),
+                Some(RelLockTime::from_height(10).unwrap()),
             ),
         ];
 

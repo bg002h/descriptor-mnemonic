@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: CC0-1.0
 
 use core::convert::TryInto;
-use core::fmt;
 use core::str::FromStr;
+use core::{fmt, hash};
 #[cfg(feature = "std")]
 use std::error;
 
@@ -12,6 +12,7 @@ use bitcoin::key::{PublicKey, XOnlyPublicKey};
 use bitcoin::secp256k1::{Secp256k1, Signing, Verification};
 use bitcoin::NetworkKind;
 
+use super::WalletPolicyError;
 use crate::prelude::*;
 #[cfg(feature = "serde")]
 use crate::serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -201,6 +202,45 @@ pub enum Wildcard {
     Hardened,
 }
 
+impl fmt::Display for Wildcard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Wildcard::None => write!(f, ""),
+            Wildcard::Unhardened => write!(f, "/*"),
+            Wildcard::Hardened => write!(f, "/*h"),
+        }
+    }
+}
+
+impl fmt::Display for SinglePub {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        maybe_fmt_master_id(f, &self.origin)?;
+        match self.key {
+            SinglePubKey::FullKey(full_key) => full_key.fmt(f),
+            SinglePubKey::XOnly(x_only_key) => x_only_key.fmt(f),
+        }?;
+        Ok(())
+    }
+}
+
+impl MiniscriptKey for SinglePub {
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
+
+    fn is_x_only_key(&self) -> bool { matches!(self.key, SinglePubKey::XOnly(_)) }
+
+    fn num_der_paths(&self) -> usize { 0 }
+
+    fn is_uncompressed(&self) -> bool {
+        match self.key {
+            SinglePubKey::FullKey(ref key) => key.is_uncompressed(),
+            _ => false,
+        }
+    }
+}
+
 impl SinglePriv {
     /// Returns the public key of this key.
     fn to_public<C: Signing>(&self, secp: &Secp256k1<C>) -> SinglePub {
@@ -256,6 +296,30 @@ impl DescriptorXKey<bip32::Xpriv> {
             wildcard: self.wildcard,
         })
     }
+}
+
+impl<K: InnerXKey> fmt::Display for DescriptorXKey<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        maybe_fmt_master_id(f, &self.origin)?;
+        self.xkey.fmt(f)?;
+        fmt_derivation_path(f, &self.derivation_path)?;
+        self.wildcard.fmt(f)?;
+        Ok(())
+    }
+}
+
+impl<K> MiniscriptKey for DescriptorXKey<K>
+where
+    K: InnerXKey + Clone + Ord + Eq + hash::Hash + fmt::Debug,
+{
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
+
+    fn is_x_only_key(&self) -> bool { false }
+
+    fn num_der_paths(&self) -> usize { 1 }
 }
 
 impl DescriptorMultiXKey<bip32::Xpriv> {
@@ -339,6 +403,30 @@ impl DescriptorMultiXKey<bip32::Xpriv> {
     }
 }
 
+impl<K: InnerXKey> fmt::Display for DescriptorMultiXKey<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        maybe_fmt_master_id(f, &self.origin)?;
+        self.xkey.fmt(f)?;
+        fmt_derivation_paths(f, self.derivation_paths.paths())?;
+        self.wildcard.fmt(f)?;
+        Ok(())
+    }
+}
+
+impl<K> MiniscriptKey for DescriptorMultiXKey<K>
+where
+    K: InnerXKey + Clone + Ord + Eq + hash::Hash + fmt::Debug,
+{
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
+
+    fn is_x_only_key(&self) -> bool { false }
+
+    fn num_der_paths(&self) -> usize { self.derivation_paths.paths().len() }
+}
+
 /// Kinds of malformed key data
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
@@ -347,6 +435,7 @@ pub enum NonDefiniteKeyError {
     Wildcard,
     Multipath,
     HardenedStep,
+    NoWildcard,
 }
 
 impl fmt::Display for NonDefiniteKeyError {
@@ -356,6 +445,9 @@ impl fmt::Display for NonDefiniteKeyError {
             Self::Multipath => f.write_str("multipath key cannot be a DerivedDescriptorKey"),
             Self::HardenedStep => {
                 f.write_str("key with hardened derivation steps cannot be a DerivedDescriptorKey")
+            }
+            Self::NoWildcard => {
+                f.write_str("descriptor does not have a wildcard; cannot derive at index")
             }
         }
     }
@@ -412,16 +504,12 @@ impl fmt::Display for MalformedKeyDataKind {
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 pub enum DescriptorKeyParseError {
-    /// Error while parsing a BIP32 extended private key
-    Bip32Xpriv(bip32::Error),
-    /// Error while parsing a BIP32 extended public key
-    Bip32Xpub(bip32::Error),
     /// Error while parsing a derivation index
     DerivationIndexError {
         /// The invalid index
         index: String,
         /// The underlying parse error
-        err: bitcoin::bip32::Error,
+        err: bip32::Error,
     },
     /// Error deriving the hardened private key.
     DeriveHardenedKey(bip32::Error),
@@ -444,13 +532,13 @@ pub enum DescriptorKeyParseError {
     WifPrivateKey(bitcoin::key::FromWifError),
     /// Error while parsing an X-only public key (Secp256k1 error).
     XonlyPublicKey(bitcoin::secp256k1::Error),
+    /// XKey parsing error
+    XKeyParseError(XKeyParseError),
 }
 
 impl fmt::Display for DescriptorKeyParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Bip32Xpriv(err) => err.fmt(f),
-            Self::Bip32Xpub(err) => err.fmt(f),
             Self::DerivationIndexError { index, err } => {
                 write!(f, "at derivation index '{index}': {err}")
             }
@@ -464,17 +552,16 @@ impl fmt::Display for DescriptorKeyParseError {
             Self::FullPublicKey(err) => err.fmt(f),
             Self::WifPrivateKey(err) => err.fmt(f),
             Self::XonlyPublicKey(err) => err.fmt(f),
+            Self::XKeyParseError(err) => err.fmt(f),
         }
     }
 }
 
 #[cfg(feature = "std")]
 impl error::Error for DescriptorKeyParseError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            Self::Bip32Xpriv(err)
-            | Self::Bip32Xpub(err)
-            | Self::DerivationIndexError { err, .. }
+            Self::DerivationIndexError { err, .. }
             | Self::DeriveHardenedKey(err)
             | Self::MasterDerivationPath(err) => Some(err),
             Self::MasterFingerprint { err, .. } => Some(err),
@@ -482,44 +569,48 @@ impl error::Error for DescriptorKeyParseError {
             Self::FullPublicKey(err) => Some(err),
             Self::WifPrivateKey(err) => Some(err),
             Self::XonlyPublicKey(err) => Some(err),
+            Self::XKeyParseError(err) => Some(err),
             Self::MalformedKeyData(_) => None,
         }
     }
 }
 
+/// An error when parsing an extended key.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum XKeyParseError {
+    Bip32(bip32::Error),
+    Bip388(WalletPolicyError),
+}
+
+#[cfg(feature = "std")]
+impl error::Error for XKeyParseError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Self::Bip32(err) => Some(err),
+            Self::Bip388(err) => Some(err),
+        }
+    }
+}
+
+impl fmt::Display for XKeyParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Bip32(err) => err.fmt(f),
+            Self::Bip388(err) => err.fmt(f),
+        }
+    }
+}
+
+impl From<bip32::Error> for XKeyParseError {
+    fn from(err: bip32::Error) -> Self { Self::Bip32(err) }
+}
+
 impl fmt::Display for DescriptorPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::Single(ref pk) => {
-                maybe_fmt_master_id(f, &pk.origin)?;
-                match pk.key {
-                    SinglePubKey::FullKey(full_key) => full_key.fmt(f),
-                    SinglePubKey::XOnly(x_only_key) => x_only_key.fmt(f),
-                }?;
-                Ok(())
-            }
-            Self::XPub(ref xpub) => {
-                maybe_fmt_master_id(f, &xpub.origin)?;
-                xpub.xkey.fmt(f)?;
-                fmt_derivation_path(f, &xpub.derivation_path)?;
-                match xpub.wildcard {
-                    Wildcard::None => {}
-                    Wildcard::Unhardened => write!(f, "/*")?,
-                    Wildcard::Hardened => write!(f, "/*h")?,
-                }
-                Ok(())
-            }
-            Self::MultiXPub(ref xpub) => {
-                maybe_fmt_master_id(f, &xpub.origin)?;
-                xpub.xkey.fmt(f)?;
-                fmt_derivation_paths(f, xpub.derivation_paths.paths())?;
-                match xpub.wildcard {
-                    Wildcard::None => {}
-                    Wildcard::Unhardened => write!(f, "/*")?,
-                    Wildcard::Hardened => write!(f, "/*h")?,
-                }
-                Ok(())
-            }
+            Self::Single(ref pk) => pk.fmt(f),
+            Self::XPub(ref xpub) => xpub.fmt(f),
+            Self::MultiXPub(ref xpub) => xpub.fmt(f),
         }
     }
 }
@@ -610,7 +701,10 @@ fn fmt_derivation_path(f: &mut fmt::Formatter, path: &bip32::DerivationPath) -> 
 /// Writes multiple derivation paths to the formatter, no leading 'm'.
 /// NOTE: we assume paths only differ at a single index, as prescribed by BIP389.
 /// Will panic if the list of paths is empty.
-fn fmt_derivation_paths(f: &mut fmt::Formatter, paths: &[bip32::DerivationPath]) -> fmt::Result {
+pub(crate) fn fmt_derivation_paths<W: fmt::Write>(
+    f: &mut W,
+    paths: &[bip32::DerivationPath],
+) -> fmt::Result {
     for (i, child) in paths[0].into_iter().enumerate() {
         if paths.len() > 1 && child != &paths[1][i] {
             write!(f, "/<")?;
@@ -642,7 +736,7 @@ impl FromStr for DescriptorPublicKey {
         let (key_part, origin) = parse_key_origin(s)?;
 
         if key_part.contains("pub") {
-            let (xpub, derivation_paths, wildcard) = parse_xkey_deriv(parse_bip32_xpub, key_part)?;
+            let (xpub, derivation_paths, wildcard) = parse_xkey_deriv(key_part)?;
             if derivation_paths.len() > 1 {
                 Ok(DescriptorPublicKey::MultiXPub(DescriptorMultiXKey {
                     origin,
@@ -795,6 +889,38 @@ impl DescriptorPublicKey {
         }
     }
 
+    /// Derivation path without the origin prefix.
+    ///
+    /// For wildcard keys this will return the path up to the wildcard, so you
+    /// can get full paths by appending one additional derivation step, according
+    /// to the wildcard type (hardened or normal).
+    ///
+    /// For multipath extended keys, this returns `None`.
+    pub fn derivation_path(&self) -> Option<bip32::DerivationPath> {
+        match *self {
+            DescriptorPublicKey::XPub(ref xpub) => Some(xpub.derivation_path.clone()),
+            DescriptorPublicKey::Single(_) => Some(bip32::DerivationPath::from(vec![])),
+            DescriptorPublicKey::MultiXPub(_) => None,
+        }
+    }
+
+    /// Returns a vector of derivation paths without the origin prefix.
+    ///
+    /// For wildcard keys this will return the path up to the wildcard, so you
+    /// can get full paths by appending one additional derivation step, according
+    /// to the wildcard type (hardened or normal).
+    pub fn derivation_paths(&self) -> Vec<bip32::DerivationPath> {
+        match &self {
+            DescriptorPublicKey::XPub(xpub) => {
+                vec![xpub.derivation_path.clone()]
+            }
+            DescriptorPublicKey::Single(_) => {
+                vec![bip32::DerivationPath::from(vec![])]
+            }
+            DescriptorPublicKey::MultiXPub(xpub) => xpub.derivation_paths.paths().clone(),
+        }
+    }
+
     /// Whether or not the key has a wildcard
     pub fn has_wildcard(&self) -> bool {
         match *self {
@@ -804,7 +930,16 @@ impl DescriptorPublicKey {
         }
     }
 
-    /// Whether or not the key has a wildcard
+    /// Return a Wildcard if key is a XKey
+    pub fn wildcard(&self) -> Option<Wildcard> {
+        match *self {
+            DescriptorPublicKey::Single(..) => None,
+            DescriptorPublicKey::XPub(ref xpub) => Some(xpub.wildcard),
+            DescriptorPublicKey::MultiXPub(ref xpub) => Some(xpub.wildcard),
+        }
+    }
+
+    /// Whether or not the key has a hardened step in path
     pub fn has_hardened_step(&self) -> bool {
         let paths = match self {
             DescriptorPublicKey::Single(..) => &[],
@@ -833,6 +968,7 @@ impl DescriptorPublicKey {
     /// # Errors
     ///
     /// - If `index` is hardened.
+    /// - If derivation path contains a hardened step.
     /// - If the key contains multi-path derivations
     pub fn at_derivation_index(
         self,
@@ -864,8 +1000,7 @@ impl DescriptorPublicKey {
             DescriptorPublicKey::MultiXPub(_) => return Err(NonDefiniteKeyError::Multipath),
         };
 
-        Ok(DefiniteDescriptorKey::new(definite)
-            .expect("The key should not contain any wildcards at this point"))
+        DefiniteDescriptorKey::new(definite)
     }
 
     /// Whether or not this key has multiple derivation paths.
@@ -925,8 +1060,7 @@ impl FromStr for DescriptorSecretKey {
                 .map_err(DescriptorKeyParseError::WifPrivateKey)?;
             Ok(DescriptorSecretKey::Single(SinglePriv { key: sk, origin }))
         } else {
-            let (xpriv, derivation_paths, wildcard) =
-                parse_xkey_deriv(parse_bip32_xpriv, key_part)?;
+            let (xpriv, derivation_paths, wildcard) = parse_xkey_deriv(key_part)?;
             if derivation_paths.len() > 1 {
                 Ok(DescriptorSecretKey::MultiXPrv(DescriptorMultiXKey {
                     origin,
@@ -1009,18 +1143,13 @@ fn parse_key_origin(s: &str) -> Result<(&str, Option<bip32::KeySource>), Descrip
     }
 }
 
-fn parse_bip32_xpub(xkey_str: &str) -> Result<bip32::Xpub, DescriptorKeyParseError> {
-    bip32::Xpub::from_str(xkey_str).map_err(DescriptorKeyParseError::Bip32Xpub)
-}
-
-fn parse_bip32_xpriv(xkey_str: &str) -> Result<bip32::Xpriv, DescriptorKeyParseError> {
-    bip32::Xpriv::from_str(xkey_str).map_err(DescriptorKeyParseError::Bip32Xpriv)
-}
-
-fn parse_xkey_deriv<Key>(
-    parse_xkey_fn: impl Fn(&str) -> Result<Key, DescriptorKeyParseError>,
+pub(crate) fn parse_xkey_deriv<Key, E>(
     key_deriv: &str,
-) -> Result<(Key, Vec<bip32::DerivationPath>, Wildcard), DescriptorKeyParseError> {
+) -> Result<(Key, Vec<bip32::DerivationPath>, Wildcard), DescriptorKeyParseError>
+where
+    Key: FromStr<Err = E>,
+    E: Into<XKeyParseError>,
+{
     let mut key_deriv = key_deriv.split('/');
     let xkey_str = key_deriv
         .next()
@@ -1028,7 +1157,8 @@ fn parse_xkey_deriv<Key>(
             MalformedKeyDataKind::NoKeyAfterOrigin,
         ))?;
 
-    let xkey = parse_xkey_fn(xkey_str)?;
+    let xkey =
+        Key::from_str(xkey_str).map_err(|e| DescriptorKeyParseError::XKeyParseError(e.into()))?;
 
     let mut wildcard = Wildcard::None;
     let mut multipath = false;
@@ -1097,7 +1227,7 @@ fn parse_xkey_deriv<Key>(
         // step all the vectors of indexes contain a single element. If it did though, one of the
         // vectors contains more than one element.
         // Now transform this list of vectors of steps into distinct derivation paths.
-        .try_fold(Vec::new(), |mut paths, index_list| {
+        .try_fold(Vec::new(), |mut paths, index_list| -> Result<_, DescriptorKeyParseError> {
             let mut index_list = index_list?.into_iter();
             let first_index = index_list
                 .next()
@@ -1220,25 +1350,23 @@ impl MiniscriptKey for DescriptorPublicKey {
 
     fn is_uncompressed(&self) -> bool {
         match self {
-            DescriptorPublicKey::Single(SinglePub {
-                key: SinglePubKey::FullKey(ref key), ..
-            }) => key.is_uncompressed(),
+            DescriptorPublicKey::Single(key) => key.is_uncompressed(),
             _ => false,
         }
     }
 
     fn is_x_only_key(&self) -> bool {
-        matches!(
-            self,
-            DescriptorPublicKey::Single(SinglePub { key: SinglePubKey::XOnly(ref _key), .. })
-        )
+        match self {
+            DescriptorPublicKey::Single(single_pub) => single_pub.is_x_only_key(),
+            _ => false,
+        }
     }
 
     fn num_der_paths(&self) -> usize {
         match self {
-            DescriptorPublicKey::Single(_) => 0,
-            DescriptorPublicKey::XPub(_) => 1,
-            DescriptorPublicKey::MultiXPub(xpub) => xpub.derivation_paths.paths().len(),
+            DescriptorPublicKey::Single(single) => single.num_der_paths(),
+            DescriptorPublicKey::XPub(xpub) => xpub.num_der_paths(),
+            DescriptorPublicKey::MultiXPub(xpub) => xpub.num_der_paths(),
         }
     }
 }

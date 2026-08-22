@@ -210,20 +210,20 @@ where
 /// Calling `plan` on a Descriptor will return this structure,
 /// containing the cheapest spending path possible (considering the `Assets` given)
 #[derive(Debug, Clone)]
-pub struct Plan {
+pub struct Plan<Pk: MiniscriptKey> {
     /// This plan's witness template
-    pub(crate) template: Vec<Placeholder<DefiniteDescriptorKey>>,
+    pub(crate) template: Vec<Placeholder<Pk>>,
     /// The absolute timelock this plan uses
     pub absolute_timelock: Option<absolute::LockTime>,
     /// The relative timelock this plan uses
     pub relative_timelock: Option<relative::LockTime>,
 
-    pub(crate) descriptor: Descriptor<DefiniteDescriptorKey>,
+    pub(crate) descriptor: Descriptor<Pk>,
 }
 
-impl Plan {
+impl<Pk: MiniscriptKey + ToPublicKey> Plan<Pk> {
     /// Returns the witness template
-    pub fn witness_template(&self) -> &Vec<Placeholder<DefiniteDescriptorKey>> { &self.template }
+    pub fn witness_template(&self) -> &Vec<Placeholder<Pk>> { &self.template }
 
     /// Returns the witness version
     pub fn witness_version(&self) -> Option<WitnessVersion> {
@@ -245,7 +245,7 @@ impl Plan {
             // scriptSig len (1) + OP_0 (1) + OP_PUSHBYTES_20 (1) + <pk hash> (20)
             (_, DescriptorType::ShWpkh) => 1 + 1 + 1 + 20,
             // scriptSig len (1) + OP_0 (1) + OP_PUSHBYTES_32 (1) + <script hash> (32)
-            (_, DescriptorType::ShWsh) | (_, DescriptorType::ShWshSortedMulti) => 1 + 1 + 1 + 32,
+            (_, DescriptorType::ShWsh) => 1 + 1 + 1 + 32,
             // Native Segwit v0 (scriptSig len (1))
             _ => 1,
         }
@@ -264,7 +264,7 @@ impl Plan {
     }
 
     /// Try creating the final script_sig and witness using a [`Satisfier`]
-    pub fn satisfy<Sat: Satisfier<DefiniteDescriptorKey>>(
+    pub fn satisfy<Sat: Satisfier<Pk>>(
         &self,
         stfr: &Sat,
     ) -> Result<(Vec<Vec<u8>>, ScriptBuf), Error> {
@@ -278,10 +278,7 @@ impl Plan {
             .ok_or(Error::CouldNotSatisfy)?;
 
         Ok(match self.descriptor.desc_type() {
-            DescriptorType::Bare
-            | DescriptorType::Sh
-            | DescriptorType::Pkh
-            | DescriptorType::ShSortedMulti => (
+            DescriptorType::Bare | DescriptorType::Sh | DescriptorType::Pkh => (
                 vec![],
                 stack
                     .into_iter()
@@ -292,16 +289,22 @@ impl Plan {
                     })
                     .into_script(),
             ),
-            DescriptorType::Wpkh
-            | DescriptorType::Wsh
-            | DescriptorType::WshSortedMulti
-            | DescriptorType::Tr => (stack, ScriptBuf::new()),
-            DescriptorType::ShWsh | DescriptorType::ShWshSortedMulti | DescriptorType::ShWpkh => {
+            DescriptorType::Wpkh | DescriptorType::Tr => (stack, ScriptBuf::new()),
+            DescriptorType::ShWpkh => (stack, self.descriptor.unsigned_script_sig()),
+            DescriptorType::Wsh | DescriptorType::ShWsh => {
+                let mut stack = stack;
+                let witness_script = self
+                    .descriptor
+                    .explicit_script()
+                    .expect("wsh descriptors have explicit script");
+                stack.push(witness_script.into_bytes());
                 (stack, self.descriptor.unsigned_script_sig())
             }
         })
     }
+}
 
+impl Plan<DefiniteDescriptorKey> {
     /// Update a PSBT input with the metadata required to complete this plan
     ///
     /// This will only add the metadata for items required to complete this plan. For example, if
@@ -409,9 +412,7 @@ impl Plan {
                         input.redeem_script = Some(wsh.inner_script().to_p2wsh());
                     }
                     descriptor::ShInner::Wpkh(..) => input.redeem_script = Some(sh.inner_script()),
-                    descriptor::ShInner::SortedMulti(_) | descriptor::ShInner::Ms(_) => {
-                        input.redeem_script = Some(sh.inner_script())
-                    }
+                    descriptor::ShInner::Ms(_) => input.redeem_script = Some(sh.inner_script()),
                 },
                 Descriptor::Wsh(wsh) => input.witness_script = Some(wsh.inner_script()),
                 Descriptor::Tr(_) => unreachable!("Tr is dealt with separately"),
@@ -494,7 +495,7 @@ impl TaprootAvailableLeaves {
 }
 
 /// The Assets we can use to satisfy a particular spending path
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct Assets {
     /// Keys the user can sign for, and how.
     ///
@@ -729,6 +730,7 @@ mod test {
     use std::str::FromStr;
 
     use bitcoin::bip32::Xpub;
+    use secp256k1::Secp256k1;
 
     use super::*;
     use crate::*;
@@ -764,7 +766,7 @@ mod test {
                 assets = assets.add(hashes[hi]);
             }
 
-            let result = desc.clone().plan(&assets);
+            let result = desc.clone().into_plan(&assets);
             assert_eq!(
                 result.as_ref().ok().map(|plan| plan.satisfaction_weight()),
                 expected,
@@ -1103,7 +1105,7 @@ mod test {
         let mut psbt_input = bitcoin::psbt::Input::default();
         let assets = Assets::new().add(internal_key);
         desc.clone()
-            .plan(&assets)
+            .into_plan(&assets)
             .unwrap()
             .update_psbt_input(&mut psbt_input);
         assert!(psbt_input.tap_internal_key.is_some(), "Internal key is missing");
@@ -1114,7 +1116,7 @@ mod test {
         let mut psbt_input = bitcoin::psbt::Input::default();
         let assets = Assets::new().add(first_branch);
         desc.clone()
-            .plan(&assets)
+            .into_plan(&assets)
             .unwrap()
             .update_psbt_input(&mut psbt_input);
         assert!(psbt_input.tap_internal_key.is_none(), "Internal key is present");
@@ -1124,7 +1126,7 @@ mod test {
 
         let mut psbt_input = bitcoin::psbt::Input::default();
         let assets = Assets::new().add(second_branch);
-        desc.plan(&assets)
+        desc.into_plan(&assets)
             .unwrap()
             .update_psbt_input(&mut psbt_input);
         assert!(psbt_input.tap_internal_key.is_none(), "Internal key is present");
@@ -1147,11 +1149,100 @@ mod test {
 
         let mut psbt_input = bitcoin::psbt::Input::default();
         let assets = Assets::new().add(asset_key);
-        desc.plan(&assets)
+        desc.into_plan(&assets)
             .unwrap()
             .update_psbt_input(&mut psbt_input);
         assert!(psbt_input.witness_script.is_some(), "Witness script missing");
         assert!(psbt_input.redeem_script.is_none(), "Redeem script present");
         assert_eq!(psbt_input.bip32_derivation.len(), 2, "Unexpected number of bip32_derivation");
+    }
+
+    fn test_plan_satisfy(
+        desc_str_fn: fn(&[bitcoin::PublicKey]) -> String,
+        exp_witness_len: usize,
+    ) -> Vec<Vec<u8>> {
+        let secp = Secp256k1::new();
+
+        let (sks, pks): (Vec<_>, Vec<_>) = [
+            &b"sally was a secret key, she said"[..],
+            &b"polly was a secret key, she said"[..],
+            &b"bonny was a secret key, she said"[..],
+        ]
+        .iter()
+        .map(|d| {
+            let sk = secp256k1::SecretKey::from_slice(d).unwrap();
+            let pk = bitcoin::PublicKey::new(secp256k1::PublicKey::from_secret_key(&secp, &sk));
+            (sk, pk)
+        })
+        .unzip();
+
+        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_str_fn(&pks)).unwrap();
+
+        let sigs = sks
+            .iter()
+            .map(|sk| {
+                let sighash =
+                    secp256k1::Message::from_digest_slice(&b"michael was a message, amusingly"[..])
+                        .expect("32 bytes");
+                bitcoin::ecdsa::Signature {
+                    signature: secp.sign_ecdsa(&sighash, sk),
+                    sighash_type: bitcoin::sighash::EcdsaSighashType::All,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // This witness script should exist in the witness stack returned by `Plan::satisfy`.
+        let exp_witness_script = desc.explicit_script().expect("has explicit script");
+        let exp_script_sig = desc.unsigned_script_sig();
+
+        let mut satisfier = BTreeMap::<DefiniteDescriptorKey, bitcoin::ecdsa::Signature>::new();
+        let mut assets = Assets::new();
+        for (i, pk) in pks.iter().enumerate() {
+            satisfier.insert(DefiniteDescriptorKey::from_str(&pk.to_string()).unwrap(), sigs[i]);
+            assets = assets.add(DescriptorPublicKey::from_str(&pk.to_string()).unwrap());
+        }
+
+        let plan = desc.into_plan(&assets).expect("plan should succeed");
+
+        let (witness, script_sig) = plan.satisfy(&satisfier).expect("satisfy should succeed");
+        assert_eq!(witness.last().unwrap(), &exp_witness_script.into_bytes());
+        assert_eq!(script_sig, exp_script_sig);
+        assert_eq!(witness.len(), exp_witness_len);
+
+        witness
+    }
+
+    #[test]
+    fn test_plan_satisfy_wsh() {
+        // For native P2WSH:
+        // - script_sig should be empty
+        // - witness should contain [signature, witness_script]
+        test_plan_satisfy(|pks| format!("wsh(pk({}))", pks[0]), 2);
+    }
+
+    #[test]
+    fn test_plan_satisfy_sh_wsh() {
+        // For P2SH-P2WSH:
+        // - script_sig should be the unsigned_script_sig (pushes the P2WSH redeemScript)
+        // - witness should contain [signature, witness_script]
+        test_plan_satisfy(|pks| format!("sh(wsh(pk({})))", pks[0]), 2);
+    }
+
+    #[test]
+    fn test_plan_satisfy_sortedmulti() {
+        // For native P2WSH with sortedmulti:
+        // - script_sig should be empty
+        // - witness should contain [sig1, sig2, sig3, witness_script]
+        // - witness should be the same no matter the order of the keys
+        assert_eq!(
+            test_plan_satisfy(
+                |pks| format!("wsh(sortedmulti(2,{},{},{}))", pks[0], pks[1], pks[2]),
+                4
+            ),
+            test_plan_satisfy(
+                |pks| format!("wsh(sortedmulti(2,{},{},{}))", pks[1], pks[2], pks[0]),
+                4
+            )
+        );
     }
 }

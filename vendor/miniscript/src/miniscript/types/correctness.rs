@@ -152,8 +152,18 @@ impl Correctness {
         Correctness { base: Base::B, input: Input::AnyNonZero, dissatisfiable: true, unit: true }
     }
 
+    /// Constructor for the correctness properties of the `sortedmulti` fragment.
+    pub const fn sortedmulti() -> Self {
+        Correctness { base: Base::B, input: Input::AnyNonZero, dissatisfiable: true, unit: true }
+    }
+
     /// Constructor for the correctness properties of the `multi_a` fragment.
     pub const fn multi_a() -> Self {
+        Correctness { base: Base::B, input: Input::Any, dissatisfiable: true, unit: true }
+    }
+
+    /// Constructor for the correctness properties of the `sortedmulti_a` fragment.
+    pub const fn sortedmulti_a() -> Self {
         Correctness { base: Base::B, input: Input::Any, dissatisfiable: true, unit: true }
     }
 

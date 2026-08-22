@@ -153,8 +153,12 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     Thresh(Threshold<Arc<Miniscript<Pk, Ctx>>, 0>),
     /// `k (<key>)* n CHECKMULTISIG`
     Multi(Threshold<Pk, MAX_PUBKEYS_PER_MULTISIG>),
+    /// `k (<key>)* n CHECKMULTISIG`
+    SortedMulti(Threshold<Pk, MAX_PUBKEYS_PER_MULTISIG>),
     /// `<key> CHECKSIG (<key> CHECKSIGADD)*(n-1) k NUMEQUAL`
     MultiA(Threshold<Pk, MAX_PUBKEYS_IN_CHECKSIGADD>),
+    /// `<key> CHECKSIG (<key> CHECKSIGADD)*(n-1) k NUMEQUAL`
+    SortedMultiA(Threshold<Pk, MAX_PUBKEYS_IN_CHECKSIGADD>),
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> Clone for Terminal<Pk, Ctx> {
@@ -212,7 +216,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Clone for Terminal<Pk, Ctx> {
                 Terminal::Thresh(thresh.map_ref(|child| Arc::new(Miniscript::clone(child))))
             }
             Terminal::Multi(ref thresh) => Terminal::Multi(thresh.clone()),
+            Terminal::SortedMulti(ref thresh) => Terminal::SortedMulti(thresh.clone()),
             Terminal::MultiA(ref thresh) => Terminal::MultiA(thresh.clone()),
+            Terminal::SortedMultiA(ref thresh) => Terminal::SortedMultiA(thresh.clone()),
         }
     }
 }
@@ -231,7 +237,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialEq for Terminal<Pk, Ctx> {
                 (Terminal::Ripemd160(h1), Terminal::Ripemd160(h2)) if h1 != h2 => return false,
                 (Terminal::Hash160(h1), Terminal::Hash160(h2)) if h1 != h2 => return false,
                 (Terminal::Multi(th1), Terminal::Multi(th2)) if th1 != th2 => return false,
+                (Terminal::SortedMulti(th1), Terminal::SortedMulti(th2)) if th1 != th2 => {
+                    return false
+                }
                 (Terminal::MultiA(th1), Terminal::MultiA(th2)) if th1 != th2 => return false,
+                (Terminal::SortedMultiA(th1), Terminal::SortedMultiA(th2)) if th1 != th2 => {
+                    return false
+                }
                 _ => {
                     if mem::discriminant(me) != mem::discriminant(you) {
                         return false;
@@ -263,8 +275,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> core::hash::Hash for Terminal<Pk, Ct
                     th.n().hash(hasher);
                     // The actual children will be hashed when we iterate
                 }
-                Terminal::Multi(th) => th.hash(hasher),
-                Terminal::MultiA(th) => th.hash(hasher),
+                Terminal::Multi(th) | Terminal::SortedMulti(th) => th.hash(hasher),
+                Terminal::MultiA(th) | Terminal::SortedMultiA(th) => th.hash(hasher),
                 _ => {}
             }
         }
@@ -534,6 +546,9 @@ pub fn decode<Ctx: ScriptContext>(
                         term.push(Miniscript::multi(thresh));
                     },
                     // MultiA
+                    // NOTE: We never decode into a sortedmulti_a. This may be
+                    // done in the future if there are validation parameters
+                    // that allow for it.
                     Tk::NumEqual, Tk::Num(k) => {
                         threshold::validate_k_n::<MAX_PUBKEYS_IN_CHECKSIGADD>(k as usize, k as usize).map_err(Error::Threshold)?;
 

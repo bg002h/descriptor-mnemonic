@@ -16,6 +16,7 @@ use {
     crate::Descriptor,
     crate::Miniscript,
     crate::Tap,
+    crate::Terminal,
     core::cmp::Reverse,
 };
 
@@ -153,15 +154,11 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     fn check_binary_ops(&self) -> Result<(), CompilerError> {
         for policy in self.pre_order_iter() {
             match *policy {
-                Policy::And(ref subs) => {
-                    if subs.len() != 2 {
-                        return Err(CompilerError::NonBinaryArgAnd);
-                    }
+                Policy::And(ref subs) if subs.len() != 2 => {
+                    return Err(CompilerError::NonBinaryArgAnd);
                 }
-                Policy::Or(ref subs) => {
-                    if subs.len() != 2 {
-                        return Err(CompilerError::NonBinaryArgOr);
-                    }
+                Policy::Or(ref subs) if subs.len() != 2 => {
+                    return Err(CompilerError::NonBinaryArgOr);
                 }
                 _ => {}
             }
@@ -275,6 +272,70 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
         }
     }
 
+    /// Compiles the [`Policy`] into a [`Descriptor::Tr`] using Taptree-native branching.
+    ///
+    /// Unlike [`Self::compile_tr`], this method decomposes all `Or` and `Thresh` branches
+    /// (including those nested inside `And` nodes) into separate TapTree leaves.
+    /// Each leaf contains only non-branching Miniscript fragments (no OP_IF/NOTIF).
+    ///
+    /// `max_leaves` caps the number of TapTree leaves to prevent combinatorial explosion.
+    /// Clamped to 1024.
+    #[cfg(feature = "compiler")]
+    pub fn compile_tr_native(
+        &self,
+        unspendable_key: Option<Pk>,
+        max_leaves: usize,
+    ) -> Result<Descriptor<Pk>, CompilerError> {
+        if max_leaves == 0 {
+            return Err(CompilerError::TooManyTapleaves { n: 1, max: 0 });
+        }
+        let max_leaves = max_leaves.min(MAX_COMPILATION_LEAVES);
+        self.is_valid().map_err(CompilerError::PolicyError)?;
+        self.check_binary_ops()?;
+        match self.is_safe_nonmalleable() {
+            (false, _) => Err(CompilerError::TopLevelNonSafe),
+            (_, false) => Err(CompilerError::ImpossibleNonMalleableCompilation),
+            _ => {
+                let (internal_key, policy) = self.clone().extract_key(unspendable_key)?;
+                let tap_tree = match policy {
+                    Policy::Trivial => None,
+                    policy => {
+                        let leaves =
+                            policy.enumerate_leaves(1.0, max_leaves, Self::enumerate_pol_native);
+                        let n = leaves.len();
+                        if n > max_leaves {
+                            return Err(CompilerError::TooManyTapleaves { n, max: max_leaves });
+                        }
+                        let mut leaf_compilations: Vec<(OrdF64, Miniscript<Pk, Tap>)> = vec![];
+                        for (leaf_idx, (prob, pol)) in leaves.iter().enumerate() {
+                            if **pol == Policy::Unsatisfiable {
+                                continue;
+                            }
+                            let compilation = compiler::best_compilation::<Pk, Tap>(pol.as_ref())?;
+                            compilation
+                                .sanity_check()
+                                .expect("compiler produces sane output");
+                            if has_if_fragment(&compilation) {
+                                return Err(CompilerError::IfFragmentInNativeLeaf {
+                                    leaf_index: leaf_idx,
+                                });
+                            }
+                            leaf_compilations.push((OrdF64(*prob), compilation));
+                        }
+                        if !leaf_compilations.is_empty() {
+                            Some(with_huffman_tree::<Pk>(leaf_compilations))
+                        } else {
+                            None
+                        }
+                    }
+                };
+                let tree = Descriptor::new_tr(internal_key, tap_tree)
+                    .expect("compiler produces sane output");
+                Ok(tree)
+            }
+        }
+    }
+
     /// Compiles the [`Policy`] into a [`Descriptor::Tr`].
     ///
     /// ### TapTree compilation
@@ -346,7 +407,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     ///
     /// It is **not recommended** to use policy as a stable identifier for a miniscript. You should
     /// use the policy compiler once, and then use the miniscript output as a stable identifier. See
-    /// the compiler document in [`doc/compiler.md`] for more details.
+    /// the compiler document in `./doc/compiler.md` for more details.
     #[cfg(feature = "compiler")]
     pub fn compile_to_descriptor<Ctx: ScriptContext>(
         &self,
@@ -416,6 +477,53 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
         }
     }
 
+    /// Like [`enumerate_pol`] but also distributes `And` over `Or`/`Thresh` children.
+    ///
+    /// This ensures nested `Or` branches inside `And` nodes are decomposed into
+    /// separate sub-policies, producing IF-free leaves for Taptree-native compilation.
+    #[cfg(feature = "compiler")]
+    fn enumerate_pol_native(&self, prob: f64) -> Vec<(f64, Arc<Self>)> {
+        match self {
+            Policy::Or(subs) => {
+                let total_odds = subs.iter().fold(0, |acc, x| acc + x.0);
+                subs.iter()
+                    .map(|(odds, pol)| (prob * *odds as f64 / total_odds as f64, pol.clone()))
+                    .collect::<Vec<_>>()
+            }
+            Policy::Thresh(ref thresh) if thresh.is_or() => {
+                let total_odds = thresh.n();
+                thresh
+                    .iter()
+                    .map(|pol| (prob / total_odds as f64, pol.clone()))
+                    .collect::<Vec<_>>()
+            }
+            Policy::Thresh(ref thresh) if !thresh.is_and() => generate_combination(thresh, prob),
+            Policy::And(subs) => {
+                for (i, sub) in subs.iter().enumerate() {
+                    let child_expanded = sub.enumerate_pol_native(1.0);
+                    if child_expanded.len() > 1 {
+                        let other: Vec<_> = subs
+                            .iter()
+                            .enumerate()
+                            .filter(|(j, _)| *j != i)
+                            .map(|(_, s)| s.clone())
+                            .collect();
+                        return child_expanded
+                            .into_iter()
+                            .map(|(child_prob, child_pol)| {
+                                let mut new_subs = other.clone();
+                                new_subs.insert(i, child_pol);
+                                (prob * child_prob, Arc::new(Policy::And(new_subs)))
+                            })
+                            .collect();
+                    }
+                }
+                vec![(prob, Arc::new(self.clone()))]
+            }
+            pol => vec![(prob, Arc::new(pol.clone()))],
+        }
+    }
+
     /// Generates a root-level disjunctive tree over the given policy tree.
     ///
     /// Uses a fixed-point algorithm to enumerate the disjunctions until exhaustive root-level
@@ -424,6 +532,21 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// enumerated sub-policies whose disjunction is isomorphic to initial policy (*invariant*).
     #[cfg(feature = "compiler")]
     fn enumerate_policy_tree(self, prob: f64) -> Vec<(f64, Arc<Self>)> {
+        self.enumerate_leaves(prob, MAX_COMPILATION_LEAVES, Self::enumerate_pol)
+    }
+
+    /// Fixed-point leaf enumeration parameterized by the expansion function and leaf limit.
+    ///
+    /// Iteratively expands policies using `expand_fn` until no further splits are possible
+    /// or the number of leaves exceeds `max_leaves`.
+    #[cfg(feature = "compiler")]
+    #[allow(clippy::type_complexity)]
+    fn enumerate_leaves(
+        self,
+        prob: f64,
+        max_leaves: usize,
+        expand_fn: fn(&Self, f64) -> Vec<(f64, Arc<Self>)>,
+    ) -> Vec<(f64, Arc<Self>)> {
         let mut tapleaf_prob_vec = BTreeSet::<(Reverse<OrdF64>, Arc<Self>)>::new();
         // Store probability corresponding to policy in the enumerated tree. This is required since
         // owing to the current [policy element enumeration algorithm][`Policy::enumerate_pol`],
@@ -457,7 +580,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             // from the ordered set.
             let mut to_del: Vec<(f64, Arc<Self>)> = vec![];
             'inner: for (i, (p, pol)) in tapleaf_prob_vec.iter().enumerate() {
-                curr_pol_replace_vec = pol.enumerate_pol(p.0 .0);
+                curr_pol_replace_vec = expand_fn(pol, p.0 .0);
                 enum_len += curr_pol_replace_vec.len() - 1; // A disjunctive node should have separated this into more nodes
                 assert!(prev_len <= enum_len);
 
@@ -479,7 +602,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             }
 
             // --- Sanity Checks ---
-            if enum_len > MAX_COMPILATION_LEAVES || no_more_enum {
+            if enum_len > max_leaves || no_more_enum {
                 for (p, pol) in tapleaf_prob_vec.into_iter() {
                     ret.push((p.0 .0, pol));
                 }
@@ -491,10 +614,12 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
             // Remove current node
             assert!(tapleaf_prob_vec.remove(&(prob, curr_policy.clone())));
+            pol_prob_map.remove(&curr_policy);
 
             // OPTIMIZATION - Move marked nodes into final vector
             for (p, pol) in to_del {
                 assert!(tapleaf_prob_vec.remove(&(Reverse(OrdF64(p)), pol.clone())));
+                pol_prob_map.remove(&pol);
                 ret.push((p, pol.clone()));
             }
 
@@ -950,6 +1075,25 @@ impl<Pk: FromStrKey> expression::FromTree for Policy<Pk> {
     }
 }
 
+/// Checks if a compiled Tapscript contains any OP_IF/NOTIF fragments.
+///
+/// `OrB` is intentionally excluded: it uses `OP_BOOLOR` (not `OP_IF`/`OP_NOTIF`),
+/// so both branches are always evaluated and no execution-path branching occurs.
+#[cfg(feature = "compiler")]
+fn has_if_fragment<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Tap>) -> bool {
+    ms.pre_order_iter().any(|node| {
+        matches!(
+            node.node,
+            Terminal::DupIf(_)
+                | Terminal::NonZero(_)
+                | Terminal::AndOr(..)
+                | Terminal::OrD(..)
+                | Terminal::OrC(..)
+                | Terminal::OrI(..)
+        )
+    })
+}
+
 /// Creates a Huffman Tree from compiled [`Miniscript`] nodes.
 #[cfg(feature = "compiler")]
 fn with_huffman_tree<Pk: MiniscriptKey>(ms: Vec<(OrdF64, Miniscript<Pk, Tap>)>) -> TapTree<Pk> {
@@ -1133,6 +1277,21 @@ mod compiler_tests {
         let desc = policy.compile_tr(None).unwrap();
         // pk(A) promoted to the internal key, leaving the script tree empty
         assert_eq!(desc.to_string(), "tr(A)#xyg3grex");
+    }
+
+    #[test]
+    fn compile_tr_private_non_expandable() {
+        // Single key: extract_key promotes it, leaving Unsatisfiable
+        let pol = Policy::<String>::from_str("pk(A)").unwrap();
+        let desc = pol.compile_tr_private_experimental(None).unwrap();
+        assert_eq!(desc.to_string(), "tr(A)#xyg3grex");
+
+        // Two keys: one promoted to internal key, other becomes single leaf
+        let pol = Policy::<String>::from_str("and(pk(A),pk(B))").unwrap();
+        let desc = pol
+            .compile_tr_private_experimental(Some("UNSPENDABLE".to_string()))
+            .unwrap();
+        assert_eq!(desc.to_string(), "tr(UNSPENDABLE,and_v(v:pk(A),pk(B)))#787dpsca");
     }
 }
 

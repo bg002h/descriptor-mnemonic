@@ -64,6 +64,11 @@ pub enum CompilerError {
         /// Maximum allowed number of Tapleaves.
         max: usize,
     },
+    /// Native Taproot compilation produced a leaf containing OP_IF/NOTIF.
+    IfFragmentInNativeLeaf {
+        /// Index of the leaf that contains branching fragments.
+        leaf_index: usize,
+    },
     ///Policy related errors
     PolicyError(policy::concrete::PolicyError),
 }
@@ -92,6 +97,14 @@ impl fmt::Display for CompilerError {
             CompilerError::TooManyTapleaves { n, max } => {
                 write!(f, "Policy had too many Tapleaves (found {}, maximum {})", n, max)
             }
+            CompilerError::IfFragmentInNativeLeaf { leaf_index } => {
+                write!(
+                    f,
+                    "native Taproot compilation produced a leaf with OP_IF/NOTIF at leaf index {}; \
+                     try increasing max_leaves",
+                    leaf_index
+                )
+            }
             CompilerError::PolicyError(ref e) => fmt::Display::fmt(e, f),
         }
     }
@@ -109,7 +122,8 @@ impl error::Error for CompilerError {
             | ImpossibleNonMalleableCompilation
             | LimitsExceeded
             | NoInternalKey
-            | TooManyTapleaves { .. } => None,
+            | TooManyTapleaves { .. }
+            | IfFragmentInNativeLeaf { .. } => None,
             PolicyError(e) => Some(e),
         }
     }
@@ -216,6 +230,14 @@ impl CompilerExtData {
         }
     }
 
+    fn sortedmulti(k: usize, _n: usize) -> Self {
+        CompilerExtData {
+            branch_prob: None,
+            sat_cost: 1.0 + 73.0 * k as f64,
+            dissat_cost: Some(1.0 * (k + 1) as f64),
+        }
+    }
+
     fn multi_a(k: usize, n: usize) -> Self {
         CompilerExtData {
             branch_prob: None,
@@ -223,6 +245,8 @@ impl CompilerExtData {
             dissat_cost: Some(n as f64), /* <w_n> ... <w_1> := 0x00 ... 0x00 (n times) */
         }
     }
+
+    fn sortedmulti_a(k: usize, n: usize) -> Self { Self::multi_a(k, n) }
 
     fn hash() -> Self {
         CompilerExtData { branch_prob: None, sat_cost: 33.0, dissat_cost: Some(33.0) }
@@ -449,7 +473,9 @@ impl CompilerExtData {
             Terminal::PkK(..) => Self::pk_k::<Ctx>(),
             Terminal::PkH(..) | Terminal::RawPkH(..) => Self::pk_h::<Ctx>(),
             Terminal::Multi(ref thresh) => Self::multi(thresh.k(), thresh.n()),
+            Terminal::SortedMulti(ref thresh) => Self::sortedmulti(thresh.k(), thresh.n()),
             Terminal::MultiA(ref thresh) => Self::multi_a(thresh.k(), thresh.n()),
+            Terminal::SortedMultiA(ref thresh) => Self::sortedmulti_a(thresh.k(), thresh.n()),
             Terminal::After(_) => Self::time(),
             Terminal::Older(_) => Self::time(),
             Terminal::Sha256(..) => Self::hash(),
@@ -1386,7 +1412,7 @@ mod tests {
             (
                 1,
                 Arc::new(Concrete::And(vec![
-                    Arc::new(Concrete::Older(RelLockTime::from_height(10000))),
+                    Arc::new(Concrete::Older(RelLockTime::from_height(10000).unwrap())),
                     Arc::new(Concrete::Thresh(
                         Threshold::from_iter(2, key_pol[5..8].iter().map(|p| (p.clone()).into()))
                             .unwrap(),
@@ -1416,10 +1442,10 @@ mod tests {
         let mut abs = policy.lift().unwrap();
         assert_eq!(abs.n_keys(), 8);
         assert_eq!(abs.minimum_n_keys(), Some(2));
-        abs = abs.at_age(RelLockTime::from_height(10000).into());
+        abs = abs.at_age(RelLockTime::from_height(10000).unwrap().into());
         assert_eq!(abs.n_keys(), 8);
         assert_eq!(abs.minimum_n_keys(), Some(2));
-        abs = abs.at_age(RelLockTime::from_height(9999).into());
+        abs = abs.at_age(RelLockTime::from_height(9999).unwrap().into());
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(3));
         abs = abs.at_age(RelLockTime::ZERO.into());
@@ -1449,15 +1475,15 @@ mod tests {
         assert!(ms.satisfy(no_sat).is_err());
         assert!(ms.satisfy(&left_sat).is_ok());
         assert!(ms
-            .satisfy((&right_sat, RelLockTime::from_height(10001)))
+            .satisfy((&right_sat, RelLockTime::from_height(10001).unwrap(),))
             .is_ok());
         //timelock not met
         assert!(ms
-            .satisfy((&right_sat, RelLockTime::from_height(9999)))
+            .satisfy((&right_sat, RelLockTime::from_height(9999).unwrap()))
             .is_err());
 
         assert_eq!(
-            ms.satisfy((left_sat, RelLockTime::from_height(9999)))
+            ms.satisfy((left_sat, RelLockTime::from_height(9999).unwrap()))
                 .unwrap(),
             vec![
                 // sat for left branch
@@ -1469,7 +1495,7 @@ mod tests {
         );
 
         assert_eq!(
-            ms.satisfy((right_sat, RelLockTime::from_height(10000)))
+            ms.satisfy((right_sat, RelLockTime::from_height(10000).unwrap()))
                 .unwrap(),
             vec![
                 // sat for right branch

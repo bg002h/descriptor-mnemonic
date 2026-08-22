@@ -167,7 +167,7 @@ impl fmt::Display for ScriptContextError {
 /// context under which the script is used.
 /// For example, disallowing uncompressed keys in Segwit context
 pub trait ScriptContext:
-    fmt::Debug + Clone + Ord + PartialOrd + Eq + PartialEq + hash::Hash + private::Sealed
+    fmt::Debug + Clone + Ord + PartialOrd + Eq + PartialEq + hash::Hash + private::Sealed + 'static
 where
     Self::Key: MiniscriptKey<Sha256 = sha256::Hash>,
     Self::Key: MiniscriptKey<Hash256 = hash256::Hash>,
@@ -384,13 +384,15 @@ impl ScriptContext for Legacy {
         // 1. Check the node first, throw an error on the language itself
         let node_checked = match ms.node {
             Terminal::PkK(ref pk) => Self::check_pk(pk),
-            Terminal::Multi(ref thresh) => {
+            Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh) => {
                 for pk in thresh.iter() {
                     Self::check_pk(pk)?;
                 }
                 Ok(())
             }
-            Terminal::MultiA(..) => Err(ScriptContextError::MultiANotAllowed),
+            Terminal::MultiA(..) | Terminal::SortedMultiA(..) => {
+                Err(ScriptContextError::MultiANotAllowed)
+            }
             _ => Ok(()),
         };
         // 2. After fragment and param check, validate the script size finally
@@ -488,13 +490,15 @@ impl ScriptContext for Segwitv0 {
         // 1. Check the node first, throw an error on the language itself
         let node_checked = match ms.node {
             Terminal::PkK(ref pk) => Self::check_pk(pk),
-            Terminal::Multi(ref thresh) => {
+            Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh) => {
                 for pk in thresh.iter() {
                     Self::check_pk(pk)?;
                 }
                 Ok(())
             }
-            Terminal::MultiA(..) => Err(ScriptContextError::MultiANotAllowed),
+            Terminal::MultiA(..) | Terminal::SortedMultiA(..) => {
+                Err(ScriptContextError::MultiANotAllowed)
+            }
             _ => Ok(()),
         };
         // 2. After fragment and param check, validate the script size finally
@@ -599,13 +603,15 @@ impl ScriptContext for Tap {
         // 1. Check the node first, throw an error on the language itself
         let node_checked = match ms.node {
             Terminal::PkK(ref pk) => Self::check_pk(pk),
-            Terminal::MultiA(ref thresh) => {
+            Terminal::MultiA(ref thresh) | Terminal::SortedMultiA(ref thresh) => {
                 for pk in thresh.iter() {
                     Self::check_pk(pk)?;
                 }
                 Ok(())
             }
-            Terminal::Multi(..) => Err(ScriptContextError::TaprootMultiDisabled),
+            Terminal::Multi(..) | Terminal::SortedMulti(..) => {
+                Err(ScriptContextError::TaprootMultiDisabled)
+            }
             _ => Ok(()),
         };
         // 2. After fragment and param check, validate the script size finally
@@ -710,13 +716,15 @@ impl ScriptContext for BareCtx {
         // 1. Check the node first, throw an error on the language itself
         let node_checked = match ms.node {
             Terminal::PkK(ref key) => Self::check_pk(key),
-            Terminal::Multi(ref thresh) => {
+            Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh) => {
                 for pk in thresh.iter() {
                     Self::check_pk(pk)?;
                 }
                 Ok(())
             }
-            Terminal::MultiA(..) => Err(ScriptContextError::MultiANotAllowed),
+            Terminal::MultiA(..) | Terminal::SortedMultiA(..) => {
+                Err(ScriptContextError::MultiANotAllowed)
+            }
             _ => Ok(()),
         };
         // 2. After fragment and param check, validate the script size finally
@@ -757,7 +765,9 @@ impl ScriptContext for BareCtx {
                 Terminal::PkK(_pk) | Terminal::PkH(_pk) => Ok(()),
                 _ => Err(Error::NonStandardBareScript),
             },
-            Terminal::Multi(ref thresh) if thresh.n() <= 3 => Ok(()),
+            Terminal::Multi(ref thresh) | Terminal::SortedMulti(ref thresh) if thresh.n() <= 3 => {
+                Ok(())
+            }
             _ => Err(Error::NonStandardBareScript),
         }
     }
@@ -783,7 +793,7 @@ impl ScriptContext for BareCtx {
 
 /// "No Checks Ecdsa" Context
 ///
-/// Used by the "satisified constraints" iterator, which is intended to read
+/// Used by the "satisfied constraints" iterator, which is intended to read
 /// scripts off of the blockchain without doing any sanity checks on them.
 /// This context should *NOT* be used unless you know what you are doing.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
