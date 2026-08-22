@@ -309,7 +309,10 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
                 path.push('\'');
             }
         }
-        by_path.entry(path).or_default().push((e.idx, e.fingerprint));
+        by_path
+            .entry(path)
+            .or_default()
+            .push((e.idx, e.fingerprint));
     }
 
     let mut collisions: Vec<(String, Vec<u8>)> = Vec::new();
