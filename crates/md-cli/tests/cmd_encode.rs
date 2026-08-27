@@ -73,26 +73,69 @@ fn encode_unbroken_group_size_0() {
     assert_eq!(line, WPKH_UNBROKEN);
 }
 
+/// P3 §6c — `--separator` is WHITESPACE-ONLY, and `hyphen` and `comma` are
+/// refused rather than silently accepted.
+///
+/// This test replaces `encode_separator_hyphen`, which pinned `--separator
+/// hyphen` at exit 0 with a hyphen-grouped card. The reason the option goes is
+/// cross-tool: `mt`'s decoder strips whitespace and nothing else, so a
+/// hyphen-grouped string is one `mt`'s own verbs refuse -- after the plates are
+/// cut. A rule that is safe per-tool and unsafe across tools is exactly the one
+/// an operator carries between tools.
+///
+/// BOTH retired keywords AND both retired literal chars are asserted. The
+/// literals are the half a narrow fix misses: `parse_separator` accepted
+/// `"hyphen"` and `"-"` through the same match arm, and removing only the
+/// keyword would leave `--separator -` working.
 #[test]
-fn encode_separator_hyphen() {
-    // P3 §6c / D4: `--separator` shapes the stderr CARD, not stdout.
-    let out = Command::cargo_bin("md")
-        .unwrap()
-        .args(["encode", "wpkh(@0/<0;1>/*)", "--separator", "hyphen"])
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    let line = String::from_utf8(out.stderr)
-        .unwrap()
-        .lines()
-        .next()
-        .unwrap()
-        .to_string();
-    assert_eq!(
-        line.chars().nth(5),
-        Some('-'),
-        "expected a hyphen after the first 5 chars; got {line:?}"
-    );
+fn encode_refuses_the_retired_separators() {
+    for arg in ["hyphen", "-", "comma", ","] {
+        let out = Command::cargo_bin("md")
+            .unwrap()
+            .args(["encode", "wpkh(@0/<0;1>/*)", "--separator", arg])
+            .output()
+            .unwrap();
+        let code = out.status.code();
+        assert_eq!(
+            code,
+            Some(2),
+            "--separator {arg:?} must be refused at clap-usage exit 2; got {code:?}"
+        );
+        let stderr = String::from_utf8(out.stderr).unwrap();
+        // §6h: the remedy must be EXECUTABLE -- it names what replaced the
+        // retired value, not merely that it is gone.
+        assert!(
+            stderr.contains("--separator space"),
+            "the refusal must name what replaced it; got {stderr:?}"
+        );
+        assert!(
+            stderr.contains("--group-size 0"),
+            "and the other way to get an unbroken card; got {stderr:?}"
+        );
+    }
+}
+
+/// The control: whitespace still works, by keyword AND by literal, and still
+/// shapes the card.
+#[test]
+fn encode_still_accepts_whitespace_separators() {
+    for arg in ["space", " "] {
+        let out = Command::cargo_bin("md")
+            .unwrap()
+            .args(["encode", "wpkh(@0/<0;1>/*)", "--separator", arg])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "--separator {arg:?} must still work: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stderr = String::from_utf8(out.stderr).unwrap();
+        assert!(
+            stderr.contains("md1yq pqqxq q8xtw hw4xw n4qh") && stderr.contains("separator: space"),
+            "got {stderr:?}"
+        );
+    }
 }
 
 #[test]

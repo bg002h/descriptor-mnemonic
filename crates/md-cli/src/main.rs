@@ -48,16 +48,36 @@ impl CliNetwork {
     }
 }
 
-/// Parse `--separator`: accepts a keyword (`space|hyphen|comma`) or the literal
-/// char (`" "|-|,`). Returns the separator char. SPEC §5 (mstring grouping).
-/// Rejection is a clap parse error (exit 2), before command dispatch.
+/// Parse `--separator`: WHITESPACE ONLY — the keyword `space` or the literal
+/// `" "`. Returns the separator char. SPEC §6c. Rejection is a clap parse error
+/// (exit 2), before command dispatch.
+///
+/// `hyphen` and `comma` were accepted before P3 and are now refused. The
+/// reason is cross-tool rather than local: `md`'s own decoder strips display
+/// separators of every kind, so a hyphen-grouped card round-trips here — but
+/// `mt`'s decoder strips WHITESPACE and nothing else, so the same habit applied
+/// to an `mt1` string produces a card `mt` refuses, after the plates are cut.
+/// A rule that is safe per-tool and unsafe across tools is exactly the one an
+/// operator carries between tools, so the constellation narrows to the
+/// intersection. The cost is two cosmetic options; the cost of getting it wrong
+/// is a plate.
+///
+/// The refusal names BOTH remedies (§6h — remedy text must be executable):
+/// `--separator space` for a grouped card, `--group-size 0` for an unbroken
+/// one. Someone reaching for `hyphen` wanted one or the other.
 fn parse_separator(s: &str) -> Result<char, String> {
     match s {
         "space" | " " => Ok(' '),
-        "hyphen" | "-" => Ok('-'),
-        "comma" | "," => Ok(','),
+        "hyphen" | "-" | "comma" | "," => Err(format!(
+            "separator {s:?} is no longer accepted: --separator is whitespace-only across the \
+             constellation (SPEC §6c), because `mt` strips whitespace and nothing else on decode, \
+             so a hyphen- or comma-grouped card is one `mt` refuses AFTER the plates are cut. \
+             Use `--separator space` (or the literal \" \") for a grouped card, or \
+             `--group-size 0` for an unbroken one."
+        )),
         other => Err(format!(
-            "invalid separator {other:?}; expected one of: space|hyphen|comma (or the literal char)"
+            "invalid separator {other:?}; --separator is whitespace-only: expected `space` (or \
+             the literal \" \"). Use `--group-size 0` for an unbroken card."
         )),
     }
 }
@@ -107,11 +127,14 @@ enum Command {
         /// Force chunked encoding even for short policies.
         #[arg(long)]
         force_chunked: bool,
-        /// Insert a separator every N characters in the emitted md1 string
-        /// (0 = unbroken). SPEC §3. Display only; --json stays unbroken.
+        /// Insert a separator every N characters in the ENGRAVING CARD on
+        /// stderr (0 = unbroken card). SPEC §6c. stdout is always the
+        /// unbroken md1 string; --json stays unbroken too.
         #[arg(long, default_value_t = 5)]
         group_size: u16,
-        /// Separator: space|hyphen|comma (keyword) or the literal " "|-|, . SPEC §5.
+        /// Separator for the engraving card: `space` (keyword) or the literal
+        /// " ". Whitespace only — `hyphen` and `comma` are no longer accepted.
+        /// SPEC §6c.
         #[arg(long, default_value = "space", value_parser = parse_separator)]
         separator: char,
         /// Removed in v0.12.0; now a hard error. md1 is regular-code-only
