@@ -23,8 +23,8 @@ pub struct VerifyArgs<'a> {
 }
 
 pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
-    // mstring display-grouping (SPEC §3.2): strip separators on intake.
-    let strings = crate::cmd::strip_md1_inputs(args.strings);
+    // P3 §6b: `-` reads stdin; separators stripped on intake (SPEC §3.2).
+    let strings = crate::cmd::read_md1_strings(args.strings)?;
     let decoded = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {

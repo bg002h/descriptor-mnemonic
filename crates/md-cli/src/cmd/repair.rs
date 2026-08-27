@@ -66,42 +66,6 @@ struct RepairDetail {
     corrected_positions: Vec<(usize, char, char)>,
 }
 
-/// Read a list of md1 strings: positional `args` minus a leading `"-"`,
-/// which means "read one string per line from stdin." `"-"` may appear
-/// as any positional value but is processed once across the list.
-/// Mirrors mk-cli's `read_mk1_strings` helper (cross-CLI parity).
-fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {
-    let mut out = Vec::with_capacity(args.len());
-    let mut consumed_stdin = false;
-    for a in args {
-        if a == "-" && !consumed_stdin {
-            consumed_stdin = true;
-            let mut buf = String::new();
-            std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-                .map_err(|e| CliError::BadArg(format!("stdin read: {e}")))?;
-            for line in buf.lines() {
-                // mstring display-grouping (SPEC §3.2): strip separators so a
-                // grouped or unbroken card both re-ingest. (repair OUTPUT stays
-                // unbroken — no grouping flags on `md repair`.)
-                let s = md_codec::encode::strip_display_separators(line);
-                if !s.is_empty() {
-                    out.push(s);
-                }
-            }
-        } else if a == "-" {
-            // Already consumed stdin; ignore additional `-` markers.
-        } else {
-            out.push(md_codec::encode::strip_display_separators(a));
-        }
-    }
-    if out.is_empty() {
-        return Err(CliError::BadArg(
-            "expected at least one md1 string (positional or via stdin with '-')".into(),
-        ));
-    }
-    Ok(out)
-}
-
 /// Run `md repair`.
 ///
 /// Returns an `Ok(u8)` exit code per D26. On atomic-fail (any md_codec
@@ -109,7 +73,7 @@ fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {
 /// stderr and returns `Ok(2)` — bypassing the `CliError::Codec → 1`
 /// default route so the repair exit-code contract is honored.
 pub fn run(args: RepairArgs) -> Result<u8, CliError> {
-    let strings = read_md1_strings(&args.md1_strings)?;
+    let strings = crate::cmd::read_md1_strings(&args.md1_strings)?;
 
     // Atomic per D28: decode_with_correction either succeeds for ALL
     // chunks or returns Err naming the first failing chunk. We do NOT

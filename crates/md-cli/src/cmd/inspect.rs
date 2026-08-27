@@ -11,8 +11,8 @@ use md_codec::identity::{
 };
 
 pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
-    // mstring display-grouping (SPEC §3.2): strip separators on intake.
-    let strings = crate::cmd::strip_md1_inputs(strings);
+    // P3 §6b: `-` reads stdin; separators stripped on intake (SPEC §3.2).
+    let strings = crate::cmd::read_md1_strings(strings)?;
     // P1.1: decode via the partial-allowing entry (see `cmd::decode` for the
     // full contract).
     let opts = DecodeOpts::partial();

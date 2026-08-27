@@ -4,8 +4,8 @@ use md_codec::decode::decode_md1_string;
 use md_codec::encode::encode_payload;
 
 pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
-    // mstring display-grouping (SPEC §3.2): strip separators on intake.
-    let strings = crate::cmd::strip_md1_inputs(strings);
+    // P3 §6b: `-` reads stdin; separators stripped on intake (SPEC §3.2).
+    let strings = crate::cmd::read_md1_strings(strings)?;
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {

@@ -5,9 +5,9 @@ use md_codec::chunk::reassemble_with_opts;
 use md_codec::decode::{DecodeOpts, decode_md1_string_with_opts};
 
 pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
-    // mstring display-grouping (SPEC §3.2): strip separators so a grouped or
-    // unbroken card both re-ingest.
-    let strings = crate::cmd::strip_md1_inputs(strings);
+    // P3 §6b: `-` reads stdin; the reader strips mstring display separators
+    // (SPEC §3.2) per line, so a grouped or unbroken card both re-ingest.
+    let strings = crate::cmd::read_md1_strings(strings)?;
     // P1.1: decode via the partial-allowing entry — a `canonical_origin ==
     // None` dead shape with no explicit origin now decodes (instead of
     // hard-rejecting `MissingExplicitOrigin`); `unresolved_origin_indices()`
