@@ -30,6 +30,78 @@ pub fn strip_md1_inputs(strings: &[String]) -> Vec<String> {
 /// straight back in. The shared crate's `records::split_record_stream` filters
 /// on `trim().is_empty()` and returns the line unchanged, so it does not do
 /// this — which is why P3 declines it and extends this instead.
+/// P3 §6b — the md1 intake for the reading verbs, across all three channels.
+///
+/// `--in FILE` reads the tool's OWN input material: md1 strings, one per line.
+/// It goes through the SAME per-line strip as `-` does, so a card copied off
+/// the stderr engraving card re-ingests from a file exactly as it does from a
+/// pipe.
+///
+/// `--in` and the positional are declared mutually exclusive in clap, so this
+/// function never has to invent a precedence rule.
+pub fn read_md1_inputs(
+    args: &[String],
+    in_file: Option<&std::path::Path>,
+) -> Result<Vec<String>, CliError> {
+    let Some(path) = in_file else {
+        return read_md1_strings(args);
+    };
+    // The path is NAMED in the refusal. A bare "No such file or directory" out
+    // of a pipeline that built the path itself is the one message an operator
+    // cannot act on.
+    let buf = std::fs::read_to_string(path)
+        .map_err(|e| CliError::BadArg(format!("--in {}: {e}", path.display())))?;
+    let mut out = Vec::new();
+    for line in buf.lines() {
+        let s = strip_display_separators(line);
+        if !s.is_empty() {
+            out.push(s);
+        }
+    }
+    if out.is_empty() {
+        return Err(CliError::BadArg(format!(
+            "--in {}: no md1 strings in this file. An EMPTY file is what a FAILED \
+             upstream command leaves behind -- check the command that wrote it.",
+            path.display()
+        )));
+    }
+    Ok(out)
+}
+
+/// P3 §6b — read a BIP-388 template from `--in FILE` on `md encode`.
+///
+/// "Own input material" is not a formality (§6b): `encode`'s input is a
+/// TEMPLATE, and the reading verbs' input is md1 strings. A single `--in` that
+/// meant both would be a filename implying a different artifact, which is what
+/// made an earlier acceptance criterion unsatisfiable.
+pub fn read_template_file(path: &std::path::Path) -> Result<String, CliError> {
+    let buf = std::fs::read_to_string(path)
+        .map_err(|e| CliError::BadArg(format!("--in {}: {e}", path.display())))?;
+    let t = buf.trim();
+    if t.is_empty() {
+        return Err(CliError::BadArg(format!(
+            "--in {}: no BIP-388 template in this file (it is empty or blank)",
+            path.display()
+        )));
+    }
+    Ok(t.to_string())
+}
+
+/// P3 §6b — write the artifact to `--out FILE`, created **0600**.
+///
+/// Through the shared crate's `write_private`, never `std::fs::write`: F-244.
+/// `write` has no root re-export in `mnemonic-io-lib`, so the path is
+/// module-qualified; the unqualified form is an `E0425`.
+///
+/// `--out` OVERWRITES (operator ruling 2026-08-26), and `write_private` sets
+/// the mode a SECOND time on the open file because `OpenOptions::mode()` binds
+/// on create only -- an existing 0644 target would otherwise stay 0644, which
+/// is the case a re-run actually hits.
+pub fn write_artifact(path: &std::path::Path, body: &str) -> Result<(), CliError> {
+    mnemonic_io_lib::write::write_private(path, body.as_bytes())
+        .map_err(|e| CliError::BadArg(format!("--out {}: {e}", path.display())))
+}
+
 pub fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {
     let mut out = Vec::with_capacity(args.len());
     let mut consumed_stdin = false;

@@ -97,9 +97,29 @@ enum Command {
     )]
     Encode {
         /// BIP 388 template, e.g. `wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))`.
+        #[arg(conflicts_with = "in_file")]
         template: Option<String>,
+        /// Read the BIP 388 template from FILE instead of argv (SPEC §6b).
+        /// The file holds one template; surrounding whitespace is trimmed.
+        #[arg(long = "in", value_name = "FILE")]
+        in_file: Option<std::path::PathBuf>,
+        /// Write the md1 artifact to FILE instead of stdout, CREATED 0600
+        /// (SPEC §6b, F-244) — which a shell redirect cannot do. OVERWRITES an
+        /// existing file, and tightens its mode. The stderr engraving card,
+        /// the chunk-set-id and the advisories are unaffected.
+        #[arg(long = "out", value_name = "FILE")]
+        out_file: Option<std::path::PathBuf>,
         /// Compile a sub-Miniscript-Policy expression into a template (cli-compiler).
-        #[arg(long = "from-policy", value_name = "EXPR", conflicts_with = "template")]
+        #[arg(
+            long = "from-policy",
+            value_name = "EXPR",
+            conflicts_with = "template",
+            // P3 §6b: --in supplies a TEMPLATE, so it is the same channel the
+            // positional occupies and the same one --from-policy replaces.
+            // Without this, `--from-policy X --in f` would silently ignore the
+            // file -- a precedence rule nobody wrote down.
+            conflicts_with = "in_file"
+        )]
         from_policy: Option<String>,
         /// Script context for `--from-policy`.
         #[arg(long, value_name = "CTX", value_parser = ["tap", "segwitv0"])]
@@ -165,8 +185,13 @@ enum Command {
         after_long_help = "EXAMPLES:\n  $ md decode md1yqpqqxqq8xtwhw4xwn4qh\n  wpkh(@0/<0;1>/*)"
     )]
     Decode {
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
         strings: Vec<String>,
+        /// Read md1 strings from FILE, one per line (SPEC §6b). Display
+        /// separators are stripped per line, so a card copied off the
+        /// engraving card re-ingests.
+        #[arg(long = "in", value_name = "FILE")]
+        in_file: Option<std::path::PathBuf>,
         /// Emit a structured JSON object on stdout instead of the
         /// plain BIP-388 wallet-policy template string.
         #[arg(long)]
@@ -174,8 +199,11 @@ enum Command {
     },
     /// Verify backup strings re-encode to a given template.
     Verify {
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
         strings: Vec<String>,
+        /// Read md1 strings from FILE, one per line (SPEC §6b).
+        #[arg(long = "in", value_name = "FILE")]
+        in_file: Option<std::path::PathBuf>,
         #[arg(long, required = true)]
         template: String,
         #[arg(long = "key", value_name = "@i=XPUB")]
@@ -206,8 +234,11 @@ enum Command {
     },
     /// Decode + pretty-print everything the codec sees.
     Inspect {
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
         strings: Vec<String>,
+        /// Read md1 strings from FILE, one per line (SPEC §6b).
+        #[arg(long = "in", value_name = "FILE")]
+        in_file: Option<std::path::PathBuf>,
         /// Emit a structured JSON object on stdout instead of the
         /// pretty-printed multi-line text form.
         #[arg(long)]
@@ -215,8 +246,11 @@ enum Command {
     },
     /// Dump the raw payload bits in an annotated layout.
     Bytecode {
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
         strings: Vec<String>,
+        /// Read md1 strings from FILE, one per line (SPEC §6b).
+        #[arg(long = "in", value_name = "FILE")]
+        in_file: Option<std::path::PathBuf>,
         #[arg(long)]
         json: bool,
     },
@@ -400,6 +434,8 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
     match c {
         Command::Encode {
             template,
+            in_file,
+            out_file,
             from_policy,
             context,
             unspendable_key,
@@ -450,14 +486,24 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                         "--unspendable-key is only meaningful with --from-policy".into(),
                     ));
                 }
-                template.ok_or_else(|| {
-                    CliError::BadArg(
-                        "encode: TEMPLATE required (or use --from-policy with cli-compiler)".into(),
-                    )
-                })?
+                // P3 §6b: the template arrives on argv or from `--in FILE`.
+                // clap declares the two mutually exclusive, so there is no
+                // precedence rule to invent here.
+                match (template, in_file.as_deref()) {
+                    (Some(t), _) => t,
+                    (None, Some(p)) => cmd::read_template_file(p)?,
+                    (None, None) => {
+                        return Err(CliError::BadArg(
+                            "encode: TEMPLATE required (on argv, via --in FILE, or use \
+                             --from-policy with cli-compiler)"
+                                .into(),
+                        ));
+                    }
+                }
             };
             cmd::encode::run(cmd::encode::EncodeArgs {
                 template: &template_str,
+                out_file: out_file.as_deref(),
                 keys: &keys,
                 fingerprints: &fingerprints,
                 path: path.as_deref(),
@@ -472,9 +518,14 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 experimental,
             })
         }
-        Command::Decode { strings, json } => cmd::decode::run(&strings, json),
+        Command::Decode {
+            strings,
+            in_file,
+            json,
+        } => cmd::decode::run(&strings, in_file.as_deref(), json),
         Command::Verify {
             strings,
+            in_file,
             template,
             keys,
             fingerprints,
@@ -483,6 +534,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             experimental,
         } => cmd::verify::run(cmd::verify::VerifyArgs {
             strings: &strings,
+            in_file: in_file.as_deref(),
             template: &template,
             keys: &keys,
             fingerprints: &fingerprints,
@@ -490,8 +542,16 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             network: network.into(),
             experimental,
         }),
-        Command::Inspect { strings, json } => cmd::inspect::run(&strings, json),
-        Command::Bytecode { strings, json } => cmd::bytecode::run(&strings, json),
+        Command::Inspect {
+            strings,
+            in_file,
+            json,
+        } => cmd::inspect::run(&strings, in_file.as_deref(), json),
+        Command::Bytecode {
+            strings,
+            in_file,
+            json,
+        } => cmd::bytecode::run(&strings, in_file.as_deref(), json),
         Command::Vectors { out } => cmd::vectors::run(out),
         Command::Compile {
             expr,

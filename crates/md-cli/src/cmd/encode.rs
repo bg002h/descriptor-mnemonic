@@ -12,6 +12,10 @@ use md_codec::tree::{Body, Node};
 
 pub struct EncodeArgs<'a> {
     pub template: &'a str,
+    /// P3 §6b — write the artifact to this file (created 0600) instead of
+    /// stdout. Affects the ARTIFACT only: the engraving card, the chunk-set-id
+    /// and every advisory still go to stderr.
+    pub out_file: Option<&'a std::path::Path>,
     pub keys: &'a [String],
     pub fingerprints: &'a [String],
     /// Override the inferred shared origin path. Accepts named (`bip44|48|49|84|86`),
@@ -171,10 +175,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // `me sysw pack` classified a grouped chunk as "not a form this container
     // can place" at exit 4.
     let cards: Vec<String> = match single {
-        Some(s) => {
-            println!("{s}");
-            vec![s]
-        }
+        Some(s) => vec![s],
         None => {
             let chunks = split(&descriptor)?;
             let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
@@ -187,12 +188,23 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             // about stdout, and a grep for the string finds two sites of which
             // only this one moves.
             eprintln!("chunk-set-id: 0x{csid:05x}");
-            for s in &chunks {
-                println!("{s}");
-            }
             chunks
         }
     };
+    // P3 §6b: the artifact goes to `--out FILE` when given, stdout otherwise --
+    // "stdout is used when `--out` is not given", and the input channel has no
+    // bearing on it. The file is CREATED 0600 through the shared crate's
+    // `write_private`; a shell redirect cannot do that, which is why the flag
+    // exists at all (F-244).
+    let mut body = String::new();
+    for s in &cards {
+        body.push_str(s);
+        body.push('\n');
+    }
+    match args.out_file {
+        Some(p) => crate::cmd::write_artifact(p, &body)?,
+        None => print!("{body}"),
+    }
     emit_engraving_card(
         &cards,
         args.group_size,

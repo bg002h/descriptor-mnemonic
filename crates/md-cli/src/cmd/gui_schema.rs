@@ -330,8 +330,15 @@ mod tests {
         assert_eq!(p["required"], json!(false));
     }
 
+    /// P3 §6b changed `required` here from `true` to `false`, and that is the
+    /// channel arriving rather than a requirement evaporating. The positional
+    /// is now `required_unless_present = "in_file"`, which clap reports as not
+    /// unconditionally required — so a GUI must offer BOTH inputs and refuse
+    /// only when neither is filled. `md decode` with neither still exits 2
+    /// ("the following required arguments were not provided: <STRINGS>..."),
+    /// asserted behaviourally in `tests/cli_channels.rs`.
     #[test]
-    fn decode_strings_positional_is_repeating_and_required() {
+    fn decode_strings_positional_is_repeating_and_conditionally_required() {
         let v = schema();
         let arr = v["subcommands"].as_array().unwrap();
         let decode = arr
@@ -340,7 +347,12 @@ mod tests {
             .expect("decode subcommand");
         let positionals = decode["positionals"].as_array().unwrap();
         assert_eq!(positionals.len(), 1);
-        assert_eq!(positionals[0]["required"], json!(true));
+        assert_eq!(positionals[0]["required"], json!(false));
         assert_eq!(positionals[0]["repeating"], json!(true));
+        let flags = decode["flags"].as_array().unwrap();
+        assert!(
+            flags.iter().any(|f| f["name"] == json!("--in")),
+            "the alternative input channel must be in the schema too"
+        );
     }
 }

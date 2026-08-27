@@ -10,9 +10,13 @@ use md_codec::identity::{
     compute_wallet_policy_id,
 };
 
-pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
-    // P3 §6b: `-` reads stdin; separators stripped on intake (SPEC §3.2).
-    let strings = crate::cmd::read_md1_strings(strings)?;
+pub fn run(
+    strings: &[String],
+    in_file: Option<&std::path::Path>,
+    json: bool,
+) -> Result<u8, CliError> {
+    // P3 §6b: argv, `--in FILE` or `-`; separators stripped on intake (§3.2).
+    let strings = crate::cmd::read_md1_inputs(strings, in_file)?;
     // P1.1: decode via the partial-allowing entry (see `cmd::decode` for the
     // full contract).
     let opts = DecodeOpts::partial();

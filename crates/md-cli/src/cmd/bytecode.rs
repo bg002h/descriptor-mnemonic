@@ -3,9 +3,13 @@ use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
 use md_codec::encode::encode_payload;
 
-pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
-    // P3 §6b: `-` reads stdin; separators stripped on intake (SPEC §3.2).
-    let strings = crate::cmd::read_md1_strings(strings)?;
+pub fn run(
+    strings: &[String],
+    in_file: Option<&std::path::Path>,
+    json: bool,
+) -> Result<u8, CliError> {
+    // P3 §6b: argv, `--in FILE` or `-`; separators stripped on intake (§3.2).
+    let strings = crate::cmd::read_md1_inputs(strings, in_file)?;
     let descriptor = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {

@@ -39,8 +39,14 @@ pub struct RepairArgs {
     /// One or more md1 strings to attempt to repair. Use `-` to read
     /// one string per line from stdin. Multi-chunk semantics are
     /// atomic per plan §1 D28 — ANY failing chunk aborts the call.
-    #[arg(required = true, num_args = 1..)]
+    #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
     pub md1_strings: Vec<String>,
+
+    /// P3 §6b — read md1 strings from FILE, one per line. Display separators
+    /// are stripped per line, so a card copied off an engraving card
+    /// re-ingests.
+    #[arg(long = "in", value_name = "FILE")]
+    pub in_file: Option<std::path::PathBuf>,
 
     /// Emit a single JSON envelope on stdout instead of the text-form
     /// report. Schema byte-matches `mnemonic repair --json`'s
@@ -73,7 +79,7 @@ struct RepairDetail {
 /// stderr and returns `Ok(2)` — bypassing the `CliError::Codec → 1`
 /// default route so the repair exit-code contract is honored.
 pub fn run(args: RepairArgs) -> Result<u8, CliError> {
-    let strings = crate::cmd::read_md1_strings(&args.md1_strings)?;
+    let strings = crate::cmd::read_md1_inputs(&args.md1_strings, args.in_file.as_deref())?;
 
     // Atomic per D28: decode_with_correction either succeeds for ALL
     // chunks or returns Err naming the first failing chunk. We do NOT

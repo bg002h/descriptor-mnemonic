@@ -73,16 +73,23 @@ fn encode_context_is_dropdown_tap_segwitv0() {
     assert_eq!(ctx["required"], false);
 }
 
+/// P3 §6b: `required` is now false because the positional is
+/// `required_unless_present = "in_file"` — the material may arrive on argv,
+/// through `--in FILE`, or on stdin via `-`. A GUI must offer both and refuse
+/// only when neither is filled; `md decode` with neither still exits 2, pinned
+/// behaviourally in `tests/cli_channels.rs`.
 #[test]
-fn decode_strings_positional_is_required_repeating() {
+fn decode_strings_positional_is_repeating_and_conditionally_required() {
     let v = run_schema();
     let arr = v["subcommands"].as_array().unwrap();
     let decode = arr.iter().find(|s| s["name"] == "decode").unwrap();
     let positionals = decode["positionals"].as_array().unwrap();
     assert_eq!(positionals.len(), 1);
     let p = &positionals[0];
-    assert_eq!(p["required"], true);
+    assert_eq!(p["required"], false);
     assert_eq!(p["repeating"], true);
+    let flags = decode["flags"].as_array().unwrap();
+    assert!(flags.iter().any(|f| f["name"] == "--in"));
 }
 
 #[test]

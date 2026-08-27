@@ -8,6 +8,8 @@ use md_codec::encode::encode_payload;
 
 pub struct VerifyArgs<'a> {
     pub strings: &'a [String],
+    /// P3 §6b — read the md1 strings from this file instead of argv.
+    pub in_file: Option<&'a std::path::Path>,
     pub template: &'a str,
     pub keys: &'a [String],
     pub fingerprints: &'a [String],
@@ -23,8 +25,8 @@ pub struct VerifyArgs<'a> {
 }
 
 pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
-    // P3 §6b: `-` reads stdin; separators stripped on intake (SPEC §3.2).
-    let strings = crate::cmd::read_md1_strings(args.strings)?;
+    // P3 §6b: argv, `--in FILE` or `-`; separators stripped on intake (§3.2).
+    let strings = crate::cmd::read_md1_inputs(args.strings, args.in_file)?;
     let decoded = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {

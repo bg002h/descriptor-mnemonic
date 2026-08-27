@@ -4,10 +4,15 @@ use crate::format::text;
 use md_codec::chunk::reassemble_with_opts;
 use md_codec::decode::{DecodeOpts, decode_md1_string_with_opts};
 
-pub fn run(strings: &[String], json: bool) -> Result<u8, CliError> {
-    // P3 §6b: `-` reads stdin; the reader strips mstring display separators
-    // (SPEC §3.2) per line, so a grouped or unbroken card both re-ingest.
-    let strings = crate::cmd::read_md1_strings(strings)?;
+pub fn run(
+    strings: &[String],
+    in_file: Option<&std::path::Path>,
+    json: bool,
+) -> Result<u8, CliError> {
+    // P3 §6b: argv, `--in FILE` or `-` for stdin. The reader strips mstring
+    // display separators (SPEC §3.2) per line, so a grouped or unbroken card
+    // both re-ingest through every one of the three.
+    let strings = crate::cmd::read_md1_inputs(strings, in_file)?;
     // P1.1: decode via the partial-allowing entry — a `canonical_origin ==
     // None` dead shape with no explicit origin now decodes (instead of
     // hard-rejecting `MissingExplicitOrigin`); `unresolved_origin_indices()`
