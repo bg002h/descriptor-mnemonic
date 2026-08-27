@@ -169,7 +169,18 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         None => {
             let chunks = split(&descriptor)?;
             let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
-            println!("chunk-set-id: 0x{csid:05x}");
+            // P3 §6a: `encode`'s stdout is the canonical artifact and nothing
+            // else, so the chunk-set-id goes to STDERR. It is not deleted --
+            // it is the only thing that tells an operator which chunks belong
+            // to one card, and `md repair`'s atomic reassembly is stated in
+            // terms of it. Moving it is what removes the `grep` from
+            // `md encode | me sysw pack`.
+            //
+            // The fixture-file writer in `cmd/vectors.rs` still emits this same
+            // text into a FILE and is deliberately untouched: §6a is a rule
+            // about stdout, and a grep for the string finds two sites of which
+            // only this one moves.
+            eprintln!("chunk-set-id: 0x{csid:05x}");
             for s in &chunks {
                 println!("{}", render_grouped(s, args.group_size, args.separator));
             }

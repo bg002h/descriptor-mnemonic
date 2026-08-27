@@ -661,14 +661,18 @@ fn a_policy_over_the_single_string_cap_chunks_without_the_flag() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     let chunks: Vec<&str> = stdout.lines().filter(|l| l.starts_with("md1")).collect();
     assert!(
         chunks.len() > 1,
         "must be chunked, got {} line(s)",
         chunks.len()
     );
+    // P3 §6a moved the header to STDERR; it is still emitted, and this test
+    // still checks that, because a chunk set with no chunk-set-id anywhere is
+    // a card whose pieces cannot be told apart from another card's.
     assert!(
-        stdout.contains("chunk-set-id:"),
+        stderr.contains("chunk-set-id:"),
         "auto-chunked output must carry the chunk-set-id header, like --force-chunked"
     );
 }
@@ -735,9 +739,17 @@ fn force_chunked_still_chunks_a_short_policy() {
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // P3 §6a: the header is on stderr now. Chunking is still what is being
+    // asserted -- the header is the only observable that distinguishes a
+    // forced-chunk run of a SHORT policy from an ordinary single-string one.
     assert!(
-        stdout.contains("chunk-set-id:"),
+        stderr.contains("chunk-set-id:"),
         "the flag must still force chunking"
+    );
+    assert!(
+        !stdout.contains("chunk-set-id:"),
+        "and it must not be on stdout"
     );
 }
 
@@ -913,4 +925,61 @@ fn experimental_still_enforces_the_other_sanity_rules() {
             "{label}: the refusal must state what --experimental does and does not do"
         );
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// P3 §6a — `encode`'s stdout is the canonical artifact and NOTHING else
+// ──────────────────────────────────────────────────────────────────────────
+
+/// The `chunk-set-id:` header is on STDERR. §6a rules `encode`'s stdout to be
+/// the artifact alone, and the header is what made `md encode | me sysw pack`
+/// need a `grep`.
+///
+/// BOTH halves are load-bearing and neither is redundant. The absence half
+/// alone cannot tell "moved to stderr" from "deleted", and the existing control
+/// `a_short_policy_still_emits_a_single_string` asserts an ABSENCE too — so an
+/// implementation that dropped the chunk-set-id entirely would leave every
+/// other test in this file green. The stderr assertion is the only thing in the
+/// suite that would notice.
+#[test]
+fn the_chunk_set_id_header_is_on_stderr_not_stdout() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--force-chunked"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        !stdout.contains("chunk-set-id:"),
+        "the header must not be on stdout; got {stdout:?}"
+    );
+    assert!(
+        stderr.contains("chunk-set-id: 0x"),
+        "the header must still be EMITTED, on stderr; got {stderr:?}"
+    );
+    // And nothing else moved onto stdout in its place.
+    for l in stdout.lines() {
+        assert!(
+            l.starts_with("md1"),
+            "encode stdout must be md1 lines only; got {l:?}"
+        );
+    }
+}
+
+/// The same rule on the AUTO-chunking path, which is the one a real keyed
+/// wallet policy takes — `--force-chunked` is a flag a pipeline never passes.
+#[test]
+fn the_auto_chunked_header_is_on_stderr_too() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(keyed_policy_args())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(!stdout.contains("chunk-set-id:"), "stdout: {stdout:?}");
+    assert!(stderr.contains("chunk-set-id: 0x"), "stderr: {stderr:?}");
 }
