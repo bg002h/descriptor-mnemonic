@@ -42,3 +42,9 @@ bip39 = "2.2.2"
 # Matches mnemonic-toolkit, which patched to a git rev for the same reason.
 [patch.crates-io]
 miniscript = { git = "https://github.com/rust-bitcoin/rust-miniscript", rev = "ff4732e5f75aa555682343cb180fa72ee3e8e9d5" }
+
+[profile.test]
+opt-level = 2
+
+[profile.dev]
+opt-level = 2
