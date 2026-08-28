@@ -4,6 +4,12 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased] — origin advisory names a `--path` supersession
+
+### Changed
+
+- **The origin-misreading note appends one trailing line when `--path` is present** (F-412 ruling): the note's predicate still reads the template's own text — `--path` neither suppresses a note the spelling earns nor triggers one the template did not write — but a fired note now ends by stating that the minted card carries the override, not the cited spelling. stderr only; stdout, exit codes and both tier predicates are unchanged.
+
 ## md-cli [Unreleased] — BIP-388 `/**` accepted on encode
 
 ### Added

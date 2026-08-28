@@ -113,7 +113,12 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
         // F-410: a placeholder origin with no hardened component. Must fire on
         // the --json branch too (parity with the text branch).
-        emit_unhardened_origin_note(args.template, &parsed_keys, &mut std::io::stderr());
+        emit_unhardened_origin_note(
+            args.template,
+            &parsed_keys,
+            args.path.is_some(),
+            &mut std::io::stderr(),
+        );
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -231,7 +236,12 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // F-227: unseatable keyless template (stderr, warn-only).
     emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
     // F-410: a placeholder origin with no hardened component (stderr, note-only).
-    emit_unhardened_origin_note(args.template, &parsed_keys, &mut std::io::stderr());
+    emit_unhardened_origin_note(
+        args.template,
+        &parsed_keys,
+        args.path.is_some(),
+        &mut std::io::stderr(),
+    );
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -531,12 +541,19 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
 ///
 /// KEYED ON THE TEMPLATE'S OWN TEXT, not the final descriptor: it is the
 /// spelling that gets misread, and `--path` replaces the declaration wholesale
-/// rather than reinterpreting it. Tier 2 follows tier 1 in this, so `--path`
-/// changes which origin the CARD carries but not which template text is read
-/// here.
+/// rather than reinterpreting it. The F-412 ruling (mnemonic-engrave
+/// design/agent-reports/RULING_f412_path_override_note.md) fixed this as the
+/// rule for BOTH tiers: the predicate reads the template's declared-origin
+/// text and the seated keys, nothing else. `--path` is invisible to the
+/// predicate in both directions: it never suppresses a note the spelling
+/// earns and never triggers one the template did not write. The override's
+/// PRESENCE (never its content) gates exactly one thing, a shared trailing
+/// line emitted once after all tier emissions, saying the minted card carries
+/// the override rather than the cited spelling.
 fn emit_unhardened_origin_note<W: std::io::Write>(
     template: &str,
     keys: &[ParsedKey],
+    path_overridden: bool,
     stderr: &mut W,
 ) {
     // The template has already parsed by the time this runs; a lex error here
@@ -610,13 +627,11 @@ fn emit_unhardened_origin_note<W: std::io::Write>(
              use-site tail (`/<0;1>/*`), not in the origin."
         );
     }
-    if affected.is_empty() {
-        return;
-    }
-    // Echo the caller's OWN path per slot, the way the descriptor-prefix reject
-    // does: a canned example is wrong guidance for a template that wrote
-    // something else.
-    let detail = affected
+    if !affected.is_empty() {
+        // Echo the caller's OWN path per slot, the way the descriptor-prefix reject
+        // does: a canned example is wrong guidance for a template that wrote
+        // something else.
+        let detail = affected
         .iter()
         .map(|(i, path)| {
             format!(
@@ -625,16 +640,32 @@ fn emit_unhardened_origin_note<W: std::io::Write>(
         })
         .collect::<Vec<_>>()
         .join("; ");
-    let _ = writeln!(
-        stderr,
-        "note: {detail} \u{2014} the path after a placeholder IS that key's origin \
+        let _ = writeln!(
+            stderr,
+            "note: {detail} \u{2014} the path after a placeholder IS that key's origin \
          declaration, the same slot that carries `@0/48'/0'/0'/2'`. An origin with no \
          hardened component is where that reading hides: it agrees with the pathless \
          spelling while the key seated here is a MASTER xpub (unhardened steps commute) \
          and DIVERGES for any other key, backing addresses one level above what a \
          descriptor-style reading intends. The card is well-formed either way \u{2014} \
          confirm the xpub you seat for each slot named is the one its origin descends FROM."
-    );
+        );
+    }
+    // F-412 ruling (mnemonic-engrave design/agent-reports/
+    // RULING_f412_path_override_note.md): when `--path` is present and a tier
+    // fired, ONE shared trailing line, both tiers, once per invocation, gated
+    // on the override's PRESENCE only, never its content. It is a suffix to a
+    // fired note, never a note of its own.
+    if path_overridden && (!deeper.is_empty() || !affected.is_empty()) {
+        let _ = writeln!(
+            stderr,
+            "note: --path replaced the origin declaration(s) cited above; the minted card \
+             carries the override, not that spelling. This note reads the TEMPLATE's own \
+             text, which --path supersedes but does not reinterpret: a step meant as \
+             DERIVATION is not moved to the use-site tail by --path \u{2014} write it there \
+             (`/<0;1>/*`) if that is what you meant."
+        );
+    }
 }
 
 fn emit_pathless_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
@@ -657,10 +688,12 @@ mod tests {
     /// The two tiers' distinguishing phrases, so a test can say WHICH note.
     const KEYED: &str = "declared origin runs DEEPER than the xpub seated there";
     const NARROW: &str = "key ORIGIN, not a derivation step";
+    /// The F-412 trailing line's distinguishing phrase.
+    const OVERRIDE: &str = "--path replaced the origin declaration";
 
-    fn note(template: &str, keys: &[ParsedKey]) -> String {
+    fn note(template: &str, keys: &[ParsedKey], path_overridden: bool) -> String {
         let mut buf: Vec<u8> = Vec::new();
-        emit_unhardened_origin_note(template, keys, &mut buf);
+        emit_unhardened_origin_note(template, keys, path_overridden, &mut buf);
         String::from_utf8(buf).expect("advisory text is utf-8")
     }
 
@@ -690,7 +723,7 @@ mod tests {
     /// below therefore fail on that mutation.
     #[test]
     fn a_depth_zero_key_takes_the_keyless_tier_not_the_keyed_one() {
-        let out = note("wpkh(@0/0/1/*)", &[key_at_depth(0, 0)]);
+        let out = note("wpkh(@0/0/1/*)", &[key_at_depth(0, 0)], false);
         assert!(
             !out.contains(KEYED),
             "master is excluded from the keyed clause: {out}"
@@ -708,7 +741,7 @@ mod tests {
     /// they might. One slot, one note.
     #[test]
     fn the_keyed_tier_wins_a_slot_both_tiers_match() {
-        let out = note("wpkh(@0/0/1/2/3/*)", &[key_at_depth(0, 3)]);
+        let out = note("wpkh(@0/0/1/2/3/*)", &[key_at_depth(0, 3)], false);
         assert!(out.contains(KEYED), "expected the keyed note: {out}");
         assert!(
             !out.contains(NARROW),
@@ -729,6 +762,7 @@ mod tests {
         let out = note(
             "wsh(multi(2,@0/0/1/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))",
             &[key_at_depth(1, 4)],
+            false,
         );
         assert!(
             !out.contains(KEYED),
@@ -737,6 +771,97 @@ mod tests {
         assert!(
             out.contains(NARROW) && out.contains("@0"),
             "@0 still gets the keyless note: {out}"
+        );
+    }
+
+    /// F-412 RULING, trailing line: a fired KEYED note under `--path` gains
+    /// the supersession line (case c1 in the ruling's matrix).
+    #[test]
+    fn override_appends_supersession_line_keyed() {
+        let out = note("wpkh(@0/84'/0'/0'/0/*)", &[key_at_depth(0, 3)], true);
+        assert!(out.contains(KEYED), "the tier-2 note still fires: {out}");
+        assert!(
+            out.contains(OVERRIDE),
+            "and the supersession line follows it: {out}"
+        );
+    }
+
+    /// F-412 RULING, trailing line on the keyless tier (case c3): the same
+    /// line, both tiers, one rule.
+    #[test]
+    fn override_appends_supersession_line_keyless() {
+        let out = note("wpkh(@0/0/*)", &[], true);
+        assert!(out.contains(NARROW), "the tier-1 note still fires: {out}");
+        assert!(
+            out.contains(OVERRIDE),
+            "and the supersession line follows it: {out}"
+        );
+    }
+
+    /// F-412 RULING: `--path` never SUPPRESSES a note the template's spelling
+    /// earns. Named mutant: an option-B-style `if path_overridden { return; }`
+    /// at the top of the function goes RED here.
+    #[test]
+    fn override_does_not_suppress_either_tier() {
+        let keyed = note("wpkh(@0/84'/0'/0'/0/*)", &[key_at_depth(0, 3)], true);
+        assert!(
+            keyed.contains(KEYED),
+            "tier 2 must survive the override: {keyed}"
+        );
+        let keyless = note("wpkh(@0/0/*)", &[], true);
+        assert!(
+            keyless.contains(NARROW),
+            "tier 1 must survive the override: {keyless}"
+        );
+    }
+
+    /// Without `--path` the notes are byte-for-byte what they were (cases c2
+    /// and c4). Named mutant: inverting the gate to `!path_overridden` goes
+    /// RED here.
+    #[test]
+    fn no_override_no_supersession_line() {
+        let keyed = note("wpkh(@0/84'/0'/0'/0/*)", &[key_at_depth(0, 3)], false);
+        assert!(
+            keyed.contains(KEYED) && !keyed.contains(OVERRIDE),
+            "no override, no supersession line: {keyed}"
+        );
+        let keyless = note("wpkh(@0/0/*)", &[], false);
+        assert!(
+            keyless.contains(NARROW) && !keyless.contains(OVERRIDE),
+            "no override, no supersession line: {keyless}"
+        );
+    }
+
+    /// F-412 RULING: the trailing line is a SUFFIX to a fired note, never a
+    /// note of its own. `--path` never triggers an advisory the template did
+    /// not write (case c6, reaffirming F-411's exclusion). Named mutant:
+    /// weakening the gate to `path_overridden` alone goes RED here.
+    #[test]
+    fn override_alone_is_silent() {
+        let out = note("wpkh(@0/*)", &[key_at_depth(0, 3)], true);
+        assert!(
+            out.is_empty(),
+            "no fired tier means no output at all: {out}"
+        );
+    }
+
+    /// ONCE PER INVOCATION, not per slot or per tier: two tier-2 slots plus a
+    /// tier-1 slot still yield exactly one supersession line, after all tier
+    /// emissions. Named mutant: moving the line into the tier-2 per-slot loop
+    /// goes RED here (two tier-2 slots would say it twice).
+    #[test]
+    fn supersession_line_emitted_once() {
+        let out = note(
+            "wsh(multi(2,@0/0/1/2/3/*,@1/0/1/2/3/*,@2/0/*))",
+            &[key_at_depth(0, 3), key_at_depth(1, 3)],
+            true,
+        );
+        assert!(out.contains(KEYED), "tier 2 fired: {out}");
+        assert!(out.contains(NARROW), "tier 1 fired: {out}");
+        assert_eq!(
+            out.matches(OVERRIDE).count(),
+            1,
+            "the supersession line is said exactly once: {out}"
         );
     }
 }
