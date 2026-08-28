@@ -45,7 +45,7 @@ miniscript = { workspace = true }
 # `write_private` is the only item `md` adopts (P3 boundary table, 1 of 11) and
 # it is reached as `mnemonic_io_lib::write::write_private` — `write` is a
 # `pub mod` with NO root re-export, so the unqualified path is an E0425.
-mnemonic-io-lib = { git = "https://github.com/bg002h/mnemonic-engrave", rev = "6c24e62823e6c1ac02aa3862cd6020674bf58544" }
+mnemonic-io-lib = { git = "https://github.com/bg002h/mnemonic-engrave", rev = "6c24e62823e6c1ac02aa3862cd6020674bf58544", version = "0.1.0" }
 
 [dev-dependencies]
 assert_cmd = "2.0"
