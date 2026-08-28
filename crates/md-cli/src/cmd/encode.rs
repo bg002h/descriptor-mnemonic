@@ -4,6 +4,7 @@ use crate::parse::keys::{parse_fingerprint, parse_key};
 use crate::parse::path::apply_path_override;
 use crate::parse::template::{ctx_for_template, parse_template_ext};
 
+use bitcoin::bip32::ChildNumber;
 use md_codec::chunk::{derive_chunk_set_id, split};
 use md_codec::encode::{Descriptor, encode_md1_string, render_grouped};
 use md_codec::identity::{compute_md1_encoding_id, compute_wallet_policy_id};
@@ -110,6 +111,9 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         emit_pathless_advisory(&descriptor, &mut std::io::stderr());
         // F-227: unseatable keyless template (stderr, warn-only).
         emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
+        // F-410: a placeholder origin with no hardened component. Must fire on
+        // the --json branch too (parity with the text branch).
+        emit_unhardened_origin_note(args.template, &mut std::io::stderr());
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -226,6 +230,8 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     emit_pathless_advisory(&descriptor, &mut std::io::stderr());
     // F-227: unseatable keyless template (stderr, warn-only).
     emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
+    // F-410: a placeholder origin with no hardened component (stderr, note-only).
+    emit_unhardened_origin_note(args.template, &mut std::io::stderr());
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -452,6 +458,88 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
          a device that will not guess must refuse the whole set. Pass one \
          --fingerprint @N=HEX per slot to make them distinguishable; it costs about \
          one extra md1 chunk and changes no path, no key and no policy."
+    );
+}
+
+/// F-410: note when a placeholder declares an ORIGIN whose every component is
+/// unhardened.
+///
+/// WHAT IS BEING WARNED ABOUT — an INTENT risk, not a codec defect. In an md
+/// template the path written after `@i` IS that key's origin declaration: the
+/// same grammatical slot that carries `@0/48'/0'/0'/2'`. So `wpkh(@0/0/*)`
+/// declares the origin `m/0` with use site `/i`; nothing is relocated and
+/// nothing is dropped. A reader arriving from descriptors, though, reads it as
+/// "derive `/0/i` from the key I supply".
+///
+/// THE TWO READINGS AGREE ON A MASTER XPUB, which is exactly what lets the
+/// misreading survive a spot check — unhardened steps commute, so both
+/// spellings derive one address (measured, same xpub, same binary):
+///
+/// ```text
+/// wpkh(@0/0/*)  ->  bc1qr932kkqd95r3chv9sh36wkjez4jvsmlf46xuc9
+/// wpkh(@0/*)    ->  bc1qr932kkqd95r3chv9sh36wkjez4jvsmlf46xuc9
+/// ```
+///
+/// They DIVERGE the moment a NON-master xpub is seated: the plate then backs
+/// `X/i` where the reader meant `X/0/i`. A hardened component cannot be read as
+/// a use-site step at all (an xpub cannot derive one), so the note is keyed on
+/// an origin with NO hardened component — which is also why every standard
+/// BIP-48/84 template stays silent.
+///
+/// NOTE, NEVER A REFUSAL. `@0/0/*` is a legitimate origin declaration, and
+/// refusing this shape would refuse correct templates in the same grammatical
+/// slot to catch a misreading. stdout and the exit code are untouched.
+///
+/// KEYED ON THE TEMPLATE'S OWN TEXT, not the final descriptor: it is the
+/// spelling that gets misread, and `--path` replaces the declaration wholesale
+/// rather than reinterpreting it.
+fn emit_unhardened_origin_note<W: std::io::Write>(template: &str, stderr: &mut W) {
+    // The template has already parsed by the time this runs; a lex error here
+    // is unreachable, and this note is not the surface that would report it.
+    let Ok(occs) = crate::parse::template::lex_placeholders(template) else {
+        return;
+    };
+    // Per DECLARATION, not per occurrence — a placeholder may appear several
+    // times in one template and it is one declaration either way.
+    let mut affected: std::collections::BTreeMap<u8, String> = std::collections::BTreeMap::new();
+    for occ in &occs {
+        let Some(path) = occ.origin_path.as_ref() else {
+            continue; // no declaration at all — nothing to misread
+        };
+        let components: Vec<_> = path.into_iter().collect();
+        if components.is_empty()
+            || components
+                .iter()
+                .any(|c| matches!(c, ChildNumber::Hardened { .. }))
+        {
+            continue;
+        }
+        affected.entry(occ.i).or_insert_with(|| format!("/{path}"));
+    }
+    if affected.is_empty() {
+        return;
+    }
+    // Echo the caller's OWN path per slot, the way the descriptor-prefix reject
+    // does: a canned example is wrong guidance for a template that wrote
+    // something else.
+    let detail = affected
+        .iter()
+        .map(|(i, path)| {
+            format!(
+                "`{path}` read as @{i}'s key ORIGIN, not a derivation step from the provided key"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let _ = writeln!(
+        stderr,
+        "note: {detail} \u{2014} the path after a placeholder IS that key's origin \
+         declaration, the same slot that carries `@0/48'/0'/0'/2'`. An origin with no \
+         hardened component is where that reading hides: it agrees with the pathless \
+         spelling while the key seated here is a MASTER xpub (unhardened steps commute) \
+         and DIVERGES for any other key, backing addresses one level above what a \
+         descriptor-style reading intends. The card is well-formed either way \u{2014} \
+         confirm the xpub you seat for each slot named is the one its origin descends FROM."
     );
 }
 

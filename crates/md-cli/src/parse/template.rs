@@ -28,8 +28,80 @@ pub struct PlaceholderOccurrence {
     pub wildcard_hardened: bool,
 }
 
+/// The `@i/...` suffix set that ENDS a placeholder. A consumed placeholder is
+/// always followed by a descriptor terminator, a separator, or end-of-input;
+/// anything else is unconsumed path residue. Shared by the `/**` desugaring
+/// below and M5's residue reject, so the two cannot disagree about where a
+/// placeholder stops.
+fn terminates_placeholder(next: Option<char>) -> bool {
+    match next {
+        None => true,
+        Some(c) => matches!(c, ')' | ',' | '}') || c.is_whitespace(),
+    }
+}
+
+/// BIP-388 §"Key placeholders" defines `/**` as shorthand for `/<0;1>/*`.
+/// Rewrite it to that canonical spelling BEFORE anything else reads the
+/// template.
+///
+/// WHY IT WAS REFUSED. `@0/**` used to error with "derivation steps after the
+/// multipath group are not representable in md1" — a message wrong on its face,
+/// since `/**` carries no derivation steps and no multipath group. It was a
+/// LEXER ACCIDENT: the placeholder regex's group 4 (`/\*(?:'|h)?`) consumed
+/// `/*` and left the second `*` as unconsumed residue, so M5's post-multipath
+/// residue check fired on a template that has no multipath group at all.
+///
+/// WHY DESUGAR RATHER THAN TEACH THE REGEXES. Two regexes read this template —
+/// the lexer's, which decides the recorded `UseSitePath`, and
+/// `substitute_synthetic`'s, which decides what miniscript parses. They already
+/// carry a standing "keep these in sync" obligation, and a card whose use-site
+/// path and structural tree disagree is exactly the divergence class M5's belt
+/// exists to catch. Rewriting the text once, upstream of both, makes `@i/**`
+/// mint BYTE-IDENTICAL output to `@i/<0;1>/*` by CONSTRUCTION rather than by
+/// two patterns continuing to agree.
+///
+/// SCOPE: only a `/**` that ENDS the placeholder is sugar. `@0/**/0` and
+/// `@0/**'` are not BIP-388 forms and are left alone, so the residue reject
+/// still refuses them rather than a rewrite quietly turning them into something
+/// that parses.
+fn desugar_double_wildcard(template: &str) -> std::borrow::Cow<'_, str> {
+    if !template.contains("**") {
+        return std::borrow::Cow::Borrowed(template);
+    }
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        // `@i` + the same origin-step class as the lexer's group 2, then `/**`.
+        // Anchoring on the origin class is what keeps `@0/<0;1>/**` out: its
+        // `/**` does not follow the placeholder's origin steps directly.
+        Regex::new(r"@\d+(?:/\d+'?)*/\*\*").expect("static regex compiles")
+    });
+    let mut out = String::with_capacity(template.len() + 8);
+    let mut last = 0usize;
+    for m in re.find_iter(template) {
+        if !terminates_placeholder(template[m.end()..].chars().next()) {
+            continue;
+        }
+        out.push_str(&template[last..m.start()]);
+        out.push_str(
+            m.as_str()
+                .strip_suffix("/**")
+                .expect("the regex matches only spans ending in `/**`"),
+        );
+        out.push_str("/<0;1>/*");
+        last = m.end();
+    }
+    if last == 0 {
+        return std::borrow::Cow::Borrowed(template);
+    }
+    out.push_str(&template[last..]);
+    std::borrow::Cow::Owned(out)
+}
+
 /// Pass A: extract every `@i/...` placeholder from the raw template string.
 pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, CliError> {
+    // BIP-388 `/**` sugar, resolved before ANY other pass reads the template.
+    let desugared = desugar_double_wildcard(template);
+    let template: &str = &desugared;
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
         // Captures:
@@ -180,8 +252,9 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         // anything else (`/`, a digit, `'`, `h`, `<`, …) is unconsumed path
         // residue.
         let match_end = caps.get(0).map(|m| m.end()).unwrap_or(0);
-        if let Some(next) = template[match_end..].chars().next() {
-            if !matches!(next, ')' | ',' | '}') && !next.is_whitespace() {
+        {
+            let next = template[match_end..].chars().next();
+            if !terminates_placeholder(next) {
                 return Err(CliError::TemplateParse(format!(
                     "@{i}: derivation steps after the multipath group are not \
                      representable in md1; the multipath `<…>` must be the final \
@@ -404,6 +477,56 @@ mod lex_tests {
             !msg.contains("final derivation step"),
             "fused case must NOT surface the M5 suffix message; got: {msg}"
         );
+    }
+
+    // ─── F-410 item 1: BIP-388 `/**` sugar ────────────────────────────────
+    // BIP-388 defines `/**` as shorthand for `/<0;1>/*`. It used to be REFUSED
+    // here, and refused with a message that was wrong on its face ("derivation
+    // steps after the multipath group") — a lexer accident: group 4 consumed
+    // `/*` and left the second `*` as unconsumed residue, so M5's post-multipath
+    // check fired on a template with no multipath group at all.
+    //
+    // The equality below is the point. `/**` is SUGAR, so the lexed view must
+    // be the SAME VALUE as the desugared spelling, not merely "not an error".
+
+    #[test]
+    fn lex_accepts_bip388_double_wildcard() {
+        assert_eq!(
+            lex_placeholders("wpkh(@0/**)").unwrap(),
+            lex_placeholders("wpkh(@0/<0;1>/*)").unwrap(),
+        );
+    }
+
+    #[test]
+    fn lex_double_wildcard_after_origin_equals_desugared() {
+        assert_eq!(
+            lex_placeholders("wsh(multi(2,@0/48'/0'/0'/2'/**,@1/48'/0'/0'/2'/**))").unwrap(),
+            lex_placeholders("wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))")
+                .unwrap(),
+        );
+    }
+
+    #[test]
+    fn lex_double_wildcard_mixed_with_explicit_spelling() {
+        // Desugaring is per PLACEHOLDER, not per template.
+        let v = lex_placeholders("wsh(multi(2,@0/**,@1/<0;1>/*))").unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].multipath_alts, vec![0, 1]);
+        assert_eq!(v[1].multipath_alts, vec![0, 1]);
+    }
+
+    #[test]
+    fn lex_rejects_double_wildcard_that_is_not_final() {
+        // The sugar is only sugar when `/**` ENDS the placeholder. `/**/0` and
+        // `/**'` are not BIP-388 forms; they must keep hitting the residue
+        // reject rather than being quietly rewritten into something that parses.
+        for t in ["wpkh(@0/**/0)", "wpkh(@0/**')", "wpkh(@0/<0;1>/**)"] {
+            let err = lex_placeholders(t).unwrap_err();
+            assert!(
+                matches!(err, CliError::TemplateParse(_)),
+                "`{t}` must stay a TemplateParse reject, got {err:?}"
+            );
+        }
     }
 
     #[test]
@@ -714,6 +837,11 @@ fn substitute_synthetic(
     template: &str,
     ctx: ScriptCtx,
 ) -> Result<(String, std::collections::BTreeMap<String, u8>), CliError> {
+    // Same desugaring as `lex_placeholders`, for the same reason: the two
+    // passes must see ONE syntax, or a `/**` template's use-site path and its
+    // structural tree could disagree.
+    let desugared = desugar_double_wildcard(template);
+    let template: &str = &desugared;
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
         // C1 fix (impl-review round-1): the multipath strip class is `[0-9;]`
