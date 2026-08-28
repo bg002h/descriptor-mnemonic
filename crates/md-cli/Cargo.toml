@@ -36,16 +36,22 @@ bip39 = { workspace = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 miniscript = { workspace = true }
-# P3 — the shared IO crate, pinned by exact rev.
+# P3 — the shared constellation IO crate, taken from the REGISTRY.
 #
 # NOT `path =`: a path does not resolve in a fresh CI checkout, and this repo
-# exists at more than one filesystem location on the author's box. NOT
-# crates.io: `mnemonic-io-lib` is not published there.
+# exists at more than one filesystem location on the author's box. And
+# deliberately NOT `git`+`rev` any more: a git source has no published tarball,
+# so neither `Cargo.lock`'s `checksum` nor `.cargo-checksum.json`'s `package`
+# can anchor the bytes that get vendored — the F-354 defect class, which is why
+# `ci/repro/vendor-freshness.sh` has to hand-ground every git source it
+# tolerates. A registry pin is anchored by cargo itself against an immutable
+# tarball on every build, so this crate needs no grounding, and md's only
+# remaining git source is the miniscript fork.
 #
 # `write_private` is the only item `md` adopts (P3 boundary table, 1 of 11) and
 # it is reached as `mnemonic_io_lib::write::write_private` — `write` is a
 # `pub mod` with NO root re-export, so the unqualified path is an E0425.
-mnemonic-io-lib = { git = "https://github.com/bg002h/mnemonic-engrave", rev = "6c24e62823e6c1ac02aa3862cd6020674bf58544", version = "0.1.0" }
+mnemonic-io-lib = "0.1.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"

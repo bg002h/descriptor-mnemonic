@@ -49,31 +49,15 @@ if [ -z "$MINISCRIPT_REV" ]; then
   exit 1
 fi
 
-# P3: `md-cli` pins `mnemonic-io-lib` (the constellation's shared IO crate) by
-# exact rev out of `bg002h/mnemonic-engrave`. It is a SECOND git source, so it
-# needs its own stanza or `--offline` resolution is not constrained by vendor/
-# for it -- exactly what the guard below caught the day the pin landed. Derived
-# from Cargo.lock for the same reason the miniscript rev is: so the config
-# tracks the pin instead of drifting from it, and fails CLOSED when it cannot.
-IOLIB_REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}' || true)"
-if [ -z "$IOLIB_REV" ]; then
-  echo "::error::vendor-freshness: could not derive the mnemonic-io-lib rev from Cargo.lock" \
-       "(expected a 'mnemonic-engrave?rev=<40-hex>' source line). Failing closed." >&2
-  exit 1
-fi
-
 # Fail CLOSED on any git source this config does NOT redirect.
 #
-# The form below covers exactly TWO git sources: the miniscript fork and
-# mnemonic-io-lib. A THIRD git dependency would not be redirected, so
-# `--offline` would mis-resolve or reach the live host -- the same false-GREEN
-# the original two-block guard existed to prevent, one dependency further along.
-# Keeping the guard means gaining a git dep still trips a loud error instead of
-# silently weakening the gate. It did exactly that when P3 added the
-# mnemonic-io-lib pin, which is how that stanza came to be written.
+# The three-block form covers exactly one fork. A SECOND git dependency would
+# not be redirected, so `--offline` would mis-resolve or reach the live host --
+# the same false-GREEN the original two-block guard existed to prevent, just
+# one dependency further along. Keeping the guard means gaining a git dep still
+# trips a loud error instead of silently weakening the gate.
 UNCOVERED="$(grep -oE '^source = "git\+[^"]+"' Cargo.lock \
-  | grep -v "rust-miniscript?rev=${MINISCRIPT_REV}" \
-  | grep -v "mnemonic-engrave?rev=${IOLIB_REV}" || true)"
+  | grep -v "rust-miniscript?rev=${MINISCRIPT_REV}" || true)"
 if [ -n "$UNCOVERED" ]; then
   echo "::error::vendor-freshness: Cargo.lock has a git source this config does not" \
        "redirect, so --offline resolution would not be constrained by vendor/:" >&2
@@ -82,21 +66,17 @@ if [ -n "$UNCOVERED" ]; then
   exit 1
 fi
 
-# 4-block source-replacement: crates-io + the miniscript git fork +
-# mnemonic-io-lib + vendored-sources -> the committed vendor/ tree. These are
-# the blocks `cargo vendor` itself emits; they are not invented here.
+# 3-block source-replacement: crates-io + the miniscript git fork +
+# vendored-sources -> the committed vendor/ tree.
 SRC_CONFIG=(
   --config 'source.crates-io.replace-with="vendored-sources"'
   --config "source.\"git+https://github.com/rust-bitcoin/rust-miniscript?rev=${MINISCRIPT_REV}\".git=\"https://github.com/rust-bitcoin/rust-miniscript\""
   --config "source.\"git+https://github.com/rust-bitcoin/rust-miniscript?rev=${MINISCRIPT_REV}\".rev=\"${MINISCRIPT_REV}\""
   --config "source.\"git+https://github.com/rust-bitcoin/rust-miniscript?rev=${MINISCRIPT_REV}\".replace-with=\"vendored-sources\""
-  --config "source.\"git+https://github.com/bg002h/mnemonic-engrave?rev=${IOLIB_REV}\".git=\"https://github.com/bg002h/mnemonic-engrave\""
-  --config "source.\"git+https://github.com/bg002h/mnemonic-engrave?rev=${IOLIB_REV}\".rev=\"${IOLIB_REV}\""
-  --config "source.\"git+https://github.com/bg002h/mnemonic-engrave?rev=${IOLIB_REV}\".replace-with=\"vendored-sources\""
   --config 'source.vendored-sources.directory="vendor"'
 )
 
-echo "vendor-freshness: resolving Cargo.lock against committed vendor/ (offline, locked; miniscript rev ${MINISCRIPT_REV}, mnemonic-io-lib rev ${IOLIB_REV}) ..."
+echo "vendor-freshness: resolving Cargo.lock against committed vendor/ (offline, locked; miniscript rev ${MINISCRIPT_REV}) ..."
 if cargo metadata --format-version 1 --locked --offline "${SRC_CONFIG[@]}" >/dev/null; then
   echo "vendor-freshness: OK — vendor/ satisfies Cargo.lock."
 else
