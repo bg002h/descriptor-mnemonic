@@ -4,6 +4,12 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased] — BIP-388 `/**` accepted on encode
+
+### Added
+
+- **`md encode` accepts `@i/**` as BIP-388 sugar for `@i/<0;1>/*`** — byte-identical to the desugared spelling, where it previously exited non-zero — while `md decode` renders the canonical `<0;1>/*`, so the round trip is not spelling-preserving.
+
 ## md-cli [Unreleased] — advisory for an unseatable keyless template
 
 ### Added

@@ -1,6 +1,6 @@
 use crate::error::CliError;
 use crate::format::text;
-use crate::parse::keys::{parse_fingerprint, parse_key};
+use crate::parse::keys::{ParsedKey, parse_fingerprint, parse_key};
 use crate::parse::path::apply_path_override;
 use crate::parse::template::{ctx_for_template, parse_template_ext};
 
@@ -113,7 +113,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
         // F-410: a placeholder origin with no hardened component. Must fire on
         // the --json branch too (parity with the text branch).
-        emit_unhardened_origin_note(args.template, &mut std::io::stderr());
+        emit_unhardened_origin_note(args.template, &parsed_keys, &mut std::io::stderr());
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -231,7 +231,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // F-227: unseatable keyless template (stderr, warn-only).
     emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
     // F-410: a placeholder origin with no hardened component (stderr, note-only).
-    emit_unhardened_origin_note(args.template, &mut std::io::stderr());
+    emit_unhardened_origin_note(args.template, &parsed_keys, &mut std::io::stderr());
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -461,8 +461,8 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
     );
 }
 
-/// F-410: note when a placeholder declares an ORIGIN whose every component is
-/// unhardened.
+/// F-410 / F-411: note when a placeholder's declared ORIGIN can be misread as
+/// a derivation step.
 ///
 /// WHAT IS BEING WARNED ABOUT — an INTENT risk, not a codec defect. In an md
 /// template the path written after `@i` IS that key's origin declaration: the
@@ -482,18 +482,63 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
 ///
 /// They DIVERGE the moment a NON-master xpub is seated: the plate then backs
 /// `X/i` where the reader meant `X/0/i`. A hardened component cannot be read as
-/// a use-site step at all (an xpub cannot derive one), so the note is keyed on
-/// an origin with NO hardened component — which is also why every standard
-/// BIP-48/84 template stays silent.
+/// a use-site step at all (an xpub cannot derive one), so both tiers below are
+/// keyed on components with no hardened marker.
 ///
-/// NOTE, NEVER A REFUSAL. `@0/0/*` is a legitimate origin declaration, and
-/// refusing this shape would refuse correct templates in the same grammatical
-/// slot to catch a misreading. stdout and the exit code are untouched.
+/// # Two tiers, because a seated key makes the question decidable
+///
+/// **TIER 1 — KEYLESS (F-410), deliberately NARROW: the origin's every
+/// component must be unhardened.** Without a key there is no depth to compare
+/// against, so `84'/0'/0'/0` is indistinguishable from every ordinary
+/// single-chain template and firing there would be note fatigue. It is not
+/// that the risk is lower with no key — it is UNDECIDABLE, and silence wins.
+/// This predicate is key-blind and unchanged: it fires whether or not a key is
+/// seated.
+///
+/// **TIER 2 — KEYED (F-411).** A seated xpub carries its own BIP-32 depth,
+/// which decides the question the keyless tier cannot ask. For a slot whose
+/// key is known, note when ALL THREE hold:
+///
+/// 1. `key.depth >= 1` — master is excluded, because the two spellings
+///    provably agree there (see above);
+/// 2. the declared origin is LONGER than `key.depth`;
+/// 3. every component at index `>= key.depth` is unhardened.
+///
+/// That excess suffix is exactly what a descriptor-thinker meant as derivation
+/// and exactly what the seated xpub COULD have derived — and md derives
+/// nothing through an origin, so the card backs the seated key's own `/i`.
+/// Measured on this binary, depth-3 key seated at `@0`:
+///
+/// ```text
+/// wpkh(@0/84'/0'/0'/0/*)      ->  bc1qr932kkqd95r3chv9sh36wkjez4jvsmlf46xuc9
+/// wpkh(@0/84'/0'/0'/*)        ->  bc1qr932kkqd95r3chv9sh36wkjez4jvsmlf46xuc9   (the excess /0 is inert)
+/// wpkh(@0/84'/0'/0'/<0;1>/*)  ->  bc1qmxrw6qdh5g3ztfcwm0et5l8mvws4eva24kmp8m   (what the misreading meant)
+/// ```
+///
+/// Standard workflows stay silent: master + a full path is excluded by (1) and
+/// is unreachable anyway (`parse_key` admits only depth 3 or 4), and an account
+/// xpub under its own matching-depth origin has no excess to fail (2).
+///
+/// A slot lands in AT MOST ONE tier and is therefore said once. Tier 2 is
+/// tested first because where both match it is the better-informed wording: it
+/// knows the seated key is not master, so it can state that the readings
+/// diverge rather than that they might.
+///
+/// NOTE, NEVER A REFUSAL. `@0/0/*` and `@0/84'/0'/0'/0/*` are both legitimate
+/// origin declarations, and refusing this shape would refuse correct templates
+/// in the same grammatical slot to catch a misreading. stdout and the exit code
+/// are untouched.
 ///
 /// KEYED ON THE TEMPLATE'S OWN TEXT, not the final descriptor: it is the
 /// spelling that gets misread, and `--path` replaces the declaration wholesale
-/// rather than reinterpreting it.
-fn emit_unhardened_origin_note<W: std::io::Write>(template: &str, stderr: &mut W) {
+/// rather than reinterpreting it. Tier 2 follows tier 1 in this, so `--path`
+/// changes which origin the CARD carries but not which template text is read
+/// here.
+fn emit_unhardened_origin_note<W: std::io::Write>(
+    template: &str,
+    keys: &[ParsedKey],
+    stderr: &mut W,
+) {
     // The template has already parsed by the time this runs; a lex error here
     // is unreachable, and this note is not the surface that would report it.
     let Ok(occs) = crate::parse::template::lex_placeholders(template) else {
@@ -502,19 +547,68 @@ fn emit_unhardened_origin_note<W: std::io::Write>(template: &str, stderr: &mut W
     // Per DECLARATION, not per occurrence — a placeholder may appear several
     // times in one template and it is one declaration either way.
     let mut affected: std::collections::BTreeMap<u8, String> = std::collections::BTreeMap::new();
+    // Tier 2, per declaration as well: slot -> (origin, excess suffix, seated
+    // depth, origin length).
+    let mut deeper: std::collections::BTreeMap<u8, (String, String, u8, usize)> =
+        std::collections::BTreeMap::new();
     for occ in &occs {
         let Some(path) = occ.origin_path.as_ref() else {
             continue; // no declaration at all — nothing to misread
         };
         let components: Vec<_> = path.into_iter().collect();
-        if components.is_empty()
-            || components
-                .iter()
-                .any(|c| matches!(c, ChildNumber::Hardened { .. }))
+        if components.is_empty() {
+            continue;
+        }
+        // TIER 2 (F-411) — needs the key that is actually seated here. No key
+        // for this slot means no clause: the depth comparison has no left-hand
+        // side, and guessing one is what tier 1 already declines to do.
+        if let Some(key) = keys.iter().find(|k| k.i == occ.i) {
+            let d = usize::from(key.depth);
+            if key.depth >= 1
+                && components.len() > d
+                && !components[d..]
+                    .iter()
+                    .any(|c| matches!(c, ChildNumber::Hardened { .. }))
+            {
+                let mut excess = String::new();
+                for c in &components[d..] {
+                    excess.push('/');
+                    excess.push_str(&c.to_string());
+                }
+                deeper
+                    .entry(occ.i)
+                    .or_insert_with(|| (format!("/{path}"), excess, key.depth, components.len()));
+                continue;
+            }
+        }
+        // TIER 1 (F-410) — the narrow, key-blind predicate.
+        if components
+            .iter()
+            .any(|c| matches!(c, ChildNumber::Hardened { .. }))
         {
             continue;
         }
         affected.entry(occ.i).or_insert_with(|| format!("/{path}"));
+    }
+    // Tier 2 first: it is the more specific finding, and a reader who has both
+    // should see the one that names a concrete key before the general one.
+    // ONE LINE PER SLOT here rather than tier 1's joined list — each line
+    // carries its own depth, level count and excess, which do not collapse
+    // into a shared sentence the way tier 1's paths do.
+    for (i, (origin, excess, depth, olen)) in &deeper {
+        let _ = writeln!(
+            stderr,
+            "note: @{i}'s declared origin runs DEEPER than the xpub seated there \u{2014} \
+             `{origin}` is {olen} levels, but the key at @{i} is depth {depth}, so the \
+             trailing `{excess}` hangs BELOW it. In an md template the WHOLE path after \
+             `@{i}` is that key's origin declaration and md derives nothing through it: \
+             this card backs the seated key's own `/i`, NOT `{excess}/i` as a \
+             descriptor-style reading expects. Every step past depth {depth} is \
+             unhardened, which is exactly the shape that xpub COULD have derived, so \
+             nothing on the card tells the two readings apart. Confirm the xpub seated at \
+             @{i} is the key `{origin}` names; a step meant as DERIVATION belongs in the \
+             use-site tail (`/<0;1>/*`), not in the origin."
+        );
     }
     if affected.is_empty() {
         return;
@@ -554,4 +648,95 @@ fn emit_pathless_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &m
          this card (origin unspecified, exit 4) and it cannot be reliably restored on its own; \
          supply --path (e.g. --path bip48) for a fully-decodable backup"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The two tiers' distinguishing phrases, so a test can say WHICH note.
+    const KEYED: &str = "declared origin runs DEEPER than the xpub seated there";
+    const NARROW: &str = "key ORIGIN, not a derivation step";
+
+    fn note(template: &str, keys: &[ParsedKey]) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        emit_unhardened_origin_note(template, keys, &mut buf);
+        String::from_utf8(buf).expect("advisory text is utf-8")
+    }
+
+    fn key_at_depth(i: u8, depth: u8) -> ParsedKey {
+        // Only `i` and `depth` are read by this advisory; the payload never
+        // reaches it. A real xpub cannot express depth 0 here anyway —
+        // `parse_key` refuses it — which is the whole reason this test exists
+        // at this level instead of end-to-end.
+        ParsedKey {
+            i,
+            depth,
+            payload: [0u8; 65],
+        }
+    }
+
+    /// CONDITION 1 OF THE KEYED CLAUSE, and the only way to reach it.
+    ///
+    /// `parse_key` admits depth 3 or 4 only, so no CLI invocation can seat a
+    /// master xpub — `cli_keyed_excess_origin_note::a_master_xpub_cannot_be_seated_at_all`
+    /// pins that refusal. The guard still has to be right, because the two
+    /// spellings PROVABLY agree on a master key (unhardened steps commute), so
+    /// a note there would be a claim of divergence that cannot happen.
+    ///
+    /// Drop `key.depth >= 1` from the clause and this flips: `/0/1` is 2
+    /// components against depth 0, both unhardened, so tier 2 would fire and
+    /// tier 1 would fall silent in its place. Both halves of the assertion
+    /// below therefore fail on that mutation.
+    #[test]
+    fn a_depth_zero_key_takes_the_keyless_tier_not_the_keyed_one() {
+        let out = note("wpkh(@0/0/1/*)", &[key_at_depth(0, 0)]);
+        assert!(
+            !out.contains(KEYED),
+            "master is excluded from the keyed clause: {out}"
+        );
+        assert!(
+            out.contains(NARROW),
+            "and it still gets the keyless note it would have got with no key at all: {out}"
+        );
+    }
+
+    /// PRECEDENCE, where both tiers match the same slot. `/0/1/2/3` is
+    /// all-unhardened (tier 1 matches) AND longer than a depth-3 key with an
+    /// unhardened excess (tier 2 matches). Tier 2 wins: it knows the seated key
+    /// is not master, so it can say the readings DO diverge rather than that
+    /// they might. One slot, one note.
+    #[test]
+    fn the_keyed_tier_wins_a_slot_both_tiers_match() {
+        let out = note("wpkh(@0/0/1/2/3/*)", &[key_at_depth(0, 3)]);
+        assert!(out.contains(KEYED), "expected the keyed note: {out}");
+        assert!(
+            !out.contains(NARROW),
+            "a slot is said once, not once per tier: {out}"
+        );
+        assert_eq!(out.lines().count(), 1, "exactly one line: {out}");
+        assert!(
+            out.contains("`/3`"),
+            "the excess past depth 3 is the single trailing step: {out}"
+        );
+    }
+
+    /// A key bound to a DIFFERENT slot must not lend its depth to this one.
+    /// Without the `k.i == occ.i` match, @1's depth-3 key would make @0's
+    /// 2-level origin look like an overshoot.
+    #[test]
+    fn a_key_seated_elsewhere_does_not_reach_this_slot() {
+        let out = note(
+            "wsh(multi(2,@0/0/1/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))",
+            &[key_at_depth(1, 4)],
+        );
+        assert!(
+            !out.contains(KEYED),
+            "@0 has no key of its own, so the keyed clause cannot apply: {out}"
+        );
+        assert!(
+            out.contains(NARROW) && out.contains("@0"),
+            "@0 still gets the keyless note: {out}"
+        );
+    }
 }

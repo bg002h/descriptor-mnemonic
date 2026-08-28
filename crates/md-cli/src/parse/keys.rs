@@ -22,6 +22,23 @@ pub enum ScriptCtx {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedKey {
     pub i: u8,
+    /// BIP-32 depth of the seated xpub — byte 4 of the 78-byte
+    /// serialization, the same field `bitcoin::bip32::Xpub::depth` exposes,
+    /// read out of the buffer this function has already decoded rather than
+    /// parsing the key a second time.
+    ///
+    /// NOT part of the encoded payload (`payload` starts at byte 13), so
+    /// carrying it here can move no wire byte, no address and no wallet id.
+    /// It exists for ADVISORIES that must compare a template's DECLARED origin
+    /// against the key actually seated in that slot — see
+    /// `emit_unhardened_origin_note` (F-411), which cannot ask the question
+    /// without it.
+    ///
+    /// The admitted set is `{3, 4}` (see the depth-admission comment in
+    /// `parse_key`), so a `0` here is unreachable through the CLI. That is why
+    /// the `depth >= 1` guard downstream is exercised by a unit test rather
+    /// than an end-to-end one.
+    pub depth: u8,
     /// chain code (32) ‖ compressed pubkey (33).
     pub payload: [u8; 65],
 }
@@ -128,7 +145,7 @@ pub fn parse_key(
     })?;
     let mut payload = [0u8; 65];
     payload.copy_from_slice(&bytes[13..78]);
-    Ok(ParsedKey { i, payload })
+    Ok(ParsedKey { i, depth, payload })
 }
 
 fn parse_index(s: &str) -> Result<u8, CliError> {
