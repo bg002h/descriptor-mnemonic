@@ -274,16 +274,101 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         });
     }
     if out.is_empty() {
-        return Err(CliError::TemplateParse(
-            "template contains no @i placeholders".into(),
-        ));
+        return Err(CliError::TemplateParse(no_placeholders_message(template)));
     }
     Ok(out)
+}
+
+/// F-420 (mnemonic-engrave FOLLOWUPS, 2026-08-28 journey walk W2): `md` is the
+/// tool NAMED for descriptors, so the natural wrong inputs here are a concrete
+/// descriptor and a BlueWallet `Key: value` export — both refuse on this arm.
+/// When the placeholder-less input carries one of those two shapes, name what
+/// it is and refer to the tool that takes it; anything else keeps the terse
+/// refusal. The referral names `--as`, which shipped with `me`'s S1 — this
+/// message MUST NOT predate that flag.
+fn no_placeholders_message(template: &str) -> String {
+    static BW_LINE: OnceLock<Regex> = OnceLock::new();
+    static CONCRETE_KEY: OnceLock<Regex> = OnceLock::new();
+    // A BlueWallet header line: `Name: x`, `Policy: 2 of 3`, `DC567276: xpub…`.
+    // Template text cannot match: miniscript's `:` wrappers (`c:pk_h(…)`) have
+    // no following space and sit after `(`, which the class excludes.
+    let bw = BW_LINE.get_or_init(|| {
+        Regex::new(r"(?m)^[A-Za-z0-9_][A-Za-z0-9_ ]{0,31}:[ \t]+\S").expect("static regex compiles")
+    });
+    // An extended-key token in any of the network/SLIP-132 spellings, public
+    // or private — 20+ base58 chars is far past any placeholder fragment.
+    let key = CONCRETE_KEY.get_or_init(|| {
+        Regex::new(r"[xtyzuvXTYZUV]p(?:ub|rv)[1-9A-HJ-NP-Za-km-z]{20,}")
+            .expect("static regex compiles")
+    });
+    // File shape first: a BlueWallet export CONTAINS xpubs, and the file is
+    // the more specific diagnosis.
+    if bw.is_match(template) {
+        "this looks like a BlueWallet `Key: value` setup file, not an md1 template — \
+         `md encode` takes a template whose keys are `@i` placeholders. A wallet \
+         export is packed by the engraver's own converter:\n    \
+         me sysw pack --as <descriptor|md1> --in <your export file>"
+            .into()
+    } else if key.is_match(template) {
+        "this is a concrete wallet descriptor (it carries a real extended key), not \
+         an md1 template — `md encode` takes a template whose keys are `@i` \
+         placeholders. A concrete descriptor is packed by the engraver's own \
+         converter:\n    me sysw pack --as <descriptor|md1> --in <your export file>"
+            .into()
+    } else {
+        "template contains no @i placeholders".into()
+    }
 }
 
 #[cfg(test)]
 mod lex_tests {
     use super::*;
+
+    /// F-420: a concrete descriptor — the tool named for descriptors gets
+    /// handed real ones — earns the referral, not the terse refusal.
+    #[test]
+    fn f420_concrete_descriptor_refers_to_me_sysw_pack() {
+        let err = lex_placeholders(
+            "wpkh([4bbaa801/84'/0'/0']xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz/<0;1>/*)",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("me sysw pack --as <descriptor|md1>"),
+            "got: {msg}"
+        );
+        assert!(msg.contains("concrete wallet descriptor"), "got: {msg}");
+    }
+
+    /// F-420: a BlueWallet `Key: value` export earns the file-shaped referral —
+    /// checked BEFORE the concrete-key shape, because the export contains xpubs
+    /// and the file is the more specific diagnosis.
+    #[test]
+    fn f420_bluewallet_file_refers_to_me_sysw_pack() {
+        let err = lex_placeholders(
+            "Name: our wallet\nPolicy: 2 of 2\nDerivation: m/48'/0'/0'/2'\nFormat: P2WSH\nDC567276: xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz\n",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("me sysw pack --as <descriptor|md1>"),
+            "got: {msg}"
+        );
+        assert!(msg.contains("BlueWallet"), "got: {msg}");
+    }
+
+    /// F-420 control: input that is neither shape keeps the terse refusal and
+    /// gains no referral — the message names a tool only when it knows why.
+    #[test]
+    fn f420_plain_garbage_keeps_the_terse_refusal() {
+        let err = lex_placeholders("hello world").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("template contains no @i placeholders"),
+            "got: {msg}"
+        );
+        assert!(!msg.contains("me sysw pack"), "got: {msg}");
+    }
 
     #[test]
     fn single_at0_no_multipath() {
