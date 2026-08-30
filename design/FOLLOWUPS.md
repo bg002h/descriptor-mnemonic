@@ -2110,12 +2110,16 @@ The descriptor→`@N`-template renderer lived only in `md-cli` (`format/text.rs:
   (measured: keyless-mint stubs are shape-only; two wallets shared
   `a235ee75`). Primary entry: `mnemonic-key/design/FOLLOWUPS.md` →
   `stub-keyed-wallet-binding-at-mint` — the mint-time change is mk's.
-- **This repo's leg:** the converter spec's seating rule 1 documents the
-  shape-only binding and ships CE-1 as a permanent accepted-limitation
-  vector row (a same-shape foreign card seats; address 0 differs). When
-  the mk upgrade lands, rule 1 tightens to true wallet binding and
-  CE-1's row flips to a refusal — flip the row and the rule TOGETHER, in
-  lockstep with the mk release, per the cross-repo convention.
+- **This repo's leg (updated r3):** the converter spec's A1/B1 stub
+  model is three-disposition (wallet-confirmed / shape-confirmed /
+  unconfirmed-WARNING — a hard mismatch refusal was falsified by the
+  fixture's own legitimate keyed-mint card, r3 C3), and CE-1's
+  accepted-limitation row is scoped to cards that are not
+  wallet-confirmed. When the mk mint-time upgrade lands (WITH its
+  canonical-origin-treatment obligation — see the primary entry's r3 M4
+  note), B1's unconfirmed tier tightens and the rows flip TOGETHER, in
+  lockstep with mk AND mnemonic-toolkit (three repos mint/read these
+  stubs — r3 I4).
 - **Operator ruling 2026-08-30, verbatim: "there are no engraved plates
   besides test plates and backward compatibility will not matter until
   v1.0 is launched."** Landed pre-v1.0, the tightening refuses no real

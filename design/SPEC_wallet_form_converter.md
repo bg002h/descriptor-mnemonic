@@ -82,112 +82,118 @@ travels unchanged into the plan and the seating engine's module comment.
 ## NORMATIVE — the seating engine (the core, and the funds-shaped part)
 
 Given a keyless policy (from a card set or a template) and a set of keys
-(from mk1 cards or flags), seating produces a total assignment slot→key or
-REFUSES. Rules, in order:
+(from mk1 cards or flags), seating produces a total assignment slot→key
+or REFUSES. **Two phases (r3 I2): PHASE A runs before any assignment is
+chosen (decode, stub triage, origin matching, ambiguity); PHASE B runs
+after a total assignment exists (wallet-id computation, stub
+confirmation, oracles, output).** No check is cited before its phase can
+compute it.
 
-1. **Stub check — SHAPE binding, stated honestly (r1 C1's ruling).** The
-   mk1 `policy_id_stubs` field is derived from the keyless template id
-   (WalletDescriptorTemplateId), which is invariant to keys, origins and
-   fingerprints — measured: two different wallets minted the same stub
-   `a235ee75`. So the stub proves only *"this card was minted against a
-   policy of this SHAPE"*. The check: at least one of the card's stubs
-   (the field is `Vec<[u8;4]>`, r1 I1 — any-of) matches the TOP 4
-   BYTES of the policy card's 16-byte template id (r2 M2; both printed
-   by `md inspect`). A mismatch refuses — *"key card `<prefix>` was
-   minted for a different policy SHAPE (stub `xxxx`; this template is
-   `yyyy`)"* — catching cross-shape mistakes cheaply. **What it does NOT
-   catch, and the spec says so where the operator reads it: a foreign
-   card from a same-shape wallet seats cleanly.** That residual is
-   IDENTICAL to physical-card restore and is caught the same way: the
-   address-0 verification in rule 6. CE-1 (the reviewer's same-stub
-   foreign card) ships as a PERMANENT vector row asserting exactly this
-   accepted behaviour — it seats, and the derived address differs from
-   the intended wallet's (r1 M6: the sharing case, not the trivial one).
-   **TWO-TIER, because the stub is form-aware (r2 I1, measured):** a
-   card minted `--from-md1 <keyed card>` carries a WalletPolicyId stub
-   (`232214e4` for the fixture), a keyless-minted card the template-id
-   (`5b48af35`) — SAME wallet, two stubs, so a flat template-id check
-   would refuse a legitimate keyed-mint card with a false message. Rule
-   1 therefore accepts a card whose stub matches EITHER the policy
-   card's template-id (shape tier — CE-1's limitation applies) OR,
-   verified POST-SEAT, the composed wallet's WalletPolicyId
-   (true-binding tier — matching it means bound to THIS wallet, CE-1
-   impossible for that card; matching neither refuses). The refusal
-   names which tier failed. CE-1's accepted-limitation row is scoped to
-   shape-tier cards only.
-   The true-binding upgrade (mint-time keyed-WalletPolicyId stubs) is
-   FILED as `stub-keyed-wallet-binding-at-mint` (primary: mk's
-   FOLLOWUPS; companion: this repo's) — and per the operator ruling
-   recorded there (2026-08-30: no engraved plates exist besides test
-   plates; backward compatibility does not matter until v1.0), it is
-   compat-FREE if landed pre-v1.0. When it lands, this rule tightens
-   and CE-1's row flips to a refusal, in lockstep. Out of scope here.
-2. **Seat by declared origin, compared as DECODED VALUES (r1 I7).**
-   Slot `@i` declares an origin; a key seats at `@i` iff its decoded
-   (fingerprint, path) equals the slot's decoded declaration. Never
-   string comparison: `h`/`'`, `m/` prefix presence, and fingerprint
-   case are measured to vary across md's and mk's own outputs.
-3. **Ambiguity: seat freely ONLY where assignment provably cannot
-   change the wallet; otherwise REFUSE (r2 C1 — the r1-fold's
-   "supplied order + warning" was measured minting THREE different
-   wallets from three input orders, and a taproot internal key belongs
-   to no group so no warning even fires; a silent guess in an
-   oracle-less case is the wrong-wallet direction and is out).**
-   Order-INSENSITIVE positions: slots within one `sortedmulti` or
-   `sortedmulti_a` group (sorted at spend time by construction —
-   permutation-invariance measured for `sortedmulti`; a vector row
-   proves it for `sortedmulti_a` before the rule relies on it).
-   Order-SENSITIVE positions: `multi`/`multi_a` groups, taproot
-   internal keys, and any position not in a sorted group (r2 I3: the
-   classification covers all four script forms plus the internal-key
-   position, exhaustively — a position the classifier cannot place is
-   itself a refusal). Fingerprint-less or shared-origin cards matching
-   order-sensitive positions REFUSE, naming the cards, the positions,
-   and the remedy: *"these N cards fit these N positions in more than
-   one way and each way is a different wallet; the cards carry no
-   tiebreak — re-mint with fingerprints, or state the assignment
-   explicitly with --seat '@i=<card prefix>'"*. `--seat` is the
-   explicit escape hatch: the operator asserts intent; the tool never
-   guesses it. Identical declared origin with DIFFERENT xpubs on
-   fingerprint-bearing cards refuses (impossible from one master — r1
-   confirmed). Identical (origin, xpub) pairs deduplicate to one key
-   AND the collapse is assumed on the policy side too (r2 M3): a policy
-   declaring two distinct slots with the same (origin, xpub) — foreign
-   encoders can — is normalised to the collapsed form before seating,
-   so the dedupe never manufactures an unfilled-slot refusal; a vector
-   row pins the pair (see repeated-slot rule in P3).
-4. **Privacy-preserving cards** (no fingerprint) seat by path under rule
-   3's group rules; refuse only when the path matches slots in more than
-   one non-interchangeable group, naming `--privacy-preserving` as the
-   reason the tiebreak is unavailable.
-5. **Completeness is total.** Every slot filled and every supplied key
-   seated. An unfilled slot refuses naming the slot and its declared
-   origin; an unseated leftover key refuses naming the card AND its
-   stub (r1 M7 — the drawer-scan operator's question is "which wallet do
-   these extras belong to", and the stub is already decoded).
-6. **Post-seat verification — automated where an oracle exists, human
-   where none does (r1 M2).** For input D, the composed result's address
-   0 MUST equal the input descriptor's own derivation (automated; a
-   mismatch is an internal error, refuse loudly). For the split set,
-   when a keyed card of the same wallet is also supplied the two
-   compositions MUST agree (automated cross-check). Otherwise nothing
-   external exists: the output prints address 0 **on stderr** (stdout
-   remains the machine contract — descriptor only) with the standing
-   instruction *"compare against your wallet software before trusting"*.
-   The me §5.4 discipline, inherited.
+**THE PRINCIPLE (r3 C1, replacing per-position classification): a card
+set seats without operator input iff EVERY complete candidate assignment
+yields the SAME wallet.** The hazard unit is the assignment, not the
+position: two `sortedmulti_a` groups of different thresholds are each
+internally order-free, yet a card's choice BETWEEN them was measured
+giving three wallets — one placing a card in a 1-of-2 unilateral-spend
+leaf. Practically: cards and slots are grouped by declared origin
+(decoded values, rule A2); within one origin-equivalence class, free
+seating requires every candidate slot to lie in ONE sorted group
+(`sortedmulti`/`sortedmulti_a` — permutation-invariance measured for
+the former, a vector row proves the latter before the rule relies on
+it). Candidates spanning two groups (sorted or not), touching any
+`multi`/`multi_a` position, a taproot internal key, or any position the
+classifier cannot place (r2 I3 — the classification is exhaustive over
+pk/pkh fragments, sorted groups, unsorted groups, and the internal-key
+position; unplaceable refuses) ⇒ the ambiguity refusal.
+
+### PHASE A
+
+**A1 — stub TRIAGE (records, never refuses alone — r3 C3).** Decode
+each card's `policy_id_stubs` (`Vec<[u8;4]>`, any-of). A stub matching
+the TOP 4 BYTES of the policy card's 16-byte template id marks the card
+*shape-matched*. A stub matching nothing yet is *unconfirmed* — NOT
+refused, because legitimate mismatches are measured: a card minted
+`--from-md1 <keyed card>` carries a WalletPolicyId-rooted stub
+(`232214e4` on the fixture) that matches neither the template id
+(`5b48af35`) nor the WalletPolicyId the composer will compute under the
+split set's own origin declarations (`ced22709`) — same wallet, three
+values, all legitimate (WalletPolicyId is origin-sensitive and this
+fixture carries two origin declarations). Final stub disposition is
+B1's.
+
+**A2 — seat by declared origin, compared as DECODED VALUES.** Slot
+declarations and card origins compare as decoded (fingerprint, path)
+values — never strings (`h`/`'`, `m/`-prefix and fingerprint case are
+measured to vary across the tools' own outputs). A card seats at a slot
+iff the values match; fingerprint-less cards match fingerprint-free
+declarations by path.
+
+**A3 — ambiguity: the PRINCIPLE decides.** Where all of an
+origin-class's candidates lie in one sorted group, seat in supplied
+order (any order is the same wallet — that is the proof obligation,
+carried by vector rows). Everywhere else, ambiguity REFUSES, naming the
+cards (by full chunk-set id), the candidate positions, and both
+remedies: re-mint with per-slot fingerprints, or `--seat` (A5).
+Identical declared origin with DIFFERENT xpubs on fingerprint-bearing
+cards refuses (impossible from one master — r1). Identical
+(origin, xpub) pairs collapse to one key, on the policy side too
+(r2 M3), pinned by a row.
+
+**A4 — completeness is total.** Every slot filled, every supplied key
+seated. Unfilled slot: refuse naming the slot and its declared origin.
+Leftover key: refuse naming the card AND its stub (the drawer-scan
+operator's question is "which wallet do these extras belong to").
+
+**A5 — `--seat`, defined (r3 C4).** `--seat '@i=<chunk-set-id>'`
+(repeatable) resolves A3 ambiguity ONLY: the referenced card must
+already origin-match slot i under A2 and be part of the refused
+ambiguity — `--seat` can never place a card A2 would not, never
+suppresses A1/B1 stub dispositions, and never fills A4 gaps. The
+chunk-set id is the card's full decoded set id — the exact label the A3
+refusal printed, never a string prefix (r3 measured prefix collisions
+at 6 characters on the 11-card fixture). Unknown id, ambiguous id, or a
+`--seat` contradicting A2 refuses by name. Vector rows: an A3 refusal
+resolved by `--seat`; a `--seat` contradicting A2 refused (r3 M2).
+
+### PHASE B
+
+**B1 — stub DISPOSITION.** With the assignment total, compute the
+composed wallet's WalletPolicyId under the supplied origin
+declarations. Per card: stub matches the WalletPolicyId top-4 ⇒
+*wallet-confirmed* (true binding — a foreign card cannot reach this
+tier; CE-1 impossible for it). Else stub shape-matched (A1) ⇒
+*shape-confirmed* (CE-1's accepted limitation applies). Else ⇒ a
+WARNING, never a hard refusal (r3 C3): *"card `<set-id>`'s stub
+matches neither this policy's shape id nor the composed wallet id —
+minted under different origin metadata (legitimate), or a different
+wallet; verify address 0 before trusting."* Both readings named, the
+human check directed. Vector rows pin all three dispositions.
+
+**B2 — oracles where they exist, the human where none does.** Input D:
+the composed result must match the input descriptor's own derivation
+(automated; mismatch is an internal error). Split set WITH a keyed card
+supplied: the two compositions must be SPEND-EQUAL (the acceptance's
+relation (a); the checker ships in P2). Otherwise: address 0 printed on
+stderr (stdout stays the machine contract) with the standing
+instruction *"compare against your wallet software before trusting"* —
+this SURFACES the CE-1 residue for human comparison; nothing in this
+engine can catch it alone (r3 M1 — "caught" was an overstatement and is
+withdrawn).
 
 Every rule above ships as executable vector rows in the SAME commit as
-its implementation — disjuncts as rows, not prose (the S2
-classifier-precision lesson). Acceptance 2 (mutation-shaped: every
-refusal's row FAILS if the refusal is removed) covers each, INCLUDING
-CE-1's accepted-limitation row.
+its implementation — disjuncts as rows, not prose. Acceptance 2
+(mutation-shaped) covers each, including CE-1's accepted-limitation row
+(scoped to cards that are not wallet-confirmed).
 
 ## The three pieces
 
 **P1 — per-slot origins on the read side: DOCUMENT and DEFINE, not build
-(r1 I8 — the premise was wrong).** Inline template origins
-(`[fp/path]@i/...`) already work on `md descriptor`/`md address` —
-measured on all 11 pathological slots. What is missing is (a) the
+(r1 I8; premise corrected again by r3 I1).** Inline template origins
+already work on `md descriptor`/`md address` — measured on all 11
+pathological slots — in the spelling md actually parses: a PATH-only
+inline origin with `'` hardening (`@i` plus the template's origin
+note); the bracketed `[fp/path]@i/...` spelling does NOT parse and is
+not the mechanism. What is missing is (a) the
 origin-notated `--key '@i=[fp/path]xpub'` FLAG form (today parsed as a
 bare xpub — measured refusal), and (b) a defined PRECEDENCE. Corrected
 per r2 I2: an inline template origin carries a PATH only, never a
@@ -211,7 +217,10 @@ exists the message points at `--from-mk1`.
 `md address` accept `--from-mk1 <STRING>` (repeatable; or
 `--from-mk1-file <FILE>`, one string per line) TOGETHER WITH keyless md1
 phrases. The seating engine runs; descriptor to stdout, notes and the
-rule-6 address to stderr. The keyed-card output needs no new surface:
+B2 address to stderr. **P2 also ships the SPEND-EQUALITY checker**
+(r3 M3 — it is B2's split-vs-keyed "agree" and acceptance 1's relation
+(a); a reader scoping P2 from this paragraph budgets it here) and the
+`--seat` flag (A5). The keyed-card output needs no new surface:
 the spec documents the two-command bridge (compose → `md encode --key`),
 sugar filed only if the bridge proves annoying.
 
@@ -286,38 +295,37 @@ cross-repo mirror rule applies only if R0 finds an mk-side action.
 
 ## Acceptance
 
-1. **The pathological round trip, with equality defined STRUCTURALLY
-   (r2 C2 — address-sampling equality admitted two constructed
-   different-wallet pairs: an origin-variant unsignable pair, and
-   `sortedmulti(2,K1,K3)` vs `multi(2,K3,K1)` which first diverge at
-   chain-0 index 2; addresses are a CONFIRMATION, never the
-   definition).** WALLET EQUALITY :=
-   (a) decoded templates structurally equal after canonicalisation
-   (same script forms, same groups, same timelocks/hashlocks, same slot
-   arity), AND (b) the slot→key assignments equal as DECODED VALUES
-   (per slot: same xpub bytes, same origin fingerprint+path, same
-   use-site paths). Addresses 0 and 1 on both chains are then asserted
-   as a redundant confirmation. This definition has an owning piece:
-   the equality checker ships inside P2 (it IS rule 6's split-vs-keyed
-   "agree" — r2 I6), and the D-input oracle of rule 6 belongs to P3.
-   The walk: the 36-string split set and the 22-chunk keyed card
-   compose to EQUAL wallets by this definition, both matching the
-   original journey derivation's addresses (`bc1qkuknuy6…` receive 0);
-   `md decompose` of a depth-consistent coordinator-grade concrete
-   descriptor — PINNED (r2 M5): the wallet built from the first three
-   lines of the pathological fixture's `keys.txt` (depth-4 keys with
-   4-component origins; verified end to end by r2) — emits a template +
-   key file that `md encode --key` + `mk encode --keys` accept and that
-   re-compose to an EQUAL wallet.
-   (The keyed-card-derived descriptor stays excluded from the
-   decompose leg BY NAME — depth-0 re-serialised keys, r1 C3.)
-2. Every seating refusal in the NORMATIVE section demonstrated by a
-   vector row that FAILS if the refusal is removed — including CE-1's
-   accepted-limitation row (a same-stub foreign card seats and the
-   derived address differs; the row asserts BOTH halves).
-3. The stub-shape refusal proven with a cross-shape foreign card, AND
-   the same-shape case proven to seat (r1 M6: the trivial mismatch
-   alone passes in both worlds and tests nothing).
+1. **The pathological round trip, with TWO equality relations (r3 C2 —
+   one relation was doing two irreconcilable jobs: the fixture's split
+   set and keyed card declare DIFFERENT legitimate origin metadata, so
+   an origin-including relation fails nine of eleven slots on the
+   spec's own walk).**
+   **SPEND-EQUALITY** (cross-form): canonicalised template structures
+   equal AND per-slot xpub values and use-site paths equal — origin
+   metadata EXCLUDED (it is seating/signing guidance, not script
+   content). **ROUND-TRIP-EQUALITY** (decompose∘compose): spend-equality
+   AND origin metadata preserved exactly.
+   The walk: (a) the 36-string split set and (b) the 22-chunk keyed
+   card compose to SPEND-EQUAL wallets, both matching the journey
+   derivation's addresses (`bc1qkuknuy6…` receive 0) as confirmation;
+   (c) `md decompose` of the PINNED depth-consistent fixture (r2 M5:
+   the wallet built from the first three lines of the pathological
+   `keys.txt`) emits a template + key file that `md encode --key` +
+   `mk encode --keys` accept and that re-compose ROUND-TRIP-EQUAL.
+   (The keyed-card-derived descriptor stays excluded from the decompose
+   leg BY NAME — depth-0 re-serialised keys, r1 C3.)
+2. Every seating refusal AND every B1 disposition demonstrated by a
+   vector row that FAILS if the behaviour is removed — including CE-1's
+   accepted-limitation row, scoped to cards that are not
+   wallet-confirmed (r3 I3): a same-stub foreign card seats and the
+   derived address differs; the row asserts BOTH halves.
+3. The three B1 dispositions each proven on a fixture (r3 I3, replacing
+   the r2 wording C3 falsified): a cross-shape card draws the
+   unconfirmed WARNING (not a refusal); a same-shape shape-tier card
+   seats; a keyed-mint card whose declarations match the composition is
+   wallet-confirmed; and the fixture's own keyed-mint card
+   (`232214e4` vs `ced22709`) draws the warning with both readings
+   named — the C3 counterexample as a permanent row.
 4. Reproduction notes pinned once: the keyed card is 22 strings (21×86
    chars + one 59-char tail, r1 N2); the composed keyed-card descriptor
    is 1,648 characters (1,649 bytes with trailing newline, r1 M1).
