@@ -12,6 +12,12 @@ this document was re-verified against this tree on 2026-08-31.
 
 (`descriptor-key-bracket-path-as-a-last-resort-source`)
 
+**RULED 2026-08-31 (operator, in the walk): YES — option 1.** The
+bracket becomes a last-resort PATH SOURCE. Precedence: inline template
+origin > `--path` > `--key` bracket; the bracket fills a slot only
+where nothing else spoke, and stays a cross-check (a disagreement
+still refuses) whenever they do. The spec binds this.
+
 Today (SPEC P1, folded from whole-diff r1 I1): the bracket path is a
 CHECK, never a source — paths come from the inline template origin,
 else the shared `--path`. Consequence, measured: a wallet whose slots
@@ -48,6 +54,10 @@ first try.
 
 (`sibling-toolkit-md-manual-lockstep-for-the-converter`, repo
 mnemonic-toolkit)
+
+**RULED 2026-08-31 (operator, in the walk): option 1.** The docs pass
+folds into this cycle's close-out phase — one cross-repo pass covers
+the converter surface plus this cycle's additions.
 
 The converter cycle added `md decompose` (with `--emit`, `--in`) and
 `--from-mk1`, `--from-mk1-file`, `--seat`, origin-notated `--key`, and
