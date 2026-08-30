@@ -1,0 +1,16 @@
+# PROVENANCE
+# Copied 2026-08-30 from
+#   /scratch/code/shibboleth/mnemonic-engrave/design/journeys/out/pathological/keys.txt
+# 11 BIP-380 origin-notated key records (3 masters), the material the 11 mk1 cards in
+# backup-strings.txt were minted from and the source for this cycle's synthetic cards.
+[73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf
+[73c5da0a/48'/0'/1'/2']xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk
+[73c5da0a/48'/0'/2'/2']xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR
+[73c5da0a/48'/0'/3'/2']xpub6E6Z3Ss5TXJYNJp4U1q3NZ3pCn82i7KXQAKUtNnzLJ3cCdchQeSdFvXemizaHUF7wNwRQAB8mPdoZhGHLiv49cWPtCnoJY3Az3E8JKxH9Mq
+[b8688df1/48'/0'/0'/2']xpub6FQya7zGhR92kacYsNnjreouvnHJMpXYsUXnW6NJJAJRCKsa26TzDy4LdnGhEurr3d6y1J8PJ7EEMKQp74XTqYvmGJNogYXSKDszYHtF8mX
+[b8688df1/48'/0'/1'/2']xpub6EAMBJLn1jiquajTsNRkZXU1oKnA4WJMNvcz4FRR4QmFKdfHxJVvfRLoysWfcc16AMTR4CoMD8UNjvs9JtbsLeuLwpTczgq8zuuERnp8YZF
+[b8688df1/48'/0'/2'/2']xpub6EGceQV5wHrRemjYkJykRWQefTvsNTw1Lr7JUpQTgaaWz2P6Cg75o3LktGoyMPshKbCqrgy2RXxAmkqBXkbyqPe52CnwA1LUnyBkNUuMhRt
+[b8688df1/48'/0'/3'/2']xpub6ELyn7moeEZ9hJ1HmSm6G5hAfgcCeTa71X9PzYJ39tHNUj93e9MaKb2tjAFrMFb94NMeTG7MW8dwxuhhnPhn5swY6r5dxZH6cyiuPd25AQ5
+[28645006/48'/0'/0'/2']xpub6DnEBNkSJKBYQmsbhS1sP9cNdtU5c9PLFGCjTJmxicxc13WB8zNNGQazabQpyFAGW5bV9tMko4uBxDxjUKL6dSAcx1tEbgEHtgSqyRsekh6
+[28645006/48'/0'/1'/2']xpub6F6gx8ZP9R3R3eYsU2PeS5EPJ4jN7Wbt9uwyHNXLoaJxQjNT92FGAfCNDjUDRhCHwzjfgDuqAZ7Gk9SugPRMa6A8PnzLVvnyEKBW9jHRGRp
+[28645006/48'/0'/2'/2']xpub6Dh4twkBRkzxDSau8FdhVY16jARGnPtfdRUk6LbePrGUGok6xE8SvGtaygCMLV7beB55YtzkR9dJoic9zYbYy3C7EKc2FGLkKoPT4mQUjPg

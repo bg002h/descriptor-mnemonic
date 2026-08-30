@@ -39,6 +39,19 @@ pub enum CliError {
     Compile(String),
     Mismatch(String),
     BadArg(String),
+    /// A refusal from the seating engine (SPEC "NORMATIVE — the seating
+    /// engine": A1-A5, B1-B2), including its input pipeline.
+    ///
+    /// ONE variant for the whole engine, deliberately: a seating refusal is
+    /// a statement about the CARD SET and the POLICY together, and the
+    /// message — which names cards by full chunk-set id, slots by index and
+    /// declared origin, and the remedies — is the contract the vector rows
+    /// pin. Splitting the taxonomy across variants would move it into the
+    /// type, where the rows would stop checking it.
+    ///
+    /// Exit code 1 (a content refusal), not 2 (a usage error): the flags
+    /// were spelled correctly; it is the material the engine declines.
+    Seat(String),
 }
 
 impl fmt::Display for CliError {
@@ -53,6 +66,7 @@ impl fmt::Display for CliError {
             CliError::Compile(m) => write!(f, "compile error: {m}"),
             CliError::Mismatch(m) => write!(f, "MISMATCH: {m}"),
             CliError::BadArg(m) => write!(f, "{m}"),
+            CliError::Seat(m) => write!(f, "seating refused: {m}"),
         }
     }
 }

@@ -1,13 +1,17 @@
-//! The seating engine (P2/A1-A5, B1-B2) — currently a skeleton.
+//! The seating engine (P2/A1-A5, B1-B2).
 //!
-//! C0 lands only this module doc comment, embedding plan section 1's
+//! C2 lands the engine under this doc comment; C0 landed the comment alone,
+//! embedding plan section 1's
 //! goal-and-gaps matrix per the operator's MATRIX-TRAVELS directive
 //! (2026-08-30): the table below is byte-identical to
 //! `design/IMPLEMENTATION_PLAN_wallet_form_converter.md` section 1, and
-//! to `design/SPEC_wallet_form_converter.md`'s copy. No engine code yet —
-//! A1 triage, A2 satisfaction, A3 matchings, A4 completeness, A5 `--seat`,
-//! B1 disposition, B2 oracles, the spend-equality checker and the input
-//! pipeline all land in C2.
+//! to `design/SPEC_wallet_form_converter.md`'s copy.
+//!
+//! ## Where each normative rule lives
+//!
+//! | SPEC rule | module |
+//! | --- | --- |
+//! | P2 input pipeline (A3(a): dedupe → group → reassemble) | [`input`] |
 //!
 //! ## 1. The surface: one matrix
 //!
@@ -38,3 +42,10 @@
 //! them. On C4 close, the ⚠/✗ cells this cycle owns flip to ✓ in every
 //! embedded copy in the same commit as the acceptance walk that proves
 //! them.
+
+// The engine's modules are reached from `main` only once step 7 lands the
+// `--from-mk1` surface (plan §3 C2). Until then the allow keeps
+// `clippy -D warnings` honest without hiding anything else; step 7's commit
+// removes it, exactly as C1 removed C0's.
+#[allow(dead_code)]
+pub mod input;
