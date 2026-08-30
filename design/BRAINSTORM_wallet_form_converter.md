@@ -18,9 +18,9 @@ Input forms (rows — any COMPLETE wallet expression) × outputs (columns):
 | in \ out | concrete descriptor | addresses | keyed card | keyless + mk1 cards |
 | --- | --- | --- | --- | --- |
 | **D** concrete descriptor | — | ✗ P3 | ✗ P3+bridge | ✗ P3 (the decomposer) |
-| **T** template + key flags | ⚠ P1 (shared-path only today) | ⚠ P1 | ✓ `md encode --key` (Divergent) | ✓ |
+| **T** template + key flags | ⚠ P1 (flag-form gap; inline template origins already work — r1 I8) | ⚠ P1 | ✓ `md encode --key` (Divergent) | ✓ |
 | **S** keyless card + mk1 strings | ✗ P2 (the seating engine) | ✗ P2 | ✗ P2+bridge | — |
-| **K** keyed card phrases | ✓ (`md descriptor`, round-tripped live) | ✓ | — | ✗ non-goal (first real need files it) |
+| **K** keyed card phrases | ✓ (round-tripped live) | ✓ | — | ✗ non-goal (first real need files it) |
 
 ✓ = works today, measured. ⚠/✗ = the gaps, each tagged with the spec
 piece that closes it (P1 per-slot origins read-side, P2 the seating
