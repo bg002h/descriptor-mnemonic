@@ -52,8 +52,16 @@ pub fn run(args: &[&str]) -> (i32, String, String) {
 /// "Bad ideas can be valid, but we don't want to support BIP forbidden
 /// wallets"). Asserted as a helper so no row can forget half of it.
 fn assert_bip388_wording(stderr: &str) {
+    // REVIEW-converter-c3-r1 M1: the former first disjunct
+    // ("forbidden by BIP 388") was subsumed by this one and made the helper
+    // look stricter than it is. What the helper enforces is exactly SPEC
+    // A3's diagnostic rule — cite BIP 388, say unsupported, never say
+    // invalid — and no more, because the disjoint-sets SHAPE2 row's message
+    // deliberately says BIP 388 PERMITS that shape (md's template surface is
+    // the limit there). Rows needing the stronger "forbidden by" phrase
+    // assert it themselves.
     assert!(
-        stderr.contains("forbidden by BIP 388") || stderr.contains("BIP 388"),
+        stderr.contains("BIP 388"),
         "refusal must cite BIP 388; got: {stderr}"
     );
     assert!(
