@@ -52,11 +52,13 @@ engine, P3 decompose).
 6. **Non-goals fenced**: `me --as md1` miniscript (S2-settled admission,
    own cycle); K→S splitting (no journey yet); any wire change.
 7. **Operator ruling (2026-08-30, verbatim): "Key reuse (meaning with
-   same keypath) isn't allowed."** Repeated (xpub, use-site path) is an
-   invalid wallet in both converter directions; the repeated-key
-   machinery (collapse/capacity/supply-twice, rounds r6-r8) is deleted
-   rather than repaired; fingerprint-bearing duplicate declarations are
-   invalid policies at the door; privacy-preserving same-path
+   same keypath) isn't allowed."** Repeated (xpub, use-site path) is
+   BIP-388-forbidden and UNSUPPORTED in both converter directions (see
+   the refinement below — technically valid, refused as policy); the
+   repeated-key machinery (collapse/capacity/supply-twice, rounds
+   r6-r8) is deleted rather than repaired; fingerprint-bearing
+   duplicate declarations are refused at the door as only fillable by
+   BIP-forbidden reuse; privacy-preserving same-path
    different-master slots remain the one legitimate same-path family.
    `md encode`'s acceptance of `@0,@0` templates is filed as an md-side
    question, not changed by this cycle.

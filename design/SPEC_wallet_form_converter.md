@@ -1,6 +1,7 @@
 # SPEC — the wallet-form converter (compose / decompose / per-slot origins)
 
-**Status: DRAFT — R0 rounds r1 (RED 3C/9I/8M/2N), r2 (RED 2C/6I/5M),
+**Status: R0 CLOSED GREEN at r9 (0C/0I/3M, Minors folded same day) —
+rounds r1 (RED 3C/9I/8M/2N), r2 (RED 2C/6I/5M),
 r3 (RED 4C/4I/4M — the wholesale seating-engine rewrite), r4 (RED
 1C/2I/4M), r5 (RED 1C/1I/2M — the executable-principle rewrite), r6
 (RED 0C/3I), r7 (RED 1C/2I — capacity deleted), r8 (RED 1C/1I/2M —
@@ -200,7 +201,12 @@ sets ({M,N} ∩ {P,Q} = ∅) — and BIP 388's invalid-example list
 includes `sh(multi(1,@0/**,@0/**))` ("Repeated keys with the same
 path expression") verbatim. The converter refuses BOTH forbidden
 shapes in BOTH directions — compose refuses to emit, decompose refuses
-as input, each with a named row — and the diagnostic says "forbidden
+as input. Rows: shape (1) both directions; shape (2) DECOMPOSE side
+only (rust-miniscript parses all three forms, so that refusal is
+reachable and testable), while the compose side has no row — md's
+parser refuses shape (2) upstream, so a compose-side row would pass in
+both worlds (r9 M2) and the refusal is documented, not row-pinned. The
+diagnostic says "forbidden
 by BIP 388" / "unsupported", never "invalid". Measured scope note:
 md's template surface is NARROWER than BIP 388 here and currently
 INVERTS it — `md descriptor` refuses the BIP-LEGAL disjoint form
@@ -331,7 +337,11 @@ exists the message points at `--from-mk1`.
 `md address` accept `--from-mk1 <STRING>` (repeatable; or
 `--from-mk1-file <FILE>`, one string per line) TOGETHER WITH keyless md1
 phrases. The seating engine runs; descriptor to stdout, notes and the
-B2 address to stderr. **P2 also ships the SPEND-EQUALITY checker**
+B2 address to stderr. **P2's input pipeline is normative as stated in
+A3(a): dedupe byte-identical strings, THEN group by declared chunk-set
+id, THEN reassemble under `mk decode` semantics — a reader scoping P2
+from this paragraph budgets that ordering here (r9 M3).** **P2 also
+ships the SPEND-EQUALITY checker**
 (r3 M3 — it is B2's split-vs-keyed "agree" and acceptance 1's relation
 (a); a reader scoping P2 from this paragraph budgets it here) and the
 `--seat` flag (A5). The keyed-card output needs no new surface:
