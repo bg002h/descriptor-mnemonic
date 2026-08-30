@@ -393,3 +393,185 @@ fn v_precedence_shared_path_fills_only_the_slot_without_an_inline_origin() {
         "slot @1 (has an inline origin) must keep it, not the shared --path: {stdout}"
     );
 }
+
+// ─── V-PATHEFF (REVIEW-converter-whole-diff-r1 I1) ──────────────────────
+//
+// P1's agreement rule was written as bracket-vs-INLINE. The defect is
+// bracket-vs-EFFECTIVE: the bracket path must agree with whatever source
+// actually WINS for that slot, and when NOTHING wins the bracket path is
+// silently discarded.
+//
+// Measured at 9d0c30dc, both manifestations:
+//
+//   A. TRUNCATION. `md decode` prints a template with no inline origins (the
+//      origins go to a stderr note), and the operator's keys are in the
+//      `[fp/path]xpub` form `md decompose --emit keys` and `mk encode --keys`
+//      both use. Combining them emitted `[73c5da0a]` on a depth-0 xpub for
+//      every slot -- a BIP-380 statement that the key IS master 73c5da0a,
+//      exit 0, no warning. Ground truth for that wallet is
+//      `[73c5da0a/48'/0'/0'/2']` etc.
+//   B. SILENT OVERRIDE. With `--path` supplied, a bracket path never enters
+//      `inline_declared`, so `--path` overwrote it: slot @1 declared
+//      `[73c5da0a/48'/0'/0'/2']` for a key the operator had explicitly said
+//      was at `48'/0'/1'/2'`. Worse than truncation -- it looks complete and
+//      it is false. And it is a silent override on the PATH datum, which is
+//      exactly what P1 forbids on the sibling FINGERPRINT datum.
+//
+// Addresses are unaffected either way (both forms derive the same address);
+// what breaks is SPENDING, because a signer handed the wrong origin derives
+// the wrong child and never matches its key.
+
+/// A template whose single slot declares NO inline origin, so `--path` is the
+/// source that wins for it.
+const PATHLESS_SINGLE_SLOT: &str = "wpkh(@0/<0;1>/*)";
+
+#[test]
+fn v_patheff_bracket_path_disagreeing_with_shared_path_refuses() {
+    let x0 = xpub_at("48'/0'/0'/2'");
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            PATHLESS_SINGLE_SLOT,
+            "--key",
+            &format!("@0=[deadbeef/48'/0'/0'/2']{x0}"),
+            "--path",
+            "84'/0'/0'", // the source that WINS, and it disagrees
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "the shared --path silently overrode the --key bracket path: {}",
+        stdout_of(&out)
+    );
+    let err = stderr_of(&out);
+    for needle in ["@0", "48'/0'/0'/2'", "84'/0'/0'", "--path"] {
+        assert!(
+            err.contains(needle),
+            "the refusal must name the slot, BOTH paths and which source wins; \
+             missing {needle}: {err}"
+        );
+    }
+}
+
+#[test]
+fn v_patheff_bracket_path_agreeing_with_shared_path_succeeds() {
+    // The control that keeps the row above from being a blanket refusal:
+    // agreement is not an override, exactly as for the inline pair.
+    let x0 = xpub_at("48'/0'/0'/2'");
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            PATHLESS_SINGLE_SLOT,
+            "--key",
+            &format!("@0=[deadbeef/48'/0'/0'/2']{x0}"),
+            "--path",
+            "48'/0'/0'/2'",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "stderr: {}", stderr_of(&out));
+    assert!(
+        stdout_of(&out).contains("[deadbeef/48'/0'/0'/2']"),
+        "got: {}",
+        stdout_of(&out)
+    );
+}
+
+#[test]
+fn v_patheff_bracket_path_with_no_winning_source_refuses_instead_of_truncating() {
+    let x0 = xpub_at("48'/0'/0'/2'");
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            PATHLESS_SINGLE_SLOT, // no inline origin
+            "--key",
+            &format!("@0=[deadbeef/48'/0'/0'/2']{x0}"),
+            // and no --path: nothing supplies a path for @0
+        ])
+        .output()
+        .unwrap();
+    let stdout = stdout_of(&out);
+    assert!(
+        !stdout.contains("[deadbeef]"),
+        "md emitted a fingerprint-only origin for a key whose path it was told: {stdout}"
+    );
+    assert!(
+        !out.status.success(),
+        "the bracket path was silently discarded: {stdout}"
+    );
+    let err = stderr_of(&out);
+    for needle in ["@0", "48'/0'/0'/2'", "--path"] {
+        assert!(
+            err.contains(needle),
+            "the refusal must name the slot, the path it was given and the \
+             channels that can state it; missing {needle}: {err}"
+        );
+    }
+    assert!(
+        err.contains("inline") || err.contains("template"),
+        "the refusal must name the inline template origin as the other \
+         channel: {err}"
+    );
+}
+
+/// THE JOURNEY, end to end: `md decode` hands over a pathless template, the
+/// operator's key file is in `[fp/path]xpub` form, and the three slots sit at
+/// three DIFFERENT accounts -- so `--path`, which is shared, cannot express
+/// this wallet at all. Before I1 this composed at exit 0 with three
+/// `[fp]`-only origins. It must now say so rather than emit them.
+#[test]
+fn v_patheff_the_divergent_origin_journey_refuses_rather_than_emitting_false_origins() {
+    let x0 = xpub_at("48'/0'/0'/2'");
+    let x1 = xpub_at("48'/0'/1'/2'");
+    let x2 = xpub_at("48'/0'/2'/2'");
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",
+            "--key",
+            &format!("@0=[73c5da0a/48'/0'/0'/2']{x0}"),
+            "--key",
+            &format!("@1=[73c5da0a/48'/0'/1'/2']{x1}"),
+            "--key",
+            &format!("@2=[73c5da0a/48'/0'/2'/2']{x2}"),
+        ])
+        .output()
+        .unwrap();
+    let stdout = stdout_of(&out);
+    assert!(
+        !stdout.contains("[73c5da0a]"),
+        "the truncated origin shipped: {stdout}"
+    );
+    assert!(
+        !out.status.success(),
+        "exit 0 with a false origin: {stdout}"
+    );
+}
+
+/// A bracket carrying a fingerprint and NO path states nothing about the
+/// path, so there is nothing to agree or disagree about and the slot still
+/// composes on the shared `--path`. Without this row the fix above could be
+/// a blanket "any bracket needs a path source".
+#[test]
+fn v_patheff_a_fingerprint_only_bracket_is_unaffected() {
+    let x0 = xpub_at("48'/0'/0'/2'");
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            PATHLESS_SINGLE_SLOT,
+            "--key",
+            &format!("@0=[cafebabe]{x0}"),
+            "--path",
+            "48'/0'/0'/2'",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "stderr: {}", stderr_of(&out));
+    assert!(stdout_of(&out).contains("[cafebabe/48'/0'/0'/2']"));
+}

@@ -57,6 +57,7 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
             template,
             args.keys,
             args.fingerprints,
+            args.path,
             ctx,
             args.network,
         )?;
@@ -106,6 +107,7 @@ fn resolve_keys_fingerprints_and_precedence(
     template: &str,
     keys: &[String],
     fingerprints: &[String],
+    path: Option<&str>,
     ctx: ScriptCtx,
     network: bitcoin::Network,
 ) -> Result<ResolvedKeysAndFingerprints, CliError> {
@@ -131,14 +133,44 @@ fn resolve_keys_fingerprints_and_precedence(
     }
     let inline_declared: BTreeSet<u8> = inline_paths.keys().copied().collect();
 
-    // V-PATHAGREE: an origin-notated --key path is checked against the
-    // slot's inline template path ONLY when BOTH exist. A key bracket with
-    // no path (a bare @i=XPUB, or [fp]xpub with no path steps) has nothing
-    // to agree or disagree about: parse_key_with_origin represents "no path
-    // given" as an empty DerivationPath. There is no template or bracket
-    // syntax for an explicitly-empty-but-present path (C0's parser refuses a
-    // bare trailing slash as BadOrigin before it ever reaches here), so this
-    // is not a real ambiguity.
+    // V-PATHAGREE / V-PATHEFF: an origin-notated --key path is checked
+    // against the path source that WINS for its slot.
+    //
+    // A key bracket with no path (a bare @i=XPUB, or [fp]xpub with no path
+    // steps) has nothing to agree or disagree about: parse_key_with_origin
+    // represents "no path given" as an empty DerivationPath. There is no
+    // template or bracket syntax for an explicitly-empty-but-present path
+    // (C0's parser refuses a bare trailing slash as BadOrigin before it ever
+    // reaches here), so this is not a real ambiguity.
+    //
+    // WHICH SOURCE WINS is exactly what apply_path_override_per_slot decides:
+    // the inline template origin for the slots that declared one, the shared
+    // --path for the rest. REVIEW-converter-whole-diff-r1 I1: the check used
+    // to compare against the INLINE path only, so the two cases below were
+    // unguarded --
+    //
+    //   * bracket vs --path. `--path` fills every slot not in
+    //     `inline_declared`, and a bracket path never enters that set, so
+    //     --path silently OVERRODE it. Measured: slot @1 declared
+    //     [73c5da0a/48'/0'/0'/2'] for a key the operator had said was at
+    //     48'/0'/1'/2'. A silent override on the path datum is precisely what
+    //     P1 forbids on the fingerprint datum.
+    //   * bracket with NO winning source. Nothing filled the slot, so md
+    //     composed it with no origin path at all -- and a slot carrying a
+    //     fingerprint renders as `[fp]`, which BIP-380 reads as "this key IS
+    //     master fp". Measured on the md decode -> md descriptor journey: three
+    //     `[73c5da0a]` origins on depth-0 xpubs, exit 0, no warning.
+    //
+    // Refusing the second case rather than warning follows the same rule the
+    // rest of P1 does: never emit an origin md already knows is incomplete.
+    // Whether the bracket should instead become a last-resort path SOURCE is
+    // an accepting-on-input widening, filed for the operator rather than
+    // decided here (design/FOLLOWUPS.md,
+    // `descriptor-key-bracket-path-as-a-last-resort-source`).
+    let shared_path = match path {
+        Some(arg) => Some(crate::parse::path::parse_path(arg)?),
+        None => None,
+    };
     for ok in &origin_keys {
         if ok.path.as_ref().is_empty() {
             continue;
@@ -150,6 +182,42 @@ fn resolve_keys_fingerprints_and_precedence(
                      template's inline origin path `{}` for this slot (agreement \
                      is required; the --key path never overrides the template)",
                     ok.i, ok.path, inline
+                )));
+            }
+            continue;
+        }
+        match &shared_path {
+            // Agreement is not an override, exactly as for the inline pair.
+            Some(shared) if &ok.path == shared => {}
+            Some(shared) => {
+                return Err(CliError::Mismatch(format!(
+                    "@{i}: origin-notated --key path `{bracket}` disagrees with \
+                     --path `{shared}`. The template declares no inline origin for \
+                     @{i}, so --path is the source that WINS for this slot and the \
+                     descriptor would carry `{shared}`; the --key bracket path is \
+                     never itself a source. Agreement is required — neither side \
+                     silently overrides the other.",
+                    i = ok.i,
+                    bracket = ok.path,
+                )));
+            }
+            None => {
+                let fp = ok
+                    .fingerprint
+                    .map(fp_hex)
+                    .unwrap_or_else(|| "fingerprint".to_string());
+                return Err(CliError::Mismatch(format!(
+                    "@{i}: origin-notated --key states path `{bracket}`, but nothing \
+                     supplies a path for @{i}: the template declares no inline origin \
+                     for it and no --path was given. The --key bracket path is never \
+                     itself a source, so md would compose @{i} with no origin path at \
+                     all and render it `[{fp}]` — BIP-380 for \"this key IS master \
+                     {fp}\", which it is not, and a signer handed that origin derives \
+                     the wrong child. State the path where md can use it: inline in \
+                     the template (`@{i}/{bracket}/…`), or with --path when every slot \
+                     lacking an inline origin shares it.",
+                    i = ok.i,
+                    bracket = ok.path,
                 )));
             }
         }

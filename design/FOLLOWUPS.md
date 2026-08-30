@@ -2343,3 +2343,49 @@ and freeze the branch for the window. C4 did not make that edit: an
 implementer editing the instructions it is itself operating under is a
 change the operator should make deliberately, not a side effect of a
 close-out phase.
+
+### `descriptor-key-bracket-path-as-a-last-resort-source` — should an origin-notated `--key`'s bracket path become a PATH SOURCE when nothing else supplies one? (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — operator decision**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, folding
+REVIEW-converter-whole-diff-r1 I1. Severity **Minor** (the defect I1
+named is closed; what remains is a widening, not a gap).
+
+SPEC P1 rules the bracket path a CHECK and never a source: paths come
+from the inline template origin, else the shared `--path`. I1 measured
+what that leaves the operator with on the most natural journey —
+`md decode` prints a template with no inline origins (they go to a
+stderr note), and the key material is in the `[fp/path]xpub` form both
+`md decompose --emit keys` and `mk encode --keys` use. For a wallet
+whose slots sit at DIFFERENT accounts (`48'/0'/0'/2'`, `48'/0'/1'/2'`,
+`48'/0'/2'/2'`) the shared `--path` cannot express it at all, and the
+inline origin is not in the operator's hand. So the T row cannot
+compose that wallet.
+
+**The fold made this a REFUSAL, not a source**, because that was the
+change the review's finding earned: md was emitting an origin it knew
+was incomplete, and refusing is strictly better than that. Turning the
+bracket into a last-resort source is a different decision — it widens
+what md accepts, and the md1 narrow-paths ruling (F-417, operator
+2026-08-28) is that widening the accepted surface for a use-site path
+is the operator's call, not an implementer's.
+
+**The shape of the decision, so it is cheap to take.** Precedence would
+become: inline template origin > `--path` > `--key` bracket. Agreement
+checks are unchanged (the bracket would only fill a slot where nothing
+else spoke). Cost is one arm in
+`resolve_keys_fingerprints_and_precedence` plus a per-slot override in
+`apply_path_override_per_slot`, which already takes a per-slot set.
+The alternative that needs no ruling at all is a documentation line
+telling the operator to paste the origins into the template inline —
+`md decode`'s stderr note already prints them.
+
+Reproduction (refuses today, by design):
+
+```
+$ md descriptor --template "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))" \
+    --key "@0=[73c5da0a/48'/0'/0'/2']<xpub0>" \
+    --key "@1=[73c5da0a/48'/0'/1'/2']<xpub1>" \
+    --key "@2=[73c5da0a/48'/0'/2'/2']<xpub2>"
+md: MISMATCH: @0: origin-notated --key states path `48'/0'/0'/2'`, but nothing
+supplies a path for @0 …
+```

@@ -270,11 +270,18 @@ fn t_row_one_key_in_two_slots_is_refused_by_address() {
 
 /// The origin-notated two-slot form the review measured composing with a
 /// checksum (`#xn0gcxt8`) — same defect, reached through C1's `--key` bracket.
+///
+/// The template carries INLINE origins here, unlike the review's command,
+/// which used the pathless form. That is deliberate: the I1 fold in the same
+/// review makes a bracket path with no winning source a refusal in its own
+/// right, so the pathless spelling would stop at THAT gate and this row would
+/// no longer measure key reuse. Both spellings refuse; this one refuses for
+/// the reason the row is named for.
 #[test]
 fn t_row_one_key_in_two_slots_is_refused_through_the_origin_notated_key() {
     let out = compose(
         "descriptor",
-        "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*))",
+        "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))",
         &[
             &format!("@0=[73c5da0a/48'/0'/0'/2']{K0}"),
             &format!("@1=[73c5da0a/48'/0'/0'/2']{K0}"),

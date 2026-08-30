@@ -334,8 +334,20 @@ origins where present, else shared `--path`, else refuse for
 non-canonical wrappers (today's rule); fingerprints come from
 `--fingerprint @i=` or the origin-notated `--key` form, and when BOTH
 name slot i they must agree (mismatch refuses — never silent
-override). An origin-notated `--key` path must agree with the slot's
-inline path when both exist. Two refusal-message fixes ride here: the inline-origin parse path
+override). An origin-notated `--key` path must agree with the path
+source that WINS for its slot — the inline template origin where the
+slot declares one, else the shared `--path` — and a slot with NEITHER
+refuses rather than discarding the bracket path, naming the inline
+origin and `--path` as the channels that can state it.
+**Post-GREEN fold, REVIEW-converter-whole-diff-r1 I1, measured
+2026-08-30:** this sentence bound bracket-vs-INLINE only, and the two
+cases it left out both shipped at exit 0 — `--path` silently OVERRODE a
+bracket path (slot @1 declared `[73c5da0a/48'/0'/0'/2']` for a key the
+operator had said was at `48'/0'/1'/2'`), and a bracket path with no
+source at all emitted a truncated `[73c5da0a]` origin on a depth-0
+xpub, which BIP-380 reads as "this key IS master 73c5da0a". Whether the
+bracket should instead become a last-resort path SOURCE is an
+accepting-on-input widening and is FILED, not decided here. Two refusal-message fixes ride here: the inline-origin parse path
 accepts `h` spellings or refuses POINTING AT the `'` requirement (r2
 M4 — today `48h/...` inline draws an unrelated multipath complaint,
 the F-420 class, and P1 makes this path load-bearing); and P2's
