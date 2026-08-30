@@ -315,8 +315,18 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
 /// descriptor and a BlueWallet `Key: value` export — both refuse on this arm.
 /// When the placeholder-less input carries one of those two shapes, name what
 /// it is and refer to the tool that takes it; anything else keeps the terse
-/// refusal. The referral names `--as`, which shipped with `me`'s S1 — this
-/// message MUST NOT predate that flag.
+/// refusal.
+///
+/// **THE TWO ARMS REFER TO TWO DIFFERENT TOOLS**
+/// (REVIEW-converter-whole-diff-r1 I3). When F-420 shipped, md could not read
+/// a descriptor at all and both arms pointed at `me sysw pack` in a sibling
+/// repo. The wallet-form-converter cycle shipped `md decompose`, so md IS the
+/// tool that takes a concrete descriptor — sending its holder to another
+/// binary is a false record at the exact moment they need the feature this
+/// cycle exists to ship. The BlueWallet arm is UNCHANGED and still correct:
+/// `decompose` takes a descriptor, not a `Key: value` export, so that input
+/// still needs `me`. That arm's referral names `--as`, which shipped with
+/// `me`'s S1 — it MUST NOT predate that flag.
 fn no_placeholders_message(template: &str) -> String {
     static BW_LINE: OnceLock<Regex> = OnceLock::new();
     static CONCRETE_KEY: OnceLock<Regex> = OnceLock::new();
@@ -343,8 +353,9 @@ fn no_placeholders_message(template: &str) -> String {
     } else if key.is_match(template) {
         "this is a concrete wallet descriptor (it carries a real extended key), not \
          an md1 template — `md encode` takes a template whose keys are `@i` \
-         placeholders. A concrete descriptor is packed by the engraver's own \
-         converter:\n    me sysw pack --as <descriptor|md1> --in <your export file>"
+         placeholders. md reads descriptors with `md decompose`:\n    \
+         md decompose <DESCRIPTOR> --emit commands   # the mint commands, ready to run\n    \
+         md decompose <DESCRIPTOR> --emit template   # or just the @i template for --template"
             .into()
     } else {
         "template contains no @i placeholders".into()
@@ -356,18 +367,18 @@ mod lex_tests {
     use super::*;
 
     /// F-420: a concrete descriptor — the tool named for descriptors gets
-    /// handed real ones — earns the referral, not the terse refusal.
+    /// handed real ones — earns the referral, not the terse refusal. Since
+    /// REVIEW-converter-whole-diff-r1 I3 that referral is `md decompose`,
+    /// this binary, not a sibling repo's.
     #[test]
-    fn f420_concrete_descriptor_refers_to_me_sysw_pack() {
+    fn f420_concrete_descriptor_refers_to_md_decompose() {
         let err = lex_placeholders(
             "wpkh([4bbaa801/84'/0'/0']xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz/<0;1>/*)",
         )
         .unwrap_err();
         let msg = err.to_string();
-        assert!(
-            msg.contains("me sysw pack --as <descriptor|md1>"),
-            "got: {msg}"
-        );
+        assert!(msg.contains("md decompose"), "got: {msg}");
+        assert!(!msg.contains("me sysw pack"), "got: {msg}");
         assert!(msg.contains("concrete wallet descriptor"), "got: {msg}");
     }
 
