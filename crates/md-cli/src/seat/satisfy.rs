@@ -364,6 +364,12 @@ pub(crate) mod fixture {
     pub const V_R5M1: &str = include_str!("../../tests/fixtures/seating/v-r5m1.txt");
     pub const V_BOUND_REF: &str = include_str!("../../tests/fixtures/seating/v-bound-ref.txt");
     pub const V_BOUND_SEAT: &str = include_str!("../../tests/fixtures/seating/v-bound-seat.txt");
+    pub const V_USP: &str = include_str!("../../tests/fixtures/seating/v-usp.txt");
+    pub const V_MIX: &str = include_str!("../../tests/fixtures/seating/v-mix.txt");
+    pub const V_R2_ORD: &str = include_str!("../../tests/fixtures/seating/v-r2-ord.txt");
+    pub const V_R4_IK: &str = include_str!("../../tests/fixtures/seating/v-r4-ik.txt");
+    pub const V_GRP: &str = include_str!("../../tests/fixtures/seating/v-grp.txt");
+    pub const V_CAP: &str = include_str!("../../tests/fixtures/seating/v-cap.txt");
 }
 
 #[cfg(test)]

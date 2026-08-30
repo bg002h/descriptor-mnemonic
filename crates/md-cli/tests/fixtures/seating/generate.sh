@@ -207,3 +207,124 @@ header "$f" V-BOUND-REF "the same xpub offered as two cards, for two slots"
   mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 00000000 --origin-fingerprint "$(fp_of 0)"
 } >> "$f"
 echo "wrote: $f"
+
+# ── V-USP (also the V-AMB / V-SEAT-* fixture) ───────────────────────────────
+# r5's counterexample. One sortedmulti, two fingerprint-free slots at ONE
+# origin — but DIFFERENT use-site paths, so swapping the cards changes which
+# xpub derives at which chain. Sorting cannot recover what derivation already
+# changed: two wallets, so it must REFUSE.
+f="$HERE/v-usp.txt"
+header "$f" V-USP "use-site-path swap: same origin, <0;1> vs <2;3>"
+{
+  echo "#   md encode \"wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<2;3>/*))\""
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  "$MD" encode "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<2;3>/*))" \
+        --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 4)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 4)"
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-MIX ───────────────────────────────────────────────────────────────────
+# r6-M2's shape: MIXED declarations with a UNIQUE matching, so it must SEAT.
+# @0 declares fingerprint 73c5da0a; @1 declares the same path and NO
+# fingerprint. Card A (73c5da0a) satisfies both slots, card B (b8688df1)
+# satisfies only @1 — one perfect matching.
+f="$HERE/v-mix.txt"
+header "$f" V-MIX "mixed declarations (one fp-bearing, one fp-free), unique matching"
+{
+  echo "#   md encode \"wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))\" \\"
+  echo "#     --fingerprint @0=73c5da0a"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  "$MD" encode "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))" \
+        --fingerprint @0=73c5da0a --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 4)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 4)"
+} >> "$f"
+echo "wrote: $f"
+
+# ── the fingerprint-free depth-5 families ───────────────────────────────────
+# Four, five and twelve distinct cards at ONE declared origin. See child_of.
+mint_child() { # mint_child <parent 0..10> <child index> <declared path>
+  mint "$(child_of "$1" "$2")" "m/$3" 5b48af35 --privacy-preserving
+}
+
+# ── V-R2-ORD ────────────────────────────────────────────────────────────────
+# r2(a): two `multi` GROUPS, four indistinguishable cards. r2 measured three
+# supply orders producing three different wallets; under THIS procedure the
+# verdict must be REFUSE, and identically in every order (r1 I1 -- the
+# verdict is order-invariant, not merely the bytes).
+f="$HERE/v-r2-ord.txt"
+header "$f" V-R2-ORD "r2's three-orders counterexample: two multi groups, four fp-free cards"
+{
+  echo "#   md encode \"wsh(or_i(multi(2,@0/$PA/<0;1>/*,@1/$PA/<0;1>/*),multi(2,@2/$PA/<0;1>/*,@3/$PA/<0;1>/*)))\""
+  echo "#   for parent in 1 2 3 4: mk encode --privacy-preserving \\"
+  echo "#     --xpub \$(mk derive --path m/0 <parent's card>) \\"
+  echo "#     --origin-path m/$PA --policy-id-stub 5b48af35"
+  "$MD" encode "wsh(or_i(multi(2,@0/$PA/<0;1>/*,@1/$PA/<0;1>/*),multi(2,@2/$PA/<0;1>/*,@3/$PA/<0;1>/*)))" \
+        --group-size 0 2>/dev/null
+  for p in 0 1 2 3; do mint_child "$p" 0 "$PA"; done
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-R4-IK ─────────────────────────────────────────────────────────────────
+# r2(b) / r4's internal-key hazard in a REUSE-FREE five-distinct-key form: the
+# taproot internal key is a member of no group, so a card landing on @0 holds
+# the unilateral keyspend path. Must REFUSE.
+f="$HERE/v-r4-ik.txt"
+header "$f" V-R4-IK "taproot internal key vs leaf repartition, five fp-free cards"
+{
+  echo "#   md encode \"tr(@0/$PA/<0;1>/*,{sortedmulti_a(2,@1/$PA/<0;1>/*,@2/$PA/<0;1>/*),sortedmulti_a(2,@3/$PA/<0;1>/*,@4/$PA/<0;1>/*)})\""
+  echo "#   for parent in 1..5: mk encode --privacy-preserving \\"
+  echo "#     --xpub \$(mk derive --path m/0 <parent's card>) \\"
+  echo "#     --origin-path m/$PA --policy-id-stub 5b48af35"
+  "$MD" encode "tr(@0/$PA/<0;1>/*,{sortedmulti_a(2,@1/$PA/<0;1>/*,@2/$PA/<0;1>/*),sortedmulti_a(2,@3/$PA/<0;1>/*,@4/$PA/<0;1>/*)})" \
+        --group-size 0 2>/dev/null
+  for p in 0 1 2 3 4; do mint_child "$p" 0 "$PA"; done
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-GRP ───────────────────────────────────────────────────────────────────
+# r3's two-group repartition: BOTH endpoints sit inside sorted groups, so a
+# position-based rule permits it -- but the groups have different arities and
+# a card landing in the 1-of-2 leaf holds unilateral spending authority the
+# operator meant to be shared. Must REFUSE.
+f="$HERE/v-grp.txt"
+header "$f" V-GRP "two sortedmulti_a groups of DIFFERENT arity (2-of-2 and 1-of-2)"
+{
+  echo "#   md encode \"tr(@0/$PA/<0;1>/*,{sortedmulti_a(2,@1/$PA/<0;1>/*,@2/$PA/<0;1>/*),sortedmulti_a(1,@3/$PA/<0;1>/*,@4/$PA/<0;1>/*)})\""
+  echo "#   for parent in 1..5: mk encode --privacy-preserving \\"
+  echo "#     --xpub \$(mk derive --path m/0 <parent's card>) \\"
+  echo "#     --origin-path m/$PA --policy-id-stub 5b48af35"
+  "$MD" encode "tr(@0/$PA/<0;1>/*,{sortedmulti_a(2,@1/$PA/<0;1>/*,@2/$PA/<0;1>/*),sortedmulti_a(1,@3/$PA/<0;1>/*,@4/$PA/<0;1>/*)})" \
+        --group-size 0 2>/dev/null
+  for p in 0 1 2 3 4; do mint_child "$p" 0 "$PA"; done
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-CAP ───────────────────────────────────────────────────────────────────
+# TWO INDEPENDENT six-card components: 6! x 6! = 518,400 perfect matchings,
+# with no component over 6. This is r6-I2's construction -- the shape a
+# per-class k! bound neither bounds nor tracks -- so it pins that the cap is
+# on TOTAL matchings enumerated.
+f="$HERE/v-cap.txt"
+header "$f" V-CAP "two independent 6-card components (518,400 matchings)"
+{
+  echo "#   md encode \"wsh(or_i(multi(3,@0..@5 at $PA),multi(3,@6..@11 at $PB)))\""
+  echo "#   for parent in 1..6: mk encode --privacy-preserving \\"
+  echo "#     --xpub \$(mk derive --path m/0 <parent's card>) --origin-path m/$PA ..."
+  echo "#   for parent in 1..6: mk encode --privacy-preserving \\"
+  echo "#     --xpub \$(mk derive --path m/1 <parent's card>) --origin-path m/$PB ..."
+  A=""; for i in 0 1 2 3 4 5; do A="$A,@$i/$PA/<0;1>/*"; done
+  B=""; for i in 6 7 8 9 10 11; do B="$B,@$i/$PB/<0;1>/*"; done
+  "$MD" encode "wsh(or_i(multi(3${A}),multi(3${B})))" --group-size 0 2>/dev/null
+  for p in 0 1 2 3 4 5; do mint_child "$p" 0 "$PA"; done
+  for p in 0 1 2 3 4 5; do mint_child "$p" 1 "$PB"; done
+} >> "$f"
+echo "wrote: $f"

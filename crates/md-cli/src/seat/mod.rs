@@ -13,6 +13,8 @@
 //! | --- | --- |
 //! | P2 input pipeline (A3(a): dedupe → group → reassemble) | [`input`] |
 //! | A2 satisfaction, the two door checks, the two card-set checks | [`satisfy`] |
+//! | A3 matchings + compose-canonicalise-compare + cap + tie-break | [`matching`] |
+//! | composition, the comparison form, the spend-equality checker | [`compose`] |
 //!
 //! ## 1. The surface: one matrix
 //!
@@ -49,6 +51,10 @@
 // `clippy -D warnings` honest without hiding anything else; step 7's commit
 // removes it, exactly as C1 removed C0's.
 #[allow(dead_code)]
+pub mod compose;
+#[allow(dead_code)]
 pub mod input;
+#[allow(dead_code)]
+pub mod matching;
 #[allow(dead_code)]
 pub mod satisfy;
