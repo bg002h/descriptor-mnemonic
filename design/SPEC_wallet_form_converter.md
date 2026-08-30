@@ -100,9 +100,13 @@ REFUSES. Rules, in order:
    foreign card) ships as a PERMANENT vector row asserting exactly this
    accepted behaviour — it seats, and the derived address differs from
    the intended wallet's (r1 M6: the sharing case, not the trivial one).
-   A future WalletPolicyId-rooted stub (true wallet binding) is an mk
-   wire-semantics cycle with a compat story for every existing engraved
-   card — filed as a follow-up option, out of scope here.
+   The true-binding upgrade (mint-time keyed-WalletPolicyId stubs) is
+   FILED as `stub-keyed-wallet-binding-at-mint` (primary: mk's
+   FOLLOWUPS; companion: this repo's) — and per the operator ruling
+   recorded there (2026-08-30: no engraved plates exist besides test
+   plates; backward compatibility does not matter until v1.0), it is
+   compat-FREE if landed pre-v1.0. When it lands, this rule tightens
+   and CE-1's row flips to a refusal, in lockstep. Out of scope here.
 2. **Seat by declared origin, compared as DECODED VALUES (r1 I7).**
    Slot `@i` declares an origin; a key seats at `@i` iff its decoded
    (fingerprint, path) equals the slot's decoded declaration. Never

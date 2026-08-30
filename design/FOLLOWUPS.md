@@ -2103,3 +2103,22 @@ The descriptor→`@N`-template renderer lived only in `md-cli` (`format/text.rs:
 - **Surfaced:** 2026-07-11, mnemonic-gui FOLLOWUP-burndown batch (S2 / constellation-eval #6 extension). mnemonic-gui's `tests/schema_mirror_defaults_drift.rs` gates the toolkit (`mnemonic`, whose `gui-schema` is version 5 — per-flag `default_value` populated) two-sidedly (`default_value` + `choices`), but `md gui-schema` is still **version 1**: it OMITS the `default_value` key on every flag (R0-verified live at pinned `descriptor-mnemonic-md-cli-v0.11.0` — 0/35 flags carry it). The GUI batch could therefore only extend the gate to `md` **CHOICES-only** (5 `md` dropdown flags) plus a SELF-ARMING one-sided guard ("IF the JSON ever carries a non-null `default_value` it must equal the hand mirror"), vacuously green until `md` emits v5. A true two-sided `md` defaults gate (catching a silent mirror omission the way `mnemonic`'s does) is infeasible until then.
 - **Fix (if pursued):** bump `md-cli`'s `gui-schema` emitter to v5 parity with the toolkit (populate each flag's `default_value` from its clap-derive default), release, then mnemonic-gui bumps its `pinned-upstream.toml` `md` pin + re-points the S2 one-sided guard to a full two-sided gate. Needs an `md-cli` release + a GUI pin bump — a future cross-repo cycle. The `md` mirror-defaults that would populate (6 of the 7 cross-repo backfills; the 7th is `ms encode --language`): `md encode --network`, `md verify --network`, `md address --network`, `md address --chain`, `md address --index`, `md address --count`.
 - **Status:** OPEN. **Tier:** `cross-repo` (producer side: `md gui-schema` emitter; consumer side: mnemonic-gui re-points the gate once the pin bumps). **Companion:** `mnemonic-gui/FOLLOWUPS.md` (primary) + `mnemonic-secret` + `mnemonic-key` `design/FOLLOWUPS.md` `sibling-gui-schema-v5-default-value-emission`.
+
+### `stub-keyed-wallet-binding-at-mint` — companion: the converter's CE-1 limitation lifts when mk mints keyed-wallet-bound stubs (pre-v1.0: no compat burden)
+
+- **Surfaced:** 2026-08-30, this repo's wallet-form-converter R0 r1 C1
+  (measured: keyless-mint stubs are shape-only; two wallets shared
+  `a235ee75`). Primary entry: `mnemonic-key/design/FOLLOWUPS.md` →
+  `stub-keyed-wallet-binding-at-mint` — the mint-time change is mk's.
+- **This repo's leg:** the converter spec's seating rule 1 documents the
+  shape-only binding and ships CE-1 as a permanent accepted-limitation
+  vector row (a same-shape foreign card seats; address 0 differs). When
+  the mk upgrade lands, rule 1 tightens to true wallet binding and
+  CE-1's row flips to a refusal — flip the row and the rule TOGETHER, in
+  lockstep with the mk release, per the cross-repo convention.
+- **Operator ruling 2026-08-30, verbatim: "there are no engraved plates
+  besides test plates and backward compatibility will not matter until
+  v1.0 is launched."** Landed pre-v1.0, the tightening refuses no real
+  backup — the window in which this is a cheap change.
+- **Status:** OPEN. **Tier:** `feature` / cross-repo.
+- **Companion:** `mnemonic-key/design/FOLLOWUPS.md` → `stub-keyed-wallet-binding-at-mint` (primary, mint-side).
