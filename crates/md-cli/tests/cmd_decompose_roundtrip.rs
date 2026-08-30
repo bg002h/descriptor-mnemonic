@@ -281,25 +281,113 @@ fn v_d_rt_key_lines_are_as_parsed_never_a_depth_zero_reserialisation() {
     }
 }
 
+/// The commands the fixture header RECORDS as having been run must still be
+/// the commands `md decompose --emit commands` prints.
+///
+/// REVIEW-converter-whole-diff-r1 I5 replaced what stood here. The old
+/// `v_d_rt_mk_encode_keys_accepted_the_emitted_file` asserted three things:
+/// that the `mk1-cards` lines start with `mk1`, and that the fixture's own
+/// COMMENT HEADER contains two literal substrings. The last two grep a file
+/// for text that file was written with, so they passed whether or not `mk`
+/// accepted anything — a PASS for a property the test never exercised — and
+/// one of them announced "the fixture must record mk's measured exit code"
+/// while looking for provenance prose.
+///
+/// What actually establishes SPEC Acceptance 1(c) is three other things, none
+/// of which needs mk in the test process:
+///
+///  1. `generate.sh` RUNS the real `mk encode --keys` and aborts unless it
+///     exits 0 (`[ "$R2" -eq 0 ] || exit 1`), so the fixture cannot be written
+///     from a failed mk;
+///  2. `v_d_rt_emissions_still_match_what_mk_consumed` asserts decompose still
+///     emits, byte for byte, the key file mk consumed;
+///  3. `v_d_rt_round_trip_equality_through_the_split_set` seats the mk1 cards
+///     mk minted and asserts round-trip equality with the input descriptor.
+///
+/// The gap none of those covers is the one this row now closes: the header's
+/// RECORDED commands are a claim about a reproduction path, and a claim in a
+/// fixture header has to be a measurement or it is decoration. If decompose's
+/// `--emit commands` output drifts, the recorded commands become a stale
+/// record of a run nobody can repeat — and nothing else would notice, because
+/// every other row consumes the fixture's SECTIONS rather than its header.
 #[test]
-fn v_d_rt_mk_encode_keys_accepted_the_emitted_file() {
-    // The measurement lives in the fixture: `mk encode --keys <emitted file>
-    // --from-md1-set <policy card>` exited 0 and minted these cards. The test
-    // asserts the evidence is present and that the mk1 cards decode through
-    // md's own seating input path (the split re-composition below).
-    let cards = section("mk1-cards");
+fn v_d_rt_the_recorded_mint_commands_are_still_the_ones_decompose_emits() {
+    let text = std::fs::read_to_string(fixture_path("decompose/v-d-rt.txt")).unwrap();
+    let recorded = |start: &str, end: Option<&str>| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut inside = false;
+        for line in text.lines() {
+            if line.trim_end() == start {
+                inside = true;
+                continue;
+            }
+            if !inside {
+                continue;
+            }
+            match end {
+                Some(e) if line.trim_end() == e => break,
+                _ => {}
+            }
+            if line.trim().is_empty() {
+                break;
+            }
+            match line.strip_prefix("#   ") {
+                Some(cmd) => out.push(cmd.to_string()),
+                None => break,
+            }
+        }
+        out
+    };
+    let rec1 = recorded("# Route 1 (keyed card):", Some("# Route 2 (split set):"));
+    let rec2 = recorded("# Route 2 (split set):", None);
     assert!(
-        cards.iter().all(|c| c.starts_with("mk1")),
-        "mk1 section is not mk1 strings: {cards:?}"
+        !rec1.is_empty() && !rec2.is_empty(),
+        "header records no routes"
     );
-    let header = std::fs::read_to_string(fixture_path("decompose/v-d-rt.txt")).unwrap();
-    assert!(
-        header.contains("mk encode --keys keys.txt --from-md1-set policy.md1"),
-        "the fixture must record the exact mk command that consumed the key file"
+
+    // The SAME extraction generate.sh performs on `--emit commands`, in Rust:
+    //   route 1: awk '/^md encode /{f=1} f&&NF==0{exit} f'
+    //   route 2: awk 'BEGIN{n=0} /^md encode /{n++} n==2{print}'
+    let (code, commands, err) = md(&["decompose", &one("input-descriptor"), "--emit", "commands"]);
+    assert_eq!(code, 0, "{err}");
+    let mut live1: Vec<String> = Vec::new();
+    let mut live2: Vec<String> = Vec::new();
+    let mut n = 0usize;
+    let mut in1 = false;
+    for line in commands.lines() {
+        if line.starts_with("md encode ") {
+            n += 1;
+            if n == 1 {
+                in1 = true;
+            }
+        }
+        if in1 {
+            if line.trim().is_empty() {
+                in1 = false;
+            } else {
+                live1.push(line.to_string());
+            }
+        }
+        if n >= 2 {
+            live2.push(line.to_string());
+        }
+    }
+    assert_eq!(
+        rec1, live1,
+        "route 1 drifted: the fixture header records a command decompose no \
+         longer emits, so the recorded run cannot be repeated"
     );
+    assert_eq!(
+        rec2, live2,
+        "route 2 drifted: the fixture header records a command decompose no \
+         longer emits, so the recorded mk run cannot be repeated"
+    );
+    // The recorded route 2 is the one that consumed the key file, and it must
+    // still name mk's file-driven flag pair — the whole point of 1(c).
     assert!(
-        header.contains("route 2 (md encode"),
-        "the fixture must record mk's measured exit code"
+        rec2.iter()
+            .any(|l| l.contains("mk encode --keys") && l.contains("--from-md1-set")),
+        "route 2 no longer runs `mk encode --keys … --from-md1-set`: {rec2:?}"
     );
 }
 

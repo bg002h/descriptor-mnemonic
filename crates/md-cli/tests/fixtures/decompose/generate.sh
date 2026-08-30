@@ -44,6 +44,35 @@ for b in "$MD" "$MK"; do
   [ -x "$b" ] || { echo "missing binary: $b (see the header of this script)" >&2; exit 1; }
 done
 
+# FLAG PROBE, not a version probe (REVIEW-converter-whole-diff-r1 I5).
+#
+# The review measured `mk` on $PATH rejecting `--keys`:
+#
+#   $ command -v mk ; mk --version ; mk encode --keys /dev/null
+#   /home/bcg/.cargo/bin/mk
+#   mk 0.13.0
+#   error: unexpected argument '--keys' found
+#
+# DETERMINATION (measured 2026-08-30): the flag did NOT change — the install
+# is STALE. /home/bcg/.cargo/bin/mk is dated Aug 14; the repo build at
+# /scratch/code/shibboleth/mnemonic-key/target/debug/mk is dated Aug 30 and
+# `mk encode --help` lists `--keys <FILE>`. Both print `mk 0.13.0`, because
+# crates/mk-cli/Cargo.toml has not been bumped since the flag landed — so the
+# VERSION STRING CANNOT TELL THE TWO APART, and a `--version` gate here would
+# pass on the binary that fails. This script was already immune (it defaults
+# MK to the repo path and puts a symlink to it first on PATH, so the bare `mk`
+# in decompose's route-2 command resolves to the pinned binary — re-run
+# 2026-08-30, output byte-identical, `git diff` empty). The probe below is for
+# the operator who overrides MK: it fails HERE, by name, instead of failing
+# 60 lines later inside an eval'd command.
+if ! "$MK" encode --keys /dev/null --help >/dev/null 2>&1 \
+   && ! "$MK" encode --help 2>/dev/null | grep -q -- '--keys'; then
+  echo "MK=$MK does not support 'mk encode --keys' — it is too old." >&2
+  echo "Version strings do not discriminate (both spellings print mk 0.13.0);" >&2
+  echo "build the sibling repo and point MK at its target/debug/mk." >&2
+  exit 1
+fi
+
 KEYS="$HERE/../pathological/keys.txt"
 OUT="$HERE/v-d-rt.txt"
 

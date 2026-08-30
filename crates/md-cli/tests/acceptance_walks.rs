@@ -26,7 +26,7 @@
 //! * `v_d_rt_fixture_is_the_pinned_wallet_from_the_first_three_keys_txt_records`
 //! * `v_d_rt_emissions_still_match_what_mk_consumed`
 //! * `v_d_rt_key_lines_are_as_parsed_never_a_depth_zero_reserialisation`
-//! * `v_d_rt_mk_encode_keys_accepted_the_emitted_file`
+//! * `v_d_rt_the_recorded_mint_commands_are_still_the_ones_decompose_emits`
 //! * `v_d_rt_md_encode_key_accepts_the_emissions_and_reproduces_the_keyed_card`
 //! * `v_d_rt_md_encode_reproduces_the_policy_card_from_the_live_template`
 //! * `v_d_rt_round_trip_equality_through_the_keyed_card`
@@ -38,7 +38,10 @@
 //! `walk_c_leg_c_rows_still_exist_in_cmd_decompose_roundtrip` below is the only
 //! thing this file adds for (c): it greps that list out of the other file's
 //! source, so the pointer above cannot rot into a comment describing tests
-//! nobody kept. It re-asserts none of their content.
+//! nobody kept. It re-asserts none of their content. (It earned its keep on
+//! 2026-08-30: REVIEW-converter-whole-diff-r1 I5 replaced
+//! `v_d_rt_mk_encode_keys_accepted_the_emitted_file` — a row that could not
+//! fail — and this grep is what caught the stale pointer.)
 //!
 //! ## Why the oracle is not `seat::compose::spend_equal`
 //!
@@ -452,7 +455,7 @@ fn walk_c_leg_c_rows_still_exist_in_cmd_decompose_roundtrip() {
         "v_d_rt_fixture_is_the_pinned_wallet_from_the_first_three_keys_txt_records",
         "v_d_rt_emissions_still_match_what_mk_consumed",
         "v_d_rt_key_lines_are_as_parsed_never_a_depth_zero_reserialisation",
-        "v_d_rt_mk_encode_keys_accepted_the_emitted_file",
+        "v_d_rt_the_recorded_mint_commands_are_still_the_ones_decompose_emits",
         "v_d_rt_md_encode_key_accepts_the_emissions_and_reproduces_the_keyed_card",
         "v_d_rt_md_encode_reproduces_the_policy_card_from_the_live_template",
         "v_d_rt_round_trip_equality_through_the_keyed_card",
