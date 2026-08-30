@@ -113,13 +113,15 @@ wallet-equality and deliberately conservative — the converse fails on
 e.g. taptree branch commutation, measured, which the engine treats as
 inequality and refuses; this form is never emitted — r6 M1), and
 byte-compare: all equal ⇒ seat the CANONICAL matching — the one whose
-canonical-comparison form is lexicographically least, a stated total
-order (r6 I1: "seat any" left B1's disposition and the emitted text
-nondeterministic — two wallet-equal matchings measured yielding
-WalletPolicyIds `568989ea…` vs `13415d47…` and different checksums, so
-a card could be wallet-confirmed on one arm and warned on the other;
-determinism restores B1's meaning at zero cost since all candidates
-are proven wallet-equal); any pair differs ⇒ the ambiguity refusal
+ASSIGNMENT VECTOR (the slot-ordered list of seated chunk-set ids) is
+lexicographically least (r7 I1: ordering by the comparison FORM cannot
+discriminate — the branch is entered precisely when all forms are
+byte-equal, measured identical hashes on the r6 fixture while the
+emitted descriptors and WalletPolicyIds still differed; the assignment
+vector differs between distinct matchings by construction, so this
+order is total AND discriminating). Determinism restores B1's meaning
+and the emitted text at zero cost since all candidates are proven
+wallet-equal (r6 I1's measurements stand as the motivation); any pair differs ⇒ the ambiguity refusal
 naming the cards, the slots, and the remedies (re-mint with
 fingerprints, or `--seat`). Enumeration is bounded by TOTAL matchings
 enumerated — 720, early-terminating at the 721st (r6 I2: a per-class
@@ -174,16 +176,25 @@ matchings of A2's satisfaction graph; compose-canonicalise-compare;
 the cap; the refusal naming cards by full chunk-set id, slots, and
 both remedies — all as stated above). Identical declared origin with
 DIFFERENT xpubs on fingerprint-bearing cards refuses (impossible from
-one master — r1). Identical cards collapse to one NODE
-WITH CAPACITY — the node may fill any number of slots whose
-declarations it satisfies, the composed descriptor repeating the key
-at each (r6 I3: collapse-as-deletion manufactured the exact
-unfilled-slot refusal r2 M3 promised away, because a keyless policy
-card cannot collapse its same-origin slots — it has no xpubs to
-compare — while two identical scans collapsed to one card; the r6
-construction ships as a row proving it SEATS). The P3 write-side
-collapse (identical (origin, xpub) → one slot) stands, pinned by its
-row.
+one master — r1). **No card-side collapse, no capacity: each SUPPLIED card instance
+fills exactly ONE slot, and supplied multiplicity IS the operator's
+declaration (r7 C1 — capacity was measured fabricating a wallet the
+operator does not own: a privacy-preserving 2-of-3 missing card Z
+composed `sortedmulti(2,X,X,Y)` with X alone controlling funds, no
+refusal, no warning; a keyless policy cannot distinguish "X twice"
+from "a card is missing", so the engine NEVER resolves that ambiguity
+itself — the safe default is missing-card, i.e. A4's unfilled-slot
+refusal).** Restoring a wallet that genuinely repeats a key means
+supplying the card once per slot (tap it twice) — the composed
+repeated-key descriptor is a verified md target. Rows: r7-C1's
+missing-card case as a permanent must-REFUSE; the supply-twice
+repeated-key case as a must-SEAT; r6-I3's keyless-policy case
+re-pinned to the supply-twice recipe. With no dedupe there is nothing
+to manufacture r2 M3's refusal — that promise is met by deletion, not
+by capacity. A3 enumerates PERFECT MATCHINGS again, exactly as its
+normative sentence says (r7 I2 resolves with capacity's removal). The
+P3 write-side collapse (identical (origin, xpub) → one slot) stands,
+pinned by its row.
 
 **A4 — completeness is total.** Every slot filled, every supplied key
 seated. Unfilled slot: refuse naming the slot and its declared origin.
