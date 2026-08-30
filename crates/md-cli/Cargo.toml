@@ -52,6 +52,14 @@ miniscript = { workspace = true }
 # it is reached as `mnemonic_io_lib::write::write_private` — `write` is a
 # `pub mod` with NO root re-export, so the unqualified path is an E0425.
 mnemonic-io-lib = "0.1.0"
+# The wallet-form converter's mk1 decoding (D1,
+# `design/IMPLEMENTATION_PLAN_wallet_form_converter.md` §2) — taken from the
+# REGISTRY, same rationale as `mnemonic-io-lib` above: NOT `path =`, and NOT
+# `git`+`rev`, so the pin is anchored by cargo against an immutable tarball
+# with no vendor-grounding step needed. me-cli already consumes this crate
+# from the registry at 0.4.x; the converter needs the 0.5.x (derived
+# chunk-set-id era) decode surface.
+mk-codec = "0.5"
 
 [dev-dependencies]
 assert_cmd = "2.0"
