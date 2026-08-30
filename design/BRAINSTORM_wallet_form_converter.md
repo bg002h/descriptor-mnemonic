@@ -38,11 +38,14 @@ engine, P3 decompose).
    Keyed (shorter, monolithic) vs split (distributable custody) are
    PEERS — different custody shapes; the converter crowns neither.
 3. **Concrete descriptor IS an entry point** (the operator asked; the
-   principle demands it) — `md decompose`, `cli-compiler`-gated.
+   principle demands it) — `md decompose`, UNGATED (r2 I4: parsing
+   needs only the unconditional `miniscript` dependency).
 4. **Seating is funds-shaped** — a wrong seat reconstructs a different
-   wallet (the "same-path keys cannot be seated" class); hence stub
-   binding first, exact-origin seating, ambiguity refuses, completeness
-   total, R0 before code, refusals as executable vectors from draft one.
+   wallet (the "same-path keys cannot be seated" class); hence the
+   seating engine's rules (two-tier stub check, decoded-value origin
+   seating, refuse-where-order-matters — see the SPEC, which supersedes
+   this line's earlier wording per r1/r2), completeness total, R0
+   before code, refusals as executable vectors from draft one.
 5. **Measured gaps that motivated all of this** (session evidence, three
    verbatim CLI refusals + one working round trip): see the spec's
    "Motivation, measured".
