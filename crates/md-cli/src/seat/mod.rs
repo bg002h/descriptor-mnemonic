@@ -12,6 +12,7 @@
 //! | SPEC rule | module |
 //! | --- | --- |
 //! | P2 input pipeline (A3(a): dedupe → group → reassemble) | [`input`] |
+//! | A2 satisfaction, the two door checks, the two card-set checks | [`satisfy`] |
 //!
 //! ## 1. The surface: one matrix
 //!
@@ -49,3 +50,5 @@
 // removes it, exactly as C1 removed C0's.
 #[allow(dead_code)]
 pub mod input;
+#[allow(dead_code)]
+pub mod satisfy;

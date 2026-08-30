@@ -94,3 +94,116 @@ header "$f" V-COLLIDE "two DIFFERENT cards pinned to one chunk-set id (0x12345)"
   mint "$(xpub_of 1)" "m/$(path_of 1)" 5b48af35 --origin-fingerprint "$(fp_of 1)" --chunk-set-id 0x12345
 } >> "$f"
 echo "wrote: $f"
+
+# ── V-IMPOSS ────────────────────────────────────────────────────────────────
+# Two cards claiming the identical (fingerprint, path) with DIFFERENT xpubs.
+# KEY 2's xpub is minted at KEY 1's origin: both are depth 4 and both paths end
+# in 2', which is all `mk encode` checks, so the declaration is a lie the format
+# itself cannot catch — exactly the case A2 has to.
+f="$HERE/v-imposs.txt"
+header "$f" V-IMPOSS "two cards, identical [73c5da0a/48'/0'/0'/2'], different xpubs"
+{
+  echo "#   md encode \"wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))\" \\"
+  echo "#     --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --xpub <KEY 2> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35   <-- the lie"
+  "$MD" encode "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))" \
+        --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint 73c5da0a
+  mint "$(xpub_of 1)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint 73c5da0a
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-DOOR ──────────────────────────────────────────────────────────────────
+# A policy whose @0 and @1 declare the IDENTICAL fingerprint-bearing origin.
+# Its only possible fill binds one xpub to both slots.
+f="$HERE/v-door.txt"
+header "$f" V-DOOR "policy declaring two identical fingerprint-bearing slots"
+{
+  echo "#   md encode \"wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))\" \\"
+  echo "#     --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  "$MD" encode "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))" \
+        --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint 73c5da0a
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-FPFREE-CARD ───────────────────────────────────────────────────────────
+# @0 declares a fingerprint; the only card at @0's path is privacy-preserving,
+# so it cannot meet that requirement blind and @0 is unfillable.
+f="$HERE/v-fpfree-card.txt"
+header "$f" V-FPFREE-CARD "fingerprint-free CARD against a fingerprint-BEARING declaration"
+{
+  echo "#   md encode \"wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))\" \\"
+  echo "#     --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a"
+  echo "#   mk encode --xpub <KEY 1> --privacy-preserving \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --xpub <KEY 2> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/1'/2' --policy-id-stub 5b48af35"
+  "$MD" encode "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))" \
+        --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --privacy-preserving
+  mint "$(xpub_of 1)" "m/48'/0'/1'/2'" 5b48af35 --origin-fingerprint 73c5da0a
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-R5M1 ──────────────────────────────────────────────────────────────────
+# r5-M1's construction, REGROUNDED by the 2026-08-30 key-reuse ruling: @0 and
+# @1 each appear in TWO group instances at the same use-site path, which is
+# exactly the repetition BIP 388 forbids. It shipped as a measured
+# over-strictness note; it is a REFUSE row now.
+f="$HERE/v-r5m1.txt"
+header "$f" V-R5M1 "two sortedmulti_a instances sharing placeholders at one path"
+{
+  echo "#   md encode \"tr(@2/48'/0'/0'/2'/<0;1>/*,{sortedmulti_a(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*),sortedmulti_a(1,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*)})\""
+  echo "#   mk encode --xpub <KEY 1|5|9> --origin-fingerprint <its own> \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  "$MD" encode "tr(@2/48'/0'/0'/2'/<0;1>/*,{sortedmulti_a(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*),sortedmulti_a(1,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*)})" \
+        --group-size 0 2>/dev/null
+  for i in 0 4 8; do
+    mint "$(xpub_of $i)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of $i)"
+  done
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-BOUND-SEAT ────────────────────────────────────────────────────────────
+# The SEAT side of the key-reuse boundary: fingerprint-free declarations at ONE
+# path, two DIFFERENT masters. Pairwise-distinct keys, not reuse — and the
+# sortedmulti group makes both assignments the same wallet, so it must SEAT.
+f="$HERE/v-bound-seat.txt"
+header "$f" V-BOUND-SEAT "fingerprint-free same-path declarations, two different masters"
+{
+  echo "#   md encode \"wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))\""
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  "$MD" encode "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))" \
+        --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 4)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 4)"
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-BOUND-REF ─────────────────────────────────────────────────────────────
+# The REFUSE side, sitting adjacent so the boundary is pinned from BOTH
+# directions: the SAME xpub offered as two cards (distinguished by their
+# stubs, so they are two cards and not one duplicate the pipeline collapses).
+f="$HERE/v-bound-ref.txt"
+header "$f" V-BOUND-REF "the same xpub offered as two cards, for two slots"
+{
+  echo "#   md encode \"wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))\""
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 00000000"
+  "$MD" encode "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))" \
+        --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 00000000 --origin-fingerprint "$(fp_of 0)"
+} >> "$f"
+echo "wrote: $f"
