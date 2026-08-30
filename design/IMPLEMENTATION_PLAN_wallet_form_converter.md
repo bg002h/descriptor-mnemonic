@@ -91,10 +91,15 @@ is C0's exit.
   `predicates` pattern of the 40+ existing `cli_*`/`cmd_*` tests.
 - Fixtures: `crates/md-cli/tests/fixtures/pathological/` — copied in
   C4 (walks) and C2 (subsets) from mnemonic-engrave
-  `design/journeys/out/pathological/{backup-strings.txt,keys.txt}`
-  and the 22-string keyed card recorded in
-  `design/CONTINUITY_2026-08-29-s2.md`, each with a provenance note
-  naming source path + date.
+  `design/journeys/out/pathological/{backup-strings.txt,keys.txt}`;
+  the 22-string keyed card comes from
+  `design/journeys/out/pathological/journey_pathological.html`
+  (r1 I3 corrected a wrong CONTINUITY citation; measured 2026-08-30:
+  the html carries the card TWICE — 44 `md1fatzr2…` tokens, 42×86 +
+  2×59 chars — deduping to exactly 22 unique strings, 21×86 + one
+  59-char tail, the W-PIN shape). C4's copy step extracts, dedupes,
+  and asserts that shape before any walk runs. Each fixture file
+  carries a provenance note naming source path + date.
 
 **D3 — snapshot surfaces move deliberately.** New flags and the new
 subcommand will shift `cmd_gui_schema.rs`, `json_snapshots.rs`,
@@ -115,9 +120,12 @@ then delete the staging ref. Freeze main for the window.
 
 Ordering: C0 → C1 → C2 → C3 → C4, one implementer per phase (standing
 directive: implementation tight, controller folds small post-review
-fixes inline). C1 before C2 because the origin-notation parser and its
-refusal texts are P1's small surface and P2 consumes them; C3 after C2
-because decompose's acceptance leg re-composes through the C2 engine.
+fixes inline). C1 before C2 because C1 is the small standalone surface
+— settling the flag grammar and its refusal texts first keeps the big
+phase's diff pure engine (r1 M1: the earlier "P2 consumes them" reason
+was wrong; what C0's parser is shared by is C1's flags and C3's
+emission checks, per D2). C3 after C2 because decompose's acceptance
+leg re-composes through the C2 engine.
 
 **C0 — wiring (small).** D1's dependency lands and resolves
 (`cargo build --locked`); `parse/keys.rs` gains the
@@ -126,8 +134,14 @@ malformed origin draws a NAMED refusal, not today's bare
 "base58check decode" — the measured motivation refusal 3); `seat/mod.rs`
 skeleton exists carrying the matrix doc comment. Exit gate:
 `cargo nextest run --locked` green, `cargo clippy --locked
---all-targets -- -D warnings` green, `cargo fmt --check` green (these
-three are every phase's exit gate; hereafter "the gate").
+--all-targets -- -D warnings` green, `cargo fmt --check` green —
+**PLUS, for every phase (r1 I2 — nextest+clippy+fmt all pass on a
+tree with no new tests, so alone they cannot prove a phase's work
+exists): the phase's named roster rows present and passing, proven by
+a row-scoped run (`cargo nextest run --locked -E 'test(<row prefix>)'`)
+whose NONZERO matched-test count is quoted in the phase-close commit
+message — an empty filter is a FAIL, not a pass.** These together are
+hereafter "the gate"; C0's named rows are V-KEYORIG-BAD's unit half.
 
 **C1 — P1, the T row (small).** Origin-notated `--key` accepted on
 `descriptor`/`address`; per-datum precedence exactly as SPEC P1 (paths:
@@ -152,8 +166,8 @@ the phase, TDD throughout, rows in the SAME commit as each behaviour:
    (the comparison form sorts within `sortedmulti`/`sortedmulti_a`
    instances, is never emitted); 720-total cap with early
    termination; lexicographically-least assignment-vector tie-break.
-   Rows V-ORD, V-GRP, V-USP, V-R5M1, V-BOUND-SEAT, V-BOUND-REF,
-   V-MIX, V-AMB, V-CAP.
+   Rows V-ORD, V-R2-ORD, V-R4-IK, V-GRP, V-USP, V-R5M1, V-BOUND-SEAT,
+   V-BOUND-REF, V-MIX, V-AMB, V-CAP; V-FPFREE-CARD lands with step 2.
 4. A4 completeness. Rows V-UNFILLED, V-LEFTOVER.
 5. A5 `--seat`. Rows V-SEAT-OK, V-SEAT-BAD, V-SEAT-UNK (see roster
    note on the ambiguous-id case).
@@ -181,7 +195,8 @@ never "invalid"; shape-2 non-disjoint multipath REFUSED — reachable
 here because rust-miniscript parses it; Core JSON and receive/change
 pairs refused with guidance, not the bare checksum error). Rows:
 V-D-RT, V-D-DEPTH, V-D-NOORIG, V-D-REUSE, V-D-SHAPE2, V-D-JSON,
-V-D-PAIR, V-D-CHKSUM. Exit: the gate.
+V-D-PAIR, V-D-CHKSUM. Exit: the gate (its row-scoped run covers all
+eight V-D-* rows).
 
 **C4 — acceptance, docs, close-out.**
 
@@ -223,7 +238,10 @@ chunk-set id, slots, remedies).
 | V-COLLIDE | two cards pinned to one chunk-set id | refuse at reassembly (merged group) | C2 |
 | V-IMPOSS | identical fp-bearing origin, different xpubs | refuse (impossible from one master) | C2 |
 | V-DOOR | policy with two identical fp-bearing (fp,path) slots | refuse at the door (BIP 388 rule 1) | C2 |
-| V-ORD | three supply orders | identical descriptor bytes | C2 |
+| V-ORD | three supply orders of a SEATABLE set | identical descriptor bytes (determinism) | C2 |
+| V-R2-ORD | the r2 three-orders counterexample fixture | REFUSES identically in all three orders (r1 I1 — the verdict, not just the bytes, is order-invariant) | C2 |
+| V-R4-IK | r4's internal-key case, reuse-free five-distinct-key form | refuse (internal-key/leaf repartition composes unequal wallets) | C2 |
+| V-FPFREE-CARD | fp-free CARD against a fp-BEARING declaration | cannot satisfy (A2's restrictive half); slot otherwise unfillable → unfilled-slot refusal naming the declared origin | C2 |
 | V-GRP | two-group repartition (r3) | refuse (wallet-unequal candidates) | C2 |
 | V-USP | use-site-path swap (r5) | refuse (comparison-form inequality) | C2 |
 | V-R5M1 | two group instances sharing placeholders, same path | refuse — "forbidden by BIP 388" | C2 |
@@ -254,11 +272,11 @@ chunk-set id, slots, remedies).
 | V-D-CHKSUM | missing/wrong checksum | accept / non-F-420 error | C3 |
 | W-A/B/C, W-PIN | §3 C4 item 1 | the acceptance walks | C4 |
 
-Roster note (pin the gap's exact shape): A5's "ambiguous id" refusal
-may be UNREACHABLE post-pipeline — colliding cards refuse at
-reassembly (V-COLLIDE) before `--seat` parses. The implementer proves
-which: either the row exists, or V-COLLIDE's test carries an assertion
-+ comment that it subsumes the A5 case. Not silently dropped.
+Roster note: A5's "ambiguous id" refusal is UNREACHABLE, settled by
+SPEC A3(a) step 3 (r1 M2 — no implementer determination is open):
+colliding cards refuse at reassembly and never reach `--seat` parsing.
+V-COLLIDE's test carries a comment stating it subsumes the A5
+ambiguous-id case.
 
 ## 5. What is deliberately NOT here
 
@@ -304,7 +322,8 @@ test files `cmd_gui_schema.rs`, `json_snapshots.rs`,
 `help_examples.rs`, `duplicate_key_slots.rs` exist (the implementer
 reads the last before writing V-BOUND-REF — it may be the seed);
 fixtures `backup-strings.txt`/`keys.txt` at the mnemonic-engrave path
-in D2; the bypass message on today's plain push (verbatim in
+in D2; the keyed card in `journey_pathological.html` (44 tokens, 22
+unique, 21×86 + one 59-char tail — measured 2026-08-30, r1 I3); the bypass message on today's plain push (verbatim in
 `design/agent-reports/push-2026-08-30-converter-spec.md`). NOT yet
 verified: mk-codec 0.5.0's presence on the registry (C0's entry gate)
 and the exact mk-codec decode API surface (C0 resolves it against the
