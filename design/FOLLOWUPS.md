@@ -2127,7 +2127,7 @@ The descriptor→`@N`-template renderer lived only in `md-cli` (`format/text.rs:
 - **Status:** OPEN. **Tier:** `feature` / cross-repo.
 - **Companion:** `mnemonic-key/design/FOLLOWUPS.md` → `stub-keyed-wallet-binding-at-mint` (primary, mint-side).
 
-### `md-repeated-placeholder-inverts-bip388` — md accepts the BIP-388-forbidden same-path repetition and refuses the BIP-388-legal disjoint form (repo: **descriptor-mnemonic**; owning phase: **next md-codec/cli normative touch — decide both directions with vectors**)
+### `md-repeated-placeholder-inverts-bip388` — md accepts the BIP-388-forbidden same-path repetition and refuses the BIP-388-legal disjoint form (repo: **descriptor-mnemonic**; owning phase: **dedicated post-converter md admission mini-cycle — decide both directions with vectors** (re-tagged 2026-08-30 by the converter plan §6: the converter cycle may not own it, by the entry's own no-side-effect rule))
 
 Filed 2026-08-30 from the wallet-form-converter cycle; reground the
 same day by the operator's refinement (verbatim): "Bad ideas can be
