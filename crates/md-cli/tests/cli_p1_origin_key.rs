@@ -132,6 +132,33 @@ fn v_keyorig_template_and_origin_notated_keys_compose_end_to_end() {
     );
 }
 
+/// The brief's task 1 names BOTH `md descriptor` and `md address` — they
+/// share `build_descriptor` (`cmd/build.rs`) so the wiring is structurally
+/// one change, but that is a claim about the implementation, not a
+/// substitute for exercising the second command directly.
+#[test]
+fn v_keyorig_address_also_accepts_the_origin_notated_key() {
+    let x0 = xpub_at("48'/0'/0'/2'");
+    let out = md()
+        .args([
+            "address",
+            "--template",
+            SINGLE_SLOT_TEMPLATE,
+            "--key",
+            &format!("@0=[deadbeef/48'/0'/0'/2']{x0}"),
+            "--count",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "stderr: {}", stderr_of(&out));
+    let stdout = stdout_of(&out);
+    assert!(
+        stdout.starts_with("bc1"),
+        "expected a derived address: {stdout}"
+    );
+}
+
 // ─── V-FPAGREE ──────────────────────────────────────────────────────────
 
 const SINGLE_SLOT_TEMPLATE: &str = "wpkh(@0/48'/0'/0'/2'/<0;1>/*)";
