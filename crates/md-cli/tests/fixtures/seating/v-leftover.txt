@@ -3,9 +3,9 @@
 # Key material: crates/md-cli/tests/fixtures/pathological/keys.txt (KEY n = its
 # n-th record, 1-based). md1 lines are the keyless policy card; mk1 lines are
 # the key cards. '#' and blank lines are provenance only.
-#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \
-#     --origin-path m/48'/0'/9'/2' --policy-id-stub 5b48af35
+#   mk encode --privacy-preserving \
+#     --xpub $(mk derive --path m/0 <KEY 5's card>) \
+#     --origin-path m/48'/0'/9'/2'/0 --policy-id-stub 5b48af35
 # Append to tests/fixtures/pathological/backup-strings.txt's mk1 half.
-mk1qpax3azqqsq4kj90xkux3r03lcztpqyqsqygpqyqsqygnqyqsqyg9qyqsqyqfz9jrmlan3ge5uegwmm4s4r09ca2gzst5dvp92h8tg9wcd7a
-mk1qpax3azpztz75f8wrrussm59fetnh6s7yxw3wtcr89csx44yjeexeprfycsm9dhrv3waxk7qqfk9slckgyvf0xg2rc07j6gwz2rczzn52dep
-mk1qpax3azz502jydh0j3n29z6qjl
+mk1qpptvkpqqqq4kj90xhlqtvyqszqq3qyqszqq3zvqszqq3q5qszqqsqqy3zepud9r5ncmvgcea2727jh2hhehmf7aqe8pqtxmzc6gp6zdx5gm
+mk1qpptvkppwc8qydsfl76qyc5pydhfc925zspkyylj8w3xjthfn9agjah5lda6nfrpj075tl3ml5eer5254n67fqs2m952jqfk02ns8lcmlj97

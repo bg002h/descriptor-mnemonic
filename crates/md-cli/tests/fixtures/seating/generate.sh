@@ -35,6 +35,7 @@ for b in "$MD" "$MK"; do
 done
 
 KEYS="$HERE/../pathological/keys.txt"
+BACKUP="$HERE/../pathological/backup-strings.txt"
 
 # ── key material ────────────────────────────────────────────────────────────
 mapfile -t KEYLINE < <(grep -v '^#' "$KEYS" | grep -v '^[[:space:]]*$')
@@ -330,16 +331,60 @@ header "$f" V-CAP "two independent 6-card components (518,400 matchings)"
 echo "wrote: $f"
 
 # ── V-LEFTOVER ──────────────────────────────────────────────────────────────
-# ONE extra card at an origin the pathological policy never declares. Tests
-# append it to the 30-string pathological set: 11 slots, 12 cards, nothing
-# unfilled and one card with nowhere to go.
+# ONE extra card at an origin the pathological policy never declares.
+#
+# Its xpub is a depth-5 CHILD, not one of the eleven: an extra card carrying a
+# pathological xpub trips A3's pairwise-distinct check FIRST (measured
+# 2026-08-30 -- the earlier draft of this fixture reused KEY 5 and the engine
+# refused with "carry the SAME extended public key", never reaching A4), so the
+# row would have pinned the wrong refusal.
 f="$HERE/v-leftover.txt"
 header "$f" V-LEFTOVER "one extra foreign card, at an origin the policy never declares"
 {
-  echo "#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \\"
-  echo "#     --origin-path m/48'/0'/9'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --privacy-preserving \\"
+  echo "#     --xpub \$(mk derive --path m/0 <KEY 5's card>) \\"
+  echo "#     --origin-path m/48'/0'/9'/2'/0 --policy-id-stub 5b48af35"
   echo "# Append to tests/fixtures/pathological/backup-strings.txt's mk1 half."
-  mint "$(xpub_of 4)" "m/48'/0'/9'/2'" 5b48af35 --origin-fingerprint "$(fp_of 4)"
+  mint "$(child_of 4 0)" "m/48'/0'/9'/2'/0" 5b48af35 --privacy-preserving
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-UNFILLED ──────────────────────────────────────────────────────────────
+# The pathological policy with TEN of its eleven cards: the card declaring
+# 48'/0'/3'/2' is dropped, so @3 is unfillable and nothing is left over.
+#
+# The dropped group is found by DECODING each card, not by slicing lines --
+# chunk membership is a property of the string-layer header, and a line-count
+# guess would silently drop a different card.
+f="$HERE/v-unfilled.txt"
+header "$f" V-UNFILLED "the pathological set minus the card for 48'/0'/3'/2'"
+{
+  echo "#   grep '^md1' backup-strings.txt"
+  echo "#   every mk1 chunk whose card does NOT decode to [73c5da0a/48'/0'/3'/2'],"
+  echo "#   grouped by the leading header symbols and checked with \`mk decode\`."
+  grep '^md1' "$BACKUP"
+  prev=""; group=()
+  emit_group() {
+    if [ ${#group[@]} -gt 0 ]; then
+      local d
+      d=$("$MK" decode "${group[@]}" 2>/dev/null)
+      # BOTH halves of the origin: two of the eleven keys sit at
+      # 48'/0'/3'/2' under different masters, and matching on the path
+      # alone drops them both (measured -- the first draft of this fixture
+      # left TWO slots unfilled instead of one).
+      if ! { grep -q "origin_fingerprint: *73c5da0a" <<<"$d" \
+             && grep -q "origin_path: *48'/0'/3'/2'" <<<"$d"; }; then
+        printf '%s\n' "${group[@]}"
+      fi
+    fi
+    return 0
+  }
+  while read -r line; do
+    key="${line:0:10}"
+    if [ "$key" != "$prev" ]; then emit_group; group=(); prev="$key"; fi
+    group+=("$line")
+  done < <(grep '^mk1' "$BACKUP")
+  emit_group
 } >> "$f"
 echo "wrote: $f"
 

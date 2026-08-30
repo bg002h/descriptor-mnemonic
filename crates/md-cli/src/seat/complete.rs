@@ -144,34 +144,33 @@ mod tests {
 
     #[test]
     fn v_unfilled_a_missing_card_names_the_slot_and_its_declared_origin() {
-        // Drop the card for the slot declaring 48'/0'/3'/2' by dropping
-        // every string in the chunk-set the pipeline groups it under.
-        let policy = policy(PATHOLOGICAL);
+        // The fixture is the pathological set with the card for
+        // [73c5da0a/48'/0'/3'/2'] removed — dropped by DECODING each card,
+        // not by slicing lines (generate.sh; chunk membership is a
+        // property of the string-layer header).
+        let policy = policy(V_UNFILLED);
         let decls = slot_declarations(&policy).unwrap();
-        let all_strings = mk1_lines(PATHOLOGICAL);
+        let cards = decode_cards(&mk1_lines(V_UNFILLED)).unwrap();
+        assert_eq!(cards.len(), 10, "ten of the eleven cards");
         let victim = decls
             .iter()
-            .find(|d| d.path.to_string().contains("3'/2'"))
-            .expect("the fixture declares 48'/0'/3'/2'");
-        let dropped_id = decode_cards(&all_strings)
-            .unwrap()
-            .into_iter()
-            .find(|c| c.card.origin_path == victim.path)
-            .expect("its card exists")
-            .set_id;
-        let survivors: Vec<String> = all_strings
-            .into_iter()
-            .filter(|s| crate::seat::input::group_id_of(s).ok() != Some(dropped_id))
-            .collect();
-        assert_eq!(decode_cards(&survivors).unwrap().len(), 10);
+            .find(|d| {
+                !cards.iter().any(|c| {
+                    c.card.origin_path == d.path
+                        && c.card.origin_fingerprint.map(|f| *f.as_bytes()) == d.fingerprint
+                })
+            })
+            .expect("exactly one declaration has no card");
 
-        let msg = diagnose(PATHOLOGICAL, &survivors);
+        let msg = diagnose(V_UNFILLED, &mk1_lines(V_UNFILLED));
         assert!(msg.contains("1 slot(s) unfilled"), "{msg}");
         assert!(msg.contains("0 card(s) left over"), "{msg}");
+        assert!(msg.contains("11 slots, 10 cards supplied"), "{msg}");
         assert!(
             msg.contains(&victim.label()),
             "names the slot + origin: {msg}"
         );
+        assert!(msg.contains("48'/0'/3'/2'"), "{msg}");
         assert!(
             msg.contains("Unfilled slots — no supplied card satisfies the declared origin"),
             "{msg}"

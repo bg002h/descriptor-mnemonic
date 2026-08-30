@@ -371,6 +371,7 @@ pub(crate) mod fixture {
     pub const V_GRP: &str = include_str!("../../tests/fixtures/seating/v-grp.txt");
     pub const V_CAP: &str = include_str!("../../tests/fixtures/seating/v-cap.txt");
     pub const V_LEFTOVER: &str = include_str!("../../tests/fixtures/seating/v-leftover.txt");
+    pub const V_UNFILLED: &str = include_str!("../../tests/fixtures/seating/v-unfilled.txt");
     pub const V_B1_WALLET: &str = include_str!("../../tests/fixtures/seating/v-b1-wallet.txt");
     pub const V_B1_SHAPE: &str = include_str!("../../tests/fixtures/seating/v-b1-shape.txt");
     pub const V_B1_WARN: &str = include_str!("../../tests/fixtures/seating/v-b1-warn.txt");

@@ -415,3 +415,174 @@ fn v_msg_keyless_a_keyed_card_with_from_mk1_says_there_is_nothing_to_seat() {
     assert!(e.contains("already carry their keys"), "{e}");
     assert!(e.contains("Drop --from-mk1"), "{e}");
 }
+
+// ─── every PHASE A refusal actually REACHES the command ─────────────────
+//
+// The engine's refusals are pinned as unit rows against the function that
+// builds each one. That proves the MESSAGE and proves nothing about whether
+// `seat::run` ever gets there — and it measurably can hide a defect: the
+// first draft of V-LEFTOVER's fixture reused a pathological xpub, so the
+// engine refused at A3's pairwise-distinct check and never reached A4, while
+// the unit row (which calls A4 directly) went on passing. This table drives
+// each fixture end to end and requires the refusal the roster names.
+
+const V_R5M1: &str = include_str!("fixtures/seating/v-r5m1.txt");
+const V_DOOR: &str = include_str!("fixtures/seating/v-door.txt");
+const V_IMPOSS: &str = include_str!("fixtures/seating/v-imposs.txt");
+const V_BOUND_REF: &str = include_str!("fixtures/seating/v-bound-ref.txt");
+const V_BOUND_SEAT: &str = include_str!("fixtures/seating/v-bound-seat.txt");
+const V_CAP: &str = include_str!("fixtures/seating/v-cap.txt");
+const V_FPFREE_CARD: &str = include_str!("fixtures/seating/v-fpfree-card.txt");
+const V_R2_ORD: &str = include_str!("fixtures/seating/v-r2-ord.txt");
+const V_R4_IK: &str = include_str!("fixtures/seating/v-r4-ik.txt");
+const V_GRP: &str = include_str!("fixtures/seating/v-grp.txt");
+const V_UNFILLED: &str = include_str!("fixtures/seating/v-unfilled.txt");
+const V_LEFTOVER: &str = include_str!("fixtures/seating/v-leftover.txt");
+const V_CE1: &str = include_str!("fixtures/seating/v-ce1.txt");
+
+fn refusal_of(text: &str, extra_cards: &[String]) -> String {
+    let mut cards = mk1(text);
+    cards.extend_from_slice(extra_cards);
+    let o = seat_cmd("descriptor", text, &cards, &[]).output().unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(1),
+        "this fixture must refuse; stderr was: {}",
+        err_of(&o)
+    );
+    assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
+    err_of(&o)
+}
+
+#[test]
+fn v_r5m1_reaches_the_command() {
+    let e = refusal_of(V_R5M1, &[]);
+    assert!(
+        e.contains("same placeholder at more than one position"),
+        "{e}"
+    );
+    assert!(e.contains("forbidden by BIP 388"), "{e}");
+    assert!(!e.to_lowercase().contains("invalid"), "{e}");
+}
+
+#[test]
+fn v_door_reaches_the_command() {
+    let e = refusal_of(V_DOOR, &[]);
+    assert!(e.contains("declare the IDENTICAL origin"), "{e}");
+}
+
+#[test]
+fn v_imposs_reaches_the_command() {
+    let e = refusal_of(V_IMPOSS, &[]);
+    assert!(e.contains("yet carry DIFFERENT xpubs"), "{e}");
+}
+
+#[test]
+fn v_bound_ref_reaches_the_command() {
+    let e = refusal_of(V_BOUND_REF, &[]);
+    assert!(e.contains("carry the SAME extended public key"), "{e}");
+    assert!(e.contains("BIP 388"), "{e}");
+}
+
+#[test]
+fn v_cap_reaches_the_command() {
+    let e = refusal_of(V_CAP, &[]);
+    assert!(
+        e.contains("more than 720 complete candidate assignments"),
+        "{e}"
+    );
+}
+
+#[test]
+fn v_fpfree_card_reaches_the_command() {
+    let e = refusal_of(V_FPFREE_CARD, &[]);
+    assert!(e.contains("1 slot(s) unfilled"), "{e}");
+    assert!(e.contains("@0 [73c5da0a/48'/0'/0'/2']"), "{e}");
+}
+
+#[test]
+fn v_r2_ord_reaches_the_command() {
+    let e = refusal_of(V_R2_ORD, &[]);
+    assert!(e.contains("24 complete candidate assignments"), "{e}");
+}
+
+#[test]
+fn v_r4_ik_reaches_the_command() {
+    let e = refusal_of(V_R4_IK, &[]);
+    assert!(e.contains("120 complete candidate assignments"), "{e}");
+}
+
+#[test]
+fn v_grp_reaches_the_command() {
+    let e = refusal_of(V_GRP, &[]);
+    assert!(e.contains("do NOT all compose to the same wallet"), "{e}");
+}
+
+#[test]
+fn v_unfilled_reaches_the_command_naming_the_slot() {
+    let e = refusal_of(V_UNFILLED, &[]);
+    assert!(e.contains("1 slot(s) unfilled"), "{e}");
+    assert!(e.contains("0 card(s) left over"), "{e}");
+    assert!(e.contains("11 slots, 10 cards supplied"), "{e}");
+    assert!(e.contains("@3 [73c5da0a/48'/0'/3'/2']"), "{e}");
+}
+
+#[test]
+fn v_leftover_reaches_the_command_naming_the_card() {
+    // The pathological set PLUS one extra card. The extra card's xpub is a
+    // depth-5 child, deliberately not one of the eleven, so the engine
+    // reaches A4 rather than stopping at A3's pairwise-distinct check.
+    let e = refusal_of(PATHOLOGICAL, &mk1(V_LEFTOVER));
+    assert!(e.contains("0 slot(s) unfilled"), "{e}");
+    assert!(e.contains("1 card(s) left over"), "{e}");
+    assert!(e.contains("11 slots, 12 cards supplied"), "{e}");
+    assert!(e.contains("which wallet do these belong to"), "{e}");
+    assert!(
+        e.contains("48'/0'/9'/2'/0"),
+        "names its declared origin: {e}"
+    );
+}
+
+// ─── and the must-SEAT fixtures reach it too ───────────────────────────
+
+#[test]
+fn v_bound_seat_reaches_the_command_and_seats() {
+    let o = seat_cmd("descriptor", V_BOUND_SEAT, &mk1(V_BOUND_SEAT), &[])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err_of(&o));
+    assert!(out_of(&o).starts_with("wsh(sortedmulti(2,"));
+}
+
+#[test]
+fn v_mix_reaches_the_command_and_seats() {
+    let o = seat_cmd("descriptor", V_MIX, &mk1(V_MIX), &[])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err_of(&o));
+    assert!(out_of(&o).starts_with("wsh(multi(2,"));
+}
+
+#[test]
+fn v_ce1_reaches_the_command_and_seats() {
+    let o = seat_cmd("descriptor", V_CE1, &mk1(V_CE1), &[])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err_of(&o));
+    assert!(out_of(&o).starts_with("wsh(multi(2,"));
+}
+
+#[test]
+fn v_collide_reaches_the_command() {
+    // Two cards pinned to one chunk-set id, offered against any policy: the
+    // input pipeline merges them and reassembly refuses, before the engine
+    // sees a card at all.
+    let collide: Vec<String> = mk1(include_str!("fixtures/seating/v-collide.txt"));
+    let mut cards = mk1(V_USP);
+    cards.extend(collide);
+    let o = seat_cmd("descriptor", V_USP, &cards, &[]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    let e = err_of(&o);
+    assert!(e.contains("chunk-set 12345"), "{e}");
+    assert!(e.contains("do not reassemble"), "{e}");
+}
