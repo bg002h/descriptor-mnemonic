@@ -300,13 +300,13 @@ pub fn check_no_repeated_xpub(cards: &[DecodedCard]) -> Result<(), CliError> {
                 return Err(CliError::Seat(format!(
                     "cards {} and {} carry the SAME extended public key. Every slot must be \
                      filled by a card and every card must be seated, so this pair would put \
-                     one key in two slots — forbidden by BIP 388 (\"the public keys obtained \
-                     by deserializing elements of the key information vector must be \
-                     pairwise distinct\"; its security note adds that reusing pubkeys can be \
-                     insecure in miniscript wallet policies). UNSUPPORTED here, not a \
-                     malformed input: supply one card per distinct key.",
+                     one key in two slots — forbidden by BIP 388 (\"{rule}\"; {note}). \
+                     UNSUPPORTED here, not a malformed input: supply one card per distinct \
+                     key.",
                     first.label(),
-                    second.label()
+                    second.label(),
+                    rule = crate::bip388::PAIRWISE_DISTINCT_RULE,
+                    note = crate::bip388::REUSE_SECURITY_NOTE,
                 )));
             }
         }

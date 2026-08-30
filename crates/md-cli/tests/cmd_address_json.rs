@@ -87,12 +87,17 @@ fn snapshot_wpkh_testnet_receive_0() {
 
 #[test]
 fn snapshot_wsh_2of2_mainnet_receive_0() {
-    // 2-of-2 wsh-multi at m/48'/0'/0'/2', same xpub for @0 and @1 (degenerate
-    // but structurally valid; same fixture pattern as the non-JSON wsh-multi
-    // integration test in cmd_address.rs).
+    // 2-of-2 wsh-multi across TWO DISTINCT cosigner accounts.
+    //
+    // This fixture used one xpub for both slots ("degenerate but structurally
+    // valid"). It is BIP 388 shape (1) -- a 2-of-2 one key alone satisfies --
+    // and REVIEW-converter-whole-diff-r1 C1 makes `md address` refuse it, so
+    // the snapshot was pinning a wallet the tool must decline. Same repair as
+    // `cmd_address.rs::address_mainnet_wsh_multi_2of2_receive_0`.
     let xpub = account_xpub("m/48'/0'/0'/2'", Network::Bitcoin);
+    let xpub_b = account_xpub("m/48'/0'/1'/2'", Network::Bitcoin);
     let key_a = format!("@0={xpub}");
-    let key_b = format!("@1={xpub}");
+    let key_b = format!("@1={xpub_b}");
     let out = Command::cargo_bin("md")
         .unwrap()
         .args([

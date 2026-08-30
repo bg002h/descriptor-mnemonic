@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 
+mod bip388;
 mod cmd;
 #[cfg(feature = "cli-compiler")]
 mod compile;

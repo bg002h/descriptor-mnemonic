@@ -52,6 +52,18 @@ pub enum CliError {
     /// Exit code 1 (a content refusal), not 2 (a usage error): the flags
     /// were spelled correctly; it is the material the engine declines.
     Seat(String),
+    /// BIP 388 rule (1) refused on the COMPOSE side of the template row:
+    /// `--template` + `--key` handed one extended key to two distinct `@N`
+    /// slots at the same use-site (SPEC A3's shape (1)).
+    ///
+    /// Its own variant rather than [`CliError::Codec`] because the message is
+    /// SPEC A3's diagnostic contract — cite BIP 388, say UNSUPPORTED, never
+    /// call the input invalid — which `md_codec::Error::DuplicateKeySlots`
+    /// (the same defect, worded for the wire layer) does not carry, and
+    /// because it must not be [`CliError::BadArg`]: the flags were spelled
+    /// correctly, so this is a content refusal at exit 1 like its `Seat` and
+    /// `Decompose` siblings, not a usage error at exit 2.
+    KeyReuse(String),
     /// A refusal from `md decompose` (SPEC "P3 — the concrete descriptor
     /// becomes an entrance"), including its input boundary.
     ///
@@ -80,6 +92,7 @@ impl fmt::Display for CliError {
             CliError::Mismatch(m) => write!(f, "MISMATCH: {m}"),
             CliError::BadArg(m) => write!(f, "{m}"),
             CliError::Seat(m) => write!(f, "seating refused: {m}"),
+            CliError::KeyReuse(m) => write!(f, "key reuse refused: {m}"),
             CliError::Decompose(m) => write!(f, "decompose: {m}"),
         }
     }

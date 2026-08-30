@@ -349,27 +349,40 @@ fn address_mainnet_wsh_multi_2of2_receive_0() {
     use bitcoin::Address;
     use bitcoin::CompressedPublicKey;
     use bitcoin::bip32::ChildNumber;
+    // TWO DISTINCT COSIGNERS. This fixture used ONE xpub for both slots
+    // ("degenerate but structurally valid"), which is exactly BIP 388's
+    // shape (1) -- a 2-of-2 one key alone can satisfy. REVIEW-converter-
+    // whole-diff-r1 C1 closed that route on `md address`, so the old fixture
+    // now draws the key-reuse refusal. It is repaired rather than exempted:
+    // a golden pinned to a wallet the tool must refuse is a golden for a
+    // wallet nobody should hold.
     let xpub = account_xpub("m/48'/0'/0'/2'", Network::Bitcoin);
+    let xpub_b = account_xpub("m/48'/0'/1'/2'", Network::Bitcoin);
     let key_arg = format!("@0={xpub}");
-    let key_arg_b = format!("@1={xpub}");
+    let key_arg_b = format!("@1={xpub_b}");
 
     // Independently derive the expected wsh-multi address.
     let secp = Secp256k1::new();
-    let leaf = xpub
-        .derive_pub(
-            &secp,
-            &[
-                ChildNumber::Normal { index: 0 },
-                ChildNumber::Normal { index: 0 },
-            ],
-        )
-        .unwrap();
-    let cpk = CompressedPublicKey(leaf.public_key);
-    let pk = bitcoin::PublicKey::new(cpk.0);
+    let leaf_of = |x: &bitcoin::bip32::Xpub| {
+        let leaf = x
+            .derive_pub(
+                &secp,
+                &[
+                    ChildNumber::Normal { index: 0 },
+                    ChildNumber::Normal { index: 0 },
+                ],
+            )
+            .unwrap();
+        bitcoin::PublicKey::new(CompressedPublicKey(leaf.public_key).0)
+    };
+    let pk = leaf_of(&xpub);
+    let pk_b = leaf_of(&xpub_b);
+    assert_ne!(pk, pk_b, "the two cosigners must be distinct keys");
+    // `multi` is ORDER-SENSITIVE (unlike `sortedmulti`): @0 then @1.
     let script = bitcoin::blockdata::script::Builder::new()
         .push_int(2)
         .push_key(&pk)
-        .push_key(&pk)
+        .push_key(&pk_b)
         .push_int(2)
         .push_opcode(bitcoin::opcodes::all::OP_CHECKMULTISIG)
         .into_script();

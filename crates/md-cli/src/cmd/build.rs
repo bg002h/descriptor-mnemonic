@@ -62,6 +62,7 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
         )?;
         let mut descriptor = parse_template(template, &parsed_keys, &parsed_fps)?;
         apply_path_override_per_slot(&mut descriptor, args.path, &inline_declared)?;
+        refuse_key_reuse_across_slots(&descriptor, args.cmd)?;
         return Ok(descriptor);
     }
     // Phrase path. mstring display-grouping (SPEC §3.2): strip separators so a
@@ -188,6 +189,64 @@ fn resolve_keys_fingerprints_and_precedence(
     let parsed_keys: Vec<ParsedKey> = origin_keys.into_iter().map(|ok| ok.key).collect();
 
     Ok((parsed_keys, parsed_fps, inline_declared))
+}
+
+/// **BIP 388 rule (1) on the T row** (REVIEW-converter-whole-diff-r1 C1).
+///
+/// SPEC A3 promises the converter "refuses BOTH forbidden shapes in BOTH
+/// directions", and names shape (1) — one xpub filling two slots — as "the
+/// reachable case where the engine's refusal binds". The S row delivered it
+/// (`seat::satisfy::check_no_repeated_xpub`) and the D row delivered it
+/// (`decompose::check_no_repeated_key`). This route did not: `md descriptor`
+/// and `md address` build a `Descriptor` and RENDER it without ever encoding,
+/// so `md_codec::validate::validate_no_duplicate_key_slots` — whose only call
+/// site is `encode.rs:120` — never ran. Measured 2026-08-30 at `9d0c30dc`:
+/// `--key @0=X --key @1=X --key @2=Y` emitted a checksummed `sortedmulti(2,X,X,Y)`
+/// at exit 0, a 2-of-3 that X alone can spend, and `md decompose` then refused
+/// the exact string `md descriptor` had just printed.
+///
+/// **THE DETECTION IS THE ENGINE'S OWN CALL, NOT A SECOND COPY.** The rule that
+/// makes this check correct rather than merely strict is the use-site: one xpub
+/// at `<0;1>` and at `<2;3>` derives a different child at every index, which is
+/// two wallets and not a duplicate — BIP 388 permits it and `md encode` mints
+/// it (`tests/duplicate_key_slots.rs::one_key_at_two_different_use_sites_is_not_a_duplicate`,
+/// and measured through this very route before the fix: the disjoint template
+/// composed at exit 0). A payload-only comparison over the parsed `--key`
+/// values would not have that boundary and would newly refuse a wallet
+/// `md encode` accepts — a fourth answer from one binary, in place of the
+/// third. Calling the codec validator on the BUILT descriptor gets the
+/// boundary, the multipath handling and the `@N` expansion for free, and
+/// cannot drift from what `md encode` decides.
+///
+/// **THE WORDING IS THIS SIDE'S OWN.** `md_codec::Error::DuplicateKeySlots`
+/// is worded for the wire layer and cites no BIP; SPEC A3's diagnostic rule
+/// for the converter is "cite BIP 388, say unsupported, never invalid", which
+/// is what the S and D rows say. The citation itself comes from
+/// [`crate::bip388`], shared byte-for-byte with the S row.
+///
+/// Runs AFTER `apply_path_override_per_slot` so it inspects the descriptor
+/// exactly as it is about to be rendered — and so that a slot whose origin
+/// only `--path` supplies is expandable when the check runs (`expand_per_at_n`
+/// raises `MissingExplicitOrigin` otherwise, which makes the validator a
+/// silent no-op).
+fn refuse_key_reuse_across_slots(d: &Descriptor, cmd: &str) -> Result<(), CliError> {
+    match md_codec::validate::validate_no_duplicate_key_slots(d) {
+        Ok(()) => Ok(()),
+        Err(md_codec::Error::DuplicateKeySlots { a, b, n }) => Err(CliError::KeyReuse(format!(
+            "@{a} and @{b} were given the SAME extended public key at the same use-site, so \
+             `md {cmd}` would emit a policy that names {n} cosigners and that ONE of them can \
+             satisfy alone — forbidden by BIP 388 (\"{rule}\"; {note}). UNSUPPORTED here, not \
+             a malformed input: supply one distinct key per slot. `md encode` and \
+             `md decompose` already refuse this wallet, so a card minted from it could never \
+             be read back.",
+            rule = crate::bip388::PAIRWISE_DISTINCT_RULE,
+            note = crate::bip388::REUSE_SECURITY_NOTE,
+        ))),
+        // Unreachable today — the validator returns only that one variant, and
+        // returns Ok(()) when expansion fails — but propagating rather than
+        // swallowing keeps it that way if it ever grows a second.
+        Err(e) => Err(CliError::from(e)),
+    }
 }
 
 fn fp_hex(fp: [u8; 4]) -> String {
