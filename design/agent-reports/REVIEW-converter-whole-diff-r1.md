@@ -7,7 +7,10 @@
 **Reviewer:** independent adversarial pass, whole-diff scope. This is the last
 gate before merge to main.
 
-**Counts: 1 Critical / 4 Important / 7 Minor / 2 Nit.**
+**Counts: 1 Critical / 5 Important / 11 Minor / 3 Nit.**
+(Body below is 1C/4I/7M/2N; the ADDENDUM at the end adds I5, M8–M11 and N3 from
+a records sweep that landed after the body was written. Every addendum claim was
+re-verified against the tree before being recorded.)
 
 Scope taken as given (not re-derived, per the dispatch brief): the per-phase
 reviews `REVIEW-converter-c2-r1` and `REVIEW-converter-c3-r1` (both 0C/0I/2M,
@@ -620,7 +623,139 @@ None found in this diff. Per the standing rule these would not gate in any case.
 
 ## Verdict
 
-**NOT GREEN. 1 Critical / 4 Important open.** C1 is the blocker: the cycle's own
+**NOT GREEN. 1 Critical / 5 Important open** (I5 is in the ADDENDUM below).
+C1 is the blocker: the cycle's own
 spec promises a compose-side refusal for shape-(1) key reuse, the S and D rows
 deliver it, the T row does not, and the result is a funds-unsafe descriptor
 emitted with exit 0 that md's own `decompose` refuses to read back.
+
+---
+
+# ADDENDUM — records sweep, landed after the main body
+
+A second records pass returned after the body above was written. Every claim
+below was re-verified by the reviewer against the tree before being recorded
+here; nothing is transcribed from the sweep unchecked. **Revised counts: 1
+Critical / 5 Important / 11 Minor / 3 Nit.** The Critical is unchanged.
+
+## IMPORTANT (new)
+
+### I5 — `v_d_rt_mk_encode_keys_accepted_the_emitted_file` cannot fail on the property its name asserts, and the reproduction path behind it has decayed
+
+`crates/md-cli/tests/cmd_decompose_roundtrip.rs:285-304`. The test's name claims
+`mk encode --keys` accepted decompose's emitted key file — SPEC Acceptance 1(c).
+Its body asserts three things:
+
+1. the `mk1-cards` fixture section's lines start with `mk1`;
+2. `header.contains("mk encode --keys keys.txt --from-md1-set policy.md1")`;
+3. `header.contains("route 2 (md encode")`, with the failure message *"the
+   fixture must record mk's measured exit code"*.
+
+Assertions 2 and 3 grep the fixture file's **own comment header** for literal
+strings. They pass whether or not `mk` accepts anything, so the test reports a
+PASS for a property it never exercises — and assertion 3's message says "exit
+code" while the substring it looks for is provenance prose, not an exit code.
+
+**The reproduction path is dead, so the claim cannot be refreshed either.**
+
+```
+$ command -v mk ; mk --version
+/home/bcg/.cargo/bin//mk
+mk 0.13.0
+$ mk encode --keys /dev/null
+error: unexpected argument '--keys' found
+```
+
+`crates/md-cli/tests/fixtures/decompose/v-d-rt.txt:13-15` records that route 2
+was "eval'd verbatim in a scratch directory with md and mk on PATH … route 2
+(md encode --out, then mk encode --keys --from-md1-set) = 0". With the `mk` on
+PATH today that is not reproducible; `generate.sh` would fail. This is the
+reproduction-decay class: an artifact keeps vouching for a generator nobody can
+re-run.
+
+**Stated fairly, because it bounds the severity.** The mk1 cards in the fixture
+are real artifacts and they *are* executed —
+`v_d_rt_round_trip_equality_through_the_split_set` (line 341) seats them through
+`md descriptor --from-mk1` and asserts round-trip equality, and it passes. The
+module doc at `:31` is honest that "`generate.sh` runs the REAL `mk encode
+--keys`", i.e. in the generator rather than the test. So the acceptance is not
+vacuous end-to-end. What is unbacked is the one assertion named for mk's
+acceptance, and the ability to re-derive it. Filed Important because "a test
+that reports a false PASS" is named in the severity rules as still blocking, on
+a clause of a funds-relevant acceptance.
+
+## MINOR (new)
+
+**M8 — `README.md:128` overstates `--emit commands` by one form.** The comment
+reads `# D → the mint commands for T, S and K`. Measured: the output carries
+exactly two route headers —
+
+```
+$ md decompose "<v-d-rt canonical descriptor>" --emit commands | grep -c '^# ── route'
+2
+# ── route 1: the KEYED card — one md1 artifact carrying template + keys ──
+# ── route 2: the SPLIT set — a keyless policy card + one mk1 card per key ──
+```
+
+There is no T mint command; the template appears only as an argument inside the
+two routes. `CHANGELOG.md:54-56` gets this right ("prints **both** mint
+routes"), so README and CHANGELOG disagree and README is the wrong one.
+
+**M9 — "the converter makes moving between them cheap" is false in both
+directions.** `README.md:132` (added by this diff) and
+`design/SPEC_wallet_form_converter.md:420-422`:
+
+> Keyed (compact, monolithic) and split (distributable custody) are peers; the
+> converter makes moving between them cheap and recommends neither.
+
+S→K refuses from both ends — this cycle's own C4 measurement, and the matrix
+cell is `✗`. K→S is a declared non-goal three lines below the SPEC sentence
+(`:424-425`, "K→S splitting … mechanical but no motivating journey yet"), and
+its matrix cell is `✗ non-goal`. Neither direction is cheap; neither exists.
+The brainstorm's version of the sentence
+(`design/BRAINSTORM_wallet_form_converter.md:48-49`) has no "cheap" in it, so
+the word was added downstream. This diff newly propagates it into README.
+
+**M10 — the seating engine's own module doc lists a keyed card among its output
+forms.** `crates/md-cli/src/seat/mod.rs:37-38`:
+
+> `//! Output forms: concrete descriptor · addresses · keyed card (via the`
+> `//! existing `md encode --key` bridge) · template + origin-notated key lines.`
+
+Sixteen lines later the same comment block retracts exactly that
+(`:54-57`, "so the bridge refuses — filed as
+`md-cannot-mint-a-keyed-card-from-a-split-set`"). The sentence is
+self-contradicting *within one doc comment*. The identical text at
+`design/SPEC_wallet_form_converter.md:74-75` and
+`design/IMPLEMENTATION_PLAN_wallet_form_converter.md:42-43` is converter-wide,
+where D→K keeps it partly true; in `seat/mod.rs` it is scoped to the S row and
+is simply false.
+
+**M11 — C4's own task list still says every cell flips.**
+`design/IMPLEMENTATION_PLAN_wallet_form_converter.md:228`:
+
+> `2. Matrix cells flip to ✓ in all four embedded copies, same commit.`
+
+Contradicted twice in the same file: `:58` ("One cell this cycle owned did NOT
+close") and `:338` ("the one matrix cell that did not flip").
+
+## NIT (new)
+
+**N3 — `README.md:134` names three matrix homes; there are four.** It lists
+BRAINSTORM, SPEC and IMPLEMENTATION_PLAN. `crates/md-cli/src/seat/mod.rs` is the
+fourth, and `scripts/matrix-identity-check.sh` checks all four — it printed all
+four homes in the gate re-run at the top of this report. An omission rather than
+a false statement.
+
+## Also confirmed by the sweep, no finding
+
+The FOLLOWUPS reproductions were independently re-run and each reproduces:
+`md-decompose-rejects-double-wildcard-input`'s `/**` refusal and the `md encode`
+asymmetry; `md-decompose-has-no-json-output` (measured: every reading verb has
+`--json` except `decompose`); `md-cannot-mint-a-keyed-card-from-a-split-set`'s
+two refusals verbatim from both ends; `phase-gate-omits-cargo-doc`'s cited gate
+definition, CI `doc` job and fix commit `d75214f7`. One arithmetic looseness in
+`md-verify-against-flag-for-cross-form-comparison` ("the strings differ in 254
+characters" against a measured 253-char delta) — not load-bearing, recorded only.
+Fifteen distinct CHANGELOG claims were verified TRUE against the binary; the two
+CHANGELOG claims this report does contest are named in C1 and I1 above.
