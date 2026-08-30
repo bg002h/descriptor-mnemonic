@@ -45,6 +45,12 @@ class, now on the compose path.
 
 ## The surface: one matrix
 
+**THE MATRIX TRAVELS (operator directive, 2026-08-30): this table is the
+cycle's goal-and-gaps statement and is embedded, cells kept current, in
+EVERY artifact — brainstorm, this spec, the implementation plan, and the
+seating engine's module doc comment in the code. A document or module
+missing it is incomplete.**
+
 Input forms (any COMPLETE wallet expression):
 
 - **D** — concrete descriptor (miniscript or plain), keys + origins inline
