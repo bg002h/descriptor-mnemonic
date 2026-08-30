@@ -197,7 +197,7 @@ mod tests {
     // ─── V-SEAT-OK ──────────────────────────────────────────────────────
 
     #[test]
-    fn v_seat_ok_resolves_the_ambiguity_v_usp_refuses_on() {
+    fn v_seat_ok_resolves_the_use_site_path_ambiguity() {
         let c = case(V_USP);
         // Without --seat this is the V-USP refusal.
         assert!(decide(&c.policy, &c.decls, &c.cards, &c.per_slot).is_err());

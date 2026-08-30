@@ -81,9 +81,14 @@ pub fn dispositions(
         .collect())
 }
 
-/// The stderr notes B1 emits for one seating: one line per card, in card
-/// order, with the two identifiers stated once at the top so a reader can
-/// check the arithmetic themselves.
+/// The stderr notes B1 emits for one seating.
+///
+/// The two identifiers are stated once at the top so a reader can check the
+/// arithmetic themselves. The CONFIRMED tiers are then summarised one line
+/// per tier, listing every card's set id — on the eleven-card fixture the
+/// per-card form repeated a three-line sentence eleven times, which buries
+/// the line that matters. WARNINGS stay one per card: each one is a
+/// separate thing to go and check.
 pub fn notes(
     policy: &Descriptor,
     seated: &Descriptor,
@@ -92,30 +97,46 @@ pub fn notes(
     let wallet = top4(md_codec::compute_wallet_policy_id(seated)?.as_bytes());
     let shape = top4(md_codec::compute_wallet_descriptor_template_id(policy)?.as_bytes());
     let tiers = dispositions(policy, seated, cards)?;
+    let ids = |want: Disposition| -> Vec<String> {
+        cards
+            .iter()
+            .zip(tiers.iter())
+            .filter(|(_, t)| **t == want)
+            .map(|(c, _)| c.set_id.to_string())
+            .collect()
+    };
     let mut out = vec![format!(
         "note: composed wallet id {} · policy shape id {}",
         hex4(wallet),
         hex4(shape)
     )];
+    let confirmed = ids(Disposition::WalletConfirmed);
+    if !confirmed.is_empty() {
+        out.push(format!(
+            "note: {} card(s) WALLET-CONFIRMED — stub matches this exact composed wallet: {}",
+            confirmed.len(),
+            confirmed.join(", ")
+        ));
+    }
+    let shaped = ids(Disposition::ShapeConfirmed);
+    if !shaped.is_empty() {
+        out.push(format!(
+            "note: {} card(s) SHAPE-CONFIRMED — stub matches this policy's shape, not this \
+             composed wallet; a card minted for a different wallet of the same shape would \
+             look identical here: {}",
+            shaped.len(),
+            shaped.join(", ")
+        ));
+    }
     for (card, tier) in cards.iter().zip(tiers.iter()) {
-        out.push(match tier {
-            Disposition::WalletConfirmed => format!(
-                "note: card {} is WALLET-CONFIRMED — its stub matches this exact composed wallet.",
-                card.set_id
-            ),
-            Disposition::ShapeConfirmed => format!(
-                "note: card {} is SHAPE-CONFIRMED — its stub matches this policy's shape, \
-                 not this composed wallet. A card minted for a different wallet of the same \
-                 shape would look identical here.",
-                card.set_id
-            ),
-            Disposition::Unconfirmed => format!(
+        if *tier == Disposition::Unconfirmed {
+            out.push(format!(
                 "warning: card {}'s stub matches neither this policy's shape id nor the \
                  composed wallet id — minted under different origin metadata (legitimate), \
                  or a different wallet; verify address 0 before trusting.",
                 card.set_id
-            ),
-        });
+            ));
+        }
     }
     Ok(out)
 }

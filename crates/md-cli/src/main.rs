@@ -316,6 +316,35 @@ enum Command {
         /// non-canonical-wrapper refusal.
         #[arg(long, value_name = "PATH", requires = "template")]
         path: Option<String>,
+        /// mk1 key-card string. Repeatable. Supplied TOGETHER WITH the
+        /// KEYLESS md1 phrases of a policy card: the seating engine matches
+        /// each card to the slot whose declared origin it satisfies, then
+        /// composes the concrete descriptor. Mutually exclusive with
+        /// --template.
+        #[arg(long = "from-mk1", value_name = "STRING", conflicts_with = "template")]
+        from_mk1: Vec<String>,
+        /// Read mk1 key-card strings from FILE, one per line. Blank lines
+        /// and `#` comments are skipped; any other line is refused rather
+        /// than ignored. Combines with --from-mk1.
+        #[arg(
+            long = "from-mk1-file",
+            value_name = "FILE",
+            conflicts_with = "template"
+        )]
+        from_mk1_file: Option<std::path::PathBuf>,
+        /// Assert the seating of one slot: --seat '@i=<chunk-set-id>',
+        /// repeatable. The id is the FULL five-hex-digit label a seating
+        /// refusal prints beside each card, never a prefix. The named card
+        /// must still satisfy the slot's declared origin, so --seat can only
+        /// choose among seatings the engine already permits -- it never
+        /// places a card the engine would not, never silences a stub
+        /// warning, and never fills a missing-card gap.
+        #[arg(
+            long = "seat",
+            value_name = "@i=CHUNK-SET-ID",
+            conflicts_with = "template"
+        )]
+        seats: Vec<String>,
         /// Network for xpub validation.
         #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
         network: CliNetwork,
@@ -368,6 +397,35 @@ enum Command {
         /// origin for @N".
         #[arg(long, value_name = "PATH", requires = "template")]
         path: Option<String>,
+        /// mk1 key-card string. Repeatable. Supplied TOGETHER WITH the
+        /// KEYLESS md1 phrases of a policy card: the seating engine matches
+        /// each card to the slot whose declared origin it satisfies, then
+        /// composes the concrete descriptor. Mutually exclusive with
+        /// --template.
+        #[arg(long = "from-mk1", value_name = "STRING", conflicts_with = "template")]
+        from_mk1: Vec<String>,
+        /// Read mk1 key-card strings from FILE, one per line. Blank lines
+        /// and `#` comments are skipped; any other line is refused rather
+        /// than ignored. Combines with --from-mk1.
+        #[arg(
+            long = "from-mk1-file",
+            value_name = "FILE",
+            conflicts_with = "template"
+        )]
+        from_mk1_file: Option<std::path::PathBuf>,
+        /// Assert the seating of one slot: --seat '@i=<chunk-set-id>',
+        /// repeatable. The id is the FULL five-hex-digit label a seating
+        /// refusal prints beside each card, never a prefix. The named card
+        /// must still satisfy the slot's declared origin, so --seat can only
+        /// choose among seatings the engine already permits -- it never
+        /// places a card the engine would not, never silences a stub
+        /// warning, and never fills a missing-card gap.
+        #[arg(
+            long = "seat",
+            value_name = "@i=CHUNK-SET-ID",
+            conflicts_with = "template"
+        )]
+        seats: Vec<String>,
         /// Network for xpub validation and address rendering.
         #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
         network: CliNetwork,
@@ -420,6 +478,17 @@ enum Command {
         #[arg(long, value_name = "DIR")]
         out: std::path::PathBuf,
     },
+}
+
+/// Merge `--from-mk1` values with `--from-mk1-file`'s lines. Both channels
+/// feed ONE list; the input pipeline dedupes it, so overlapping channels are
+/// harmless by construction rather than by a rule here (SPEC A3(a) step 1).
+fn collect_mk1(inline: &[String], file: Option<&std::path::Path>) -> Result<Vec<String>, CliError> {
+    let mut out = inline.to_vec();
+    if let Some(p) = file {
+        out.extend(seat::read_mk1_file(p)?);
+    }
+    Ok(out)
 }
 
 fn main() -> ExitCode {
@@ -615,18 +684,24 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             keys,
             fingerprints,
             path,
+            from_mk1,
+            from_mk1_file,
+            seats,
             network,
             chain,
             change,
             json,
         } => {
             let chain = if change { Some(1) } else { chain };
+            let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::descriptor::run(cmd::descriptor::DescriptorArgs {
                 phrases: &phrases,
                 template: template.as_deref(),
                 keys: &keys,
                 fingerprints: &fingerprints,
                 path: path.as_deref(),
+                from_mk1: &from_mk1,
+                seats: &seats,
                 network: network.into(),
                 network_str: network.as_str(),
                 chain,
@@ -639,6 +714,9 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             keys,
             fingerprints,
             path,
+            from_mk1,
+            from_mk1_file,
+            seats,
             network,
             chain,
             change,
@@ -647,12 +725,15 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             json,
         } => {
             let chain = if change { 1 } else { chain };
+            let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::address::run(cmd::address::AddressArgs {
                 phrases: &phrases,
                 template: template.as_deref(),
                 keys: &keys,
                 path: path.as_deref(),
                 fingerprints: &fingerprints,
+                from_mk1: &from_mk1,
+                seats: &seats,
                 network: network.into(),
                 network_str: network.as_str(),
                 chain,

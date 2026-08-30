@@ -134,6 +134,11 @@ pub fn comparison_form(seated: &Descriptor) -> Result<Vec<u8>, CliError> {
 /// walk (r3 C2). Round-trip-equality — spend-equality AND origin metadata
 /// preserved exactly — is the stricter relation, and it belongs to C3's
 /// decompose leg.
+// P2's deliverable, consumed by C4's acceptance walk (plan section 3 C4
+// item 1(b)) and by this module's V-SPENDEQ rows. Nothing on the C2 CLI
+// surface calls it, because C2 ships no channel for supplying a keyed card
+// alongside a split set -- see the report's deviations note.
+#[allow(dead_code)]
 pub fn spend_equal(a: &Descriptor, b: &Descriptor) -> Result<bool, CliError> {
     // Structure: the comparison form of each side with the origin metadata
     // blanked, so `sortedmulti` permutation is absorbed exactly as it is in

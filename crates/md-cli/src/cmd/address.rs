@@ -7,6 +7,10 @@ pub struct AddressArgs<'a> {
     pub fingerprints: &'a [String],
     /// Shared origin-path override, mirroring `md encode --path`.
     pub path: Option<&'a str>,
+    /// mk1 key-card strings (P2). Non-empty routes to the seating engine.
+    pub from_mk1: &'a [String],
+    /// Raw `--seat '@i=<chunk-set-id>'` values (A5).
+    pub seats: &'a [String],
     pub network: bitcoin::Network,
     pub network_str: &'static str,
     pub chain: u32,
@@ -16,18 +20,44 @@ pub struct AddressArgs<'a> {
 }
 
 pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
-    let descriptor = crate::cmd::build::build_descriptor(&crate::cmd::build::DescriptorInput {
-        phrases: args.phrases,
-        template: args.template,
-        keys: args.keys,
-        fingerprints: args.fingerprints,
-        path: args.path,
-        network: args.network,
-        cmd: "address",
-    })?;
+    // P2 — the S row, exactly as on `md descriptor`: the two commands must
+    // seat identically or one of them derives a different wallet.
+    let mut seating_notes: Vec<String> = Vec::new();
+    let descriptor = if args.from_mk1.is_empty() {
+        if !args.seats.is_empty() {
+            return Err(CliError::Seat(
+                "--seat asserts which mk1 key card fills a slot, so it needs \
+                 --from-mk1/--from-mk1-file cards to choose among."
+                    .into(),
+            ));
+        }
+        crate::cmd::build::build_descriptor(&crate::cmd::build::DescriptorInput {
+            phrases: args.phrases,
+            template: args.template,
+            keys: args.keys,
+            fingerprints: args.fingerprints,
+            path: args.path,
+            network: args.network,
+            cmd: "address",
+        })?
+    } else {
+        let seating = crate::seat::run(&crate::seat::SeatingRequest {
+            phrases: args.phrases,
+            from_mk1: args.from_mk1,
+            seats: args.seats,
+            network: args.network,
+            cmd: "address",
+        })?;
+        seating_notes = seating.notes;
+        seating.descriptor
+    };
     if !descriptor.is_wallet_policy() {
         return Err(CliError::BadArg(
-            "address requires wallet-policy mode (Pubkeys TLV); supply --key @i=XPUB or use a wallet-policy-mode phrase".into(),
+            "address requires wallet-policy mode (Pubkeys TLV): this card is a keyless \
+             TEMPLATE. Supply the matching mk1 key cards with --from-mk1 <STRING> \
+             (repeatable) or --from-mk1-file <FILE>, or rebuild the policy with \
+             --template <T> --key @i=XPUB."
+                .into(),
         ));
     }
 
@@ -59,6 +89,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
             "addresses": addresses,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
+        crate::cmd::descriptor::emit_seating_notes(&seating_notes);
         crate::output_advisory::emit_output_class_advisory(
             crate::output_advisory::OutputClass::WatchOnly,
             &mut std::io::stderr(),
@@ -71,6 +102,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
     for (_, _, addr) in &rows {
         println!("{addr}");
     }
+    crate::cmd::descriptor::emit_seating_notes(&seating_notes);
     crate::output_advisory::emit_output_class_advisory(
         crate::output_advisory::OutputClass::WatchOnly,
         &mut std::io::stderr(),

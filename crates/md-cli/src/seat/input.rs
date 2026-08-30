@@ -137,6 +137,10 @@ pub fn group_key_of(s: &str, position: usize) -> Result<GroupId, CliError> {
 /// has no such field, so this reports `Single(0)` for one; that fallback is
 /// only meaningful inside a whole [`decode_cards`] run, where the position
 /// is real.
+// Used by the vector rows that build a card subset by GROUP rather than by
+// guessing which lines belong to a card (V-UNFILLED, V-CE1). The pipeline
+// itself calls `group_key_of` with a real position.
+#[allow(dead_code)]
 pub fn group_id_of(s: &str) -> Result<GroupId, CliError> {
     group_key_of(s, 0)
 }
