@@ -42,9 +42,9 @@ engine, P3 decompose).
    needs only the unconditional `miniscript` dependency).
 4. **Seating is funds-shaped** — a wrong seat reconstructs a different
    wallet (the "same-path keys cannot be seated" class); hence the
-   seating engine's rules (two-tier stub check, decoded-value origin
-   seating, refuse-where-order-matters — see the SPEC, which supersedes
-   this line's earlier wording per r1/r2), completeness total, R0
+   seating engine (the assignment-invariance PRINCIPLE, phases A/B,
+   the three-disposition stub model — see the SPEC, which supersedes
+   this line's earlier wordings per r1-r4), completeness total, R0
    before code, refusals as executable vectors from draft one.
 5. **Measured gaps that motivated all of this** (session evidence, three
    verbatim CLI refusals + one working round trip): see the spec's

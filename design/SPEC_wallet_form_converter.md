@@ -1,7 +1,9 @@
 # SPEC — the wallet-form converter (compose / decompose / per-slot origins)
 
-**Status: DRAFT — R0 r1 (RED 3C/9I/8M/2N,
-`design/agent-reports/R0-converter-spec-r1.md`) folded 2026-08-30.**
+**Status: DRAFT — R0 rounds r1 (RED 3C/9I/8M/2N), r2 (RED 2C/6I/5M),
+r3 (RED 4C/4I/4M — the wholesale seating-engine rewrite), r4 (RED
+1C/2I/4M) all folded 2026-08-30; reports in
+`design/agent-reports/R0-converter-spec-r*.md`.**
 Repo: descriptor-mnemonic (`md`), with one measured touch-point in
 mnemonic-key (`mk decode` output is consumed as-is; no mk changes).
 Baselines: md `6c4a56fd`, mk `93cebfb` (crate 0.13.0 — r1 M3: the
@@ -42,8 +44,8 @@ origin → substitute) produced the correct descriptor, and is the working
 sketch of the engine below. It also exposed the danger class: a
 composition that seats a wrong key card reconstructs a DIFFERENT
 wallet — "same-path keys cannot be seated", now on the compose path.
-(What checking can and cannot promise here was settled by r1 C1 and
-r2 I1: see the seating engine's two-tier rule 1.)
+(What checking can and cannot promise here was settled across r1-r4:
+see the seating engine's A1/B1 three-disposition stub model.)
 
 ## The principle (operator, 2026-08-30, verbatim intent)
 
@@ -97,10 +99,16 @@ internally order-free, yet a card's choice BETWEEN them was measured
 giving three wallets — one placing a card in a 1-of-2 unilateral-spend
 leaf. Practically: cards and slots are grouped by declared origin
 (decoded values, rule A2); within one origin-equivalence class, free
-seating requires every candidate slot to lie in ONE sorted group
-(`sortedmulti`/`sortedmulti_a` — permutation-invariance measured for
-the former, a vector row proves the latter before the rule relies on
-it). Candidates spanning two groups (sorted or not), touching any
+seating requires (r4 C1 — membership alone was defeated twice, both
+constructions md-encodable today): every candidate slot to have EQUAL
+MULTIPLICITY (a repeated slot `sortedmulti(2,@0,@0,@1)` makes the two
+assignments the key multisets {X,X,Y} vs {Y,Y,X} — different wallets,
+measured), AND every OCCURRENCE of every candidate slot to lie in the
+SAME ONE sorted group (`tr(@0,{sortedmulti_a(2,@0,@1),pk(@2)})` puts
+@0 in a sorted group AND at the internal key — swapping changes the
+wallet, measured). `sortedmulti` permutation-invariance is measured; a
+vector row proves `sortedmulti_a`'s before the rule relies on it; rows
+pin both r4 constructions as refusals. Candidates spanning two groups (sorted or not), touching any
 `multi`/`multi_a` position, a taproot internal key, or any position the
 classifier cannot place (r2 I3 — the classification is exhaustive over
 pk/pkh fragments, sorted groups, unsorted groups, and the internal-key
@@ -121,12 +129,18 @@ values, all legitimate (WalletPolicyId is origin-sensitive and this
 fixture carries two origin declarations). Final stub disposition is
 B1's.
 
-**A2 — seat by declared origin, compared as DECODED VALUES.** Slot
-declarations and card origins compare as decoded (fingerprint, path)
+**A2 — seat by declared origin: the DECLARATION is the CONSTRAINT
+(r4 I1 — symmetric equality made a legitimate set unrestorable: a
+fingerprint-free policy declaration against fingerprint-bearing cards
+failed every slot).** Comparison is over decoded (fingerprint, path)
 values — never strings (`h`/`'`, `m/`-prefix and fingerprint case are
-measured to vary across the tools' own outputs). A card seats at a slot
-iff the values match; fingerprint-less cards match fingerprint-free
-declarations by path.
+measured to vary across the tools' own outputs). A card satisfies a
+declaration iff the PATHS match AND, where the declaration states a
+fingerprint, the card's matches it; a fingerprint-FREE declaration
+accepts any card at that path (the card's extra fingerprint is
+information, not a mismatch). A fingerprint-free CARD satisfies only a
+fingerprint-free declaration by path — a declared fingerprint is a
+requirement the card cannot meet blind.
 
 **A3 — ambiguity: the PRINCIPLE decides.** Where all of an
 origin-class's candidates lie in one sorted group, seat in supplied
@@ -145,13 +159,21 @@ Leftover key: refuse naming the card AND its stub (the drawer-scan
 operator's question is "which wallet do these extras belong to").
 
 **A5 — `--seat`, defined (r3 C4).** `--seat '@i=<chunk-set-id>'`
-(repeatable) resolves A3 ambiguity ONLY: the referenced card must
-already origin-match slot i under A2 and be part of the refused
-ambiguity — `--seat` can never place a card A2 would not, never
-suppresses A1/B1 stub dispositions, and never fills A4 gaps. The
+(repeatable): the referenced card must satisfy slot i's declaration
+under A2 — that clause carries the whole safety argument, so a
+consistent `--seat` on a NON-ambiguous slot is simply satisfied (r4 M1
+dropped the was-it-part-of-the-refusal conjunct: it protected nothing
+and broke scripting `--seat` for every slot in a mixed run). `--seat`
+can never place a card A2 would not, never suppresses A1/B1 stub
+dispositions, and never fills A4 gaps. The
 chunk-set id is the card's full decoded set id — the exact label the A3
 refusal printed, never a string prefix (r3 measured prefix collisions
-at 6 characters on the 11-card fixture). Unknown id, ambiguous id, or a
+at 6 characters on the 11-card fixture). The label is md-side: no mk
+surface prints it today (r4 M2 — a follow-up may surface it in
+`mk inspect`; until then the refusal text is the operator's source).
+`mk encode --chunk-set-id` can PIN two cards to one 20-bit id, so the
+ambiguous-id refusal is deliberately reachable, and its vector row says
+so rather than relying on birthday luck. Unknown id, ambiguous id, or a
 `--seat` contradicting A2 refuses by name. Vector rows: an A3 refusal
 resolved by `--seat`; a `--seat` contradicting A2 refused (r3 M2).
 
@@ -290,8 +312,11 @@ of this spec to 0C/0I before code; vectors from the first implementation
 commit; one implementer; adversarial review before merge. ALL three pieces ship
 UNGATED (r2 I4 unified the three contradictory statements to P3's
 measured ruling: parsing needs `miniscript`, an unconditional
-dependency; only `compile` needs the `cli-compiler` feature). mk is untouched; the
-cross-repo mirror rule applies only if R0 finds an mk-side action.
+dependency; only `compile` needs the `cli-compiler` feature). No mk CODE changes in this
+cycle (r4 M4) — but R0 DID find the mk-side action: the filed
+`stub-keyed-wallet-binding-at-mint` three-repo lockstep with its
+canonical-origin design obligation; the mirror entries exist in both
+FOLLOWUPS.
 
 ## Acceptance
 
