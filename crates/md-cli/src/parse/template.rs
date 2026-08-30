@@ -124,7 +124,17 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         // double-marker (`<0'';1>`), and any other non-`[0-9;]` residue, while
         // still ACCEPTING valid `<0;1>` / `<0;1;2>`. A hardened multipath is
         // un-derivable on an xpub (BIP-32), so it can NEVER fail open.
-        Regex::new(r"@(\d+)((?:/\d+'?)*)(?:/<([^>]*)>)?(/\*(?:'|h)?)?")
+        // Group 2 accepts BOTH hardening spellings (`'` and `h`) so an
+        // h-spelled origin step is CONSUMED here rather than left as
+        // unconsumed residue — see the h-spelling refusal immediately below,
+        // which is what actually rejects it. Before this widening, `/48h`
+        // fell through to M5's residue check and drew an unrelated
+        // "derivation steps after the multipath group" complaint (SPEC P1
+        // r2 M4, the F-420 class): the message named a multipath group that
+        // did not exist. Widening the capture lets the origin-path block see
+        // the WHOLE step text and refuse it BY NAME, pointing at the `'`
+        // requirement, instead of misdirecting through M5.
+        Regex::new(r"@(\d+)((?:/\d+(?:'|h)?)*)(?:/<([^>]*)>)?(/\*(?:'|h)?)?")
             .expect("static regex compiles")
     });
 
@@ -191,6 +201,27 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
             if s.is_empty() {
                 None
             } else {
+                // H-SPELL refusal (SPEC P1 r2 M4 / the F-420 class): md's
+                // INLINE TEMPLATE origin syntax accepts only the `'`
+                // hardened spelling. `h` is refused BY NAME here, pointing
+                // at the `'` requirement, rather than reaching
+                // `DerivationPath::from_str` below — which, unlike this
+                // syntax, DOES accept `h` (see `parse_key_with_origin`'s
+                // doc comment: it inherits `bitcoin::bip32::ChildNumber
+                // ::from_str`'s BIP-380 leniency for the `--key
+                // @i=[fp/path]xpub` bracket form). The two syntaxes are
+                // deliberately not required to agree: this is a template
+                // placeholder origin, not a `--key` origin bracket.
+                if let Some(step) = s.split('/').find(|step| step.ends_with('h')) {
+                    return Err(CliError::TemplateParse(format!(
+                        "@{i} origin step `{step}` uses `h` hardening; md's inline \
+                         template origin syntax requires the `'` spelling — write \
+                         `{}'` (the `--key @i=[fp/path]xpub` origin-notation form \
+                         accepts either spelling; this is a template placeholder \
+                         origin, not that form)",
+                        step.trim_end_matches('h')
+                    )));
+                }
                 Some(
                     DerivationPath::from_str(s.trim_start_matches('/')).map_err(|e| {
                         CliError::TemplateParse(format!("@{i} origin path `{s}`: {e}"))
@@ -537,13 +568,51 @@ mod lex_tests {
         assert!(matches!(err, CliError::TemplateParse(_)), "{err:?}");
     }
 
+    // ─── V-HSPELL (C1, SPEC P1 r2 M4): inline `h`-spelled origin steps ────────
+    // WAS the "unrelated multipath complaint" (F-420 class): origin class was
+    // `/\d+'?` (apostrophe only), so `/48h` left `h…` as unconsumed residue and
+    // M5's post-multipath-suffix check fired on a template with no multipath
+    // group at all. Group 2 now CONSUMES both spellings so the h-spelling
+    // refusal (immediately below the capture, in `lex_placeholders`) fires by
+    // name instead.
+
     #[test]
-    fn lex_rejects_h_in_origin_residue() {
-        // `h`-bearing origin step: origin class is `/\d+'?` (apostrophe only),
-        // so `/48h` leaves the `h…` unconsumed → reject (today: malformed
-        // XPUBh/…). This is the same residue family.
+    fn v_hspell_named_refusal_points_at_apostrophe_requirement() {
         let err = lex_placeholders("wpkh(@0/48h/0h/0h/<0;1>/*)").unwrap_err();
         assert!(matches!(err, CliError::TemplateParse(_)), "{err:?}");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("`h` hardening") && msg.contains("requires the `'` spelling"),
+            "refusal must point at the `'` requirement; got: {msg}"
+        );
+        // THE FIX: the old misdirect named a multipath group that does not
+        // exist in this template at all. It must be gone.
+        assert!(
+            !msg.contains("multipath") && !msg.contains("derivation steps after"),
+            "the old unrelated multipath complaint must not survive; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn v_hspell_mixed_apostrophe_and_h_still_names_the_h_step() {
+        // A single offending step is enough to refuse, even mid-path.
+        let err = lex_placeholders("wpkh(@0/48'/0h/0'/2'/<0;1>/*)").unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("`0h`"),
+            "must name the offending step; got: {msg}"
+        );
+    }
+
+    /// POSITIVE CONTROL: the `'`-only spelling this refusal exists to require
+    /// is completely unaffected by the widened capture group.
+    #[test]
+    fn v_hspell_apostrophe_spelling_still_accepted() {
+        let v = lex_placeholders("wpkh(@0/48'/0'/0'/2'/<0;1>/*)").unwrap();
+        assert_eq!(
+            v[0].origin_path.as_ref().unwrap().to_string(),
+            "48'/0'/0'/2'"
+        );
     }
 
     #[test]
@@ -2799,8 +2868,14 @@ mod entry_tests {
 
     #[test]
     fn parse_template_rejects_h_in_origin_funds() {
+        // V-HSPELL (C1): the refusal is now the dedicated h-spelling message,
+        // not the M5 residue family — see `v_hspell_*` above for the message
+        // content assertions; this test keeps the `parse_template` entry
+        // point (rather than `lex_placeholders` directly) covered.
         let err = parse_template("wpkh(@0/48h/0h/0h/<0;1>/*)", &[], &[]).unwrap_err();
         assert!(matches!(err, CliError::TemplateParse(_)), "{err:?}");
+        let msg = format!("{err}");
+        assert!(msg.contains("requires the `'` spelling"), "got: {msg}");
     }
 
     #[test]

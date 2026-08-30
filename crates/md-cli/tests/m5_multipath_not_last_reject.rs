@@ -53,8 +53,13 @@ fn encode_post_multipath_fixed_step_rejects() {
         .stdout(predicate::str::contains("md1").not());
 }
 
-/// (a') The `h`-bearing origin step variant `@0/48h/0h/0h/<0;1>/*` (unconsumed
-/// `h…` residue) must also reject — same residue family.
+/// (a') The `h`-bearing origin step variant `@0/48h/0h/0h/<0;1>/*` must also
+/// reject. UPDATED (C1, V-HSPELL, SPEC P1 r2 M4): this is no longer the M5
+/// residue family — group 2's capture now consumes `h`-spelled steps, and a
+/// dedicated named refusal fires pointing at the `'` requirement, rather than
+/// M5's post-multipath-suffix message misfiring on a template with no
+/// multipath group at all (the old F-420-class misdirect). See
+/// `parse::template::v_hspell_*` for the message-content assertions.
 #[test]
 fn encode_h_in_origin_residue_rejects() {
     Command::cargo_bin("md")
@@ -63,6 +68,8 @@ fn encode_h_in_origin_residue_rejects() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("template parse error"))
+        .stderr(predicate::str::contains("requires the `'` spelling"))
+        .stderr(predicate::str::contains("multipath").not())
         .stdout(predicate::str::contains("md1").not());
 }
 
