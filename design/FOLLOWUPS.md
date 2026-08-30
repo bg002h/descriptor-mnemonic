@@ -2146,3 +2146,50 @@ appears with inconsistent path/multipath/hardening"). Decide both
 directions deliberately (a normative md change, own gate + vectors):
 refuse the same-path repetition, and either admit or by-design-refuse
 the disjoint form; do not change either as a converter side effect.
+
+### `md-decompose-rejects-double-wildcard-input` — `md decompose` cannot read a descriptor written with BIP-389's `/**` shorthand, though `md encode` accepts `@0/**` (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — C4 may absorb it if the operator wants it in-cycle**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, phase C3
+(`md decompose`). Severity **Minor**: the remedy is in the operator's
+hands and the refusal names the accepted spellings.
+
+Measured 2026-08-30 against the C3 tree:
+
+```
+$ md decompose "wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq…/**)"
+md: decompose: this is not a descriptor md can parse: at derivation index
+'**': invalid child number format. …multipath (`<0;1>`) or fixed-path…
+exit 1
+```
+
+The cause is upstream, not md: rust-miniscript at the pinned rev
+`ff4732e` does not parse BIP-389's `/**` shorthand at all, so nothing
+reaches decompose's own code. md is ASYMMETRIC as a result — its own
+template parser desugars the shorthand
+(`crates/md-cli/src/parse/template.rs::desugar_double_wildcard`, and
+`tests/cli_bip388_double_wildcard.rs` pins it), so `md encode
+"wpkh(@0/**)"` works while `md decompose "wpkh(<key>/**)"` does not.
+Wallets that export the `/**` spelling therefore need a manual rewrite
+to `/<0;1>/*` before decompose will read them.
+
+The fix is small and local — apply the same desugar to decompose's
+input before handing it to rust-miniscript — but it is a widening of
+the D-row input boundary that SPEC P3 did not state, so C3 filed it
+rather than taking it. Decide deliberately: desugar on input (and say
+so in `--help`), or keep the refusal and name `/**` in its text as a
+recognised spelling with its rewrite.
+
+### `md-decompose-has-no-json-output` — `md decompose` emits text only, unlike every other reading verb (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, phase C3.
+Severity **Nit**.
+
+`decode`, `inspect`, `bytecode`, `descriptor`, `address` and `repair`
+all carry `--json`; `decompose` does not, because SPEC P3 and the
+implementation plan specify only the text emissions (template, key
+lines, fingerprint flags, descriptor, commands) and C3 declined to
+invent a JSON envelope no consumer had asked for. A GUI or front-end
+doing the `listdescriptors`-extraction job SPEC P3 leaves to "a future
+front-end" would want one — that is the moment to design it, since the
+envelope should carry the per-slot origin/fingerprint/key structure
+rather than the rendered text blocks.
