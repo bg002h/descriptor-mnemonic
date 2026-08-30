@@ -354,9 +354,15 @@ from this paragraph budgets that ordering here (r9 M3).** **P2 also
 ships the SPEND-EQUALITY checker**
 (r3 M3 — it is B2's split-vs-keyed "agree" and acceptance 1's relation
 (a); a reader scoping P2 from this paragraph budgets it here) and the
-`--seat` flag (A5). The keyed-card output needs no new surface:
-the spec documents the two-command bridge (compose → `md encode --key`),
-sugar filed only if the bridge proves annoying.
+`--seat` flag (A5). The keyed-card output was SPECIFIED here as the
+two-command bridge (compose → `md encode --key`) needing no new
+surface — **measured FALSE at C4 (2026-08-30): a descriptor composed
+from mk1 cards carries depth-0 xpubs (the Pubkeys TLV holds 65 bytes,
+no depth) and `md encode --key` admits only depth 3/4, so the bridge
+refuses from both ends.** The S → keyed-card matrix cell stays ✗ with
+that reason, and the gap is filed as
+`md-cannot-mint-a-keyed-card-from-a-split-set` (post-converter md-cli
+mini-cycle).
 
 **P3 — the concrete descriptor becomes an entrance (the D row).**
 `md decompose <DESCRIPTOR|--in FILE>`: parses a concrete descriptor via
