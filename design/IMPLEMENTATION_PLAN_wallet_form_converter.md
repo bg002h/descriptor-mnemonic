@@ -314,6 +314,33 @@ changes (r4 M4); no md `encode` admission change for the `@0,@0` form
   possible `mk inspect` chunk-set-id surface (r4 M2) if the `--seat`
   UX proves it needed.
 
+**C4's reconciliation of this list (2026-08-30), each entry resolved:**
+
+- `md-repeated-placeholder-inverts-bip388` — **post-converter**, unchanged;
+  its own text forbids a converter side effect. Not touched.
+- `stub-keyed-wallet-binding-at-mint` — **post-converter, other repo**
+  (mnemonic-key's next mint cycle). Not touched.
+- `scripts/push-via-staging.sh` — **DONE this cycle**, with the two required
+  contexts resolved against the live protection rule rather than copied from
+  the sibling.
+- `mk inspect` chunk-set-id surface — **NOT NEEDED, decided by measurement,
+  so not filed.** The `--seat` UX never leaves the operator without the id:
+  md prints the full five-hex-digit label beside every card both in a
+  seating REFUSAL and in the B1 disposition note on a SUCCESSFUL composition
+  (measured on the pathological set: `043d3, 13da0, 3fc7c, 69f0e, 7fa26,
+  94eb4, ab645, d1427, dd78b, decb1, e03a5`). A separate mk surface would be
+  a second way to learn something md already volunteers.
+- `md-decompose-rejects-double-wildcard-input` (C3's, heading offered C4 the
+  option) — **CONSIDERED AND DECLINED**; it widens SPEC P3's D-row input
+  boundary, which a close-out commit must not do. Stays post-converter.
+- **New, filed by C4:** `md-verify-against-flag-for-cross-form-comparison`
+  (B2's missing CLI channel — the decision C2 parked here),
+  `md-cannot-mint-a-keyed-card-from-a-split-set` (the one matrix cell that
+  did not flip), `phase-gate-omits-cargo-doc`,
+  `push-ritual-not-discoverable-from-claude-md`; plus the standing
+  `manual-cli-surface-mirror` entry marked TRIGGERED with this cycle's
+  concrete flag list. All post-converter or operator-owned; none gates.
+
 ## 7. Process gates (restated so the plan is self-carrying)
 
 R0 this plan → 0C/0I. Then per phase: re-validate plan freshness →

@@ -211,6 +211,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Why filed:** the manual is a separate artifact (its own `manual-v*` versioning); without an explicit mirror invariant, sibling-side flag changes would silently drift the manual.
 - **Status:** `open` (mirror invariant active for the lifetime of `mnemonic-toolkit/docs/manual/`)
 - **Tier:** `cross-repo`
+- **TRIGGERED 2026-08-30 by the wallet-form-converter cycle** — the debt is now concrete, not hypothetical. `md-cli` gained one SUBCOMMAND (`decompose`, with `--in`, `--emit`, `--network`) and three flags on each of `descriptor` and `address` (`--from-mk1`, `--from-mk1-file`, `--seat`), plus the origin-notated `--key` value form. `mnemonic-toolkit/docs/manual/src/40-cli-reference/42-md.md` must mirror them or the manual-side `tests/lint.sh flag-coverage` step fails on its next push. Not done in-cycle: the manual is a SIBLING repo and the converter cycle's worktree does not reach it. Owning phase: the toolkit's next manual pass, before the next `manual-v*` tag.
 
 ### `ms1-v01-payload-bracket-overflow-prefix-byte-incompatibility` — ms1 v0.1 wire-format plan needs revision (BIP-93 codex32 length-bracket conflict with locked `0x00` prefix byte)
 
@@ -2147,7 +2148,7 @@ directions deliberately (a normative md change, own gate + vectors):
 refuse the same-path repetition, and either admit or by-design-refuse
 the disjoint form; do not change either as a converter side effect.
 
-### `md-decompose-rejects-double-wildcard-input` — `md decompose` cannot read a descriptor written with BIP-389's `/**` shorthand, though `md encode` accepts `@0/**` (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — C4 may absorb it if the operator wants it in-cycle**)
+### `md-decompose-rejects-double-wildcard-input` — `md decompose` cannot read a descriptor written with BIP-389's `/**` shorthand, though `md encode` accepts `@0/**` (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — C4 CONSIDERED AND DECLINED 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C3
 (`md decompose`). Severity **Minor**: the remedy is in the operator's
@@ -2179,6 +2180,17 @@ rather than taking it. Decide deliberately: desugar on input (and say
 so in `--help`), or keep the refusal and name `/**` in its text as a
 recognised spelling with its rewrite.
 
+**C4 considered it and DECLINED (2026-08-30), for the reason C3 filed
+it.** The entry's own heading offered C4 the option; C4 is the
+acceptance-and-close-out phase, and taking this would WIDEN the D-row
+input boundary SPEC P3 states — a spec change smuggled in under a
+close-out commit, past the R0 loop that ruled on that boundary. The
+remedy also stays in the operator's hands (rewrite `/**` to `/<0;1>/*`)
+and the refusal already names the accepted spellings, so nothing is
+unreachable meanwhile. It keeps its owning phase: the post-converter
+md-cli mini-cycle, where the two options above get decided together
+with vectors.
+
 ### `md-decompose-has-no-json-output` — `md decompose` emits text only, unlike every other reading verb (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C3.
@@ -2193,3 +2205,141 @@ doing the `listdescriptors`-extraction job SPEC P3 leaves to "a future
 front-end" would want one — that is the moment to design it, since the
 envelope should carry the per-slot origin/fingerprint/key structure
 rather than the rendered text blocks.
+
+### `md-verify-against-flag-for-cross-form-comparison` — SPEC B2's split-vs-keyed comparison has no operator-reachable command; the obvious two-command substitute reports a FALSE difference (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, phase C4, closing
+the question C2's report left open ("`md descriptor --from-mk1` cannot be
+handed a keyed card as a cross-check oracle … Owning phase: C4").
+Severity **Minor**. **The flag is NOT added by C4** — the phase brief
+scoped C4 to the acceptance walk, and adding a surface at close-out
+would ship a flag no R0 round reviewed.
+
+**C4's decision, and the evidence for it.** The comparison is not
+inexpressible today — but the FORM an operator would reach for first is
+wrong, which is why it wants a flag rather than a documentation line.
+Measured on the pathological vault, both forms of the same wallet:
+
+```
+$ md descriptor <6 keyless md1> --from-mk1 <30 mk1>  > split.txt   # 1,901 chars
+$ md descriptor <22 keyed md1>                       > keyed.txt   # 1,648 chars
+$ diff split.txt keyed.txt
+Files split.txt and keyed.txt differ                               # exit 1
+```
+
+The two descriptors are the SAME WALLET and `diff` says otherwise. The
+split form carries each slot's `[fingerprint/path]` origin (11 × 23 = 253
+characters) and the keyed form declares none, and the BIP-380 checksum is
+computed over the differing text, so the strings differ in 254 characters
+while the script content is identical. That is precisely SPEC Acceptance
+1's reason for having TWO relations: spend-equality excludes origins,
+round-trip-equality does not.
+
+What DOES work today, with the two-command surface:
+
+```
+$ md address <6 keyless md1> --from-mk1 <30 mk1>
+bc1qkuknuy6dsm0fq44cyyhzqy9wl3ex2n6ed39zxhx867l9wlh4yhlsejms64
+$ md address <22 keyed md1>
+bc1qkuknuy6dsm0fq44cyyhzqy9wl3ex2n6ed39zxhx867l9wlh4yhlsejms64
+```
+
+Equal addresses are a sound practical oracle (and `--count` widens it),
+so the operator is not blocked. But the comparison they reach for first
+reports a false negative on a correct restore — the worst direction for a
+funds-shaped check, since it invites re-cutting plates that are fine.
+
+`seat::compose::spend_equal` — the checker SPEC P2 requires — already
+ships and is row-pinned four ways; it carries an `#[allow(dead_code)]`
+whose stated reason is exactly this missing channel. A
+`--verify-against <md1|FILE>` flag on `md descriptor` would wire it, and
+should: state SPEND-EQUAL vs NOT, name which half failed (structure,
+values, use-sites), and say plainly that origin metadata is excluded and
+why. Vector rows: an equal cross-form pair, a one-xpub-off negative, and
+an origins-differ pair that must still report EQUAL.
+
+### `md-cannot-mint-a-keyed-card-from-a-split-set` — the S → keyed-card bridge is blocked by `md encode --key`'s depth-3/4 admission rule (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, phase C4, while
+flipping plan §1's matrix. Severity **Minor** — a missing surface, not a
+wrong result, and it is now stated in the matrix cell itself rather than
+left as a silent gap. **This is the one cell C4 did NOT flip to ✓.**
+
+A descriptor composed from mk1 cards carries DEPTH-0 extended keys: md's
+`Pubkeys` TLV holds 65 bytes (chain code ‖ compressed point) with no
+depth or child number, so md-codec rebuilds a depth-0 xpub. `md encode
+--key` admits only an account-level xpub. So the bridge refuses from
+either end. Measured 2026-08-30:
+
+```
+$ md encode "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,…))" --key "@0=<the composed xpub>"
+md: --key @0: expected an account-level xpub at depth 3 or 4 (this
+script context conventionally uses 4), got 0
+
+$ md decompose "<the descriptor composed from the split set>" --emit template
+md: decompose: key @0 is depth-inconsistent IN THE INPUT: the extended
+key states depth 0, but its origin path `[73c5da0a/48'/0'/0'/2']` has 4
+component(s) — depth 4. …
+```
+
+**The information is not lost — only the surface is missing.** A keyed
+card needs exactly the 65 bytes each mk1 card already carries, so
+minting one from a seated composition is a data-preserving operation;
+what is absent is a command that does it without round-tripping through
+a descriptor string whose depth md then refuses. The natural shape is a
+`--out <FILE>` / `--emit md1` on `md descriptor --from-mk1` (mint the
+keyed card directly from the seating result), NOT a relaxation of the
+depth rule, which exists to catch a genuinely wrong key being pasted at
+an account slot.
+
+Related but distinct: `stub-keyed-wallet-binding-at-mint` (mk's mint-side
+stub semantics) and `md-decompose-rejects-double-wildcard-input` (D-row
+input spelling). Neither is this.
+
+### `phase-gate-omits-cargo-doc` — the converter cycle's per-phase gate ran nextest + clippy + fmt and never rustdoc, so CI's `doc` job was RED for two phases undetected (repo: **descriptor-mnemonic**; owning phase: **the next plan that writes a phase gate**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, phase C4.
+Severity **Minor** (the defect it hid was itself minor; the GAP is the
+finding). Fixed in-cycle at commit `d75214f7`, filed so the gate is
+widened rather than the incident merely closed.
+
+`design/IMPLEMENTATION_PLAN_wallet_form_converter.md` §3 C0 defines "the
+gate" as `cargo nextest run --locked` + `cargo clippy --locked
+--all-targets -- -D warnings` + `cargo fmt --check`, and every phase
+quoted those three. None of them runs rustdoc. `.github/workflows/ci.yml`
+has a fourth job — `cargo doc --workspace --no-deps
+--document-private-items` with `RUSTDOCFLAGS: "-D warnings"` — and C2's
+`--seat` help text broke it:
+
+```
+error: unclosed HTML tag `chunk-set-id`
+   --> crates/md-cli/src/main.rs:336:56
+error: could not document `md-cli`
+```
+
+C2 closed green, C3 closed green, and both were red on a required-adjacent
+CI job the whole time. Verified pre-existing by stashing C4's work and
+re-running against the bare C3 tip. **A phase gate that is narrower than
+CI is a gate that reports green for a tree CI will reject** — the next
+plan's gate definition should name every CI job, or name the command that
+runs them all.
+
+### `push-ritual-not-discoverable-from-claude-md` — `scripts/push-via-staging.sh` exists but nothing an agent reads first points at it (repo: **descriptor-mnemonic**; owning phase: **operator's call — a one-line CLAUDE.md edit**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, phase C4, with the
+script it refers to. Severity **Nit**.
+
+Measured behaviour, from `design/agent-reports/push-2026-08-30-converter-spec.md`:
+a push agent checked for a staging ritual by grepping `README.md` and
+`CLAUDE.md`, found nothing, used a plain `git push origin main`, and got
+`remote: Bypassed rule violations for refs/heads/main: - 2 of 2 required
+status checks are expected.` C4 committed `scripts/push-via-staging.sh`,
+which closes the capability gap — but not the DISCOVERY gap, because the
+next agent will grep the same two files.
+
+The fix is one bullet under `CLAUDE.md` → "Other repo-specific notes":
+push `main` with `scripts/push-via-staging.sh`, never a plain `git push`,
+and freeze the branch for the window. C4 did not make that edit: an
+implementer editing the instructions it is itself operating under is a
+change the operator should make deliberately, not a side effect of a
+close-out phase.
