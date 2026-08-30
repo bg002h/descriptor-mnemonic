@@ -291,14 +291,29 @@ enum Command {
         /// BIP 388 template. Requires at least one --key. Mutually exclusive with phrases.
         #[arg(long, value_name = "TEMPLATE", conflicts_with = "phrases")]
         template: Option<String>,
-        /// Concrete xpub for placeholder @i. Repeatable. Requires --template.
-        #[arg(long = "key", value_name = "@i=XPUB", requires = "template")]
+        /// Concrete xpub for placeholder @i, or the origin-notated
+        /// @i=[fingerprint/path]xpub form (BIP-380). Repeatable. Requires
+        /// --template. An origin-notated key's path must AGREE with the
+        /// slot's inline template origin when both are present (never an
+        /// override); its fingerprint must AGREE with --fingerprint when
+        /// both name the same slot.
+        #[arg(
+            long = "key",
+            value_name = "@i=XPUB|@i=[fp/path]XPUB",
+            requires = "template"
+        )]
         keys: Vec<String>,
-        /// Master-key fingerprint for placeholder @i. Repeatable. Requires --template.
+        /// Master-key fingerprint for placeholder @i. Repeatable. Requires
+        /// --template. Must AGREE with an origin-notated --key's own
+        /// fingerprint when both name the same slot -- never a silent
+        /// override.
         #[arg(long = "fingerprint", value_name = "@i=HEX", requires = "template")]
         fingerprints: Vec<String>,
-        /// Override the inferred origin path with a single shared path. Mirrors
-        /// `md encode --path`; without it a non-canonical wrapper refuses.
+        /// Shared origin path, applied PER SLOT to whichever @i the
+        /// template gave no inline origin -- a slot's inline template
+        /// origin always wins. Mirrors `md encode --path`; a slot with
+        /// neither an inline origin nor this flag hits today's
+        /// non-canonical-wrapper refusal.
         #[arg(long, value_name = "PATH", requires = "template")]
         path: Option<String>,
         /// Network for xpub validation.
@@ -325,20 +340,32 @@ enum Command {
         /// BIP 388 template. Requires at least one --key. Mutually exclusive with phrases.
         #[arg(long, value_name = "TEMPLATE", conflicts_with = "phrases")]
         template: Option<String>,
-        /// Concrete xpub for placeholder @i. Repeatable. Requires --template.
-        #[arg(long = "key", value_name = "@i=XPUB", requires = "template")]
+        /// Concrete xpub for placeholder @i, or the origin-notated
+        /// @i=[fingerprint/path]xpub form (BIP-380). Repeatable. Requires
+        /// --template. An origin-notated key's path must AGREE with the
+        /// slot's inline template origin when both are present (never an
+        /// override); its fingerprint must AGREE with --fingerprint when
+        /// both name the same slot.
+        #[arg(
+            long = "key",
+            value_name = "@i=XPUB|@i=[fp/path]XPUB",
+            requires = "template"
+        )]
         keys: Vec<String>,
-        /// Master-key fingerprint for placeholder @i. Repeatable. Requires --template.
+        /// Master-key fingerprint for placeholder @i. Repeatable. Requires
+        /// --template. Must AGREE with an origin-notated --key's own
+        /// fingerprint when both name the same slot -- never a silent
+        /// override.
         #[arg(long = "fingerprint", value_name = "@i=HEX", requires = "template")]
         fingerprints: Vec<String>,
-        /// Override the inferred origin path with a single shared path
-        /// (flattens Divergent mode to Shared). Accepts named (bip44|48|49|84|86),
-        /// hex (0xNN), or literal (m/...) forms.
+        /// Shared origin path, applied PER SLOT to whichever @i the template
+        /// gave no inline origin -- a slot's inline template origin always
+        /// wins. Accepts named (bip44|48|49|84|86), hex (0xNN), or literal
+        /// (m/...) forms.
         ///
-        /// Mirrors `md encode --path`. Without it the non-canonical wrappers this
-        /// flag exists for are unreachable here: they refuse with "non-canonical
-        /// wrapper requires explicit origin for @N", and there was no way to
-        /// supply one.
+        /// Mirrors `md encode --path`. A slot with neither an inline origin
+        /// nor this flag still hits "non-canonical wrapper requires explicit
+        /// origin for @N".
         #[arg(long, value_name = "PATH", requires = "template")]
         path: Option<String>,
         /// Network for xpub validation and address rendering.
