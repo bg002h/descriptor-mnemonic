@@ -111,7 +111,7 @@ pub fn dedupe_strings(strings: &[String]) -> Vec<String> {
 /// of that stream. Nothing here re-implements either.
 ///
 /// [`DecodedString`]: mk_codec::string_layer::DecodedString
-fn group_key_of(s: &str, position: usize) -> Result<GroupId, CliError> {
+pub fn group_key_of(s: &str, position: usize) -> Result<GroupId, CliError> {
     let decoded = decode_string(s).map_err(|e| {
         CliError::Seat(format!(
             "--from-mk1 string {} is not a decodable mk1 string: {e}",
@@ -129,6 +129,16 @@ fn group_key_of(s: &str, position: usize) -> Result<GroupId, CliError> {
         StringLayerHeader::Chunked { chunk_set_id, .. } => GroupId::Chunked(chunk_set_id),
         _ => GroupId::Single(position),
     })
+}
+
+/// The group key of ONE mk1 string, read in isolation.
+///
+/// Exact for the chunked form (the id is on the wire). A single-string card
+/// has no such field, so this reports `Single(0)` for one; that fallback is
+/// only meaningful inside a whole [`decode_cards`] run, where the position
+/// is real.
+pub fn group_id_of(s: &str) -> Result<GroupId, CliError> {
+    group_key_of(s, 0)
 }
 
 /// The whole pipeline: `&[String]` of mk1 strings in, reassembled cards out,

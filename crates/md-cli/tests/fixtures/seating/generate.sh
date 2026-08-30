@@ -328,3 +328,17 @@ header "$f" V-CAP "two independent 6-card components (518,400 matchings)"
   for p in 0 1 2 3 4 5; do mint_child "$p" 1 "$PB"; done
 } >> "$f"
 echo "wrote: $f"
+
+# ── V-LEFTOVER ──────────────────────────────────────────────────────────────
+# ONE extra card at an origin the pathological policy never declares. Tests
+# append it to the 30-string pathological set: 11 slots, 12 cards, nothing
+# unfilled and one card with nowhere to go.
+f="$HERE/v-leftover.txt"
+header "$f" V-LEFTOVER "one extra foreign card, at an origin the policy never declares"
+{
+  echo "#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \\"
+  echo "#     --origin-path m/48'/0'/9'/2' --policy-id-stub 5b48af35"
+  echo "# Append to tests/fixtures/pathological/backup-strings.txt's mk1 half."
+  mint "$(xpub_of 4)" "m/48'/0'/9'/2'" 5b48af35 --origin-fingerprint "$(fp_of 4)"
+} >> "$f"
+echo "wrote: $f"

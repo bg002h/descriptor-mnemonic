@@ -370,6 +370,7 @@ pub(crate) mod fixture {
     pub const V_R4_IK: &str = include_str!("../../tests/fixtures/seating/v-r4-ik.txt");
     pub const V_GRP: &str = include_str!("../../tests/fixtures/seating/v-grp.txt");
     pub const V_CAP: &str = include_str!("../../tests/fixtures/seating/v-cap.txt");
+    pub const V_LEFTOVER: &str = include_str!("../../tests/fixtures/seating/v-leftover.txt");
 }
 
 #[cfg(test)]

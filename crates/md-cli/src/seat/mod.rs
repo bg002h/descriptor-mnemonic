@@ -14,6 +14,7 @@
 //! | P2 input pipeline (A3(a): dedupe → group → reassemble) | [`input`] |
 //! | A2 satisfaction, the two door checks, the two card-set checks | [`satisfy`] |
 //! | A3 matchings + compose-canonicalise-compare + cap + tie-break | [`matching`] |
+//! | A4 completeness (unfilled slots, leftover cards) | [`complete`] |
 //! | composition, the comparison form, the spend-equality checker | [`compose`] |
 //!
 //! ## 1. The surface: one matrix
@@ -50,6 +51,8 @@
 // `--from-mk1` surface (plan §3 C2). Until then the allow keeps
 // `clippy -D warnings` honest without hiding anything else; step 7's commit
 // removes it, exactly as C1 removed C0's.
+#[allow(dead_code)]
+pub mod complete;
 #[allow(dead_code)]
 pub mod compose;
 #[allow(dead_code)]
