@@ -61,19 +61,42 @@ and its three siblings; the spec is `design/SPEC_wallet_form_converter.md`.
 
   Precedence is **per datum**, never whole-record. A path comes from the slot's
   inline template origin if it has one, else the shared `--path`; a fingerprint
-  comes from `--fingerprint` or from an origin-notated `--key`. Where two sources
-  name the same slot they must AGREE or the command refuses — a disagreeing
-  fingerprint or path is never silently overridden. An inline `48h/…` origin
-  whose spelling md cannot take now points at the `'` requirement instead of the
-  old misdirecting message.
+  comes from `--fingerprint` or from an origin-notated `--key`.
+
+  Where two sources state the same datum for the same slot they must AGREE or the
+  command refuses. A disagreeing fingerprint is never silently overridden, and
+  neither is a `--key` bracket path: the bracket is checked against whichever
+  source WINS for that slot — the inline template origin, else the shared
+  `--path` — and a bracket path for a slot where NEITHER speaks refuses too,
+  rather than composing an origin md knows is incomplete. The one pair that is a
+  declared PRECEDENCE rather than an agreement is `--path` against an inline
+  template origin: the inline origin wins, per slot, and `--path` fills only the
+  slots that declared none.
+
+  An inline `48h/…` origin whose spelling md cannot take now points at the `'`
+  requirement instead of the old misdirecting message.
+
+- **The template-row flags refuse rather than being ignored.** `--key`,
+  `--fingerprint` and `--path` belong to `--template`, and supplying them
+  alongside md1 phrases, `--from-mk1`, `--from-mk1-file` or `--seat` now names the
+  conflict. They were previously accepted and silently discarded on a successful
+  composition, on both `md descriptor` and `md address`.
+
+- **`md encode` sends a concrete descriptor to `md decompose`.** Handed a real
+  descriptor, `md encode` still refuses — it takes a template — but the refusal
+  now names this binary's own converter instead of `me sysw pack` in a sibling
+  repo, which was the right answer only until `md decompose` shipped. A
+  BlueWallet `Key: value` export still goes to `me`: `decompose` takes a
+  descriptor, not an export file.
 
 ### Refused, deliberately — BIP-388 key reuse
 
-Reusing one key at two positions with the same path expression is **forbidden by
-BIP 388** ("the public keys obtained by deserializing elements of the key
-information vector must be pairwise distinct", and two key expressions on one
-placeholder must have disjoint multipath sets). Both converter directions refuse
-it, at three points:
+BIP 388 requires that "the public keys obtained by deserializing elements of the
+key information vector must be pairwise distinct", and that two key expressions
+on one placeholder have disjoint multipath sets.
+
+**One extended key filling two DISTINCT slots at the same use-site** — the
+reachable case — is refused in both converter directions, at four points:
 
 - a policy using the same placeholder at more than one position, before any card
   is read;
@@ -81,7 +104,25 @@ it, at three points:
   one path yields exactly one key, so the only possible fill binds that one xpub
   to both slots — refused at the door;
 - the same extended key offered for two slots, or found at two positions of a
-  descriptor being decomposed.
+  descriptor being decomposed;
+- the same extended key given to two slots of a `--template`, on both
+  `md descriptor` and `md address`. That entrance was the one this cycle left
+  open and closed on review: `sortedmulti(2,X,X,Y)` composed at exit 0 with no
+  warning — a 2-of-3 that X alone can spend — and `md decompose` refused the
+  exact string `md descriptor` had just printed.
+
+One key at two DISJOINT use-sites (`<0;1>` beside `<2;3>`) is **not** reuse: it
+derives a different child at every index, BIP 388 permits it, and it still
+composes and still encodes.
+
+The **other** shape — one PLACEHOLDER at two positions — is where md's template
+surface is narrower than BIP 388 and currently inverts it: `md descriptor`
+refuses the BIP-LEGAL disjoint form (`@0/<0;1>/*` beside `@0/<2;3>/*` → "@0
+appears with inconsistent path/multipath/hardening") while composing the
+BIP-FORBIDDEN same-path form. That predates this work and is not changed by it;
+the seating and decompose routes refuse both spellings, and md's template
+admission is filed as an md-side question (`design/FOLLOWUPS.md`,
+`md-repeated-placeholder-inverts-bip388`).
 
 The refusals say **"forbidden by BIP 388"** and **"UNSUPPORTED"**, never
 "invalid": the script would be well-formed, and it is the POLICY this tool
