@@ -333,6 +333,12 @@ enum Command {
             conflicts_with = "template"
         )]
         from_mk1_file: Option<std::path::PathBuf>,
+        // rustdoc reads `<chunk-set-id>` as an unclosed HTML tag and
+        // `-D warnings` (CI's `doc` job) turns that into an error. The text is
+        // a CLAP help string, not documentation prose — rewording it would
+        // change `md descriptor --help`, the man page and the gui-schema — so
+        // the lint is silenced here rather than the help text edited.
+        #[allow(rustdoc::invalid_html_tags)]
         /// Assert the seating of one slot: --seat '@i=<chunk-set-id>',
         /// repeatable. The id is the FULL five-hex-digit label a seating
         /// refusal prints beside each card, never a prefix. The named card
@@ -414,6 +420,12 @@ enum Command {
             conflicts_with = "template"
         )]
         from_mk1_file: Option<std::path::PathBuf>,
+        // rustdoc reads `<chunk-set-id>` as an unclosed HTML tag and
+        // `-D warnings` (CI's `doc` job) turns that into an error. The text is
+        // a CLAP help string, not documentation prose — rewording it would
+        // change `md descriptor --help`, the man page and the gui-schema — so
+        // the lint is silenced here rather than the help text edited.
+        #[allow(rustdoc::invalid_html_tags)]
         /// Assert the seating of one slot: --seat '@i=<chunk-set-id>',
         /// repeatable. The id is the FULL five-hex-digit label a seating
         /// refusal prints beside each card, never a prefix. The named card
