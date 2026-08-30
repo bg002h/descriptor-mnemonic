@@ -8,12 +8,16 @@
 //! wrappers generally). Two copies is how one of them ends up without it.
 
 use crate::error::CliError;
-use crate::parse::keys::{ParsedFingerprint, parse_fingerprint, parse_key};
-use crate::parse::path::apply_path_override;
-use crate::parse::template::{ctx_for_template, parse_template};
+use crate::parse::keys::{
+    ParsedFingerprint, ParsedKey, ScriptCtx, parse_fingerprint, parse_key_with_origin,
+};
+use crate::parse::path::apply_path_override_per_slot;
+use crate::parse::template::{ctx_for_template, lex_placeholders, parse_template};
+use bitcoin::bip32::DerivationPath;
 use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
 use md_codec::encode::Descriptor;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The two ways a wallet policy reaches a command: as md1 phrases, or as a
 /// template plus concrete keys.
@@ -49,18 +53,15 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
             ));
         }
         let ctx = ctx_for_template(template);
-        let parsed_keys = args
-            .keys
-            .iter()
-            .map(|k| parse_key(k, ctx, args.network))
-            .collect::<Result<Vec<_>, _>>()?;
-        let parsed_fps: Vec<ParsedFingerprint> = args
-            .fingerprints
-            .iter()
-            .map(|s| parse_fingerprint(s))
-            .collect::<Result<Vec<_>, _>>()?;
+        let (parsed_keys, parsed_fps, inline_declared) = resolve_keys_fingerprints_and_precedence(
+            template,
+            args.keys,
+            args.fingerprints,
+            ctx,
+            args.network,
+        )?;
         let mut descriptor = parse_template(template, &parsed_keys, &parsed_fps)?;
-        apply_path_override(&mut descriptor, args.path)?;
+        apply_path_override_per_slot(&mut descriptor, args.path, &inline_declared)?;
         return Ok(descriptor);
     }
     // Phrase path. mstring display-grouping (SPEC §3.2): strip separators so a
@@ -72,4 +73,123 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
         let refs: Vec<&str> = phrases.iter().map(String::as_str).collect();
         Ok(reassemble(&refs)?)
     }
+}
+
+/// SPEC P1's per-datum precedence (`design/SPEC_wallet_form_converter.md`
+/// "The three pieces"), resolved BEFORE `parse_template` runs. Accepts the
+/// origin-notated `--key '@i=[fp/path]xpub'` form (C0's `parse_key_with_origin`)
+/// alongside the bare `@i=XPUB` form it already accepted (both go through the
+/// same parser — a bare value just carries no bracket).
+///
+/// "the sources never overlap on the same datum, so precedence is
+/// per-DATUM, not per-source":
+///
+/// - PATHS come from the inline template origin where present, else the
+///   shared `--path` (applied afterward, per slot, by
+///   `apply_path_override_per_slot`), else today's non-canonical-wrapper
+///   refusal stands. An origin-notated `--key`'s bracket PATH is NEVER a
+///   source of descriptor path data — it exists only to be checked against
+///   the slot's inline template path when BOTH are present (V-PATHAGREE):
+///   agreement is not an override, and disagreement refuses naming the slot
+///   and both paths.
+/// - FINGERPRINTS come from `--fingerprint @i=` or an origin-notated
+///   `--key`'s bracket fingerprint; when BOTH name slot i they must AGREE
+///   (V-FPAGREE) or refuse — never a silent override in either direction.
+///
+/// Returns `(parsed_keys, parsed_fingerprints, inline_declared)` — the last
+/// is the per-slot set `apply_path_override_per_slot` needs to know which
+/// slots the shared `--path` may still fill in.
+type ResolvedKeysAndFingerprints = (Vec<ParsedKey>, Vec<ParsedFingerprint>, BTreeSet<u8>);
+
+fn resolve_keys_fingerprints_and_precedence(
+    template: &str,
+    keys: &[String],
+    fingerprints: &[String],
+    ctx: ScriptCtx,
+    network: bitcoin::Network,
+) -> Result<ResolvedKeysAndFingerprints, CliError> {
+    let origin_keys = keys
+        .iter()
+        .map(|k| parse_key_with_origin(k, ctx, network))
+        .collect::<Result<Vec<_>, _>>()?;
+    let explicit_fps: Vec<ParsedFingerprint> = fingerprints
+        .iter()
+        .map(|s| parse_fingerprint(s))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Inline per-slot template origins, read BEFORE parse_template folds them
+    // into path_decl's Shared/Divergent representation — which cannot answer
+    // "did slot i declare one at all" once folded (see
+    // apply_path_override_per_slot's doc comment for why).
+    let occs = lex_placeholders(template)?;
+    let mut inline_paths: BTreeMap<u8, DerivationPath> = BTreeMap::new();
+    for occ in &occs {
+        if let Some(p) = &occ.origin_path {
+            inline_paths.entry(occ.i).or_insert_with(|| p.clone());
+        }
+    }
+    let inline_declared: BTreeSet<u8> = inline_paths.keys().copied().collect();
+
+    // V-PATHAGREE: an origin-notated --key path is checked against the
+    // slot's inline template path ONLY when BOTH exist. A key bracket with
+    // no path (a bare @i=XPUB, or [fp]xpub with no path steps) has nothing
+    // to agree or disagree about: parse_key_with_origin represents "no path
+    // given" as an empty DerivationPath. There is no template or bracket
+    // syntax for an explicitly-empty-but-present path (C0's parser refuses a
+    // bare trailing slash as BadOrigin before it ever reaches here), so this
+    // is not a real ambiguity.
+    for ok in &origin_keys {
+        if ok.path.as_ref().is_empty() {
+            continue;
+        }
+        if let Some(inline) = inline_paths.get(&ok.i) {
+            if &ok.path != inline {
+                return Err(CliError::Mismatch(format!(
+                    "@{}: origin-notated --key path `{}` disagrees with the \
+                     template's inline origin path `{}` for this slot (agreement \
+                     is required; the --key path never overrides the template)",
+                    ok.i, ok.path, inline
+                )));
+            }
+        }
+    }
+
+    // V-FPAGREE: merge --fingerprint and origin-notated --key fingerprints,
+    // agreeing or refusing per slot — never a silent override.
+    let mut fp_map: BTreeMap<u8, [u8; 4]> = BTreeMap::new();
+    for f in &explicit_fps {
+        fp_map.insert(f.i, f.fp);
+    }
+    for ok in &origin_keys {
+        let Some(fp) = ok.fingerprint else {
+            continue;
+        };
+        match fp_map.get(&ok.i) {
+            Some(existing) if *existing != fp => {
+                return Err(CliError::Mismatch(format!(
+                    "@{}: --fingerprint {} disagrees with the origin-notated --key \
+                     fingerprint {} for this slot (agreement is required; neither \
+                     side silently overrides the other)",
+                    ok.i,
+                    fp_hex(*existing),
+                    fp_hex(fp)
+                )));
+            }
+            Some(_) => {} // agree — no-op, never an override
+            None => {
+                fp_map.insert(ok.i, fp);
+            }
+        }
+    }
+    let parsed_fps: Vec<ParsedFingerprint> = fp_map
+        .into_iter()
+        .map(|(i, fp)| ParsedFingerprint { i, fp })
+        .collect();
+    let parsed_keys: Vec<ParsedKey> = origin_keys.into_iter().map(|ok| ok.key).collect();
+
+    Ok((parsed_keys, parsed_fps, inline_declared))
+}
+
+fn fp_hex(fp: [u8; 4]) -> String {
+    format!("{:02x}{:02x}{:02x}{:02x}", fp[0], fp[1], fp[2], fp[3])
 }

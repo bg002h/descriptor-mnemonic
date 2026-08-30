@@ -25,14 +25,9 @@ pub enum CliError {
     /// name the origin-notation grammar the value failed rather than
     /// blaming the base58 payload (the motivation refusal 3 fix).
     ///
-    /// C0 lands `parse_key_with_origin` (the only constructor) as a
-    /// standalone parser, not yet wired into `--key` flag handling — that
-    /// wiring is C1 (`design/IMPLEMENTATION_PLAN_wallet_form_converter.md`
-    /// §3). Under default features the plain `md` binary build therefore
-    /// never constructs this variant outside `#[cfg(test)]`, same as
-    /// `CliError::Compile` below; `#[allow(dead_code)]` keeps that build
-    /// clippy-clean until C1 reaches it from `main`.
-    #[allow(dead_code)]
+    /// C0 landed `parse_key_with_origin` (the only constructor) as a
+    /// standalone parser; C1 wires it into `--key` flag handling on
+    /// `descriptor`/`address` (`cmd/build.rs::build_descriptor`).
     BadOrigin {
         i: u8,
         why: String,

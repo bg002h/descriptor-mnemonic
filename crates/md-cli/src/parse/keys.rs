@@ -546,10 +546,9 @@ mod fp_tests {
 
 /// Parsed representation of an origin-notated `--key` value.
 ///
-/// C0 (parser only, unwired): under default features the plain `md` binary
-/// build never constructs this outside `#[cfg(test)]` yet — `#[allow(dead_code)]`
-/// keeps that build clippy-clean until C1 reaches it from `--key` handling.
-#[allow(dead_code)]
+/// C1 wires this into `descriptor`/`--key` and `address`/`--key` handling
+/// (`crates/md-cli/src/cmd/build.rs::build_descriptor`) — no longer
+/// `#[allow(dead_code)]` once C1 reaches it from `main`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OriginNotatedKey {
     pub i: u8,
@@ -577,7 +576,6 @@ pub struct OriginNotatedKey {
 /// literal-path fallback (`parse::path::parse_path`) already relies on, so
 /// this parser follows the file's existing precedent rather than adding a
 /// second, narrower path grammar.
-#[allow(dead_code)]
 pub fn parse_key_with_origin(
     arg: &str,
     ctx: ScriptCtx,

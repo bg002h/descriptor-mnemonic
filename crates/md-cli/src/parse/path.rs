@@ -7,7 +7,8 @@ use crate::error::CliError;
 use crate::parse::template::to_origin_path;
 use bitcoin::bip32::DerivationPath;
 use md_codec::Descriptor;
-use md_codec::origin_path::PathDeclPaths;
+use md_codec::origin_path::{OriginPath, PathDeclPaths};
+use std::collections::BTreeSet;
 use std::str::FromStr;
 
 /// Apply a `--path` override to a parsed descriptor, if one was supplied.
@@ -31,6 +32,73 @@ pub fn apply_path_override(
         let dp = parse_path(arg)?;
         descriptor.path_decl.paths = PathDeclPaths::Shared(to_origin_path(Some(&dp)));
     }
+    Ok(())
+}
+
+/// Apply a `--path` override PER SLOT (SPEC P1's per-datum precedence): an
+/// inline template origin WINS for the slots that declared one; `--path`
+/// fills in ONLY the slots that did not — never the whole-descriptor
+/// overwrite [`apply_path_override`] above does. "Agreement is not an
+/// override" (P1) — a slot with an inline origin keeps it verbatim even
+/// when `path` disagrees with it; the caller (`build_descriptor`) is
+/// responsible for refusing that disagreement BEFORE this runs, per
+/// V-PATHAGREE — this function only decides who WINS, never who is right.
+///
+/// `inline_declared` names which `@i` slots the TEMPLATE itself gave an
+/// origin to. `descriptor.path_decl.paths` alone cannot answer that
+/// question once folded to `Shared`/`Divergent` by
+/// `template::make_path_decl` — a slot with no inline origin and a slot
+/// explicitly declaring the empty/root origin both fold to the same empty
+/// `OriginPath` (there is no template syntax for the latter, so this is
+/// not a real ambiguity in practice, but the fold has already discarded
+/// the distinction). The caller computes the set from
+/// `parse::template::lex_placeholders` BEFORE the fold and passes it in.
+///
+/// Used only by `cmd::build::build_descriptor` (`descriptor`/`address`,
+/// SPEC P1) — `encode`/`verify`/`vectors` keep [`apply_path_override`]'s
+/// existing whole-descriptor-overwrite behaviour, unchanged and out of
+/// C1's scope (their templates have no analogous per-slot precedence rule
+/// defined yet).
+pub fn apply_path_override_per_slot(
+    descriptor: &mut Descriptor,
+    path: Option<&str>,
+    inline_declared: &BTreeSet<u8>,
+) -> Result<(), CliError> {
+    let Some(arg) = path else {
+        return Ok(());
+    };
+    let n = descriptor.path_decl.n;
+    if (0..n).all(|i| inline_declared.contains(&i)) {
+        // Every slot already has an inline origin; --path has nothing left
+        // to fill in. Leave path_decl exactly as parse_template built it.
+        return Ok(());
+    }
+    let shared = to_origin_path(Some(&parse_path(arg)?));
+    let current = |i: u8| -> OriginPath {
+        match &descriptor.path_decl.paths {
+            PathDeclPaths::Shared(p) => p.clone(),
+            PathDeclPaths::Divergent(v) => v[i as usize].clone(),
+        }
+    };
+    let merged: Vec<OriginPath> = (0..n)
+        .map(|i| {
+            if inline_declared.contains(&i) {
+                current(i)
+            } else {
+                shared.clone()
+            }
+        })
+        .collect();
+    descriptor.path_decl.paths = if merged.windows(2).all(|w| w[0] == w[1]) {
+        PathDeclPaths::Shared(
+            merged
+                .into_iter()
+                .next()
+                .unwrap_or(OriginPath { components: vec![] }),
+        )
+    } else {
+        PathDeclPaths::Divergent(merged)
+    };
     Ok(())
 }
 
