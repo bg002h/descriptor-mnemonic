@@ -1,10 +1,11 @@
 # R0 round 2 — SPEC_wallet_form_converter.md, fold review
 
-**Artifact:** `design/SPEC_wallet_form_converter.md` @ `6a51d667`
-(fold `6a5cf3ad` + matrix sync `6a51d667`; `git diff 5912ad78..HEAD -- design/`).
+**Artifact:** `design/SPEC_wallet_form_converter.md` @ `ef35d4c6`
+(fold `6a5cf3ad`, matrix sync `6a51d667`, follow-up filing `ef35d4c6`;
+mk companion `mnemonic-key@bcd8505`).
 **Question:** does the fold resolve each r1 finding without introducing a new defect?
 **Reviewer:** independent R0 agent, 2026-08-30. **Verdict: RED.**
-**Counts: 2 Critical / 6 Important / 5 Minor.**
+**Counts: 2 Critical / 7 Important / 6 Minor.**
 
 r1's *"What was NOT found"* stays settled and was not re-derived. r1's measurements
 stand. Nothing in any repo was modified. Scope: the fold's own text, plus the two
@@ -43,6 +44,25 @@ against the tools.
 
 **Fully closed: 12 of 22.** The remaining ten are the two Criticals and six Importants
 below (several r1 items share a fold defect).
+
+---
+
+## 0b. The `ef35d4c6` delta — the C1 upgrade filing
+
+Asked: do the rule-1 pointer, the two FOLLOWUPS entries, and CE-1's row description
+form a consistent story? **Mostly yes; two defects.**
+
+**What is sound.** The operator ruling is recorded verbatim and identically in both
+entries. The cross-citation convention is honoured in both directions. The compat
+argument is correct and is the right reason to schedule this pre-v1.0. The spec's rule 1
+no longer claims a compat burden it does not have, and the "flip in lockstep" instruction
+is the right shape. My r1/r2 C1 measurement (`a235ee75` shared by two wallets) is cited
+accurately in all three places.
+
+**What is not.** The mk primary entry's mechanism claim is measurably wrong (**I7**), and
+the lockstep enumerates 2 of at least 5 sites that must flip together (**M6**). Neither
+touches rule 1's correctness as written, and neither changes the verdict — both Criticals
+above are independent of this delta.
 
 ---
 
@@ -305,6 +325,56 @@ An unowned normative gate is the class r1 flagged in the repo's own closure rule
 that has never been run is a hypothesis. Name the owning piece and the comparison
 relation — and note the relation is C2's, so the two findings fold together.
 
+### I7 — The mk primary entry misdescribes the mechanism it proposes to change, and its lockstep omits a third repo whose live test forbids the naive fix.
+
+`mnemonic-key/design/FOLLOWUPS.md` → `stub-keyed-wallet-binding-at-mint` says:
+
+> "(Distinct from `stub-formula-divergence`, RESOLVED v0.8.0: the FORMULA is
+> WalletPolicyId-rooted; the keyless mint path simply has no keys to feed it, so the
+> binding collapses to policy SHAPE.)"
+
+Both halves are false, measured:
+
+* **The formula is not WalletPolicyId-rooted for a keyless md1.** v0.8.0 made it
+  unconditionally so; a *later* change (toolkit #28) made it FORM-AWARE and routes
+  keyless cards to `compute_wallet_descriptor_template_id`
+  (`mk-cli/src/cmd/mod.rs`, `decode_md1_card`). Live:
+
+  ```
+  $ mk encode --xpub <K0> --origin-fingerprint 73c5da0a --origin-path "m/48'/0'/0'/2'" \
+        --from-md1 md1yqpqqxzq2qwfv8urt848e          # the pkh_basic KEYLESS template
+  policy_id_stubs:     559e64b2       <-- WalletDescriptorTemplateId
+       v0.8.0 froze:   3d190af3       <-- unconditional WalletPolicyId
+  ```
+  `mk-cli/tests/template_id_stub.rs` names `3d190af3` "the pre-#28 (**BUGGY for a
+  template**) value" and asserts the emitted stub does **not** equal it.
+
+* **It is not for want of keys.** `compute_wallet_policy_id` runs fine on a keyless
+  descriptor and discriminates without any: r1 measured two same-template keyless cards
+  giving `073e6088` vs `04829c78` on fingerprints and origins alone, and the pathological
+  keyless card's own policy id is `024a9921`. The keyless arm does not lack an input; the
+  dispatch deliberately chooses the other identity.
+
+**Two consequences the entry hides.**
+
+1. **A cheaper intermediate tier exists and is not offered.** Simply routing the keyless
+   arm to `compute_wallet_policy_id` needs no new mint-time inputs and would already
+   refuse the *fingerprint-bearing* foreign card — the ordinary drawer mistake. It would
+   NOT close CE-1, whose two wallets have byte-identical keyless cards, so only the full
+   keyed stub kills CE-1. The entry collapses two tiers with different costs into one.
+2. **It is a THREE-repo lockstep, not two.** `mnemonic-toolkit` mints the same binding
+   stubs (`crates/mnemonic-toolkit/src/cmd/bundle.rs:1239 bundle_binding_stub`), and
+   toolkit #28 agreement is precisely why the keyless arm is the template id today. The
+   test comment states the hazard directly: *"swapping the keyless arm to WalletPolicyId
+   … survived this test while killing its siblings."* The naive change is an
+   already-guarded regression, and the toolkit is an unnamed party to the flip.
+
+Rule 1 in the spec remains correct as written — it describes today's behaviour, which I
+re-measured. This is a defect in the **filed plan**: executed as described it would be
+attempted in the wrong repo, against a test written to stop it. (The descriptor-mnemonic
+companion entry does not repeat the claim; it says only "keyless-mint stubs are
+shape-only", which is accurate.)
+
 ---
 
 ## MINOR
@@ -332,11 +402,26 @@ relation — and note the relation is C2's, so the two findings fold together.
   addresses derive on both chains. Pin that fixture by name so the leg cannot be reported
   as blocked for want of an input.
 
+* **M6** — The lockstep set is under-enumerated, and "PERMANENT" is attached to the
+  wrong noun. Rule 1 says CE-1 "ships as a PERMANENT vector row **asserting exactly this
+  accepted behaviour**" and then, three lines later, that the row "flips to a refusal".
+  The intended reading — permanent as a *row*, with a *changing assertion* — is coherent
+  but is nowhere stated; as written the emphatic PERMANENT binds to the assertion that
+  flips. And the flip list names two sites ("this rule tightens and CE-1's row flips")
+  where at least five must move together: rule 1's predicate, rule 1's refusal TEXT
+  (which says "different policy SHAPE" and would become a wallet-binding message), CE-1's
+  vector row, **acceptance 2**'s parenthetical (*"a same-stub foreign card seats and the
+  derived address differs; the row asserts BOTH halves"*), and **acceptance 3**'s second
+  half (*"the same-shape case proven to seat"*, which inverts to "refused"). Both
+  acceptances would contradict the new rule 1 the day the mk release lands. Given this
+  repo's demonstrated failure mode is incomplete propagation — I5 above is the realised
+  version — enumerating the full set now is the cheap moment.
+
 ---
 
 ## Gate
 
-**RED — 2 Critical, 6 Important.** The loop does not close.
+**RED — 2 Critical, 7 Important.** The loop does not close.
 
 Both Criticals are **fold-introduced**, and both come from the same over-correction:
 r1 said "rule 3 refuses too much" and "descriptor-string equality is false", and the fold
@@ -354,7 +439,9 @@ Shortest path to GREEN:
    under the strengthened relation.
 3. **I1, I2, I3, I6** are localised, and I6 merges into C2's relation once it is fixed.
 4. **I4, I5** are propagation sweeps — five sites named, one pass.
-5. **M1–M5** ride the same fold.
+5. **I7** is a correction to the mk FOLLOWUPS entry, not to this spec; it can land
+   independently and should, before anyone schedules the upgrade.
+6. **M1–M6** ride the same fold.
 
 Re-dispatch after the fold. Nothing in the r1 disposition table marked **yes** needs
 revisiting; scope r3 to the ten items above and to whatever the fold newly writes.
