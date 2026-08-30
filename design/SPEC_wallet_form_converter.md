@@ -91,28 +91,37 @@ after a total assignment exists (wallet-id computation, stub
 confirmation, oracles, output).** No check is cited before its phase can
 compute it.
 
-**THE PRINCIPLE (r3 C1, replacing per-position classification): a card
-set seats without operator input iff EVERY complete candidate assignment
-yields the SAME wallet.** The hazard unit is the assignment, not the
-position: two `sortedmulti_a` groups of different thresholds are each
-internally order-free, yet a card's choice BETWEEN them was measured
-giving three wallets — one placing a card in a 1-of-2 unilateral-spend
-leaf. Practically: cards and slots are grouped by declared origin
-(decoded values, rule A2); within one origin-equivalence class, free
-seating requires (r4 C1 — membership alone was defeated twice, both
-constructions md-encodable today): every candidate slot to have EQUAL
-MULTIPLICITY (a repeated slot `sortedmulti(2,@0,@0,@1)` makes the two
-assignments the key multisets {X,X,Y} vs {Y,Y,X} — different wallets,
-measured), AND every OCCURRENCE of every candidate slot to lie in the
-SAME ONE sorted group (`tr(@0,{sortedmulti_a(2,@0,@1),pk(@2)})` puts
-@0 in a sorted group AND at the internal key — swapping changes the
-wallet, measured). `sortedmulti` permutation-invariance is measured; a
-vector row proves `sortedmulti_a`'s before the rule relies on it; rows
-pin both r4 constructions as refusals. Candidates spanning two groups (sorted or not), touching any
-`multi`/`multi_a` position, a taproot internal key, or any position the
-classifier cannot place (r2 I3 — the classification is exhaustive over
-pk/pkh fragments, sorted groups, unsorted groups, and the internal-key
-position; unplaceable refuses) ⇒ the ambiguity refusal.
+**THE PRINCIPLE (r3 C1; made EXECUTABLE at r5 — three rounds discovered
+invariance axes one counterexample at a time (order r2, group-choice
+r3, multiplicity and occurrence r4, use-site paths r5); the cure is
+that the check IS the principle, so no axis can be missed): a card set
+seats without operator input iff every complete candidate assignment
+composes to the SAME WALLET — and that is DECIDED BY COMPOSING, never
+by structural shortcuts.**
+
+The decision procedure: A2 defines a bipartite SATISFACTION relation
+between cards and slot declarations (r5 I1 — it is not an equivalence:
+a card can satisfy two unequal declarations, e.g. `[fp/path]` and a
+fingerprint-free `path`; "origin-equivalence classes" are the wrong
+frame and are gone from this spec). A3 enumerates the PERFECT MATCHINGS
+of that graph. Zero matchings ⇒ A4's refusals identify the unsatisfied
+side. Exactly one ⇒ seat it. Several ⇒ compose each candidate
+assignment, canonicalise FOR COMPARISON (an internal form that
+additionally sorts keys within each `sortedmulti`/`sortedmulti_a`
+group instance — making byte-equality of the comparison form exactly
+wallet-equality for sorted groups; this form is never emitted), and
+byte-compare: all equal ⇒ seat any (a free seat, PROVEN); any pair
+differs ⇒ the ambiguity refusal naming the cards, the slots, and the
+remedies (re-mint with fingerprints, or `--seat`). Matching counts are
+capped (a class of k mutually-ambiguous cards contributes k!
+compositions; above a stated bound — 720, i.e. k>6 in one class — the
+engine refuses and says the bound, `--seat` being the remedy there
+too). Every prior round's counterexample — r2's three-orders, r3's
+two-groups, r4's repeated-slot and internal-key, r5's use-site-path
+swap — ships as a vector row against THIS procedure, and r5-M1's
+measured over-strictness case (two group instances sharing
+placeholders, invariant yet refused by the old clause test) ships as a
+row proving the procedure SEATS what the clauses wrongly refused.
 
 ### PHASE A
 
@@ -140,18 +149,20 @@ fingerprint, the card's matches it; a fingerprint-FREE declaration
 accepts any card at that path (the card's extra fingerprint is
 information, not a mismatch). A fingerprint-free CARD satisfies only a
 fingerprint-free declaration by path — a declared fingerprint is a
-requirement the card cannot meet blind.
+requirement the card cannot meet blind. **Named residue (r5 M2): a
+fingerprint-free DECLARATION accepts a foreign card with the right
+path and any fingerprint — CE-1-adjacent, and it is the policy
+AUTHOR's accepted risk, chosen at mint time where `md encode` already
+warns that fingerprint-free slots cannot be told apart; the converter
+inherits that choice rather than overriding it.**
 
-**A3 — ambiguity: the PRINCIPLE decides.** Where all of an
-origin-class's candidates lie in one sorted group, seat in supplied
-order (any order is the same wallet — that is the proof obligation,
-carried by vector rows). Everywhere else, ambiguity REFUSES, naming the
-cards (by full chunk-set id), the candidate positions, and both
-remedies: re-mint with per-slot fingerprints, or `--seat` (A5).
-Identical declared origin with DIFFERENT xpubs on fingerprint-bearing
-cards refuses (impossible from one master — r1). Identical
-(origin, xpub) pairs collapse to one key, on the policy side too
-(r2 M3), pinned by a row.
+**A3 — ambiguity: THE PRINCIPLE's decision procedure runs** (perfect
+matchings of A2's satisfaction graph; compose-canonicalise-compare;
+the cap; the refusal naming cards by full chunk-set id, slots, and
+both remedies — all as stated above). Identical declared origin with
+DIFFERENT xpubs on fingerprint-bearing cards refuses (impossible from
+one master — r1). Identical (origin, xpub) pairs collapse to one key,
+on the policy side too (r2 M3), pinned by a row.
 
 **A4 — completeness is total.** Every slot filled, every supplied key
 seated. Unfilled slot: refuse naming the slot and its declared origin.
