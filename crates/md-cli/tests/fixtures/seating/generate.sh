@@ -342,3 +342,115 @@ header "$f" V-LEFTOVER "one extra foreign card, at an origin the policy never de
   mint "$(xpub_of 4)" "m/48'/0'/9'/2'" 5b48af35 --origin-fingerprint "$(fp_of 4)"
 } >> "$f"
 echo "wrote: $f"
+
+# ── the B1 family ───────────────────────────────────────────────────────────
+# All four share ONE policy so the three dispositions differ only in the stub
+# each card was minted against, which is the variable B1 is about.
+B1_TPL="wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))"
+B1_FPS=(--fingerprint @0=73c5da0a --fingerprint @1=73c5da0a)
+
+b1_keyless() { "$MD" encode "$B1_TPL" "${B1_FPS[@]}" --group-size 0 2>/dev/null; }
+b1_keyed()   { # b1_keyed <fp for both slots>
+  "$MD" encode "$B1_TPL" --key "@0=$(xpub_of 0)" --key "@1=$(xpub_of 1)" \
+        --fingerprint "@0=$1" --fingerprint "@1=$1" --group-size 0 2>/dev/null
+}
+id_of() { # id_of <field> <md1 strings...>
+  local field="$1"; shift
+  # shellcheck disable=SC2086
+  "$MD" inspect $* 2>/dev/null | awk -v f="$field:" '$1 == f {print substr($2,1,8)}'
+}
+
+B1_KEYED=$(b1_keyed 73c5da0a)
+# shellcheck disable=SC2086
+B1_WALLET_ID=$(id_of wallet-policy-id $B1_KEYED)
+# shellcheck disable=SC2086
+B1_SHAPE_ID=$(id_of wallet-descriptor-template-id $(b1_keyless))
+[ ${#B1_WALLET_ID} -eq 8 ] || { echo "wallet-policy-id extraction failed" >&2; exit 1; }
+[ ${#B1_SHAPE_ID} -eq 8 ]  || { echo "template-id extraction failed" >&2; exit 1; }
+
+b1_fixture() { # b1_fixture <file> <row> <desc> <stub> <extra provenance line>
+  header "$1" "$2" "$3"
+  {
+    echo "#   md encode \"$B1_TPL\" --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a"
+    echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+    echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub $4"
+    echo "#   mk encode --xpub <KEY 2> --origin-fingerprint 73c5da0a \\"
+    echo "#     --origin-path m/48'/0'/1'/2' --policy-id-stub $4"
+    echo "# $5"
+    b1_keyless
+    mint "$(xpub_of 0)" "m/48'/0'/0'/2'" "$4" --origin-fingerprint 73c5da0a
+    mint "$(xpub_of 1)" "m/48'/0'/1'/2'" "$4" --origin-fingerprint 73c5da0a
+  } >> "$1"
+  echo "wrote: $1"
+}
+
+b1_fixture "$HERE/v-b1-wallet.txt" V-B1-WALLET \
+  "cards stubbed with the COMPOSED wallet id -> wallet-confirmed" \
+  "$B1_WALLET_ID" \
+  "Stub $B1_WALLET_ID is the top 4 bytes of this composition's WalletPolicyId (measured with md inspect on the keyed card built from the same template + keys)."
+
+b1_fixture "$HERE/v-b1-shape.txt" V-B1-SHAPE \
+  "cards stubbed with this policy's own template id -> shape-confirmed" \
+  "$B1_SHAPE_ID" \
+  "Stub $B1_SHAPE_ID is the top 4 bytes of this policy's WalletDescriptorTemplateId."
+
+b1_fixture "$HERE/v-b1-warn.txt" V-B1-WARN \
+  "cards stubbed 232214e4 -- neither this shape nor this wallet" \
+  232214e4 \
+  "232214e4 is SPEC A1's measured value: the stub a card minted --from-md1 <the pathological KEYED card> carries. It matches neither the template id nor the composed wallet id, and all three are legitimate. The permanent row for the r3-C3 counterexample."
+
+b1_fixture "$HERE/v-b1-cross.txt" V-B1-CROSS \
+  "cards stubbed with a DIFFERENT wallet's shape id" \
+  5b48af35 \
+  "5b48af35 is the PATHOLOGICAL policy's template id -- a real shape id, belonging to another wallet entirely. Cross-shape: warn, never refuse."
+
+# The keyed card for the cross-form spend-equality row, deliberately minted
+# with DIFFERENT origin metadata (fingerprint b8688df1 on both slots) so the
+# row exercises r3-C2's point: the two forms declare different origins and
+# must still be SPEND-EQUAL.
+f="$HERE/v-spendeq-keyed.txt"
+header "$f" V-SPENDEQ "the same wallet as a KEYED card, with different origin metadata"
+{
+  echo "#   md encode \"$B1_TPL\" --key @0=<KEY 1> --key @1=<KEY 2> \\"
+  echo "#     --fingerprint @0=b8688df1 --fingerprint @1=b8688df1"
+  echo "# Same template, same keys, same use-site paths; DIFFERENT declared"
+  echo "# fingerprints from v-b1-wallet.txt's split set. Spend-equal, not"
+  echo "# round-trip-equal -- the distinction acceptance 1 exists to draw."
+  b1_keyed b8688df1
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-CE1 ───────────────────────────────────────────────────────────────────
+# A fingerprint-FREE policy, the genuine pair, and a FOREIGN card carrying the
+# SAME stub at @0's path. The foreign card seats (A2's third cell -- the named
+# residue) and the derived address differs. Both halves are the row.
+CE1_TPL="wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))"
+# shellcheck disable=SC2086
+CE1_SHAPE=$(id_of wallet-descriptor-template-id $("$MD" encode "$CE1_TPL" --group-size 0 2>/dev/null))
+[ ${#CE1_SHAPE} -eq 8 ] || { echo "CE1 template-id extraction failed" >&2; exit 1; }
+
+f="$HERE/v-ce1.txt"
+header "$f" V-CE1 "fingerprint-free policy + the GENUINE pair (stub $CE1_SHAPE)"
+{
+  echo "#   md encode \"$CE1_TPL\"        (no --fingerprint: fp-free declarations)"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub $CE1_SHAPE"
+  echo "#   mk encode --xpub <KEY 2> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/1'/2' --policy-id-stub $CE1_SHAPE"
+  "$MD" encode "$CE1_TPL" --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" "$CE1_SHAPE" --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 1)" "m/48'/0'/1'/2'" "$CE1_SHAPE" --origin-fingerprint "$(fp_of 1)"
+} >> "$f"
+echo "wrote: $f"
+
+f="$HERE/v-ce1-foreign.txt"
+header "$f" V-CE1 "the FOREIGN card: another master, @0's path, the SAME stub"
+{
+  echo "#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub $CE1_SHAPE"
+  echo "# Substitute it for v-ce1.txt's first card. Nothing in the engine can"
+  echo "# tell it apart -- the policy declares no fingerprint to discriminate"
+  echo "# with, and that is the policy AUTHOR's accepted risk (SPEC A2, r5 M2)."
+  mint "$(xpub_of 4)" "m/48'/0'/0'/2'" "$CE1_SHAPE" --origin-fingerprint "$(fp_of 4)"
+} >> "$f"
+echo "wrote: $f"

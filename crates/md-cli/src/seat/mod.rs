@@ -16,6 +16,7 @@
 //! | A3 matchings + compose-canonicalise-compare + cap + tie-break | [`matching`] |
 //! | A4 completeness (unfilled slots, leftover cards) | [`complete`] |
 //! | A5 `--seat '@i=<chunk-set-id>'` | [`directive`] |
+//! | B1 stub disposition, B2 oracles | [`disposition`] |
 //! | composition, the comparison form, the spend-equality checker | [`compose`] |
 //!
 //! ## 1. The surface: one matrix
@@ -58,6 +59,8 @@ pub mod complete;
 pub mod compose;
 #[allow(dead_code)]
 pub mod directive;
+#[allow(dead_code)]
+pub mod disposition;
 #[allow(dead_code)]
 pub mod input;
 #[allow(dead_code)]
