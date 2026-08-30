@@ -1,6 +1,9 @@
 # IMPLEMENTATION PLAN — the wallet-form converter (P1 / P2 / P3)
 
-**Status: DRAFT — R0 review pending; no code before 0C/0I.**
+**Status: R0 CLOSED GREEN at r2 (0C/0I/1M, Minor folded same day) —
+rounds r1 (RED 0C/3I/2M), r2 (GREEN) in
+`design/agent-reports/R0-converter-plan-r*.md`. A GREEN EXPIRES —
+re-validate before each phase dispatch (§7).**
 Spec: `design/SPEC_wallet_form_converter.md`, **R0 CLOSED GREEN at r9**
 (rounds r1–r9 + the 2026-08-30 operator key-reuse rulings all folded).
 The spec is normative; this plan only schedules and locates it. Where
@@ -139,8 +142,10 @@ skeleton exists carrying the matrix doc comment. Exit gate:
 tree with no new tests, so alone they cannot prove a phase's work
 exists): the phase's named roster rows present and passing, proven by
 a row-scoped run (`cargo nextest run --locked -E 'test(<row prefix>)'`)
-whose NONZERO matched-test count is quoted in the phase-close commit
-message — an empty filter is a FAIL, not a pass.** These together are
+whose matched-test count is quoted AGAINST THE PHASE'S EXPECTED ROW
+COUNT (r2 M1 — "nonzero" is satisfied by 1 of C3's 8 rows; the
+expected number comes from the roster) in the phase-close commit
+message — an empty or short count is a FAIL, not a pass.** These together are
 hereafter "the gate"; C0's named rows are V-KEYORIG-BAD's unit half.
 
 **C1 — P1, the T row (small).** Origin-notated `--key` accepted on
@@ -196,7 +201,10 @@ here because rust-miniscript parses it; Core JSON and receive/change
 pairs refused with guidance, not the bare checksum error). Rows:
 V-D-RT, V-D-DEPTH, V-D-NOORIG, V-D-REUSE, V-D-SHAPE2, V-D-JSON,
 V-D-PAIR, V-D-CHKSUM. Exit: the gate (its row-scoped run covers all
-eight V-D-* rows).
+eight V-D-* rows) + the same scoped independent review pattern as
+C2's (sonnet, mechanical: do the eight rows assert what the spec's
+P3 bullets demand; any false-PASS shape) — r2 M1's second half: C3
+was the one phase with rows and no review before C4's backstop.
 
 **C4 — acceptance, docs, close-out.**
 
