@@ -53,3 +53,8 @@ fn encode_example_matches_actual_output() {
 fn decode_example_matches_actual_output() {
     check_example("decode");
 }
+
+#[test]
+fn decompose_example_matches_actual_output() {
+    check_example("decompose");
+}

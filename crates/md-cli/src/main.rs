@@ -3,6 +3,7 @@
 mod cmd;
 #[cfg(feature = "cli-compiler")]
 mod compile;
+mod decompose;
 mod error;
 mod format;
 mod output_advisory;
@@ -445,6 +446,40 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Turn a CONCRETE output descriptor back into the pieces md engraves:
+    /// the keyless BIP-388 template, one origin-notated key line per slot, and
+    /// the per-slot --fingerprint flags.
+    ///
+    /// The inverse of `md descriptor`. Takes ONE descriptor — real xpubs, with
+    /// or without a `#checksum`, multipath (`<0;1>`) or fixed-path. Bitcoin
+    /// Core's `listdescriptors` JSON and separate receive/change descriptor
+    /// PAIRS are refused with guidance rather than parsed.
+    #[command(
+        after_long_help = "EXAMPLES:\n  $ md decompose wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf/<0;1>/*) --emit template\n  wpkh(@0/48'/0'/0'/2'/<0;1>/*)"
+    )]
+    Decompose {
+        /// The concrete output descriptor. Exactly one; two are refused with
+        /// the receive/change-pair guidance.
+        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
+        descriptors: Vec<String>,
+        /// Read the descriptor from FILE instead of argv — decompose's own
+        /// input material (SPEC §6b). Blank lines and `#` comments are
+        /// skipped; a file holding a receive/change PAIR draws the pair
+        /// guidance, not a parse error.
+        #[arg(long = "in", value_name = "FILE")]
+        in_file: Option<std::path::PathBuf>,
+        /// Which artifact to print. `all` (the default) prints template, key
+        /// lines and fingerprint flags under `#` headers; the single-section
+        /// forms redirect straight into the file the next command wants.
+        /// `commands` prints runnable `md encode` / `mk encode` lines and
+        /// REFUSES when any key states no origin (an mk1 card binds key to
+        /// origin by design).
+        #[arg(long, value_enum, default_value_t = cmd::decompose::Emit::All)]
+        emit: cmd::decompose::Emit,
+        /// Network the descriptor's extended keys must belong to.
+        #[arg(long, value_enum, default_value_t = CliNetwork::Mainnet)]
+        network: CliNetwork,
+    },
     /// Emit a machine-readable JSON description of this CLI's flag surface
     /// (SPEC §7 of the mnemonic-gui v0.2 plan). Consumed by the mnemonic-gui
     /// overlay to bootstrap and drift-check per-subcommand widget schemas.
@@ -742,6 +777,17 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 json,
             })
         }
+        Command::Decompose {
+            descriptors,
+            in_file,
+            emit,
+            network,
+        } => cmd::decompose::run(cmd::decompose::DecomposeArgs {
+            descriptors: &descriptors,
+            in_file: in_file.as_deref(),
+            emit,
+            network: network.into(),
+        }),
         #[cfg(feature = "json")]
         Command::GuiSchema => cmd::gui_schema::run(),
         Command::Repair(a) => cmd::repair::run(a),

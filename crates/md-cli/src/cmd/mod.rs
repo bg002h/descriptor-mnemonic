@@ -140,6 +140,7 @@ pub mod bytecode;
 #[cfg(feature = "cli-compiler")]
 pub mod compile;
 pub mod decode;
+pub mod decompose;
 pub mod descriptor;
 pub mod encode;
 pub mod gen_man;

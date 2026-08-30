@@ -52,6 +52,19 @@ pub enum CliError {
     /// Exit code 1 (a content refusal), not 2 (a usage error): the flags
     /// were spelled correctly; it is the material the engine declines.
     Seat(String),
+    /// A refusal from `md decompose` (SPEC "P3 — the concrete descriptor
+    /// becomes an entrance"), including its input boundary.
+    ///
+    /// ONE variant for the whole verb, for the same reason [`CliError::Seat`]
+    /// is one for the engine: a P3 refusal is a statement about the SUPPLIED
+    /// DESCRIPTOR, and its text — which names the BIP 388 rule, the positions,
+    /// the remedy, and never calls the input "invalid" — is the contract the
+    /// V-D-* rows pin. A taxonomy in the type would move that contract
+    /// somewhere the rows stop checking it.
+    ///
+    /// Exit code 1 (a content refusal), not 2: the flags were spelled
+    /// correctly; it is the material decompose declines.
+    Decompose(String),
 }
 
 impl fmt::Display for CliError {
@@ -67,6 +80,7 @@ impl fmt::Display for CliError {
             CliError::Mismatch(m) => write!(f, "MISMATCH: {m}"),
             CliError::BadArg(m) => write!(f, "{m}"),
             CliError::Seat(m) => write!(f, "seating refused: {m}"),
+            CliError::Decompose(m) => write!(f, "decompose: {m}"),
         }
     }
 }
