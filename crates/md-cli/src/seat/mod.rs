@@ -1,0 +1,40 @@
+//! The seating engine (P2/A1-A5, B1-B2) — currently a skeleton.
+//!
+//! C0 lands only this module doc comment, embedding plan section 1's
+//! goal-and-gaps matrix per the operator's MATRIX-TRAVELS directive
+//! (2026-08-30): the table below is byte-identical to
+//! `design/IMPLEMENTATION_PLAN_wallet_form_converter.md` section 1, and
+//! to `design/SPEC_wallet_form_converter.md`'s copy. No engine code yet —
+//! A1 triage, A2 satisfaction, A3 matchings, A4 completeness, A5 `--seat`,
+//! B1 disposition, B2 oracles, the spend-equality checker and the input
+//! pipeline all land in C2.
+//!
+//! ## 1. The surface: one matrix
+//!
+//! **THE MATRIX TRAVELS (operator directive, 2026-08-30): this table is
+//! the cycle's goal-and-gaps statement and is embedded, cells kept
+//! current, in EVERY artifact — brainstorm, spec, this plan, and the
+//! seating engine's module doc comment in the code. A document or module
+//! missing it is incomplete.**
+//!
+//! Input forms (any COMPLETE wallet expression):
+//!
+//! - **D** — concrete descriptor (miniscript or plain), keys + origins inline
+//! - **T** — BIP-388 template + per-slot keys/origins as flags
+//! - **S** — the split card set: keyless md1 phrases + mk1 strings
+//! - **K** — keyed md1 phrases (Pubkeys TLV)
+//!
+//! Output forms: concrete descriptor · addresses · keyed card (via the
+//! existing `md encode --key` bridge) · template + origin-notated key lines.
+//!
+//! | in \ out | concrete descriptor | addresses | keyed card | keyless + mk1 cards |
+//! | --- | --- | --- | --- | --- |
+//! | **D** concrete descriptor | — | ✗ P3 | ✗ P3+bridge | ✗ P3 (the decomposer) |
+//! | **T** template + key flags | ⚠ P1 (flag-form gap; inline template origins already work — r1 I8) | ⚠ P1 | ✓ `md encode --key` (Divergent) | ✓ |
+//! | **S** keyless card + mk1 strings | ✗ P2 (the seating engine) | ✗ P2 | ✗ P2+bridge | — |
+//! | **K** keyed card phrases | ✓ (round-tripped live) | ✓ | — | ✗ non-goal (first real need files it) |
+//!
+//! ✓ measured working; ⚠/✗ the gaps, tagged with the piece that closes
+//! them. On C4 close, the ⚠/✗ cells this cycle owns flip to ✓ in every
+//! embedded copy in the same commit as the acceptance walk that proves
+//! them.

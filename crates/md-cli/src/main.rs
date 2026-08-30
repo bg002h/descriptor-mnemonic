@@ -8,6 +8,7 @@ mod format;
 mod output_advisory;
 mod parse;
 mod process_hardening;
+mod seat;
 
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
