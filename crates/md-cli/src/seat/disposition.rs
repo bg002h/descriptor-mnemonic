@@ -13,8 +13,13 @@
 //! | else a stub matches the policy's `WalletDescriptorTemplateId` top 4 | **shape-confirmed** |
 //! | else | **unconfirmed — a WARNING** |
 //!
-//! Wallet-confirmed is a TRUE binding: a foreign card cannot reach that
-//! tier, so CE-1 is impossible for it. Shape-confirmed carries CE-1's
+//! Wallet-confirmed is a TRUE binding WITHIN CE-1's threat model, which is
+//! the ACCIDENTAL one -- a drawer scan, a mixed-up card: such a card matches
+//! by 2^-32 accident, so CE-1 is impossible for it. It is NOT a binding
+//! against an adversarial minter who knows the cosigner set: `policy_id_stubs`
+//! is an any-of `Vec<[u8;4]>`, so someone who can compute the composed id of
+//! the wallet that results from substituting their own key can mint a stub
+//! for it. That substitution threat is outside CE-1 and is not claimed here. Shape-confirmed carries CE-1's
 //! accepted limitation. Unconfirmed is a WARNING and never a hard refusal,
 //! because legitimate mismatches are MEASURED: a card minted
 //! `--from-md1 <keyed card>` carries a WalletPolicyId-rooted stub

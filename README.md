@@ -125,13 +125,13 @@ The same wallet lives in four forms, and `md` converts between them rather than 
 ```sh
 md descriptor <keyless md1 phrases…> --from-mk1 <mk1…>          # S → descriptor
 md address    <keyless md1 phrases…> --from-mk1 <mk1…>          # S → addresses
-md decompose  "<descriptor>" --emit commands                    # D → the mint commands for T, S and K
+md decompose  "<descriptor>" --emit commands                    # D → the mint commands for BOTH routes (K, and S)
 md descriptor --template "<template>" --key "@0=[fp/path]xpub…" # T → descriptor
 ```
 
-Seating an `mk1` card onto a keyless card is the funds-shaped step: a keyless card names its slots by **origin**, not by order, and a wrong seat reconstructs a *different wallet* rather than failing. So `md` seats only when every possible assignment composes the same wallet, and otherwise refuses, naming the cards, the slots and the remedies — including `--seat '@i=<chunk-set-id>'` to decide one slot by hand. Keyed (compact, monolithic) and split (distributable custody) are peers; the converter makes moving between them cheap and recommends neither.
+Seating an `mk1` card onto a keyless card is the funds-shaped step: a keyless card names its slots by **origin**, not by order, and a wrong seat reconstructs a *different wallet* rather than failing. So `md` seats only when every possible assignment composes the same wallet, and otherwise refuses, naming the cards, the slots and the remedies — including `--seat '@i=<chunk-set-id>'` to decide one slot by hand. Keyed (compact, monolithic) and split (distributable custody) are peers, and the converter recommends neither. Moving BETWEEN those two is not something it does today: `md decompose` reaches either from a descriptor, but S → K is blocked (a card composes depth-0 xpubs, `md encode --key` admits only depth 3/4 — filed) and K → S is a declared non-goal.
 
-Which conversions work today is the "in \ out" matrix, kept current in [`design/BRAINSTORM_wallet_form_converter.md`](design/BRAINSTORM_wallet_form_converter.md), [`design/SPEC_wallet_form_converter.md`](design/SPEC_wallet_form_converter.md) and [`design/IMPLEMENTATION_PLAN_wallet_form_converter.md`](design/IMPLEMENTATION_PLAN_wallet_form_converter.md) — the spec is the normative copy. The flags are in [`CHANGELOG.md`](CHANGELOG.md).
+Which conversions work today is the "in \ out" matrix, kept byte-identical in four homes — [`design/BRAINSTORM_wallet_form_converter.md`](design/BRAINSTORM_wallet_form_converter.md), [`design/SPEC_wallet_form_converter.md`](design/SPEC_wallet_form_converter.md), [`design/IMPLEMENTATION_PLAN_wallet_form_converter.md`](design/IMPLEMENTATION_PLAN_wallet_form_converter.md) and `crates/md-cli/src/seat/mod.rs`, machine-checked by `scripts/matrix-identity-check.sh` — the spec is the normative copy. The flags are in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Status
 
@@ -144,7 +144,7 @@ The Rust reference implementation implements the current scope:
 - 444 unit + integration tests across the workspace (395 without default features), including corpus round-trips, negative conformance vectors, hand-AST defensive coverage, and BCH known-vectors cross-checked against an independent Python implementation.
 - v0.30 wire-format test vectors locked in `crates/md-codec/tests/vectors/` (per-shape quadruples; manifest at `tests/vectors/manifest.rs`).
 - `Descriptor::derive_address` (v0.32+, feature `derive`, default-on) covers every BIP-388-parseable shape via the generic AST → `miniscript::Descriptor` converter at `crates/md-codec/src/to_miniscript.rs`.
-- An `md` CLI (in [`crates/md-cli/`](crates/md-cli/)) for ad-hoc encode/decode/verify/inspect/bytecode/vectors operations, plus a `from-policy` mode (behind opt-in `cli-compiler` feature) wrapping rust-miniscript's policy compiler.
+- An `md` CLI (in [`crates/md-cli/`](crates/md-cli/)) — `encode`, `decode`, `verify`, `inspect`, `bytecode`, `address`, `descriptor`, `decompose`, `repair`, `vectors`, `gen-man` (the full table is [`crates/md-cli/README.md`](crates/md-cli/README.md)) — plus a `from-policy` mode (behind opt-in `cli-compiler` feature) wrapping rust-miniscript's policy compiler.
 - A sibling [`md-signer-compat`](crates/md-signer-compat/) crate (v0.7.0+) shipping named hardware-signer subsets (`COLDCARD_TAP`, `LEDGER_TAP`) with a `validate_tap_tree` walker, plus a `md-signer-compat validate --signer <name> ...` CLI binary.
 
 The `Draft` status (the first formal BIP 2 status) will be claimed only after the spec has been reviewed by at least one human contributor end-to-end.

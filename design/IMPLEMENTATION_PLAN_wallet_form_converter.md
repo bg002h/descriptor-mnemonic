@@ -227,7 +227,9 @@ was the one phase with rows and no review before C4's backstop.
    descriptor stays out of leg (c) BY NAME (depth-0 keys, r1 C3).
    Reproduction pins asserted: 22 strings = 21×86 + one 59-char tail;
    composed keyed descriptor 1,648 chars.
-2. Matrix cells flip to ✓ in all four embedded copies, same commit.
+2. Matrix cells flip in all four embedded copies, same commit — every
+   cell this cycle owned EXCEPT S → keyed card, which stays ✗ with its
+   measured reason (see :58 and :338).
 3. CHANGELOG, README surface note, regenerated man/gui-schema
    snapshots (D3 discipline).
 4. Follow-ups reconcile (§6) + commit `scripts/push-via-staging.sh`

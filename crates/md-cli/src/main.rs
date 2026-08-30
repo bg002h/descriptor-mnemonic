@@ -359,9 +359,12 @@ enum Command {
         fingerprints: Vec<String>,
         /// Shared origin path, applied PER SLOT to whichever @i the
         /// template gave no inline origin -- a slot's inline template
-        /// origin always wins. Mirrors `md encode --path`; a slot with
-        /// neither an inline origin nor this flag hits today's
-        /// non-canonical-wrapper refusal.
+        /// origin always wins. Same VALUE grammar as `md encode --path`
+        /// (named, hex or literal) but NOT the same rule: `md encode
+        /// --path` replaces the declaration wholesale, this fills only the
+        /// slots that declared nothing. A slot with neither an inline
+        /// origin nor this flag hits today's non-canonical-wrapper
+        /// refusal.
         #[arg(
             long,
             value_name = "PATH",
@@ -517,9 +520,11 @@ enum Command {
         /// wins. Accepts named (bip44|48|49|84|86), hex (0xNN), or literal
         /// (m/...) forms.
         ///
-        /// Mirrors `md encode --path`. A slot with neither an inline origin
-        /// nor this flag still hits "non-canonical wrapper requires explicit
-        /// origin for @N".
+        /// Same VALUE grammar as `md encode --path` but NOT the same rule:
+        /// `md encode --path` replaces the declaration wholesale, this fills
+        /// only the slots that declared nothing. A slot with neither an
+        /// inline origin nor this flag still hits "non-canonical wrapper
+        /// requires explicit origin for @N".
         #[arg(
             long,
             value_name = "PATH",

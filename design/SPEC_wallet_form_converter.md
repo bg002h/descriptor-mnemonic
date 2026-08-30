@@ -442,8 +442,14 @@ wanted, is its own breaking-change decision and is out of scope.
 - `me sysw pack --as md1` accepting miniscript (touches the S2-settled
   admission predicate; its own spec-amendment + R0 cycle if ever).
 - Crowning either card form: keyed (shorter, monolithic) and split
-  (distributable custody) are peers; the converter makes moving between
-  them cheap and recommends neither.
+  (distributable custody) are peers, and the converter recommends
+  neither. **Post-GREEN fold, REVIEW-converter-whole-diff-r1 M9:** the
+  sentence used to say the converter "makes moving between them cheap",
+  which is false in both directions — S → K refuses from both ends (C4's
+  own measurement; the matrix cell is ✗) and K → S is the declared
+  non-goal three lines below. Neither direction exists, so neither is
+  cheap; what the converter offers is that `md decompose` reaches EITHER
+  form from a descriptor.
 - Any device/fork change. Any wire-format change (Tag/TLV untouched).
 - K→S splitting (keyed card → keyless + mk1 cards): mechanical but no
   motivating journey yet; follow-up on first real need.

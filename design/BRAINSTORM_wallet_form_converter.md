@@ -45,6 +45,10 @@ copies is machine-checked by `scripts/matrix-identity-check.sh`.
 2. **The keyed card already exists as an output** — `md encode --key
    @i=XPUB --fingerprint @i=HEX` (Divergent mode) minted the journey's
    22-chunk card; no new surface needed, only bridges into that call.
+   **Measured FALSE for the S row at C4 (2026-08-30)** — see the
+   retraction above: a card composes depth-0 xpubs and `md encode --key`
+   admits only depth 3/4, so that bridge refuses. True of the D row,
+   which is where the ✓ stayed.
    Keyed (shorter, monolithic) vs split (distributable custody) are
    PEERS — different custody shapes; the converter crowns neither.
 3. **Concrete descriptor IS an entry point** (the operator asked; the

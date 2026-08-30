@@ -1244,7 +1244,7 @@ The reference implementation is published at [https://github.com/bg002h/descript
 * Written in Rust, building on <code>rust-miniscript</code>
 * Licensed CC0-1.0 to match this specification
 * Accompanied by the test vector suite linked above
-* Released with the <code>md</code> CLI binary (<code>md encode</code>, <code>md decode</code>, <code>md verify</code>, <code>md inspect</code>, <code>md bytecode</code>, <code>md vectors</code>, <code>md repair</code>, <code>md address</code>, <code>md compile</code>, <code>md gen-man</code>)
+* Released with the <code>md</code> CLI binary (<code>md encode</code>, <code>md decode</code>, <code>md verify</code>, <code>md inspect</code>, <code>md bytecode</code>, <code>md vectors</code>, <code>md repair</code>, <code>md address</code>, <code>md descriptor</code>, <code>md decompose</code>, <code>md compile</code>, <code>md gen-man</code>)
 
 ==Acknowledgments==
 

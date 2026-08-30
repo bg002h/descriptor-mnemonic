@@ -2230,8 +2230,9 @@ Files split.txt and keyed.txt differ                               # exit 1
 The two descriptors are the SAME WALLET and `diff` says otherwise. The
 split form carries each slot's `[fingerprint/path]` origin (11 × 23 = 253
 characters) and the keyed form declares none, and the BIP-380 checksum is
-computed over the differing text, so the strings differ in 254 characters
-while the script content is identical. That is precisely SPEC Acceptance
+computed over the differing text, so the strings differ in 253 characters
+while the script content is identical (1,901 − 1,648 = 253 = 11 × 23; the
+entry said 254, corrected per REVIEW-converter-whole-diff-r1's sweep). That is precisely SPEC Acceptance
 1's reason for having TWO relations: spend-equality excludes origins,
 round-trip-equality does not.
 
@@ -2389,3 +2390,85 @@ $ md descriptor --template "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))
 md: MISMATCH: @0: origin-notated --key states path `48'/0'/0'/2'`, but nothing
 supplies a path for @0 …
 ```
+
+### `all-features-suite-is-red-and-ungated-by-ci` — `cargo test --all-features` has one failing test that CI never runs (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, folding
+REVIEW-converter-whole-diff-r1 M5. Severity **Minor**. **Pre-existing**,
+not introduced by the converter diff.
+
+Measured 2026-08-30 at the fold tip:
+
+```
+$ cargo nextest run --locked --all-features --no-fail-fast
+     Summary  1106 tests run: 1105 passed, 1 failed, 2 skipped
+        FAIL  md-cli::bin/md compile::tests::
+              upstream_display_is_still_broken_delete_local_renderer_when_this_fails
+```
+
+The test is at `crates/md-cli/src/compile.rs` and it is a TRIPWIRE that has
+fired, doing exactly its job:
+
+```
+left:  "tr(@4,{{pk(@3),pk(@2)},{pk(@1),pk(@0)}})"
+right: "tr(@4,{{pk(@3),pk(@2),pk(@1),pk(@0)}})"
+```
+
+Upstream miniscript's `Display` no longer flattens a depth-2 taptree, so the
+local `render_tr_template` workaround the test names should be DELETED and the
+upstream renderer used directly.
+
+**Why nothing caught it.** `.github/workflows/ci.yml:48` runs
+`cargo test --workspace --all-targets` with no `--all-features`, and `compile`
+sits behind `#[cfg(feature = "cli-compiler")]`. So the whole compiler surface
+is unrun in CI. That is the more interesting half of this entry: the fix is one
+deletion, but the reason it went unnoticed for the life of the feature is a
+gate that does not cover a feature flag.
+
+Two pieces, and they are separable: (a) delete `render_tr_template` and its
+test, letting upstream `Display` render; (b) add `--all-features` to the CI test
+job, which is what stops the next one. Do (b) even if (a) slips.
+
+### `md-decompose-does-not-read-stdin` — every other reading verb takes `-`, `decompose` does not (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, folding
+REVIEW-converter-whole-diff-r1 M6. Severity **Minor**.
+
+Measured 2026-08-30:
+
+```
+$ echo 'md15zfdsssjjtvyyw2fdssj54qqxppcgsc97v883w6pfw0za5z5u79mg9qp3wxzvhhu3l6n' | md decode -
+wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))                    # exit 0
+
+$ echo '<descriptor>' | md decompose - --emit template
+md: decompose: this is not a descriptor md can parse: unrecognized name '-'.
+decompose takes ONE concrete output descriptor — …                       # exit 1
+```
+
+The `-` convention was deliberately generalised across the reading verbs in
+THIS cycle's P3 §6b (`cmd/mod.rs:20-33`, hoisting `read_md1_strings` out of
+`cmd::repair` so `decode`/`verify`/`inspect`/`bytecode` all gained it), and
+`decompose` is the one reading verb that did not get it. `--in FILE` exists and
+is by design, so nothing is unreachable — a pipe becomes
+`md decompose --in /dev/stdin`.
+
+Two parts, the second cheaper and worth doing regardless: (a) accept `-` on the
+positional; (b) the refusal above does not mention `--in`, so an operator who
+tries the pipe is told what `-` is not, and not what to use instead.
+
+### `sibling-toolkit-md-manual-lockstep-for-the-converter` — `bg002h/mnemonic-toolkit`'s `md` CLI reference has not been checked against this cycle's new surface (repo: **mnemonic-toolkit**; owning phase: **operator's call — a cross-repo docs pass**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle, folding
+REVIEW-converter-whole-diff-r1 N2. Severity **Nit**.
+
+`CLAUDE.md:35` requires `docs/manual/src/40-cli-reference/42-md.md` in
+`bg002h/mnemonic-toolkit` to be updated in lockstep with any flag or API
+change, gated there by `tests/lint.sh flag-coverage`. This cycle adds one
+subcommand (`md decompose`) and, measured at the fold tip, these flags on
+`md descriptor` / `md address`: `--from-mk1`, `--from-mk1-file`, `--seat`, plus
+`--key`'s origin-notated form and `--path` on both verbs; `md decompose` adds
+`--emit` and `--in`.
+
+That file is in another repository and outside this worktree, so its state
+could not be verified here. The obligation is recorded rather than discharged;
+whoever next opens the toolkit repo should run its `flag-coverage` lint.

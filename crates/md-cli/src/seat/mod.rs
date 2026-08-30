@@ -34,8 +34,10 @@
 //! - **S** — the split card set: keyless md1 phrases + mk1 strings
 //! - **K** — keyed md1 phrases (Pubkeys TLV)
 //!
-//! Output forms: concrete descriptor · addresses · keyed card (via the
-//! existing `md encode --key` bridge) · template + origin-notated key lines.
+//! Output forms: concrete descriptor · addresses · template + origin-notated
+//! key lines. A keyed card is an output of the D row via the `md encode --key`
+//! bridge, but NOT of this engine's own S row -- see the retraction sixteen
+//! lines below, which this sentence used to contradict.
 //!
 //! | in \ out | concrete descriptor | addresses | keyed card | keyless + mk1 cards |
 //! | --- | --- | --- | --- | --- |
