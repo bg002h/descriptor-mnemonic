@@ -302,21 +302,92 @@ enum Command {
         #[arg(
             long = "key",
             value_name = "@i=XPUB|@i=[fp/path]XPUB",
-            requires = "template"
+            requires = "template",
+            // REVIEW-converter-whole-diff-r1 I4 — the T-row flags have no
+            // meaning on the S row. `requires = "template"` alone did NOT
+            // refuse them: it fires only when the whole
+            // `<PHRASES|--template>` group is absent, so with a policy card
+            // supplied it was inert, and `--key`/`--fingerprint`/`--path`
+            // were accepted and silently discarded on a SUCCESSFUL
+            // composition (measured 2026-08-30: same descriptor, same
+            // checksum `#9uzthz8n`, exit 0). Declared here so the conflict is
+            // structural on every entrance rather than a runtime check one
+            // route could forget.
+            //
+            // `phrases` is in the list for the same reason and it is the
+            // PRE-EXISTING half: `md descriptor <keyed md1 card> --key @0=X`
+            // also composed at exit 0 with the key discarded (measured
+            // 2026-08-30 on the v-d-rt keyed card: byte-identical output with
+            // and without the flag). Nothing legitimate is lost -- these three
+            // flags already `requires = "template"`, and `--template` already
+            // `conflicts_with = "phrases"`, so no valid invocation pairs them
+            // with phrases; the declaration only makes the existing rule
+            // actually fire.
+            conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
         )]
         keys: Vec<String>,
         /// Master-key fingerprint for placeholder @i. Repeatable. Requires
         /// --template. Must AGREE with an origin-notated --key's own
         /// fingerprint when both name the same slot -- never a silent
         /// override.
-        #[arg(long = "fingerprint", value_name = "@i=HEX", requires = "template")]
+        #[arg(
+            long = "fingerprint",
+            value_name = "@i=HEX",
+            requires = "template",
+            // REVIEW-converter-whole-diff-r1 I4 — the T-row flags have no
+            // meaning on the S row. `requires = "template"` alone did NOT
+            // refuse them: it fires only when the whole
+            // `<PHRASES|--template>` group is absent, so with a policy card
+            // supplied it was inert, and `--key`/`--fingerprint`/`--path`
+            // were accepted and silently discarded on a SUCCESSFUL
+            // composition (measured 2026-08-30: same descriptor, same
+            // checksum `#9uzthz8n`, exit 0). Declared here so the conflict is
+            // structural on every entrance rather than a runtime check one
+            // route could forget.
+            //
+            // `phrases` is in the list for the same reason and it is the
+            // PRE-EXISTING half: `md descriptor <keyed md1 card> --key @0=X`
+            // also composed at exit 0 with the key discarded (measured
+            // 2026-08-30 on the v-d-rt keyed card: byte-identical output with
+            // and without the flag). Nothing legitimate is lost -- these three
+            // flags already `requires = "template"`, and `--template` already
+            // `conflicts_with = "phrases"`, so no valid invocation pairs them
+            // with phrases; the declaration only makes the existing rule
+            // actually fire.
+            conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
+        )]
         fingerprints: Vec<String>,
         /// Shared origin path, applied PER SLOT to whichever @i the
         /// template gave no inline origin -- a slot's inline template
         /// origin always wins. Mirrors `md encode --path`; a slot with
         /// neither an inline origin nor this flag hits today's
         /// non-canonical-wrapper refusal.
-        #[arg(long, value_name = "PATH", requires = "template")]
+        #[arg(
+            long,
+            value_name = "PATH",
+            requires = "template",
+            // REVIEW-converter-whole-diff-r1 I4 — the T-row flags have no
+            // meaning on the S row. `requires = "template"` alone did NOT
+            // refuse them: it fires only when the whole
+            // `<PHRASES|--template>` group is absent, so with a policy card
+            // supplied it was inert, and `--key`/`--fingerprint`/`--path`
+            // were accepted and silently discarded on a SUCCESSFUL
+            // composition (measured 2026-08-30: same descriptor, same
+            // checksum `#9uzthz8n`, exit 0). Declared here so the conflict is
+            // structural on every entrance rather than a runtime check one
+            // route could forget.
+            //
+            // `phrases` is in the list for the same reason and it is the
+            // PRE-EXISTING half: `md descriptor <keyed md1 card> --key @0=X`
+            // also composed at exit 0 with the key discarded (measured
+            // 2026-08-30 on the v-d-rt keyed card: byte-identical output with
+            // and without the flag). Nothing legitimate is lost -- these three
+            // flags already `requires = "template"`, and `--template` already
+            // `conflicts_with = "phrases"`, so no valid invocation pairs them
+            // with phrases; the declaration only makes the existing rule
+            // actually fire.
+            conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
+        )]
         path: Option<String>,
         /// mk1 key-card string. Repeatable. Supplied TOGETHER WITH the
         /// KEYLESS md1 phrases of a policy card: the seating engine matches
@@ -386,14 +457,60 @@ enum Command {
         #[arg(
             long = "key",
             value_name = "@i=XPUB|@i=[fp/path]XPUB",
-            requires = "template"
+            requires = "template",
+            // REVIEW-converter-whole-diff-r1 I4 — the T-row flags have no
+            // meaning on the S row. `requires = "template"` alone did NOT
+            // refuse them: it fires only when the whole
+            // `<PHRASES|--template>` group is absent, so with a policy card
+            // supplied it was inert, and `--key`/`--fingerprint`/`--path`
+            // were accepted and silently discarded on a SUCCESSFUL
+            // composition (measured 2026-08-30: same descriptor, same
+            // checksum `#9uzthz8n`, exit 0). Declared here so the conflict is
+            // structural on every entrance rather than a runtime check one
+            // route could forget.
+            //
+            // `phrases` is in the list for the same reason and it is the
+            // PRE-EXISTING half: `md descriptor <keyed md1 card> --key @0=X`
+            // also composed at exit 0 with the key discarded (measured
+            // 2026-08-30 on the v-d-rt keyed card: byte-identical output with
+            // and without the flag). Nothing legitimate is lost -- these three
+            // flags already `requires = "template"`, and `--template` already
+            // `conflicts_with = "phrases"`, so no valid invocation pairs them
+            // with phrases; the declaration only makes the existing rule
+            // actually fire.
+            conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
         )]
         keys: Vec<String>,
         /// Master-key fingerprint for placeholder @i. Repeatable. Requires
         /// --template. Must AGREE with an origin-notated --key's own
         /// fingerprint when both name the same slot -- never a silent
         /// override.
-        #[arg(long = "fingerprint", value_name = "@i=HEX", requires = "template")]
+        #[arg(
+            long = "fingerprint",
+            value_name = "@i=HEX",
+            requires = "template",
+            // REVIEW-converter-whole-diff-r1 I4 — the T-row flags have no
+            // meaning on the S row. `requires = "template"` alone did NOT
+            // refuse them: it fires only when the whole
+            // `<PHRASES|--template>` group is absent, so with a policy card
+            // supplied it was inert, and `--key`/`--fingerprint`/`--path`
+            // were accepted and silently discarded on a SUCCESSFUL
+            // composition (measured 2026-08-30: same descriptor, same
+            // checksum `#9uzthz8n`, exit 0). Declared here so the conflict is
+            // structural on every entrance rather than a runtime check one
+            // route could forget.
+            //
+            // `phrases` is in the list for the same reason and it is the
+            // PRE-EXISTING half: `md descriptor <keyed md1 card> --key @0=X`
+            // also composed at exit 0 with the key discarded (measured
+            // 2026-08-30 on the v-d-rt keyed card: byte-identical output with
+            // and without the flag). Nothing legitimate is lost -- these three
+            // flags already `requires = "template"`, and `--template` already
+            // `conflicts_with = "phrases"`, so no valid invocation pairs them
+            // with phrases; the declaration only makes the existing rule
+            // actually fire.
+            conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
+        )]
         fingerprints: Vec<String>,
         /// Shared origin path, applied PER SLOT to whichever @i the template
         /// gave no inline origin -- a slot's inline template origin always
@@ -403,7 +520,32 @@ enum Command {
         /// Mirrors `md encode --path`. A slot with neither an inline origin
         /// nor this flag still hits "non-canonical wrapper requires explicit
         /// origin for @N".
-        #[arg(long, value_name = "PATH", requires = "template")]
+        #[arg(
+            long,
+            value_name = "PATH",
+            requires = "template",
+            // REVIEW-converter-whole-diff-r1 I4 — the T-row flags have no
+            // meaning on the S row. `requires = "template"` alone did NOT
+            // refuse them: it fires only when the whole
+            // `<PHRASES|--template>` group is absent, so with a policy card
+            // supplied it was inert, and `--key`/`--fingerprint`/`--path`
+            // were accepted and silently discarded on a SUCCESSFUL
+            // composition (measured 2026-08-30: same descriptor, same
+            // checksum `#9uzthz8n`, exit 0). Declared here so the conflict is
+            // structural on every entrance rather than a runtime check one
+            // route could forget.
+            //
+            // `phrases` is in the list for the same reason and it is the
+            // PRE-EXISTING half: `md descriptor <keyed md1 card> --key @0=X`
+            // also composed at exit 0 with the key discarded (measured
+            // 2026-08-30 on the v-d-rt keyed card: byte-identical output with
+            // and without the flag). Nothing legitimate is lost -- these three
+            // flags already `requires = "template"`, and `--template` already
+            // `conflicts_with = "phrases"`, so no valid invocation pairs them
+            // with phrases; the declaration only makes the existing rule
+            // actually fire.
+            conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
+        )]
         path: Option<String>,
         /// mk1 key-card string. Repeatable. Supplied TOGETHER WITH the
         /// KEYLESS md1 phrases of a policy card: the seating engine matches

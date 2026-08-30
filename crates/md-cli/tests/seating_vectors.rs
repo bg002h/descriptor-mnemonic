@@ -16,6 +16,7 @@ const PATHOLOGICAL: &str = include_str!("fixtures/pathological/backup-strings.tx
 const V_USP: &str = include_str!("fixtures/seating/v-usp.txt");
 const V_MIX: &str = include_str!("fixtures/seating/v-mix.txt");
 const V_B1_WARN: &str = include_str!("fixtures/seating/v-b1-warn.txt");
+const V_D_RT_KEYED: &str = include_str!("fixtures/decompose/v-d-rt.txt");
 
 fn lines(text: &str, hrp: &str) -> Vec<String> {
     text.lines()
@@ -152,6 +153,166 @@ fn v_dup_an_all_uppercase_card_set_seats_identically() {
         .output()
         .unwrap();
     assert_eq!(out_of(&upper), out_of(&lower));
+}
+
+// ─── V-SFLAG (REVIEW-converter-whole-diff-r1 I4) ────────────────────────
+//
+// `--key`, `--fingerprint` and `--path` are TEMPLATE-row flags: the seating
+// branch builds a `seat::SeatingRequest { phrases, from_mk1, seats, network,
+// cmd }`, which does not carry them at all. Measured at 9d0c30dc, all three
+// were accepted and silently discarded on a SUCCESSFUL composition -- the same
+// descriptor, the same checksum `#9uzthz8n`, exit 0, not a word. `--key` is
+// funds-relevant material.
+//
+// The declared refusal did not fire. `requires = "template"` only triggers
+// when the whole `<PHRASES|--template>` group is absent, so it is inert
+// whenever phrases are supplied -- the "a refusal that does not refuse" class.
+// It bit hardest on exactly the wallets that need it: v-ce1 declares
+// fingerprint-free origins, so the composed descriptor carries NO origin
+// metadata, and the obvious operator response ("add the origins I know") was
+// accepted and did nothing.
+
+/// `<verb> <policy> --from-mk1 … <flag> <value>` must refuse, naming both
+/// sides of the conflict, and compose nothing.
+fn assert_seating_flag_conflict(verb: &str, flag: &str, value: &str, card_flag: &str) {
+    let cards = mk1(V_CE1);
+    let mut c = md();
+    c.arg(verb);
+    for p in md1(V_CE1) {
+        c.arg(p);
+    }
+    if card_flag == "--from-mk1" {
+        for s in &cards {
+            c.args(["--from-mk1", s]);
+        }
+    } else {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        for s in &cards {
+            writeln!(f, "{s}").unwrap();
+        }
+        let path = f.into_temp_path();
+        c.args(["--from-mk1-file", path.to_str().unwrap()]);
+        // Keep the file alive for the duration of the run.
+        let out = c.args([flag, value]).output().unwrap();
+        assert_conflict(&out, verb, flag, card_flag);
+        return;
+    }
+    let out = c.args([flag, value]).output().unwrap();
+    assert_conflict(&out, verb, flag, card_flag);
+}
+
+fn assert_conflict(out: &std::process::Output, verb: &str, flag: &str, card_flag: &str) {
+    let stdout = out_of(out);
+    assert!(
+        !out.status.success(),
+        "md {verb} accepted {flag} on the seating route and composed anyway: {stdout}"
+    );
+    assert!(
+        !stdout.contains("wsh(") && !stdout.contains("bc1"),
+        "md {verb} composed a wallet while ignoring {flag}: {stdout}"
+    );
+    let err = err_of(out);
+    assert!(
+        err.contains(flag) && err.contains(card_flag),
+        "the refusal must name BOTH sides of the conflict ({flag} and \
+         {card_flag}); got: {err}"
+    );
+}
+
+#[test]
+fn v_sflag_key_on_the_seating_route_refuses_on_both_verbs() {
+    let xpub = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
+    for verb in ["descriptor", "address"] {
+        assert_seating_flag_conflict(verb, "--key", &format!("@0={xpub}"), "--from-mk1");
+    }
+}
+
+#[test]
+fn v_sflag_fingerprint_on_the_seating_route_refuses_on_both_verbs() {
+    for verb in ["descriptor", "address"] {
+        assert_seating_flag_conflict(verb, "--fingerprint", "@0=73c5da0a", "--from-mk1");
+    }
+}
+
+#[test]
+fn v_sflag_path_on_the_seating_route_refuses_on_both_verbs() {
+    for verb in ["descriptor", "address"] {
+        assert_seating_flag_conflict(verb, "--path", "48'/0'/0'/2'", "--from-mk1");
+    }
+}
+
+/// The file channel is the same route, so it must refuse the same way --
+/// otherwise the guard is one spelling away from being bypassed.
+#[test]
+fn v_sflag_the_file_channel_refuses_identically() {
+    assert_seating_flag_conflict("descriptor", "--path", "48'/0'/0'/2'", "--from-mk1-file");
+}
+
+/// The `# @@ keyed-card` section of the v-d-rt fixture -- its md1 lines, and
+/// NOT the `# @@ policy-card` line that shares the file. Keyed cards carry the
+/// `md1f0v5` prefix; the keyless policy card is `md15`.
+fn v_d_rt_keyed_card() -> Vec<String> {
+    lines(V_D_RT_KEYED, "md1f0v5")
+}
+
+/// THE PRE-EXISTING HALF, closed by the same declaration. A KEYED md1 card
+/// needs no `--key` either, and measured at 9d0c30dc
+/// `md descriptor <keyed card> --key @0=X` composed byte-identically to
+/// `md descriptor <keyed card>` -- funds-relevant material discarded on a
+/// successful composition, exit 0, no word. It is the same "a refusal that
+/// does not refuse" root the review named, one route over.
+#[test]
+fn v_sflag_the_phrase_route_refuses_the_template_flags_too() {
+    let keyed = v_d_rt_keyed_card();
+    assert_eq!(keyed.len(), 6, "fixture: the v-d-rt keyed card");
+    for (flag, value) in [
+        (
+            "--key",
+            "@0=xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf",
+        ),
+        ("--fingerprint", "@0=73c5da0a"),
+        ("--path", "84'/0'/0'"),
+    ] {
+        for verb in ["descriptor", "address"] {
+            let mut c = md();
+            c.arg(verb);
+            for p in &keyed {
+                c.arg(p);
+            }
+            let out = c.args([flag, value]).output().unwrap();
+            let stdout = out_of(&out);
+            assert!(
+                !out.status.success(),
+                "md {verb} discarded {flag} and composed anyway: {stdout}"
+            );
+            let err = err_of(&out);
+            assert!(err.contains(flag), "the refusal must name {flag}: {err}");
+        }
+    }
+}
+
+/// CONTROL for the row above: the keyed card composes on its own.
+#[test]
+fn v_sflag_the_phrase_route_itself_is_unaffected() {
+    let mut c = md();
+    c.arg("descriptor");
+    for p in v_d_rt_keyed_card() {
+        c.arg(p);
+    }
+    let out = c.output().unwrap();
+    assert!(out.status.success(), "{}", err_of(&out));
+    assert!(out_of(&out).contains("wsh(sortedmulti(2,"));
+}
+
+/// CONTROL: without the T-row flags the same invocation still seats. Without
+/// this the rows above would pass if `--from-mk1` had simply stopped working.
+#[test]
+fn v_sflag_the_seating_route_itself_is_unaffected() {
+    let out = seat_cmd("descriptor", V_CE1, &mk1(V_CE1), &[])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", err_of(&out));
+    assert!(out_of(&out).contains("wsh(multi(2,"));
 }
 
 // ─── the composed wallet, on both verbs ─────────────────────────────────
