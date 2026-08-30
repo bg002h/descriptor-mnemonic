@@ -17,6 +17,26 @@ pub enum CliError {
         i: u8,
         why: String,
     },
+    /// Malformed BIP-380 origin notation on a `--key @i=[fp/path]xpub` value
+    /// (P1 — `design/SPEC_wallet_form_converter.md` "The three pieces").
+    /// Distinct from [`CliError::BadXpub`]'s bare "base58check decode"
+    /// error: this variant fires while parsing the `[fp/path]` bracket
+    /// itself, before the xpub half is ever decoded, so the message can
+    /// name the origin-notation grammar the value failed rather than
+    /// blaming the base58 payload (the motivation refusal 3 fix).
+    ///
+    /// C0 lands `parse_key_with_origin` (the only constructor) as a
+    /// standalone parser, not yet wired into `--key` flag handling — that
+    /// wiring is C1 (`design/IMPLEMENTATION_PLAN_wallet_form_converter.md`
+    /// §3). Under default features the plain `md` binary build therefore
+    /// never constructs this variant outside `#[cfg(test)]`, same as
+    /// `CliError::Compile` below; `#[allow(dead_code)]` keeps that build
+    /// clippy-clean until C1 reaches it from `main`.
+    #[allow(dead_code)]
+    BadOrigin {
+        i: u8,
+        why: String,
+    },
     /// Reserved for `cli-compiler` feature paths (`compile` subcommand,
     /// `encode --from-policy`). Constructed only when that feature is on;
     /// `#[allow(dead_code)]` keeps default-features clippy clean.
@@ -34,6 +54,7 @@ impl fmt::Display for CliError {
             CliError::TemplateParse(m) => write!(f, "template parse error: {m}"),
             CliError::BadXpub { i, why } => write!(f, "--key @{i}: {why}"),
             CliError::BadFingerprint { i, why } => write!(f, "--fingerprint @{i}: {why}"),
+            CliError::BadOrigin { i, why } => write!(f, "--key @{i}: origin notation {why}"),
             CliError::Compile(m) => write!(f, "compile error: {m}"),
             CliError::Mismatch(m) => write!(f, "MISMATCH: {m}"),
             CliError::BadArg(m) => write!(f, "{m}"),
@@ -66,6 +87,18 @@ mod tests {
             why: "checksum failed".into(),
         };
         assert_eq!(format!("{e}"), "--key @2: checksum failed");
+    }
+
+    #[test]
+    fn display_bad_origin() {
+        let e = CliError::BadOrigin {
+            i: 0,
+            why: "fingerprint must be 8 hex chars, got `zzzz`".into(),
+        };
+        assert_eq!(
+            format!("{e}"),
+            "--key @0: origin notation fingerprint must be 8 hex chars, got `zzzz`"
+        );
     }
 
     #[test]

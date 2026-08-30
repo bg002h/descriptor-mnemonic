@@ -1,5 +1,7 @@
 use crate::error::CliError;
 use bitcoin::base58;
+use bitcoin::bip32::DerivationPath;
+use std::str::FromStr;
 
 const XPUB_LEN: usize = 78;
 pub(crate) const MAINNET_XPUB_VERSION: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
@@ -529,5 +531,316 @@ mod fp_tests {
     fn rejects_non_hex() {
         let err = parse_fingerprint("@0=zzzzzzzz").unwrap_err();
         assert!(matches!(err, CliError::BadFingerprint { i: 0, .. }));
+    }
+}
+
+// ─── Origin-notated `--key` value: `@i=[fp/path]xpub` (C0, P1) ────────────
+//
+// BIP-380 origin notation, mk's own file format. C0 lands the PARSER only —
+// this type and function exist standalone; wiring them into `--key` flag
+// handling on `descriptor`/`address`, with the P1 precedence rules
+// (paths: inline template origin, else shared `--path`, else refuse;
+// fingerprints: `--fingerprint` or this form, agreement required), is C1.
+// Today's CLI behaviour is unchanged — nothing outside this module calls
+// `parse_key_with_origin` yet.
+
+/// Parsed representation of an origin-notated `--key` value.
+///
+/// C0 (parser only, unwired): under default features the plain `md` binary
+/// build never constructs this outside `#[cfg(test)]` yet — `#[allow(dead_code)]`
+/// keeps that build clippy-clean until C1 reaches it from `--key` handling.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OriginNotatedKey {
+    pub i: u8,
+    /// `None` when the value carries no bracketed origin at all — a bare
+    /// `@i=XPUB`, the same syntax [`parse_key`] accepts.
+    pub fingerprint: Option<[u8; 4]>,
+    /// Empty (master) when the bracket carries a fingerprint but no path
+    /// steps (`[deadbeef]xpub…`), or when there is no bracket at all.
+    pub path: DerivationPath,
+    pub key: ParsedKey,
+}
+
+/// Parse a `--key` value in EITHER form: the bare `@i=XPUB` [`parse_key`]
+/// already accepts, or the origin-notated `@i=[fp/path]xpub` (BIP-380,
+/// mk's own file format — SPEC P1).
+///
+/// A malformed origin bracket draws a NAMED [`CliError::BadOrigin`]
+/// refusal — never the bare "base58check decode" error `parse_key` would
+/// give if the whole `[fp/path]xpub` string were fed to it as a bare xpub
+/// (the measured motivation refusal 3,
+/// `design/SPEC_wallet_form_converter.md` "Motivation, measured").
+///
+/// Path hardening accepts BOTH `'` and `h` spellings — inherited from
+/// `bitcoin::bip32::ChildNumber::from_str`, the same mechanism `--path`'s
+/// literal-path fallback (`parse::path::parse_path`) already relies on, so
+/// this parser follows the file's existing precedent rather than adding a
+/// second, narrower path grammar.
+#[allow(dead_code)]
+pub fn parse_key_with_origin(
+    arg: &str,
+    ctx: ScriptCtx,
+    network: bitcoin::Network,
+) -> Result<OriginNotatedKey, CliError> {
+    let (i_str, value) = arg.split_once('=').ok_or_else(|| {
+        CliError::BadArg(format!(
+            "--key expects @i=XPUB or @i=[fp/path]XPUB, got: {arg}"
+        ))
+    })?;
+    let i = parse_index(i_str)?;
+
+    let Some(rest) = value.strip_prefix('[') else {
+        // No bracket: delegate to parse_key for the exact same
+        // decode/version/depth/point checks, rather than duplicating them.
+        let key = parse_key(arg, ctx, network)?;
+        return Ok(OriginNotatedKey {
+            i,
+            fingerprint: None,
+            path: DerivationPath::default(),
+            key,
+        });
+    };
+
+    let Some(close) = rest.find(']') else {
+        return Err(CliError::BadOrigin {
+            i,
+            why: format!("`[{rest}` is missing its closing `]`"),
+        });
+    };
+    let origin = &rest[..close];
+    let xpub_str = &rest[close + 1..];
+
+    let (fp_str, path_str) = origin.split_once('/').unwrap_or((origin, ""));
+
+    if fp_str.len() != 8 || !fp_str.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(CliError::BadOrigin {
+            i,
+            why: format!("fingerprint must be 8 hex chars, got `{fp_str}`"),
+        });
+    }
+    let mut fp = [0u8; 4];
+    for (n, chunk) in fp_str.as_bytes().chunks(2).enumerate() {
+        // UTF-8 and hex-digit-ness are guaranteed by the check just above.
+        let s = std::str::from_utf8(chunk).expect("hexdigit-checked ASCII");
+        fp[n] = u8::from_str_radix(s, 16).expect("hexdigit-checked byte");
+    }
+
+    let path = if path_str.is_empty() {
+        // A bare trailing slash right after the fingerprint (`[deadbeef/]`)
+        // is a malformed EMPTY path, distinct from no slash at all
+        // (`[deadbeef]`, a valid fingerprint-only origin) — `DerivationPath
+        // ::from_str("")` would silently accept both, so this refuses the
+        // former by name before reaching it.
+        if origin.contains('/') {
+            return Err(CliError::BadOrigin {
+                i,
+                why: format!("path is empty after `/`: [{origin}]"),
+            });
+        }
+        DerivationPath::default()
+    } else {
+        DerivationPath::from_str(path_str).map_err(|e| CliError::BadOrigin {
+            i,
+            why: format!("path `{path_str}` could not be parsed: {e}"),
+        })?
+    };
+
+    if xpub_str.is_empty() {
+        return Err(CliError::BadOrigin {
+            i,
+            why: format!("`[{origin}]` has no xpub after it"),
+        });
+    }
+
+    let key = parse_key(&format!("@{i}={xpub_str}"), ctx, network)?;
+
+    Ok(OriginNotatedKey {
+        i,
+        fingerprint: Some(fp),
+        path,
+        key,
+    })
+}
+
+#[cfg(test)]
+mod origin_tests {
+    use super::*;
+
+    // Real xpub at depth 4 (m/48'/0'/0'/2') from the abandon-mnemonic,
+    // mainnet — same fixture `tests` (above) uses.
+    const XPUB_DEPTH4: &str = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
+
+    // ─── Accepted forms ─────────────────────────────────────────────────
+
+    #[test]
+    fn accepts_fingerprint_and_path() {
+        let p = parse_key_with_origin(
+            &format!("@0=[deadbeef/48'/0'/0'/2']{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        assert_eq!(p.i, 0);
+        assert_eq!(p.fingerprint, Some([0xDE, 0xAD, 0xBE, 0xEF]));
+        assert_eq!(p.path.to_string(), "48'/0'/0'/2'");
+        assert_eq!(p.key.payload.len(), 65);
+    }
+
+    #[test]
+    fn accepts_hardened_apostrophe_form() {
+        let p = parse_key_with_origin(
+            &format!("@0=[deadbeef/48'/0'/0'/2']{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        assert_eq!(p.path.to_string(), "48'/0'/0'/2'");
+    }
+
+    #[test]
+    fn accepts_hardened_h_form() {
+        let p = parse_key_with_origin(
+            &format!("@0=[deadbeef/48h/0h/0h/2h]{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        // DerivationPath's Display always renders `'`, regardless of the
+        // input spelling — both spellings parse to the SAME path.
+        assert_eq!(p.path.to_string(), "48'/0'/0'/2'");
+    }
+
+    #[test]
+    fn accepts_fingerprint_only_no_path() {
+        let p = parse_key_with_origin(
+            &format!("@0=[deadbeef]{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        assert_eq!(p.fingerprint, Some([0xDE, 0xAD, 0xBE, 0xEF]));
+        assert!(p.path.as_ref().is_empty());
+    }
+
+    #[test]
+    fn accepts_bare_xpub_no_origin() {
+        // Same syntax parse_key accepts — fingerprint/path both absent.
+        let p = parse_key_with_origin(
+            &format!("@0={XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap();
+        assert_eq!(p.fingerprint, None);
+        assert!(p.path.as_ref().is_empty());
+    }
+
+    // ─── V-KEYORIG-BAD: malformed origin notation (C0's named row) ────────
+    //
+    // Test names carry `v_keyorig_bad` so the phase gate's row-scoped run
+    // (`cargo nextest run --locked -E 'test(v_keyorig_bad)'`) finds them.
+    // Every one asserts a NAMED CliError::BadOrigin, and that the message
+    // does NOT contain "base58check decode" — today's bare error the
+    // motivation refusal 3 measured against this exact class of input.
+
+    #[test]
+    fn v_keyorig_bad_fingerprint_hex() {
+        let err = parse_key_with_origin(
+            &format!("@0=[zzzzzzzz/48'/0'/0'/2']{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::BadOrigin { i: 0, .. }),
+            "got: {err:?}"
+        );
+        let msg = format!("{err}");
+        assert!(msg.contains("origin notation"), "got: {msg}");
+        assert!(!msg.contains("base58check decode"), "got: {msg}");
+    }
+
+    #[test]
+    fn v_keyorig_bad_unclosed_bracket() {
+        let err = parse_key_with_origin(
+            &format!("@0=[deadbeef/48'/0'/0'/2'{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::BadOrigin { i: 0, .. }),
+            "got: {err:?}"
+        );
+        let msg = format!("{err}");
+        assert!(msg.contains("origin notation"), "got: {msg}");
+        assert!(msg.contains("closing"), "got: {msg}");
+        assert!(!msg.contains("base58check decode"), "got: {msg}");
+    }
+
+    #[test]
+    fn v_keyorig_bad_empty_path() {
+        let err = parse_key_with_origin(
+            &format!("@0=[deadbeef/]{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::BadOrigin { i: 0, .. }),
+            "got: {err:?}"
+        );
+        let msg = format!("{err}");
+        assert!(msg.contains("origin notation"), "got: {msg}");
+        assert!(msg.contains("empty"), "got: {msg}");
+        assert!(!msg.contains("base58check decode"), "got: {msg}");
+    }
+
+    // ─── Other error paths (defensive coverage, not V-KEYORIG-BAD rows) ───
+
+    #[test]
+    fn rejects_no_xpub_after_bracket() {
+        let err = parse_key_with_origin(
+            "@0=[deadbeef/48'/0'/0'/2']",
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::BadOrigin { i: 0, .. }),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_path_steps() {
+        let err = parse_key_with_origin(
+            &format!("@0=[deadbeef/not-a-path]{XPUB_DEPTH4}"),
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::BadOrigin { i: 0, .. }),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn bad_xpub_inside_origin_still_reaches_parse_key() {
+        // The origin bracket is well-formed; the xpub half is garbage. This
+        // should fall through to parse_key's own BadXpub, NOT BadOrigin --
+        // the origin-notation refusal is scoped to the bracket, not the key.
+        let err = parse_key_with_origin(
+            "@0=[deadbeef/48'/0'/0'/2']not-an-xpub",
+            ScriptCtx::MultiSig,
+            bitcoin::Network::Bitcoin,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::BadXpub { i: 0, .. }),
+            "got: {err:?}"
+        );
     }
 }
