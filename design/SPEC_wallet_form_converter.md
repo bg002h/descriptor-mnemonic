@@ -176,25 +176,33 @@ matchings of A2's satisfaction graph; compose-canonicalise-compare;
 the cap; the refusal naming cards by full chunk-set id, slots, and
 both remedies — all as stated above). Identical declared origin with
 DIFFERENT xpubs on fingerprint-bearing cards refuses (impossible from
-one master — r1). **No card-side collapse, no capacity: each SUPPLIED card instance
-fills exactly ONE slot, and supplied multiplicity IS the operator's
-declaration (r7 C1 — capacity was measured fabricating a wallet the
-operator does not own: a privacy-preserving 2-of-3 missing card Z
-composed `sortedmulti(2,X,X,Y)` with X alone controlling funds, no
-refusal, no warning; a keyless policy cannot distinguish "X twice"
-from "a card is missing", so the engine NEVER resolves that ambiguity
-itself — the safe default is missing-card, i.e. A4's unfilled-slot
-refusal).** Restoring a wallet that genuinely repeats a key means
-supplying the card once per slot (tap it twice) — the composed
-repeated-key descriptor is a verified md target. Rows: r7-C1's
-missing-card case as a permanent must-REFUSE; the supply-twice
-repeated-key case as a must-SEAT; r6-I3's keyless-policy case
-re-pinned to the supply-twice recipe. With no dedupe there is nothing
-to manufacture r2 M3's refusal — that promise is met by deletion, not
-by capacity. A3 enumerates PERFECT MATCHINGS again, exactly as its
-normative sentence says (r7 I2 resolves with capacity's removal). The
-P3 write-side collapse (identical (origin, xpub) → one slot) stands,
-pinned by its row.
+one master — r1). **KEY REUSE IS INVALID — operator ruling 2026-08-30, verbatim: "Key
+reuse (meaning with same keypath) isn't allowed."** The same
+(xpub, use-site path) at two positions is not a valid wallet, in
+EITHER direction: compose refuses to emit it, decompose refuses it as
+input — named rows both ways. Three consequences, each a
+simplification:
+(a) each card fills exactly ONE slot and there is no repeated-key
+restore case at all — the r6/r7 collapse/capacity/supply-twice
+machinery is DELETED, not repaired; an accidentally double-scanned
+identical card dedupes harmlessly (no valid wallet could need the
+duplicate);
+(b) r7-C1's missing-card fabrication (`sortedmulti(2,X,X,Y)` from a
+2-of-3 missing Z — measured, X alone controlling funds) is doubly
+dead: A4's unfilled-slot refusal AND the reuse-invalidity refusal —
+both ship as permanent must-REFUSE rows;
+(c) a policy declaring two fingerprint-BEARING slots with the
+identical (fingerprint, path) is INVALID AT THE DOOR — only
+repetition could fill it — refused with that explanation. The
+legitimate same-path family survives untouched: fingerprint-free
+declarations across DIFFERENT masters (privacy-preserving multisig)
+are different keys, not reuse.
+A3 enumerates PERFECT MATCHINGS exactly as its normative sentence says
+(r7 I2). The P3 write-side handling of a repeated-key INPUT descriptor
+becomes a refusal (invalid wallet), replacing the earlier collapse
+rule; its row flips accordingly. `md encode`'s current acceptance of
+`@0,@0` templates predates the ruling and is FILED as an md-side
+question rather than changed by this spec (see FOLLOWUPS).
 
 **A4 — completeness is total.** Every slot filled, every supplied key
 seated. Unfilled slot: refuse naming the slot and its declared origin.
@@ -307,11 +315,10 @@ probe** — and emits: the keyless template, origin-notated key lines
   lacks an origin — naming the keys and the reason (mk1 cards bind key
   to origin by design; a card cannot be minted for an origin the input
   never stated). The template and descriptor outputs still work.
-- **Repeated keys (r1 M4):** identical (origin, xpub) appearing in
-  multiple positions collapses to ONE slot referenced multiply
-  (matching `md encode`'s accepted `@0…@0` form) — on read AND write,
-  so compose∘decompose is stable for such descriptors; a vector row
-  pins the choice and the WalletPolicyId consequence.
+- **Repeated keys — REFUSED as invalid (operator ruling 2026-08-30,
+  superseding r1 M4's collapse):** a concrete descriptor carrying the
+  same (xpub, use-site path) at two positions is not a valid wallet;
+  decompose refuses it by name. A vector row pins the refusal.
 - **New walker, not `compile`'s (r1 M5):** the existing substitution
   machinery strips placeholders to bare synthetic xpubs and its drift
   guard forbids `MultiXPub` — but every multipath key parses AS

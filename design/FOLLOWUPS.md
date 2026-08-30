@@ -2126,3 +2126,15 @@ The descriptor→`@N`-template renderer lived only in `md-cli` (`format/text.rs:
   backup — the window in which this is a cheap change.
 - **Status:** OPEN. **Tier:** `feature` / cross-repo.
 - **Companion:** `mnemonic-key/design/FOLLOWUPS.md` → `stub-keyed-wallet-binding-at-mint` (primary, mint-side).
+
+### `md-encode-repeated-placeholder-question` — `md encode` accepts `@0,@0` templates; under the key-reuse ruling that mints an invalid wallet's policy card (repo: **descriptor-mnemonic**; owning phase: **next md-codec/cli normative touch — decide refuse-vs-keep with a vector**)
+
+Filed 2026-08-30 from the wallet-form-converter cycle. Operator ruling
+(verbatim): "Key reuse (meaning with same keypath) isn't allowed." The
+converter refuses repeated (xpub, use-site path) in both directions;
+`md encode` today accepts `wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))`
+(measured, r4 M4 of the converter R0), whose only fills are now-invalid
+wallets. Decide whether encode refuses the repeated placeholder (a
+normative md change, own gate + vector) or keeps it for some template
+use the ruling does not reach; do not change it as a converter side
+effect.
