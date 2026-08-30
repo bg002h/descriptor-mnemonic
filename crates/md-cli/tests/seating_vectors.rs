@@ -469,6 +469,10 @@ fn v_r5m1_reaches_the_command() {
 fn v_door_reaches_the_command() {
     let e = refusal_of(V_DOOR, &[]);
     assert!(e.contains("declare the IDENTICAL origin"), "{e}");
+    // Review r1 M1: pin the named slots and the ground, not just the class.
+    assert!(e.contains("@0 [73c5da0a/48'/0'/0'/2']"), "{e}");
+    assert!(e.contains("@1 [73c5da0a/48'/0'/0'/2']"), "{e}");
+    assert!(e.contains("forbidden by BIP 388"), "{e}");
 }
 
 #[test]
@@ -516,6 +520,12 @@ fn v_r4_ik_reaches_the_command() {
 fn v_grp_reaches_the_command() {
     let e = refusal_of(V_GRP, &[]);
     assert!(e.contains("do NOT all compose to the same wallet"), "{e}");
+    // Review r1 M1: pin the measured matching count, a full chunk-set id,
+    // and both remedies at the CLI level, matching the sibling rows' depth.
+    assert!(e.contains("120 complete candidate assignments"), "{e}");
+    assert!(e.contains("card 34128 (stub 5b48af35)"), "{e}");
+    assert!(e.contains("re-mint the POLICY card"), "{e}");
+    assert!(e.contains("--seat '@i=<chunk-set-id>'"), "{e}");
 }
 
 #[test]
