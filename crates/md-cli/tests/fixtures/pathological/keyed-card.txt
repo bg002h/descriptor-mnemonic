@@ -1,0 +1,43 @@
+# PROVENANCE
+# EXTRACTED 2026-08-30 from
+#   /scratch/code/shibboleth/mnemonic-engrave/design/journeys/out/pathological/journey_pathological.html
+# by crates/md-cli/tests/fixtures/pathological/extract-keyed-card.sh
+# Extraction command (what the script runs):
+#   grep -o 'md1fatzr2[0-9a-z]*' <page> | awk '!seen[$0]++'
+#
+# The KEYED md1 card of the pathological vault — the same 11-key wallet
+# backup-strings.txt holds in SPLIT form, minted instead as one monolithic
+# keyed card (md Pubkeys TLV). The page carries it TWICE (44 tokens); the
+# dedupe above is order-preserving, so chunk order is the card's own.
+#
+# W-PIN (SPEC Acceptance 4, plan section 3 C4 item 1): 22 strings =
+# 21 x 86 chars + one 59-char tail. ASSERTED by this script before the file
+# is written, and again by tests/acceptance_walks.rs before any walk runs.
+# Composed, this card yields a 1,648-char descriptor (1,649 bytes with the
+# trailing newline) whose address 0 is
+#   bc1qkuknuy6dsm0fq44cyyhzqy9wl3ex2n6ed39zxhx867l9wlh4yhlsejms64
+#
+# Lines beginning with '#' and blank lines are provenance only; test
+# helpers skip them.
+md1fatzr2spzjtvyyy4qqxpx2v6mqq85yszv6a4pxuusyh2unu8xqz8naa2r2akwukvgm42gwsr8ztkypux5za
+md1fatzr2s2rc6cckmmq5mngy26xzzqyn9xddhpk7cspxdw6snwwgzt4wf7rnqpre774p4wmxtyldgm8whvtd8
+md1fatzr2s4evc3h25sapudvvtdas2de5z9drq3rg4jnxhqqqrll7xppvaxdwqqs8sngvq9zvd5z6s7pygwfk3
+md1fatzr2su9k6zqhwsv0jskp2rsal4egz4ep5859p875x67p5s3wem7sgluxl3d2a3syx3m74wyswrxcvpc54
+md1fatzr23zlhaeh6reknylagmwyjycf8044xtt9flsdlkvt6f6cthyl9yvevrz28llsnr4qy500rkxyfe6hw0
+md1fatzr23tkxgeal5wa4wy86389z3gq870g9n6rjwuq7cmsyjgffgkpqmffa5k8pmzr2lxjzdetr8v52fs2cv
+md1fatzr23n04upy3z0n8ek4aj5kk9satjt7uv4am7jn7q2pvhex36qvgp5csmqq29aj78uss09z0mledqds8p
+md1fatzr23m7j8mxp87s87gwfzjsys8njyze0uj4852ajv5x7fyu88u23mx7vwv6azw8d59kw70a2lmlks0w95
+md1fatzr2jx88nfhcc7nza0ynr9p5d3exan7jvup3kx8742q6d662qzwwx3qg6rmwy2r0upegmfdvte0lgjxay
+md1fatzr2jdkx6k89kfkaz2az67ajl8hyy967je7sks39z80kl7quz6axuvpffejsahhtp2x7gczf3clc26muz
+md1fatzr2j3w82jq5zap9302ynhp37ggd6z5u4emag0zr8gh9upnjugr26jfvunvs35jvgdjkvf8nxwprt58vw
+md1fatzr2jmwxeza6dduqqnvtpl3vsgcj7vs58sl2hmlrnysxhs57y20d0sn3047m4jnr9cz5e8jumuwpep9lg
+md1fatzr2n86g9y9evngtkrskaxskvp4qchq5qpv0pez9rarvlx32c8627y2x4unucwuan7ngdj6m8a4jm3a38
+md1fatzr2ntm5awv08c2v0vktw5t6qu9g4xkmv2dywrwkudljyuk9dam643wu0vf30ddl5vwq28tgapq6km0dg
+md1fatzr2n3g59kdh7306na4nhq32cd5w9c2uzlhxryrtzdu2qf455xvp5uc0ktmeyw4h7cajy9dzdt2xm663g
+md1fatzr2nuqhu772hljrwlhzlncxfd22zx672chhdu5ajtemtchqtljnzwtnna6j74phutvjl0dhs8ws22759
+md1fatzr25q9z7s576y0hwv6a92khwlwfmwulc9zrqupz2zll50ju3dcmghtxtfv0y025ltk2rlu3mjgf4q49y
+md1fatzr25fnqlk8ycusz0quhfev0a3hqdghjmksz3ry92d3gv4ejtmu9f0zxf3clxvtlnnvxgaz09mvs08va3
+md1fatzr25hgcj5r8x9t5j54jfadzzykqz37sefnc0rhk5zchwu9cfljgk8tg3nlnyr6nv2e7vtf5ttahr4hn4
+md1fatzr25efq2e50d8mg50ts8t8mquqwc90uynctuc4sv9py5lug68qthk65sax8thnpjetx05qdw2xnz9759
+md1fatzr24xrn6wz3pd0pwa4xqjj8e7htel64394h6gme2g4flvkpvqrj3us7k4x9dcp2a2uz2f0tdhlnxyd7a
+md1fatzr24w75nz845y9up7y276lt29ywu3usza3aqrp2qarn88u9dtnzuy

@@ -38,8 +38,7 @@
 #![allow(missing_docs)]
 
 use assert_cmd::Command;
-use miniscript::ForEachKey;
-use miniscript::descriptor::{Descriptor, DescriptorPublicKey};
+use miniscript::descriptor::DescriptorPublicKey;
 use std::str::FromStr;
 
 // ─── fixture access ─────────────────────────────────────────────────────────
@@ -169,87 +168,17 @@ fn mint_policy_card(template: &str, records: &[String]) -> Vec<String> {
         .collect()
 }
 
-// ─── the two relations, computed independently of `src/decompose` ───────────
+// ─── the two relations ────────────────────────────────────────────────────
+//
+// `Facts` / `facts` / `spend_equal` moved to `tests/common/facts.rs` in C4 so
+// the acceptance walks (`tests/acceptance_walks.rs`) grade SPEC Acceptance 1
+// against the same relation this file does, rather than a second copy of it.
+// The relation is still computed from rust-miniscript in the TEST, with no
+// call into `src/decompose` or `src/seat`.
 
-/// Everything the two equality relations are defined over.
-#[derive(Debug, PartialEq, Eq)]
-struct Facts {
-    /// The descriptor with every key expression replaced by `@n`, n in
-    /// textual order — "canonicalised template structure".
-    structure: String,
-    /// Per slot: chain code ‖ compressed point, hex. The xpub VALUE, which is
-    /// what md's wire format actually carries.
-    values: Vec<String>,
-    /// Per slot: everything after the xpub, e.g. `/<0;1>/*`.
-    use_sites: Vec<String>,
-    /// Per slot: `[fingerprint/path]`, or `-` when the key states no origin.
-    /// EXCLUDED from spend-equality, INCLUDED in round-trip-equality.
-    origins: Vec<String>,
-}
-
-fn facts(desc_str: &str) -> Facts {
-    let d = Descriptor::<DescriptorPublicKey>::from_str(desc_str)
-        .unwrap_or_else(|e| panic!("fixture descriptor must parse ({desc_str}): {e}"));
-    let rendered = format!("{d:#}");
-    let mut keys: Vec<DescriptorPublicKey> = Vec::new();
-    d.for_each_key(|k| {
-        keys.push(k.clone());
-        true
-    });
-    keys.sort_by_key(|k| rendered.find(&k.to_string()).unwrap_or(usize::MAX));
-    keys.dedup_by(|a, b| a.to_string() == b.to_string());
-
-    let mut structure = rendered.clone();
-    let (mut values, mut use_sites, mut origins) = (Vec::new(), Vec::new(), Vec::new());
-    for (n, k) in keys.iter().enumerate() {
-        let shown = k.to_string();
-        structure = structure.replace(&shown, &format!("@{n}"));
-        let (origin, xkey) = match k {
-            DescriptorPublicKey::XPub(x) => (x.origin.clone(), x.xkey),
-            DescriptorPublicKey::MultiXPub(m) => (m.origin.clone(), m.xkey),
-            DescriptorPublicKey::Single(_) => panic!("fixture has no raw keys"),
-        };
-        values.push(format!(
-            "{}{}",
-            hex(xkey.chain_code.as_ref()),
-            hex(&xkey.public_key.serialize())
-        ));
-        // The use-site suffix: strip `[origin]` then the base58 xpub.
-        let after = match shown.find(']') {
-            Some(i) if shown.starts_with('[') => shown[i + 1..].to_string(),
-            _ => shown.clone(),
-        };
-        use_sites.push(match after.find('/') {
-            Some(i) => after[i..].to_string(),
-            None => String::new(),
-        });
-        origins.push(match origin {
-            Some((f, p)) if p.as_ref().is_empty() => format!("[{f}]"),
-            Some((f, p)) => format!("[{f}/{p}]"),
-            None => "-".to_string(),
-        });
-    }
-    Facts {
-        structure,
-        values,
-        use_sites,
-        origins,
-    }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    bytes.iter().fold(String::new(), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
-        s
-    })
-}
-
-/// SPEC Acceptance 1: structures equal AND per-slot xpub values and use-site
-/// paths equal — origin metadata EXCLUDED.
-fn spend_equal(a: &Facts, b: &Facts) -> bool {
-    a.structure == b.structure && a.values == b.values && a.use_sites == b.use_sites
-}
+#[path = "common/facts.rs"]
+mod common_facts;
+use common_facts::{facts, spend_equal};
 
 /// Assert ROUND-TRIP-EQUALITY, both halves separately.
 fn assert_round_trip_equal(input: &str, recomposed: &str, route: &str) {

@@ -76,14 +76,24 @@ existing `md encode --key` bridge) · template + origin-notated key lines.
 
 | in \ out | concrete descriptor | addresses | keyed card | keyless + mk1 cards |
 | --- | --- | --- | --- | --- |
-| **D** concrete descriptor | — | ✗ P3 | ✗ P3+bridge | ✗ P3 (the decomposer) |
-| **T** template + key flags | ⚠ P1 (flag-form gap; inline template origins already work — r1 I8) | ⚠ P1 | ✓ `md encode --key` (Divergent) | ✓ |
-| **S** keyless card + mk1 strings | ✗ P2 (the seating engine) | ✗ P2 | ✗ P2+bridge | — |
+| **D** concrete descriptor | — | ✓ P3 (shipped this cycle) | ✓ P3+bridge (shipped this cycle) | ✓ P3 (the decomposer, shipped this cycle) |
+| **T** template + key flags | ✓ P1 (shipped this cycle; inline template origins already worked — r1 I8) | ✓ P1 (shipped this cycle) | ✓ `md encode --key` (Divergent) | ✓ |
+| **S** keyless card + mk1 strings | ✓ P2 (the seating engine, shipped this cycle) | ✓ P2 (shipped this cycle) | ✗ P2+bridge — `md encode --key` needs a depth-3/4 xpub, a card composes depth-0 (measured C4, filed) | — |
 | **K** keyed card phrases | ✓ (round-tripped live) | ✓ | — | ✗ non-goal (first real need files it) |
 
 ✓ measured working; ⚠/✗ the gaps, tagged with the piece that closes
 them. This table is byte-identical to the brainstorm's (r1 I9/N1) and
 travels unchanged into the plan and the seating engine's module comment.
+
+**Flipped at C4 close (2026-08-30)**, in the same commit as the acceptance
+walks that prove them: the T row's two ⚠ P1 cells, the S row's concrete-
+descriptor and addresses cells, and the whole D row. One cell this cycle owned
+did NOT close, and is left ✗ carrying its measured reason: **S → keyed card**.
+`md encode --key` admits only a depth-3/4 xpub, and a descriptor composed from
+mk1 cards carries depth-0 keys (md rebuilds them from the 65-byte TLV, which
+has no depth), so the bridge refuses — filed as
+`md-cannot-mint-a-keyed-card-from-a-split-set`. Byte-identity of the four
+copies is machine-checked by `scripts/matrix-identity-check.sh`.
 
 ## NORMATIVE — the seating engine (the core, and the funds-shaped part)
 
