@@ -1,6 +1,7 @@
 //! P2's **normative input pipeline** (SPEC `A3(a)`, restated in P2):
 //!
-//! > (1) dedupe byte-identical input strings; (2) group the survivors by
+//! > (1) dedupe input strings that name the same card, after normalising
+//! > display separators AND case; (2) group the survivors by
 //! > declared chunk-set id; (3) reassemble each group under `mk decode`
 //! > semantics.
 //!
@@ -14,11 +15,14 @@
 //! 2"), so the seating engine never sees colliding cards. That is also why
 //! A5's "ambiguous `--seat` id" case is unreachable (plan §4 roster note).
 //!
-//! Step 1 normalises display separators before comparing, mirroring
-//! [`crate::cmd::strip_md1_inputs`] on the md1 side: a card transcribed off
-//! an engraving card in grouped form is byte-identical to the same card
-//! pasted unbroken, and treating them as two cards would defeat the dedupe
-//! this pipeline exists for.
+//! Step 1 normalises display separators AND case before comparing. The
+//! separator half mirrors [`crate::cmd::strip_md1_inputs`] on the md1 side: a
+//! card transcribed off an engraving card in grouped form is the same card as
+//! one pasted unbroken. The case half is
+//! REVIEW-converter-whole-diff-r1 I2 — mk1 is bech32, uppercase is the
+//! canonical QR form, and md's decoder accepts it, so byte identity missed one
+//! card scanned twice in two cases. Treating either as two cards defeats the
+//! dedupe this pipeline exists for. See [`dedupe_strings`].
 
 use crate::error::CliError;
 use mk_codec::KeyCard;
@@ -82,19 +86,45 @@ impl DecodedCard {
     }
 }
 
-/// Step 1 — dedupe byte-identical strings, after stripping display
-/// separators, preserving first-appearance order.
+/// Step 1 — dedupe strings that name the SAME card, after stripping display
+/// separators and normalising case, preserving first-appearance order.
 ///
 /// Order preservation is not cosmetic: step 2's groups inherit it, and the
 /// `GroupId::Single` fallback keys on it.
+///
+/// TWO NORMALISATIONS, EACH FOR A MEASURED REASON.
+///
+/// - WHITESPACE, mirroring [`crate::cmd::strip_md1_inputs`]: a card
+///   transcribed off an engraving card in grouped form is the same card as
+///   one pasted unbroken.
+/// - CASE (REVIEW-converter-whole-diff-r1 I2). mk1 strings are bech32, so
+///   UPPERCASE is the canonical QR form and `mk decode` accepts it: measured
+///   2026-08-30, an all-uppercase card set seats to the identical descriptor
+///   (`v_dup_an_all_uppercase_card_set_seats_identically`). A byte-identity
+///   key therefore did NOT recognise one card scanned twice, once in each
+///   case. The two survivors merged into one group at step 2 and refused at
+///   step 3 with "Two DIFFERENT cards pinned to one chunk-set id … re-mint
+///   one of them so the set ids differ" — a diagnosis of the wrong problem
+///   whose remedy is re-engraving a plate that is fine. SPEC A3(a)'s
+///   guarantee is that the double scan is harmless BY ORDER OF OPERATIONS,
+///   and it can only be that if step 1 recognises the equivalence the
+///   decoder already honours.
+///
+/// The comparison key is case-folded; the string KEPT is the one as supplied
+/// (first appearance wins). Lower-casing the survivor would take a decision
+/// that belongs to the decoder — bech32 forbids MIXED case in one string, and
+/// that refusal is `decode_string`'s to make, not this step's.
 pub fn dedupe_strings(strings: &[String]) -> Vec<String> {
     let mut seen: Vec<String> = Vec::with_capacity(strings.len());
+    let mut keys: Vec<String> = Vec::with_capacity(strings.len());
     for s in strings {
         let normalised: String = s.chars().filter(|c| !c.is_whitespace()).collect();
         if normalised.is_empty() {
             continue;
         }
-        if !seen.iter().any(|k| *k == normalised) {
+        let key = normalised.to_lowercase();
+        if !keys.iter().any(|k| *k == key) {
+            keys.push(key);
             seen.push(normalised);
         }
     }
@@ -309,6 +339,24 @@ mod tests {
             "mk1def".to_string(),
         ];
         assert_eq!(dedupe_strings(&v), vec!["mk1abc", "mk1def"]);
+    }
+
+    /// REVIEW-converter-whole-diff-r1 I2. The key is case-folded; the string
+    /// KEPT is the one as supplied, so the decoder still gets to rule on a
+    /// mixed-case string rather than having it silently lower-cased here.
+    #[test]
+    fn dedupe_folds_case_and_keeps_the_first_spelling() {
+        let v = vec![
+            "mk1abc".to_string(),
+            "MK1ABC".to_string(),
+            "mk1 ABC".to_string(),
+            "mk1def".to_string(),
+        ];
+        assert_eq!(dedupe_strings(&v), vec!["mk1abc", "mk1def"]);
+
+        // First-appearance order, and the first SPELLING, both survive.
+        let upper_first = vec!["MK1ABC".to_string(), "mk1abc".to_string()];
+        assert_eq!(dedupe_strings(&upper_first), vec!["MK1ABC"]);
     }
 
     #[test]

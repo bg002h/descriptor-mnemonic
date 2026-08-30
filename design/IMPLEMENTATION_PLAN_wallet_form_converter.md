@@ -170,7 +170,9 @@ V-HSPELL. Exit: the gate + all rows in the same commits as the code.
 **C2 — P2, the S row (the core; funds-shaped).** Build order inside
 the phase, TDD throughout, rows in the SAME commit as each behaviour:
 
-1. Input pipeline (normative, A3(a)): dedupe byte-identical strings →
+1. Input pipeline (normative, A3(a)): dedupe separator- and
+   case-normalised strings (post-GREEN fold,
+   REVIEW-converter-whole-diff-r1 I2) →
    group by declared chunk-set id → reassemble under `mk decode`
    semantics. Rows V-DUP, V-COLLIDE.
 2. A2 satisfaction (decoded values, never strings; declaration is the

@@ -235,13 +235,25 @@ harmless BY ORDER OF OPERATIONS, not by assumption (r8 I1 — the naive
 "dedupes harmlessly" claim was measured false: `mk decode S1 S2 S1 S2`
 → "error: chunked-header malformed: received 4 chunks, header
 declares total_chunks = 2"). P2's input pipeline is normative: (1)
-dedupe byte-identical input strings; (2) group the survivors by
+dedupe input strings that name the same card, after normalising
+display separators AND case; (2) group the survivors by
 declared chunk-set id (r8 M2 — the grouping rule the tie-break's
 totality depends on); (3) reassemble each group under `mk decode`
 semantics, so a merged id-collision group still refuses at reassembly
 (measured: "received 5 chunks, header declares total_chunks = 2") and
 the seating engine never sees colliding cards. A full card string set
 supplied twice over ships as a must-SEAT row;
+**Post-GREEN fold, REVIEW-converter-whole-diff-r1 I2, measured
+2026-08-30:** step 1 said BYTE-identical, and mk1 strings are
+bech32 — an all-uppercase card set seats to the identical
+descriptor, so a byte-identity key did not recognise one card
+scanned twice, once in each case. Those two survivors merged into
+one group at step 2 and refused at step 3 with "Two DIFFERENT cards
+pinned to one chunk-set id … re-mint one of them", which diagnoses
+the wrong problem and prescribes re-engraving a good plate. Step 1
+normalises display separators AND case; whole-string mixed-case
+rejection stays the decoder's.
+
 (b) r7-C1's missing-card fabrication (`sortedmulti(2,X,X,Y)` from a
 2-of-3 missing Z — measured, X alone controlling funds) is doubly
 dead: A4's unfilled-slot refusal AND the BIP-388-unsupported refusal —
@@ -360,7 +372,7 @@ exists the message points at `--from-mk1`.
 `--from-mk1-file <FILE>`, one string per line) TOGETHER WITH keyless md1
 phrases. The seating engine runs; descriptor to stdout, notes and the
 B2 address to stderr. **P2's input pipeline is normative as stated in
-A3(a): dedupe byte-identical strings, THEN group by declared chunk-set
+A3(a): dedupe separator- and case-normalised strings, THEN group by declared chunk-set
 id, THEN reassemble under `mk decode` semantics — a reader scoping P2
 from this paragraph budgets that ordering here (r9 M3).** **P2 also
 ships the SPEND-EQUALITY checker**

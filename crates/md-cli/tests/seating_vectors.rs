@@ -94,6 +94,66 @@ fn v_dup_the_full_split_set_supplied_twice_over_still_seats() {
     );
 }
 
+/// REVIEW-converter-whole-diff-r1 I2 — the double scan is CASE-variant.
+///
+/// mk1 strings are bech32, so UPPERCASE is the canonical QR form and md's own
+/// mk1 decoder accepts it everywhere: an all-uppercase card set seats to the
+/// identical descriptor. Step 1 of P2's normative pipeline normalised
+/// WHITESPACE only, so one card scanned twice -- once lowercase, once
+/// uppercase -- survived dedupe as two strings, merged into one group at step
+/// 2 and blew up at step 3 with a message that BLAMED THE WRONG THING:
+///
+///   "Two DIFFERENT cards pinned to one chunk-set id merge into one group
+///    here and refuse exactly like this — re-mint one of them so the set ids
+///    differ"
+///
+/// An operator who follows that re-engraves a plate to fix a problem that
+/// does not exist. SPEC A3(a) promises "an accidental double-scan is made
+/// harmless BY ORDER OF OPERATIONS": it was not.
+#[test]
+fn v_dup_a_case_variant_double_scan_still_seats() {
+    let cards = mk1(PATHOLOGICAL);
+    assert_eq!(cards.len(), 30, "fixture: the full pathological card set");
+    let mut with_variant = cards.clone();
+    // ONE card re-scanned in the canonical uppercase QR form.
+    with_variant.push(cards[0].to_uppercase());
+
+    let variant = seat_cmd("descriptor", PATHOLOGICAL, &with_variant, &[])
+        .output()
+        .unwrap();
+    assert!(
+        variant.status.success(),
+        "a case-variant re-scan of one card was refused: {}",
+        err_of(&variant)
+    );
+
+    let once = seat_cmd("descriptor", PATHOLOGICAL, &cards, &[])
+        .output()
+        .unwrap();
+    assert!(once.status.success(), "{}", err_of(&once));
+    assert_eq!(
+        out_of(&variant),
+        out_of(&once),
+        "a case-variant re-scan is the same wallet, byte for byte"
+    );
+}
+
+/// The control that keeps the row above honest: an uppercase mk1 string is
+/// something md's decoder really does accept, so the dedupe is normalising a
+/// real equivalence rather than papering over a decode failure.
+#[test]
+fn v_dup_an_all_uppercase_card_set_seats_identically() {
+    let cards: Vec<String> = mk1(PATHOLOGICAL).iter().map(|s| s.to_uppercase()).collect();
+    let upper = seat_cmd("descriptor", PATHOLOGICAL, &cards, &[])
+        .output()
+        .unwrap();
+    assert!(upper.status.success(), "{}", err_of(&upper));
+    let lower = seat_cmd("descriptor", PATHOLOGICAL, &mk1(PATHOLOGICAL), &[])
+        .output()
+        .unwrap();
+    assert_eq!(out_of(&upper), out_of(&lower));
+}
+
 // ─── the composed wallet, on both verbs ─────────────────────────────────
 
 #[test]
