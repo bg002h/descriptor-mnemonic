@@ -60,3 +60,12 @@ engine, P3 decompose).
    different-master slots remain the one legitimate same-path family.
    `md encode`'s acceptance of `@0,@0` templates is filed as an md-side
    question, not changed by this cycle.
+   **Refinement (operator, 2026-08-30, verbatim): "Bad ideas can be
+   valid, but we don't want to support BIP forbidden wallets."** The
+   refusal ground is BIP 388 policy (pairwise-distinct keys; disjoint
+   multipath sets per placeholder — both verified against bitcoin/bips
+   master), NOT invalidity — the diagnostics say "unsupported", never
+   "invalid". Measured the same day: md refuses the BIP-legal disjoint
+   form ("@0 appears with inconsistent path/multipath/hardening") while
+   composing the BIP-forbidden same-path form — md currently inverts
+   BIP 388 on this point; that inversion is the filed md-side question.

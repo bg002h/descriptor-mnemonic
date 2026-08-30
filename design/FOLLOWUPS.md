@@ -2127,14 +2127,22 @@ The descriptor→`@N`-template renderer lived only in `md-cli` (`format/text.rs:
 - **Status:** OPEN. **Tier:** `feature` / cross-repo.
 - **Companion:** `mnemonic-key/design/FOLLOWUPS.md` → `stub-keyed-wallet-binding-at-mint` (primary, mint-side).
 
-### `md-encode-repeated-placeholder-question` — `md encode` accepts `@0,@0` templates; under the key-reuse ruling that mints an invalid wallet's policy card (repo: **descriptor-mnemonic**; owning phase: **next md-codec/cli normative touch — decide refuse-vs-keep with a vector**)
+### `md-repeated-placeholder-inverts-bip388` — md accepts the BIP-388-forbidden same-path repetition and refuses the BIP-388-legal disjoint form (repo: **descriptor-mnemonic**; owning phase: **next md-codec/cli normative touch — decide both directions with vectors**)
 
-Filed 2026-08-30 from the wallet-form-converter cycle. Operator ruling
-(verbatim): "Key reuse (meaning with same keypath) isn't allowed." The
-converter refuses repeated (xpub, use-site path) in both directions;
-`md encode` today accepts `wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))`
-(measured, r4 M4 of the converter R0), whose only fills are now-invalid
-wallets. Decide whether encode refuses the repeated placeholder (a
-normative md change, own gate + vector) or keeps it for some template
-use the ruling does not reach; do not change it as a converter side
-effect.
+Filed 2026-08-30 from the wallet-form-converter cycle; reground the
+same day by the operator's refinement (verbatim): "Bad ideas can be
+valid, but we don't want to support BIP forbidden wallets." BIP 388's
+"Additional rules" (verified against bitcoin/bips master): keys in the
+key information vector must be pairwise distinct (security footnote:
+miniscript pubkey-reuse insecurity), and two KEY expressions on the
+same placeholder must have disjoint multipath sets — its
+invalid-example list includes `sh(multi(1,@0/**,@0/**))` ("Repeated
+keys with the same path expression"). Measured 2026-08-30: md INVERTS
+both halves — `md descriptor --template
+"wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))"` composes clean (the
+forbidden shape; also r4 M4 measured `md encode` accepting it), while
+the BIP-legal `wsh(multi(2,@0/<0;1>/*,@0/<2;3>/*))` is refused ("@0
+appears with inconsistent path/multipath/hardening"). Decide both
+directions deliberately (a normative md change, own gate + vectors):
+refuse the same-path repetition, and either admit or by-design-refuse
+the disjoint form; do not change either as a converter side effect.

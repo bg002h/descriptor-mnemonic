@@ -2,7 +2,10 @@
 
 **Status: DRAFT — R0 rounds r1 (RED 3C/9I/8M/2N), r2 (RED 2C/6I/5M),
 r3 (RED 4C/4I/4M — the wholesale seating-engine rewrite), r4 (RED
-1C/2I/4M) all folded 2026-08-30; reports in
+1C/2I/4M), r5 (RED 1C/1I/2M — the executable-principle rewrite), r6
+(RED 0C/3I), r7 (RED 1C/2I — capacity deleted), r8 (RED 1C/1I/2M —
+reviewed against the key-reuse ruling) all folded 2026-08-30, plus the
+operator key-reuse rulings of 2026-08-30 (recorded in A3); reports in
 `design/agent-reports/R0-converter-spec-r*.md`.**
 Repo: descriptor-mnemonic (`md`), with one measured touch-point in
 mnemonic-key (`mk decode` output is consumed as-is; no mk changes).
@@ -133,10 +136,14 @@ bound and printing the cards and their candidate slots — graph
 properties it has even when the matchings are uncounted (r6 M3) —
 `--seat` being the remedy there too. Every prior round's counterexample — r2's three-orders, r3's
 two-groups, r4's repeated-slot and internal-key, r5's use-site-path
-swap — ships as a vector row against THIS procedure, and r5-M1's
+swap — ships as a vector row against THIS procedure. r5-M1's
 measured over-strictness case (two group instances sharing
-placeholders, invariant yet refused by the old clause test) ships as a
-row proving the procedure SEATS what the clauses wrongly refused.
+placeholders) is REGROUNDED by the 2026-08-30 key-reuse ruling: @0 at
+two positions with the same use-site path is exactly the repetition
+BIP 388 forbids, so its row ships as a REFUSE row now, and the
+anti-over-refusal duty it carried transfers to Acceptance 2's boundary
+seat row (the fingerprint-free same-path different-masters family must
+SEAT).
 
 ### PHASE A
 
@@ -176,33 +183,67 @@ matchings of A2's satisfaction graph; compose-canonicalise-compare;
 the cap; the refusal naming cards by full chunk-set id, slots, and
 both remedies — all as stated above). Identical declared origin with
 DIFFERENT xpubs on fingerprint-bearing cards refuses (impossible from
-one master — r1). **KEY REUSE IS INVALID — operator ruling 2026-08-30, verbatim: "Key
-reuse (meaning with same keypath) isn't allowed."** The same
-(xpub, use-site path) at two positions is not a valid wallet, in
-EITHER direction: compose refuses to emit it, decompose refuses it as
-input — named rows both ways. Three consequences, each a
-simplification:
+one master — r1). **KEY REUSE IS UNSUPPORTED — operator rulings 2026-08-30.** First
+ruling, verbatim: "Key reuse (meaning with same keypath) isn't
+allowed." Refinement, verbatim: "Bad ideas can be valid, but we don't
+want to support BIP forbidden wallets" — so the ground is NOT
+invalidity: a repeated-key descriptor is technically valid script, and
+this is a POLICY refusal of a BIP-forbidden shape. The authority is
+BIP 388's "Additional rules" (verified against bitcoin/bips master,
+2026-08-30): (1) "The public keys obtained by deserializing elements
+of the key information vector must be pairwise distinct" — with the
+BIP's own security footnote: "Reusing pubkeys could be insecure in the
+context of wallet policies containing miniscript. Avoiding repeated
+public keys altogether avoids the problem at the source."; (2) two
+KEY expressions on the SAME placeholder must have DISJOINT multipath
+sets ({M,N} ∩ {P,Q} = ∅) — and BIP 388's invalid-example list
+includes `sh(multi(1,@0/**,@0/**))` ("Repeated keys with the same
+path expression") verbatim. The converter refuses BOTH forbidden
+shapes in BOTH directions — compose refuses to emit, decompose refuses
+as input, each with a named row — and the diagnostic says "forbidden
+by BIP 388" / "unsupported", never "invalid". Measured scope note:
+md's template surface is NARROWER than BIP 388 here and currently
+INVERTS it — `md descriptor` refuses the BIP-LEGAL disjoint form
+(`wsh(multi(2,@0/<0;1>/*,@0/<2;3>/*))` → "@0 appears with
+inconsistent path/multipath/hardening") while composing the
+BIP-FORBIDDEN same-path form (`wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))`
+composed clean; both measured 2026-08-30) — so shape (2) is
+unreachable through md today and its refusal is recorded for
+completeness, while shape (1) (the same xpub filling two slots) is the
+reachable case where the engine's refusal binds. Three consequences,
+each a simplification:
 (a) each card fills exactly ONE slot and there is no repeated-key
 restore case at all — the r6/r7 collapse/capacity/supply-twice
-machinery is DELETED, not repaired; an accidentally double-scanned
-identical card dedupes harmlessly (no valid wallet could need the
-duplicate);
+machinery is DELETED, not repaired. An accidental double-scan is made
+harmless BY ORDER OF OPERATIONS, not by assumption (r8 I1 — the naive
+"dedupes harmlessly" claim was measured false: `mk decode S1 S2 S1 S2`
+→ "error: chunked-header malformed: received 4 chunks, header
+declares total_chunks = 2"). P2's input pipeline is normative: (1)
+dedupe byte-identical input strings; (2) group the survivors by
+declared chunk-set id (r8 M2 — the grouping rule the tie-break's
+totality depends on); (3) reassemble each group under `mk decode`
+semantics, so a merged id-collision group still refuses at reassembly
+(measured: "received 5 chunks, header declares total_chunks = 2") and
+the seating engine never sees colliding cards. A full card string set
+supplied twice over ships as a must-SEAT row;
 (b) r7-C1's missing-card fabrication (`sortedmulti(2,X,X,Y)` from a
 2-of-3 missing Z — measured, X alone controlling funds) is doubly
-dead: A4's unfilled-slot refusal AND the reuse-invalidity refusal —
+dead: A4's unfilled-slot refusal AND the BIP-388-unsupported refusal —
 both ship as permanent must-REFUSE rows;
 (c) a policy declaring two fingerprint-BEARING slots with the
-identical (fingerprint, path) is INVALID AT THE DOOR — only
-repetition could fill it — refused with that explanation. The
-legitimate same-path family survives untouched: fingerprint-free
-declarations across DIFFERENT masters (privacy-preserving multisig)
-are different keys, not reuse.
+identical (fingerprint, path) is REFUSED AT THE DOOR — its only
+possible fill binds one xpub to two slots, which rule (1) forbids —
+refused with that explanation. The legitimate same-path family
+survives untouched: fingerprint-free declarations across DIFFERENT
+masters (privacy-preserving multisig) are pairwise-distinct keys, not
+reuse.
 A3 enumerates PERFECT MATCHINGS exactly as its normative sentence says
 (r7 I2). The P3 write-side handling of a repeated-key INPUT descriptor
-becomes a refusal (invalid wallet), replacing the earlier collapse
-rule; its row flips accordingly. `md encode`'s current acceptance of
-`@0,@0` templates predates the ruling and is FILED as an md-side
-question rather than changed by this spec (see FOLLOWUPS).
+becomes a refusal (BIP-forbidden, unsupported — never "invalid"),
+replacing the earlier collapse rule; its row flips accordingly.
+`md descriptor`/`md encode`'s current acceptance of the same-path form
+predates the ruling and is FILED as an md-side question rather than
+changed by this spec (see FOLLOWUPS).
 
 **A4 — completeness is total.** Every slot filled, every supplied key
 seated. Unfilled slot: refuse naming the slot and its declared origin.
@@ -315,10 +356,12 @@ probe** — and emits: the keyless template, origin-notated key lines
   lacks an origin — naming the keys and the reason (mk1 cards bind key
   to origin by design; a card cannot be minted for an origin the input
   never stated). The template and descriptor outputs still work.
-- **Repeated keys — REFUSED as invalid (operator ruling 2026-08-30,
-  superseding r1 M4's collapse):** a concrete descriptor carrying the
-  same (xpub, use-site path) at two positions is not a valid wallet;
-  decompose refuses it by name. A vector row pins the refusal.
+- **Repeated keys — REFUSED as BIP-forbidden (operator rulings
+  2026-08-30, superseding r1 M4's collapse):** a concrete descriptor
+  carrying the same xpub at two positions is technically valid script
+  that BIP 388 forbids (pairwise-distinct rule) — decompose refuses it
+  by name as unsupported, never as invalid. A vector row pins the
+  refusal.
 - **New walker, not `compile`'s (r1 M5):** the existing substitution
   machinery strips placeholders to bare synthetic xpubs and its drift
   guard forbids `MultiXPub` — but every multipath key parses AS
@@ -390,9 +433,13 @@ FOLLOWUPS.
    (The keyed-card-derived descriptor stays excluded from the decompose
    leg BY NAME — depth-0 re-serialised keys, r1 C3.)
 2. Every seating refusal, every B1 disposition, AND every
-   PROVEN-FREE-SEAT case (the rows that must SEAT — r5-M1's
-   two-instance case, r6-I3's capacity case, the mixed-declaration
-   unique matching — r6 M2) demonstrated by a vector row that FAILS if
+   PROVEN-FREE-SEAT case (the rows that must SEAT — the
+   fingerprint-free same-path different-masters family, which is the
+   SEAT side of the key-reuse boundary and carries r5-M1's
+   anti-over-refusal duty, its REFUSE side (the same xpub at two
+   slots) sitting adjacent so the boundary is pinned from BOTH
+   directions; and the mixed-declaration unique matching — r6 M2)
+   demonstrated by a vector row that FAILS if
    the behaviour is removed or inverted — including CE-1's
    accepted-limitation row, scoped to cards that are not
    wallet-confirmed (r3 I3): a same-stub foreign card seats and the
