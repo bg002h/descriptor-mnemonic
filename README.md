@@ -113,6 +113,26 @@ This covers single-key wallets, all common multisig configurations (including th
 
 Foreign xpubs (multi-party multisig where you don't hold all seeds) are deferred to v1+. Per-`@N` divergent paths shipped in v0.10 (`Tag::OriginPaths`); the current wire format is **v0.30** (a clean break from v0.x — see `design/SPEC_v0_30_wire_format.md`, [`CHANGELOG.md`](CHANGELOG.md), and [`MIGRATION.md`](MIGRATION.md)). v0.32 (2026-05-11) replaced the v0.14-era 5-shape address-derivation allow-list with a generic AST → `miniscript::Descriptor` converter, covering every BIP-388-parseable shape.
 
+## Moving between wallet forms
+
+The same wallet lives in four forms, and `md` converts between them rather than treating each as a dead end:
+
+- **D** — a concrete descriptor (keys and origins inline);
+- **T** — a BIP-388 template plus per-slot keys and origins as flags;
+- **S** — the split backup: a keyless `md1` policy card plus one `mk1` key card per slot, each distributable on its own;
+- **K** — a single keyed `md1` card carrying template and keys together.
+
+```sh
+md descriptor <keyless md1 phrases…> --from-mk1 <mk1…>          # S → descriptor
+md address    <keyless md1 phrases…> --from-mk1 <mk1…>          # S → addresses
+md decompose  "<descriptor>" --emit commands                    # D → the mint commands for T, S and K
+md descriptor --template "<template>" --key "@0=[fp/path]xpub…" # T → descriptor
+```
+
+Seating an `mk1` card onto a keyless card is the funds-shaped step: a keyless card names its slots by **origin**, not by order, and a wrong seat reconstructs a *different wallet* rather than failing. So `md` seats only when every possible assignment composes the same wallet, and otherwise refuses, naming the cards, the slots and the remedies — including `--seat '@i=<chunk-set-id>'` to decide one slot by hand. Keyed (compact, monolithic) and split (distributable custody) are peers; the converter makes moving between them cheap and recommends neither.
+
+Which conversions work today is the "in \ out" matrix, kept current in [`design/BRAINSTORM_wallet_form_converter.md`](design/BRAINSTORM_wallet_form_converter.md), [`design/SPEC_wallet_form_converter.md`](design/SPEC_wallet_form_converter.md) and [`design/IMPLEMENTATION_PLAN_wallet_form_converter.md`](design/IMPLEMENTATION_PLAN_wallet_form_converter.md) — the spec is the normative copy. The flags are in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Status
 
 This specification is in **Pre-Draft, AI + reference implementation, awaiting human review** status. The structure of the spec is in place and a reference implementation ships at [`crates/md-codec/`](crates/md-codec/) with 444 tests passing across the workspace (395 without default features). Independent human review of both the spec and the impl is the remaining gate. Open spec questions are tracked in `design/POLICY_BACKUP.md` §8; deferred work is tracked in [`design/FOLLOWUPS.md`](design/FOLLOWUPS.md).

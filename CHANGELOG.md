@@ -4,6 +4,91 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased] — the wallet-form converter
+
+A wallet expressed in one form can now be moved to another. The three forms md
+already understood — a **concrete descriptor**, a **BIP-388 template plus keys**,
+and the **backup cards** (a keyless `md1` policy card with one `mk1` key card per
+slot, or a single keyed `md1` card) — were each a dead end: what went in one way
+came out the same way. The gaps, and which piece closes each, are the "in \ out"
+matrix in [`design/BRAINSTORM_wallet_form_converter.md`](design/BRAINSTORM_wallet_form_converter.md)
+and its three siblings; the spec is `design/SPEC_wallet_form_converter.md`.
+
+### Added
+
+- **`md descriptor` and `md address` seat mk1 key cards onto a keyless policy
+  card** — `--from-mk1 <STRING>` (repeatable), `--from-mk1-file <FILE>`, and
+  `--seat '@i=<chunk-set-id>'`.
+
+  ```sh
+  md descriptor <keyless md1 phrases…> --from-mk1 <mk1…>   # the concrete descriptor
+  md address    <keyless md1 phrases…> --from-mk1 <mk1…>   # its addresses
+  ```
+
+  A keyless card names its slots by ORIGIN, not by order, so restoring one means
+  deciding which card belongs in which slot — and a wrong seat reconstructs a
+  DIFFERENT WALLET rather than failing. The engine therefore refuses wherever it
+  cannot decide: it enumerates every perfect matching of cards to slots (bounded
+  at 720 total, with early termination), composes each candidate, and seats only
+  when every candidate is the same wallet. When two candidates differ it names
+  the cards, the slots and both remedies rather than picking one. `--seat` lets
+  the operator resolve an ambiguity by hand; it can only choose among seatings
+  the engine already permits — it never places a card the engine would not,
+  never silences a stub warning and never fills a missing-card gap.
+
+  Completeness is total: a slot with no card, or a card that fits no slot, is a
+  refusal naming the slot's declared origin or the card's chunk-set id. Stub
+  bindings are reported at three tiers (wallet-confirmed, shape-confirmed,
+  unconfirmed-with-warning) on stderr; stdout stays the machine contract.
+
+- **`md decompose <DESCRIPTOR>` — a concrete descriptor becomes an entrance.**
+
+  ```sh
+  md decompose "wsh(sortedmulti(2,[73c5da0a/48'/0'/0'/2']xpub…/<0;1>/*,…))" --emit commands
+  ```
+
+  `--emit` selects `template`, `keys`, `fingerprints`, `descriptor`, `commands`
+  or `all` (default); `--in FILE` reads the descriptor from a file. The key lines
+  are BIP-380 origin-notated records `mk encode --keys` accepts, emitted **as
+  parsed** — true depth, child number and origin, never a re-serialised depth-0
+  form, which mk's depth-consistency check refuses. `--emit commands` prints both
+  mint routes (keyed card; keyless policy card + mk1 cards) as runnable command
+  lines.
+
+- **`--key` accepts the origin-notated BIP-380 form on `descriptor` and
+  `address`**: `--key "@0=[73c5da0a/48'/0'/0'/2']xpub…"`, alongside the bare
+  `--key '@0=xpub…'`.
+
+  Precedence is **per datum**, never whole-record. A path comes from the slot's
+  inline template origin if it has one, else the shared `--path`; a fingerprint
+  comes from `--fingerprint` or from an origin-notated `--key`. Where two sources
+  name the same slot they must AGREE or the command refuses — a disagreeing
+  fingerprint or path is never silently overridden. An inline `48h/…` origin
+  whose spelling md cannot take now points at the `'` requirement instead of the
+  old misdirecting message.
+
+### Refused, deliberately — BIP-388 key reuse
+
+Reusing one key at two positions with the same path expression is **forbidden by
+BIP 388** ("the public keys obtained by deserializing elements of the key
+information vector must be pairwise distinct", and two key expressions on one
+placeholder must have disjoint multipath sets). Both converter directions refuse
+it, at three points:
+
+- a policy using the same placeholder at more than one position, before any card
+  is read;
+- two fingerprint-BEARING slots declaring the IDENTICAL origin — one master at
+  one path yields exactly one key, so the only possible fill binds that one xpub
+  to both slots — refused at the door;
+- the same extended key offered for two slots, or found at two positions of a
+  descriptor being decomposed.
+
+The refusals say **"forbidden by BIP 388"** and **"UNSUPPORTED"**, never
+"invalid": the script would be well-formed, and it is the POLICY this tool
+declines to reconstruct. Fingerprint-FREE declarations sharing one path are a
+DIFFERENT case and seat normally — that is the privacy-preserving
+different-masters family, and it is pinned by rows on both sides of the boundary.
+
 ## md-cli [Unreleased] — origin advisory names a `--path` supersession
 
 ### Changed
