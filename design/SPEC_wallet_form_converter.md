@@ -108,15 +108,28 @@ of that graph. Zero matchings ⇒ A4's refusals identify the unsatisfied
 side. Exactly one ⇒ seat it. Several ⇒ compose each candidate
 assignment, canonicalise FOR COMPARISON (an internal form that
 additionally sorts keys within each `sortedmulti`/`sortedmulti_a`
-group instance — making byte-equality of the comparison form exactly
-wallet-equality for sorted groups; this form is never emitted), and
-byte-compare: all equal ⇒ seat any (a free seat, PROVEN); any pair
-differs ⇒ the ambiguity refusal naming the cards, the slots, and the
-remedies (re-mint with fingerprints, or `--seat`). Matching counts are
-capped (a class of k mutually-ambiguous cards contributes k!
-compositions; above a stated bound — 720, i.e. k>6 in one class — the
-engine refuses and says the bound, `--seat` being the remedy there
-too). Every prior round's counterexample — r2's three-orders, r3's
+group instance; byte-equality of this form is SOUND for
+wallet-equality and deliberately conservative — the converse fails on
+e.g. taptree branch commutation, measured, which the engine treats as
+inequality and refuses; this form is never emitted — r6 M1), and
+byte-compare: all equal ⇒ seat the CANONICAL matching — the one whose
+canonical-comparison form is lexicographically least, a stated total
+order (r6 I1: "seat any" left B1's disposition and the emitted text
+nondeterministic — two wallet-equal matchings measured yielding
+WalletPolicyIds `568989ea…` vs `13415d47…` and different checksums, so
+a card could be wallet-confirmed on one arm and warned on the other;
+determinism restores B1's meaning at zero cost since all candidates
+are proven wallet-equal); any pair differs ⇒ the ambiguity refusal
+naming the cards, the slots, and the remedies (re-mint with
+fingerprints, or `--seat`). Enumeration is bounded by TOTAL matchings
+enumerated — 720, early-terminating at the 721st (r6 I2: a per-class
+k! bound neither bounds the work — two independent 6-card components
+are 518,400 matchings with no class over 6 — nor tracks it — an
+8-card path component has 2 matchings; and "class" is the frame this
+procedure deleted). Over the bound, the engine refuses stating the
+bound and printing the cards and their candidate slots — graph
+properties it has even when the matchings are uncounted (r6 M3) —
+`--seat` being the remedy there too. Every prior round's counterexample — r2's three-orders, r3's
 two-groups, r4's repeated-slot and internal-key, r5's use-site-path
 swap — ships as a vector row against THIS procedure, and r5-M1's
 measured over-strictness case (two group instances sharing
@@ -161,8 +174,16 @@ matchings of A2's satisfaction graph; compose-canonicalise-compare;
 the cap; the refusal naming cards by full chunk-set id, slots, and
 both remedies — all as stated above). Identical declared origin with
 DIFFERENT xpubs on fingerprint-bearing cards refuses (impossible from
-one master — r1). Identical (origin, xpub) pairs collapse to one key,
-on the policy side too (r2 M3), pinned by a row.
+one master — r1). Identical cards collapse to one NODE
+WITH CAPACITY — the node may fill any number of slots whose
+declarations it satisfies, the composed descriptor repeating the key
+at each (r6 I3: collapse-as-deletion manufactured the exact
+unfilled-slot refusal r2 M3 promised away, because a keyless policy
+card cannot collapse its same-origin slots — it has no xpubs to
+compare — while two identical scans collapsed to one card; the r6
+construction ships as a row proving it SEATS). The P3 write-side
+collapse (identical (origin, xpub) → one slot) stands, pinned by its
+row.
 
 **A4 — completeness is total.** Every slot filled, every supplied key
 seated. Unfilled slot: refuse naming the slot and its declared origin.
@@ -350,8 +371,11 @@ FOLLOWUPS.
    `mk encode --keys` accept and that re-compose ROUND-TRIP-EQUAL.
    (The keyed-card-derived descriptor stays excluded from the decompose
    leg BY NAME — depth-0 re-serialised keys, r1 C3.)
-2. Every seating refusal AND every B1 disposition demonstrated by a
-   vector row that FAILS if the behaviour is removed — including CE-1's
+2. Every seating refusal, every B1 disposition, AND every
+   PROVEN-FREE-SEAT case (the rows that must SEAT — r5-M1's
+   two-instance case, r6-I3's capacity case, the mixed-declaration
+   unique matching — r6 M2) demonstrated by a vector row that FAILS if
+   the behaviour is removed or inverted — including CE-1's
    accepted-limitation row, scoped to cards that are not
    wallet-confirmed (r3 I3): a same-stub foreign card seats and the
    derived address differs; the row asserts BOTH halves.
