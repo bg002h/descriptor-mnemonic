@@ -53,16 +53,22 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
             ));
         }
         let ctx = ctx_for_template(template);
-        let (parsed_keys, parsed_fps, inline_declared) = resolve_keys_fingerprints_and_precedence(
-            template,
-            args.keys,
-            args.fingerprints,
-            args.path,
-            ctx,
-            args.network,
-        )?;
+        let (parsed_keys, parsed_fps, inline_declared, bracket_sourced) =
+            resolve_keys_fingerprints_and_precedence(
+                template,
+                args.keys,
+                args.fingerprints,
+                args.path,
+                ctx,
+                args.network,
+            )?;
         let mut descriptor = parse_template(template, &parsed_keys, &parsed_fps)?;
-        apply_path_override_per_slot(&mut descriptor, args.path, &inline_declared)?;
+        apply_path_override_per_slot(
+            &mut descriptor,
+            args.path,
+            &inline_declared,
+            &bracket_sourced,
+        )?;
         refuse_key_reuse_across_slots(&descriptor, args.cmd)?;
         return Ok(descriptor);
     }
@@ -92,30 +98,42 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
 }
 
 /// SPEC P1's per-datum precedence (`design/SPEC_wallet_form_converter.md`
-/// "The three pieces"), resolved BEFORE `parse_template` runs. Accepts the
-/// origin-notated `--key '@i=[fp/path]xpub'` form (C0's `parse_key_with_origin`)
-/// alongside the bare `@i=XPUB` form it already accepted (both go through the
-/// same parser — a bare value just carries no bracket).
+/// "The three pieces"), WIDENED by N3 (`design/SPEC_mdcli_mini.md` "N3 —
+/// the `--key` bracket path becomes a last-resort source"), resolved BEFORE
+/// `parse_template` runs. Accepts the origin-notated `--key
+/// '@i=[fp/path]xpub'` form (C0's `parse_key_with_origin`) alongside the
+/// bare `@i=XPUB` form it already accepted (both go through the same parser
+/// — a bare value just carries no bracket).
 ///
 /// "the sources never overlap on the same datum, so precedence is
 /// per-DATUM, not per-source":
 ///
 /// - PATHS come from the inline template origin where present, else the
-///   shared `--path` (applied afterward, per slot, by
-///   `apply_path_override_per_slot`), else today's non-canonical-wrapper
-///   refusal stands. An origin-notated `--key`'s bracket PATH is NEVER a
-///   source of descriptor path data — it exists only to be checked against
-///   the slot's inline template path when BOTH are present (V-PATHAGREE):
-///   agreement is not an override, and disagreement refuses naming the slot
-///   and both paths.
+///   shared `--path`, else — as of N3 — an origin-notated `--key`'s bracket
+///   path, applied afterward, per slot, by `apply_path_override_per_slot`;
+///   a slot none of the three speaks for still hits today's
+///   non-canonical-wrapper refusal. Precedence is inline > `--path` >
+///   bracket: wherever inline or `--path` already wins the slot, the
+///   bracket remains a CROSS-CHECK only (V-PATHAGREE/V-PATHEFF — agreement
+///   is not an override, and disagreement refuses naming the slot and both
+///   paths); it becomes a SOURCE only for a slot neither of the first two
+///   supplies.
 /// - FINGERPRINTS come from `--fingerprint @i=` or an origin-notated
 ///   `--key`'s bracket fingerprint; when BOTH name slot i they must AGREE
 ///   (V-FPAGREE) or refuse — never a silent override in either direction.
 ///
-/// Returns `(parsed_keys, parsed_fingerprints, inline_declared)` — the last
-/// is the per-slot set `apply_path_override_per_slot` needs to know which
-/// slots the shared `--path` may still fill in.
-type ResolvedKeysAndFingerprints = (Vec<ParsedKey>, Vec<ParsedFingerprint>, BTreeSet<u8>);
+/// Returns `(parsed_keys, parsed_fingerprints, inline_declared,
+/// bracket_sourced)` — the last two are the per-slot sets
+/// `apply_path_override_per_slot` needs: `inline_declared` names the slots
+/// `--path` may still fill in, `bracket_sourced` names the slots N3's
+/// last-resort bracket path may fill in (by construction, disjoint from
+/// `inline_declared` — see that function's doc comment).
+type ResolvedKeysAndFingerprints = (
+    Vec<ParsedKey>,
+    Vec<ParsedFingerprint>,
+    BTreeSet<u8>,
+    BTreeMap<u8, DerivationPath>,
+);
 
 fn resolve_keys_fingerprints_and_precedence(
     template: &str,
@@ -159,32 +177,41 @@ fn resolve_keys_fingerprints_and_precedence(
     //
     // WHICH SOURCE WINS is exactly what apply_path_override_per_slot decides:
     // the inline template origin for the slots that declared one, the shared
-    // --path for the rest. REVIEW-converter-whole-diff-r1 I1: the check used
-    // to compare against the INLINE path only, so the two cases below were
-    // unguarded --
+    // --path for the rest, and -- as of N3 -- the bracket path itself for a
+    // slot neither of those speaks for. REVIEW-converter-whole-diff-r1 I1:
+    // the check used to compare against the INLINE path only, so the two
+    // cases below were unguarded --
     //
     //   * bracket vs --path. `--path` fills every slot not in
     //     `inline_declared`, and a bracket path never enters that set, so
     //     --path silently OVERRODE it. Measured: slot @1 declared
     //     [73c5da0a/48'/0'/0'/2'] for a key the operator had said was at
     //     48'/0'/1'/2'. A silent override on the path datum is precisely what
-    //     P1 forbids on the fingerprint datum.
+    //     P1 forbids on the fingerprint datum. STILL A REFUSAL under N3 --
+    //     precedence is inline > --path > bracket, so wherever --path speaks
+    //     for a slot the bracket is a cross-check only; disagreement still
+    //     refuses (the regression row N3 adds alongside its new composing
+    //     one).
     //   * bracket with NO winning source. Nothing filled the slot, so md
     //     composed it with no origin path at all -- and a slot carrying a
     //     fingerprint renders as `[fp]`, which BIP-380 reads as "this key IS
     //     master fp". Measured on the md decode -> md descriptor journey: three
-    //     `[73c5da0a]` origins on depth-0 xpubs, exit 0, no warning.
-    //
-    // Refusing the second case rather than warning follows the same rule the
-    // rest of P1 does: never emit an origin md already knows is incomplete.
-    // Whether the bracket should instead become a last-resort path SOURCE is
-    // an accepting-on-input widening, filed for the operator rather than
-    // decided here (design/FOLLOWUPS.md,
-    // `descriptor-key-bracket-path-as-a-last-resort-source`).
+    //     `[73c5da0a]` origins on depth-0 xpubs, exit 0, no warning. NO LONGER
+    //     A REFUSAL under N3 (ruled 2026-08-31,
+    //     design/FOLLOWUPS.md `descriptor-key-bracket-path-as-a-last-resort-source`):
+    //     with nothing else supplying a path for this slot, the bracket path
+    //     itself becomes the source -- recorded into `bracket_sourced` below
+    //     rather than refused, so the slot renders its full origin instead of
+    //     truncating to `[fp]` or refusing outright. A slot with NO bracket
+    //     path either (a bare @i=XPUB, `ok.path.as_ref().is_empty()` above)
+    //     is untouched by this arm and still falls through to the same
+    //     non-canonical-wrapper refusal it always has -- N3 adds a SOURCE, it
+    //     does not manufacture one.
     let shared_path = match path {
         Some(arg) => Some(crate::parse::path::parse_path(arg)?),
         None => None,
     };
+    let mut bracket_sourced: BTreeMap<u8, DerivationPath> = BTreeMap::new();
     for ok in &origin_keys {
         if ok.path.as_ref().is_empty() {
             continue;
@@ -209,30 +236,24 @@ fn resolve_keys_fingerprints_and_precedence(
                      --path `{shared}`. The template declares no inline origin for \
                      @{i}, so --path is the source that WINS for this slot and the \
                      descriptor would carry `{shared}`; the --key bracket path is \
-                     never itself a source. Agreement is required — neither side \
-                     silently overrides the other.",
+                     never itself a source when --path speaks for the slot. \
+                     Agreement is required — neither side silently overrides the \
+                     other.",
                     i = ok.i,
                     bracket = ok.path,
                 )));
             }
             None => {
-                let fp = ok
-                    .fingerprint
-                    .map(fp_hex)
-                    .unwrap_or_else(|| "fingerprint".to_string());
-                return Err(CliError::Mismatch(format!(
-                    "@{i}: origin-notated --key states path `{bracket}`, but nothing \
-                     supplies a path for @{i}: the template declares no inline origin \
-                     for it and no --path was given. The --key bracket path is never \
-                     itself a source, so md would compose @{i} with no origin path at \
-                     all and render it `[{fp}]` — BIP-380 for \"this key IS master \
-                     {fp}\", which it is not, and a signer handed that origin derives \
-                     the wrong child. State the path where md can use it: inline in \
-                     the template (`@{i}/{bracket}/…`), or with --path when every slot \
-                     lacking an inline origin shares it.",
-                    i = ok.i,
-                    bracket = ok.path,
-                )));
+                // N3: neither an inline template origin nor --path supplies
+                // a path for @i, so the bracket becomes the last-resort
+                // SOURCE. First writer wins for a given slot (mirroring
+                // inline_paths' own `or_insert_with` above) -- the CLI has
+                // no syntax for binding two different --key values to the
+                // same @i in the first place, so this is not a reachable
+                // disagreement in practice.
+                bracket_sourced
+                    .entry(ok.i)
+                    .or_insert_with(|| ok.path.clone());
             }
         }
     }
@@ -270,7 +291,7 @@ fn resolve_keys_fingerprints_and_precedence(
         .collect();
     let parsed_keys: Vec<ParsedKey> = origin_keys.into_iter().map(|ok| ok.key).collect();
 
-    Ok((parsed_keys, parsed_fps, inline_declared))
+    Ok((parsed_keys, parsed_fps, inline_declared, bracket_sourced))
 }
 
 /// **BIP 388 rule (1) on the T row** (REVIEW-converter-whole-diff-r1 C1).

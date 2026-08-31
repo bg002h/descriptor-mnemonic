@@ -409,13 +409,24 @@ fn v_precedence_shared_path_fills_only_the_slot_without_an_inline_origin() {
 //      both use. Combining them emitted `[73c5da0a]` on a depth-0 xpub for
 //      every slot -- a BIP-380 statement that the key IS master 73c5da0a,
 //      exit 0, no warning. Ground truth for that wallet is
-//      `[73c5da0a/48'/0'/0'/2']` etc.
+//      `[73c5da0a/48'/0'/0'/2']` etc. AT THE TIME, I1's fix made this refuse
+//      rather than truncate -- "never emit an origin md already knows is
+//      incomplete." N3 (ruled 2026-08-31, `design/SPEC_mdcli_mini.md` "N3 --
+//      the --key bracket path becomes a last-resort source") SUPERSEDES that
+//      disposition for this manifestation specifically: with nothing else
+//      supplying a path for the slot, the bracket path itself now becomes
+//      the source, so this composes with the FULL origin instead of either
+//      truncating or refusing. The two tests below that exercised this exact
+//      shape (single winning bracket, no inline, no --path) are updated in
+//      place rather than duplicated -- see `v_n3_*` below.
 //   B. SILENT OVERRIDE. With `--path` supplied, a bracket path never enters
 //      `inline_declared`, so `--path` overwrote it: slot @1 declared
 //      `[73c5da0a/48'/0'/0'/2']` for a key the operator had explicitly said
 //      was at `48'/0'/1'/2'`. Worse than truncation -- it looks complete and
 //      it is false. And it is a silent override on the PATH datum, which is
-//      exactly what P1 forbids on the sibling FINGERPRINT datum.
+//      exactly what P1 forbids on the sibling FINGERPRINT datum. STILL A
+//      REFUSAL under N3 -- precedence is inline > --path > bracket, so
+//      wherever --path speaks for a slot the bracket is a cross-check only.
 //
 // Addresses are unaffected either way (both forms derive the same address);
 // what breaks is SPENDING, because a signer handed the wrong origin derives
@@ -480,8 +491,13 @@ fn v_patheff_bracket_path_agreeing_with_shared_path_succeeds() {
     );
 }
 
+/// N3 (ruled 2026-08-31): with no inline origin and no `--path`, the
+/// bracket path becomes the slot's SOURCE rather than being discarded or
+/// refused. WAS `v_patheff_bracket_path_with_no_winning_source_refuses_instead_of_truncating`
+/// before N3 -- same shape (single winning bracket, no other source),
+/// opposite disposition.
 #[test]
-fn v_patheff_bracket_path_with_no_winning_source_refuses_instead_of_truncating() {
+fn v_n3_bracket_path_with_no_other_source_becomes_the_path_source() {
     let x0 = xpub_at("48'/0'/0'/2'");
     let out = md()
         .args([
@@ -490,45 +506,38 @@ fn v_patheff_bracket_path_with_no_winning_source_refuses_instead_of_truncating()
             PATHLESS_SINGLE_SLOT, // no inline origin
             "--key",
             &format!("@0=[deadbeef/48'/0'/0'/2']{x0}"),
-            // and no --path: nothing supplies a path for @0
+            // and no --path: the bracket is the only source left
         ])
         .output()
         .unwrap();
+    assert!(out.status.success(), "stderr: {}", stderr_of(&out));
     let stdout = stdout_of(&out);
     assert!(
-        !stdout.contains("[deadbeef]"),
-        "md emitted a fingerprint-only origin for a key whose path it was told: {stdout}"
-    );
-    assert!(
-        !out.status.success(),
-        "the bracket path was silently discarded: {stdout}"
-    );
-    let err = stderr_of(&out);
-    for needle in ["@0", "48'/0'/0'/2'", "--path"] {
-        assert!(
-            err.contains(needle),
-            "the refusal must name the slot, the path it was given and the \
-             channels that can state it; missing {needle}: {err}"
-        );
-    }
-    assert!(
-        err.contains("inline") || err.contains("template"),
-        "the refusal must name the inline template origin as the other \
-         channel: {err}"
+        stdout.contains("[deadbeef/48'/0'/0'/2']"),
+        "the bracket's full origin (fingerprint AND path) must appear, not a \
+         truncated [deadbeef]-only origin: {stdout}"
     );
 }
 
-/// THE JOURNEY, end to end: `md decode` hands over a pathless template, the
-/// operator's key file is in `[fp/path]xpub` form, and the three slots sit at
-/// three DIFFERENT accounts -- so `--path`, which is shared, cannot express
-/// this wallet at all. Before I1 this composed at exit 0 with three
-/// `[fp]`-only origins. It must now say so rather than emit them.
+/// THE JOURNEY, end to end -- N3's own motivating case
+/// (`design/FOLLOWUPS.md` `descriptor-key-bracket-path-as-a-last-resort-source`):
+/// `md decode` hands over a pathless template, the operator's key file is in
+/// `[fp/path]xpub` form, and the three slots sit at three DIFFERENT accounts
+/// -- so `--path`, which is shared, cannot express this wallet at all. Before
+/// I1 this composed at exit 0 with three `[fp]`-only (TRUNCATED) origins;
+/// after I1 and before N3 it refused outright (this test's previous name was
+/// `v_patheff_the_divergent_origin_journey_refuses_rather_than_emitting_false_origins`).
+/// N3 makes it compose again, but with the FULL origins this time -- and
+/// PROVES it against an independent construction: pasting the same three
+/// origins directly into the template (no brackets) must produce the
+/// byte-identical descriptor (the plan's row-1 equality obligation).
 #[test]
-fn v_patheff_the_divergent_origin_journey_refuses_rather_than_emitting_false_origins() {
+fn v_n3_divergent_origin_wallet_composes_and_equals_inline_pasted_origins() {
     let x0 = xpub_at("48'/0'/0'/2'");
     let x1 = xpub_at("48'/0'/1'/2'");
     let x2 = xpub_at("48'/0'/2'/2'");
-    let out = md()
+
+    let via_bracket = md()
         .args([
             "descriptor",
             "--template",
@@ -542,14 +551,55 @@ fn v_patheff_the_divergent_origin_journey_refuses_rather_than_emitting_false_ori
         ])
         .output()
         .unwrap();
-    let stdout = stdout_of(&out);
     assert!(
-        !stdout.contains("[73c5da0a]"),
-        "the truncated origin shipped: {stdout}"
+        via_bracket.status.success(),
+        "stderr: {}",
+        stderr_of(&via_bracket)
+    );
+    let via_bracket_out = stdout_of(&via_bracket);
+    assert!(
+        !via_bracket_out.contains("[73c5da0a]"),
+        "a truncated fingerprint-only origin shipped: {via_bracket_out}"
     );
     assert!(
-        !out.status.success(),
-        "exit 0 with a false origin: {stdout}"
+        via_bracket_out.contains("[73c5da0a/48'/0'/0'/2']")
+            && via_bracket_out.contains("[73c5da0a/48'/0'/1'/2']")
+            && via_bracket_out.contains("[73c5da0a/48'/0'/2'/2']"),
+        "all three full per-slot origins must appear: {via_bracket_out}"
+    );
+
+    let via_inline = md()
+        .args([
+            "descriptor",
+            "--template",
+            "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,\
+             @2/48'/0'/2'/2'/<0;1>/*))",
+            "--key",
+            &format!("@0={x0}"),
+            "--key",
+            &format!("@1={x1}"),
+            "--key",
+            &format!("@2={x2}"),
+            "--fingerprint",
+            "@0=73c5da0a",
+            "--fingerprint",
+            "@1=73c5da0a",
+            "--fingerprint",
+            "@2=73c5da0a",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        via_inline.status.success(),
+        "stderr: {}",
+        stderr_of(&via_inline)
+    );
+    let via_inline_out = stdout_of(&via_inline);
+
+    assert_eq!(
+        via_bracket_out, via_inline_out,
+        "the bracket-as-source composition must equal, byte for byte, the \
+         same wallet built by pasting the origins inline into the template"
     );
 }
 

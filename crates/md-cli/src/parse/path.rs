@@ -8,7 +8,7 @@ use crate::parse::template::to_origin_path;
 use bitcoin::bip32::DerivationPath;
 use md_codec::Descriptor;
 use md_codec::origin_path::{OriginPath, PathDeclPaths};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
 /// Apply a `--path` override to a parsed descriptor, if one was supplied.
@@ -35,14 +35,16 @@ pub fn apply_path_override(
     Ok(())
 }
 
-/// Apply a `--path` override PER SLOT (SPEC P1's per-datum precedence): an
-/// inline template origin WINS for the slots that declared one; `--path`
-/// fills in ONLY the slots that did not — never the whole-descriptor
-/// overwrite [`apply_path_override`] above does. "Agreement is not an
-/// override" (P1) — a slot with an inline origin keeps it verbatim even
-/// when `path` disagrees with it; the caller (`build_descriptor`) is
-/// responsible for refusing that disagreement BEFORE this runs, per
-/// V-PATHAGREE — this function only decides who WINS, never who is right.
+/// Apply a `--path` override PER SLOT (SPEC P1's per-datum precedence,
+/// widened by N3's bracket-as-last-resort-source): an inline template origin
+/// WINS for the slots that declared one; `--path` fills in the slots that
+/// did not; an origin-notated `--key` bracket path fills in whatever is
+/// STILL left — never the whole-descriptor overwrite [`apply_path_override`]
+/// above does. "Agreement is not an override" (P1) — a slot with an inline
+/// origin keeps it verbatim even when `path` disagrees with it; the caller
+/// (`build_descriptor`) is responsible for refusing that disagreement BEFORE
+/// this runs, per V-PATHAGREE/V-PATHEFF — this function only decides who
+/// WINS, never who is right.
 ///
 /// `inline_declared` names which `@i` slots the TEMPLATE itself gave an
 /// origin to. `descriptor.path_decl.paths` alone cannot answer that
@@ -54,8 +56,19 @@ pub fn apply_path_override(
 /// the distinction). The caller computes the set from
 /// `parse::template::lex_placeholders` BEFORE the fold and passes it in.
 ///
+/// `bracket_sourced` names the per-slot paths N3 admits: SPEC N3's
+/// precedence is "inline template origin > --path > --key bracket", so by
+/// construction `resolve_keys_fingerprints_and_precedence` only ever
+/// populates this map for a slot when BOTH the first two sources were
+/// silent for it — a slot present here can never also be in
+/// `inline_declared`, and whenever `path` is `Some` every entry here has
+/// already been checked to AGREE with the shared path (V-PATHEFF), so it is
+/// redundant with `shared` rather than in tension with it. `--path` still
+/// wins the slot outright in that case; this map only matters when `path`
+/// is `None`.
+///
 /// Used only by `cmd::build::build_descriptor` (`descriptor`/`address`,
-/// SPEC P1) — `encode`/`verify`/`vectors` keep [`apply_path_override`]'s
+/// SPEC P1/N3) — `encode`/`verify`/`vectors` keep [`apply_path_override`]'s
 /// existing whole-descriptor-overwrite behaviour, unchanged and out of
 /// C1's scope (their templates have no analogous per-slot precedence rule
 /// defined yet).
@@ -63,17 +76,24 @@ pub fn apply_path_override_per_slot(
     descriptor: &mut Descriptor,
     path: Option<&str>,
     inline_declared: &BTreeSet<u8>,
+    bracket_sourced: &BTreeMap<u8, DerivationPath>,
 ) -> Result<(), CliError> {
-    let Some(arg) = path else {
-        return Ok(());
-    };
-    let n = descriptor.path_decl.n;
-    if (0..n).all(|i| inline_declared.contains(&i)) {
-        // Every slot already has an inline origin; --path has nothing left
-        // to fill in. Leave path_decl exactly as parse_template built it.
+    if path.is_none() && bracket_sourced.is_empty() {
+        // Nothing left to fill in from any of the two sources this function
+        // owns; leave path_decl exactly as parse_template built it.
         return Ok(());
     }
-    let shared = to_origin_path(Some(&parse_path(arg)?));
+    let n = descriptor.path_decl.n;
+    if (0..n).all(|i| inline_declared.contains(&i)) {
+        // Every slot already has an inline origin, which by construction
+        // means bracket_sourced is empty too (see the doc comment above) —
+        // neither remaining source has anything left to fill in.
+        return Ok(());
+    }
+    let shared: Option<OriginPath> = match path {
+        Some(arg) => Some(to_origin_path(Some(&parse_path(arg)?))),
+        None => None,
+    };
     let current = |i: u8| -> OriginPath {
         match &descriptor.path_decl.paths {
             PathDeclPaths::Shared(p) => p.clone(),
@@ -84,8 +104,12 @@ pub fn apply_path_override_per_slot(
         .map(|i| {
             if inline_declared.contains(&i) {
                 current(i)
-            } else {
+            } else if let Some(shared) = &shared {
                 shared.clone()
+            } else if let Some(bracket) = bracket_sourced.get(&i) {
+                to_origin_path(Some(bracket))
+            } else {
+                current(i)
             }
         })
         .collect();
