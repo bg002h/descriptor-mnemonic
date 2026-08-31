@@ -36,6 +36,15 @@ pub struct DecomposeArgs<'a> {
 pub fn run(a: DecomposeArgs<'_>) -> Result<u8, CliError> {
     let raw = match a.in_file {
         Some(p) => crate::decompose::read_descriptor_file(p)?,
+        // R7 -- `-` on the positional reads stdin, the convention every
+        // other reading verb already has (`cmd/mod.rs:20-33`). Checked only
+        // when it is the SOLE positional value: `clap`'s own `num_args =
+        // 1..` lets `-` sit alongside other values, and only a lone `-`
+        // unambiguously means "read the descriptor from stdin" rather than
+        // being a (nonsensical) descriptor string of its own.
+        None if a.descriptors.len() == 1 && a.descriptors[0] == "-" => {
+            crate::decompose::read_descriptor_stdin()?
+        }
         None => a.descriptors.to_vec(),
     };
     let d = decompose(&raw, a.network)?;

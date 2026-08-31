@@ -672,15 +672,16 @@ enum Command {
     /// the per-slot --fingerprint flags.
     ///
     /// The inverse of `md descriptor`. Takes ONE descriptor — real xpubs, with
-    /// or without a `#checksum`, multipath (`<0;1>`) or fixed-path. Bitcoin
-    /// Core's `listdescriptors` JSON and separate receive/change descriptor
-    /// PAIRS are refused with guidance rather than parsed.
+    /// or without a `#checksum`, multipath (`<0;1>`) or fixed-path (BIP-389's
+    /// `/**` shorthand for `/<0;1>/*` is also accepted, on either spelling).
+    /// Bitcoin Core's `listdescriptors` JSON and separate receive/change
+    /// descriptor PAIRS are refused with guidance rather than parsed.
     #[command(
         after_long_help = "EXAMPLES:\n  $ md decompose wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf/<0;1>/*) --emit template\n  wpkh(@0/48'/0'/0'/2'/<0;1>/*)"
     )]
     Decompose {
         /// The concrete output descriptor. Exactly one; two are refused with
-        /// the receive/change-pair guidance.
+        /// the receive/change-pair guidance. Use `-` to read it from stdin.
         #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
         descriptors: Vec<String>,
         /// Read the descriptor from FILE instead of argv — decompose's own

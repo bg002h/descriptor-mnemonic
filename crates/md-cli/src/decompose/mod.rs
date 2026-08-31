@@ -122,6 +122,18 @@ pub fn resolve_input(raw: &[String]) -> Result<String, CliError> {
     }
 }
 
+/// Shared line-processing for decompose's descriptor input: blank lines and
+/// `#` comments are skipped; every remaining line is a descriptor. Used by
+/// BOTH `--in FILE` and `-` (R7 — stdin), so a file holding a receive/change
+/// PAIR and a PIPED receive/change PAIR draw the SAME pair guidance.
+fn parse_descriptor_lines(buf: &str) -> Vec<String> {
+    buf.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(String::from)
+        .collect()
+}
+
 /// Read `--in FILE`: decompose's OWN input material is a descriptor (P3 §6b).
 /// Blank lines and `#` comments are skipped; every remaining line is a
 /// descriptor, so a file holding a receive/change PAIR reaches `resolve_input`
@@ -132,12 +144,7 @@ pub fn read_descriptor_file(path: &std::path::Path) -> Result<Vec<String>, CliEr
     if looks_like_json(&buf) {
         return Err(json_refusal());
     }
-    let out: Vec<String> = buf
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(String::from)
-        .collect();
+    let out = parse_descriptor_lines(&buf);
     if out.is_empty() {
         return Err(CliError::BadArg(format!(
             "--in {}: no descriptor in this file (it is empty, blank, or all comments). \
@@ -145,6 +152,31 @@ pub fn read_descriptor_file(path: &std::path::Path) -> Result<Vec<String>, CliEr
              command that wrote it.",
             path.display()
         )));
+    }
+    Ok(out)
+}
+
+/// **R7 — `-` on the positional, `≡ --in /dev/stdin`.** Same per-line
+/// convention as `--in FILE` (blank/`#` skipped, receive/change PAIR draws
+/// the same guidance) — sourced from stdin DIRECTLY rather than by opening a
+/// literal `/dev/stdin` path, which the windows-latest CI leg (`ci.yml`'s
+/// three-OS test matrix) does not have. Closes
+/// `md-decompose-does-not-read-stdin`.
+pub fn read_descriptor_stdin() -> Result<Vec<String>, CliError> {
+    let mut buf = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+        .map_err(|e| CliError::BadArg(format!("stdin read: {e}")))?;
+    if looks_like_json(&buf) {
+        return Err(json_refusal());
+    }
+    let out = parse_descriptor_lines(&buf);
+    if out.is_empty() {
+        return Err(CliError::BadArg(
+            "-: no descriptor on stdin (it is empty, blank, or all comments). An EMPTY \
+             stream is what a FAILED upstream command leaves behind — check the command \
+             that wrote it."
+                .into(),
+        ));
     }
     Ok(out)
 }
@@ -158,8 +190,16 @@ pub fn read_descriptor_file(path: &std::path::Path) -> Result<Vec<String>, CliEr
 /// expected value is COMPUTED here with `miniscript`'s public checksum engine
 /// rather than scraped out of the error text, so the message cannot drift with
 /// upstream's wording.
+///
+/// **R6 — the checksum is verified against `s` AS WRITTEN, before anything
+/// touches the text.** The `/**` desugar below changes the byte content a
+/// BIP-380 checksum covers (`/**` and `/<0;1>/*` checksum differently — the
+/// pathological wallet's two metadata forms already measure this), so
+/// desugaring must run strictly AFTER the check above and the checksum-free
+/// `body` is what gets desugared and parsed — never handing rust-miniscript
+/// a checksum that was verified against text it will not see.
 fn parse_descriptor(s: &str) -> Result<Descriptor<DescriptorPublicKey>, CliError> {
-    if let Some((body, supplied)) = s.rsplit_once('#') {
+    let body: &str = if let Some((body, supplied)) = s.rsplit_once('#') {
         let mut eng = miniscript::descriptor::checksum::Engine::new();
         let expected = match eng.input(body) {
             Ok(()) => eng.checksum(),
@@ -177,12 +217,21 @@ fn parse_descriptor(s: &str) -> Result<Descriptor<DescriptorPublicKey>, CliError
                  telling you the descriptor is malformed; only that the two disagree.)"
             )));
         }
-    }
-    Descriptor::<DescriptorPublicKey>::from_str(s).map_err(|e| {
+        body
+    } else {
+        s
+    };
+    // R6 — BIP-388's `/**` shorthand, desugared to `/<0;1>/*` so decompose
+    // reads it identically to the explicit spelling
+    // (`design/SPEC_mdcli_mini.md` R6; closes
+    // `md-decompose-rejects-double-wildcard-input`).
+    let desugared = crate::parse::template::desugar_double_wildcard_descriptor(body);
+    Descriptor::<DescriptorPublicKey>::from_str(&desugared).map_err(|e| {
         CliError::Decompose(format!(
             "this is not a descriptor md can parse: {e}. decompose takes ONE concrete output \
              descriptor — real xpubs, with or without a `#checksum`, multipath (`<0;1>`) or \
-             fixed-path. A BIP-388 TEMPLATE (with `@0`, `@1`, …) goes to `md encode`, not here."
+             fixed-path — on the positional, via --in FILE, or piped in with `-`. A BIP-388 \
+             TEMPLATE (with `@0`, `@1`, …) goes to `md encode`, not here."
         ))
     })
 }

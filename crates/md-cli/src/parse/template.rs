@@ -42,46 +42,92 @@ fn terminates_placeholder(next: Option<char>) -> bool {
 
 /// BIP-388 §"Key placeholders" defines `/**` as shorthand for `/<0;1>/*`.
 /// Rewrite it to that canonical spelling BEFORE anything else reads the
-/// template.
+/// input — a TEMPLATE's `@i` placeholder here, and (R6,
+/// `design/SPEC_mdcli_mini.md`) a CONCRETE descriptor's key expression in
+/// `decompose::parse_descriptor`, which read `@0/**` fine on `md encode`
+/// while refusing the identical shorthand on a wallet's own exported
+/// descriptor (`md-decompose-rejects-double-wildcard-input`) — "reuse the
+/// shipped desugar" was false, because this function was anchored on `@i`
+/// alone and is a NO-OP on a bare xpub.
 ///
-/// WHY IT WAS REFUSED. `@0/**` used to error with "derivation steps after the
-/// multipath group are not representable in md1" — a message wrong on its face,
-/// since `/**` carries no derivation steps and no multipath group. It was a
-/// LEXER ACCIDENT: the placeholder regex's group 4 (`/\*(?:'|h)?`) consumed
-/// `/*` and left the second `*` as unconsumed residue, so M5's post-multipath
-/// residue check fired on a template that has no multipath group at all.
+/// WHY IT WAS REFUSED (the template side). `@0/**` used to error with
+/// "derivation steps after the multipath group are not representable in
+/// md1" — a message wrong on its face, since `/**` carries no derivation
+/// steps and no multipath group. It was a LEXER ACCIDENT: the placeholder
+/// regex's group 4 (`/\*(?:'|h)?`) consumed `/*` and left the second `*` as
+/// unconsumed residue, so M5's post-multipath residue check fired on a
+/// template that has no multipath group at all.
 ///
-/// WHY DESUGAR RATHER THAN TEACH THE REGEXES. Two regexes read this template —
+/// WHY DESUGAR RATHER THAN TEACH THE REGEXES. Two regexes read a template —
 /// the lexer's, which decides the recorded `UseSitePath`, and
-/// `substitute_synthetic`'s, which decides what miniscript parses. They already
-/// carry a standing "keep these in sync" obligation, and a card whose use-site
-/// path and structural tree disagree is exactly the divergence class M5's belt
-/// exists to catch. Rewriting the text once, upstream of both, makes `@i/**`
-/// mint BYTE-IDENTICAL output to `@i/<0;1>/*` by CONSTRUCTION rather than by
-/// two patterns continuing to agree.
+/// `substitute_synthetic`'s, which decides what miniscript parses. They
+/// already carry a standing "keep these in sync" obligation, and a card
+/// whose use-site path and structural tree disagree is exactly the
+/// divergence class M5's belt exists to catch. Rewriting the text once,
+/// upstream of both, makes `@i/**` mint BYTE-IDENTICAL output to
+/// `@i/<0;1>/*` by CONSTRUCTION rather than by two patterns continuing to
+/// agree. **R6 extends the same argument to the two CALLERS rather than to
+/// the two REGEXES inside one caller**: [`desugar_double_wildcard`] and
+/// [`desugar_double_wildcard_descriptor`] share ONE core
+/// ([`rewrite_double_wildcard`]) and differ ONLY in which anchor pattern
+/// they hand it — a template's `@\d+`, or a concrete descriptor's `xpub`/
+/// `tpub` extended-key token — so there is still nothing to keep in sync.
 ///
-/// SCOPE: only a `/**` that ENDS the placeholder is sugar. `@0/**/0` and
+/// SCOPE: only a `/**` that ENDS the key expression is sugar. `@0/**/0` and
 /// `@0/**'` are not BIP-388 forms and are left alone, so the residue reject
-/// still refuses them rather than a rewrite quietly turning them into something
-/// that parses.
+/// (template side) or rust-miniscript's own parser (descriptor side) still
+/// refuses them rather than a rewrite quietly turning them into something
+/// that parses. This is why the anchor is NOT dropped in favour of matching
+/// a bare `/**` anywhere: an UNANCHORED regex would also rewrite
+/// `@0/<0;1>/**` into the malformed double-multipath `@0/<0;1>/<0;1>/*`,
+/// because `(?:/\d+'?)*` can match ZERO steps and let the search restart
+/// right at the `/**` — measured while drafting this function. The anchor
+/// is what forces the match to start at the key expression's true
+/// beginning, so anything between it and `/**` that is NOT a plain
+/// (optionally hardened) numeric step — a multipath group, in particular —
+/// makes the WHOLE match fail rather than being silently skipped.
 fn desugar_double_wildcard(template: &str) -> std::borrow::Cow<'_, str> {
-    if !template.contains("**") {
-        return std::borrow::Cow::Borrowed(template);
-    }
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        // `@i` + the same origin-step class as the lexer's group 2, then `/**`.
-        // Anchoring on the origin class is what keeps `@0/<0;1>/**` out: its
-        // `/**` does not follow the placeholder's origin steps directly.
-        Regex::new(r"@\d+(?:/\d+'?)*/\*\*").expect("static regex compiles")
-    });
-    let mut out = String::with_capacity(template.len() + 8);
+    let re = RE.get_or_init(|| wildcard_regex(r"@\d+"));
+    rewrite_double_wildcard(template, re)
+}
+
+/// R6's second front-end: the SAME desugar, anchored on a concrete
+/// descriptor's key expression — an `xpub`/`tpub` extended-key token
+/// (BIP-380 descriptors never write the SLIP-132 `ypub`/`zpub` family; those
+/// are a wallet-UI convention, not descriptor grammar) — instead of a
+/// template's `@i`. An origin bracket, if present, is simply copied
+/// unchanged as part of the untouched prefix: the anchor only needs to find
+/// where the KEY's own derivation-path suffix begins, and that is always
+/// the extended key itself, bracket or not.
+pub(crate) fn desugar_double_wildcard_descriptor(descriptor: &str) -> std::borrow::Cow<'_, str> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| wildcard_regex(r"[xt]pub[1-9A-HJ-NP-Za-km-z]*"));
+    rewrite_double_wildcard(descriptor, re)
+}
+
+/// Build a `/**`-desugar regex for the given key-expression ANCHOR: the
+/// anchor, then zero or more numeric (optionally hardened) derivation
+/// steps, then the literal `/**`.
+fn wildcard_regex(anchor: &str) -> Regex {
+    Regex::new(&format!(r"{anchor}(?:/\d+'?)*/\*\*")).expect("static regex compiles")
+}
+
+/// The shared desugar core both front-ends call: find every ANCHORED span
+/// ending in `/**` that terminates its key expression ([`terminates_placeholder`],
+/// shared with the residue reject so the two cannot disagree about where a
+/// placeholder stops), and rewrite `/**` to `/<0;1>/*` in place.
+fn rewrite_double_wildcard<'a>(text: &'a str, re: &Regex) -> std::borrow::Cow<'a, str> {
+    if !text.contains("**") {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 8);
     let mut last = 0usize;
-    for m in re.find_iter(template) {
-        if !terminates_placeholder(template[m.end()..].chars().next()) {
+    for m in re.find_iter(text) {
+        if !terminates_placeholder(text[m.end()..].chars().next()) {
             continue;
         }
-        out.push_str(&template[last..m.start()]);
+        out.push_str(&text[last..m.start()]);
         out.push_str(
             m.as_str()
                 .strip_suffix("/**")
@@ -91,9 +137,9 @@ fn desugar_double_wildcard(template: &str) -> std::borrow::Cow<'_, str> {
         last = m.end();
     }
     if last == 0 {
-        return std::borrow::Cow::Borrowed(template);
+        return std::borrow::Cow::Borrowed(text);
     }
-    out.push_str(&template[last..]);
+    out.push_str(&text[last..]);
     std::borrow::Cow::Owned(out)
 }
 

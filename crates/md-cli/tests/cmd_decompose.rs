@@ -553,3 +553,141 @@ fn emit_commands_route1_line_actually_runs() {
         String::from_utf8_lossy(&out.stdout)
     );
 }
+
+// ─── R6 — decompose desugars `/**` ──────────────────────────────────────────
+//
+// `design/SPEC_mdcli_mini.md` "Riders" R6; plan P6 step 2. Closes FOLLOWUPS
+// `md-decompose-rejects-double-wildcard-input`. ONE desugar core
+// (`crate::parse::template::desugar_double_wildcard_descriptor`) serves both
+// spellings — see that function's doc comment for why it is not a second,
+// lookalike regex.
+
+#[test]
+fn r6_double_wildcard_decomposes_identically_to_its_explicit_rewrite() {
+    let double = format!("wpkh({K0}/**)");
+    let explicit = format!("wpkh({K0}/<0;1>/*)");
+    let (code_d, stdout_d, stderr_d) = run(&["decompose", &double, "--emit", "all"]);
+    let (code_e, stdout_e, stderr_e) = run(&["decompose", &explicit, "--emit", "all"]);
+    assert_eq!(code_d, 0, "the /** spelling must be accepted: {stderr_d}");
+    assert_eq!(code_e, 0, "{stderr_e}");
+    assert_eq!(
+        stdout_d, stdout_e,
+        "the two spellings must decompose byte-identically"
+    );
+}
+
+/// The FOLLOWUP's own reproduction command, now accepted.
+#[test]
+fn r6_the_followups_reproduction_command_now_composes() {
+    let d = format!("wpkh({K0}/**)");
+    let (code, _, stderr) = run(&["decompose", &d]);
+    assert_eq!(code, 0, "{stderr}");
+}
+
+/// **SCOPE regression guard.** `/**` only desugars when it ENDS the key
+/// expression. A key that already carries a multipath group before `/**` is
+/// not a BIP-388 form and must still refuse — an UNANCHORED desugar would
+/// silently rewrite this into the malformed double-multipath
+/// `.../<0;1>/<0;1>/*` instead (measured while drafting the generalised
+/// regex; the anchor is what stops it).
+#[test]
+fn r6_a_wildcard_after_an_existing_multipath_group_is_still_refused() {
+    let d = format!("wpkh({K0}/<0;1>/**)");
+    let (code, stdout, stderr) = run(&["decompose", &d]);
+    assert_ne!(
+        code, 0,
+        "a pre-existing multipath group before /** must still refuse"
+    );
+    assert!(stdout.is_empty(), "{stdout}");
+    // Pinned to the SPECIFIC upstream parse error the UNTOUCHED `/**`
+    // draws, not merely "some refusal": an unanchored desugar would instead
+    // REWRITE this into the malformed double-multipath
+    // `.../<0;1>/<0;1>/*`, which still refuses but with a DIFFERENT
+    // upstream message ("'<' may only appear once in a derivation path" —
+    // measured while drafting the anchor, and the exact failure a weaker
+    // "did it refuse" assertion would miss).
+    assert!(
+        stderr.contains("invalid child number format"),
+        "must refuse on the UNTOUCHED /** literally, not a rewritten double-multipath: {stderr}"
+    );
+}
+
+// ─── R7 — decompose reads `-` ───────────────────────────────────────────────
+//
+// `design/SPEC_mdcli_mini.md` "Riders" R7; plan P6 step 3. Closes FOLLOWUPS
+// `md-decompose-does-not-read-stdin`. Every other reading verb already has
+// this (`cli_stdin_dash.rs`); this is decompose's OWN entrance, since its
+// positional grammar (a concrete descriptor, not an md1 string) is not the
+// shape that file's cases share.
+
+fn run_stdin(args: &[&str], stdin: &str) -> (i32, String, String) {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(args)
+        .write_stdin(stdin.to_string())
+        .output()
+        .unwrap();
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8(out.stdout).unwrap(),
+        String::from_utf8(out.stderr).unwrap(),
+    )
+}
+
+/// **THE GATE IS EQUALITY, NOT SUCCESS** (mirrors `cli_stdin_dash.rs`'s own
+/// framing): the piped run and the positional run must produce the SAME
+/// bytes on both streams, not merely both exit 0.
+#[test]
+fn r7_dash_reads_the_descriptor_from_stdin_byte_for_byte() {
+    let d = fixture_descriptor();
+    let (pos_code, pos_out, pos_err) = run(&["decompose", &d, "--emit", "all"]);
+    assert_eq!(pos_code, 0, "control: {pos_err}");
+    let (pipe_code, pipe_out, pipe_err) =
+        run_stdin(&["decompose", "-", "--emit", "all"], &format!("{d}\n"));
+    assert_eq!(pipe_code, 0, "`md decompose -` must read stdin: {pipe_err}");
+    assert_eq!(pipe_out, pos_out, "stdout must be byte-equal");
+    assert_eq!(pipe_err, pos_err, "stderr must be byte-equal");
+}
+
+/// A receive/change PAIR piped over stdin draws the SAME guidance a `--in
+/// FILE` pair does (R7's convention is `≡ --in /dev/stdin`).
+#[test]
+fn r7_dash_a_piped_pair_draws_the_same_pair_guidance_as_in_file() {
+    let recv = format!("wsh(sortedmulti(2,{K0}/0/*,{K1}/0/*,{K2}/0/*))");
+    let change = format!("wsh(sortedmulti(2,{K0}/1/*,{K1}/1/*,{K2}/1/*))");
+    let (code, stdout, stderr) = run_stdin(&["decompose", "-"], &format!("{recv}\n{change}\n"));
+    assert_ne!(code, 0);
+    assert!(stdout.is_empty(), "{stdout}");
+    // The PAIR guidance specifically ("2 were supplied"), not merely the
+    // generic not-a-descriptor refusal -- both mention "<0;1>" (the generic
+    // refusal's own text names multipath as an accepted spelling), so that
+    // substring alone does not distinguish them.
+    assert!(
+        stderr.contains("decompose takes ONE descriptor and 2 were supplied"),
+        "got: {stderr}"
+    );
+}
+
+/// The rewritten not-a-descriptor refusal (Acceptance 4's rendered-line
+/// contract): it now names BOTH accepted channels, `--in FILE` and `-`, not
+/// just the positional.
+#[test]
+fn r7_the_rewritten_refusal_names_in_file_and_dash() {
+    let (code, stdout, stderr) = run(&["decompose", "garbage"]);
+    assert_ne!(code, 0);
+    assert!(stdout.is_empty(), "{stdout}");
+    let rendered: Vec<&str> = stderr.lines().filter(|l| l.starts_with("md: ")).collect();
+    assert_eq!(
+        rendered.len(),
+        1,
+        "expected exactly one rendered line:\n{stderr}"
+    );
+    assert_eq!(
+        rendered[0],
+        "md: decompose: this is not a descriptor md can parse: unrecognized name 'garbage'. \
+         decompose takes ONE concrete output descriptor — real xpubs, with or without a \
+         `#checksum`, multipath (`<0;1>`) or fixed-path — on the positional, via --in FILE, or \
+         piped in with `-`. A BIP-388 TEMPLATE (with `@0`, `@1`, …) goes to `md encode`, not \
+         here."
+    );
+}
