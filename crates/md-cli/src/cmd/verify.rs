@@ -44,8 +44,18 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut expected =
-        parse_template_ext(args.template, &parsed_keys, &parsed_fps, args.experimental)?;
+    // N1's WARN disposition, not REFUSE. `verify` READS: an operator holding a
+    // legacy plate that carries a shape this cycle newly refuses must still be
+    // able to check it, or the refusal has taken away the only tool that could
+    // tell them what they have (SPEC_mdcli_mini.md N1 "Verb dispositions", and
+    // Acceptance 5 -- such plates exist, `tests/fixtures/n1/`).
+    let mut expected = parse_template_ext(
+        args.template,
+        &parsed_keys,
+        &parsed_fps,
+        args.experimental,
+        crate::parse::reuse::Disposition::Warn,
+    )?;
     // Mirrors `md encode --path`; see cmd/address.rs for why a verify without it
     // cannot reach a non-canonical wrapper at all.
     apply_path_override(&mut expected, args.path)?;

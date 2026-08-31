@@ -1,0 +1,522 @@
+//! N1 — the placeholder/key-reuse admission taxonomy, in ONE place.
+//!
+//! `design/SPEC_mdcli_mini.md` §N1 classifies two families on the mint/compose
+//! surface:
+//!
+//! * **Family 1** — one placeholder at more than one use site. The key is the
+//!   triple the lexer already records per occurrence: (inline origin path,
+//!   multipath set, wildcard hardening). Five outcomes, on three different
+//!   authorities — see [`Finding`].
+//! * **Family 2** — one key at more than one placeholder. Only the
+//!   DISJOINT-use-site **delta** belongs here; the same-use-site case has been
+//!   refused at the codec floor since F-218
+//!   (`md_codec::validate::validate_no_duplicate_key_slots`, called inside
+//!   `encode_payload`) and keeps its own wording and its own position. This
+//!   module must never absorb it — that would be a second implementation of a
+//!   shipped predicate, which the spec's single-source rule forbids, and it
+//!   would replace a correct message with one written for a different case.
+//!
+//! # Why the input is an occurrence list plus key bindings
+//!
+//! The spec states the single-source rule as a statement about the
+//! classifier's INPUT rather than about a code location, because no single
+//! existing location sees both halves: Family 1 needs only the per-occurrence
+//! triples, Family 2's delta needs the resolved per-`@i` key material, and
+//! `resolve_placeholders` (which collapses the occurrences) carries no key
+//! material at all. Both halves ARE in hand at `parse_template_ext` time on
+//! the template path, and both are reconstructible from a decoded card on the
+//! card path — so this module takes them as arguments and is invoked from
+//! wherever they exist.
+//!
+//! # Why the disposition is a parameter
+//!
+//! Each predicate has exactly ONE implementation here. The verbs differ only
+//! in what they DO with a finding: `encode`, `descriptor` and `address` refuse
+//! (they mint or compose), while the reading verbs warn and proceed, so an
+//! operator can still check a legacy plate carrying a shape this cycle newly
+//! refuses (SPEC N1 "Verb dispositions", and Acceptance 5 — such plates exist:
+//! `crates/md-cli/tests/fixtures/n1/`). A per-verb second copy of a predicate
+//! is what `cmd/build.rs`'s own rule already forbids, and it is how the two
+//! sides drift into disagreeing about the same wallet.
+//!
+//! # Placement constraint (NORMATIVE, SPEC §"Placement constraint")
+//!
+//! Nothing here may be added to `encode_payload`'s validator set: `md inspect`
+//! and `md verify` re-enter `encode_payload` on a DECODED card, so a check
+//! there would make already-engraved plates of newly-refused shapes
+//! uninspectable and unverifiable.
+
+use crate::error::CliError;
+use crate::parse::keys::ParsedKey;
+use crate::parse::template::PlaceholderOccurrence;
+
+/// What a verb does with a finding. NEVER a second implementation of the
+/// predicate — only what happens after it fires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disposition {
+    /// Mint/compose surface: `encode`, `descriptor`, `address`.
+    Refuse,
+    /// Read surface: the finding is reported and the verb proceeds, so a plate
+    /// already carrying the shape stays readable (Acceptance 5).
+    Warn,
+}
+
+/// One classified violation. Each variant carries the values its message
+/// quotes, so the rendering below can echo the operator's OWN template rather
+/// than a canned example.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Finding {
+    /// **R-N1a** — one placeholder, several use sites, IDENTICAL triples.
+    /// BIP 388 forbids it by name.
+    SamePathExpression { i: u8, sites: usize },
+    /// **R-N1b** — the triples differ only in their multipath sets, and the
+    /// sets OVERLAP. BIP 388's disjointness rule.
+    MultipathOverlap {
+        i: u8,
+        a: String,
+        b: String,
+        shared: String,
+    },
+    /// **R-N1c** — the triples differ only in their multipath sets, and the
+    /// sets are DISJOINT. The wallet is BIP-388-LEGAL; md1 cannot express it
+    /// (F-417). The one refusal in this taxonomy that is not about a defect.
+    MultipathDisjoint { i: u8, a: String, b: String },
+    /// **R-N1-origin** — the triples differ in inline ORIGIN. md's own
+    /// representability limit; cites no BIP rule.
+    OriginDiffers { i: u8, a: String, b: String },
+    /// **R-N1-hardening** — the triples differ in wildcard HARDENING. md's own
+    /// derivability limit; cites no BIP rule.
+    HardeningDiffers { i: u8, a: String, b: String },
+    /// **R-N1d** — one key at two placeholders whose use sites DIFFER. The
+    /// same-use-site case is NOT this variant; it belongs to the codec floor.
+    KeyAtDisjointUseSites { a: u8, b: u8, sa: String, sb: String },
+}
+
+/// The multipath set as the operator wrote it: `<0;1>`, or a plain-language
+/// stand-in when the placeholder carries no multipath group at all.
+fn multipath_display(alts: &[u32]) -> String {
+    if alts.is_empty() {
+        return "no multipath group".to_owned();
+    }
+    let body: Vec<String> = alts.iter().map(u32::to_string).collect();
+    format!("<{}>", body.join(";"))
+}
+
+/// The use-site half of the triple — multipath set plus the wildcard's
+/// hardening, which is exactly what the wire's `UseSitePath` records.
+fn use_site_display(occ: &PlaceholderOccurrence) -> String {
+    let star = if occ.wildcard_hardened { "*'" } else { "*" };
+    if occ.multipath_alts.is_empty() {
+        star.to_owned()
+    } else {
+        format!("{}/{star}", multipath_display(&occ.multipath_alts))
+    }
+}
+
+/// The inline origin as written, or a plain-language stand-in for its absence.
+fn origin_display(occ: &PlaceholderOccurrence) -> String {
+    match &occ.origin_path {
+        None => "no inline origin".to_owned(),
+        Some(p) => format!("/{p}"),
+    }
+}
+
+/// True iff two occurrences agree on all three components of the key triple.
+fn same_triple(a: &PlaceholderOccurrence, b: &PlaceholderOccurrence) -> bool {
+    a.origin_path == b.origin_path
+        && a.multipath_alts == b.multipath_alts
+        && a.wildcard_hardened == b.wildcard_hardened
+}
+
+/// Classify the resolved template. Returns the FIRST finding in a
+/// deterministic order, or `None` when nothing is wrong.
+///
+/// ORDER, and it is deliberate rather than incidental:
+///
+/// 1. **Family 1 before Family 2.** Family 1 is a property of the template
+///    alone and fires on the keyless spelling too, so reporting it first means
+///    the same template draws the same diagnostic whether or not keys were
+///    supplied.
+/// 2. **Lowest `@i` first**, then first divergence in TEMPLATE order, so the
+///    message names the earliest place an operator can look.
+/// 3. Within one placeholder: **origin, then hardening, then multipath.** The
+///    spec's two multipath rows are qualified "differ ONLY in multipath sets",
+///    so they are reachable only once the other two axes agree; between origin
+///    and hardening the order is this module's choice, and origin goes first
+///    because it is the axis an operator is likelier to have written on
+///    purpose.
+pub fn classify(occs: &[PlaceholderOccurrence], keys: &[ParsedKey]) -> Option<Finding> {
+    // ── Family 1 ───────────────────────────────────────────────────────────
+    let mut indices: Vec<u8> = occs.iter().map(|o| o.i).collect();
+    indices.sort_unstable();
+    indices.dedup();
+
+    for i in &indices {
+        let group: Vec<&PlaceholderOccurrence> = occs.iter().filter(|o| o.i == *i).collect();
+        if group.len() < 2 {
+            continue;
+        }
+        let head = group[0];
+        let Some(other) = group[1..].iter().find(|o| !same_triple(head, o)) else {
+            return Some(Finding::SamePathExpression {
+                i: *i,
+                sites: group.len(),
+            });
+        };
+        if head.origin_path != other.origin_path {
+            return Some(Finding::OriginDiffers {
+                i: *i,
+                a: origin_display(head),
+                b: origin_display(other),
+            });
+        }
+        if head.wildcard_hardened != other.wildcard_hardened {
+            return Some(Finding::HardeningDiffers {
+                i: *i,
+                a: use_site_display(head),
+                b: use_site_display(other),
+            });
+        }
+        // Only the multipath sets are left, or `same_triple` would have held.
+        let shared: Vec<String> = head
+            .multipath_alts
+            .iter()
+            .filter(|v| other.multipath_alts.contains(v))
+            .map(|v| v.to_string())
+            .collect();
+        let (a, b) = (
+            multipath_display(&head.multipath_alts),
+            multipath_display(&other.multipath_alts),
+        );
+        return Some(if shared.is_empty() {
+            Finding::MultipathDisjoint { i: *i, a, b }
+        } else {
+            Finding::MultipathOverlap {
+                i: *i,
+                a,
+                b,
+                shared: shared.join(", "),
+            }
+        });
+    }
+
+    // ── Family 2, the DISJOINT-use-site delta only ─────────────────────────
+    //
+    // Identical key MATERIAL — the 65-byte `chain code ‖ compressed pubkey`,
+    // the same comparison the codec floor makes and for the same reason: the
+    // fingerprint identifies a MASTER (so it would refuse the legitimate
+    // cosigner contributing two accounts) and the base58 string carries
+    // depth/parent metadata that differs between two sources of one key.
+    //
+    // The SAME-use-site case is deliberately NOT reported here. It is the
+    // codec floor's, and falls through to it.
+    for (n, a) in keys.iter().enumerate() {
+        for b in &keys[n + 1..] {
+            if a.i == b.i || a.payload != b.payload {
+                continue;
+            }
+            let (Some(oa), Some(ob)) = (
+                occs.iter().find(|o| o.i == a.i),
+                occs.iter().find(|o| o.i == b.i),
+            ) else {
+                continue;
+            };
+            if oa.multipath_alts == ob.multipath_alts
+                && oa.wildcard_hardened == ob.wildcard_hardened
+            {
+                continue; // same use site — the codec floor's case, not ours
+            }
+            let (lo, hi) = if a.i < b.i { (a, b) } else { (b, a) };
+            let (olo, ohi) = if a.i < b.i { (oa, ob) } else { (ob, oa) };
+            return Some(Finding::KeyAtDisjointUseSites {
+                a: lo.i,
+                b: hi.i,
+                sa: use_site_display(olo),
+                sb: use_site_display(ohi),
+            });
+        }
+    }
+    None
+}
+
+impl Finding {
+    /// The diagnostic BODY — everything after the rendered prefix.
+    ///
+    /// It is the SAME text under either disposition, which is what makes
+    /// "one implementation, the disposition is a parameter" observable rather
+    /// than merely claimed: a refusal and a warning about one wallet say the
+    /// same thing about it.
+    ///
+    /// The word "invalid" appears in none of these. A BIP-forbidden or
+    /// wire-inexpressible shape is UNSUPPORTED, never invalid — a repeated-key
+    /// descriptor is legal script, and calling the operator's wallet invalid
+    /// is both false and the wrong instruction (operator ruling 2026-08-30).
+    pub fn message(&self) -> String {
+        match self {
+            Finding::SamePathExpression { i, sites } => format!(
+                "@{i} appears at {sites} use sites in this template with the same path \
+                 expression, so ONE key would fill every one of them. That is forbidden by \
+                 BIP 388 (\"{rule}\"), whose forbidden-example list names \
+                 sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same path expression\". \
+                 md declines to mint or compose this shape: give each distinct key its own \
+                 placeholder.",
+                rule = crate::bip388::PAIRWISE_DISTINCT_RULE,
+            ),
+            Finding::MultipathOverlap { i, a, b, shared } => format!(
+                "@{i} appears at use sites whose multipath sets OVERLAP — {a} and {b} share \
+                 {shared}. BIP 388 requires two key expressions on one placeholder to have \
+                 DISJOINT multipath sets, so this shape is forbidden; md1 could not carry two \
+                 use sites for one key slot in any case (one path per key slot, F-417), but \
+                 the disjointness rule is the primary ground. md declines to mint or compose \
+                 this shape: give each use site its own placeholder."
+            ),
+            Finding::MultipathDisjoint { i, a, b } => format!(
+                "@{i} appears at use sites with DISJOINT multipath sets — {a} and {b}. The \
+                 WALLET is legal under BIP 388, which permits exactly this on one \
+                 placeholder; md1 deliberately cannot express it, because an md1 card carries \
+                 ONE path per key slot and that narrowness is a design decision the wire \
+                 format will not widen (F-417). md declines to mint or compose this shape. \
+                 Keep this wallet as a descriptor instead: {ESCAPE}"
+            ),
+            Finding::OriginDiffers { i, a, b } => format!(
+                "@{i} appears at use sites declaring DIFFERENT key origins — {a} and {b}. One \
+                 placeholder is one key slot and an md1 card records ONE origin per key slot, \
+                 so it cannot carry both. Inline origins are md's own normal template \
+                 spelling, so this is md's representability limit and not a statement about \
+                 your wallet. md declines to mint or compose this shape: give each origin its \
+                 own placeholder."
+            ),
+            Finding::HardeningDiffers { i, a, b } => format!(
+                "@{i} appears at use sites whose wildcards differ in HARDENING — {a} and {b}. \
+                 One placeholder is one key slot and an md1 card records ONE use-site \
+                 wildcard per slot, so it cannot carry both; an xpub derives no hardened \
+                 child either, so one key could not serve both use sites even if the card \
+                 could carry them. This is md's own derivability limit, not a statement about \
+                 your wallet. md declines to mint or compose this shape: give each use site \
+                 its own placeholder."
+            ),
+            Finding::KeyAtDisjointUseSites { a, b, sa, sb } => format!(
+                "@{a} and @{b} were given the SAME extended public key at DIFFERENT use sites \
+                 — {sa} and {sb}. Spelled with two placeholders, this policy lists that key \
+                 TWICE in BIP 388's key information vector, and rule (1) requires \"{rule}\" \
+                 — so what BIP 388 forbids is THIS SPELLING's key vector, not the wallet it \
+                 describes. The wallet — one key at two disjoint path sets — is a legal \
+                 descriptor, and BIP 388 writes it with ONE placeholder carrying both sets; \
+                 md1 cannot write that spelling either, because an md1 card carries one path \
+                 per key slot (F-417). md declines to mint or compose this shape. Keep this \
+                 wallet as a descriptor: {ESCAPE}",
+                rule = crate::bip388::PAIRWISE_DISTINCT_RULE,
+            ),
+        }
+    }
+}
+
+/// The RUNNABLE escape, quoted identically by R-N1c and R-N1d.
+///
+/// `me sysw pack` is the real surface (`me-cli/src/main.rs:723`), not an
+/// invented one: a refusal that names no way forward leaves an operator
+/// holding a legal wallet and no tool, which is the outcome these two rows
+/// exist to avoid.
+const ESCAPE: &str = "me sysw pack --as descriptor --in <your export file>";
+
+/// Classify, then apply the caller's disposition.
+///
+/// `Warn` writes to stderr and returns `Ok(())`; the caller proceeds. `Refuse`
+/// returns [`CliError::Unsupported`], which renders as
+/// `md: unsupported: <body>` at exit 1.
+pub fn check(
+    occs: &[PlaceholderOccurrence],
+    keys: &[ParsedKey],
+    disposition: Disposition,
+) -> Result<(), CliError> {
+    let Some(finding) = classify(occs, keys) else {
+        return Ok(());
+    };
+    match disposition {
+        Disposition::Refuse => Err(CliError::Unsupported(finding.message())),
+        Disposition::Warn => {
+            eprintln!("md: warning: {}", finding.message());
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::template::lex_placeholders;
+
+    fn key(i: u8, seed: u8) -> ParsedKey {
+        ParsedKey {
+            i,
+            depth: 4,
+            payload: [seed; 65],
+        }
+    }
+
+    fn find(template: &str, keys: &[ParsedKey]) -> Option<Finding> {
+        classify(&lex_placeholders(template).expect("template lexes"), keys)
+    }
+
+    #[test]
+    fn identical_triples_are_r_n1a() {
+        assert!(matches!(
+            find("wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))", &[]),
+            Some(Finding::SamePathExpression { i: 0, sites: 2 })
+        ));
+    }
+
+    #[test]
+    fn the_site_count_is_the_real_count_not_two() {
+        assert!(matches!(
+            find("wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@0/<0;1>/*),s:pk(@0/<0;1>/*)))", &[]),
+            Some(Finding::SamePathExpression { i: 0, sites: 3 })
+        ));
+    }
+
+    #[test]
+    fn overlapping_and_disjoint_multipath_sets_are_different_findings() {
+        assert!(matches!(
+            find("wsh(multi(2,@0/<0;1>/*,@0/<1;2>/*))", &[]),
+            Some(Finding::MultipathOverlap { .. })
+        ));
+        assert!(matches!(
+            find("wsh(multi(2,@0/<0;1>/*,@0/<2;3>/*))", &[]),
+            Some(Finding::MultipathDisjoint { .. })
+        ));
+    }
+
+    #[test]
+    fn the_origin_axis_wins_over_the_multipath_axis() {
+        // Both differ. The origin row is not qualified "only", the multipath
+        // rows are, so origin must be what is reported.
+        assert!(matches!(
+            find(
+                "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@0/48'/0'/1'/2'/<2;3>/*))",
+                &[]
+            ),
+            Some(Finding::OriginDiffers { .. })
+        ));
+    }
+
+    #[test]
+    fn the_hardening_axis_is_its_own_finding() {
+        assert!(matches!(
+            find("wsh(multi(2,@0/<0;1>/*,@0/<0;1>/*'))", &[]),
+            Some(Finding::HardeningDiffers { .. })
+        ));
+    }
+
+    #[test]
+    fn family_1_fires_before_family_2() {
+        // A template carrying BOTH defects must report the key-blind one, so
+        // the keyed and keyless spellings of one template agree.
+        let f = find(
+            "wsh(multi(2,@0/<0;1>/*,@0/<0;1>/*,@1/<2;3>/*))",
+            &[key(0, 7), key(1, 7)],
+        );
+        assert!(matches!(f, Some(Finding::SamePathExpression { .. })));
+    }
+
+    #[test]
+    fn one_key_at_two_disjoint_use_sites_is_r_n1d() {
+        assert!(matches!(
+            find("wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))", &[key(0, 7), key(1, 7)]),
+            Some(Finding::KeyAtDisjointUseSites { a: 0, b: 1, .. })
+        ));
+    }
+
+    /// THE BOUNDARY WITH THE SHIPPED FLOOR. Same key, SAME use site is F-218's
+    /// case and belongs to `validate_no_duplicate_key_slots`; if this module
+    /// claimed it, the operator would get a message written for a different
+    /// wallet and the floor's own rows would go red for the wrong reason.
+    #[test]
+    fn one_key_at_the_same_use_site_is_not_this_modules_case() {
+        assert_eq!(
+            find("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", &[key(0, 7), key(1, 7)]),
+            None
+        );
+    }
+
+    #[test]
+    fn distinct_keys_and_distinct_placeholders_are_clean() {
+        assert_eq!(
+            find("wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))", &[key(0, 7), key(1, 9)]),
+            None
+        );
+        assert_eq!(
+            find(
+                "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))",
+                &[key(0, 7), key(1, 9)]
+            ),
+            None
+        );
+    }
+
+    /// No diagnostic in this taxonomy may call the operator's wallet invalid,
+    /// and the two that hand out an escape must actually name a runnable one.
+    #[test]
+    fn every_message_obeys_the_principle() {
+        let all = [
+            Finding::SamePathExpression { i: 0, sites: 2 },
+            Finding::MultipathOverlap {
+                i: 0,
+                a: "<0;1>".into(),
+                b: "<1;2>".into(),
+                shared: "1".into(),
+            },
+            Finding::MultipathDisjoint {
+                i: 0,
+                a: "<0;1>".into(),
+                b: "<2;3>".into(),
+            },
+            Finding::OriginDiffers {
+                i: 0,
+                a: "/48'/0'/0'/2'".into(),
+                b: "/48'/0'/1'/2'".into(),
+            },
+            Finding::HardeningDiffers {
+                i: 0,
+                a: "<0;1>/*".into(),
+                b: "<0;1>/*'".into(),
+            },
+            Finding::KeyAtDisjointUseSites {
+                a: 0,
+                b: 1,
+                sa: "<0;1>/*".into(),
+                sb: "<2;3>/*".into(),
+            },
+        ];
+        for f in &all {
+            let m = f.message();
+            assert!(
+                !m.to_lowercase().contains("invalid"),
+                "{f:?} calls the wallet invalid: {m}"
+            );
+            assert!(!m.contains('\n'), "{f:?} renders on more than one line");
+        }
+        // The two md-side axes cite no BIP rule at all — an inline origin and
+        // a hardened wildcard are md's own limits, and a citation there would
+        // be a false record about a normative document.
+        for f in [&all[3], &all[4]] {
+            let m = f.message();
+            assert!(!m.contains("BIP"), "{f:?} cites a BIP rule: {m}");
+        }
+        for f in [&all[2], &all[5]] {
+            assert!(f.message().contains(ESCAPE), "{f:?} names no escape");
+        }
+    }
+
+    #[test]
+    fn the_disposition_changes_the_outcome_not_the_text() {
+        let occs = lex_placeholders("wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))").unwrap();
+        let err = check(&occs, &[], Disposition::Refuse).unwrap_err();
+        assert!(matches!(err, CliError::Unsupported(_)));
+        let body = classify(&occs, &[]).unwrap().message();
+        assert_eq!(err.to_string(), format!("unsupported: {body}"));
+        // Warn proceeds. (Its stderr line is pinned end-to-end by
+        // `tests/n1_admission_taxonomy.rs`; here the contract is that it does
+        // not stop the caller.)
+        assert!(check(&occs, &[], Disposition::Warn).is_ok());
+    }
+}

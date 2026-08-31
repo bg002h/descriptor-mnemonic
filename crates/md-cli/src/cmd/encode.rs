@@ -64,8 +64,15 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut descriptor =
-        parse_template_ext(args.template, &parsed_keys, &parsed_fps, args.experimental)?;
+    // N1's REFUSE disposition: `encode` MINTS, so a shape the taxonomy names
+    // must never reach a plate (SPEC_mdcli_mini.md N1 "Verb dispositions").
+    let mut descriptor = parse_template_ext(
+        args.template,
+        &parsed_keys,
+        &parsed_fps,
+        args.experimental,
+        crate::parse::reuse::Disposition::Refuse,
+    )?;
     if args.experimental {
         // LOUD, on stderr, every time. This authors a card for a wallet whose
         // guarantees rust-miniscript declines to vouch for, and the card itself

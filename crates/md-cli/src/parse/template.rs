@@ -2557,12 +2557,25 @@ fn reject_unreferenced_bindings(
     Ok(())
 }
 
+/// Parse a template on the MINT/COMPOSE surface: N1's admission taxonomy runs
+/// with the REFUSE disposition (`md descriptor --template`, `md address
+/// --template` via `cmd::build`, and `md vectors`' generator, which therefore
+/// refuses a future forbidden-shape manifest entry fail-closed).
+///
+/// A reading verb wants the WARN disposition instead and calls
+/// [`parse_template_ext`] directly with it.
 pub fn parse_template(
     template: &str,
     keys: &[ParsedKey],
     fingerprints: &[ParsedFingerprint],
 ) -> Result<Descriptor, CliError> {
-    parse_template_ext(template, keys, fingerprints, false)
+    parse_template_ext(
+        template,
+        keys,
+        fingerprints,
+        false,
+        crate::parse::reuse::Disposition::Refuse,
+    )
 }
 
 /// `parse_template`, with an opt-out from rust-miniscript's SIGNATURE rule.
@@ -2586,15 +2599,32 @@ pub fn parse_template(
 /// unguaranteed, which is a different and worse class of mistake.
 ///
 /// Callers must warn loudly; see `md encode --experimental`.
+///
+/// `reuse` is N1's per-verb disposition ([`crate::parse::reuse`]): REFUSE on
+/// the mint/compose surface, WARN on the read surface. It is a parameter and
+/// never a second implementation of the predicate — that is the spec's
+/// single-source rule, and it is why a refusal and a warning about one wallet
+/// say the same thing about it.
 pub fn parse_template_ext(
     template: &str,
     keys: &[ParsedKey],
     fingerprints: &[ParsedFingerprint],
     experimental: bool,
+    reuse: crate::parse::reuse::Disposition,
 ) -> Result<Descriptor, CliError> {
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
     reject_unreferenced_bindings(&occs, keys, fingerprints)?;
+    // N1 (SPEC_mdcli_mini.md §N1) runs on the OCCURRENCE LIST, so it must sit
+    // ahead of `resolve_placeholders` — which collapses same-`@i` occurrences
+    // and, for every Family-1 case except R-N1a, refuses them first with one
+    // generic "inconsistent path/multipath/hardening" that names neither the
+    // axis nor the authority. It is also, deliberately, nowhere near
+    // `encode_payload`'s validator set: `md inspect` and `md verify` re-enter
+    // that set on a DECODED card, so a check there would make already-engraved
+    // plates of newly-refused shapes uninspectable (the C1 placement
+    // constraint; such plates exist — `tests/fixtures/n1/`).
+    crate::parse::reuse::check(&occs, keys, reuse)?;
     let resolved = resolve_placeholders(&occs)?;
 
     let (substituted, key_map) = substitute_synthetic(template, ctx)?;

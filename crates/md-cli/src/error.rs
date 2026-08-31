@@ -64,6 +64,26 @@ pub enum CliError {
     /// correctly, so this is a content refusal at exit 1 like its `Seat` and
     /// `Decompose` siblings, not a usage error at exit 2.
     KeyReuse(String),
+    /// N1's placeholder/key-reuse admission taxonomy
+    /// (`design/SPEC_mdcli_mini.md` §N1, [`crate::parse::reuse`]).
+    ///
+    /// ONE variant for the whole taxonomy, for the reason [`CliError::Seat`]
+    /// and [`CliError::Decompose`] are one each: the contract the vector rows
+    /// pin is the RENDERED LINE, and a taxonomy split across variants would
+    /// move it into the type, where the rows stop checking it.
+    ///
+    /// **It exists because [`CliError::TemplateParse`] could not carry these
+    /// messages.** R-N1c refuses a wallet BIP 388 explicitly permits — md1
+    /// simply cannot write it (F-417) — and "md: template parse error:" blames
+    /// an input that is not at fault. The spec makes the prefix normative for
+    /// exactly that reason: it must read as a statement about md's capability,
+    /// not about the operator's template. `unsupported` is also the
+    /// Principle's word: a BIP-forbidden or wire-inexpressible shape is
+    /// UNSUPPORTED, never "invalid".
+    ///
+    /// Exit code 1, like its `Seat`/`Decompose`/`KeyReuse` siblings: the flags
+    /// were spelled correctly; it is the material md declines.
+    Unsupported(String),
     /// A refusal from `md decompose` (SPEC "P3 — the concrete descriptor
     /// becomes an entrance"), including its input boundary.
     ///
@@ -93,6 +113,7 @@ impl fmt::Display for CliError {
             CliError::BadArg(m) => write!(f, "{m}"),
             CliError::Seat(m) => write!(f, "seating refused: {m}"),
             CliError::KeyReuse(m) => write!(f, "key reuse refused: {m}"),
+            CliError::Unsupported(m) => write!(f, "unsupported: {m}"),
             CliError::Decompose(m) => write!(f, "decompose: {m}"),
         }
     }
