@@ -2472,3 +2472,38 @@ subcommand (`md decompose`) and, measured at the fold tip, these flags on
 That file is in another repository and outside this worktree, so its state
 could not be verified here. The obligation is recorded rather than discharged;
 whoever next opens the toolkit repo should run its `flag-coverage` lint.
+
+### `from-mk1-arity-spills-card-strings-into-the-md1-positional` — `--from-mk1` takes ONE string per occurrence, so the natural paste sends the rest to the md1 positional and fails with a bare codec error (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — discovered in its own brainstorm walk**)
+
+Filed 2026-08-31 from the mini-cycle brainstorm walk, while measuring
+the operator's same-key-two-paths question. Severity **Minor** — the
+F-420 class (a refusal must never be the bare codec error), sitting on
+the converter's most-trodden entrance.
+
+`md descriptor` declares `from_mk1: Vec<String>` with no `num_args`
+(`crates/md-cli/src/main.rs:400`), so clap takes ONE value per
+`--from-mk1` occurrence. The natural spelling of the measured S-row
+journey — the followups ledger itself writes it as
+`md descriptor <6 keyless md1> --from-mk1 <30 mk1>` — therefore
+consumes the first string and hands every later one to the md1
+POSITIONAL, which fails inside the md1 codec:
+
+```
+$ md descriptor md15pfdsss… --from-mk1 mk1qpd8cwpqqsq… mk1qpd8cwpp806… …
+md: codec error: wire-format version mismatch: got 10, expected 4
+exit 1
+```
+
+Nothing names the actual mistake: the input IS a valid mk1 string, the
+diagnostic points at the md1 wire layer, and the "10" is noise from
+reading mk1 bytes as md1. An operator pasting a full card set (30
+strings on the pathological vault) gets this on the first try; the
+working spellings — one `--from-mk1` per string, or `--from-mk1-file`
+— are discoverable only from `--help`.
+
+Two remedies, composable: (a) `num_args = 1..` on `--from-mk1` so the
+natural paste works (check the positional/greedy-flag interaction
+deliberately); (b) the md1 positional refuses an `mk1…`-prefixed
+string BY NAME ("this is an mk1 card string; pass it via --from-mk1"),
+which also catches a card string arriving there by any other route.
+(b) is worth doing even if (a) lands.
