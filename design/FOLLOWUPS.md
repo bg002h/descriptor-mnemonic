@@ -2751,3 +2751,21 @@ requirement; (b) rework `derive` to avoid them; (c) demote `derive`
 from the default set (a breaking surface change). **F-424 (publish
 ≥0.43.0, bump `me`, drop the host mirror) is BLOCKED on this** — the
 me-side mirror stays in place until it clears.
+
+### `seat-merged-group-auto-partition` — resolve small chunk-set collisions instead of refusing
+
+- **Surfaced:** 2026-08-31, chunk_set_id wording walk W15 (mnemonic-key
+  `design/WALK_chunk_set_id_2026-08-31.md`): the merged-cards refusal
+  paralyzed the operator into planning up to 12 trial commands. The
+  tool can do that work: for a merged group, the piece-number/total
+  headers bound the partition space to a handful of candidates, and
+  the 4-byte cross-chunk hash verifies the right one — turning the
+  refusal into a seated success plus a note, for the accidental-
+  collision case.
+- **Ruling needed:** this changes the seat pipeline's normative
+  refusal behavior (A3-adjacent); do NOT implement without an operator
+  ruling. Interaction with the csid-mismatch warning (both partitions
+  verified but ids pinned) needs a vector row.
+- **Owning phase:** unscheduled candidate — raise at the chunk_set_id
+  cycle's post-cycle burndown review.
+- **Status:** OPEN. **Tier:** `ux` / converter leg.
