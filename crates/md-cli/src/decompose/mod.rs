@@ -240,15 +240,19 @@ fn parse_descriptor(s: &str) -> Result<Descriptor<DescriptorPublicKey>, CliError
 
 /// **Key reuse — SPEC A3's two BIP-388 shapes, on the DECOMPOSE side.**
 ///
-/// BIP 388's "Additional rules": (1) the public keys obtained by deserializing
-/// elements of the key information vector must be pairwise distinct; (2) two
-/// KEY expressions on the SAME placeholder must have DISJOINT multipath sets.
+/// BIP 388's "Additional rules": the pairwise-distinctness rule (the public
+/// keys obtained by deserializing elements of the key information vector
+/// must be pairwise distinct) and the disjointness rule (two KEY expressions
+/// on the SAME placeholder must have DISJOINT multipath sets). BIP 388 does
+/// not number these paragraphs itself, so neither does this comment (review
+/// r1 N1).
 ///
 /// In a CONCRETE descriptor those separate cleanly. Two occurrences of one
 /// extended key under DIFFERENT key expressions would become two entries of
-/// the key information vector deserializing to the same key — rule (1). Two
-/// occurrences of the SAME key expression are one placeholder used twice —
-/// rule (2), which is satisfied only when the multipath sets are disjoint.
+/// the key information vector deserializing to the same key — the
+/// pairwise-distinctness rule. Two occurrences of the SAME key expression
+/// are one placeholder used twice — the disjointness rule, which is
+/// satisfied only when the multipath sets are disjoint.
 ///
 /// The third case is real and has no BIP violation in it: the same expression
 /// twice with DISJOINT sets, which BIP 388 permits and md's own template
@@ -262,7 +266,7 @@ fn parse_descriptor(s: &str) -> Result<Descriptor<DescriptorPublicKey>, CliError
 /// limit, NOT the BIP, because there is no BIP violation to name.
 ///
 /// Grouping is by the whole extended key serialisation. `sanity_check` does
-/// NOT cover rule (1) here: measured 2026-08-30, the same xpub under two
+/// NOT cover the pairwise-distinctness rule here: measured 2026-08-30, the same xpub under two
 /// different origins returns `Ok(())` because the two `DescriptorPublicKey`
 /// values differ. The check is md's own.
 fn check_no_repeated_key(occ: &[Occurrence]) -> Result<(), CliError> {
@@ -279,7 +283,8 @@ fn check_no_repeated_key(occ: &[Occurrence]) -> Result<(), CliError> {
         let distinct: std::collections::BTreeSet<&str> = records.iter().copied().collect();
 
         if distinct.len() > 1 {
-            // Rule (1) — pairwise distinctness of the key information vector.
+            // The pairwise-distinctness rule — the key information vector's
+            // elements must be pairwise distinct.
             let where_ = idxs
                 .iter()
                 .map(|i| format!("  {} at {}", occ[*i].label(), occ[*i].use_site))
@@ -298,7 +303,7 @@ fn check_no_repeated_key(occ: &[Occurrence]) -> Result<(), CliError> {
             )));
         }
 
-        // One key expression, several occurrences: rule (2).
+        // One key expression, several occurrences: the disjointness rule.
         for (a, i) in idxs.iter().enumerate() {
             for j in idxs.iter().skip(a + 1) {
                 let overlap: Vec<String> = occ[*i]

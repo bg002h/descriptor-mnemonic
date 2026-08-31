@@ -52,7 +52,7 @@ pub enum CliError {
     /// Exit code 1 (a content refusal), not 2 (a usage error): the flags
     /// were spelled correctly; it is the material the engine declines.
     Seat(String),
-    /// BIP 388 rule (1) refused on the COMPOSE side of the template row:
+    /// BIP 388's pairwise-distinctness rule refused on the COMPOSE side of the template row:
     /// `--template` + `--key` handed one extended key to two distinct `@N`
     /// slots at the same use-site (SPEC A3's shape (1)).
     ///
@@ -97,6 +97,19 @@ pub enum CliError {
     /// Exit code 1 (a content refusal), not 2: the flags were spelled
     /// correctly; it is the material decompose declines.
     Decompose(String),
+    /// `--verify-against`'s argument did not decode, NAMING which branch of
+    /// `resolve_verify_against`'s existence check ran (whole-diff review r1
+    /// N4). `Path::new(arg).is_file()` decides file-vs-literal before either
+    /// branch can fail, so by the time this variant is built the branch is
+    /// already known; without naming it, an operator whose cwd happens to
+    /// hold a file matching their pasted md1 string sees md reject the
+    /// string they typed, and an operator with a mistyped path sees md
+    /// reject it as a string rather than say no such file exists.
+    ///
+    /// Exit code 1, same as the decode error it wraps: the message is
+    /// enriched, the disposition (a decode failure, never a spend-equality
+    /// verdict) is unchanged.
+    VerifyAgainstUnreadable(String),
 }
 
 impl fmt::Display for CliError {
@@ -115,6 +128,7 @@ impl fmt::Display for CliError {
             CliError::KeyReuse(m) => write!(f, "key reuse refused: {m}"),
             CliError::Unsupported(m) => write!(f, "unsupported: {m}"),
             CliError::Decompose(m) => write!(f, "decompose: {m}"),
+            CliError::VerifyAgainstUnreadable(m) => write!(f, "{m}"),
         }
     }
 }

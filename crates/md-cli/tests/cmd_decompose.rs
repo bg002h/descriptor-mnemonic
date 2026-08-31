@@ -421,7 +421,7 @@ fn v_d_noorig_emit_commands_succeeds_when_every_key_has_an_origin() {
 #[test]
 fn v_d_reuse_same_xpub_at_two_positions_refuses_as_bip388_forbidden() {
     // Two DIFFERENT key expressions (different origin paths) that deserialize
-    // to the SAME public key -- BIP 388 rule (1), pairwise distinctness.
+    // to the SAME public key -- BIP 388's pairwise-distinctness rule.
     // rust-miniscript parses this and `sanity_check` does NOT catch it (the two
     // `DescriptorPublicKey`s differ), measured 2026-08-30 -- so the check is
     // md's own.

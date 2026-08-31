@@ -19,12 +19,15 @@
 //! positional, `--from-mk1` seating) the FOLLOWUP exists for. Rows (a) and
 //! (b) below exercise both.
 //!
-//! Five rows (SPEC R3 / plan P6 step 1): (a) an equal cross-form pair via
+//! Six rows (SPEC R3 / plan P6 step 1): (a) an equal cross-form pair via
 //! `--from-mk1` against a FILE holding the keyed card; (b) a keyed-card
 //! POSITIONAL composition with `--verify-against` — the MODE row; (c) a
 //! one-xpub-off negative, naming the values half; (d) an origins-differ
 //! pair, still EQUAL; (e) a garbage `--verify-against` argument — a decode
-//! error, never a verdict.
+//! error, never a verdict; (f) a garbage argument that COLLIDES with a real
+//! filename in cwd, added for whole-diff review r1 N4 — the message must
+//! name whether a file or a literal string was read, not just that
+//! decoding failed.
 
 use assert_cmd::Command;
 use std::io::Write;
@@ -310,8 +313,15 @@ fn r3_garbage_verify_against_argument_is_a_decode_error_never_a_verdict() {
     assert_eq!(o.status.code(), Some(1), "{}", err_of(&o));
     let stderr = err_of(&o);
     assert!(
-        stderr.starts_with("md: codec error:"),
-        "a garbage argument must draw a DECODE error: {stderr}"
+        stderr.starts_with("md: --verify-against not-a-real-md1-or-file-r3-garbage-row:"),
+        "a garbage argument must draw a DECODE error naming the flag and argument: {stderr}"
+    );
+    // r1 N4: the message must say WHICH branch ran, so an operator whose
+    // argument happens to collide with a real filename is never left
+    // guessing whether md read a file or their literal string.
+    assert!(
+        stderr.contains("no file exists at this path"),
+        "must name that this argument was NOT read as a file: {stderr}"
     );
     assert!(!stderr.contains("SPEND-EQUAL"), "{stderr}");
     assert!(!stderr.contains("NOT spend-equal"), "{stderr}");
@@ -320,6 +330,50 @@ fn r3_garbage_verify_against_argument_is_a_decode_error_never_a_verdict() {
         "nothing on stdout when the target fails to decode: {}",
         out_of(&o)
     );
+}
+
+// ─── (f) --verify-against argument that COLLIDES with a real filename ─────
+//
+// r1 N4: `Path::new(arg).is_file()` wins over "looks like an md1 string", so
+// an operator whose cwd happens to hold a file matching the string they
+// pasted has that FILE read instead. Constructs the collision directly: a
+// file literally named after the pasted (garbage) argument, holding content
+// that also fails to decode. The message must say a FILE was read, not
+// leave the operator thinking md rejected the string they typed.
+#[test]
+fn r3_verify_against_argument_colliding_with_a_real_filename_says_a_file_was_read() {
+    let (_, x1) = key_record(1);
+    let (_, x2) = key_record(2);
+    let card_a = mint_two_of_two("73c5da0a", &x1, &x2);
+
+    let dir = tempfile::tempdir().unwrap();
+    let colliding_name = "not-a-real-md1-but-a-real-file-r3-collision-row";
+    write_lines(
+        dir.path(),
+        colliding_name,
+        &["also not a valid md1 line".to_string()],
+    );
+
+    let mut c = md();
+    c.current_dir(dir.path());
+    c.arg("descriptor");
+    for p in &card_a {
+        c.arg(p);
+    }
+    c.args(["--verify-against", colliding_name]);
+    let o = c.output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", err_of(&o));
+    let stderr = err_of(&o);
+    assert!(
+        stderr.starts_with(&format!("md: --verify-against {colliding_name}:")),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("a file exists at this path and was read as one"),
+        "must name that this argument WAS read as a file, not a literal string: {stderr}"
+    );
+    assert!(!stderr.contains("SPEND-EQUAL"), "{stderr}");
+    assert!(!stderr.contains("NOT spend-equal"), "{stderr}");
 }
 
 // ─── an EMPTY --verify-against FILE names the flag the operator passed ───

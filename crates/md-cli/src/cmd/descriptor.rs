@@ -230,20 +230,41 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
 /// EXISTING path is read as a FILE (md1 string(s), one per line, the same
 /// convention `--in`/`--from-mk1-file` already use); anything else is a
 /// literal md1 string. A garbage value that is neither an existing file nor
-/// a valid md1 string hits `decode_md1_string`'s own codec error —
-/// `CliError::Codec`, exit 1 — never a spend-equality verdict (SPEC R3's
-/// garbage-argument row).
+/// a valid md1 string hits a decode error — `CliError::VerifyAgainstUnreadable`,
+/// exit 1, never a spend-equality verdict (SPEC R3's garbage-argument row) —
+/// that NAMES which branch ran (whole-diff review r1 N4). The bare
+/// `CliError::Codec` passthrough this replaced said only "codec error:
+/// … does not start with HRP md1", so an operator whose cwd happened to hold
+/// a file matching their pasted md1 string saw md silently read that file
+/// and reject ITS content, and an operator who mistyped a path saw md treat
+/// the typo as a literal md1 string rather than say no such file exists.
+/// `is_file` is checked once and the same boolean labels the eventual error,
+/// so the message always matches the branch that actually ran.
 fn resolve_verify_against(arg: &str) -> Result<Descriptor, CliError> {
-    let strings: Vec<String> = if std::path::Path::new(arg).is_file() {
+    let is_file = std::path::Path::new(arg).is_file();
+    let strings: Vec<String> = if is_file {
         crate::cmd::read_md1_inputs(&[], Some(std::path::Path::new(arg)), "--verify-against")?
     } else {
         vec![md_codec::encode::strip_display_separators(arg)]
     };
     let refs: Vec<&str> = strings.iter().map(String::as_str).collect();
-    Ok(if refs.len() == 1 {
-        md_codec::decode::decode_md1_string(refs[0])?
+    let decoded = if refs.len() == 1 {
+        md_codec::decode::decode_md1_string(refs[0])
     } else {
-        md_codec::chunk::reassemble(&refs)?
+        md_codec::chunk::reassemble(&refs)
+    };
+    decoded.map_err(|e| {
+        if is_file {
+            CliError::VerifyAgainstUnreadable(format!(
+                "--verify-against {arg}: a file exists at this path and was read as one \
+                 (same convention as --in/--from-mk1-file), but its content did not decode: {e}"
+            ))
+        } else {
+            CliError::VerifyAgainstUnreadable(format!(
+                "--verify-against {arg}: no file exists at this path, so it was read as a \
+                 literal md1 string, which did not decode: {e}"
+            ))
+        }
     })
 }
 

@@ -358,7 +358,7 @@ pub fn validate_xpub_bytes(d: &Descriptor) -> Result<(), Error> {
 /// site pair is not a DUPLICATE is a statement about this check's comparison,
 /// and it was read as a statement that the shape is fine to mint. It is not:
 /// spelled with two placeholders, the policy repeats the key in BIP 388's key
-/// information vector, which its rule (1) forbids. `md-cli` refuses that
+/// information vector, which its pairwise-distinctness rule forbids. `md-cli` refuses that
 /// spelling one layer up (its N1 taxonomy's R-N1d,
 /// `design/SPEC_mdcli_mini.md`).
 ///

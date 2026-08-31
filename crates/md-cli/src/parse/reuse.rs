@@ -276,13 +276,14 @@ impl Finding {
     pub fn message(&self, disposition: Disposition) -> String {
         match self {
             Finding::SamePathExpression { i, sites } => {
-                // BIP 388's rule (1) (pairwise distinctness of the key
-                // information VECTOR) is satisfied here — the vector holds
-                // only ONE element for one placeholder repeated verbatim.
-                // What this shape breaks is rule (2), the disjointness rule:
-                // the SAME multipath set compared with itself is never
+                // BIP 388's pairwise-distinctness rule (pairwise distinctness
+                // of the key information VECTOR) is satisfied here — the
+                // vector holds only ONE element for one placeholder repeated
+                // verbatim. What this shape breaks is BIP 388's disjointness
+                // rule: the SAME multipath set compared with itself is never
                 // disjoint from it (review r1 I1; the prior citation named
-                // rule (1), which this shape does not violate).
+                // the pairwise-distinctness rule, which this shape does not
+                // violate).
                 let tail = match disposition {
                     Disposition::Refuse => {
                         "md declines to mint or compose this shape: give \
@@ -338,7 +339,8 @@ impl Finding {
             Finding::KeyAtDisjointUseSites { a, b, sa, sb } => format!(
                 "@{a} and @{b} were given the SAME extended public key at DIFFERENT use sites \
                  — {sa} and {sb}. Spelled with two placeholders, this policy lists that key \
-                 TWICE in BIP 388's key information vector, and rule (1) requires \"{rule}\" \
+                 TWICE in BIP 388's key information vector, and BIP 388's pairwise-distinctness \
+                 rule requires \"{rule}\" \
                  — so what BIP 388 forbids is THIS SPELLING's key vector, not the wallet it \
                  describes. The wallet — one key at two disjoint path sets — is a legal \
                  descriptor, and BIP 388 writes it with ONE placeholder carrying both sets; \

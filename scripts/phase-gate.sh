@@ -26,8 +26,8 @@ step() { echo; echo "=== $* ==="; }
 step "cargo nextest run --locked --all-features"
 cargo nextest run --locked --all-features
 
-step "cargo test --workspace --doc"
-cargo test --workspace --doc
+step "cargo test --workspace --doc --all-features"
+cargo test --workspace --doc --all-features
 
 step "cargo clippy --locked --all-targets --all-features -- -D warnings"
 cargo clippy --locked --all-targets --all-features -- -D warnings

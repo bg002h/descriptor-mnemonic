@@ -294,7 +294,7 @@ fn resolve_keys_fingerprints_and_precedence(
     Ok((parsed_keys, parsed_fps, inline_declared, bracket_sourced))
 }
 
-/// **BIP 388 rule (1) on the T row** (REVIEW-converter-whole-diff-r1 C1).
+/// **BIP 388's pairwise-distinctness rule on the T row** (REVIEW-converter-whole-diff-r1 C1).
 ///
 /// SPEC A3 promises the converter "refuses BOTH forbidden shapes in BOTH
 /// directions", and names shape (1) — one xpub filling two slots — as "the
@@ -320,7 +320,7 @@ fn resolve_keys_fingerprints_and_precedence(
 /// with its SPELLING, and the second half is now false. BIP 388 permits the
 /// wallet — one key at two disjoint path sets — in its ONE-placeholder
 /// spelling; the TWO-placeholder spelling written here repeats the key in the
-/// key information vector, which rule (1) forbids, and md1 cannot write the
+/// key information vector, which the pairwise-distinctness rule forbids, and md1 cannot write the
 /// one-placeholder spelling at all (F-417). So `md encode` refuses BOTH
 /// spellings from P2 onward, at [`crate::parse::reuse`]'s R-N1d, one layer
 /// above this check.

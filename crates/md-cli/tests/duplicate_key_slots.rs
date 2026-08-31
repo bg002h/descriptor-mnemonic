@@ -86,7 +86,7 @@ fn two_distinct_keys_still_encode() {
 /// codec floor (`validate_no_duplicate_key_slots`, F-218) is right to let it
 /// past, and it still does. R-N1d refuses it one layer up for a different
 /// reason — the TWO-PLACEHOLDER SPELLING repeats the key in BIP 388's key
-/// information vector, which rule (1) forbids, while md1 cannot write the
+/// information vector, which the pairwise-distinctness rule forbids, while md1 cannot write the
 /// one-placeholder spelling BIP 388 permits (F-417). The wallet is legal; both
 /// md1 spellings of it are not.
 ///

@@ -1,0 +1,31 @@
+# R-N1A-TR-INTERNAL-KEY — a KEYED card carrying the R-N1a shape through
+# `Body::Tr`'s BARE INTERNAL-KEY index (@0 as the tap internal key AND at a
+# leaf, identical triples), minted while a shipped binary still would.
+#
+# Filed as whole-diff review r1 N5: every existing R-N1a/R-N1d fixture puts
+# its repeat in `Body::MultiKeys` (r-n1a-keyed.txt, v-r5m1.txt), so no card
+# ever exercised `count_occurrences`'s `Body::Tr` arm (the internal-key
+# index, plus the recursion into the tap tree). This card does.
+#
+# GENERATED 2026-08-31 by hand from the b8a64938 code surface (the
+# mdcli-mini plan's baseline revision, same commit r-n1a-keyed.txt used),
+# `md` built fresh in a scratch worktree at that commit, with:
+#
+#   md encode "tr(@0/<0;1>/*,pk(@0/<0;1>/*))" \
+#     --key @0=<KEY 1> --path "48'/0'/0'/2'" --group-size 0
+#
+# Key material: crates/md-cli/tests/fixtures/pathological/keys.txt (KEY n =
+# its n-th record, 1-based) — KEY 1 is [73c5da0a/48'/0'/0'/2']. '#' and blank
+# lines are provenance only.
+#
+# THERE IS NO GENERATOR FOR THIS FILE, BY DESIGN — same reason as
+# r-n1a-keyed.txt. SPEC_mdcli_mini.md N1's R-N1a makes `md encode` REFUSE
+# this shape from P2 onward regardless of whether the repeat is spelled
+# through `Body::Tr` or `Body::MultiKeys` (measured: the current binary
+# refuses this exact template at exit 1, "unsupported: @0 appears at 2 use
+# sites..."), so no shipped binary can mint it again. Regenerating it would
+# require checking out b8a64938. Frozen.
+#
+# chunk-set-id: 0x380f5 (2 chunks)
+md1f8q84qspqztvyyy4qqxq5592pza6p372zc9gwrh7h9q2hyxs7s5yl6smtcxjz9m806prlszt7saqyvwq3ez
+md1f8q84qst0ck4wcczrgalt7lhxlg0x6vnl4rdcjgnpya7k5edv487ph7e30f8tpwunu5sq0fljjlmlqztdq

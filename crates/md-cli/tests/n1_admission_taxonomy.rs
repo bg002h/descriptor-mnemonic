@@ -304,7 +304,8 @@ const T_N1D: &str = "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))";
 
 const MSG_N1D: &str = "md: unsupported: @0 and @1 were given the SAME extended public key at \
 DIFFERENT use sites — <0;1>/* and <2;3>/*. Spelled with two placeholders, this policy lists that \
-key TWICE in BIP 388's key information vector, and rule (1) requires \"the public keys obtained by \
+key TWICE in BIP 388's key information vector, and BIP 388's pairwise-distinctness rule requires \
+\"the public keys obtained by \
 deserializing elements of the key information vector must be pairwise distinct\" — so what BIP 388 \
 forbids is THIS SPELLING's key vector, not the wallet it describes. The wallet — one key at two \
 disjoint path sets — is a legal descriptor, and BIP 388 writes it with ONE placeholder carrying \
@@ -720,6 +721,48 @@ fn r_n1d_card_verifies_at_exit_0_with_a_warning() {
     let out = verify_card(CARD_N1D, T_N1D, &[&format!("@0={K0}"), &format!("@1={K0}")]);
     assert_read_warns(&out, &as_warning(MSG_N1D));
     assert!(String::from_utf8_lossy(&out.stdout).contains("OK"));
+}
+
+// ─── P3.3 — `Body::Tr`'s internal-key arm (whole-diff review r1 N5) ────────
+//
+// Every row above puts its repeat in `Body::MultiKeys`. `count_occurrences`
+// (`src/parse/reuse.rs`) also has a `Body::Tr` arm — the tap internal key is
+// a BARE index, not a child `Node`, so a walker that only recursed through
+// `Body::Children` would miss it — and until this fixture, no CARD ever
+// exercised it: `md_codec::tree::Body::Tr`'s doc-comment traces back to
+// v0.30 Phase C/F, well before this cycle, but the R-N1a/R-N1d predicate
+// that walks it card-side is this cycle's own.
+//
+// FROZEN for the identical reason as `r-n1a-keyed.txt` (same header, this
+// file's own header explains the mint command and baseline commit): the
+// current binary refuses `tr(@0/<0;1>/*,pk(@0/<0;1>/*))` at `md encode`
+// (measured, exit 1, "unsupported: @0 appears at 2 use sites..."), so this
+// card could only be minted from the pre-R-N1a baseline. `@0` is the Tr
+// internal key AND a leaf `pk(@0/<0;1>/*)`, IDENTICAL triples — the same
+// R-N1a shape as `CARD_N1A`, spelled through the other arm. The rendered
+// message is BYTE-IDENTICAL to `MSG_N1A`/`MSG_N1A_WARN`: `Finding::message`
+// never quotes the surrounding template shape, only `@{i}` and `{sites}`,
+// so reusing the same constants here is itself a check that one classifier
+// serves both arms rather than a second, drifted copy.
+
+const CARD_N1A_TR: &str = include_str!("fixtures/n1/r-n1a-tr-internal-key.txt");
+
+#[test]
+fn r_n1a_tr_internal_key_card_refuses_at_descriptor() {
+    assert_refused(&card_cmd("descriptor", CARD_N1A_TR, &[]), MSG_N1A);
+}
+
+#[test]
+fn r_n1a_tr_internal_key_card_refuses_at_address() {
+    assert_refused(
+        &card_cmd("address", CARD_N1A_TR, &["--count", "1"]),
+        MSG_N1A,
+    );
+}
+
+#[test]
+fn r_n1a_tr_internal_key_card_decodes_at_exit_0_with_a_warning() {
+    assert_read_warns(&card_cmd("decode", CARD_N1A_TR, &[]), MSG_N1A_WARN);
 }
 
 // ─── the anti-over-refusal duty, on the CARD path ──────────────────────────
