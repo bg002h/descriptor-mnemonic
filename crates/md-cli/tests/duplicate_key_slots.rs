@@ -396,3 +396,110 @@ fn t_row_the_same_slot_supplied_twice_keeps_first_wins() {
         "a repeated --key for ONE slot must still be first-wins"
     );
 }
+
+// ─── ORDERING PIN (whole-diff review r1 I2) ─────────────────────────────────
+//
+// `cmd::build::build_descriptor` calls `apply_path_override_per_slot` THEN
+// `refuse_key_reuse_across_slots`, and that order is load-bearing:
+// `refuse_key_reuse_across_slots` calls `expand_per_at_n`, which raises
+// `MissingExplicitOrigin` on a slot with no origin at all -- a silent no-op
+// for the check, not a refusal -- so a slot whose ONLY origin source is
+// `--path` must have it applied before the duplicate-key check runs, or the
+// check never fires.
+//
+// Every existing T-row above uses a CANONICAL wrapper (`wsh(multi(...))`,
+// `wsh(sortedmulti(...))`), where `expand_per_at_n` succeeds with or without
+// the override, so none of them can see this. This row uses a `tr(...)`
+// script tree instead -- a NON-CANONICAL wrapper whose slots carry no inline
+// origin at all, so the only way `refuse_key_reuse_across_slots` can expand
+// and compare them is if `--path` has already been merged in.
+//
+// PROVEN LIVE, not asserted: swapping the two statements in
+// `build_descriptor` (`apply_path_override_per_slot` after
+// `refuse_key_reuse_across_slots` instead of before) makes this exact
+// invocation mint `tr(...)` and derive a `bc1p...` address at exit 0, with
+// the whole suite otherwise green -- recorded in
+// `design/agent-reports/FOLD-mdcli-mini-whole-diff-r1.md`. Swapped back
+// before this file was committed; `git diff` over `cmd/build.rs` is empty.
+
+/// K1 supplied twice, on `tr`'s taproot-leaf slots -- no inline origin
+/// anywhere in the template, so both slots' origins come SOLELY from
+/// `--path`.
+const NONCANONICAL_TR_ONE_KEY_TWICE: &str = "tr(@0/<0;1>/*,multi_a(2,@1/<0;1>/*,@2/<0;1>/*))";
+
+fn compose_with_path(
+    verb: &str,
+    template: &str,
+    keys: &[&str],
+    path: &str,
+) -> std::process::Output {
+    let mut c = md();
+    c.args([verb, "--template", template, "--path", path]);
+    for k in keys {
+        c.args(["--key", k]);
+    }
+    if verb == "address" {
+        c.args(["--count", "1"]);
+    }
+    c.output().unwrap()
+}
+
+#[test]
+fn t_row_key_reuse_through_a_noncanonical_wrapper_sourced_solely_by_path_refuses_at_descriptor() {
+    let out = compose_with_path(
+        "descriptor",
+        NONCANONICAL_TR_ONE_KEY_TWICE,
+        &[
+            &format!("@0={K0}"),
+            &format!("@1={K1}"),
+            &format!("@2={K1}"),
+        ],
+        "48'/0'/0'/2'",
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "one xpub filling two multi_a leaf slots was minted: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("tr(") && !stdout.contains("bc1"),
+        "md descriptor printed a wallet alongside the refusal: {stdout}"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("key reuse refused"),
+        "the ordering-sensitive row did not reach `refuse_key_reuse_across_slots`: {err}"
+    );
+}
+
+#[test]
+fn t_row_key_reuse_through_a_noncanonical_wrapper_sourced_solely_by_path_refuses_at_address() {
+    let out = compose_with_path(
+        "address",
+        NONCANONICAL_TR_ONE_KEY_TWICE,
+        &[
+            &format!("@0={K0}"),
+            &format!("@1={K1}"),
+            &format!("@2={K1}"),
+        ],
+        "48'/0'/0'/2'",
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "one xpub filling two multi_a leaf slots derived an address: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("tr(") && !stdout.contains("bc1"),
+        "md address printed a wallet alongside the refusal: {stdout}"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("key reuse refused"),
+        "the ordering-sensitive row did not reach `refuse_key_reuse_across_slots`: {err}"
+    );
+}
