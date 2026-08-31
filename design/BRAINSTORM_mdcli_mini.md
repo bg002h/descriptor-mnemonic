@@ -94,6 +94,10 @@ three-verbs-cannot-diverge invariant. Any new admission rule lives in
 the same place, so the invariant survives by construction. Reading
 verbs do NOT run the encode-path validators, which is what keeps
 already-minted cards readable (see the read-side rule below).
+[CORRECTED by REVIEW-mdcli-mini-spec-r1 C1, 2026-08-31: FALSE for
+`md inspect` and `md verify`, which re-enter `encode_payload` on the
+decoded card — the spec's placement constraint (N1) is the binding
+text now.]
 
 ### Item 1 — `md-repeated-placeholder-inverts-bip388`: decide both directions, with vectors
 
