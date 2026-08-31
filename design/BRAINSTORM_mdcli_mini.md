@@ -172,6 +172,21 @@ side is already closed. Vector gap for the spec: `V-BOUND-REF` pins
 only the same-path variant — add a different-paths sibling row so the
 case the operator asked about is pinned, not measured once.
 
+**Walk measurement 2 (2026-08-31), the pathless probe:** a policy with
+NO per-slot paths or fingerprints MINTS (`md encode
+"wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*))"` → exit 0, slots declare
+`m`, mint-time warns the slots cannot be told apart). But seating
+path-bearing cards into it REFUSES — A2's declaration-is-the-
+constraint holds: `m` matches no card at `48'/…`, so both slots go
+unfilled and both cards are left over, each side named. Card paths are
+VERIFICATION, never a source. The fully-pathless pipeline is
+unreachable for real keys: `mk encode` requires `--origin-path`, and
+an explicit `--origin-path m` refuses a depth-4 xpub ("xpub
+origin-path mismatch: xpub depth 4 / child 2' vs origin_path depth 0").
+Both wires carry the path — the policy card per slot, the key card per
+key — and restore requires them to AGREE. No change earned: the
+refusal names both sides and the redundancy is the safety mechanism.
+
 ### Item 2 — `md-cannot-mint-a-keyed-card-from-a-split-set`: mint from the seating result; do NOT relax the depth rule
 
 Measured (2026-08-30): the S → keyed-card bridge refuses from both
