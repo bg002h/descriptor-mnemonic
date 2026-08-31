@@ -1,5 +1,24 @@
 # CONTINUITY — post-converter md-cli mini-cycle (opened 2026-08-31)
 
+## STATUS 2026-08-31 (updated in-cycle): SPEC GREEN, PLAN IN R0
+
+Brainstorm WALKED with the operator and complete (all rulings in
+BRAINSTORM_mdcli_mini.md): bracket-path-as-source YES; docs pass at
+close-out; item 1 both directions YES+YES; rider 8 parked; rider 9
+DISCOVERED in the walk (from-mk1 arity, filed). SPEC_mdcli_mini.md is
+**GREEN at b8a64938** — R0 loop r1 (2C/7I) → r2 (15/15 fixed,
+0C/3I) → r3 (7/7 fixed, 0C/1I) → r4 fold-check clean; all reports
+verbatim in design/agent-reports/REVIEW-mdcli-mini-spec-r*.md.
+IMPLEMENTATION_PLAN_mdcli_mini.md drafted at d635458a (7 phases, R5
+first to widen the gate, burndown map for 11 slugs); its R0 review
+was dispatched and, if this session ended before folding, the report
+is design/agent-reports/REVIEW-mdcli-mini-plan-r1.md — persist it
+FIRST, machine-check, then fold. Key learned facts: the taxonomy must
+NOT live in encode_payload (inspect/verify re-enter it on decoded
+cards); R-N1d is the disjoint-use-site DELTA over the shipped F-218
+floor; fixture cards for newly-refused shapes must be minted from the
+baseline binary BEFORE the refusals land (0xed813, 0x00ee4).
+
 **Mission:** burn down the converter cycle's parked residue in ONE
 mini-cycle. Repo: descriptor-mnemonic. Baseline: main = d3676fb1 (+2
 local report/continuity commits), converter SHIPPED same day (52
