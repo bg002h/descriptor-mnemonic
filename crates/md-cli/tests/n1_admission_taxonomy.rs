@@ -1,6 +1,13 @@
 #![allow(missing_docs)]
-//! N1 — the placeholder/key-reuse admission taxonomy on the MINT/COMPOSE
-//! surface (`design/SPEC_mdcli_mini.md` §N1, plan phase P2).
+//! N1 — the placeholder/key-reuse admission taxonomy
+//! (`design/SPEC_mdcli_mini.md` §N1).
+//!
+//! Two halves, in phase order: the MINT/COMPOSE surface reached through
+//! `--template` (plan P2), then the same taxonomy reached through an md1
+//! CARD plus the READ side that must keep reading one (plan P3, from
+//! "P3 — the CARD input and the READ side" below). They share this file
+//! because they must share the RENDERED LINE — one predicate, one message,
+//! the disposition the only difference.
 //!
 //! Every row here asserts the **RENDERED stderr line, from the `md:` prefix
 //! onward** (Acceptance 4). A body substring would pass under a prefix that
@@ -8,11 +15,12 @@
 //! message mandate forbids, so the prefix is part of the contract and the
 //! rows pin the whole line.
 //!
-//! WHAT IS NOT HERE. The CARD-input refusals and the read-side warnings on
-//! `decode`/`inspect`/`bytecode`/`verify` are P3's; the SHIPPED same-use-site
-//! refusal (`validate_no_duplicate_key_slots`, F-218) keeps its own wording
-//! and its own rows in `duplicate_key_slots.rs`. R-N1d here is the DISJOINT
-//! use-site DELTA only.
+//! WHAT IS NOT HERE. The SHIPPED same-use-site refusal
+//! (`validate_no_duplicate_key_slots`, F-218) keeps its own wording and its
+//! own rows in `duplicate_key_slots.rs`; R-N1d here is the DISJOINT
+//! use-site DELTA only. The SEATING side — the door check and
+//! `check_no_repeated_xpub` — is pinned where it lives, in `src/seat/` and
+//! `tests/seating_vectors.rs`.
 
 use assert_cmd::Command;
 
@@ -527,4 +535,242 @@ fn md_compile_still_accepts_a_distinct_key_policy() {
         "the distinct-key control failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+// ═══ P3 — the CARD input and the READ side ═════════════════════════════════
+//
+// Everything above enters through `--template`. Everything below enters
+// through an md1 CARD, which is the other half of the spec's verb
+// dispositions and the whole of Acceptance 5.
+//
+// The two fixture cards are FROZEN (`tests/fixtures/n1/`): they were minted
+// from the b8a64938 baseline binary while a shipped `md encode` still would,
+// and from P2 onward none can. They are the already-engraved plates the C1
+// placement constraint exists for, so they are also the only possible input
+// to these rows.
+//
+// THE ROWS QUOTE THE SAME TWO CONSTANTS AS THE TEMPLATE ROWS, deliberately.
+// "each predicate has ONE implementation; the per-verb disposition is a
+// parameter" is a claim about the code that only a shared constant can
+// falsify: if the card path ever grew its own copy of the predicate, its
+// message would drift and these `assert_eq!`s are what would say so.
+
+const CARD_N1A: &str = include_str!("fixtures/n1/r-n1a-keyed.txt");
+const CARD_N1D: &str = include_str!("fixtures/n1/r-n1d-delta.txt");
+
+/// The md1 chunks of a fixture file; `#` lines are provenance.
+fn chunks(fixture: &str) -> Vec<&str> {
+    fixture
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("md1"))
+        .collect()
+}
+
+/// `md <verb> <every md1 chunk of the fixture> [extra…]`.
+fn card_cmd(verb: &str, fixture: &str, extra: &[&str]) -> std::process::Output {
+    let mut c = md();
+    c.arg(verb);
+    for ch in chunks(fixture) {
+        c.arg(ch);
+    }
+    c.args(extra);
+    c.output().unwrap()
+}
+
+/// The WARN rendering of a refusal's body — the same text under the other
+/// disposition, which is the observable form of "one implementation".
+fn as_warning(refusal: &str) -> String {
+    format!(
+        "md: warning: {}",
+        refusal.strip_prefix("md: unsupported: ").unwrap()
+    )
+}
+
+/// A reading verb must COMPLETE at exit 0 (Acceptance 5), still produce its
+/// output, and say what is wrong with the card on stderr.
+fn assert_read_warns(out: &std::process::Output, expected_line: &str) {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a reading verb refused an already-engraved plate; stderr was:\n{stderr}"
+    );
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).trim().is_empty(),
+        "the verb warned but produced no output, so the plate is still unreadable"
+    );
+    let line = rendered_line(out);
+    assert_eq!(line, expected_line);
+    assert!(
+        line.contains("BIP 388"),
+        "the read-side warning must name the BIP-388 violation: {line}"
+    );
+    assert!(
+        !line.to_lowercase().contains("invalid"),
+        "the operator's wallet must never be called invalid: {line}"
+    );
+}
+
+// ─── P3.1 — the card-input COMPOSING refusals ──────────────────────────────
+//
+// `descriptor` and `address` are on the REFUSE (mint/compose) surface for
+// BOTH inputs (SPEC N1 "Verb dispositions"). Measured before this phase:
+// every one of these four read at exit 0 and printed a wallet, because the
+// card branch of `cmd/build.rs` ran no reuse check at all.
+
+#[test]
+fn r_n1a_card_refuses_at_descriptor() {
+    assert_refused(&card_cmd("descriptor", CARD_N1A, &[]), MSG_N1A);
+}
+
+#[test]
+fn r_n1a_card_refuses_at_address() {
+    assert_refused(&card_cmd("address", CARD_N1A, &["--count", "1"]), MSG_N1A);
+}
+
+#[test]
+fn r_n1d_card_refuses_at_descriptor() {
+    assert_refused(&card_cmd("descriptor", CARD_N1D, &[]), MSG_N1D);
+}
+
+#[test]
+fn r_n1d_card_refuses_at_address() {
+    assert_refused(&card_cmd("address", CARD_N1D, &["--count", "1"]), MSG_N1D);
+}
+
+// ─── P3.2 — the READ side keeps reading ────────────────────────────────────
+//
+// Acceptance 5, row-pinned on both plates: `decode`, `inspect`, `bytecode`
+// and `verify` complete at exit 0 on a card carrying a shape this cycle
+// newly refuses, WITH a warning naming the BIP-388 violation. This is what
+// the C1 placement constraint buys — a check inside `encode_payload` would
+// have made these same plates uninspectable and unverifiable.
+
+#[test]
+fn r_n1a_card_decodes_at_exit_0_with_a_warning() {
+    assert_read_warns(&card_cmd("decode", CARD_N1A, &[]), &as_warning(MSG_N1A));
+}
+
+#[test]
+fn r_n1a_card_inspects_at_exit_0_with_a_warning() {
+    assert_read_warns(&card_cmd("inspect", CARD_N1A, &[]), &as_warning(MSG_N1A));
+}
+
+#[test]
+fn r_n1a_card_bytecodes_at_exit_0_with_a_warning() {
+    assert_read_warns(&card_cmd("bytecode", CARD_N1A, &[]), &as_warning(MSG_N1A));
+}
+
+#[test]
+fn r_n1d_card_decodes_at_exit_0_with_a_warning() {
+    assert_read_warns(&card_cmd("decode", CARD_N1D, &[]), &as_warning(MSG_N1D));
+}
+
+#[test]
+fn r_n1d_card_inspects_at_exit_0_with_a_warning() {
+    assert_read_warns(&card_cmd("inspect", CARD_N1D, &[]), &as_warning(MSG_N1D));
+}
+
+#[test]
+fn r_n1d_card_bytecodes_at_exit_0_with_a_warning() {
+    assert_read_warns(&card_cmd("bytecode", CARD_N1D, &[]), &as_warning(MSG_N1D));
+}
+
+/// `md verify` needs a `--template` (clap `required = true`), so its CARD
+/// row is the card checked against its own spelling.
+///
+/// NO SECOND CHECK IS WIRED ON `verify`'s DECODED SIDE, and that is a
+/// decision rather than an omission: `verify` returns MISMATCH unless the
+/// decoded card and the parsed template encode to the identical payload, so
+/// the only card that can reach exit 0 here is one whose shape the template
+/// also carries — and the template side already warns (P2). A second
+/// invocation would print the identical line twice on every such run.
+/// These rows are what would notice if that reasoning ever stopped holding:
+/// they assert the warning on the CARD's own journey, not on the mechanism.
+fn verify_card(fixture: &str, template: &str, keys: &[&str]) -> std::process::Output {
+    let mut c = md();
+    c.arg("verify");
+    for ch in chunks(fixture) {
+        c.arg(ch);
+    }
+    c.args(["--template", template, "--path", PATH]);
+    for k in keys {
+        c.args(["--key", k]);
+    }
+    c.output().unwrap()
+}
+
+#[test]
+fn r_n1a_card_verifies_at_exit_0_with_a_warning() {
+    let out = verify_card(CARD_N1A, T_N1A, &[&format!("@0={K0}")]);
+    assert_read_warns(&out, &as_warning(MSG_N1A));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("OK"));
+}
+
+#[test]
+fn r_n1d_card_verifies_at_exit_0_with_a_warning() {
+    let out = verify_card(CARD_N1D, T_N1D, &[&format!("@0={K0}"), &format!("@1={K0}")]);
+    assert_read_warns(&out, &as_warning(MSG_N1D));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("OK"));
+}
+
+// ─── the anti-over-refusal duty, on the CARD path ──────────────────────────
+//
+// A card-path check that fired on every card would pass every row above and
+// break every wallet. The control is minted here rather than taken from a
+// fixture so it is unarguably a card a shipped binary still writes.
+
+/// A clean 2-of-2 from two DIFFERENT keys, minted by this same binary.
+fn clean_card() -> Vec<String> {
+    let out = encode(
+        "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
+        &[&format!("@0={K0}"), &format!("@1={K1}")],
+    );
+    assert!(
+        out.status.success(),
+        "the control card could not be minted: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("md1"))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn run_on(verb: &str, card: &[String], extra: &[&str]) -> std::process::Output {
+    let mut c = md();
+    c.arg(verb);
+    for ch in card {
+        c.arg(ch);
+    }
+    c.args(extra);
+    c.output().unwrap()
+}
+
+#[test]
+fn control_a_clean_card_still_composes_and_reads_without_a_diagnostic() {
+    let card = clean_card();
+    assert!(!card.is_empty(), "the control card has no chunks");
+    for (verb, extra) in [
+        ("descriptor", &[][..]),
+        ("address", &["--count", "1"][..]),
+        ("decode", &[][..]),
+        ("inspect", &[][..]),
+        ("bytecode", &[][..]),
+    ] {
+        let out = run_on(verb, &card, extra);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "`md {verb}` refused a clean card: {stderr}"
+        );
+        assert!(
+            !stderr.lines().any(|l| l.starts_with("md: ")),
+            "`md {verb}` emitted a diagnostic on a clean card: {stderr}"
+        );
+    }
 }
