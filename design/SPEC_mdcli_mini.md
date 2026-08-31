@@ -57,7 +57,13 @@ plates carrying R-N1d's disjoint half can exist.
 "Key reuse (meaning with same keypath) isn't allowed." "Bad ideas can
 be valid, but we don't want to support BIP forbidden wallets"
 (both 2026-08-30). F-417 (2026-08-28): md1's use-site-path narrowness
-is DELIBERATE; the wire format will not be widened. Diagnostics for
+is DELIBERATE; the wire format will not be widened. Post-walk ruling
+(operator, 2026-08-31, verbatim, on the degrading-multisig
+consequence surfaced by plan review): "No carve out for reused keys
+unless different origin paths" — the same-path reuse refusals stand
+with no exception, and one master at different origin paths
+(different derived xpubs) remains the legitimate, control-row-pinned
+family. Diagnostics for
 BIP-forbidden or wire-inexpressible shapes say "forbidden by BIP 388"
 / "unsupported" — NEVER "invalid".
 

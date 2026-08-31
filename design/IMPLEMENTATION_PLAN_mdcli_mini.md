@@ -1,8 +1,8 @@
 # IMPLEMENTATION PLAN — post-converter md-cli mini-cycle
 
-Status: DRAFT p2 — REVIEW-mdcli-mini-plan-r1 (2C/7I/7M/3N, 18/19
-fixed per r2 with C1 partial) and REVIEW-mdcli-mini-plan-r2
-(0C/2I/4M/2N) are BOTH folded; re-review pending. Spec:
+Status: DRAFT p3 — plan reviews r1 (2C/7I/7M/3N), r2 (0C/2I/4M/2N,
+18/19+C1 completed per r3) and r3 (0C/1I/1M/2N) are all folded;
+mechanical fold-check pending. Spec:
 `SPEC_mdcli_mini.md`, **GREEN at `b8a64938`** (R0 loop closed
 2026-08-31 at 0C/0I over four rounds). Baseline revision for
 staleness re-validation: **`b8a64938`** — every citation in this plan
@@ -118,19 +118,31 @@ per-verb disposition (refuse/warn) is a parameter; NOTHING new inside
 (`validate_no_duplicate_key_slots` at `encode.rs:120`) and the S-row
 `check_no_repeated_xpub` stay as shipped.
 
-**A third shipped implementation, named and RULED (r2 I-2):**
-`check_no_repeated_placeholder` (`seat/satisfy.rs:188`, called at
-`seat/mod.rs:134` as the first door check on the seating path)
-already refuses Family-1 shapes on `md descriptor`'s card input —
-but COARSER than spec N1: it counts occurrences only, so it refuses
-R-N1d-disjoint spellings with Family-1 wording, which the spec's
-distinct R-N1d message mandate forbids. Ruling: P3 UNIFIES it — the
-door check becomes an invocation of the shared classifier
-(per-verb disposition), its wording becomes the taxonomy's messages,
-and the two sites pinning the old wording
-(`seating_vectors.rs:679-687`, `satisfy.rs:530-548`) update in the
-same commit. It is NOT in the stays-as-shipped set;
-`check_no_repeated_xpub` and the codec floor still are.
+**A third shipped implementation, named and RULED (r2 I-2; ground
+corrected per r3 I-1):** `check_no_repeated_placeholder`
+(`seat/satisfy.rs:188`, called at `seat/mod.rs:134` as the first
+door check on the seating path) already refuses Family-1 shapes on
+`md descriptor`'s card input. The ground for unifying is the spec's
+SINGLE-SOURCE rule alone: `descriptor`'s card input is on the
+REFUSE mint/compose surface, so P3.1's new card-input Family-1
+refusal would otherwise be a SECOND implementation of the predicate
+already shipped at `satisfy.rs:188`. Reachable-domain facts (r3,
+measured): the policy at the door check is KEYLESS by construction
+(`seat/mod.rs:122-130` refuses wallet-policy cards first), so
+Family 2 is undetectable there in principle; and the wire cannot
+carry one placeholder at two different triples (`md encode` refuses
+"inconsistent path/multipath/hardening"), so the check's reachable
+domain is EXACTLY R-N1a — where its shipped wording is correct.
+Ruling: P3 UNIFIES it — the door check becomes an invocation of the
+shared classifier (per-verb disposition) IN PLACE: its position is
+order-normative (`seat/mod.rs:100-106`: "each of those refusals is
+accurate only where it sits") and MUST NOT move past A3 to obtain
+key bindings it does not need. Its wording becomes the taxonomy's
+R-N1a message (the only reachable row), and the two sites pinning
+the old wording (`seating_vectors.rs:679-687`,
+`satisfy.rs:530-548`) update in the same commit. It is NOT in the
+stays-as-shipped set; `check_no_repeated_xpub` and the codec floor
+still are.
 
 TDD order — rows first, red before green:
 
@@ -208,12 +220,12 @@ TDD order — rows first, red before green:
      15 files ({the 3 vector names} × {template, bytes.hex,
      phrase.txt, descriptor.json, conformance.json}). Those files
      are the cross-language artifact vendored into the Go port
-     byte-for-byte (`corpus_origin_consistency.rs:11-14`) — THIS is
+     byte-for-byte (`crates/md-cli/tests/corpus_origin_consistency.rs:11-14`) — THIS is
      where the Rust-primary lockstep bites: regeneration lands with
      this phase, the Go vendor sync is flagged in the phase report
      and follows. Constraint on the replacements: never bind one
      `[fingerprint/path]` origin to two different xpubs
-     (`corpus_origin_consistency.rs` reads the conformance JSONs).
+     (`crates/md-cli/tests/corpus_origin_consistency.rs` reads the conformance JSONs).
      Checked clear by r2, do not re-derive: the
      `display-grouping-vectors.tsv` checksum pin holds zero MANIFEST
      content; no insta snapshot carries `keyed_*`; `wire_golden.rs`
@@ -234,7 +246,7 @@ TDD order — rows first, red before green:
    `crates/md-cli/tests/fixtures/seating/generate.sh`'s V-R5M1 block
    mints an R-N1a-shaped template (measured exit 0 today; refused
    after this phase, and under `set -e` the script would die AFTER
-   truncating `v-r5m1.txt`, leaving nine later fixtures
+   truncating `v-r5m1.txt`, leaving every later fixture
    unregenerated). Disposition: regenerate `v-r5m1.txt` one final
    time from the baseline binary, convert its block to an
    existence-assert with a frozen-by-design provenance note, and
@@ -262,6 +274,12 @@ TDD order — rows first, red before green:
 3. Seating: the V-BOUND-REF different-paths sibling row (same xpub
    declared at two paths refuses at `check_no_repeated_xpub` —
    measured 2026-08-31, previously unpinned).
+3b. **The door-check unification (r3 M-1 — the deliverable ruled in
+   P2's preamble, restated here where its implementer reads):**
+   `check_no_repeated_placeholder` becomes an in-place invocation of
+   the shared classifier with the R-N1a rendered line;
+   `seating_vectors.rs:679-687` and `satisfy.rs:530-548` update in
+   the same commit; the refusal does not move past A3.
 4. T-row/S-row parity is now row-pinned from both sides (spec r3
    M-1): the delta wallet refuses at T (P2) and S (shipped);
    the legitimate same-seed wallet composes at T (P2 control) and
