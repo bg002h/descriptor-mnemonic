@@ -453,6 +453,25 @@ enum Command {
         /// Sugar for --chain 1.
         #[arg(long, conflicts_with = "chain")]
         change: bool,
+        /// Put the KEYED md1 card on stdout instead of the concrete
+        /// descriptor: `--emit md1`, minted from the seating result. Needs
+        /// --from-mk1/--from-mk1-file input -- a template's minting tool is
+        /// `md encode`, and a card on the positional is that artifact
+        /// already. Changes the OUTPUT FORM only; every seating rule is
+        /// unaffected.
+        //
+        // N2 (`design/SPEC_mdcli_mini.md`). `conflicts_with = "json"` because
+        // `--json`'s envelope carries a `descriptor` field this form does not
+        // produce; the cycle ships no new JSON envelope (SPEC "Non-goals"),
+        // and a silently discarded flag on this verb is precisely
+        // REVIEW-converter-whole-diff-r1 I4's finding.
+        #[arg(
+            long = "emit",
+            value_name = "FORM",
+            value_enum,
+            conflicts_with = "json"
+        )]
+        emit: Option<cmd::descriptor::Emit>,
         /// Emit JSON output.
         #[arg(long)]
         json: bool,
@@ -909,6 +928,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             network,
             chain,
             change,
+            emit,
             json,
         } => {
             let chain = if change { Some(1) } else { chain };
@@ -924,6 +944,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 network: network.into(),
                 network_str: network.as_str(),
                 chain,
+                emit,
                 json,
             })
         }

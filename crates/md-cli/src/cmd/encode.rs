@@ -156,57 +156,24 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // the same gate on md's authoring surface.
     md_codec::validate::validate_relative_timelocks(&descriptor.tree)?;
 
-    // Single string when it fits, chunked when it does not -- AUTOMATICALLY.
-    //
-    // A payload over the codex32 regular code's 80-data-symbol cap used to be a
-    // hard error telling the operator to retry with `--force-chunked`. Every
-    // keyed wallet policy is over that cap (a 2-of-2 is 246 data symbols), so
-    // the first encounter with a real multisig read as "this policy is
-    // unsupported". Two places already described the dispatch as automatic --
-    // this flag's own help ("even for SHORT policies", implying long ones are
-    // automatic) and `--force-long-code`'s ("payloads over 400 bits are
-    // chunked"). The documentation was right about the intent; the encoder was
-    // what disagreed. F-136.
-    //
-    // `--force-chunked` keeps its documented meaning: chunk even when a single
-    // string would fit.
-    //
-    // The fallback matches ONLY the overflow error. Any other encode failure
-    // still propagates -- silently chunking around an unrelated fault would
-    // turn a diagnosable error into a surprising output shape.
-    let single = if args.force_chunked {
-        None
-    } else {
-        match encode_md1_string(&descriptor) {
-            Ok(s) => Some(s),
-            Err(md_codec::error::Error::PayloadTooLongForSingleString { .. }) => None,
-            Err(e) => return Err(e.into()),
-        }
-    };
-
     // P3 §6a + D4. stdout is the canonical artifact, UNBROKEN, and nothing
     // else; the grouped form -- the thing a human actually transcribes onto a
     // plate -- moves to the stderr engraving card below. Before this, a
     // pipeline had to strip a header line AND pass `--group-size 0`, and
     // `me sysw pack` classified a grouped chunk as "not a form this container
     // can place" at exit 4.
-    let cards: Vec<String> = match single {
-        Some(s) => vec![s],
-        None => {
-            let chunks = split(&descriptor)?;
-            let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
-            // The chunk-set-id is not deleted -- it is the only thing that
-            // tells an operator which chunks belong to one card. It heads the
-            // engraving card on stderr.
-            //
-            // The fixture-file writer in `cmd/vectors.rs` still emits this same
-            // text into a FILE and is deliberately untouched: §6a is a rule
-            // about stdout, and a grep for the string finds two sites of which
-            // only this one moves.
-            eprintln!("chunk-set-id: 0x{csid:05x}");
-            chunks
-        }
-    };
+    let (cards, chunk_set_id) = mint_md1_cards(&descriptor, args.force_chunked)?;
+    if let Some(csid) = chunk_set_id {
+        // The chunk-set-id is not deleted -- it is the only thing that tells
+        // an operator which chunks belong to one card. It heads the engraving
+        // card on stderr.
+        //
+        // The fixture-file writer in `cmd/vectors.rs` still emits this same
+        // text into a FILE and is deliberately untouched: §6a is a rule about
+        // stdout, and a grep for the string finds two sites of which only this
+        // one moves.
+        eprintln!("chunk-set-id: 0x{csid:05x}");
+    }
     // P3 §6b: the artifact goes to `--out FILE` when given, stdout otherwise --
     // "stdout is used when `--out` is not given", and the input channel has no
     // bearing on it. The file is CREATED 0600 through the shared crate's
@@ -258,6 +225,56 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     };
     crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
     Ok(0)
+}
+
+/// The md1 artifact for a descriptor: ONE string when it fits the codex32
+/// regular code, the chunk set when it does not. The second element is the
+/// chunk-set id, `Some` exactly when the return is chunked.
+///
+/// **Single string when it fits, chunked when it does not -- AUTOMATICALLY.**
+/// A payload over the codex32 regular code's 80-data-symbol cap used to be a
+/// hard error telling the operator to retry with `--force-chunked`. Every
+/// keyed wallet policy is over that cap (a 2-of-2 is 246 data symbols), so the
+/// first encounter with a real multisig read as "this policy is unsupported".
+/// Two places already described the dispatch as automatic -- that flag's own
+/// help ("even for SHORT policies", implying long ones are automatic) and
+/// `--force-long-code`'s ("payloads over 400 bits are chunked"). The
+/// documentation was right about the intent; the encoder was what disagreed.
+/// F-136.
+///
+/// `force_chunked` keeps `--force-chunked`'s documented meaning: chunk even
+/// when a single string would fit.
+///
+/// The fallback matches ONLY the overflow error. Any other encode failure
+/// still propagates -- silently chunking around an unrelated fault would turn
+/// a diagnosable error into a surprising output shape.
+///
+/// **Shared by both minting surfaces so they cannot drift** (N2, plan P5):
+/// `md encode` (the T and D rows) and `md descriptor … --emit md1` (the S
+/// row). With one implementation, byte-identity of the two artifacts for one
+/// wallet is a property of the `Descriptor` alone -- which is exactly what
+/// N2's primary oracle row measures end to end.
+pub fn mint_md1_cards(
+    descriptor: &Descriptor,
+    force_chunked: bool,
+) -> Result<(Vec<String>, Option<u32>), CliError> {
+    let single = if force_chunked {
+        None
+    } else {
+        match encode_md1_string(descriptor) {
+            Ok(s) => Some(s),
+            Err(md_codec::error::Error::PayloadTooLongForSingleString { .. }) => None,
+            Err(e) => return Err(e.into()),
+        }
+    };
+    match single {
+        Some(s) => Ok((vec![s], None)),
+        None => {
+            let chunks = split(descriptor)?;
+            let csid = derive_chunk_set_id(&compute_md1_encoding_id(descriptor)?);
+            Ok((chunks, Some(csid)))
+        }
+    }
 }
 
 /// P3 §6c: the keyword for a separator char, for the card's `separator:` line.
