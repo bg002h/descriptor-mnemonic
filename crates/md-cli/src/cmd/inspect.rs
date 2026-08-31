@@ -16,7 +16,7 @@ pub fn run(
     json: bool,
 ) -> Result<u8, CliError> {
     // P3 §6b: argv, `--in FILE` or `-`; separators stripped on intake (§3.2).
-    let strings = crate::cmd::read_md1_inputs(strings, in_file)?;
+    let strings = crate::cmd::read_md1_inputs(strings, in_file, "--in")?;
     // P1.1: decode via the partial-allowing entry (see `cmd::decode` for the
     // full contract).
     let opts = DecodeOpts::partial();

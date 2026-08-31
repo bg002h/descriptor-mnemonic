@@ -215,7 +215,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
 /// garbage-argument row).
 fn resolve_verify_against(arg: &str) -> Result<Descriptor, CliError> {
     let strings: Vec<String> = if std::path::Path::new(arg).is_file() {
-        crate::cmd::read_md1_inputs(&[], Some(std::path::Path::new(arg)))?
+        crate::cmd::read_md1_inputs(&[], Some(std::path::Path::new(arg)), "--verify-against")?
     } else {
         vec![md_codec::encode::strip_display_separators(arg)]
     };

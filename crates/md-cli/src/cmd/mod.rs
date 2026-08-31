@@ -39,9 +39,18 @@ pub fn strip_md1_inputs(strings: &[String]) -> Vec<String> {
 ///
 /// `--in` and the positional are declared mutually exclusive in clap, so this
 /// function never has to invent a precedence rule.
+///
+/// `flag` names the ACTUAL flag the caller is reading a file for in every
+/// message this function renders (review r1 M3) — every reading verb's own
+/// `--in`, but also `md descriptor --verify-against FILE`
+/// (`resolve_verify_against`), which reuses this same file-reading
+/// convention without owning a `--in` of its own. Before M3 this hardcoded
+/// `"--in"`, so `--verify-against` on an empty file told the operator about
+/// a flag they never passed.
 pub fn read_md1_inputs(
     args: &[String],
     in_file: Option<&std::path::Path>,
+    flag: &str,
 ) -> Result<Vec<String>, CliError> {
     let Some(path) = in_file else {
         return read_md1_strings(args);
@@ -50,7 +59,7 @@ pub fn read_md1_inputs(
     // of a pipeline that built the path itself is the one message an operator
     // cannot act on.
     let buf = std::fs::read_to_string(path)
-        .map_err(|e| CliError::BadArg(format!("--in {}: {e}", path.display())))?;
+        .map_err(|e| CliError::BadArg(format!("{flag} {}: {e}", path.display())))?;
     let mut out = Vec::new();
     for line in buf.lines() {
         let s = strip_display_separators(line);
@@ -60,7 +69,7 @@ pub fn read_md1_inputs(
     }
     if out.is_empty() {
         return Err(CliError::BadArg(format!(
-            "--in {}: no md1 strings in this file. An EMPTY file is what a FAILED \
+            "{flag} {}: no md1 strings in this file. An EMPTY file is what a FAILED \
              upstream command leaves behind -- check the command that wrote it.",
             path.display()
         )));

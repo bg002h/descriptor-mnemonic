@@ -26,7 +26,7 @@ pub struct VerifyArgs<'a> {
 
 pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
     // P3 §6b: argv, `--in FILE` or `-`; separators stripped on intake (§3.2).
-    let strings = crate::cmd::read_md1_inputs(args.strings, args.in_file)?;
+    let strings = crate::cmd::read_md1_inputs(args.strings, args.in_file, "--in")?;
     let decoded = if strings.len() == 1 {
         decode_md1_string(&strings[0])?
     } else {

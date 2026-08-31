@@ -12,7 +12,7 @@ pub fn run(
     // P3 §6b: argv, `--in FILE` or `-` for stdin. The reader strips mstring
     // display separators (SPEC §3.2) per line, so a grouped or unbroken card
     // both re-ingest through every one of the three.
-    let strings = crate::cmd::read_md1_inputs(strings, in_file)?;
+    let strings = crate::cmd::read_md1_inputs(strings, in_file, "--in")?;
     // P1.1: decode via the partial-allowing entry — a `canonical_origin ==
     // None` dead shape with no explicit origin now decodes (instead of
     // hard-rejecting `MissingExplicitOrigin`); `unresolved_origin_indices()`

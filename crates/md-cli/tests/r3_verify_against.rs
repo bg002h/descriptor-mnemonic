@@ -321,3 +321,40 @@ fn r3_garbage_verify_against_argument_is_a_decode_error_never_a_verdict() {
         out_of(&o)
     );
 }
+
+// ─── an EMPTY --verify-against FILE names the flag the operator passed ───
+// (whole-diff review r1 M3)
+//
+// `resolve_verify_against` reuses `cmd::read_md1_inputs`, the same file
+// reader every `--in`-taking verb shares — and before this fold that
+// function's messages hardcoded "--in", so an empty `--verify-against`
+// FILE told the operator about a flag they never typed. Threaded the flag
+// name through instead (`cmd::mod::read_md1_inputs`'s new `flag` param).
+
+#[test]
+fn r3_an_empty_verify_against_file_names_verify_against_not_in() {
+    let (_, x1) = key_record(1);
+    let (_, x2) = key_record(2);
+    let card_a = mint_two_of_two("73c5da0a", &x1, &x2);
+
+    let dir = tempfile::tempdir().unwrap();
+    let empty = write_lines(dir.path(), "empty.txt", &[]);
+
+    let mut c = md();
+    c.arg("descriptor");
+    for p in &card_a {
+        c.arg(p);
+    }
+    c.args(["--verify-against", empty.to_str().unwrap()]);
+    let o = c.output().unwrap();
+    assert_eq!(o.status.code(), Some(2), "{}", err_of(&o));
+    let stderr = err_of(&o);
+    assert!(
+        stderr.starts_with("md: --verify-against "),
+        "the empty-file refusal must name --verify-against, not --in: {stderr}"
+    );
+    assert!(
+        !stderr.contains("--in "),
+        "the flag the operator never typed must not appear: {stderr}"
+    );
+}

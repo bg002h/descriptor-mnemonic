@@ -79,7 +79,7 @@ struct RepairDetail {
 /// stderr and returns `Ok(2)` — bypassing the `CliError::Codec → 1`
 /// default route so the repair exit-code contract is honored.
 pub fn run(args: RepairArgs) -> Result<u8, CliError> {
-    let strings = crate::cmd::read_md1_inputs(&args.md1_strings, args.in_file.as_deref())?;
+    let strings = crate::cmd::read_md1_inputs(&args.md1_strings, args.in_file.as_deref(), "--in")?;
 
     // Atomic per D28: decode_with_correction either succeeds for ALL
     // chunks or returns Err naming the first failing chunk. We do NOT
