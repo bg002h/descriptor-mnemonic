@@ -310,7 +310,13 @@ fn separator_name(sep: char) -> String {
 /// There is no `--no-engraving-card` on `md` -- §6c names that flag for `ms`
 /// and `mnemonic` only, and warns that it is what makes "no grouped form
 /// anywhere" possible.
-fn emit_engraving_card<W: std::io::Write>(
+///
+/// `pub(crate)`, not private: `cmd::descriptor::emit_md1_card` (N2's `--emit
+/// md1`, the S -> K cell) calls this SAME function so the two minting
+/// surfaces cannot drift into two card renderers (the followup this closes,
+/// `emit-md1-has-no-transcribe-ready-form`) -- single-sourced exactly the way
+/// `mint_md1_cards` above already is.
+pub(crate) fn emit_engraving_card<W: std::io::Write>(
     cards: &[String],
     group_size: usize,
     separator: char,

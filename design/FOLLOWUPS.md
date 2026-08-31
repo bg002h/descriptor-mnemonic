@@ -2583,7 +2583,7 @@ in both `cmd::descriptor::run` and `cmd::address::run`, names an
 string among `--from-mk1`'s values by name, symmetrically on both
 verbs.
 
-### `emit-md1-has-no-transcribe-ready-form` — the S→K mint prints bare md1 strings with no engraving-card output (repo: **descriptor-mnemonic**; owning phase: **operator's call — a small surface addition, own decision**)
+### `emit-md1-has-no-transcribe-ready-form` — the S→K mint prints bare md1 strings with no engraving-card output (repo: **descriptor-mnemonic**; owning phase: **operator's call — a small surface addition, own decision — ✓ CLOSED, 2026-08-31**)
 
 Filed 2026-08-31 from REVIEW-mdcli-mini-whole-diff-r1 M2 (deferred from
 the fold by design: a new output surface is not fold material).
@@ -2592,6 +2592,18 @@ exists for, but offers no `--out`, `--group-size`, `--separator`, and
 prints no engraving card — the transcribe-ready form `md encode`
 supplies, on the one card `md encode` cannot mint (the depth rule).
 An operator minting for a plate today pipes and formats by hand.
+
+**✓ CLOSED (2026-08-31), commit `c8c3a4fd`.** `--out`, `--group-size`
+and `--separator` now mirror `md encode`'s contract byte for byte on
+`--emit md1`, single-sourced through the same `mint_md1_cards` /
+`emit_engraving_card` (now `pub(crate)`) functions `md encode` uses —
+no second renderer. All three flags are `requires = "emit"`, refused
+rather than silently discarded without `--emit md1`. 6 new
+differential rows in `n2_emit_md1.rs` (default shape, `--group-size`,
+`--separator`, `--out`, and the `requires = "emit"` refusal),
+TDD red-then-green against the pre-fix source; no existing P5 row
+pinned the old bare-strings default. Gate green
+(`design/agent-reports/IMPL-emit-md1-form.md`).
 
 ### `toolkit-manual-gate-pinned-to-stale-md-release` — mnemonic-toolkit's manual CI installs md-cli v0.11.2, so the flag-coverage gate is not CI-live for the mini-cycle surface (repo: **mnemonic-toolkit**; owning phase: **the next md-cli publish**)
 

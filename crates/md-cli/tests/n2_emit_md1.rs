@@ -502,6 +502,173 @@ fn n2_emit_md1_composes_with_seat() {
     );
 }
 
+// ─── step 3b — the transcribe-ready form ─────────────────────────────────
+//
+// `emit-md1-has-no-transcribe-ready-form` (filed from REVIEW-mdcli-mini-
+// whole-diff-r1 M2): `--emit md1` minted a card with no `--out`, no
+// `--group-size`, no `--separator`, and printed no engraving card at all —
+// `md encode` supplies all four, on the one card `md encode` cannot mint.
+// These rows measure that `--emit md1` now carries the SAME contract,
+// single-sourced through `cmd::encode::emit_engraving_card` /
+// `cmd::encode::mint_md1_cards` rather than a second renderer.
+
+/// The engraving-card LINES on stderr: the rendered card string(s) plus the
+/// `group size:` / `separator:` lines `emit_engraving_card` writes. Filters
+/// out `chunk-set-id:`, the seating notes and the output-class advisory —
+/// `md encode`'s stderr has none of the seating notes, so this is the slice
+/// that is meaningful to compare between the two surfaces.
+fn engraving_block(stderr: &str) -> Vec<&str> {
+    stderr
+        .lines()
+        .filter(|l| {
+            l.starts_with("md1") || l.starts_with("group size:") || l.starts_with("separator:")
+        })
+        .collect()
+}
+
+fn oracle_encode(extra: &[&str]) -> std::process::Output {
+    let (_, k1) = key_record(1);
+    let (_, k2) = key_record(2);
+    let mut c = md();
+    c.args([
+        "encode",
+        B1_TPL,
+        "--key",
+        &format!("@0={k1}"),
+        "--key",
+        &format!("@1={k2}"),
+        "--fingerprint",
+        &format!("@0={B1_FP}"),
+        "--fingerprint",
+        &format!("@1={B1_FP}"),
+    ]);
+    c.args(extra);
+    c.output().unwrap()
+}
+
+fn emit_b1_with(extra: &[&str]) -> std::process::Output {
+    seat_cmd("descriptor", V_B1_WALLET, &mk1(V_B1_WALLET), extra)
+        .output()
+        .unwrap()
+}
+
+/// **The default shape.** With no group/separator flags, `--emit md1`'s
+/// engraving card is BYTE-IDENTICAL to `md encode`'s, for the same wallet —
+/// same grouped string(s), same `group size: 5`, same `separator: space`.
+/// Before the fold this row is RED: the baseline prints no engraving card at
+/// all, so `engraving_block` on the minted side is empty.
+#[test]
+fn n2_emit_md1_default_engraving_card_matches_md_encodes_default_shape() {
+    let oracle = oracle_encode(&[]);
+    let minted = emit_b1_with(&["--emit", "md1"]);
+    assert!(minted.status.success(), "{}", err_of(&minted));
+    assert!(oracle.status.success(), "{}", err_of(&oracle));
+    assert_eq!(
+        engraving_block(&err_of(&minted)),
+        engraving_block(&err_of(&oracle)),
+        "minted stderr:\n{}\noracle stderr:\n{}",
+        err_of(&minted),
+        err_of(&oracle)
+    );
+    // Not a vacuous comparison of two empty vectors.
+    assert!(!engraving_block(&err_of(&oracle)).is_empty());
+}
+
+/// **`--group-size` — a differential row.** Same strings in
+/// (`--group-size 0`, unbroken; `--group-size 8`), same rendered engraving
+/// card out, on both surfaces.
+#[test]
+fn n2_emit_md1_group_size_behaves_identically_to_md_encodes() {
+    for gs in ["0", "8", "3"] {
+        let oracle = oracle_encode(&["--group-size", gs]);
+        let minted = emit_b1_with(&["--emit", "md1", "--group-size", gs]);
+        assert!(oracle.status.success(), "{}", err_of(&oracle));
+        assert!(minted.status.success(), "{}", err_of(&minted));
+        assert_eq!(
+            engraving_block(&err_of(&minted)),
+            engraving_block(&err_of(&oracle)),
+            "--group-size {gs}: minted stderr:\n{}\noracle stderr:\n{}",
+            err_of(&minted),
+            err_of(&oracle)
+        );
+    }
+}
+
+/// **`--separator` — a differential row.** The flag is whitespace-only
+/// (SPEC §6c); `space` is both the keyword and the default, exercised
+/// explicitly here rather than only by omission.
+#[test]
+fn n2_emit_md1_separator_behaves_identically_to_md_encodes() {
+    let oracle = oracle_encode(&["--separator", "space", "--group-size", "6"]);
+    let minted = emit_b1_with(&["--emit", "md1", "--separator", "space", "--group-size", "6"]);
+    assert!(oracle.status.success(), "{}", err_of(&oracle));
+    assert!(minted.status.success(), "{}", err_of(&minted));
+    assert_eq!(
+        engraving_block(&err_of(&minted)),
+        engraving_block(&err_of(&oracle))
+    );
+}
+
+/// **`--out` — a differential row, both sides of the contract.** stdout is
+/// empty and the artifact lands in the FILE, created 0600 — `md encode
+/// --out`'s exact behaviour (`cli_channels.rs::out_creates_the_file_owner_only`),
+/// and the stderr engraving card, chunk-set-id and advisories are UNAFFECTED
+/// (mirrors `cli_channels.rs::out_suppresses_nothing_on_stderr`).
+#[test]
+fn n2_emit_md1_out_writes_the_file_and_stdout_matches_md_encodes_out_contract() {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let oracle_f = dir.path().join("oracle.md1");
+    let minted_f = dir.path().join("minted.md1");
+
+    let oracle = oracle_encode(&["--out", oracle_f.to_str().unwrap()]);
+    let minted = emit_b1_with(&["--emit", "md1", "--out", minted_f.to_str().unwrap()]);
+    assert!(oracle.status.success(), "{}", err_of(&oracle));
+    assert!(minted.status.success(), "{}", err_of(&minted));
+
+    assert_eq!(out_of(&oracle), "", "--out routes the artifact off stdout");
+    assert_eq!(out_of(&minted), "", "--out routes the artifact off stdout");
+
+    let oracle_body = std::fs::read_to_string(&oracle_f).unwrap();
+    let minted_body = std::fs::read_to_string(&minted_f).unwrap();
+    assert_eq!(minted_body, oracle_body, "both --out files hold one card");
+    assert!(minted_body.starts_with("md1"));
+
+    #[cfg(unix)]
+    {
+        let mode_of =
+            |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode_of(&minted_f), 0o600, "--out must CREATE 0600");
+    }
+
+    // Nothing on stderr is suppressed by routing the artifact to a file.
+    assert!(err_of(&minted).contains("chunk-set-id: 0x"));
+    assert!(!engraving_block(&err_of(&minted)).is_empty());
+    assert!(err_of(&minted).contains("stdout is watch-only"));
+}
+
+/// **`--group-size`/`--separator`/`--out` are inert without `--emit md1`,
+/// and clap refuses the combination structurally** rather than accepting and
+/// silently discarding it — the exact defect class
+/// REVIEW-converter-whole-diff-r1 I4 found on this verb's T-row flags
+/// (`--key`/`--fingerprint`/`--path` without `--template`).
+#[test]
+fn n2_group_size_separator_and_out_require_emit() {
+    for flag in ["--group-size", "--separator", "--out"] {
+        let val = match flag {
+            "--separator" => "space",
+            "--group-size" => "5",
+            _ => "/tmp/should-not-be-touched.md1",
+        };
+        let o = seat_cmd("descriptor", V_B1_WALLET, &mk1(V_B1_WALLET), &[flag, val])
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(2), "{flag}: {}", err_of(&o));
+        assert!(out_of(&o).is_empty(), "{flag}: nothing minted on refusal");
+    }
+}
+
 // ─── step 4 — advisories carry across the new minting surface (r1 I3) ───────
 //
 // `--emit md1` is a minting surface too, and which command engraved the

@@ -63,6 +63,20 @@ pub struct DescriptorArgs<'a> {
     /// N2 — `Some(Emit::Md1)` replaces stdout's descriptor with the keyed
     /// card minted from the seating result. `None` is today's behaviour.
     pub emit: Option<Emit>,
+    /// `emit-md1-has-no-transcribe-ready-form`: write the keyed md1
+    /// artifact to this file (created 0600) instead of stdout when `emit ==
+    /// Some(Emit::Md1)`. Mirrors `md encode`'s `--out` byte for byte
+    /// (`crate::cmd::write_artifact`); the engraving card, the
+    /// chunk-set-id and the advisories are unaffected. `None`/inert when
+    /// `emit` is `None` -- the clap surface's `requires = "emit"` is what
+    /// keeps that combination unreachable.
+    pub out_file: Option<&'a std::path::Path>,
+    /// mstring display-grouping for the `--emit md1` engraving card, mirroring
+    /// `md encode`'s `group_size`/`separator` exactly (same default, same
+    /// meaning): insert `separator` every `group_size` chars (0 = unbroken).
+    /// Display only, on stderr. Inert when `emit` is `None`.
+    pub group_size: usize,
+    pub separator: char,
     pub json: bool,
     /// R3 — `--verify-against <md1|FILE>`: an inline md1 string or an
     /// existing file path holding one or more, checked against the
@@ -168,7 +182,13 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
     // A4 seating rule above ran exactly as it does without the flag, and a
     // refusal there never reaches this line.
     if args.emit == Some(Emit::Md1) {
-        let code = emit_md1_card(&descriptor, &seating_notes)?;
+        let code = emit_md1_card(
+            &descriptor,
+            &seating_notes,
+            args.out_file,
+            args.group_size,
+            args.separator,
+        )?;
         return Ok(verify_exit.unwrap_or(code));
     }
 
@@ -289,18 +309,37 @@ fn check_emit_md1_input_mode(template: Option<&str>, from_mk1: &[String]) -> Res
     Ok(())
 }
 
-/// Mint the seated policy as a keyed md1 card: stdout carries the artifact
-/// unbroken, one string per line, exactly as `md encode` writes it.
+/// Mint the seated policy as a keyed md1 card: the SAME transcribe-ready
+/// output contract as `md encode` (`emit-md1-has-no-transcribe-ready-form`).
 ///
-/// The cards come from [`crate::cmd::encode::mint_md1_cards`], the same
-/// function `md encode` mints through — so N2's byte-identity oracle is a
-/// question about the composed `Descriptor` and nothing else.
+/// The cards come from [`crate::cmd::encode::mint_md1_cards`], and the
+/// engraving card comes from [`crate::cmd::encode::emit_engraving_card`] --
+/// the SAME two functions `md encode` mints and renders through, so N2's
+/// byte-identity oracle is a question about the composed `Descriptor` alone,
+/// and the two minting surfaces cannot drift into two card renderers.
+///
+/// Mirrors `md encode`'s §6a/§6b/§6c contract exactly (measured against the
+/// binary, `design/agent-reports/IMPL-emit-md1-form.md`): stdout is the
+/// canonical artifact, UNBROKEN and nothing else, written to `out_file` when
+/// given (created 0600, `crate::cmd::write_artifact`) instead of stdout; the
+/// chunk-set-id (when chunked), the grouped engraving card, `group size:`
+/// and `separator:` all go to stderr in that order, immediately after the
+/// artifact is written -- exactly where `md encode` puts them. Only after
+/// that does this diverge from `md encode`'s stderr shape, for
+/// `emit_seating_notes` -- an S-row-only insertion with no `md encode`
+/// counterpart -- before the advisories both surfaces share.
 ///
 /// `--json` cannot arrive here: its envelope carries a `descriptor` field
 /// this form does not produce, so the two flags are declared mutually
 /// exclusive at the clap surface rather than one silently discarding the
 /// other (REVIEW-converter-whole-diff-r1 I4's defect class, on this verb).
-fn emit_md1_card(descriptor: &Descriptor, seating_notes: &[String]) -> Result<u8, CliError> {
+fn emit_md1_card(
+    descriptor: &Descriptor,
+    seating_notes: &[String],
+    out_file: Option<&std::path::Path>,
+    group_size: usize,
+    separator: char,
+) -> Result<u8, CliError> {
     // THE AUTHORING GATE, for the same reason `md encode` runs it before it
     // mints (`cmd/encode.rs`): BIP-68 reads only bits 31, 22 and 0-15 of a
     // relative locktime, so a plate can assert a four-year lock the chain
@@ -320,7 +359,17 @@ fn emit_md1_card(descriptor: &Descriptor, seating_notes: &[String]) -> Result<u8
         body.push_str(s);
         body.push('\n');
     }
-    print!("{body}");
+    // `md encode --out`'s exact contract: FILE when given (created 0600, a
+    // shell redirect cannot do that -- F-244), stdout otherwise.
+    match out_file {
+        Some(p) => crate::cmd::write_artifact(p, &body)?,
+        None => print!("{body}"),
+    }
+    // THE ENGRAVING CARD -- `md encode`'s own stderr rendering, single-sourced
+    // (`emit-md1-has-no-transcribe-ready-form`). Same function, same
+    // position relative to the artifact write, same three lines: the grouped
+    // card(s), `group size:`, `separator:`.
+    crate::cmd::encode::emit_engraving_card(&cards, group_size, separator, &mut std::io::stderr());
     emit_seating_notes(seating_notes);
     // F-A4: legacy-P2SH-multisig footgun advisory, carried across from `md
     // encode` (review r1 I3) -- this is a minting surface too, and which

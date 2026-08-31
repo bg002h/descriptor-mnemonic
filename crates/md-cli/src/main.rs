@@ -472,6 +472,34 @@ enum Command {
             conflicts_with = "json"
         )]
         emit: Option<cmd::descriptor::Emit>,
+        /// Write the KEYED md1 artifact to FILE instead of stdout, CREATED
+        /// 0600 -- mirrors `md encode --out` (F-244) byte for byte, which a
+        /// shell redirect cannot do. OVERWRITES an existing file, and
+        /// tightens its mode. The stderr engraving card, the chunk-set-id
+        /// and the advisories are unaffected. Only meaningful with `--emit
+        /// md1` -- `requires = "emit"` refuses it structurally rather than
+        /// silently discarding it on the plain descriptor row (the I4
+        /// defect class this cycle keeps naming on this verb).
+        #[arg(long = "out", value_name = "FILE", requires = "emit")]
+        out_file: Option<std::path::PathBuf>,
+        /// Insert a separator every N characters in the ENGRAVING CARD on
+        /// stderr (0 = unbroken card) -- mirrors `md encode --group-size`
+        /// exactly, same default. stdout is always the unbroken md1 string.
+        /// Only meaningful with `--emit md1`; see `--out`'s note on
+        /// `requires`.
+        #[arg(long, default_value_t = 5, requires = "emit")]
+        group_size: u16,
+        /// Separator for the engraving card: `space` (keyword) or the
+        /// literal " " -- mirrors `md encode --separator` exactly, same
+        /// default. Whitespace only. Only meaningful with `--emit md1`; see
+        /// `--out`'s note on `requires`.
+        #[arg(
+            long,
+            default_value = "space",
+            value_parser = parse_separator,
+            requires = "emit"
+        )]
+        separator: char,
         /// Emit JSON output.
         #[arg(long)]
         json: bool,
@@ -948,6 +976,9 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             chain,
             change,
             emit,
+            out_file,
+            group_size,
+            separator,
             json,
             verify_against,
         } => {
@@ -965,6 +996,9 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 network_str: network.as_str(),
                 chain,
                 emit,
+                out_file: out_file.as_deref(),
+                group_size: group_size as usize,
+                separator,
                 json,
                 verify_against: verify_against.as_deref(),
             })

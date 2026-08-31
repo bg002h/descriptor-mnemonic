@@ -349,6 +349,22 @@ converter cycle filed against itself.
   bridge). Admissible only with `--from-mk1`/`--from-mk1-file`; a `--template`
   or an already-keyed card on the positional refuses naming the right command.
 
+  **`--out`, `--group-size` and `--separator` now give this the SAME
+  transcribe-ready output contract as `md encode`**
+  (`emit-md1-has-no-transcribe-ready-form`, filed from
+  REVIEW-mdcli-mini-whole-diff-r1 M2). Previously `--emit md1` printed only the
+  bare unbroken card(s) on stdout, with no `--out`, no `--group-size`, no
+  `--separator`, and NO engraving card on stderr at all — the one form `md
+  encode` cannot mint had no way to get the grouped form a human actually
+  transcribes onto a plate. All three flags now mirror `md encode`'s byte for
+  byte, single-sourced through the SAME `mint_md1_cards`/`emit_engraving_card`
+  functions (no second renderer): `--out FILE` writes the artifact there
+  instead of stdout (created 0600, F-244); `--group-size`/`--separator`
+  control the grouped card, `group size:` and `separator:` lines `md encode`
+  already writes to stderr. All three are `requires = "emit"` — refused,
+  never silently discarded, without `--emit md1` (the I4 defect class this
+  cycle keeps naming on this verb).
+
 ### Added — `md descriptor --verify-against <md1|FILE>`
 
   Cross-form comparison the converter cycle's own two-command substitute got
