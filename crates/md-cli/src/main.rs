@@ -276,7 +276,6 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Derive bitcoin addresses from a wallet-policy-mode descriptor.
     /// Emit the CONCRETE output descriptor -- real xpubs, key origins and the
     /// BIP-380 checksum -- for pasting into a coordinator.
     ///
@@ -523,6 +522,7 @@ enum Command {
         verify_against: Option<String>,
     },
 
+    /// Derive bitcoin addresses from a wallet-policy-mode descriptor.
     // R9 — see the identical comment on `descriptor_input` above.
     #[command(after_long_help = "EXAMPLES:\n  $ md address md1qq...\n  bc1q...",
               group = clap::ArgGroup::new("address_input").required(true).multiple(true).args(["phrases", "template", "from_mk1"]))]
