@@ -2615,12 +2615,26 @@ CI. On the next publish: bump the pin, confirm flag-coverage green in
 toolkit CI. Related residue found same pass, same repo: `md
 gui-schema` and several `--in`/`--out` flags remain undocumented.
 
-### `md-address-help-summary-is-blank` — `md address`'s subcommand summary line is empty at the source level (repo: **descriptor-mnemonic**; owning phase: **opportunistic — one doc-comment line**)
+### `md-address-help-summary-is-blank` — `md address`'s subcommand summary line is empty at the source level (repo: **descriptor-mnemonic**; owning phase: **opportunistic — one doc-comment line — ✓ CLOSED, 2026-08-31**)
 
 Filed 2026-08-31 from DOCS-mdcli-mini-toolkit-pass, measured against
 the mdcli-mini binary's own `--help`.
 
-### `whole-diff-r1-nit-residue` — five nits from the cycle's whole-diff review, each larger than a wording touch (repo: **descriptor-mnemonic**; owning phase: **post-release residue, batch with the next cleanup pass**)
+**✓ CLOSED (2026-08-31), commit `3e3e5903`.** The summary line was not
+merely missing: `git blame` traced it to the SAME original commit
+(`9e122530f`, 2026-05-03) that added the `Address` variant itself — the
+line existed, worded correctly for `address` ("Derive bitcoin addresses
+from a wallet-policy-mode descriptor."), but had landed on the *next*
+variant's (`Descriptor`'s) doc comment instead, where it produced a
+second defect nobody had filed: `md descriptor`'s own `--help` summary
+opened with a sentence about addresses, not descriptors. Moved the line
+to `Address`; `Descriptor`'s doc comment already had its own accurate
+second sentence ("Emit the CONCRETE output descriptor…"), which now
+stands alone as its summary. Verified against the built binary's
+`--help`: both subcommands now show accurate, distinct one-line
+summaries.
+
+### `whole-diff-r1-nit-residue` — five nits from the cycle's whole-diff review, each larger than a wording touch (repo: **descriptor-mnemonic**; owning phase: **post-release residue, batch with the next cleanup pass — 4 of 5 ✓ CLOSED, 2026-08-31; N2 OPEN**)
 
 Filed 2026-08-31. The five are itemized with reasoning in
 `design/agent-reports/FOLD-mdcli-mini-whole-diff-r1.md` (nits section):
@@ -2628,7 +2642,33 @@ cross-file rendered-string consistency, a CI/script behavior nit, an
 error-context plumbing nit, missing test-fixture nits, and the
 session-date-vs-git-date convention question in the brainstorm.
 
-### `push-staging-script-watches-an-order-dependent-run` — `push-via-staging.sh` selects `gh run list --commit … '.[0]'`, which grabbed the wrong workflow when three fire on one SHA (repo: **descriptor-mnemonic**; owning phase: **before the next push — a one-line script fix**)
+**4 of 5 ✓ CLOSED (2026-08-31), commit `2b935f19`.** N1 (cross-file
+rendered-string consistency): fetched the real `bip-0388.mediawiki` —
+its "Additional rules" section has no bullet/ordinal numbering at all,
+so the repo's own invented "rule (1)"/"rule (2)" labels were both off
+by one against the BIP's actual paragraph order, and renumbering only
+the flagged line would have collided with the OTHER label. Dropped the
+invented ordinals everywhere (20 occurrences, 9 live files) in favor of
+naming each rule; updated the one pinned rendered string this touches.
+N3 (CI/script behavior): `.github/workflows/ci.yml` and
+`scripts/phase-gate.sh` both now run `cargo test --workspace --doc
+--all-features`, matching the other three all-features gate steps. N4
+(error-context plumbing): `resolve_verify_against` now records which
+branch (file vs. literal string) it took and names it in the decode
+error (`CliError::VerifyAgainstUnreadable`); added a test constructing
+the actual filename collision the nit described. N5 (missing test
+fixtures): `count_occurrences`'s `Body::Tr` internal-key arm had no
+CARD-path exercise; minted a new frozen fixture
+(`tests/fixtures/n1/r-n1a-tr-internal-key.txt`) from the same b8a64938
+pre-refusal baseline `r-n1a-keyed.txt` used, plus three tests. Gate:
+1195 tests passed (2 skipped), clippy clean, fmt clean.
+**N2 (session-date-vs-git-date convention) is OPEN, unchanged** — it
+awaits an operator ruling per the original fold's own finding (treating
+`2026-08-31` as correct conflicts with git history, and the fold
+declined to unilaterally reverse it); this entry stays open for that
+item only.
+
+### `push-staging-script-watches-an-order-dependent-run` — `push-via-staging.sh` selects `gh run list --commit … '.[0]'`, which grabbed the wrong workflow when three fire on one SHA (repo: **descriptor-mnemonic**; owning phase: **before the next push — a one-line script fix — ✓ CLOSED, 2026-08-31**)
 
 Filed 2026-08-31 from the mdcli-mini final push (full record:
 `design/agent-reports/push-2026-08-31-mdcli-mini.md`). Three workflows
@@ -2644,3 +2684,19 @@ direction: filter by workflow name (`gh run list --workflow CI …`) or
 select the run whose job set contains the required contexts. The
 first staging run (2026-08-30) was clean only because nothing else
 fired on that SHA.
+
+**✓ CLOSED (2026-08-31), commit `df0e893e`.** `gh run list` is now
+filtered to `--workflow "$CI_WORKFLOW" --branch ci/staging`
+(`CI_WORKFLOW` defaults to `CI`, overridable like `REQUIRED_CONTEXTS`).
+Workflow name alone turned out NOT to be sufficient, discovered by
+running the verification rather than assuming it: `gh run list
+--repo bg002h/descriptor-mnemonic --workflow CI --commit
+bdb031a4cb54a9f57510af98db81386c360e9b70` returns TWO `CI`-workflow
+runs today (`33365618376` on `main`, `33364380379` on `ci/staging`) —
+because this SHA's own eventual push to `main` (this script's last
+step) triggers a second same-workflow run, so `--workflow` alone stops
+being unique the moment the ritual completes. Adding `--branch
+ci/staging` isolates exactly `33364380379` — the run the script's own
+staging push triggers, so it is the semantically correct selector, not
+merely a disambiguator. Fail-closed behavior unchanged: the retry loop
+and the "no run appeared" FATAL are unaffected, just filtered.
