@@ -45,6 +45,27 @@
 # it at the trigger. `enforce_admins` is false DELIBERATELY -- the maintainer's
 # own escape hatch, ruled 2026-08-15, and NOT to be flipped. The no-bypass rule
 # binds automation, not the human.
+#
+# RUN SELECTION IS FILTERED, NOT `.[0]` OF EVERYTHING -- FOLLOWUPS
+# `push-staging-script-watches-an-order-dependent-run` (2026-08-31,
+# `design/agent-reports/push-2026-08-31-mdcli-mini.md`). One SHA now
+# triggers THREE workflows on this repo (`CI`, `fuzz-smoke`,
+# `bitcoind-differential`); an unfiltered `gh run list ... -q '.[0]...'` is
+# list-order-dependent across all three, and the push agent measured it
+# selecting `bitcoind-differential` (run 33364380344, one job, no required
+# context could ever appear there) while `CI` (run 33364380379, the run
+# actually carrying both required contexts) sat unselected -- a 1800s stall
+# ending in a FATAL "last: absent" false alarm, never a wrong push. `gh run
+# list` is filtered to `--workflow "$CI_WORKFLOW" --branch ci/staging`: the
+# workflow name narrows out the other two workflows, and the branch filter
+# is REQUIRED alongside it -- once this SHA also lands on `main` (this
+# script's own last step), a SECOND `CI`-workflow run appears for the same
+# SHA (headBranch `main`), so workflow name alone stops being unique the
+# moment the ritual completes. `--branch ci/staging` is exactly the run
+# THIS script's own staging push (below) triggers, so it is also the
+# semantically right selector, not just a disambiguator. Override with
+# CI_WORKFLOW="..." if the workflow is ever renamed -- and update this
+# header when you do, same discipline as REQUIRED_CONTEXTS above.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -52,6 +73,9 @@ BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
 REPO="${REPO:-bg002h/descriptor-mnemonic}"
 # Pipe-separated, so a context containing spaces stays one field.
 REQUIRED_CONTEXTS="${REQUIRED_CONTEXTS:-cargo test (ubuntu-latest)|cargo clippy}"
+# The workflow that carries REQUIRED_CONTEXTS -- see the RUN SELECTION note
+# above. Must match `.github/workflows/ci.yml`'s `name:` field.
+CI_WORKFLOW="${CI_WORKFLOW:-CI}"
 
 [ -z "$(git status --porcelain)" ] || {
   echo "FATAL: working tree is dirty -- commit or stash before staging a push" >&2
@@ -67,11 +91,16 @@ git push origin "HEAD:refs/heads/ci/staging"
 
 RUN_ID=""
 for _ in $(seq 1 30); do
-  RUN_ID=$(gh run list --repo "$REPO" --commit "$TIP" --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+  # Filtered to the CI workflow on the ci/staging branch -- see the RUN
+  # SELECTION header note. An unfiltered `.[0]` is order-dependent across
+  # the other workflows this SHA also triggers (FOLLOWUPS
+  # push-staging-script-watches-an-order-dependent-run).
+  RUN_ID=$(gh run list --repo "$REPO" --commit "$TIP" --workflow "$CI_WORKFLOW" --branch ci/staging \
+             --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
   [ -n "$RUN_ID" ] && break
   sleep 10   # an empty gh result can be a race, never a conclusion
 done
-[ -n "$RUN_ID" ] || { echo "FATAL: no workflow run appeared for $TIP" >&2; exit 1; }
+[ -n "$RUN_ID" ] || { echo "FATAL: no '$CI_WORKFLOW' workflow run appeared for $TIP on ci/staging" >&2; exit 1; }
 echo "== run $RUN_ID; waiting for required contexts: $REQUIRED_CONTEXTS"
 
 # Judge PER-JOB conclusions. A run-level conclusion is the wrong question here:
