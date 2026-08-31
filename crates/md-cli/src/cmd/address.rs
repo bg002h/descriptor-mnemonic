@@ -20,6 +20,10 @@ pub struct AddressArgs<'a> {
 }
 
 pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
+    // R9 — checked before either branch below decides what to build; see
+    // its own doc comment in cmd::build for why it must run first.
+    crate::cmd::build::check_from_mk1_arity(args.phrases, args.from_mk1, args.template, "address")?;
+
     // P2 — the S row, exactly as on `md descriptor`: the two commands must
     // seat identically or one of them derives a different wallet.
     let mut seating_notes: Vec<String> = Vec::new();

@@ -365,3 +365,84 @@ fn refuse_key_reuse_across_slots(d: &Descriptor, cmd: &str) -> Result<(), CliErr
 fn fp_hex(fp: [u8; 4]) -> String {
     format!("{:02x}{:02x}{:02x}{:02x}", fp[0], fp[1], fp[2], fp[3])
 }
+
+/// R9 (`design/SPEC_mdcli_mini.md` "R9 — `--from-mk1` arity"; FOLLOWUPS
+/// `from-mk1-arity-spills-card-strings-into-the-md1-positional`).
+///
+/// `--from-mk1` widened to `num_args = 1..` (main.rs) so the natural
+/// multi-value paste works, but a `Vec<String>` FLAG with unbounded arity
+/// sitting next to a `Vec<String>` POSITIONAL with unbounded arity
+/// (`phrases`) means clap's greedy multi-value consumption of the flag can
+/// swallow a TRAILING md1 policy string that was meant for the positional --
+/// leaving `phrases` empty. Reaching that state required widening
+/// `descriptor_input`/`address_input`'s `ArgGroup` to admit `from_mk1` on
+/// its own (main.rs), which closes one gap (the swallow no longer trips
+/// clap's own missing-required-argument error) and opens another: clap no
+/// longer refuses `--from-mk1 <keys...>` with NO policy phrase and no
+/// `--template` at all, which used to be exactly what the group's
+/// `required(true)` caught. Both gaps are CLI-input-resolution, not wire or
+/// seating-engine concerns, so they are checked here, in code, BEFORE
+/// either branch of `cmd::descriptor::run`/`cmd::address::run` decides what
+/// to build:
+///
+/// 1. an mk1-prefixed string on the POSITIONAL is never right -- `phrases`
+///    is md1 policy material only -- so it refuses BY NAME regardless of
+///    how it got there (typed directly, or spilled from a swallow);
+/// 2. an md1-prefixed string among `--from-mk1`'s VALUES is the swallow's
+///    own signature (the trailing policy string a natural paste meant for
+///    the positional), and refuses BY NAME pointing back at the positional;
+/// 3. `--from-mk1` with values but no md1 policy phrase on the positional
+///    and no `--template` is the group-relaxation's own gap: nothing failed
+///    to parse, but nothing would compose either, and falling through would
+///    have reached `seat::run`'s `reassemble(&[])` -- a bare "chunk set is
+///    empty" codec error that names neither `--from-mk1` nor the missing
+///    policy card, exactly the unnamed-diagnostic class this phase exists
+///    to close.
+///
+/// Checked 1 then 2 then 3 deliberately: in the swallow scenario BOTH (2)'s
+/// and (3)'s preconditions hold at once (`from_mk1` non-empty, `phrases`
+/// empty), and (2) is the more specific, more actionable diagnosis, so it
+/// must run first.
+///
+/// Runs on `phrases`/`from_mk1` with display separators stripped only --
+/// before `strip_md1_inputs`' dedupe or `seat::run`'s own pipeline -- so a
+/// grouped/copy-pasted card is recognised by prefix the same way the read
+/// verbs already do.
+pub fn check_from_mk1_arity(
+    phrases: &[String],
+    from_mk1: &[String],
+    template: Option<&str>,
+    cmd: &'static str,
+) -> Result<(), CliError> {
+    if let Some(bad) = phrases
+        .iter()
+        .map(|s| md_codec::encode::strip_display_separators(s))
+        .find(|s| s.starts_with("mk1"))
+    {
+        return Err(CliError::Seat(format!(
+            "`{bad}` is an mk1 key-card string, not an md1 policy card, and does not belong \
+             on {cmd}'s positional (that positional is for md1 policy phrases only). Pass key \
+             cards via --from-mk1 <STRING> (repeatable) or --from-mk1-file <FILE>."
+        )));
+    }
+    if let Some(bad) = from_mk1
+        .iter()
+        .map(|s| md_codec::encode::strip_display_separators(s))
+        .find(|s| s.starts_with("md1"))
+    {
+        return Err(CliError::Seat(format!(
+            "`{bad}` is an md1 policy-card string, not an mk1 key card, and does not belong \
+             among --from-mk1's values. A single --from-mk1 can take several values now; if \
+             this string trailed a run of key cards on one command line, put it back on \
+             {cmd}'s positional instead, where the policy phrase belongs."
+        )));
+    }
+    if phrases.is_empty() && template.is_none() && !from_mk1.is_empty() {
+        return Err(CliError::BadArg(format!(
+            "{cmd} --from-mk1 supplies key cards, not the policy: no md1 policy phrase is on \
+             the positional and no --template was given. Supply the keyless md1 policy \
+             card(s) these keys seat into."
+        )));
+    }
+    Ok(())
+}

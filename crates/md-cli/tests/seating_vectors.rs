@@ -844,3 +844,181 @@ fn v_collide_reaches_the_command() {
     assert!(e.contains("chunk-set 12345"), "{e}");
     assert!(e.contains("do not reassemble"), "{e}");
 }
+
+// ─── V-R9 — --from-mk1 arity (design/SPEC_mdcli_mini.md "R9"; FOLLOWUPS
+// `from-mk1-arity-spills-card-strings-into-the-md1-positional`) ─────────
+//
+// `seat_cmd` above always repeats `--from-mk1` once per card -- the
+// spelling that already worked before this phase. These rows exercise the
+// spelling that did NOT: one `--from-mk1` occurrence carrying several
+// values, which is what a natural paste of a scanned card set produces.
+
+/// `md <verb> <phrases...> [--from-mk1 <values...>]`, with ALL of
+/// `from_mk1_values` on ONE occurrence of the flag (unlike `seat_cmd`) --
+/// this is what a natural multi-value paste looks like on argv, and it is
+/// the shape that lets clap's greedy multi-value consumption swallow a
+/// trailing positional. The flag is omitted entirely when
+/// `from_mk1_values` is empty, since `num_args = 1..` refuses a bare
+/// `--from-mk1` with nothing after it.
+fn r9_cmd(verb: &str, phrases: &[String], from_mk1_values: &[String]) -> Command {
+    let mut c = md();
+    c.arg(verb);
+    for p in phrases {
+        c.arg(p);
+    }
+    if !from_mk1_values.is_empty() {
+        c.arg("--from-mk1");
+        for v in from_mk1_values {
+            c.arg(v);
+        }
+    }
+    c
+}
+
+/// The exact rendered line (Acceptance 4) for every R9 refusal below,
+/// asserted the same way `refusal_of`'s siblings do it: exactly one `md: `
+/// line, matched in full.
+fn assert_one_rendered_line(out: &std::process::Output, expected: &str) {
+    let e = err_of(out);
+    let lines: Vec<&str> = e.lines().filter(|l| l.starts_with("md: ")).collect();
+    assert_eq!(lines.len(), 1, "expected exactly one rendered line:\n{e}");
+    assert_eq!(lines[0], expected);
+}
+
+/// Row 1 -- POSITIONAL-FIRST composes. The md1 policy phrase(s) precede
+/// `--from-mk1` on the command line, so clap claims them for `phrases`
+/// before `--from-mk1`'s greedy multi-value consumption ever starts; the
+/// single occurrence then takes all 30 key cards, which is exactly the
+/// FOLLOWUPS journey (a 30-card vault, pasted once). Proved against the
+/// pre-existing repeated-flag spelling (`seat_cmd`), which composes the
+/// same wallet by construction (P2, `v_dup_*` above) -- so this row
+/// isolates the arity fix from the seating engine itself.
+#[test]
+fn v_r9_positional_first_natural_paste_composes() {
+    let phrases = md1(PATHOLOGICAL);
+    let cards = mk1(PATHOLOGICAL);
+    assert_eq!(cards.len(), 30, "fixture: the full pathological card set");
+
+    let natural = r9_cmd("descriptor", &phrases, &cards).output().unwrap();
+    assert!(
+        natural.status.success(),
+        "positional-first natural paste did not compose: {}",
+        err_of(&natural)
+    );
+
+    let repeated = seat_cmd("descriptor", PATHOLOGICAL, &cards, &[])
+        .output()
+        .unwrap();
+    assert!(repeated.status.success(), "{}", err_of(&repeated));
+    assert_eq!(
+        out_of(&natural),
+        out_of(&repeated),
+        "a single-occurrence natural paste must compose the identical wallet \
+         the repeated-flag spelling does"
+    );
+}
+
+/// Row 2 -- FLAG-FIRST with a trailing md1 string. Nothing precedes
+/// `--from-mk1` on the command line, so ITS single occurrence swallows
+/// every value that follows, including the md1 policy phrase a natural
+/// paste (policy card typed after the keys, or the keys pasted before
+/// scrolling to the policy line) would leave trailing. Per SPEC R9(b) this
+/// must NOT surface as clap's own missing-required-argument error -- it
+/// must be the symmetric guard's named diagnostic, pointing back at the
+/// positional.
+fn assert_flag_first_trailing_md1_refuses(verb: &str) {
+    let mut values = mk1(V_USP);
+    let policy = md1(V_USP);
+    assert_eq!(policy.len(), 1, "fixture: a single-chunk policy card");
+    values.push(policy[0].clone());
+
+    let out = r9_cmd(verb, &[], &values).output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "flag-first with a trailing md1 string did not refuse (or refused \
+         with the wrong exit code -- possibly clap's own missing-required- \
+         argument error rather than the named guard): {}",
+        err_of(&out)
+    );
+    assert!(out_of(&out).is_empty(), "nothing on stdout when refusing");
+    assert_one_rendered_line(
+        &out,
+        &format!(
+            "md: seating refused: `{bad}` is an md1 policy-card string, not an mk1 key card, \
+             and does not belong among --from-mk1's values. A single --from-mk1 can take \
+             several values now; if this string trailed a run of key cards on one command \
+             line, put it back on {verb}'s positional instead, where the policy phrase \
+             belongs.",
+            bad = policy[0],
+        ),
+    );
+}
+
+#[test]
+fn v_r9_flag_first_trailing_md1_string_refuses_naming_the_positional() {
+    for verb in ["descriptor", "address"] {
+        assert_flag_first_trailing_md1_refuses(verb);
+    }
+}
+
+/// Row 3 -- an mk1 string DIRECTLY on the positional, no `--from-mk1` at
+/// all. The general shape the FOLLOWUPS remedy (b) describes: "which also
+/// catches a card string arriving there by any other route."
+fn assert_mk1_in_positional_refuses(verb: &str) {
+    let cards = mk1(V_USP);
+    let out = r9_cmd(verb, &[cards[0].clone()], &[]).output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an mk1 string on the positional did not refuse: {}",
+        err_of(&out)
+    );
+    assert!(out_of(&out).is_empty(), "nothing on stdout when refusing");
+    assert_one_rendered_line(
+        &out,
+        &format!(
+            "md: seating refused: `{bad}` is an mk1 key-card string, not an md1 policy card, \
+             and does not belong on {verb}'s positional (that positional is for md1 policy \
+             phrases only). Pass key cards via --from-mk1 <STRING> (repeatable) or \
+             --from-mk1-file <FILE>.",
+            bad = cards[0],
+        ),
+    );
+}
+
+#[test]
+fn v_r9_mk1_string_in_the_positional_refuses_naming_from_mk1() {
+    for verb in ["descriptor", "address"] {
+        assert_mk1_in_positional_refuses(verb);
+    }
+}
+
+/// Row 4 -- `--from-mk1` with values but NO policy card anywhere (no
+/// positional, no `--template`). Before this phase's `ArgGroup` widening
+/// (needed for Row 2 above) clap's own `required(true)` caught this; the
+/// widening reopens it, so `check_from_mk1_arity` must close it itself
+/// rather than falling through to `seat::run`'s `reassemble(&[])` -- a
+/// bare "chunk set is empty" codec error naming neither `--from-mk1` nor
+/// the missing policy card (the FOLLOWUPS class this phase exists to
+/// close). Exit 2 (BadArg), matching what clap's own group error would
+/// have produced for the same shape.
+#[test]
+fn v_r9_from_mk1_with_no_policy_card_anywhere_refuses_naming_the_missing_policy() {
+    let cards = mk1(V_USP);
+    let out = r9_cmd("descriptor", &[], &cards).output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "--from-mk1 with no policy card anywhere did not refuse as a usage \
+         error, or fell through to seating with an empty policy: {}",
+        err_of(&out)
+    );
+    assert!(out_of(&out).is_empty(), "nothing on stdout when refusing");
+    assert_one_rendered_line(
+        &out,
+        "md: descriptor --from-mk1 supplies key cards, not the policy: no md1 policy phrase is \
+         on the positional and no --template was given. Supply the keyless md1 policy card(s) \
+         these keys seat into.",
+    );
+}

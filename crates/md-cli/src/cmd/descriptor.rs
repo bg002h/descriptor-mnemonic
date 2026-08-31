@@ -42,6 +42,15 @@ pub struct DescriptorArgs<'a> {
 }
 
 pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
+    // R9 — checked before either branch below decides what to build; see
+    // its own doc comment in cmd::build for why it must run first.
+    crate::cmd::build::check_from_mk1_arity(
+        args.phrases,
+        args.from_mk1,
+        args.template,
+        "descriptor",
+    )?;
+
     // P2 — the S row. `--from-mk1` composes a keyless policy card with mk1
     // key cards through the seating engine. stdout stays the machine
     // contract (the descriptor and nothing else); every PHASE B note and

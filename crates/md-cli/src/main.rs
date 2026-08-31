@@ -284,8 +284,17 @@ enum Command {
     /// @1, ...) or an address. Neither is what "paste your descriptor" means.
     /// Multipath (<0;1>) by default, which is the form a coordinator wants;
     /// --chain collapses it.
+    // R9 (`design/SPEC_mdcli_mini.md`): `from_mk1` joins this group, with
+    // `.multiple(true)`, so `--from-mk1`'s mere presence satisfies
+    // `required(true)` even when a swallowed positional leaves `phrases`
+    // empty (see `cmd::build::check_from_mk1_arity`'s doc comment) --
+    // WITHOUT making `phrases` and `from_mk1` mutually exclusive, since
+    // `.multiple(true)` lifts the group's default at-most-one constraint and
+    // the two are meant to be supplied TOGETHER on the S row. `template`
+    // stays mutually exclusive with both via its own `conflicts_with`
+    // attributes, unaffected by this group's `multiple` setting.
     #[command(after_long_help = "EXAMPLES:\n  $ md descriptor md1qq...\n  wsh(...)#checksum",
-              group = clap::ArgGroup::new("descriptor_input").required(true).args(["phrases", "template"]))]
+              group = clap::ArgGroup::new("descriptor_input").required(true).multiple(true).args(["phrases", "template", "from_mk1"]))]
     Descriptor {
         /// One or more md1 phrases. Mutually exclusive with --template.
         #[arg(num_args = 0..)]
@@ -392,12 +401,19 @@ enum Command {
             conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
         )]
         path: Option<String>,
-        /// mk1 key-card string. Repeatable. Supplied TOGETHER WITH the
-        /// KEYLESS md1 phrases of a policy card: the seating engine matches
-        /// each card to the slot whose declared origin it satisfies, then
-        /// composes the concrete descriptor. Mutually exclusive with
-        /// --template.
-        #[arg(long = "from-mk1", value_name = "STRING", conflicts_with = "template")]
+        /// mk1 key-card string. Repeatable, and a single occurrence also
+        /// takes several values (`--from-mk1 mk1a mk1b mk1c`) so a natural
+        /// paste of a scanned card set works without repeating the flag.
+        /// Supplied TOGETHER WITH the KEYLESS md1 phrases of a policy card:
+        /// the seating engine matches each card to the slot whose declared
+        /// origin it satisfies, then composes the concrete descriptor.
+        /// Mutually exclusive with --template.
+        #[arg(
+            long = "from-mk1",
+            value_name = "STRING",
+            num_args = 1..,
+            conflicts_with = "template"
+        )]
         from_mk1: Vec<String>,
         /// Read mk1 key-card strings from FILE, one per line. Blank lines
         /// and `#` comments are skipped; any other line is refused rather
@@ -442,8 +458,9 @@ enum Command {
         json: bool,
     },
 
+    // R9 — see the identical comment on `descriptor_input` above.
     #[command(after_long_help = "EXAMPLES:\n  $ md address md1qq...\n  bc1q...",
-              group = clap::ArgGroup::new("address_input").required(true).args(["phrases", "template"]))]
+              group = clap::ArgGroup::new("address_input").required(true).multiple(true).args(["phrases", "template", "from_mk1"]))]
     Address {
         /// One or more md1 phrases. Mutually exclusive with --template.
         #[arg(num_args = 0..)]
@@ -552,12 +569,19 @@ enum Command {
             conflicts_with_all = ["phrases", "from_mk1", "from_mk1_file", "seats"],
         )]
         path: Option<String>,
-        /// mk1 key-card string. Repeatable. Supplied TOGETHER WITH the
-        /// KEYLESS md1 phrases of a policy card: the seating engine matches
-        /// each card to the slot whose declared origin it satisfies, then
-        /// composes the concrete descriptor. Mutually exclusive with
-        /// --template.
-        #[arg(long = "from-mk1", value_name = "STRING", conflicts_with = "template")]
+        /// mk1 key-card string. Repeatable, and a single occurrence also
+        /// takes several values (`--from-mk1 mk1a mk1b mk1c`) so a natural
+        /// paste of a scanned card set works without repeating the flag.
+        /// Supplied TOGETHER WITH the KEYLESS md1 phrases of a policy card:
+        /// the seating engine matches each card to the slot whose declared
+        /// origin it satisfies, then composes the concrete descriptor.
+        /// Mutually exclusive with --template.
+        #[arg(
+            long = "from-mk1",
+            value_name = "STRING",
+            num_args = 1..,
+            conflicts_with = "template"
+        )]
         from_mk1: Vec<String>,
         /// Read mk1 key-card strings from FILE, one per line. Blank lines
         /// and `#` comments are skipped; any other line is refused rather
