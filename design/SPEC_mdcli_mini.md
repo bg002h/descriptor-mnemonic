@@ -1,9 +1,8 @@
 # SPEC — post-converter md-cli mini-cycle (admission taxonomy, S→K mint, converter riders)
 
-Status: DRAFT r2 — REVIEW-mdcli-mini-spec-r1 (2C/7I/4M/2N, 15/15
-fixed per r2) and REVIEW-mdcli-mini-spec-r2 (0C/3I/3M/1N, all new
-findings in the r1 fold's own content) are BOTH folded; re-review
-pending. Authored from `BRAINSTORM_mdcli_mini.md` as
+Status: DRAFT r3 — REVIEW-mdcli-mini-spec-r1 (2C/7I/4M/2N, 15/15
+fixed per r2), -r2 (0C/3I/3M/1N, 7/7 fixed per r3) and -r3
+(0C/1I/1M/1N) are all folded; mechanical fold-check pending. Authored from `BRAINSTORM_mdcli_mini.md` as
 walked with the operator 2026-08-31; every ruling cited below carries
 its date and is recorded verbatim in the brainstorm's walk sections.
 
@@ -178,7 +177,13 @@ each predicate has ONE implementation (no per-verb second copy —
 a parameter of the invocation, never a re-implementation; and the
 constraint that identity computation and verify's re-encode of a
 decoded card keep working is row-pinned. The plan chooses the
-invocation points under those constraints.
+invocation points under those constraints. The S row's shipped
+`check_no_repeated_xpub` (`seat/satisfy.rs:294`) is a third,
+card-set-side implementation of the Family-2 predicate; it stays as
+shipped (r3 M-1) — the single-source rule binds the mint/compose
+surface, and T-row/S-row PARITY (each side refuses the wallet the
+other refuses) is pinned behaviorally by the row set, not by code
+unification.
 
 ### Verb dispositions (r1 C2 folded — derived from the `Cmd` enum; there is no `md build`)
 
@@ -201,7 +206,12 @@ rendered-line row (prefix + the three content statements + absence of
 origin axis, does not cite the repeated-key rule); R-N1-hardening row
 if reachable; R-N1d T-row refusal with its full rendered-line row (the two flipped
 tests become refusal rows; the message row asserts the mandate
-above); the R-N1d must-COMPOSE control (same fingerprint, different
+above); R-N1d CARD-INPUT refusals — `descriptor` and `address` on a
+minted delta card refuse, mirroring R-N1a's card-input rows (r3 I-1:
+both measured at exit 0 today; the card branch at `build.rs:69-77`
+runs no reuse check, and `refuse_key_reuse_across_slots` has its one
+call site inside the `--template` branch); the R-N1d must-COMPOSE
+control (same fingerprint, different
 accounts, different xpubs — composes); the V-BOUND-REF sibling row
 pinning same-xpub-at-DIFFERENT-declared-paths refusing at seating
 (measured 2026-08-31, previously unpinned);
@@ -387,5 +397,7 @@ frozen for the window.
    cycle introduces or rewrites HAS such a row — asserted by the
    vector rows, not by convention (r2 M-a restores r0's clause).
 5. Reading verbs (`decode`, `inspect`, `bytecode`, `verify`) complete
-   at exit 0 on already-engraved cards carrying refused shapes —
-   row-pinned, per the C1 constraint.
+   at exit 0 on already-engraved cards carrying shapes THIS CYCLE
+   newly refuses — row-pinned, per the C1 constraint. (r3 N-1: the
+   pre-existing codec floor's shape is out of scope and reads per
+   shipped behavior.)
