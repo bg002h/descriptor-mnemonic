@@ -1,8 +1,12 @@
 # IMPLEMENTATION PLAN — post-converter md-cli mini-cycle
 
-Status: DRAFT p3 — plan reviews r1 (2C/7I/7M/3N), r2 (0C/2I/4M/2N,
-18/19+C1 completed per r3) and r3 (0C/1I/1M/2N) are all folded;
-mechanical fold-check pending. Spec:
+Status: **GREEN — 0C/0I, plan R0 loop closed 2026-08-31.** Rounds:
+r1 (2C/7I/7M/3N) → fold → r2 (18/19 fixed, C1 partial; 0C/2I/4M/2N
+new) → fold → r3 (8/8 fixed, C1 complete; 0C/1I/1M/2N new) → fold →
+r4 fold-check (4/4, 0 contradictions). Reports verbatim in
+`design/agent-reports/REVIEW-mdcli-mini-plan-r*.md`. NOT YET
+DISPATCHED: P1 awaits the operator's go; re-validate this plan
+against the tree immediately before dispatching each phase. Spec:
 `SPEC_mdcli_mini.md`, **GREEN at `b8a64938`** (R0 loop closed
 2026-08-31 at 0C/0I over four rounds). Baseline revision for
 staleness re-validation: **`b8a64938`** — every citation in this plan

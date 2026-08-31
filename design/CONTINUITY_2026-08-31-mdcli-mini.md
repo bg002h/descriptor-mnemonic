@@ -1,6 +1,18 @@
 # CONTINUITY — post-converter md-cli mini-cycle (opened 2026-08-31)
 
-## STATUS 2026-08-31 (updated in-cycle): SPEC GREEN, PLAN IN R0
+## STATUS 2026-08-31 (final this session): SPEC GREEN + PLAN GREEN — AWAITING OPERATOR GO FOR P1
+
+Both R0 loops CLOSED at 0C/0I. Spec GREEN at b8a64938 (4 rounds).
+Plan GREEN at the r4-foldcheck persist commit (4 rounds: 2C/7I →
+0C/2I → 0C/1I → clean). Operator rulings recorded verbatim in spec
+Principle incl. post-walk "No carve out for reused keys unless
+different origin paths". NEXT ACTION: on the operator's go,
+re-validate the plan against the tree (staleness scope: what moved),
+then dispatch the P1 implementer (all-features closure +
+scripts/phase-gate.sh). The section below predates this and stands
+as history.
+
+## (superseded) STATUS earlier same day: SPEC GREEN, PLAN IN R0
 
 Brainstorm WALKED with the operator and complete (all rulings in
 BRAINSTORM_mdcli_mini.md): bracket-path-as-source YES; docs pass at
