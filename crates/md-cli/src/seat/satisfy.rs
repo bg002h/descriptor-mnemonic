@@ -35,7 +35,6 @@ use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use md_codec::canonicalize::expand_per_at_n;
 use md_codec::encode::Descriptor;
 use md_codec::origin_path::OriginPath;
-use md_codec::tree::{Body, Node};
 
 /// One slot's declaration, as the policy card states it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,62 +119,31 @@ pub fn satisfies(decl: &SlotDecl, card: &DecodedCard) -> bool {
     }
 }
 
-/// Count each placeholder's OCCURRENCES in the tree.
-///
-/// `Body::MultiKeys` holds raw indices rather than child `Node`s, and
-/// `Body::Tr` holds the internal key as a bare index, so a walker that only
-/// recursed through `Body::Children` would miss every position that matters
-/// here.
-fn count_occurrences(node: &Node, counts: &mut [u32]) {
-    match &node.body {
-        Body::KeyArg { index } => {
-            if (*index as usize) < counts.len() {
-                counts[*index as usize] += 1;
-            }
-        }
-        Body::MultiKeys { indices, .. } => {
-            for idx in indices {
-                if (*idx as usize) < counts.len() {
-                    counts[*idx as usize] += 1;
-                }
-            }
-        }
-        Body::Tr {
-            is_nums,
-            key_index,
-            tree,
-        } => {
-            if !*is_nums && (*key_index as usize) < counts.len() {
-                counts[*key_index as usize] += 1;
-            }
-            if let Some(t) = tree {
-                count_occurrences(t, counts);
-            }
-        }
-        Body::Children(children) => {
-            for c in children {
-                count_occurrences(c, counts);
-            }
-        }
-        Body::Variable { children, .. } => {
-            for c in children {
-                count_occurrences(c, counts);
-            }
-        }
-        _ => {}
-    }
-}
-
 /// **Door check 1 — a placeholder used at more than one position.**
 ///
-/// BIP 388's "Additional rules" (verified against bitcoin/bips master,
-/// 2026-08-30) forbid two KEY expressions on the same placeholder whose
-/// multipath sets are not DISJOINT, and list `sh(multi(1,@0/**,@0/**))`
-/// ("Repeated keys with the same path expression") among its invalid
-/// examples. md's own template parser already refuses the DISJOINT spelling
-/// upstream — `wsh(multi(2,@0/<0;1>/*,@0/<2;3>/*))` draws "@0 appears with
-/// inconsistent path/multipath/hardening", measured 2026-08-30 — so every
-/// repeat that survives to here is the same-path one BIP 388 forbids.
+/// AN INVOCATION OF THE SHARED N1 CLASSIFIER, IN PLACE (plan P3 step 3b).
+/// `md descriptor`'s card input is on the REFUSE mint/compose surface, so a
+/// separate card-input refusal would have made this function a SECOND
+/// implementation of a predicate `crate::parse::reuse` already owns — which
+/// the spec's single-source rule forbids, and which is how two sides drift
+/// into disagreeing about one wallet. The wording below is therefore the
+/// taxonomy's, and the message an operator sees is the same whether the
+/// shape arrives as a template, as a keyed card, or as a policy card here.
+///
+/// **Its POSITION is order-normative and does not move** (see
+/// [`crate::seat::run`]: "each of those refusals is accurate only where it
+/// sits"). It stays the first door check, ahead of A3, and needs nothing
+/// from the card set to be right.
+///
+/// **Its reachable domain is exactly R-N1a**, which is why replacing the
+/// wording loses nothing:
+///
+/// * The policy here is KEYLESS by construction — [`crate::seat::run`]
+///   refuses a wallet-policy card before this point — so Family 2 has no key
+///   material to fire on, in principle rather than in practice.
+/// * The wire carries ONE origin, ONE multipath set and ONE hardening per
+///   key slot, so two occurrences of `@i` cannot differ and the four
+///   axis-divergence rows are unreachable from a card.
 ///
 /// The diagnostic says "forbidden by BIP 388" and "unsupported", NEVER
 /// "invalid": a repeated-key descriptor is technically valid script, and
@@ -183,31 +151,11 @@ fn count_occurrences(node: &Node, counts: &mut [u32]) {
 /// 2026-08-30, verbatim: "Bad ideas can be valid, but we don't want to
 /// support BIP forbidden wallets").
 ///
-/// This is r5-M1's construction, REGROUNDED: it shipped as a measured
-/// over-strictness note and is a REFUSE row now.
+/// This is r5-M1's construction, REGROUNDED twice: it shipped as a measured
+/// over-strictness note, became a REFUSE row under the key-reuse ruling, and
+/// is now the seating entrance to one taxonomy.
 pub fn check_no_repeated_placeholder(policy: &Descriptor) -> Result<(), CliError> {
-    let mut counts = vec![0u32; policy.n as usize];
-    count_occurrences(&policy.tree, &mut counts);
-    let repeated: Vec<String> = counts
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| **c > 1)
-        .map(|(i, c)| format!("@{i} ({c} positions)"))
-        .collect();
-    if repeated.is_empty() {
-        return Ok(());
-    }
-    Err(CliError::Seat(format!(
-        "this policy uses the same placeholder at more than one position — {}. \
-         Seating it would bind ONE key to several positions with the same path \
-         expression, which is forbidden by BIP 388 (\"the public keys obtained by \
-         deserializing elements of the key information vector must be pairwise \
-         distinct\", and two key expressions on one placeholder must have disjoint \
-         multipath sets). That shape is UNSUPPORTED here: the script would be \
-         well-formed, the POLICY is one this tool declines to reconstruct. Re-mint \
-         the policy with one placeholder per distinct key.",
-        repeated.join(", ")
-    )))
+    crate::parse::reuse::check_descriptor(policy, crate::parse::reuse::Disposition::Refuse)
 }
 
 /// **Door check 2 — two fingerprint-BEARING slots with the identical
@@ -528,24 +476,41 @@ mod tests {
 
     // ─── V-R5M1 ─────────────────────────────────────────────────────────
 
+    /// The door check's wording IS the taxonomy's R-N1a message, which is
+    /// the whole content of the P3.3b unification: this asserts the two are
+    /// the same string rather than two strings that happen to agree today.
+    /// The RENDERED line is pinned as a literal one layer out, in
+    /// `tests/seating_vectors.rs::v_r5m1_reaches_the_command`.
     #[test]
     fn v_r5m1_repeated_placeholder_refuses_as_bip388_forbidden() {
         let policy = policy(V_R5M1);
+        // The GROUND for the domain claim in the function's doc: the policy
+        // at this door is keyless, so Family 2 has nothing to fire on.
+        assert!(
+            !policy.is_wallet_policy(),
+            "a policy card carrying keys never reaches this door check"
+        );
         let err = check_no_repeated_placeholder(&policy).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("forbidden by BIP 388"), "{msg}");
-        assert!(msg.contains("UNSUPPORTED"), "{msg}");
-        assert!(
-            !msg.to_lowercase().contains("invalid"),
-            "the word `invalid` is forbidden here (operator ruling): {msg}"
-        );
+
         // md canonicalises placeholder indices by first appearance before
         // encoding (SPEC section 6.1), so the fixture's source `@0`/`@1`
         // arrive here renumbered: the internal key becomes @0 and the two
-        // shared leaf placeholders become @1 and @2.
+        // shared leaf placeholders become @1 and @2, each at two positions.
+        // The classifier reports the FIRST finding in a deterministic order
+        // (lowest `@i`), so @1 is what the message names.
+        assert_eq!(
+            msg,
+            format!(
+                "unsupported: {}",
+                crate::parse::reuse::Finding::SamePathExpression { i: 1, sites: 2 }.message()
+            ),
+            "the door check no longer speaks the taxonomy's R-N1a message"
+        );
+        assert!(msg.contains("forbidden by BIP 388"), "{msg}");
         assert!(
-            msg.contains("@1 (2 positions)") && msg.contains("@2 (2 positions)"),
-            "names each repeated placeholder and its arity: {msg}"
+            !msg.to_lowercase().contains("invalid"),
+            "the word `invalid` is forbidden here (operator ruling): {msg}"
         );
     }
 

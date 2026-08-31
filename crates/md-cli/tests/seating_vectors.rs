@@ -676,14 +676,30 @@ fn refusal_of(text: &str, extra_cards: &[String]) -> String {
     err_of(&o)
 }
 
+/// The RENDERED line, from the `md:` prefix onward (Acceptance 4) — this
+/// diagnostic was REWRITTEN by plan P3 step 3b, when the door check became
+/// an invocation of the shared N1 classifier, so it re-earns its row.
+///
+/// It is the R-N1a message verbatim, and that is the deliverable: one
+/// wallet draws one sentence whether it arrives as a template, as a keyed
+/// card, or as the keyless policy card of a seating request. Before the
+/// unification this line began "md: seating refused: this policy uses the
+/// same placeholder at more than one position — @1 (2 positions), @2 (2
+/// positions)." and was a second implementation of the same predicate.
 #[test]
 fn v_r5m1_reaches_the_command() {
     let e = refusal_of(V_R5M1, &[]);
-    assert!(
-        e.contains("same placeholder at more than one position"),
-        "{e}"
+    let lines: Vec<&str> = e.lines().filter(|l| l.starts_with("md: ")).collect();
+    assert_eq!(lines.len(), 1, "expected exactly one rendered line:\n{e}");
+    assert_eq!(
+        lines[0],
+        "md: unsupported: @1 appears at 2 use sites in this template with the same path \
+         expression, so ONE key would fill every one of them. That is forbidden by BIP 388 \
+         (\"the public keys obtained by deserializing elements of the key information vector \
+         must be pairwise distinct\"), whose forbidden-example list names \
+         sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same path expression\". md \
+         declines to mint or compose this shape: give each distinct key its own placeholder."
     );
-    assert!(e.contains("forbidden by BIP 388"), "{e}");
     assert!(!e.to_lowercase().contains("invalid"), "{e}");
 }
 
