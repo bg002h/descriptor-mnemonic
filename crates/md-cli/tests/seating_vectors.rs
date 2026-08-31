@@ -694,11 +694,12 @@ fn v_r5m1_reaches_the_command() {
     assert_eq!(
         lines[0],
         "md: unsupported: @1 appears at 2 use sites in this template with the same path \
-         expression, so ONE key would fill every one of them. That is forbidden by BIP 388 \
-         (\"the public keys obtained by deserializing elements of the key information vector \
-         must be pairwise distinct\"), whose forbidden-example list names \
-         sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same path expression\". md \
-         declines to mint or compose this shape: give each distinct key its own placeholder."
+         expression, so ONE key would fill every one of them. That is forbidden by BIP 388's \
+         disjointness rule (\"if two KEY are KP/<M;N>/* and KP/<P;Q>/* for the same key \
+         placeholder KP, then the sets {M, N} and {P, Q} must be disjoint\"), whose \
+         forbidden-example list names sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same \
+         path expression\". md declines to mint or compose this shape: give each distinct key \
+         its own placeholder."
     );
     assert!(!e.to_lowercase().contains("invalid"), "{e}");
 }

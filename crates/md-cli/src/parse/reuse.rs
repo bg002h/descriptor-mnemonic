@@ -259,26 +259,49 @@ pub fn classify(occs: &[PlaceholderOccurrence], keys: &[ParsedKey]) -> Option<Fi
 impl Finding {
     /// The diagnostic BODY — everything after the rendered prefix.
     ///
-    /// It is the SAME text under either disposition, which is what makes
-    /// "one implementation, the disposition is a parameter" observable rather
-    /// than merely claimed: a refusal and a warning about one wallet say the
-    /// same thing about it.
+    /// It is the SAME text under either disposition for every finding except
+    /// [`Finding::SamePathExpression`] (R-N1a), whose final clause is
+    /// disposition-aware (review r1 M4): a REFUSE tail says md declines to
+    /// mint or compose, which is only true when something was actually
+    /// refused; a WARN tail says the card still reads and names the shape's
+    /// actual consequence instead. That is still one classifier and one
+    /// body up to the tail — "one implementation, the disposition is a
+    /// parameter" is about the predicate and the shared prefix, not a claim
+    /// that no finding may ever read the disposition it was given.
     ///
     /// The word "invalid" appears in none of these. A BIP-forbidden or
     /// wire-inexpressible shape is UNSUPPORTED, never invalid — a repeated-key
     /// descriptor is legal script, and calling the operator's wallet invalid
     /// is both false and the wrong instruction (operator ruling 2026-08-30).
-    pub fn message(&self) -> String {
+    pub fn message(&self, disposition: Disposition) -> String {
         match self {
-            Finding::SamePathExpression { i, sites } => format!(
-                "@{i} appears at {sites} use sites in this template with the same path \
-                 expression, so ONE key would fill every one of them. That is forbidden by \
-                 BIP 388 (\"{rule}\"), whose forbidden-example list names \
-                 sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same path expression\". \
-                 md declines to mint or compose this shape: give each distinct key its own \
-                 placeholder.",
-                rule = crate::bip388::PAIRWISE_DISTINCT_RULE,
-            ),
+            Finding::SamePathExpression { i, sites } => {
+                // BIP 388's rule (1) (pairwise distinctness of the key
+                // information VECTOR) is satisfied here — the vector holds
+                // only ONE element for one placeholder repeated verbatim.
+                // What this shape breaks is rule (2), the disjointness rule:
+                // the SAME multipath set compared with itself is never
+                // disjoint from it (review r1 I1; the prior citation named
+                // rule (1), which this shape does not violate).
+                let tail = match disposition {
+                    Disposition::Refuse => {
+                        "md declines to mint or compose this shape: give \
+                         each distinct key its own placeholder."
+                    }
+                    Disposition::Warn => {
+                        "This shape can no longer be minted or composed; the \
+                         card remains readable."
+                    }
+                };
+                format!(
+                    "@{i} appears at {sites} use sites in this template with the same path \
+                     expression, so ONE key would fill every one of them. That is forbidden by \
+                     BIP 388's disjointness rule (\"{rule}\"), whose forbidden-example list \
+                     names sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same path \
+                     expression\". {tail}",
+                    rule = crate::bip388::DISJOINTNESS_RULE,
+                )
+            }
             Finding::MultipathOverlap { i, a, b, shared } => format!(
                 "@{i} appears at use sites whose multipath sets OVERLAP — {a} and {b} share \
                  {shared}. BIP 388 requires two key expressions on one placeholder to have \
@@ -350,9 +373,9 @@ pub fn check(
         return Ok(());
     };
     match disposition {
-        Disposition::Refuse => Err(CliError::Unsupported(finding.message())),
+        Disposition::Refuse => Err(CliError::Unsupported(finding.message(disposition))),
         Disposition::Warn => {
-            eprintln!("md: warning: {}", finding.message());
+            eprintln!("md: warning: {}", finding.message(disposition));
             Ok(())
         }
     }
@@ -666,36 +689,79 @@ mod tests {
                 sb: "<2;3>/*".into(),
             },
         ];
+        // Checked under BOTH dispositions: M4 made one finding's tail vary by
+        // disposition, and the principle binds the WARN rendering too, not
+        // only the one this suite happens to construct with Refuse.
         for f in &all {
-            let m = f.message();
-            assert!(
-                !m.to_lowercase().contains("invalid"),
-                "{f:?} calls the wallet invalid: {m}"
-            );
-            assert!(!m.contains('\n'), "{f:?} renders on more than one line");
+            for disp in [Disposition::Refuse, Disposition::Warn] {
+                let m = f.message(disp);
+                assert!(
+                    !m.to_lowercase().contains("invalid"),
+                    "{f:?} ({disp:?}) calls the wallet invalid: {m}"
+                );
+                assert!(
+                    !m.contains('\n'),
+                    "{f:?} ({disp:?}) renders on more than one line"
+                );
+            }
         }
         // The two md-side axes cite no BIP rule at all — an inline origin and
         // a hardened wildcard are md's own limits, and a citation there would
         // be a false record about a normative document.
         for f in [&all[3], &all[4]] {
-            let m = f.message();
+            let m = f.message(Disposition::Refuse);
             assert!(!m.contains("BIP"), "{f:?} cites a BIP rule: {m}");
         }
         for f in [&all[2], &all[5]] {
-            assert!(f.message().contains(ESCAPE), "{f:?} names no escape");
+            assert!(
+                f.message(Disposition::Refuse).contains(ESCAPE),
+                "{f:?} names no escape"
+            );
         }
     }
 
     #[test]
-    fn the_disposition_changes_the_outcome_not_the_text() {
-        let occs = lex_placeholders("wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))").unwrap();
+    fn the_disposition_changes_the_outcome_not_the_text_for_most_findings() {
+        // R-N1a (`SamePathExpression`) is the one exception, covered by
+        // `r_n1a_warn_tail_differs_from_refuse_tail_per_m4` below — this row
+        // uses R-N1b instead, where the "same text either way" invariant
+        // still holds.
+        let occs = lex_placeholders("wsh(multi(2,@0/<0;1>/*,@0/<1;2>/*))").unwrap();
         let err = check(&occs, &[], Disposition::Refuse).unwrap_err();
         assert!(matches!(err, CliError::Unsupported(_)));
-        let body = classify(&occs, &[]).unwrap().message();
+        let body = classify(&occs, &[]).unwrap().message(Disposition::Refuse);
         assert_eq!(err.to_string(), format!("unsupported: {body}"));
         // Warn proceeds. (Its stderr line is pinned end-to-end by
         // `tests/n1_admission_taxonomy.rs`; here the contract is that it does
         // not stop the caller.)
         assert!(check(&occs, &[], Disposition::Warn).is_ok());
+    }
+
+    /// M4 — the R-N1a tail is disposition-aware, and this is the row that
+    /// pins it structurally rather than by reading the source.
+    #[test]
+    fn r_n1a_warn_tail_differs_from_refuse_tail_per_m4() {
+        let occs = lex_placeholders("wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))").unwrap();
+        let finding = classify(&occs, &[]).unwrap();
+        let refuse = finding.message(Disposition::Refuse);
+        let warn = finding.message(Disposition::Warn);
+        assert_ne!(
+            refuse, warn,
+            "the warn tail must differ from the refuse tail"
+        );
+        assert!(
+            refuse.ends_with(
+                "md declines to mint or compose this shape: give each distinct key its own \
+                 placeholder."
+            ),
+            "{refuse}"
+        );
+        assert!(
+            warn.ends_with(
+                "This shape can no longer be minted or composed; the card remains readable."
+            ),
+            "{warn}"
+        );
+        assert!(!warn.contains("md declines to mint or compose"), "{warn}");
     }
 }

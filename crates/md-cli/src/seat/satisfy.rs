@@ -503,7 +503,8 @@ mod tests {
             msg,
             format!(
                 "unsupported: {}",
-                crate::parse::reuse::Finding::SamePathExpression { i: 1, sites: 2 }.message()
+                crate::parse::reuse::Finding::SamePathExpression { i: 1, sites: 2 }
+                    .message(crate::parse::reuse::Disposition::Refuse)
             ),
             "the door check no longer speaks the taxonomy's R-N1a message"
         );

@@ -119,11 +119,21 @@ fn assert_refused(out: &std::process::Output, expected_line: &str) {
 const T_N1A: &str = "wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))";
 
 const MSG_N1A: &str = "md: unsupported: @0 appears at 2 use sites in this template with the same \
-path expression, so ONE key would fill every one of them. That is forbidden by BIP 388 (\"the \
-public keys obtained by deserializing elements of the key information vector must be pairwise \
-distinct\"), whose forbidden-example list names sh(multi(1,@0/**,@0/**)) — \"Repeated keys with \
-the same path expression\". md declines to mint or compose this shape: give each distinct key its \
-own placeholder.";
+path expression, so ONE key would fill every one of them. That is forbidden by BIP 388's \
+disjointness rule (\"if two KEY are KP/<M;N>/* and KP/<P;Q>/* for the same key placeholder KP, \
+then the sets {M, N} and {P, Q} must be disjoint\"), whose forbidden-example list names \
+sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same path expression\". md declines to mint \
+or compose this shape: give each distinct key its own placeholder.";
+
+/// The READ-side WARN rendering of the same finding (review r1 M4): the tail
+/// is disposition-aware, so this is NOT `as_warning(MSG_N1A)` — the body up
+/// to the forbidden-example quote is identical, only the remedy differs.
+const MSG_N1A_WARN: &str = "md: warning: @0 appears at 2 use sites in this template with the \
+same path expression, so ONE key would fill every one of them. That is forbidden by BIP 388's \
+disjointness rule (\"if two KEY are KP/<M;N>/* and KP/<P;Q>/* for the same key placeholder KP, \
+then the sets {M, N} and {P, Q} must be disjoint\"), whose forbidden-example list names \
+sh(multi(1,@0/**,@0/**)) — \"Repeated keys with the same path expression\". This shape can no \
+longer be minted or composed; the card remains readable.";
 
 #[test]
 fn r_n1a_refuses_at_encode() {
@@ -473,13 +483,10 @@ fn verify_template_warns_and_completes_on_a_refused_shape() {
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("OK"));
     let line = rendered_line(&out);
-    assert_eq!(
-        line,
-        format!(
-            "md: warning: {}",
-            MSG_N1A.strip_prefix("md: unsupported: ").unwrap()
-        )
-    );
+    // NOT `as_warning(MSG_N1A)` / a strip-prefix of MSG_N1A — R-N1a's tail is
+    // disposition-aware (M4), so the WARN rendering is `MSG_N1A_WARN`
+    // verbatim, not MSG_N1A with the prefix swapped.
+    assert_eq!(line, MSG_N1A_WARN);
 }
 
 // ─── `md compile` cannot open a mint path for a refused shape ──────────────
@@ -649,17 +656,17 @@ fn r_n1d_card_refuses_at_address() {
 
 #[test]
 fn r_n1a_card_decodes_at_exit_0_with_a_warning() {
-    assert_read_warns(&card_cmd("decode", CARD_N1A, &[]), &as_warning(MSG_N1A));
+    assert_read_warns(&card_cmd("decode", CARD_N1A, &[]), MSG_N1A_WARN);
 }
 
 #[test]
 fn r_n1a_card_inspects_at_exit_0_with_a_warning() {
-    assert_read_warns(&card_cmd("inspect", CARD_N1A, &[]), &as_warning(MSG_N1A));
+    assert_read_warns(&card_cmd("inspect", CARD_N1A, &[]), MSG_N1A_WARN);
 }
 
 #[test]
 fn r_n1a_card_bytecodes_at_exit_0_with_a_warning() {
-    assert_read_warns(&card_cmd("bytecode", CARD_N1A, &[]), &as_warning(MSG_N1A));
+    assert_read_warns(&card_cmd("bytecode", CARD_N1A, &[]), MSG_N1A_WARN);
 }
 
 #[test]
@@ -704,7 +711,7 @@ fn verify_card(fixture: &str, template: &str, keys: &[&str]) -> std::process::Ou
 #[test]
 fn r_n1a_card_verifies_at_exit_0_with_a_warning() {
     let out = verify_card(CARD_N1A, T_N1A, &[&format!("@0={K0}")]);
-    assert_read_warns(&out, &as_warning(MSG_N1A));
+    assert_read_warns(&out, MSG_N1A_WARN);
     assert!(String::from_utf8_lossy(&out.stdout).contains("OK"));
 }
 
