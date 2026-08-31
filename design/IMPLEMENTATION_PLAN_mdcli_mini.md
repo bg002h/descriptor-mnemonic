@@ -1,7 +1,8 @@
 # IMPLEMENTATION PLAN — post-converter md-cli mini-cycle
 
-Status: DRAFT p1 — REVIEW-mdcli-mini-plan-r1 (2C/7I/7M/3N) is
-FOLDED here; re-review pending. Spec:
+Status: DRAFT p2 — REVIEW-mdcli-mini-plan-r1 (2C/7I/7M/3N, 18/19
+fixed per r2 with C1 partial) and REVIEW-mdcli-mini-plan-r2
+(0C/2I/4M/2N) are BOTH folded; re-review pending. Spec:
 `SPEC_mdcli_mini.md`, **GREEN at `b8a64938`** (R0 loop closed
 2026-08-31 at 0C/0I over four rounds). Baseline revision for
 staleness re-validation: **`b8a64938`** — every citation in this plan
@@ -32,8 +33,10 @@ cargo test --workspace --doc          # nextest does NOT run doctests
 **P1 commits `scripts/phase-gate.sh`** running all six lines, and
 every later phase runs the script, not a from-memory list. The
 script states its blind spot plainly: the freebsd and musl
-compile/test jobs (ci.yml:95+) are CI-only cross-target gates a
-local run cannot reproduce — the push-ritual staging run covers them
+compile/test jobs (ci.yml:95+) AND the windows/macos legs of the
+test matrix (ci.yml:31-49 runs three OS contexts; a local run
+reproduces one — r2 M-a) are CI-only gates a local run cannot
+reproduce — the push-ritual staging run covers them
 before anything reaches `main`. The burndown row for
 `phase-gate-omits-cargo-doc` closes by citing the script's commit.
 
@@ -53,12 +56,14 @@ summary lines into the commit message.
 **Acceptance-4 obligation, binding on EVERY phase (r1 I6):** every
 diagnostic any phase introduces or rewrites gets a
 RENDERED-stderr-line row (from the `md:` prefix onward), not a body
-substring. That is eleven diagnostics across the cycle, not two:
-R-N1a/b/c/origin(/hardening if reachable) and R-N1d (P2); the two
-card-input refusals and the read-side warning (P3); the three R9
-refusals (P4); the two `--emit md1` mode refusals (P5); the
-SPEND-EQUAL/NOT verdict lines and the rewritten decompose refusal
-(P6).
+substring. The binding rule is the sentence above — EVERY introduced or
+rewritten diagnostic, no fixed count (r2 M-c). The current
+enumeration, for orientation only: R-N1a/b/c/origin(/hardening if
+reachable) and R-N1d (P2); the two card-input refusals and the
+read-side warning (P3); the R9 refusals on BOTH verbs (P4); the two
+`--emit md1` mode refusals (P5); the SPEND-EQUAL/NOT verdict lines,
+the garbage-argument decode error, and the rewritten decompose
+refusal (P6).
 
 **A plan's GREEN expires.** Before dispatching each phase's
 implementer, the controller re-validates this plan against the tree,
@@ -113,6 +118,20 @@ per-verb disposition (refuse/warn) is a parameter; NOTHING new inside
 (`validate_no_duplicate_key_slots` at `encode.rs:120`) and the S-row
 `check_no_repeated_xpub` stay as shipped.
 
+**A third shipped implementation, named and RULED (r2 I-2):**
+`check_no_repeated_placeholder` (`seat/satisfy.rs:188`, called at
+`seat/mod.rs:134` as the first door check on the seating path)
+already refuses Family-1 shapes on `md descriptor`'s card input —
+but COARSER than spec N1: it counts occurrences only, so it refuses
+R-N1d-disjoint spellings with Family-1 wording, which the spec's
+distinct R-N1d message mandate forbids. Ruling: P3 UNIFIES it — the
+door check becomes an invocation of the shared classifier
+(per-verb disposition), its wording becomes the taxonomy's messages,
+and the two sites pinning the old wording
+(`seating_vectors.rs:679-687`, `satisfy.rs:530-548`) update in the
+same commit. It is NOT in the stays-as-shipped set;
+`check_no_repeated_xpub` and the codec floor still are.
+
 TDD order — rows first, red before green:
 
 1. **Fixture mint FIRST, from the baseline binary — full commands,
@@ -132,8 +151,9 @@ TDD order — rows first, red before green:
    Baseline procedure (r1 M7): `git worktree add <dir> b8a64938 &&
    cargo build -p md-cli` — and verified benign: the spec's
    `ed2fe9c2` and this plan's `b8a64938` differ by nothing under
-   `crates/`, `scripts/` or `.github/`, and P1 touches only
-   `compile.rs` (feature-gated) and `ci.yml`, so a post-P1 tree
+   `crates/`, `scripts/` or `.github/`, and P1 touches nothing
+   on the `md encode` path (r2 M-d: its edits are a feature-gated
+   compile module, CI config, and test-file text), so a post-P1 tree
    mints byte-identical cards. Commit the strings as fixtures with
    provenance headers in the V-BOUND-REF pattern
    (`crates/md-cli/tests/fixtures/seating/generate.sh` — full path,
@@ -167,16 +187,38 @@ TDD order — rows first, red before green:
      **REPLACED, not deleted**, each preserving its stated coverage
      role with a BIP-legal shape: `keyed_tr_sortedmulti_a` and
      `keyed_tr_multi_a` (internal key repeated in the leaf at the
-     identical triple) get DISTINCT leaf placeholders — the
-     order-sensitivity role (`keyed_tr_multi_a`'s comment: the ONLY
-     order-sensitive tap leaf, mutation-proven) needs written-order
-     keys, not reuse; `keyed_wsh_timelock_hashlock` (@1/@2 repeated
+     identical triple) give the INTERNAL KEY a placeholder that
+     appears nowhere in the leaf (r2 N-a: the leaf placeholders are
+     already distinct today) — the order-sensitivity role
+     (`keyed_tr_multi_a`'s comment: the ONLY order-sensitive tap
+     leaf, mutation-proven) survives either way, verified by r2:
+     the leaf keeps two distinct keys in written order; `keyed_wsh_timelock_hashlock` (@1/@2 repeated
      across the two spending clauses) gets fresh placeholders in the
      recovery clause. **Rust-primary lockstep:** the corpus change
      lands here with the phase; the Go port's sync is flagged in the
      phase report and follows, never leads.
-   - `template_roundtrip.rs:37-45` and `json_snapshots.rs:38-51`
-     turn green via the replacements (they drive MANIFEST).
+   - The binding tests (r2 I-1 — `template_roundtrip.rs` and
+     `json_snapshots.rs` SKIP all three vectors via their
+     `force_chunked` continue and were never red):
+     `crates/md-cli/tests/vector_corpus.rs:15` (`diff -r`s
+     `md vectors` output against the committed corpus) and
+     `crates/md-cli/tests/conformance_vectors_roundtrip.rs:36`.
+     Both go red until the COMMITTED CORPUS is regenerated:
+     `md vectors --out crates/md-codec/tests/vectors` rewrites the
+     15 files ({the 3 vector names} × {template, bytes.hex,
+     phrase.txt, descriptor.json, conformance.json}). Those files
+     are the cross-language artifact vendored into the Go port
+     byte-for-byte (`corpus_origin_consistency.rs:11-14`) — THIS is
+     where the Rust-primary lockstep bites: regeneration lands with
+     this phase, the Go vendor sync is flagged in the phase report
+     and follows. Constraint on the replacements: never bind one
+     `[fingerprint/path]` origin to two different xpubs
+     (`corpus_origin_consistency.rs` reads the conformance JSONs).
+     Checked clear by r2, do not re-derive: the
+     `display-grouping-vectors.tsv` checksum pin holds zero MANIFEST
+     content; no insta snapshot carries `keyed_*`; `wire_golden.rs`
+     pins a different vector; the BIP mediawiki names none of the
+     three.
    - **`md vectors` invocation point, ruled:** the classifier sits
      where `md vectors`' `parse_template` path hits it, so the
      generator REFUSES a future forbidden-shape vector fail-closed.
@@ -197,7 +239,8 @@ TDD order — rows first, red before green:
    time from the baseline binary, convert its block to an
    existence-assert with a frozen-by-design provenance note, and
    re-run the generator end-to-end in this phase's gate —
-   `git diff` clean over the nine later fixtures is the check.
+   `git diff` clean over EVERY fixture written after that block is
+   the check (r2 M-b: that is 17 files, not r1's nine).
 8. **`md compile` determination, recorded and pinned (r1 I1):**
    probed at baseline — `md compile 'thresh(2,pk(@0),pk(@0),pk(@1))'
    --context segwitv0` (and `and`/`or` forms, and `--context tap`)

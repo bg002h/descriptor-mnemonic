@@ -368,8 +368,10 @@ R0 loop on this spec to 0C/0I before any plan; plan R0; one
 implementer per phase; whole-diff adversarial review before merge. N3
 and the riders ride the same plan as non-gated phases.
 
-**Phase gate (closes `phase-gate-omits-cargo-doc`), quoted verbatim
-by the plan:** `cargo nextest run --locked` + `cargo clippy --locked
+**Phase gate (closes `phase-gate-omits-cargo-doc`), quoted and
+EXTENDED by the plan (plan r2 N-b: the plan adds the doctest and
+conformance-checksum lines per the FOLLOWUP's name-every-CI-job
+criterion):** `cargo nextest run --locked` + `cargo clippy --locked
 --all-targets -- -D warnings` + `cargo fmt --check` +
 `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 --document-private-items` — and from R5(b) onward the nextest, clippy
