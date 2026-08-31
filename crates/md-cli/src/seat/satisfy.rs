@@ -363,6 +363,8 @@ pub(crate) mod fixture {
     pub const V_FPFREE_CARD: &str = include_str!("../../tests/fixtures/seating/v-fpfree-card.txt");
     pub const V_R5M1: &str = include_str!("../../tests/fixtures/seating/v-r5m1.txt");
     pub const V_BOUND_REF: &str = include_str!("../../tests/fixtures/seating/v-bound-ref.txt");
+    pub const V_BOUND_REF_PATHS: &str =
+        include_str!("../../tests/fixtures/seating/v-bound-ref-paths.txt");
     pub const V_BOUND_SEAT: &str = include_str!("../../tests/fixtures/seating/v-bound-seat.txt");
     pub const V_USP: &str = include_str!("../../tests/fixtures/seating/v-usp.txt");
     pub const V_MIX: &str = include_str!("../../tests/fixtures/seating/v-mix.txt");
@@ -579,6 +581,52 @@ mod tests {
     fn v_bound_ref_same_xpub_twice_refuses_as_bip388_forbidden() {
         let cards = cards(V_BOUND_REF);
         assert_eq!(cards.len(), 2, "fixture: two distinct cards, one xpub");
+        let err = check_no_repeated_xpub(&cards).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("SAME extended public key"), "{msg}");
+        assert!(msg.contains("BIP 388"), "{msg}");
+        assert!(msg.contains("UNSUPPORTED"), "{msg}");
+        assert!(
+            !msg.to_lowercase().contains("invalid"),
+            "the word `invalid` is forbidden here (operator ruling): {msg}"
+        );
+    }
+
+    /// **The SIBLING**, and the reason `check_no_repeated_xpub` compares KEY
+    /// MATERIAL and nothing else: the same xpub declared at two DIFFERENT
+    /// paths is still one key in two slots, so it refuses too.
+    ///
+    /// The row also pins WHICH check answers. Because the two declared paths
+    /// differ, neither door check nor the impossible-pair check has a case
+    /// here — each is asserted OK first, so the refusal below cannot be some
+    /// earlier check firing for another reason and the row cannot pass
+    /// vacuously on a fixture that was wrong in a different way.
+    ///
+    /// Shipped behaviour, measured 2026-08-31 and identical on the plan's
+    /// baseline binary; unpinned until plan P3 step 3.
+    #[test]
+    fn v_bound_ref_paths_same_xpub_at_different_paths_still_refuses() {
+        let policy = policy(V_BOUND_REF_PATHS);
+        let decls = slot_declarations(&policy).unwrap();
+        assert_eq!(decls.len(), 2, "fixture: a two-slot policy");
+        assert_ne!(
+            decls[0].path, decls[1].path,
+            "fixture: the two slots must declare DIFFERENT paths, or this is \
+             V-BOUND-REF over again"
+        );
+        let cards = cards(V_BOUND_REF_PATHS);
+        assert_eq!(cards.len(), 2, "fixture: two distinct cards, one xpub");
+        assert_ne!(
+            cards[0].card.origin_path, cards[1].card.origin_path,
+            "fixture: the two cards must declare DIFFERENT paths"
+        );
+
+        // Everything upstream of the xpub check has no case here.
+        assert!(check_no_repeated_placeholder(&policy).is_ok());
+        assert!(check_no_identical_fp_bearing_declarations(&decls).is_ok());
+        assert!(check_no_impossible_card_pair(&cards).is_ok());
+
+        // So this is the check that answers.
         let err = check_no_repeated_xpub(&cards).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("SAME extended public key"), "{msg}");

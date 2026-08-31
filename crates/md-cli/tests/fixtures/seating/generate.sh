@@ -221,6 +221,35 @@ header "$f" V-BOUND-REF "the same xpub offered as two cards, for two slots"
 } >> "$f"
 echo "wrote: $f"
 
+# ── V-BOUND-REF-PATHS ───────────────────────────────────────────────────────
+# V-BOUND-REF's SIBLING, and the point of it: the same xpub offered as two
+# cards that declare DIFFERENT origin paths. `check_no_repeated_xpub` compares
+# KEY MATERIAL and nothing else, so it refuses this pair too -- and it is the
+# check that answers, because the two paths differ and therefore neither
+# `check_no_identical_fp_bearing_declarations` (identical declared origins) nor
+# `check_no_impossible_card_pair` (one origin, two xpubs) fires.
+#
+# The declarations are honest about the SHAPE and dishonest about one card, the
+# way V-IMPOSS is: KEY 1 is minted a second time at 48'/0'/1'/2', which
+# `mk encode` accepts because it checks only depth and the last component.
+# What the fixture pins is the ENGINE's answer, not the card's provenance.
+#
+# Measured shipped behaviour, 2026-08-31 -- unpinned until plan P3 step 3.
+f="$HERE/v-bound-ref-paths.txt"
+header "$f" V-BOUND-REF-PATHS "the same xpub declared at two DIFFERENT paths"
+{
+  echo "#   md encode \"wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))\""
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/1'/2' --policy-id-stub 5b48af35   <-- KEY 1 again"
+  "$MD" encode "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))" \
+        --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" 5b48af35 --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 0)" "m/48'/0'/1'/2'" 5b48af35 --origin-fingerprint "$(fp_of 0)"
+} >> "$f"
+echo "wrote: $f"
+
 # ── V-USP (also the V-AMB / V-SEAT-* fixture) ───────────────────────────────
 # r5's counterexample. One sortedmulti, two fingerprint-free slots at ONE
 # origin — but DIFFERENT use-site paths, so swapping the cards changes which

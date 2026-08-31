@@ -651,6 +651,7 @@ const V_R5M1: &str = include_str!("fixtures/seating/v-r5m1.txt");
 const V_DOOR: &str = include_str!("fixtures/seating/v-door.txt");
 const V_IMPOSS: &str = include_str!("fixtures/seating/v-imposs.txt");
 const V_BOUND_REF: &str = include_str!("fixtures/seating/v-bound-ref.txt");
+const V_BOUND_REF_PATHS: &str = include_str!("fixtures/seating/v-bound-ref-paths.txt");
 const V_BOUND_SEAT: &str = include_str!("fixtures/seating/v-bound-seat.txt");
 const V_CAP: &str = include_str!("fixtures/seating/v-cap.txt");
 const V_FPFREE_CARD: &str = include_str!("fixtures/seating/v-fpfree-card.txt");
@@ -707,6 +708,16 @@ fn v_bound_ref_reaches_the_command() {
     let e = refusal_of(V_BOUND_REF, &[]);
     assert!(e.contains("carry the SAME extended public key"), "{e}");
     assert!(e.contains("BIP 388"), "{e}");
+}
+
+/// The different-PATHS sibling reaches the command too, so the engine's
+/// path-blindness is pinned end to end and not only at the function.
+#[test]
+fn v_bound_ref_paths_reaches_the_command() {
+    let e = refusal_of(V_BOUND_REF_PATHS, &[]);
+    assert!(e.contains("carry the SAME extended public key"), "{e}");
+    assert!(e.contains("BIP 388"), "{e}");
+    assert!(!e.to_lowercase().contains("invalid"), "{e}");
 }
 
 #[test]
