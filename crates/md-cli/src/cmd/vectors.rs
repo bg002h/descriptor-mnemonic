@@ -218,3 +218,35 @@ fn write_lf(path: &std::path::Path, contents: &str) -> Result<(), CliError> {
     }
     fs::write(path, s.as_bytes()).map_err(|e| CliError::BadArg(format!("write {path:?}: {e}")))
 }
+
+#[cfg(test)]
+mod tests {
+    /// `md vectors` is FAIL-CLOSED against a forbidden-shape manifest entry
+    /// (`design/IMPLEMENTATION_PLAN_mdcli_mini.md` P2 step 6, the ruled
+    /// invocation point).
+    ///
+    /// The generator's ONLY route from a `Vector` to a `Descriptor` is
+    /// `parse_template` — the call in `run` above — and that entry carries
+    /// N1's REFUSE disposition. So a future manifest entry holding a shape the
+    /// taxonomy names stops the run instead of writing a corpus file, and the
+    /// corpus is the cross-language artifact vendored into the Go port.
+    ///
+    /// WHAT THIS DOES NOT DO: fabricate such an entry. `MANIFEST` is a `const`
+    /// in another crate and `Vector` is `#[non_exhaustive]`, so the row asserts
+    /// the exact call instead. If `run` ever reaches a `Descriptor` by another
+    /// route, this row keeps passing and the guarantee is gone — which is why
+    /// the call above is a single, named one.
+    #[test]
+    fn the_generator_refuses_a_forbidden_shape_template() {
+        let err = crate::parse::template::parse_template(
+            "wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))",
+            &[],
+            &[],
+        )
+        .expect_err("md vectors must not be able to write a forbidden shape");
+        assert!(
+            matches!(err, crate::error::CliError::Unsupported(_)),
+            "expected N1's refusal, got: {err}"
+        );
+    }
+}
