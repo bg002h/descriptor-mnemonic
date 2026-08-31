@@ -111,18 +111,22 @@ reachable case — is refused in both converter directions, at four points:
   warning — a 2-of-3 that X alone can spend — and `md decompose` refused the
   exact string `md descriptor` had just printed.
 
-One key at two DISJOINT use-sites (`<0;1>` beside `<2;3>`) is **not** reuse: it
-derives a different child at every index, BIP 388 permits it, and it still
-composes and still encodes.
+One key at two DISJOINT use-sites (`<0;1>` beside `<2;3>`) is **not** reuse of
+the WALLET: it derives a different child at every index, and BIP 388 permits it
+— on a SINGLE placeholder. **Corrected by the post-converter mini-cycle
+below:** the two-placeholder SPELLING of that same wallet neither composes nor
+encodes as of that cycle, because writing the key at two placeholders repeats
+it in BIP 388's key information vector — which the pairwise-distinctness rule
+forbids — and md1 cannot write the one-placeholder spelling BIP 388 permits
+either (F-417: one path per key slot).
 
-The **other** shape — one PLACEHOLDER at two positions — is where md's template
-surface is narrower than BIP 388 and currently inverts it: `md descriptor`
-refuses the BIP-LEGAL disjoint form (`@0/<0;1>/*` beside `@0/<2;3>/*` → "@0
-appears with inconsistent path/multipath/hardening") while composing the
-BIP-FORBIDDEN same-path form. That predates this work and is not changed by it;
-the seating and decompose routes refuse both spellings, and md's template
-admission is filed as an md-side question (`design/FOLLOWUPS.md`,
-`md-repeated-placeholder-inverts-bip388`).
+The **other** shape — one PLACEHOLDER at two positions — was, before that same
+mini-cycle, where md's template surface inverted BIP 388: `md descriptor`
+refused the BIP-LEGAL disjoint form (`@0/<0;1>/*` beside `@0/<2;3>/*`) while
+composing the BIP-FORBIDDEN same-path form (`@0/<0;1>/*` beside
+`@0/<0;1>/*`). The mini-cycle's N1 admission taxonomy (below) closes both
+directions at once and closes `design/FOLLOWUPS.md`'s
+`md-repeated-placeholder-inverts-bip388`.
 
 The refusals say **"forbidden by BIP 388"** and **"UNSUPPORTED"**, never
 "invalid": the script would be well-formed, and it is the POLICY this tool
@@ -284,6 +288,121 @@ Noted for the record: the Go port (`seedhammer` `md/encode_singlesig.go`,
 never had a single-string-or-error mode, so it never carried this defect. That
 is the second time in one cycle the strictly-downstream port was already right
 where the primary was not.
+
+## md-cli [Unreleased] — the post-converter mini-cycle: N1 admission, `--emit md1`, `--verify-against`, N3/R9, decompose BIP-388 `/**`/`-`
+
+Follow-on to the wallet-form converter above (`design/SPEC_mdcli_mini.md`,
+`design/IMPLEMENTATION_PLAN_mdcli_mini.md`), closing several FOLLOWUPS the
+converter cycle filed against itself.
+
+### Added — the N1 key-reuse/placeholder-repetition admission taxonomy
+
+- **`md encode`, `md descriptor --template`, `md address --template` and both
+  card-input entrances now refuse every BIP-388-relevant shape a template or
+  card can carry** — not just the one shape the converter cycle closed on
+  review (see above). One classifier (`crate::parse::reuse`), invoked
+  identically from the template path and the card path, so one wallet draws
+  one message however it arrived:
+
+  - **R-N1a** — one placeholder repeated at IDENTICAL use sites (BIP 388's own
+    invalid example, `sh(multi(1,@0/**,@0/**))` — "Repeated keys with the
+    same path expression").
+  - **R-N1b** — one placeholder at use sites whose multipath sets OVERLAP.
+  - **R-N1c** — one placeholder at use sites with DISJOINT multipath sets. The
+    one refusal in the taxonomy that is not about a defect: BIP 388 permits
+    this wallet outright, and md1 cannot express it (F-417, one path per key
+    slot) — the message says so and hands a runnable escape, `me sysw pack
+    --as descriptor --in <your export file>`.
+  - Two md-only axes that cite no BIP rule at all: a placeholder repeated with
+    a different inline ORIGIN, or a different wildcard HARDENING — both are
+    md1's own representability limits, not BIP violations.
+  - **R-N1d** — one key at two DIFFERENT placeholders whose use sites differ.
+    The SAME-use-site case (one key filling two cosigner slots identically)
+    keeps its own pre-existing wording and position; this is the disjoint
+    delta only.
+
+  Every message in the taxonomy obeys one rule: **never call the operator's
+  wallet "invalid."** A repeated-key descriptor is legal script; what md
+  declines to do is mint or compose that SHAPE, and the messages say
+  "forbidden by BIP 388" / "UNSUPPORTED" instead.
+
+### Added — the read side keeps reading (Acceptance 5)
+
+- **`md decode`, `md inspect`, `md bytecode` and `md verify` still complete at
+  exit 0** on a card carrying a shape this cycle newly refuses at mint time,
+  with the SAME diagnostic on stderr as a WARNING instead of a refusal — so a
+  plate engraved before this cycle stays inspectable and verifiable. The N1
+  classifier is never added to `encode_payload`'s validator set for exactly
+  this reason: that entry point is shared with the reading verbs.
+
+### Added — `md descriptor --emit md1`: a keyed card from a seating result
+
+  ```sh
+  md descriptor <keyless md1 policy…> --from-mk1 <mk1 key cards…> --emit md1
+  ```
+
+  Mints the SEATED wallet as a keyed md1 card, byte-identical to what `md
+  encode` would mint from the same template, keys and per-slot
+  origins/fingerprints — closing the S → keyed-card matrix cell the converter
+  cycle left blocked (`md encode --key`'s depth-3/4 admission rule cannot take
+  the depth-0 keys a seating result carries; this route does not use that
+  bridge). Admissible only with `--from-mk1`/`--from-mk1-file`; a `--template`
+  or an already-keyed card on the positional refuses naming the right command.
+
+### Added — `md descriptor --verify-against <md1|FILE>`
+
+  Cross-form comparison the converter cycle's own two-command substitute got
+  wrong (an md1 string, or a FILE holding one or more, checked against the
+  composed descriptor for SPEND-EQUALITY, origin metadata excluded).
+  Admissible on every composing input mode — the keyed-card positional and
+  `--from-mk1` seating alike.
+
+  - exit **0** — spend-equal.
+  - exit **5** — NOT spend-equal (`md repair`'s reserved-5 precedent for a
+    non-error, non-default answer), naming which half differs: the KEY
+    VALUES, the USE-SITE PATHS, or the tree STRUCTURE.
+  - exit **1**/**2** — a decode/argument error, never a verdict, so a
+    mistyped `--verify-against` argument can never read as "not equal."
+
+### Added — the `--key` bracket path as a last-resort PATH SOURCE (N3)
+
+- **A slot with NO inline template origin and NO `--path` now takes its
+  origin from an origin-notated `--key '@i=[fp/path]xpub'` bracket**, where
+  before it refused. Precedence is unchanged and now three-deep: inline
+  template origin, then the shared `--path`, then the bracket — each source
+  is consulted only where the ones ahead of it are silent for that slot, so a
+  bracket disagreeing with a WINNING `--path` still refuses rather than
+  silently overriding it.
+
+### Added — `--from-mk1` arity guards, on both `descriptor` and `address`
+
+- **`--from-mk1` takes `num_args = 1..`**, so a natural multi-card paste no
+  longer has to repeat the flag per card. Widening it opened two gaps this
+  cycle closes with named refusals, checked before either verb decides what
+  to build: an mk1-prefixed string that spilled onto the md1 positional (the
+  greedy flag swallowed a trailing policy string meant for it), and an md1
+  string that spilled INTO `--from-mk1`'s own values; plus `--from-mk1` with
+  values but no policy card and no `--template` at all — the group-relaxation's
+  own gap, which used to fall through to a bare "chunk set is empty" error
+  naming neither the flag nor the missing card.
+
+### Added — `md decompose` reads BIP-388 `/**` and stdin `-`
+
+- **`md decompose` accepts a concrete descriptor spelled with the `/**`
+  double-wildcard shorthand**, desugaring only the two BIP-388 forms
+  (`.../**` and `.../0/**`) to their explicit `/<0;1>/*` equivalents before
+  parsing; every other `/**`-adjacent spelling reaches rust-miniscript
+  unchanged. `/**` and `/<0;1>/*` decompose to the identical template.
+- **`md decompose -` reads its descriptor from stdin**, matching every other
+  reading verb (`decode`, `inspect`, `bytecode`, `verify`), which already
+  took `-`; `decompose` had not.
+
+### Fixed
+
+- **`md descriptor`/`md address` refuse one key filling two slots** built
+  from a `--template`, closing the gap `REVIEW-converter-whole-diff-r1` C1
+  found: `sortedmulti(2,X,X,Y)` composed at exit 0 with no warning through
+  this route, though `md encode` had refused the same wallet since F-218.
 
 ## md-codec [0.42.0] — 2026-07-11
 
