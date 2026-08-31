@@ -2128,7 +2128,7 @@ The descriptor→`@N`-template renderer lived only in `md-cli` (`format/text.rs:
 - **Status:** OPEN. **Tier:** `feature` / cross-repo.
 - **Companion:** `mnemonic-key/design/FOLLOWUPS.md` → `stub-keyed-wallet-binding-at-mint` (primary, mint-side).
 
-### `md-repeated-placeholder-inverts-bip388` — md accepts the BIP-388-forbidden same-path repetition and refuses the BIP-388-legal disjoint form (repo: **descriptor-mnemonic**; owning phase: **dedicated post-converter md admission mini-cycle — decide both directions with vectors** (re-tagged 2026-08-30 by the converter plan §6: the converter cycle may not own it, by the entry's own no-side-effect rule))
+### `md-repeated-placeholder-inverts-bip388` — md accepts the BIP-388-forbidden same-path repetition and refuses the BIP-388-legal disjoint form (repo: **descriptor-mnemonic**; owning phase: **dedicated post-converter md admission mini-cycle — decide both directions with vectors** (re-tagged 2026-08-30 by the converter plan §6: the converter cycle may not own it, by the entry's own no-side-effect rule) — ✓ CLOSED P2+P3, 2026-08-30)
 
 Filed 2026-08-30 from the wallet-form-converter cycle; reground the
 same day by the operator's refinement (verbatim): "Bad ideas can be
@@ -2148,7 +2148,13 @@ directions deliberately (a normative md change, own gate + vectors):
 refuse the same-path repetition, and either admit or by-design-refuse
 the disjoint form; do not change either as a converter side effect.
 
-### `md-decompose-rejects-double-wildcard-input` — `md decompose` cannot read a descriptor written with BIP-389's `/**` shorthand, though `md encode` accepts `@0/**` (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — C4 CONSIDERED AND DECLINED 2026-08-30**)
+**✓ CLOSED by P2+P3 (2026-08-30).** P2 (final commit `83885768`) built
+the N1 taxonomy classifier and decided both directions with vectors,
+replacing the forbidden-vs-legal corpus entries. P3 (final commit
+`f9cfde94`) added card-input refusals, read-side warnings on the
+forbidden shape, and unified the door-check across entry points.
+
+### `md-decompose-rejects-double-wildcard-input` — `md decompose` cannot read a descriptor written with BIP-389's `/**` shorthand, though `md encode` accepts `@0/**` (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — C4 CONSIDERED AND DECLINED 2026-08-30 — ✓ CLOSED P6, 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C3
 (`md decompose`). Severity **Minor**: the remedy is in the operator's
@@ -2191,7 +2197,11 @@ unreachable meanwhile. It keeps its owning phase: the post-converter
 md-cli mini-cycle, where the two options above get decided together
 with vectors.
 
-### `md-decompose-has-no-json-output` — `md decompose` emits text only, unlike every other reading verb (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+**✓ CLOSED by P6 (2026-08-30), commit `3aa38764`.** `md decompose`
+now desugars `/**` via the same shared core `md encode` uses, before
+handing the descriptor to rust-miniscript.
+
+### `md-decompose-has-no-json-output` — `md decompose` emits text only, unlike every other reading verb (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — PARKED P7, 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C3.
 Severity **Nit**.
@@ -2206,7 +2216,11 @@ front-end" would want one — that is the moment to design it, since the
 envelope should carry the per-slot origin/fingerprint/key structure
 rather than the rendered text blocks.
 
-### `md-verify-against-flag-for-cross-form-comparison` — SPEC B2's split-vs-keyed comparison has no operator-reachable command; the obvious two-command substitute reports a FALSE difference (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+**Parked by the mini-cycle walk ruling 2026-08-31 (operator; see
+BRAINSTORM_mdcli_mini.md rider 8): the trigger recorded above stands
+— the first front-end consumer designs the envelope.**
+
+### `md-verify-against-flag-for-cross-form-comparison` — SPEC B2's split-vs-keyed comparison has no operator-reachable command; the obvious two-command substitute reports a FALSE difference (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — ✓ CLOSED P6, 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C4, closing
 the question C2's report left open ("`md descriptor --from-mk1` cannot be
@@ -2259,7 +2273,13 @@ values, use-sites), and say plainly that origin metadata is excluded and
 why. Vector rows: an equal cross-form pair, a one-xpub-off negative, and
 an origins-differ pair that must still report EQUAL.
 
-### `md-cannot-mint-a-keyed-card-from-a-split-set` — the S → keyed-card bridge is blocked by `md encode --key`'s depth-3/4 admission rule (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+**✓ CLOSED by P6 (2026-08-30), commit `1a1983d7`.** `--verify-against
+<md1|FILE>` on `md descriptor` wires `seat::compose::spend_equal`:
+exit 0 spend-equal, exit 5 not spend-equal, exit 1-2 on errors, and
+origin metadata is stated as excluded per SPEC Acceptance 1's two
+relations.
+
+### `md-cannot-mint-a-keyed-card-from-a-split-set` — the S → keyed-card bridge is blocked by `md encode --key`'s depth-3/4 admission rule (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — ✓ CLOSED P5, 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C4, while
 flipping plan §1's matrix. Severity **Minor** — a missing surface, not a
@@ -2297,7 +2317,13 @@ Related but distinct: `stub-keyed-wallet-binding-at-mint` (mk's mint-side
 stub semantics) and `md-decompose-rejects-double-wildcard-input` (D-row
 input spelling). Neither is this.
 
-### `phase-gate-omits-cargo-doc` — the converter cycle's per-phase gate ran nextest + clippy + fmt and never rustdoc, so CI's `doc` job was RED for two phases undetected (repo: **descriptor-mnemonic**; owning phase: **the next plan that writes a phase gate**)
+**✓ CLOSED by P5 (2026-08-30), commit `cd7785a2`.** `--emit md1` on
+`md descriptor --from-mk1` mints the keyed card directly from the
+seating result, byte-identical to `md encode`'s mint; the S →
+keyed-card matrix cell flips to ✓ in all four homes (plan §1's
+matrix).
+
+### `phase-gate-omits-cargo-doc` — the converter cycle's per-phase gate ran nextest + clippy + fmt and never rustdoc, so CI's `doc` job was RED for two phases undetected (repo: **descriptor-mnemonic**; owning phase: **the next plan that writes a phase gate — ✓ CLOSED P1 (mdcli-mini), 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C4.
 Severity **Minor** (the defect it hid was itself minor; the GAP is the
@@ -2325,6 +2351,15 @@ CI is a gate that reports green for a tree CI will reject** — the next
 plan's gate definition should name every CI job, or name the command that
 runs them all.
 
+**✓ CLOSED by P1 (2026-08-30), commit `400a2f77`.** `scripts/phase-gate.sh`
+— the phase gate for this plan, `design/IMPLEMENTATION_PLAN_mdcli_mini.md`
+— names every runnable CI job (`cargo nextest run --locked --all-features`,
+`cargo test --workspace --doc`, `cargo clippy --locked --all-targets
+--all-features -- -D warnings`, `cargo fmt --check`, `cargo doc --workspace
+--no-deps --document-private-items --all-features`, the vectors-checksum
+check) and states its own blind spot (freebsd/musl/windows/macos CI legs)
+in its output, satisfying the "next plan" this entry's heading anticipated.
+
 ### `push-ritual-not-discoverable-from-claude-md` — `scripts/push-via-staging.sh` exists but nothing an agent reads first points at it (repo: **descriptor-mnemonic**; owning phase: **operator's call — a one-line CLAUDE.md edit**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, phase C4, with the
@@ -2345,7 +2380,7 @@ implementer editing the instructions it is itself operating under is a
 change the operator should make deliberately, not a side effect of a
 close-out phase.
 
-### `descriptor-key-bracket-path-as-a-last-resort-source` — should an origin-notated `--key`'s bracket path become a PATH SOURCE when nothing else supplies one? (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — operator decision**)
+### `descriptor-key-bracket-path-as-a-last-resort-source` — should an origin-notated `--key`'s bracket path become a PATH SOURCE when nothing else supplies one? (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — operator decision — ✓ CLOSED P4, 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, folding
 REVIEW-converter-whole-diff-r1 I1. Severity **Minor** (the defect I1
@@ -2391,7 +2426,12 @@ md: MISMATCH: @0: origin-notated --key states path `48'/0'/0'/2'`, but nothing
 supplies a path for @0 …
 ```
 
-### `all-features-suite-is-red-and-ungated-by-ci` — `cargo test --all-features` has one failing test that CI never runs (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+**✓ CLOSED by P4 (2026-08-30), commit `d72ede51`.** The operator ruled
+YES in the brainstorm walk (2026-08-31): the `--key` bracket path is
+now a last-resort PATH SOURCE, with precedence inline template origin
+> `--path` > `--key` bracket, exactly as sketched above.
+
+### `all-features-suite-is-red-and-ungated-by-ci` — `cargo test --all-features` has one failing test that CI never runs (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — ✓ CLOSED P1, 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, folding
 REVIEW-converter-whole-diff-r1 M5. Severity **Minor**. **Pre-existing**,
@@ -2429,7 +2469,13 @@ Two pieces, and they are separable: (a) delete `render_tr_template` and its
 test, letting upstream `Display` render; (b) add `--all-features` to the CI test
 job, which is what stops the next one. Do (b) even if (a) slips.
 
-### `md-decompose-does-not-read-stdin` — every other reading verb takes `-`, `decompose` does not (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle**)
+**✓ CLOSED by P1 (2026-08-30).** Both pieces landed: (a)
+`render_tr_template` and its test deleted, Tap rendering routed
+through upstream `Display` (commit `1b36bf6b`); (b) CI widened to
+`--all-features`, and `scripts/phase-gate.sh` added as the per-phase
+gate (commit `400a2f77`).
+
+### `md-decompose-does-not-read-stdin` — every other reading verb takes `-`, `decompose` does not (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — ✓ CLOSED P6, 2026-08-30**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, folding
 REVIEW-converter-whole-diff-r1 M6. Severity **Minor**.
@@ -2456,6 +2502,10 @@ Two parts, the second cheaper and worth doing regardless: (a) accept `-` on the
 positional; (b) the refusal above does not mention `--in`, so an operator who
 tries the pipe is told what `-` is not, and not what to use instead.
 
+**✓ CLOSED by P6 (2026-08-30), commit `3aa38764`.** `-` is now
+accepted on `decompose`'s positional; the refusal for anything else
+names both `--in` and `-` as the accepted spellings.
+
 ### `sibling-toolkit-md-manual-lockstep-for-the-converter` — `bg002h/mnemonic-toolkit`'s `md` CLI reference has not been checked against this cycle's new surface (repo: **mnemonic-toolkit**; owning phase: **operator's call — a cross-repo docs pass**)
 
 Filed 2026-08-30 from the wallet-form-converter cycle, folding
@@ -2473,7 +2523,15 @@ That file is in another repository and outside this worktree, so its state
 could not be verified here. The obligation is recorded rather than discharged;
 whoever next opens the toolkit repo should run its `flag-coverage` lint.
 
-### `from-mk1-arity-spills-card-strings-into-the-md1-positional` — `--from-mk1` takes ONE string per occurrence, so the natural paste sends the rest to the md1 positional and fails with a bare codec error (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — discovered in its own brainstorm walk**)
+**Still OPEN (2026-08-30).** The docs pass this entry calls for is
+running in `bg002h/mnemonic-toolkit` as part of this cycle's P7 (plan
+step 2: `docs/manual/src/40-cli-reference/42-md.md` catching up on
+`--verify-against`, `--emit md1`, bracket-source, `-` on decompose,
+`/**`, R9 arity; `tests/lint.sh flag-coverage` green there). Closure
+will cite that repo's commit once the pass lands — not discharged from
+this worktree.
+
+### `from-mk1-arity-spills-card-strings-into-the-md1-positional` — `--from-mk1` takes ONE string per occurrence, so the natural paste sends the rest to the md1 positional and fails with a bare codec error (repo: **descriptor-mnemonic**; owning phase: **post-converter md-cli mini-cycle — discovered in its own brainstorm walk — ✓ CLOSED P4, 2026-08-30**)
 
 Filed 2026-08-31 from the mini-cycle brainstorm walk, while measuring
 the operator's same-key-two-paths question. Severity **Minor** — the
@@ -2507,3 +2565,13 @@ deliberately); (b) the md1 positional refuses an `mk1…`-prefixed
 string BY NAME ("this is an mk1 card string; pass it via --from-mk1"),
 which also catches a card string arriving there by any other route.
 (b) is worth doing even if (a) lands.
+
+**✓ CLOSED by P4 (2026-08-30), commit `d593218c`.** Both remedies
+landed together: (a) `num_args = 1..` on `--from-mk1` on both verbs,
+with the `ArgGroup` widened so `phrases + from_mk1` (the S row) stays
+legal and a bare `--from-mk1` with nothing else still trips
+`required(true)`; (b) `cmd::build::check_from_mk1_arity`, called first
+in both `cmd::descriptor::run` and `cmd::address::run`, names an
+`mk1`-prefixed string on the policy positional and an `md1`-prefixed
+string among `--from-mk1`'s values by name, symmetrically on both
+verbs.
