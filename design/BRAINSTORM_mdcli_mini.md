@@ -8,6 +8,13 @@ Baseline: main = `3efab622` (converter SHIPPED; suite 1069 passed /
 2 skipped under `cargo nextest run --locked`). Every code citation in
 this document was re-verified against this tree on 2026-08-31.
 
+**Walk status (2026-08-31):** decisions (a) and (b) RULED below. The
+operator confirmed in the walk: item 1's read-side rule, item 2's
+mint-from-seating shape, rider 6's desugar, rider 8's park. Item 1's
+two directions stand pending the operator's word after the same-key
+probe was answered by measurement (see item 1's walk measurement).
+Rider 9 was DISCOVERED by the walk itself.
+
 ## OPERATOR DECISION (a) — should an origin-notated `--key`'s bracket path become a PATH SOURCE of last resort?
 
 (`descriptor-key-bracket-path-as-a-last-resort-source`)
@@ -150,6 +157,21 @@ the template surface today (the forbidden form composes clean).
 Direction 1 makes A3's premise true. The mini-cycle spec states that
 reconciliation rather than silently inheriting it.
 
+**Walk measurement (2026-08-31), answering the operator's probe** ("a
+two-slot template populated with the same key at different paths via
+two mk1 strings — refused currently?"): YES — measured live, not
+recited. A freshly minted pair (same xpub declared at `48'/0'/0'/2'`
+and `48'/0'/1'/2'`) fed to `md descriptor --from-mk1` refuses: "cards
+… carry the SAME extended public key … forbidden by BIP 388 …
+UNSUPPORTED here, not a malformed input", exit 1. The check is
+`check_no_repeated_xpub` (`crates/md-cli/src/seat/satisfy.rs:294`,
+wired at `seat/mod.rs:140`, BEFORE matching) and it compares key
+material only (public key + chain code) — declared paths never enter.
+So item 1's gap is confined to the TEMPLATE surface; the card-seating
+side is already closed. Vector gap for the spec: `V-BOUND-REF` pins
+only the same-path variant — add a different-paths sibling row so the
+case the operator asked about is pinned, not measured once.
+
 ### Item 2 — `md-cannot-mint-a-keyed-card-from-a-split-set`: mint from the seating result; do NOT relax the depth rule
 
 Measured (2026-08-30): the S → keyed-card bridge refuses from both
@@ -252,6 +274,17 @@ item by recording the trigger ("the first front-end doing the
 listdescriptors-extraction job designs the envelope") rather than
 inventing an API with no consumer. Alternative: a minimal envelope now
 while the walker is warm, accepting envelope churn later.
+
+### 9. `--from-mk1` arity + mistargeted diagnostic (`from-mk1-arity-spills-card-strings-into-the-md1-positional`) — NEW, from this walk
+
+Discovered 2026-08-31 while measuring the operator's same-key probe.
+`--from-mk1` takes one string per occurrence, so the natural paste of
+a card set sends every string after the first to the md1 positional,
+which fails with the bare codec error "wire-format version mismatch:
+got 10, expected 4" — the F-420 class on the converter's most-trodden
+entrance. Two composable remedies (full entry in FOLLOWUPS):
+`num_args = 1..` on the flag, and an mk1-prefix refusal in the md1
+positional that names `--from-mk1`.
 
 ## PROCESS AND GATES
 
