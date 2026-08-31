@@ -665,12 +665,16 @@ fn corpus() -> Vec<Shape> {
         // This is also the evidence DD6's EXPERIMENTAL advisory should rest
         // on. That advisory says depth-≥2 "recovery is not possible with
         // shipped tooling" — true while md depended on upstream's `Display`,
-        // which mangles non-caterpillar trees. PR #953 fixes it and is merged
+        // which mangled non-caterpillar trees. PR #953 fixes it and is merged
         // but STILL UNRELEASED (verified with `git merge-base --is-ancestor`:
-        // ff4732e is not an ancestor of miniscript-13.1.0). md stopped
-        // depending on it — `md-cli/src/compile.rs: render_tr_template` ports
-        // #953's algorithm. What remained missing was an INDEPENDENT check,
-        // and that is this shape.
+        // ff4732e is not an ancestor of miniscript-13.1.0), so the workspace
+        // `Cargo.toml` `[patch.crates-io]` pins miniscript to a git rev
+        // carrying it. `md-cli/src/compile.rs` renders taproot templates via
+        // upstream `Descriptor::to_string()` directly — the local
+        // `render_tr_template` port of #953's algorithm this comment used to
+        // name became redundant once the pin carried the fix, and P1 deleted
+        // it (`all-features-suite-is-red-and-ungated-by-ci`). What remained
+        // missing was an INDEPENDENT check, and that is this shape.
         //
         // Shaped as the unbalanced 3-leaf tree rather than the balanced
         // 4-leaf one on purpose: `{{A,B},C}` has a DECREASING leaf-depth
