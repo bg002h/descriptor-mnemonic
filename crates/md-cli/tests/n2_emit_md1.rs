@@ -12,23 +12,52 @@
 //! compressed point) and no depth field. `--emit md1` does not use that
 //! bridge and does not relax its rule: it mints from the SEATING RESULT,
 //! whose 65 bytes are exactly what a keyed card needs. Nothing is lost in the
-//! trip.
+//! trip, and the primary row below measures that as byte-identity rather than
+//! asserting it.
+//!
+//! ## The oracle (SPEC N2 "Oracle", r1 I4)
+//!
+//! > Byte-identity is decided by the FULL input set: template, keys, per-slot
+//! > origins, per-slot FINGERPRINTS …, and the path-declaration SHAPE.
+//!
+//! The PRIMARY row is the spec's primary form, measured executable rather
+//! than falling back: `md encode <template with INLINE per-slot origins>
+//! --key @i=XPUB --fingerprint @i=HEX`, one `--fingerprint` per fingerprint
+//! the policy card declares. Its stdout and `--emit md1`'s stdout are
+//! compared byte for byte.
+//!
+//! The SECONDARY rows are `spend_equal` and address-0 equality against the
+//! KEYED fixture card `v-spendeq-keyed.txt`, which is the same wallet minted
+//! with DIFFERENT declared fingerprints. Both are computed in
+//! `tests/common/facts.rs` from a rust-miniscript parse of the emitted
+//! descriptor STRING — never by asking `src/seat` whether it succeeded.
 //!
 //! ## Input modes
 //!
 //! `--emit md1` is admissible ONLY with `--from-mk1`/`--from-mk1-file`, and
-//! the two refusals are rendered-line rows (Acceptance 4).
+//! the two refusals are rendered-line rows (Acceptance 4). It changes ONLY
+//! the output form: a seating refusal is pinned byte-identical with and
+//! without it, and it composes with `--seat`.
 
 use assert_cmd::Command;
 use std::io::Write;
 
+#[path = "common/facts.rs"]
+mod common_facts;
+use common_facts::{Facts, facts, spend_equal, spend_equal_report};
+
 const V_B1_WALLET: &str = include_str!("fixtures/seating/v-b1-wallet.txt");
 const V_SPENDEQ_KEYED: &str = include_str!("fixtures/seating/v-spendeq-keyed.txt");
+const V_USP: &str = include_str!("fixtures/seating/v-usp.txt");
 const KEYS_TXT: &str = include_str!("fixtures/pathological/keys.txt");
 
 /// V-B1-WALLET's own mint command, from the provenance header of
-/// `fixtures/seating/v-b1-wallet.txt`.
+/// `fixtures/seating/v-b1-wallet.txt`. `fixture_header_still_records_this_mint`
+/// asserts the fixture still says so, so a regenerated fixture cannot leave
+/// the oracle row measuring a template nobody minted.
 const B1_TPL: &str = "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))";
+/// The fingerprint the policy card declares for BOTH slots.
+const B1_FP: &str = "73c5da0a";
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -117,6 +146,58 @@ fn descriptor_of(cards: &[String]) -> String {
     let o = c.output().unwrap();
     assert!(o.status.success(), "{}", err_of(&o));
     out_of(&o).trim_end().to_string()
+}
+
+/// Address 0 of the receive chain, derived by rust-miniscript from the
+/// descriptor STRING — not by a second run of md's own engine.
+fn address_zero_of(desc: &str) -> String {
+    use miniscript::descriptor::{Descriptor, DescriptorPublicKey};
+    use std::str::FromStr;
+    let d = Descriptor::<DescriptorPublicKey>::from_str(desc)
+        .unwrap_or_else(|e| panic!("the composed descriptor must parse: {e}"));
+    d.into_single_descriptors()
+        .expect("multipath descriptor splits into single-path forms")
+        .into_iter()
+        .next()
+        .expect("chain 0 exists")
+        .derive_at_index(0)
+        .expect("index 0 derives")
+        .address(bitcoin::Network::Bitcoin)
+        .expect("a wsh descriptor has an address")
+        .to_string()
+}
+
+// ─── the fixture provenance pin ─────────────────────────────────────────
+
+/// The oracle row below hands `md encode` a template and two `--fingerprint`
+/// flags typed out as constants. This is what keeps them the FIXTURE's, not
+/// this file's opinion of it: v-b1-wallet.txt records its own mint command in
+/// its provenance header, and if the fixture is ever regenerated from a
+/// different template the oracle stops measuring anything and this row says
+/// so first.
+#[test]
+fn n2_fixture_header_still_records_the_mint_the_oracle_reproduces() {
+    let header: String = V_B1_WALLET
+        .lines()
+        .filter(|l| l.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        header.contains(B1_TPL),
+        "v-b1-wallet.txt's header no longer records the template the oracle uses:\n{header}"
+    );
+    for i in [0, 1] {
+        assert!(
+            header.contains(&format!("--fingerprint @{i}={B1_FP}")),
+            "v-b1-wallet.txt's header no longer declares @{i}={B1_FP}:\n{header}"
+        );
+    }
+    // And the two keys the oracle seats are the records those origins name.
+    for (n, want) in [(1usize, "48'/0'/0'/2'"), (2usize, "48'/0'/1'/2'")] {
+        let (origin, xpub) = key_record(n);
+        assert_eq!(origin, format!("{B1_FP}/{want}"), "keys.txt record {n}");
+        assert!(xpub.starts_with("xpub"), "keys.txt record {n}: {xpub}");
+    }
 }
 
 // ─── step 1 — emission from the seating result ──────────────────────────
@@ -289,6 +370,133 @@ fn n2_emit_md1_and_json_are_declared_mutually_exclusive() {
     assert!(
         !out_of(&o).contains("md1") && !out_of(&o).contains("wsh("),
         "nothing composed: {}",
+        out_of(&o)
+    );
+}
+
+// ─── step 3 — the oracle ────────────────────────────────────────────────
+
+/// **PRIMARY.** The minted card is byte-identical to the one `md encode`
+/// mints from the same wallet, given the template with INLINE per-slot
+/// origins and one `--fingerprint @i=HEX` per fingerprint the policy card
+/// declares — SPEC N2's primary oracle form, which the spec records as
+/// measured-executable at the cycle baseline.
+///
+/// stdout against stdout: `md encode` puts the artifact there unbroken, and
+/// so does this.
+#[test]
+fn n2_emit_md1_is_byte_identical_to_the_md_encode_mint_of_the_same_wallet() {
+    let (_, k1) = key_record(1);
+    let (_, k2) = key_record(2);
+    let oracle = md()
+        .args([
+            "encode",
+            B1_TPL,
+            "--key",
+            &format!("@0={k1}"),
+            "--key",
+            &format!("@1={k2}"),
+            "--fingerprint",
+            &format!("@0={B1_FP}"),
+            "--fingerprint",
+            &format!("@1={B1_FP}"),
+        ])
+        .output()
+        .unwrap();
+    assert!(oracle.status.success(), "{}", err_of(&oracle));
+
+    let minted = emit_b1();
+    assert!(minted.status.success(), "{}", err_of(&minted));
+
+    assert_eq!(
+        out_of(&minted),
+        out_of(&oracle),
+        "the seated mint and the `md encode` mint are one card"
+    );
+    // The comparison is only worth something if there is a card in it.
+    assert!(
+        out_of(&oracle).starts_with("md1"),
+        "the oracle minted a card: {}",
+        out_of(&oracle)
+    );
+    // Both name the same chunk set, which is the id an operator writes down.
+    let id_of = |o: &std::process::Output| -> String {
+        err_of(o)
+            .lines()
+            .find_map(|l| l.strip_prefix("chunk-set-id: ").map(str::to_string))
+            .expect("a chunked mint names its set id")
+    };
+    assert_eq!(id_of(&minted), id_of(&oracle));
+}
+
+/// **SECONDARY.** The minted card is SPEND-EQUAL to the keyed fixture card of
+/// the same wallet, and derives the same address 0 — with the fixture card
+/// deliberately declaring DIFFERENT fingerprints, so the row exercises the
+/// relation rather than string equality.
+#[test]
+fn n2_emit_md1_is_spend_equal_to_the_keyed_fixture_card_and_shares_address_zero() {
+    let minted = emit_b1();
+    assert!(minted.status.success(), "{}", err_of(&minted));
+    let minted_cards: Vec<String> = out_of(&minted).lines().map(str::to_string).collect();
+
+    let a = descriptor_of(&minted_cards);
+    let b = descriptor_of(&md1(V_SPENDEQ_KEYED));
+
+    // The two forms declare different origin metadata...
+    assert_ne!(a, b, "the fixture card declares another fingerprint");
+    let (fa, fb): (Facts, Facts) = (facts(&a), facts(&b));
+    assert_ne!(fa.origins, fb.origins, "which is what differs");
+    // ...and are still spend-equal, origin metadata excluded.
+    assert!(spend_equal(&fa, &fb), "{}", spend_equal_report(&fa, &fb));
+    assert_eq!(address_zero_of(&a), address_zero_of(&b));
+}
+
+/// **`--emit` changes ONLY the output form.** Every A2/A3/A4 seating rule is
+/// untouched, so a refusal is the same refusal — byte for byte on stderr, and
+/// still nothing on stdout.
+#[test]
+fn n2_emit_md1_leaves_a_seating_refusal_exactly_as_it_was() {
+    let plain = seat_cmd("descriptor", V_USP, &mk1(V_USP), &[])
+        .output()
+        .unwrap();
+    let emitted = seat_cmd("descriptor", V_USP, &mk1(V_USP), &["--emit", "md1"])
+        .output()
+        .unwrap();
+    assert_eq!(plain.status.code(), Some(1), "{}", err_of(&plain));
+    assert_eq!(emitted.status.code(), plain.status.code());
+    assert!(
+        out_of(&emitted).is_empty(),
+        "nothing on stdout when refusing"
+    );
+    assert_eq!(err_of(&emitted), err_of(&plain), "one refusal, one wording");
+}
+
+/// And it composes with `--seat`: the assertion that resolves that refusal
+/// resolves it here too, and what comes back is a card.
+#[test]
+fn n2_emit_md1_composes_with_seat() {
+    let refused = seat_cmd("descriptor", V_USP, &mk1(V_USP), &[])
+        .output()
+        .unwrap();
+    let id = err_of(&refused)
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("card "))
+        .and_then(|s| s.split(' ').next().map(str::to_string))
+        .expect("the refusal lists the cards that fit more than one slot");
+    assert_eq!(id.len(), 5, "a full five-hex-digit id: {id}");
+
+    let o = seat_cmd(
+        "descriptor",
+        V_USP,
+        &mk1(V_USP),
+        &["--seat", &format!("@0={id}"), "--emit", "md1"],
+    )
+    .output()
+    .unwrap();
+    assert!(o.status.success(), "{}", err_of(&o));
+    assert!(
+        out_of(&o).starts_with("md1"),
+        "a seated mint is a card: {}",
         out_of(&o)
     );
 }
