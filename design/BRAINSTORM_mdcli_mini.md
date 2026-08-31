@@ -17,6 +17,15 @@ mint; keep the disjoint-form refusal and rewrite its message honestly.
 Rider 9 was DISCOVERED by the walk itself. THE WALK IS COMPLETE —
 every decision this cycle needed is ruled; the spec follows.
 
+**Post-walk ruling (operator, 2026-08-31, verbatim), on the
+degrading-multisig consequence surfaced by plan review r1:** "No
+carve out for reused keys unless different origin paths." The
+same-path reuse refusals stand with no exception — the
+timelock-recovery/degrading-multisig spelling included; one master
+at DIFFERENT origin paths (different derived xpubs) remains the
+legitimate, control-row-pinned family. Ratifies the GREEN spec as
+written; queued for the spec's Principle section at the next fold.
+
 ## OPERATOR DECISION (a) — should an origin-notated `--key`'s bracket path become a PATH SOURCE of last resort?
 
 (`descriptor-key-bracket-path-as-a-last-resort-source`)
