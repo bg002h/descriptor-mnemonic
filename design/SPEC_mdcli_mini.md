@@ -1,7 +1,9 @@
 # SPEC — post-converter md-cli mini-cycle (admission taxonomy, S→K mint, converter riders)
 
-Status: DRAFT r1 — REVIEW-mdcli-mini-spec-r1 (2C/7I/4M/2N) is FOLDED
-here; re-review pending. Authored from `BRAINSTORM_mdcli_mini.md` as
+Status: DRAFT r2 — REVIEW-mdcli-mini-spec-r1 (2C/7I/4M/2N, 15/15
+fixed per r2) and REVIEW-mdcli-mini-spec-r2 (0C/3I/3M/1N, all new
+findings in the r1 fold's own content) are BOTH folded; re-review
+pending. Authored from `BRAINSTORM_mdcli_mini.md` as
 walked with the operator 2026-08-31; every ruling cited below carries
 its date and is recorded verbatim in the brainstorm's walk sections.
 
@@ -40,6 +42,15 @@ against bip-0388.mediawiki (fetched 2026-08-31): the repeated-key
 invalid example is line 308, the disjointness rule line 195, the
 pairwise-distinct rule line 193, the disjoint-use-site VALID example
 line 291, the explicit-path-on-placeholder invalid example line 305.
+The r2 reviewer additionally verified: `cargo clippy --all-features
+--all-targets -- -D warnings` and `RUSTDOCFLAGS="-D warnings" cargo
+doc --all-features --workspace --no-deps --document-private-items`
+both exit 0 at this tree, so R5(b) cannot turn CI red; `md encode`
+accepts a template with inline divergent origins plus per-slot
+`--fingerprint @i=HEX` (N2's primary oracle form is executable, not
+resting on its fallback); and the two-placeholder disjoint same-key
+form MINTS today (`md encode`, exit 0, chunk-set-id `0x00ee4`) —
+plates carrying R-N1d's disjoint half can exist.
 
 ## Principle (operator rulings, verbatim anchors)
 
@@ -66,7 +77,7 @@ multipath set, wildcard hardening).
 | triples identical | BIP 388 FORBIDDEN (invalid-example list, line 308: "Repeated keys with the same path expression") | **R-N1a: mint/compose REFUSE**, citing the repeated-key rule |
 | triples differ ONLY in multipath sets, sets overlap | BIP 388 FORBIDDEN (disjointness rule, line 195) | **R-N1b: REFUSE** — disjointness named primary, wire inexpressibility secondary |
 | triples differ ONLY in multipath sets, sets disjoint | BIP 388 LEGAL (its own valid example, line 291) | **R-N1c: refusal STANDS** (F-417: one path per key slot); message rewritten honestly, see below |
-| triples differ in inline ORIGIN | outside BIP 388's KEY grammar (line 305 lists an explicit path on a placeholder as invalid) | **R-N1-origin: REFUSE** naming the origin axis — one placeholder cannot carry two origins; one origin per key in md1. MUST NOT cite the repeated-key rule |
+| triples differ in inline ORIGIN | md representability (one origin per key) | **R-N1-origin: REFUSE** naming the origin axis — one placeholder cannot carry two origins; one origin per key in md1. MUST NOT cite the repeated-key rule, and MUST NOT cite BIP 388 at all: inline origins are md's own normal template spelling (`--emit template` prints them, `md encode` mints them — both measured), not an error class. Spec-internal aside, never for diagnostics: BIP 388's KEY grammar carries no explicit paths (its line-305 invalid example), which is why this axis is md-side |
 | triples differ in wildcard HARDENING | md derivability, not BIP 388 | **R-N1-hardening: REFUSE** naming the hardening axis; MUST NOT cite BIP 388. The plan verifies whether this case is reachable past the single-site hardened-wildcard refusal; its row lands only if reachable |
 
 There is no "fixed derivation counts as its singleton set" clause
@@ -74,23 +85,57 @@ There is no "fixed derivation counts as its singleton set" clause
 lex, and pre-multipath steps lex as origin — so that shape belongs to
 the ORIGIN axis above.
 
-**Family 2 — one key at more than one placeholder (R-N1d, folds
-r1 I3).** Identical key material (public key + chain code) bound to
-two different placeholders is forbidden by BIP 388's
-pairwise-distinct rule (line 193) REGARDLESS of use sites — the key
-information vector holds two equal elements. The seating engine
-already refuses exactly this (`check_no_repeated_xpub`, key material
-only); the T row mints it today (measured, exit 0) with an in-code
-rationale — "BIP 388 permits it", `cmd/build.rs:280-283` — that the
-BIP text contradicts. The operator's standing ruling decides it:
-**mint/compose refuses R-N1d.** The two tests pinning today's
-acceptance flip
-(`duplicate_key_slots.rs::one_key_at_two_different_use_sites_is_not_a_duplicate`,
-`::t_row_one_key_at_two_disjoint_use_sites_still_composes`), and the
-stale boundary comments (`build.rs:280-283`, `validate.rs:353-355`)
-are corrected in the same commit. Untouched: distinct keys at one
-path across different masters (privacy multisig) — different key
-material, no reuse.
+**Family 2 — one key at more than one placeholder (R-N1d; folds
+r1 I3, reshaped by r2 I-b/I-c).** Two halves with different standing:
+
+- **The same-use-site half is ALREADY SHIPPED and unchanged.**
+  `validate_no_duplicate_key_slots` (md-codec, called inside
+  `encode_payload` at `encode.rs:120`, tagged F-218) refuses two
+  placeholders holding identical key material at the same use site.
+  It is the CODEC-LAYER FLOOR: it stays where it is, sits outside
+  this cycle's single-source scope, and is exempt from the C1
+  placement constraint (which binds NEW checks; the floor's read-side
+  behavior is shipped and out of this cycle's scope). Its wording
+  stands for its own case.
+- **R-N1d proper is the DISJOINT-USE-SITE DELTA:** identical key
+  material (public key + chain code) at two placeholders whose use
+  sites differ. The two-placeholder POLICY FORM puts the same key
+  twice in BIP 388's key information vector, and the
+  pairwise-distinct rule (line 193) forbids that FORM. Measured
+  today: `md descriptor` composes it and `md encode` mints it (exit
+  0, chunk-set-id `0x00ee4`), with an in-code rationale — "BIP 388
+  permits it", `cmd/build.rs:280-283` — that conflates the wallet
+  with its spelling. **Mint/compose refuses the delta.** The two
+  pinning tests flip
+  (`duplicate_key_slots.rs::one_key_at_two_different_use_sites_is_not_a_duplicate`,
+  `::t_row_one_key_at_two_disjoint_use_sites_still_composes`), and
+  the stale comments (`build.rs:280-283`, `validate.rs:353-355`) are
+  corrected in the same commit.
+
+**R-N1d's message mandate (r2 I-b — the honest reconciliation).** The
+WALLET — one key at two disjoint path sets — is BIP-legal: it is
+R-N1c's wallet in its one-placeholder spelling. What BIP 388 forbids
+is THIS two-placeholder spelling (its key vector repeats the key);
+what F-417 makes inexpressible is the one-placeholder spelling. Both
+md1 spellings are inadmissible while the wallet itself is fine as a
+descriptor. The rendered line therefore: attributes the
+pairwise-distinct violation to this SPELLING's key vector, not to the
+wallet; states the wallet is expressible as a descriptor; names the
+same runnable escape as R-N1c (`me sysw pack --as descriptor --in
+<your export file>`); never says "invalid"; and MUST NOT reuse the
+shipped same-use-site wording — "at the same use-site" and "a card
+minted from it could never be read back" are both false for the
+delta, the latter contradicting Acceptance 5. A full rendered-line
+row is mandated, exactly as for R-N1c.
+
+**Untouched — the two legitimate families, both control-row pinned
+(the second measured at the operator's probe, 2026-08-31):**
+(i) distinct keys at ONE path across DIFFERENT masters (privacy
+multisig) — different key material, no reuse; (ii) ONE master (same
+fingerprint) at DIFFERENT account paths — different derived xpubs, no
+reuse; measured composing and seating at exit 0. A must-COMPOSE T-row
+control (same fingerprint, different accounts, different xpubs) and
+the existing S-row control pin the anti-over-refusal duty.
 
 ### R-N1c's message, fully specified (r1 I7 folded)
 
@@ -107,19 +152,33 @@ Behavior unchanged — refusal stands; message and variant only.
 
 ### Placement constraint (r1 C1 folded) — NORMATIVE
 
-The taxonomy MUST NOT be enforced inside `encode_payload`'s validator
+No check THIS CYCLE ADDS may sit inside `encode_payload`'s validator
 set: `md inspect` and `md verify` re-enter `encode_payload` on the
-decoded card, so that placement makes already-engraved R-N1a/R-N1d
-plates uninspectable and unverifiable — the exact hazard the
-read-side rule exists to prevent. (The brainstorm's premise "reading
-verbs do not run the encode-path validators" is FALSE for those two
-verbs and is corrected there.) Single-source requirement: ONE
-classifier implementation, invoked per verb with that verb's
-disposition. The template-text funnel (`resolve_placeholders`,
-`template.rs:723`) reaches every template-parsing verb; card-input
-paths classify the decoded template. The plan places the calls; the
+decoded card, so a new check there makes already-engraved plates of
+newly-refused shapes uninspectable and unverifiable — and such plates
+exist for R-N1a and for R-N1d's disjoint half, both mintable today
+(the same-use-site half has been refused at the codec floor since
+F-218, r2 I-c's correction of r1's broader claim). The brainstorm's
+premise "reading verbs do not run the encode-path validators" is
+FALSE for those two verbs and is corrected there. The shipped floor
+(`validate_no_duplicate_key_slots` and its sibling validators inside
+`encode_payload`) is out of this cycle's scope and stays.
+
+**Single-source, stated as the classifier's INPUT (r2 I-a).** The
+classifier consumes (i) the per-placeholder occurrence list — the
+triple per use site — and (ii) the resolved per-`@i` key bindings.
+Both are in hand at `parse_template_ext` time on the template path,
+and both are reconstructible from a decoded card on the card path.
+Family 1 needs only (i); R-N1d's delta needs (ii) — so no single
+existing code location sees both, and this spec does NOT name one
+(r1's `resolve_placeholders` naming was wrong for Family 2: its
+signature carries no key material). The normative requirements are:
+each predicate has ONE implementation (no per-verb second copy —
+`build.rs:277`'s own rule); per-verb disposition (refuse vs warn) is
+a parameter of the invocation, never a re-implementation; and the
 constraint that identity computation and verify's re-encode of a
-decoded card keep working is normative and row-pinned.
+decoded card keep working is row-pinned. The plan chooses the
+invocation points under those constraints.
 
 ### Verb dispositions (r1 C2 folded — derived from the `Cmd` enum; there is no `md build`)
 
@@ -140,9 +199,12 @@ R-N1a refusal at `encode`, `descriptor --template`, and
 rendered-line row (prefix + the three content statements + absence of
 "invalid" + the runnable escape spelling); R-N1-origin row (names the
 origin axis, does not cite the repeated-key rule); R-N1-hardening row
-if reachable; R-N1d T-row refusal (the two flipped tests) and the
-V-BOUND-REF sibling row pinning same-xpub-at-DIFFERENT-declared-paths
-refusing at seating (measured 2026-08-31, previously unpinned);
+if reachable; R-N1d T-row refusal with its full rendered-line row (the two flipped
+tests become refusal rows; the message row asserts the mandate
+above); the R-N1d must-COMPOSE control (same fingerprint, different
+accounts, different xpubs — composes); the V-BOUND-REF sibling row
+pinning same-xpub-at-DIFFERENT-declared-paths refusing at seating
+(measured 2026-08-31, previously unpinned);
 read-side rows on the hand-built R-N1a card — `decode` warns at exit
 0, `inspect` completes at exit 0, `verify` completes at exit 0,
 `bytecode` completes (the C1 guarantee, pinned).
@@ -259,7 +321,10 @@ clap's missing-required-argument error; the mechanics (e.g. relaxing
 the `descriptor_input` group when `--from-mk1` is present and
 refusing in code) are the plan's. Rows: positional-first composes;
 flag-first with a trailing md1 string → the named refusal; an mk1
-string in the positional → the named refusal.
+string in the positional → the named refusal; `--from-mk1` with NO
+policy card anywhere → a refusal naming the missing policy input
+(r2 M-c: today the clap group catches this case; a relaxed group must
+not let it fall through to seating with an empty policy).
 
 **Docs (ruled).** The mnemonic-toolkit manual pass
 (`docs/manual/src/40-cli-reference/42-md.md`, gated by
@@ -271,8 +336,11 @@ covering the converter cycle's surface plus this cycle's.
 - No wire-format change of any kind (F-417 binds; R-N1c refuses
   instead of widening).
 - No relaxation of `md encode --key`'s depth rule.
-- No placement of the taxonomy inside `encode_payload`'s validator
-  set (the C1 constraint, restated).
+- No NEW check inside `encode_payload`'s validator set (the C1
+  constraint) — and no removal of the shipped floor there:
+  `validate_no_duplicate_key_slots` stays at `encode.rs:120` (r2 I-c;
+  deleting it would strip md-codec's wire-level F-218 refusal from
+  every consumer outside md-cli).
 - No JSON envelope (R8 parked).
 - No change to pathless-declaration seating: a slot declaring `m`
   never takes its path from a card; card paths remain verification,
@@ -304,8 +372,10 @@ frozen for the window.
 
 ## Acceptance
 
-1. Every vector row named above exists as an executable test in the
-   same commit as its implementation — disjuncts as rows, not prose.
+1. Every vector row named above — except R-N1-hardening's, which is
+   explicitly conditional on reachability — exists as an executable
+   test in the same commit as its implementation; disjuncts as rows,
+   not prose.
 2. The suite is green under the full phase gate, including
    `--all-features` on all three widened lines (R5).
 3. The S→K matrix cell is flipped in all 4 homes with the identity
@@ -313,7 +383,9 @@ frozen for the window.
 4. Diagnostic rows assert the RENDERED stderr line from the `md:`
    prefix onward — never body substrings alone — and no diagnostic
    introduced by this cycle contains the word "invalid" for a
-   BIP-forbidden or wire-inexpressible shape.
+   BIP-forbidden or wire-inexpressible shape. Every diagnostic this
+   cycle introduces or rewrites HAS such a row — asserted by the
+   vector rows, not by convention (r2 M-a restores r0's clause).
 5. Reading verbs (`decode`, `inspect`, `bytecode`, `verify`) complete
    at exit 0 on already-engraved cards carrying refused shapes —
    row-pinned, per the C1 constraint.
