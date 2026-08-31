@@ -475,6 +475,24 @@ enum Command {
         /// Emit JSON output.
         #[arg(long)]
         json: bool,
+        /// SPEND-EQUAL comparison target — an md1 string or a FILE holding
+        /// one or more, one per line. Wires `seat::compose::spend_equal`:
+        /// states SPEND-EQUAL or NOT, names the failing half (structure,
+        /// values, use-sites), and states that origin metadata is excluded
+        /// and why.
+        ///
+        /// Exit codes: 0 = spend-equal; 5 = NOT spend-equal (`md repair`'s
+        /// reserved-5 precedent for a non-error, non-default answer); 1/2 =
+        /// errors, unchanged — so a mistyped input can never read as "not
+        /// equal", the false signal that invites re-cutting a good plate.
+        ///
+        /// Admissible on every input mode that composes a descriptor here
+        /// (the positional card, --from-mk1/--from-mk1-file seating,
+        /// --template) — deliberately NOT the T-row `requires = "template"`
+        /// plus `conflicts_with_all` pattern, which would make it unusable
+        /// on exactly the two modes the FOLLOWUP exists for.
+        #[arg(long = "verify-against", value_name = "md1|FILE")]
+        verify_against: Option<String>,
     },
 
     // R9 — see the identical comment on `descriptor_input` above.
@@ -930,6 +948,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             change,
             emit,
             json,
+            verify_against,
         } => {
             let chain = if change { Some(1) } else { chain };
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
@@ -946,6 +965,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 chain,
                 emit,
                 json,
+                verify_against: verify_against.as_deref(),
             })
         }
         Command::Address {

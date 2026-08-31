@@ -64,6 +64,10 @@ pub struct DescriptorArgs<'a> {
     /// card minted from the seating result. `None` is today's behaviour.
     pub emit: Option<Emit>,
     pub json: bool,
+    /// R3 — `--verify-against <md1|FILE>`: an inline md1 string or an
+    /// existing file path holding one or more, checked against the
+    /// composed descriptor for SPEND-EQUALITY. `None` is today's behaviour.
+    pub verify_against: Option<&'a str>,
 }
 
 pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
@@ -133,11 +137,39 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         ));
     }
 
+    // R3 — `--verify-against`, admissible on every input mode that reaches
+    // here (positional card, --from-mk1 seating, --template): checked once
+    // the composed descriptor is final and BEFORE the `--emit` dispatch, so
+    // it applies uniformly regardless of what `--emit` does with stdout. The
+    // verdict is a stderr note (Acceptance 4's rendered-line contract) plus
+    // an EXIT CODE override — 0 stays 0, a NOT-equal verdict becomes 5 (`md
+    // repair`'s reserved-5 precedent) — that wins over whatever the rest of
+    // this function would otherwise return, since it is a definitive answer
+    // a mistyped input must never be mistaken for.
+    let verify_exit: Option<u8> = match args.verify_against {
+        Some(arg) => {
+            let other = resolve_verify_against(arg)?;
+            // The boolean entrance `spend_equal` decides equal/not; the
+            // failing half is named ONLY when it says not, via the same
+            // primitive `spend_equal` itself calls (`spend_equal_verdict`).
+            let equal = crate::seat::compose::spend_equal(&descriptor, &other)?;
+            let verdict = if equal {
+                crate::seat::compose::SpendEqualVerdict::Equal
+            } else {
+                crate::seat::compose::spend_equal_verdict(&descriptor, &other)?
+            };
+            emit_verify_against_verdict(verdict);
+            Some(if equal { 0 } else { 5 })
+        }
+        None => None,
+    };
+
     // N2 — the S → K cell. `--emit` changes ONLY the output form: every A2/A3/
     // A4 seating rule above ran exactly as it does without the flag, and a
     // refusal there never reaches this line.
     if args.emit == Some(Emit::Md1) {
-        return emit_md1_card(&descriptor, &seating_notes);
+        let code = emit_md1_card(&descriptor, &seating_notes)?;
+        return Ok(verify_exit.unwrap_or(code));
     }
 
     let rendered = match args.chain {
@@ -160,7 +192,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
             crate::output_advisory::OutputClass::WatchOnly,
             &mut std::io::stderr(),
         );
-        return Ok(0);
+        return Ok(verify_exit.unwrap_or(0));
     }
     let _ = args.json;
     let _ = args.network_str;
@@ -171,7 +203,49 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         crate::output_advisory::OutputClass::WatchOnly,
         &mut std::io::stderr(),
     );
-    Ok(0)
+    Ok(verify_exit.unwrap_or(0))
+}
+
+/// R3 — resolve `--verify-against`'s argument into a `Descriptor`. An
+/// EXISTING path is read as a FILE (md1 string(s), one per line, the same
+/// convention `--in`/`--from-mk1-file` already use); anything else is a
+/// literal md1 string. A garbage value that is neither an existing file nor
+/// a valid md1 string hits `decode_md1_string`'s own codec error —
+/// `CliError::Codec`, exit 1 — never a spend-equality verdict (SPEC R3's
+/// garbage-argument row).
+fn resolve_verify_against(arg: &str) -> Result<Descriptor, CliError> {
+    let strings: Vec<String> = if std::path::Path::new(arg).is_file() {
+        crate::cmd::read_md1_inputs(&[], Some(std::path::Path::new(arg)))?
+    } else {
+        vec![md_codec::encode::strip_display_separators(arg)]
+    };
+    let refs: Vec<&str> = strings.iter().map(String::as_str).collect();
+    Ok(if refs.len() == 1 {
+        md_codec::decode::decode_md1_string(refs[0])?
+    } else {
+        md_codec::chunk::reassemble(&refs)?
+    })
+}
+
+/// R3 — the SPEND-EQUAL/NOT verdict, rendered on stderr with the `md: `
+/// prefix (Acceptance 4). Origin metadata is excluded from the comparison
+/// because it is seating/signing guidance, not script content (SPEC
+/// Acceptance 1) — stated plainly every time, per the FOLLOWUP.
+fn emit_verify_against_verdict(verdict: crate::seat::compose::SpendEqualVerdict) {
+    const ORIGIN_NOTE: &str = "Origin metadata (fingerprints, key origins, path declaration) is \
+                                excluded from this comparison: it is seating/signing guidance, \
+                                not script content.";
+    if verdict.is_equal() {
+        eprintln!(
+            "md: --verify-against: SPEND-EQUAL — same template structure, per-slot key values \
+             and per-slot use-site paths. {ORIGIN_NOTE}"
+        );
+    } else {
+        eprintln!(
+            "md: --verify-against: NOT spend-equal — the {} half differs. {ORIGIN_NOTE}",
+            verdict.failing_half().to_uppercase()
+        );
+    }
 }
 
 /// PHASE B's notes belong on stderr: stdout is the machine contract a

@@ -121,8 +121,53 @@ pub fn comparison_form(seated: &Descriptor) -> Result<Vec<u8>, CliError> {
     Ok(out)
 }
 
+/// The failing half of a **NOT spend-equal** verdict, named per SPEC R3:
+/// which of the three properties SPEND-EQUALITY requires (canonicalised
+/// template STRUCTURE, per-slot xpub VALUES, per-slot USE-SITE paths —
+/// origin metadata excluded throughout) is where the two candidates
+/// diverge. `Equal` means all three hold.
+///
+/// **Checked in this order — VALUES, then USE-SITES, then STRUCTURE —**
+/// deliberately the reverse of how it reads above: the per-slot checks are
+/// FINE-GRAINED (one xpub, one use-site suffix) while the STRUCTURE check
+/// (`comparison_form`'s stripped byte form) is coarse and catches
+/// everything the per-slot checks do too, since it serialises the whole
+/// descriptor — tree, `Pubkeys` TLV and use-site declarations together —
+/// with only origin metadata blanked (see `comparison_form`'s own doc
+/// comment). Running it FIRST would report every values-only mismatch as
+/// "structure", which SPEC R3's own row ("one-xpub-off … names the values
+/// half") rules out. Running the per-slot checks first, and falling back to
+/// the byte form only once both pass, gives the byte form its actual job:
+/// catching what the per-slot loop cannot see — e.g. a script family swap
+/// (`multi` vs `sortedmulti`) at unchanged key values and use-sites
+/// (`v_spendeq_multi_and_sortedmulti_are_not_spend_equal`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpendEqualVerdict {
+    Equal,
+    Structure,
+    Values,
+    UseSites,
+}
+
+impl SpendEqualVerdict {
+    pub fn is_equal(self) -> bool {
+        matches!(self, Self::Equal)
+    }
+
+    /// The name SPEC R3's CLI message states — "structure", "values" or
+    /// "use-sites". Never called on `Equal`.
+    pub fn failing_half(self) -> &'static str {
+        match self {
+            Self::Equal => "equal",
+            Self::Structure => "structure",
+            Self::Values => "values",
+            Self::UseSites => "use-sites",
+        }
+    }
+}
+
 /// **SPEND-EQUALITY** (SPEC Acceptance 1, the cross-form relation; SPEC B2's
-/// split-vs-keyed "agree").
+/// split-vs-keyed "agree"), with the failing half named (SPEC R3).
 ///
 /// > canonicalised template structures equal AND per-slot xpub values and
 /// > use-site paths equal — origin metadata EXCLUDED (it is seating/signing
@@ -134,16 +179,32 @@ pub fn comparison_form(seated: &Descriptor) -> Result<Vec<u8>, CliError> {
 /// walk (r3 C2). Round-trip-equality — spend-equality AND origin metadata
 /// preserved exactly — is the stricter relation, and it belongs to C3's
 /// decompose leg.
-// P2's deliverable, consumed by C4's acceptance walk (plan section 3 C4
-// item 1(b)) and by this module's V-SPENDEQ rows. Nothing on the C2 CLI
-// surface calls it, because C2 ships no channel for supplying a keyed card
-// alongside a split set -- see the report's deviations note.
-#[allow(dead_code)]
-pub fn spend_equal(a: &Descriptor, b: &Descriptor) -> Result<bool, CliError> {
+///
+/// R3 wires this — `md descriptor --verify-against` — for the naming; the
+/// plain [`spend_equal`] wrapper below stays the boolean entrance the P2
+/// tests already pin.
+pub fn spend_equal_verdict(a: &Descriptor, b: &Descriptor) -> Result<SpendEqualVerdict, CliError> {
+    // Per-slot xpub values and use-site paths, read through the same
+    // expansion the identity computation uses. Checked BEFORE the byte
+    // form — see the enum's doc comment for why the order is load-bearing.
+    let ea = expand_per_at_n(a)?;
+    let eb = expand_per_at_n(b)?;
+    if ea.len() == eb.len() {
+        for (x, y) in ea.iter().zip(eb.iter()) {
+            if x.xpub != y.xpub {
+                return Ok(SpendEqualVerdict::Values);
+            }
+            if x.use_site_path != y.use_site_path {
+                return Ok(SpendEqualVerdict::UseSites);
+            }
+        }
+    }
     // Structure: the comparison form of each side with the origin metadata
     // blanked, so `sortedmulti` permutation is absorbed exactly as it is in
     // A3 while a `multi` vs `sortedmulti` difference still separates them
-    // (r2 C2 (ii) found a key pair the address relation could not).
+    // (r2 C2 (ii) found a key pair the address relation could not). Reached
+    // only once the per-slot checks above already agree (or a length
+    // mismatch, itself a structural fact) — see the enum's doc comment.
     let stripped = |d: &Descriptor| -> Result<Vec<u8>, CliError> {
         let mut c = d.clone();
         c.tlv.fingerprints = None;
@@ -157,21 +218,17 @@ pub fn spend_equal(a: &Descriptor, b: &Descriptor) -> Result<bool, CliError> {
         comparison_form(&c)
     };
     if stripped(a)? != stripped(b)? {
-        return Ok(false);
+        return Ok(SpendEqualVerdict::Structure);
     }
-    // Per-slot xpub values and use-site paths, read through the same
-    // expansion the identity computation uses.
-    let ea = expand_per_at_n(a)?;
-    let eb = expand_per_at_n(b)?;
-    if ea.len() != eb.len() {
-        return Ok(false);
-    }
-    for (x, y) in ea.iter().zip(eb.iter()) {
-        if x.xpub != y.xpub || x.use_site_path != y.use_site_path {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    Ok(SpendEqualVerdict::Equal)
+}
+
+/// The boolean entrance the P2 tests pin — `spend_equal_verdict(a,
+/// b)?.is_equal()`, unchanged bit for bit: reordering the checks inside
+/// `spend_equal_verdict` does not change which pairs are equal, only which
+/// named half a NOT-equal pair reports.
+pub fn spend_equal(a: &Descriptor, b: &Descriptor) -> Result<bool, CliError> {
+    Ok(spend_equal_verdict(a, b)?.is_equal())
 }
 
 #[cfg(test)]
