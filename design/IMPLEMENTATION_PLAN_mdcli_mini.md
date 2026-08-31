@@ -1,6 +1,7 @@
 # IMPLEMENTATION PLAN — post-converter md-cli mini-cycle
 
-Status: DRAFT p0 — plan R0 not yet run. Spec:
+Status: DRAFT p1 — REVIEW-mdcli-mini-plan-r1 (2C/7I/7M/3N) is
+FOLDED here; re-review pending. Spec:
 `SPEC_mdcli_mini.md`, **GREEN at `b8a64938`** (R0 loop closed
 2026-08-31 at 0C/0I over four rounds). Baseline revision for
 staleness re-validation: **`b8a64938`** — every citation in this plan
@@ -20,12 +21,44 @@ cargo fmt --check
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --all-features
 ```
 
-Until P1 lands, the same four lines without `--all-features`.
+plus, same gate, every run (r1 I3 — the gate must name every CI job
+or the command that runs them):
+
+```
+cargo test --workspace --doc          # nextest does NOT run doctests
+( cd design && sha256sum -c display-grouping-vectors.tsv.sha256 )   # conformance-vector pin, ci.yml:73
+```
+
+**P1 commits `scripts/phase-gate.sh`** running all six lines, and
+every later phase runs the script, not a from-memory list. The
+script states its blind spot plainly: the freebsd and musl
+compile/test jobs (ci.yml:95+) are CI-only cross-target gates a
+local run cannot reproduce — the push-ritual staging run covers them
+before anything reaches `main`. The burndown row for
+`phase-gate-omits-cargo-doc` closes by citing the script's commit.
+
+**P1's own final commit runs the WIDENED lines (r1 I4):** the
+narrow form exists only for re-validating work that predates P1 —
+P1's deliverable is the all-features-green suite, so its gate must
+observe it.
+
 Machine-verified at baseline: clippy and doc are exit 0 WITH
 `--all-features`; nextest `--all-features --no-fail-fast` fails only
 the fired tripwire P1 deletes (1106 run / 1105 passed / 1 failed / 2
-skipped). Every phase's implementer runs the gate before its final
-commit and pastes the summary lines into the commit message.
+skipped); the workspace has 0 doctests today (the doctest line is a
+latent-hole closure, and P6 adds prime doctest sites). Every phase's
+implementer runs the gate before its final commit and pastes the
+summary lines into the commit message.
+
+**Acceptance-4 obligation, binding on EVERY phase (r1 I6):** every
+diagnostic any phase introduces or rewrites gets a
+RENDERED-stderr-line row (from the `md:` prefix onward), not a body
+substring. That is eleven diagnostics across the cycle, not two:
+R-N1a/b/c/origin(/hardening if reachable) and R-N1d (P2); the two
+card-input refusals and the read-side warning (P3); the three R9
+refusals (P4); the two `--emit md1` mode refusals (P5); the
+SPEND-EQUAL/NOT verdict lines and the rewritten decompose refusal
+(P6).
 
 **A plan's GREEN expires.** Before dispatching each phase's
 implementer, the controller re-validates this plan against the tree,
@@ -47,13 +80,26 @@ more agents.
    `upstream_display_is_still_broken_delete_local_renderer_when_this_fails`);
    render via upstream `Display`. The tripwire IS the failing test —
    after the deletion the all-features suite must be fully green.
+   **Disambiguation already run (r1 M3, plan-r1 reviewer):** the
+   tripwire fails ALONE while
+   `render_tr_template_pins_every_topology_class` passes — the
+   repo's own documented test (`compile.rs:329-333`) for "genuine
+   upstream PR #953, not an ordering change". Do not re-derive.
+   **Checksum note (r1 M4):** upstream `Descriptor::to_string()`
+   appends a BIP-380 checksum the deleted `format!` build never had;
+   `render_tr_template_pins_every_topology_class` compares exact
+   checksum-free strings and is the gate for the strip — keep it
+   green, and RENAME it (r1 N3: its name cites the deleted
+   function).
 2. Widen `.github/workflows/ci.yml`: `--all-features` on the test
    job (`cargo test --workspace --all-targets`), the clippy job
    (line 65) and the doc job (line 93), in the same commit that
    widens the gate above. Sequencing (1) before (2) keeps CI green
    throughout (never-skip-jobs).
-3. Sweep `compile.rs` for imports/helpers orphaned by the deletion
-   (clippy `--all-features` now sees them).
+3. Sweep for orphans of the deletion: `compile.rs`
+   imports/helpers (clippy `--all-features` now sees them) AND the
+   comment naming `render_tr_template` at
+   `crates/md-codec/tests/bitcoind_differential.rs:671` (r1 M5).
 
 Closes FOLLOWUPS `all-features-suite-is-red-and-ungated-by-ci`.
 
@@ -69,15 +115,30 @@ per-verb disposition (refuse/warn) is a parameter; NOTHING new inside
 
 TDD order — rows first, red before green:
 
-1. **Fixture mint FIRST, at baseline:** mint the R-N1a card
-   (`wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))`, chunk-set-id
-   `0xed813` measured) and the R-N1d delta card
-   (`wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))` with one key, chunk-set-id
-   `0x00ee4` measured, 4 chunks) from the BASELINE binary, commit as
-   fixtures with provenance headers in the V-BOUND-REF pattern
-   (`tests/fixtures/seating/generate.sh` documents it). After this
-   phase no shipped binary can mint them — the fixtures are the
-   read-side and card-input rows' input forever.
+1. **Fixture mint FIRST, from the baseline binary — full commands,
+   flags included (r1 I7: the keyless spelling mints a one-chunk
+   template card that composes nothing):**
+
+   ```
+   md encode "wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))" \
+     --key @0=<KEY 1 xpub> --path "48'/0'/0'/2'" --group-size 0
+     # → chunk-set-id 0xed813, 2 chunks — the KEYED R-N1a card
+   md encode "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))" \
+     --key @0=<KEY 1 xpub> --key @1=<KEY 1 xpub> \
+     --path "48'/0'/0'/2'" --group-size 0
+     # → chunk-set-id 0x00ee4, 4 chunks — the R-N1d delta card
+   ```
+
+   Baseline procedure (r1 M7): `git worktree add <dir> b8a64938 &&
+   cargo build -p md-cli` — and verified benign: the spec's
+   `ed2fe9c2` and this plan's `b8a64938` differ by nothing under
+   `crates/`, `scripts/` or `.github/`, and P1 touches only
+   `compile.rs` (feature-gated) and `ci.yml`, so a post-P1 tree
+   mints byte-identical cards. Commit the strings as fixtures with
+   provenance headers in the V-BOUND-REF pattern
+   (`crates/md-cli/tests/fixtures/seating/generate.sh` — full path,
+   r1 M2). After this phase no shipped binary can mint them — the
+   fixtures are the read-side and card-input rows' input forever.
 2. Family-1 rows: R-N1a refusal at `encode`, `descriptor
    --template`, `address --template`; R-N1b; R-N1c full rendered
    line (new error variant — NOT `CliError::TemplateParse` — body
@@ -99,6 +160,51 @@ TDD order — rows first, red before green:
    fingerprint-keyed misimplementation).
 5. Correct the stale comments: `cmd/build.rs:280-283` ("BIP 388
    permits it") and `md-codec/src/validate.rs:353-355`.
+6. **R-N1a blast-radius dispositions (r1 C1) — enumerated; the
+   implementer improvises none of them.** Measured at baseline, all
+   exit 0 today and refused after this phase:
+   - The three MANIFEST vectors carrying refused shapes are
+     **REPLACED, not deleted**, each preserving its stated coverage
+     role with a BIP-legal shape: `keyed_tr_sortedmulti_a` and
+     `keyed_tr_multi_a` (internal key repeated in the leaf at the
+     identical triple) get DISTINCT leaf placeholders — the
+     order-sensitivity role (`keyed_tr_multi_a`'s comment: the ONLY
+     order-sensitive tap leaf, mutation-proven) needs written-order
+     keys, not reuse; `keyed_wsh_timelock_hashlock` (@1/@2 repeated
+     across the two spending clauses) gets fresh placeholders in the
+     recovery clause. **Rust-primary lockstep:** the corpus change
+     lands here with the phase; the Go port's sync is flagged in the
+     phase report and follows, never leads.
+   - `template_roundtrip.rs:37-45` and `json_snapshots.rs:38-51`
+     turn green via the replacements (they drive MANIFEST).
+   - **`md vectors` invocation point, ruled:** the classifier sits
+     where `md vectors`' `parse_template` path hits it, so the
+     generator REFUSES a future forbidden-shape vector fail-closed.
+   - `sortedmulti_a_taproot_leaf.rs:77/:139`: rewrite the templates
+     to distinct placeholders (the leaf-admission behavior under
+     test does not need reuse); `:106`'s message assertion updates
+     to whichever refusal now fires first, verified by running it.
+   - `cli_unhardened_origin_note.rs:134` and
+     `cli_keyed_excess_origin_note.rs:169`: the repeated-placeholder
+     template is an incidental vehicle — rewrite to `@0`/`@1`,
+     preserving the note under test.
+7. **The seating-fixture generator survives (r1 C2):**
+   `crates/md-cli/tests/fixtures/seating/generate.sh`'s V-R5M1 block
+   mints an R-N1a-shaped template (measured exit 0 today; refused
+   after this phase, and under `set -e` the script would die AFTER
+   truncating `v-r5m1.txt`, leaving nine later fixtures
+   unregenerated). Disposition: regenerate `v-r5m1.txt` one final
+   time from the baseline binary, convert its block to an
+   existence-assert with a frozen-by-design provenance note, and
+   re-run the generator end-to-end in this phase's gate —
+   `git diff` clean over the nine later fixtures is the check.
+8. **`md compile` determination, recorded and pinned (r1 I1):**
+   probed at baseline — `md compile 'thresh(2,pk(@0),pk(@0),pk(@1))'
+   --context segwitv0` (and `and`/`or` forms, and `--context tap`)
+   all refuse with "Policy contains duplicate keys". The refusal is
+   rust-miniscript's, pinned locally by nothing — add the row (a
+   duplicate-key policy refuses at `md compile`) so an upstream bump
+   cannot silently open a mint path for a refused shape.
 
 ### P3 — N1 card paths + read side
 
@@ -129,24 +235,36 @@ Closes FOLLOWUPS `md-repeated-placeholder-inverts-bip388`.
    inline-origins composition byte-for-byte; a disagreeing bracket
    with `--path` present still refuses; a slot with no path from any
    source still refuses.
-2. R9: `num_args = 1..` on `--from-mk1`; BOTH guards (mk1-prefix in
-   the positional → names `--from-mk1`; md1-prefix among
-   `--from-mk1` values → names the positional); the flag-first
-   ordering must produce the symmetric guard's diagnostic, not
-   clap's missing-required error — mechanics are this phase's to
-   choose under that outcome. Four rows: positional-first composes;
-   flag-first trailing-md1 → named refusal; mk1-in-positional →
-   named refusal; `--from-mk1` with no policy card anywhere → named
-   refusal (nothing falls through to seating with an empty policy).
+2. R9 — **on BOTH verbs (r1 I2): `--from-mk1` is declared twice,
+   `main.rs:400` (`Descriptor`) and `:560` (`Address`), each under
+   its own required input group.** `num_args = 1..` on both; BOTH
+   guards on both verbs (mk1-prefix in the positional → names
+   `--from-mk1`; md1-prefix among `--from-mk1` values → names the
+   positional); the flag-first ordering must produce the symmetric
+   guard's diagnostic, not clap's missing-required error — mechanics
+   are this phase's to choose under that outcome. Rows: the four
+   below on `descriptor`, plus at minimum the two guard rows
+   duplicated on `address`: positional-first composes; flag-first
+   trailing-md1 → named refusal; mk1-in-positional → named refusal;
+   `--from-mk1` with no policy card anywhere → named refusal
+   (nothing falls through to seating with an empty policy). Guard
+   scope note (r1 M6): the md1-prefix guard applies to the
+   `--from-mk1` values and the positional ONLY — P5's literal
+   `--emit md1` value must not trip it, and P5's rows run after P4
+   and would catch it.
 
 Closes FOLLOWUPS `descriptor-key-bracket-path-as-a-last-resort-source`
 and `from-mk1-arity-spills-card-strings-into-the-md1-positional`.
 
 ### P5 — N2: `--emit md1`
 
-1. Emission from the seating result on `md descriptor --from-mk1`;
-   carries the origin metadata learned from seating; depth rule on
-   `md encode --key` untouched.
+1. Emission from the seating result on `md descriptor` with
+   `--from-mk1` OR `--from-mk1-file` (r1 M1 — both are admissible
+   per spec; `collect_mk1` at `main.rs:891` merges them, and one row
+   uses the `--from-mk1-file` spelling, the one the FOLLOWUPS
+   journey recommends for a 30-card set); carries the origin
+   metadata learned from seating; depth rule on `md encode --key`
+   untouched.
 2. Input-mode refusals: `--emit md1` with `--template` refuses
    naming `md encode`; on a keyed-card positional refuses as a
    re-emit, by name.
@@ -166,9 +284,17 @@ Closes FOLLOWUPS `md-cannot-mint-a-keyed-card-from-a-split-set`.
 1. R3 `--verify-against <md1|FILE>` on `md descriptor`: wires
    `spend_equal` (delete its `#[allow(dead_code)]` and the
    now-false comment); output per spec; **exit 0 equal / 5 not / 1-2
-   errors**. Four rows: equal cross-form pair (0); one-xpub-off (5,
-   names the values half); origins-differ (0, EQUAL); garbage
-   argument (1, decode error, no verdict).
+   errors**. **The flag must NOT inherit the T-row flag pattern
+   (r1 I5): every other value flag on this verb is
+   `requires = "template"` + `conflicts_with_all = [phrases,
+   from_mk1, …]`, which would make the flag unusable on exactly the
+   two card modes the FOLLOWUP exists for.** Admissible on all three
+   composing input modes. Rows: equal cross-form pair (0) — spelled
+   as the SPLIT set via `--from-mk1` verified against the keyed
+   card; a keyed-card POSITIONAL composition with `--verify-against`
+   (0) — the mode row; one-xpub-off (5, names the values half);
+   origins-differ (0, EQUAL); garbage argument (1, decode error, no
+   verdict).
 2. R6: one desugar core serving both spellings (generalise off the
    `@`-anchor or two thin front-ends over one component — no
    keep-in-sync regex pair); `--help` names `/**`; row: `/**`
@@ -182,9 +308,11 @@ Closes FOLLOWUPS `md-verify-against-flag-for-cross-form-comparison`,
 
 ### P7 — close-out
 
-1. R8: append the parked trigger to FOLLOWUPS
-   `md-decompose-has-no-json-output` ("the first front-end consumer
-   doing the listdescriptors-extraction job designs the envelope").
+1. R8: the FOLLOWUPS entry `md-decompose-has-no-json-output`
+   already states the trigger in nearly the spec's words (r1 N2) —
+   VERIFY it suffices, add only a one-line "parked by the mini-cycle
+   walk ruling 2026-08-31" closure citing the brainstorm; do not
+   duplicate the trigger text.
 2. Cross-repo docs pass in `bg002h/mnemonic-toolkit`:
    `docs/manual/src/40-cli-reference/42-md.md` catches up on the
    converter cycle's surface plus this cycle's
@@ -193,9 +321,12 @@ Closes FOLLOWUPS `md-verify-against-flag-for-cross-form-comparison`,
    there. Also closes FOLLOWUPS
    `sibling-toolkit-md-manual-lockstep-for-the-converter` (ruled
    into this phase by the operator, 2026-08-31).
-3. FOLLOWUPS reconciliation sweep: all nine owned entries
-   dispositioned (the eight originals + the walk-discovered R9
-   entry); each closure cites its phase's commit.
+3. FOLLOWUPS reconciliation sweep over ALL ELEVEN burndown rows
+   (r1 N1): the eight originals, the walk-discovered R9 entry,
+   `phase-gate-omits-cargo-doc` (closes citing P1's
+   `scripts/phase-gate.sh` commit) and `sibling-toolkit-…` (closes
+   citing this phase's docs-pass commit); each closure cites a
+   commit.
 4. **Whole-diff independent adversarial review (mandatory,
    non-deferrable)** over the full cycle diff before merge; report
    persisted; fold loop to 0C/0I.
