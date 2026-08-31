@@ -224,9 +224,21 @@ pub fn spend_equal_verdict(a: &Descriptor, b: &Descriptor) -> Result<SpendEqualV
 }
 
 /// The boolean entrance the P2 tests pin — `spend_equal_verdict(a,
-/// b)?.is_equal()`, unchanged bit for bit: reordering the checks inside
-/// `spend_equal_verdict` does not change which pairs are equal, only which
-/// named half a NOT-equal pair reports.
+/// b)?.is_equal()`.
+///
+/// **Corrected (review r1 M5) — the claim below was stronger than proven.**
+/// Reordering the checks inside `spend_equal_verdict` does not change WHICH
+/// PAIRS ARE EQUAL, only which named half a NOT-equal pair reports —
+/// PROVIDED both sides actually expand (`expand_per_at_n` succeeds on both).
+/// It is NOT unchanged bit for bit for a pair where expansion FAILS:
+/// `expand_per_at_n` now runs BEFORE the structural byte compare, so such a
+/// pair returns `Err` where the structure-first order would have reached
+/// `Ok(SpendEqualVerdict::Structure)` (a length mismatch always changes
+/// `comparison_form`'s bytes, so the `ea.len() == eb.len()` skip still gets
+/// there) without ever calling `expand_per_at_n`. Unreachable through the
+/// CLI today — a `MissingExplicitOrigin` descriptor cannot be minted, so
+/// `--verify-against` can never hand this function one — but the original
+/// wording covered the error case and did not hold for it.
 pub fn spend_equal(a: &Descriptor, b: &Descriptor) -> Result<bool, CliError> {
     Ok(spend_equal_verdict(a, b)?.is_equal())
 }
