@@ -72,13 +72,15 @@ Input forms (any COMPLETE wallet expression):
 - **K** — keyed md1 phrases (Pubkeys TLV)
 
 Output forms: concrete descriptor · addresses · keyed card (via the
-existing `md encode --key` bridge) · template + origin-notated key lines.
+`md encode --key` bridge from D, or `md descriptor --emit md1` from S,
+added by the mdcli-mini cycle's P5) · template + origin-notated key
+lines.
 
 | in \ out | concrete descriptor | addresses | keyed card | keyless + mk1 cards |
 | --- | --- | --- | --- | --- |
 | **D** concrete descriptor | — | ✓ P3 (shipped this cycle) | ✓ P3+bridge (shipped this cycle) | ✓ P3 (the decomposer, shipped this cycle) |
 | **T** template + key flags | ✓ P1 (shipped this cycle; inline template origins already worked — r1 I8) | ✓ P1 (shipped this cycle) | ✓ `md encode --key` (Divergent) | ✓ |
-| **S** keyless card + mk1 strings | ✓ P2 (the seating engine, shipped this cycle) | ✓ P2 (shipped this cycle) | ✗ P2+bridge — `md encode --key` needs a depth-3/4 xpub, a card composes depth-0 (measured C4, filed) | — |
+| **S** keyless card + mk1 strings | ✓ P2 (the seating engine, shipped this cycle) | ✓ P2 (shipped this cycle) | ✓ `md descriptor --emit md1` (mdcli-mini P5 — minted from the seating result, never through the depth-3/4 bridge) | — |
 | **K** keyed card phrases | ✓ (round-tripped live) | ✓ | — | ✗ non-goal (first real need files it) |
 
 ✓ measured working; ⚠/✗ the gaps, tagged with the piece that closes
@@ -86,14 +88,25 @@ them. This table is byte-identical to the brainstorm's (r1 I9/N1) and
 travels unchanged into the plan and the seating engine's module comment.
 
 **Flipped at C4 close (2026-08-30)**, in the same commit as the acceptance
-walks that prove them: the T row's two ⚠ P1 cells, the S row's concrete-
-descriptor and addresses cells, and the whole D row. One cell this cycle owned
-did NOT close, and is left ✗ carrying its measured reason: **S → keyed card**.
-`md encode --key` admits only a depth-3/4 xpub, and a descriptor composed from
-mk1 cards carries depth-0 keys (md rebuilds them from the 65-byte TLV, which
-has no depth), so the bridge refuses — filed as
-`md-cannot-mint-a-keyed-card-from-a-split-set`. Byte-identity of the four
-copies is machine-checked by `scripts/matrix-identity-check.sh`.
+walks that prove them: the T row's two ⚠ P1 cells, the S row's
+concrete-descriptor and addresses cells, and the whole D row. One cell this
+cycle owned did NOT close, and was left ✗ at that close carrying its
+measured reason: **S → keyed card**. `md encode --key` admits only a
+depth-3/4 xpub, and a descriptor composed from mk1 cards carries depth-0
+keys (md rebuilds them from the 65-byte TLV, which has no depth), so the
+bridge refuses — filed as `md-cannot-mint-a-keyed-card-from-a-split-set`.
+Byte-identity of the four copies is machine-checked by
+`scripts/matrix-identity-check.sh`.
+
+**S → keyed card FLIPPED ✓ (mdcli-mini cycle, P5, 2026-08-31)** — the one
+cell the converter cycle left ✗. The bridge is not what closed it and its
+admission rule is unchanged: `md descriptor … --from-mk1 --emit md1` never
+calls `md encode --key`, it mints straight from the seating result, and a
+keyed card's `Pubkeys` TLV is 65 bytes (chain code ‖ compressed point) with
+no depth field, so depth-0 seated keys lose nothing. The minted card is
+byte-identical to the `md encode` mint of the same wallet, measured in
+`crates/md-cli/tests/n2_emit_md1.rs`. Closes
+`md-cannot-mint-a-keyed-card-from-a-split-set`.
 
 ## NORMATIVE — the seating engine (the core, and the funds-shaped part)
 
@@ -383,10 +396,11 @@ two-command bridge (compose → `md encode --key`) needing no new
 surface — **measured FALSE at C4 (2026-08-30): a descriptor composed
 from mk1 cards carries depth-0 xpubs (the Pubkeys TLV holds 65 bytes,
 no depth) and `md encode --key` admits only depth 3/4, so the bridge
-refuses from both ends.** The S → keyed-card matrix cell stays ✗ with
-that reason, and the gap is filed as
+refuses from both ends.** The S → keyed-card matrix cell was left ✗ with
+that reason for this cycle and the gap filed as
 `md-cannot-mint-a-keyed-card-from-a-split-set` (post-converter md-cli
-mini-cycle).
+mini-cycle) — where its P5 closed it with `md descriptor --emit md1`, a
+mint from the seating result rather than any relaxation of the bridge.
 
 **P3 — the concrete descriptor becomes an entrance (the D row).**
 `md decompose <DESCRIPTOR|--in FILE>`: parses a concrete descriptor via
