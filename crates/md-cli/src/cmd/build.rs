@@ -69,12 +69,26 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
     // Phrase path. mstring display-grouping (SPEC §3.2): strip separators so a
     // grouped or unbroken card both re-ingest.
     let phrases = crate::cmd::strip_md1_inputs(args.phrases);
-    if phrases.len() == 1 {
-        Ok(decode_md1_string(&phrases[0])?)
+    let descriptor = if phrases.len() == 1 {
+        decode_md1_string(&phrases[0])?
     } else {
         let refs: Vec<&str> = phrases.iter().map(String::as_str).collect();
-        Ok(reassemble(&refs)?)
-    }
+        reassemble(&refs)?
+    };
+    // N1 on the CARD input (plan P3 step 1). `descriptor` and `address` are
+    // on the REFUSE surface for BOTH of their inputs -- the template branch
+    // above inherits it from `parse_template`, and until P3 this branch had
+    // nothing at all: a card carrying a shape `md encode` now refuses still
+    // composed a wallet at exit 0.
+    //
+    // It runs on the DECODED TEMPLATE, here, and NOT inside
+    // `encode_payload`'s validator set -- the spec's placement constraint.
+    // `md inspect` and `md verify` re-enter `encode_payload` on a decoded
+    // card, so a check there would make the already-engraved plates in
+    // `tests/fixtures/n1/` uninspectable and unverifiable, which is exactly
+    // what Acceptance 5 forbids.
+    crate::parse::reuse::check_descriptor(&descriptor, crate::parse::reuse::Disposition::Refuse)?;
+    Ok(descriptor)
 }
 
 /// SPEC P1's per-datum precedence (`design/SPEC_wallet_form_converter.md`

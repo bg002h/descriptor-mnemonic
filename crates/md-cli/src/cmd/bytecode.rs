@@ -16,6 +16,12 @@ pub fn run(
         let refs: Vec<&str> = strings.iter().map(String::as_str).collect();
         reassemble(&refs)?
     };
+    // N1's WARN disposition on the CARD (plan P3 step 2, Acceptance 5). A
+    // plate already carrying a shape this cycle newly refuses must still
+    // READ, or the refusal has taken away the only tool that could tell its
+    // holder what they have. Same predicate and same body as the refusal --
+    // only the disposition differs (`crate::parse::reuse`).
+    crate::parse::reuse::check_descriptor(&descriptor, crate::parse::reuse::Disposition::Warn)?;
     let (bytes, bit_len) = encode_payload(&descriptor)?;
 
     #[cfg(feature = "json")]

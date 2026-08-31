@@ -16,6 +16,16 @@
 //!   shipped predicate, which the spec's single-source rule forbids, and it
 //!   would replace a correct message with one written for a different case.
 //!
+//! # Two entrances, one classifier
+//!
+//! [`check`] takes the two inputs directly and is what the TEMPLATE path
+//! calls, from `parse_template_ext`. [`check_descriptor`] reconstructs the
+//! same two inputs from a DECODED card and is what the CARD path calls —
+//! `cmd/build.rs`'s phrase branch (`md descriptor`/`md address`), the three
+//! reading verbs, and the seating engine's door check. There is one
+//! predicate underneath both, so one wallet draws one message however it
+//! arrived.
+//!
 //! # Why the input is an occurrence list plus key bindings
 //!
 //! The spec states the single-source rule as a statement about the
@@ -49,6 +59,8 @@
 use crate::error::CliError;
 use crate::parse::keys::ParsedKey;
 use crate::parse::template::PlaceholderOccurrence;
+use md_codec::encode::Descriptor;
+use md_codec::tree::{Body, Node};
 
 /// What a verb does with a finding. NEVER a second implementation of the
 /// predicate — only what happens after it fires.
@@ -343,6 +355,156 @@ pub fn check(
             eprintln!("md: warning: {}", finding.message());
             Ok(())
         }
+    }
+}
+
+/// Classify a DECODED CARD, then apply the caller's disposition.
+///
+/// The card path's entrance. It reconstructs the classifier's two inputs
+/// from the wire and hands them to [`check`], so the CARD and the TEMPLATE
+/// are judged by one predicate and answered with one message.
+///
+/// # What the wire can and cannot carry, and why that shrinks the taxonomy
+///
+/// A card records ONE origin, ONE multipath set and ONE wildcard hardening
+/// per KEY SLOT — that is F-417's narrowness, the wire fact the whole N1
+/// cycle is built around. So every occurrence of `@i` on a card necessarily
+/// carries the IDENTICAL triple, and Family 1 has exactly one reachable
+/// outcome here: [`Finding::SamePathExpression`]. The four axis-divergence
+/// rows (origin, hardening, overlapping and disjoint multipath sets) are
+/// template-only by construction, not by omission.
+///
+/// Family 2 IS reachable: the `Pubkeys` TLV can bind one key to two slots
+/// whose use sites differ, and `tests/fixtures/n1/r-n1d-delta.txt` is a
+/// minted card that does exactly that.
+pub fn check_descriptor(d: &Descriptor, disposition: Disposition) -> Result<(), CliError> {
+    check(&card_occurrences(d), &card_key_bindings(d), disposition)
+}
+
+/// Rebuild the per-occurrence triples from a decoded card.
+///
+/// The triple is built ONCE PER SLOT and then repeated for each position the
+/// slot occupies in the tree, which is the structural form of the paragraph
+/// above: two occurrences of one slot cannot differ, because there is only
+/// one declaration to differ from.
+///
+/// `origin_path` is left `None` for every occurrence rather than decoded out
+/// of `path_decl`. Its ONLY role in the classifier is `same_triple`, which
+/// compares occurrences of the SAME slot — where a constant is exactly
+/// right — and no message on this path quotes it. Decoding it would mean
+/// running the strict per-`@N` expansion, which fails closed on a partial
+/// card; the reading verbs must still read one (Acceptance 5), so the
+/// classifier must not be the thing that stops them.
+///
+/// A slot with ZERO tree positions still contributes ONE occurrence: the
+/// card DECLARES its use site whether or not the tree references it, and
+/// Family 2's lookup needs a triple for every slot it holds a key for.
+/// A floor of one can never manufacture a Family-1 finding, which needs two.
+fn card_occurrences(d: &Descriptor) -> Vec<PlaceholderOccurrence> {
+    let n = d.n as usize;
+    let mut counts = vec![0u32; n];
+    count_occurrences(&d.tree, &mut counts);
+    let overrides = d.tlv.use_site_path_overrides.as_deref().unwrap_or_default();
+
+    let mut out = Vec::new();
+    for (i, count) in counts.iter().enumerate() {
+        let usp = overrides
+            .iter()
+            .find(|(j, _)| usize::from(*j) == i)
+            .map_or(&d.use_site_path, |(_, p)| p);
+        // `Alternative` carries a hardened flag the template lexer can never
+        // produce (a hardened multipath alt is un-derivable on a watch-only
+        // card and is refused at lex), so flattening to the value here can
+        // only ever make two use sites look MORE alike -- i.e. it can only
+        // under-report Family 2, never invent it.
+        let occ = PlaceholderOccurrence {
+            i: i as u8,
+            origin_path: None,
+            multipath_alts: usp
+                .multipath
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(|a| a.value)
+                .collect(),
+            wildcard_hardened: usp.wildcard_hardened,
+        };
+        for _ in 0..(*count).max(1) {
+            out.push(occ.clone());
+        }
+    }
+    out
+}
+
+/// Rebuild the per-`@i` key bindings from the card's `Pubkeys` TLV.
+///
+/// `depth` is `0` because the wire carries no depth field — a keyed card's
+/// `Pubkeys` entry is 65 bytes, chain code ‖ compressed point, and nothing
+/// else. That is safe here and only here: `classify` reads `i` and
+/// `payload`, these values never leave this module, and the advisories that
+/// DO read `depth` (F-411's `emit_unhardened_origin_note`) are on the
+/// template path and build their own `ParsedKey`s from a real xpub.
+fn card_key_bindings(d: &Descriptor) -> Vec<ParsedKey> {
+    d.tlv
+        .pubkeys
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|(i, payload)| ParsedKey {
+            i: *i,
+            depth: 0,
+            payload: *payload,
+        })
+        .collect()
+}
+
+/// Count each placeholder's OCCURRENCES in the tree.
+///
+/// `Body::MultiKeys` holds raw indices rather than child `Node`s, and
+/// `Body::Tr` holds the internal key as a bare index, so a walker that only
+/// recursed through `Body::Children` would miss every position that matters
+/// here.
+///
+/// Moved here from `seat::satisfy` by plan P3 step 3b, when the seating
+/// door check became an invocation of this module: it is now one walker
+/// serving one predicate rather than a second copy beside it.
+fn count_occurrences(node: &Node, counts: &mut [u32]) {
+    match &node.body {
+        Body::KeyArg { index } => {
+            if (*index as usize) < counts.len() {
+                counts[*index as usize] += 1;
+            }
+        }
+        Body::MultiKeys { indices, .. } => {
+            for idx in indices {
+                if (*idx as usize) < counts.len() {
+                    counts[*idx as usize] += 1;
+                }
+            }
+        }
+        Body::Tr {
+            is_nums,
+            key_index,
+            tree,
+        } => {
+            if !*is_nums && (*key_index as usize) < counts.len() {
+                counts[*key_index as usize] += 1;
+            }
+            if let Some(t) = tree {
+                count_occurrences(t, counts);
+            }
+        }
+        Body::Children(children) => {
+            for c in children {
+                count_occurrences(c, counts);
+            }
+        }
+        Body::Variable { children, .. } => {
+            for c in children {
+                count_occurrences(c, counts);
+            }
+        }
+        _ => {}
     }
 }
 
