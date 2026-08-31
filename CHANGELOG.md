@@ -4,7 +4,9 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## md-cli [Unreleased] — the wallet-form converter
+## md-cli [0.14.0] — 2026-08-31
+
+**SemVer-minor — the wallet-form converter + the post-converter mini-cycle. Consumes md-codec 0.42.0 (unchanged this release; the next md-codec publish is a separately gated decision, F-424).**
 
 A wallet expressed in one form can now be moved to another. The three forms md
 already understood — a **concrete descriptor**, a **BIP-388 template plus keys**,
@@ -13,6 +15,14 @@ slot, or a single keyed `md1` card) — were each a dead end: what went in one w
 came out the same way. The gaps, and which piece closes each, are the "in \ out"
 matrix in [`design/BRAINSTORM_wallet_form_converter.md`](design/BRAINSTORM_wallet_form_converter.md)
 and its three siblings; the spec is `design/SPEC_wallet_form_converter.md`.
+
+This release also folds in the post-converter mini-cycle below (the N1
+key-reuse/placeholder-repetition admission taxonomy, `--emit md1`,
+`--verify-against`, N3/R9, and `decompose`'s BIP-388 `/**`/`-` support), plus
+the smaller fixes landed between the two cycles (the `--path`-supersession
+origin advisory, `/**` on `encode`, the unseatable-keyless-template advisory,
+the consensus-masked `older()` authoring gate, and automatic chunking on
+overflow) — all of it shipped together since `md-cli` 0.13.0.
 
 ### Added
 
@@ -134,19 +144,19 @@ declines to reconstruct. Fingerprint-FREE declarations sharing one path are a
 DIFFERENT case and seat normally — that is the privacy-preserving
 different-masters family, and it is pinned by rows on both sides of the boundary.
 
-## md-cli [Unreleased] — origin advisory names a `--path` supersession
+### origin advisory names a `--path` supersession
 
 ### Changed
 
 - **The origin-misreading note appends one trailing line when `--path` is present** (F-412 ruling): the note's predicate still reads the template's own text — `--path` neither suppresses a note the spelling earns nor triggers one the template did not write — but a fired note now ends by stating that the minted card carries the override, not the cited spelling. stderr only; stdout, exit codes and both tier predicates are unchanged.
 
-## md-cli [Unreleased] — BIP-388 `/**` accepted on encode
+### BIP-388 `/**` accepted on encode
 
 ### Added
 
 - **`md encode` accepts `@i/**` as BIP-388 sugar for `@i/<0;1>/*`** — byte-identical to the desugared spelling, where it previously exited non-zero — while `md decode` renders the canonical `<0;1>/*`, so the round trip is not spelling-preserving.
 
-## md-cli [Unreleased] — advisory for an unseatable keyless template
+### advisory for an unseatable keyless template
 
 ### Added
 
@@ -191,7 +201,7 @@ different-masters family, and it is pinned by rows on both sides of the boundary
   Keyed cards are exempt: they carry their own keys, so nothing is seated onto
   them.
 
-## md-cli [Unreleased] — authoring gate for consensus-masked `older()`
+### authoring gate for consensus-masked `older()`
 
 ### Fixed
 
@@ -240,8 +250,6 @@ different-masters family, and it is pinned by rows on both sides of the boundary
 - `md_codec::validate::validate_relative_timelocks` is public and called by
   `md encode` only — an opt-in helper, not codec behaviour.
 
-## md-cli [Unreleased]
-
 ### Changed — `md encode` chunks automatically on overflow (F-136)
 
 A payload over the codex32 regular code's 80-data-symbol cap used to be a HARD
@@ -289,7 +297,7 @@ never had a single-string-or-error mode, so it never carried this defect. That
 is the second time in one cycle the strictly-downstream port was already right
 where the primary was not.
 
-## md-cli [Unreleased] — the post-converter mini-cycle: N1 admission, `--emit md1`, `--verify-against`, N3/R9, decompose BIP-388 `/**`/`-`
+### the post-converter mini-cycle: N1 admission, `--emit md1`, `--verify-against`, N3/R9, decompose BIP-388 `/**`/`-`
 
 Follow-on to the wallet-form converter above (`design/SPEC_mdcli_mini.md`,
 `design/IMPLEMENTATION_PLAN_mdcli_mini.md`), closing several FOLLOWUPS the
