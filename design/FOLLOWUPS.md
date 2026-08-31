@@ -2725,3 +2725,29 @@ when `Cargo.toml` pinned the git-sourced miniscript fork on
 2026-08-20 — so v0.14.0 currently lacks its static musl binaries.
 Fix the rev (and consider deriving it from Cargo.lock so it cannot
 drift again), then re-run or re-tag per that workflow's own rules.
+
+**PARTIAL 2026-08-31:** the rev-drift half is FIXED and pushed —
+`man-pages.yml` now derives the rev from `Cargo.lock` (commit
+`0ce18660`, both required contexts green). Still open: v0.14.0's
+missing musl binaries — the workflow must re-run for that tag (next
+md-cli tag, or a manual dispatch per the workflow's own rules).
+
+### `md-codec-derive-feature-depends-on-unpublished-miniscript-apis` — the crate cannot be published: its default `derive` feature calls three APIs that exist only in the git-fork miniscript pin (repo: **descriptor-mnemonic**; owning phase: **blocks the next md-codec publish — resolve before re-attempting F-424's chain**)
+
+Filed 2026-08-31 from the halted 0.43.0 publish (full record:
+`design/agent-reports/publish-2026-08-31-md-codec-0.43.0.md`; the
+drafted version-bump and CHANGELOG text are preserved there for
+reuse). `cargo publish --dry-run` failed to compile: `derive`
+(a DEFAULT feature) calls `Descriptor::derive_at_index`,
+`Descriptor::into_definite` and `Terminal::SortedMultiA`, which exist
+in the workspace's `[patch.crates-io]` git-fork rev and in NO
+published miniscript — so a published md-codec would not build for
+any consumer. Verified a fresh regression against the
+`md-codec-v0.42.0` tag's own source; introduced by `5b4d20ad`,
+`3bc2239e`, `75032c2f`. `--no-default-features` compiles clean,
+isolating the defect. Options, undecided: (a) wait for an upstream
+miniscript release carrying the APIs and raise the registry
+requirement; (b) rework `derive` to avoid them; (c) demote `derive`
+from the default set (a breaking surface change). **F-424 (publish
+≥0.43.0, bump `me`, drop the host mirror) is BLOCKED on this** — the
+me-side mirror stays in place until it clears.
