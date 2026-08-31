@@ -11,9 +11,11 @@ this document was re-verified against this tree on 2026-08-31.
 **Walk status (2026-08-31):** decisions (a) and (b) RULED below. The
 operator confirmed in the walk: item 1's read-side rule, item 2's
 mint-from-seating shape, rider 6's desugar, rider 8's park. Item 1's
-two directions stand pending the operator's word after the same-key
-probe was answered by measurement (see item 1's walk measurement).
-Rider 9 was DISCOVERED by the walk itself.
+two directions RULED YES + YES (operator, 2026-08-31, confirmed as
+two explicit questions): refuse the forbidden same-path repetition at
+mint; keep the disjoint-form refusal and rewrite its message honestly.
+Rider 9 was DISCOVERED by the walk itself. THE WALK IS COMPLETE —
+every decision this cycle needed is ruled; the spec follows.
 
 ## OPERATOR DECISION (a) — should an origin-notated `--key`'s bracket path become a PATH SOURCE of last resort?
 
