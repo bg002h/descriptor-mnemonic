@@ -2627,3 +2627,20 @@ Filed 2026-08-31. The five are itemized with reasoning in
 cross-file rendered-string consistency, a CI/script behavior nit, an
 error-context plumbing nit, missing test-fixture nits, and the
 session-date-vs-git-date convention question in the brainstorm.
+
+### `push-staging-script-watches-an-order-dependent-run` — `push-via-staging.sh` selects `gh run list --commit … '.[0]'`, which grabbed the wrong workflow when three fire on one SHA (repo: **descriptor-mnemonic**; owning phase: **before the next push — a one-line script fix**)
+
+Filed 2026-08-31 from the mdcli-mini final push (full record:
+`design/agent-reports/push-2026-08-31-mdcli-mini.md`). Three workflows
+now fire per SHA (`CI`, `fuzz-smoke`, `bitcoind-differential`); the
+script's `.[0].databaseId` selection is list-order-dependent and
+watched `bitcoind-differential` (33364380344) while the required
+contexts lived only in `CI` (33364380379) — it would have burned its
+full 1800s budget and FATAL'd "last: absent" despite CI being green
+the whole time. Never pushed anything wrong; the defect is a
+30-minute false alarm, found because the push agent verified
+per-job conclusions independently instead of trusting the watch. Fix
+direction: filter by workflow name (`gh run list --workflow CI …`) or
+select the run whose job set contains the required contexts. The
+first staging run (2026-08-30) was clean only because nothing else
+fired on that SHA.

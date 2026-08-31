@@ -1,6 +1,17 @@
 # CONTINUITY — post-converter md-cli mini-cycle (opened 2026-08-31)
 
-## STATUS 2026-08-31 FINAL: CYCLE COMPLETE — merged to main, push in flight
+## STATUS: SHIPPED — origin/main = bdb031a4, no bypass, CI 9/9 green
+
+Pushed 2026-08-31 via the staging ritual (agent-verified per-job; the
+script's run-selection defect found en route is filed as
+`push-staging-script-watches-an-order-dependent-run`). Post-ship
+riders landed the same session: `--emit md1` transcribe-ready form
+(branch emit-md1-form merged, 1191 tests green, rides the next push);
+Go corpus sync prepared in the fork (branch mdcli-corpus-sync, gated
+commit on origin — check its report); toolkit docs merge/push decision
+pending its agent's CI-pin assessment.
+
+## (superseded) CYCLE COMPLETE — merged to main, push in flight
 
 Operator said "Proceed"; all 7 phases implemented (P1-P6 one agent
 each, controller-verified gates + live probes after every phase; P7 =
