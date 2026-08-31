@@ -49,6 +49,7 @@ use common_facts::{Facts, facts, spend_equal, spend_equal_report};
 const V_B1_WALLET: &str = include_str!("fixtures/seating/v-b1-wallet.txt");
 const V_SPENDEQ_KEYED: &str = include_str!("fixtures/seating/v-spendeq-keyed.txt");
 const V_USP: &str = include_str!("fixtures/seating/v-usp.txt");
+const V_LEGACY_P2SH: &str = include_str!("fixtures/seating/v-legacy-p2sh.txt");
 const KEYS_TXT: &str = include_str!("fixtures/pathological/keys.txt");
 
 /// V-B1-WALLET's own mint command, from the provenance header of
@@ -498,5 +499,45 @@ fn n2_emit_md1_composes_with_seat() {
         out_of(&o).starts_with("md1"),
         "a seated mint is a card: {}",
         out_of(&o)
+    );
+}
+
+// ─── step 4 — advisories carry across the new minting surface (r1 I3) ───────
+//
+// `--emit md1` is a minting surface too, and which command engraved the
+// plate makes no difference to what it claims. `md encode` emits five things
+// around a mint; this cell only carried `emit_output_class_advisory`.
+// F-227 and F-410 are genuinely inapplicable ONLY here (a keyed card and no
+// `--template`), so this row measures F-A4 only, on a policy shape no other
+// fixture in this directory carries: a bare `sh(sortedmulti(...))`.
+
+/// Measured ABSENT before this fold: `md descriptor <V-LEGACY-P2SH>
+/// --from-mk1 <its cards> --emit md1` minted at exit 0 with zero occurrences
+/// of "legacy P2SH" on stderr, while `md encode` of the identical wallet (the
+/// oracle row's shape, `sh(sortedmulti(...))` instead of `wsh(...)`) warns
+/// every time. Same wallet, same defect class, two commands, one answer now.
+#[test]
+fn n2_emit_md1_carries_the_legacy_p2sh_advisory_across() {
+    let o = seat_cmd(
+        "descriptor",
+        V_LEGACY_P2SH,
+        &mk1(V_LEGACY_P2SH),
+        &["--emit", "md1"],
+    )
+    .output()
+    .unwrap();
+    assert!(o.status.success(), "{}", err_of(&o));
+    assert!(
+        out_of(&o).starts_with("md1"),
+        "the mint still happened -- this is warn-only: {}",
+        out_of(&o)
+    );
+    assert!(
+        err_of(&o).contains(
+            "sh(multi)/sh(sortedmulti) is legacy P2SH multisig \u{2014} susceptible to \
+             third-party txid malleability"
+        ),
+        "the F-A4 advisory did not carry across to --emit md1: {}",
+        err_of(&o)
     );
 }

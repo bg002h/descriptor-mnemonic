@@ -340,7 +340,7 @@ fn is_legacy_p2sh_multisig(tree: &Node) -> bool {
 /// `tree` is a top-level bare `sh(multi)` / `sh(sortedmulti)`. Warn-only —
 /// the card is still emitted on stdout. Modern forms (`wsh(multi)`, `wpkh`,
 /// `tr`), `sh(wsh(...))`, and the canonical BIP44 `pkh` default are SILENT.
-fn emit_legacy_p2sh_advisory<W: std::io::Write>(tree: &Node, stderr: &mut W) {
+pub(crate) fn emit_legacy_p2sh_advisory<W: std::io::Write>(tree: &Node, stderr: &mut W) {
     if is_legacy_p2sh_multisig(tree) {
         let _ = writeln!(
             stderr,
@@ -692,7 +692,7 @@ fn emit_unhardened_origin_note<W: std::io::Write>(
     }
 }
 
-fn emit_pathless_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
+pub(crate) fn emit_pathless_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
     if descriptor.unresolved_origin_indices().is_empty() {
         return;
     }

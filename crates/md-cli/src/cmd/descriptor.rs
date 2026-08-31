@@ -322,6 +322,19 @@ fn emit_md1_card(descriptor: &Descriptor, seating_notes: &[String]) -> Result<u8
     }
     print!("{body}");
     emit_seating_notes(seating_notes);
+    // F-A4: legacy-P2SH-multisig footgun advisory, carried across from `md
+    // encode` (review r1 I3) -- this is a minting surface too, and which
+    // command engraved the plate makes no difference to what it claims.
+    crate::cmd::encode::emit_legacy_p2sh_advisory(&descriptor.tree, &mut std::io::stderr());
+    // P1.2: loud advisory when the SEATED descriptor still carries an
+    // unresolvable origin (review r1 I3). F-227 (unseatable keyless
+    // template) and F-410 (unhardened-origin note) are genuinely
+    // inapplicable here and are deliberately NOT carried across: `--emit
+    // md1` always produces a KEYED card (`check_emit_md1_input_mode` above
+    // refuses every other input mode), so F-227's keyless-template case
+    // cannot arise, and F-410 reads `args.template`, which this path never
+    // has.
+    crate::cmd::encode::emit_pathless_advisory(descriptor, &mut std::io::stderr());
     // A keyed card is watch-only material: public keys only, no spend.
     crate::output_advisory::emit_output_class_advisory(
         crate::output_advisory::OutputClass::WatchOnly,

@@ -540,3 +540,33 @@ header "$f" V-CE1 "the FOREIGN card: another master, @0's path, the SAME stub"
   mint "$(xpub_of 4)" "m/48'/0'/0'/2'" "$CE1_SHAPE" --origin-fingerprint "$(fp_of 4)"
 } >> "$f"
 echo "wrote: $f"
+
+# ── V-LEGACY-P2SH (whole-diff review r1 I3) ─────────────────────────────────
+# `sh(sortedmulti(...))` -- CE1's own template, re-wrapped in legacy P2SH
+# instead of wsh -- fingerprint-bearing so ONE card each seats unambiguously,
+# no stub-matching needed. Exists so `--emit md1` has a legacy-P2SH policy it
+# can seat from a split card set: F-A4's footgun advisory fires only on the
+# top-level bare sh(multi)/sh(sortedmulti) shape, and no fixture in this
+# directory carried it before this row.
+LEGACY_P2SH_TPL="sh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))"
+LEGACY_P2SH_KEYED=$("$MD" encode "$LEGACY_P2SH_TPL" --key "@0=$(xpub_of 0)" \
+      --key "@1=$(xpub_of 1)" --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a \
+      --group-size 0 2>/dev/null)
+# shellcheck disable=SC2086
+LEGACY_P2SH_WALLET_ID=$(id_of wallet-policy-id $LEGACY_P2SH_KEYED)
+[ ${#LEGACY_P2SH_WALLET_ID} -eq 8 ] || { echo "V-LEGACY-P2SH wallet-policy-id extraction failed" >&2; exit 1; }
+
+f="$HERE/v-legacy-p2sh.txt"
+header "$f" V-LEGACY-P2SH "a bare sh(sortedmulti(...)) policy, seated from two fp-bearing cards (stub $LEGACY_P2SH_WALLET_ID)"
+{
+  echo "#   md encode \"$LEGACY_P2SH_TPL\" --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub $LEGACY_P2SH_WALLET_ID"
+  echo "#   mk encode --xpub <KEY 2> --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/1'/2' --policy-id-stub $LEGACY_P2SH_WALLET_ID"
+  "$MD" encode "$LEGACY_P2SH_TPL" --fingerprint @0=73c5da0a --fingerprint @1=73c5da0a \
+        --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/48'/0'/0'/2'" "$LEGACY_P2SH_WALLET_ID" --origin-fingerprint 73c5da0a
+  mint "$(xpub_of 1)" "m/48'/0'/1'/2'" "$LEGACY_P2SH_WALLET_ID" --origin-fingerprint 73c5da0a
+} >> "$f"
+echo "wrote: $f"
