@@ -1,0 +1,30 @@
+# R-N1D-DELTA — a KEYED card carrying R-N1d's DISJOINT-use-site delta (KEY 1
+# bound to BOTH @0 and @1, at <0;1> and <2;3>), minted while a shipped binary
+# still would.
+#
+# GENERATED 2026-08-30 by hand from the b8a64938 code surface (the
+# mdcli-mini plan's baseline revision), binary
+# /scratch/code/shibboleth/descriptor-mnemonic/target/debug/md, with:
+#
+#   md encode "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))" \
+#     --key @0=<KEY 1> --key @1=<KEY 1> --path "48'/0'/0'/2'" --group-size 0
+#
+# Key material: crates/md-cli/tests/fixtures/pathological/keys.txt (KEY n =
+# its n-th record, 1-based) — KEY 1 is [73c5da0a/48'/0'/0'/2']. '#' and blank
+# lines are provenance only.
+#
+# THE WALLET IS BIP-388-LEGAL; THIS SPELLING IS NOT. One key at two DISJOINT
+# path sets is BIP 388's own valid example in its ONE-placeholder spelling
+# (line 291); the TWO-placeholder spelling used here repeats the key in the
+# key information vector, which the pairwise-distinct rule (line 193) forbids.
+# md1 cannot write the one-placeholder spelling (F-417), so both spellings are
+# inadmissible from P2 onward and no shipped binary can mint this card again.
+# It is kept because plates carrying it CAN exist — SPEC_mdcli_mini.md's
+# placement constraint and Acceptance 5 exist for exactly these bytes.
+# Regenerating it would require checking out b8a64938. Frozen, by design.
+#
+# chunk-set-id: 0x00ee4 (4 chunks)
+md1fqrhypspq2tvyyy4qqxppsg2qknq2zc2uzfwaqcl9pvz58pmltjs9tjrg0g2z0agd4ufp7hduum6kwk5
+md1fqrhypsgxjz9m806prlsm794tkxqs6806lhaeh6reknylagmwyjycf8044xtt9flsduceq9hcyzfej5t
+md1fqrhypshvch5n4shwf72wa6p372zc9gwrh7h9q2hyxs7s5yl6smtcxjz9m806prlsmup3ltrsqzp8y40
+md1fqrhypsut2hvvpp5wl4l0mn058ndxfl63kufyfsjwlt2vkk2nlqmlvch5n4shwf72gq83vs87hd9720k

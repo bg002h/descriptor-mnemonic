@@ -1,0 +1,24 @@
+# R-N1A-KEYED — a KEYED card carrying the R-N1a shape (@0 at two use sites,
+# identical triples), minted while a shipped binary still would.
+#
+# GENERATED 2026-08-30 by hand from the b8a64938 code surface (the
+# mdcli-mini plan's baseline revision), binary
+# /scratch/code/shibboleth/descriptor-mnemonic/target/debug/md, with:
+#
+#   md encode "wsh(sortedmulti(2,@0/<0;1>/*,@0/<0;1>/*))" \
+#     --key @0=<KEY 1> --path "48'/0'/0'/2'" --group-size 0
+#
+# Key material: crates/md-cli/tests/fixtures/pathological/keys.txt (KEY n =
+# its n-th record, 1-based) — KEY 1 is [73c5da0a/48'/0'/0'/2']. '#' and blank
+# lines are provenance only.
+#
+# THERE IS NO GENERATOR FOR THIS FILE, BY DESIGN. SPEC_mdcli_mini.md N1's
+# R-N1a makes `md encode` REFUSE this shape from P2 onward, so no shipped
+# binary can mint it again — deliberately, since these bytes are exactly the
+# already-engraved plate the C1 placement constraint protects (Acceptance 5:
+# `decode`/`inspect`/`bytecode`/`verify` must still complete at exit 0 on it).
+# Regenerating it would require checking out b8a64938. Frozen.
+#
+# chunk-set-id: 0xed813 (2 chunks)
+md1fakqnqspqztvyyy4qqxppcgg4gythgx8egtq4pcwl6u5p2us6r6zsnl2rd0q6gghvalgywfyx3z0nn28m7t
+md1fakqnqs0cdlz64mrqgdrha0m7umapumfj075dhzfzvynh66n94j5lcxlmx9ayav9mj0jjqpx5yl5n7q5v9j
