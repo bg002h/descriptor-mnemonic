@@ -603,6 +603,50 @@ fn v_n3_divergent_origin_wallet_composes_and_equals_inline_pasted_origins() {
     );
 }
 
+/// N3's row 3 (whole-diff review r1 M1): a bracket sources SOME slots while
+/// another has NO source at all -- the shape N3 could plausibly have broken,
+/// because it makes `apply_path_override_per_slot` PROCEED where it used to
+/// early-return the instant any slot lacked a path source. Rows 1 and 2
+/// above cover "bracket wins" and "bracket disagrees with --path"; neither
+/// exercises a slot N3's bracket source cannot reach at all.
+///
+/// `@0` has a bracket origin (wins per N3); `@1` has none -- no inline
+/// origin, no `--path`, no bracket -- so it must still hit today's
+/// non-canonical-wrapper refusal exactly as it did before N3 existed
+/// (`tests/cli_path_override_reaches_noncanonical.rs::
+/// address_without_path_still_refuses_a_noncanonical_wrapper`, which uses
+/// bare keys and so never enters N3's code path at all).
+#[test]
+fn v_n3_a_slot_with_no_path_from_any_source_still_refuses() {
+    let x0 = xpub_at("48'/0'/0'/2'");
+    let x1 = xpub_at("48'/0'/1'/2'");
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            "tr(@0/<0;1>/*,pk(@1/<0;1>/*))",
+            "--key",
+            &format!("@0=[73c5da0a/48'/0'/0'/2']{x0}"),
+            "--key",
+            &format!("@1={x1}"),
+            // no --path, and @1's --key carries no bracket at all
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "a slot with NO path source composed: {}",
+        stdout_of(&out)
+    );
+    let err = stderr_of(&out);
+    assert!(
+        err.contains("non-canonical wrapper requires explicit origin"),
+        "the refusal must name the missing origin, unchanged by N3's bracket \
+         source existing for a DIFFERENT slot: {err}"
+    );
+    assert!(err.contains("@1"), "the refusal must name the slot: {err}");
+}
+
 /// A bracket carrying a fingerprint and NO path states nothing about the
 /// path, so there is nothing to agree or disagree about and the slot still
 /// composes on the shared `--path`. Without this row the fix above could be
