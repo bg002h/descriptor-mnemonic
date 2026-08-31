@@ -2642,6 +2642,15 @@ cross-file rendered-string consistency, a CI/script behavior nit, an
 error-context plumbing nit, missing test-fixture nits, and the
 session-date-vs-git-date convention question in the brainstorm.
 
+**N2 (the date convention) RULED and CLOSED 2026-08-31 — operator
+chose "B", verbatim option: the page wins.** THE CONVENTION: a design
+document's stated date is the cycle's working-day LABEL; git's
+timestamp is the clock; disagreement of up to a day between them is
+expected and is not an error, never backdating. Nothing is re-dated
+retroactively; when a citation needs precision, cite the commit SHA,
+not a date. With the other four nits closed by `close-out-nits`
+(commit 2b935f19), this entry is now fully CLOSED.
+
 **4 of 5 ✓ CLOSED (2026-08-31), commit `2b935f19`.** N1 (cross-file
 rendered-string consistency): fetched the real `bip-0388.mediawiki` —
 its "Additional rules" section has no bullet/ordinal numbering at all,
@@ -2700,3 +2709,19 @@ ci/staging` isolates exactly `33364380379` — the run the script's own
 staging push triggers, so it is the semantically correct selector, not
 merely a disambiguator. Fail-closed behavior unchanged: the retry loop
 and the "no run appeared" FATAL are unaffected, just filtered.
+
+### `release-musl-legs-fail-on-stale-miniscript-rev` — the v0.14.0 tag release shipped without its static musl binaries; `man-pages.yml`'s reproducibility gate pins a `miniscript_rev` that predates the 2026-08-20 fork pin (repo: **descriptor-mnemonic**; owning phase: **before or with the next tag release**)
+
+Filed 2026-08-31 from the v0.14.0 release (full record:
+`design/agent-reports/release-2026-08-31-md-cli-0.14.0.md`). Pushing
+`descriptor-mnemonic-md-cli-v0.14.0` triggered `man-pages.yml` — the
+release brief's "no tag-triggered workflows" premise was the
+CONTROLLER's unverified claim, wrong: the pipeline fires on every
+long-form tag and simply never ran for v0.13.0's short-form-only tag.
+The man-pages job succeeded (GitHub Release created with the bundle);
+the reproducibility gate's musl legs failed on a pre-existing
+misconfiguration — the workflow's `miniscript_rev` was not updated
+when `Cargo.toml` pinned the git-sourced miniscript fork on
+2026-08-20 — so v0.14.0 currently lacks its static musl binaries.
+Fix the rev (and consider deriving it from Cargo.lock so it cannot
+drift again), then re-run or re-tag per that workflow's own rules.
