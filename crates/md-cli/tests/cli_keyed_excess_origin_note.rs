@@ -159,22 +159,34 @@ fn only_the_deeper_slot_is_named() {
     );
 }
 
+/// ONE LINE PER FIRING SLOT — the rule the emitter states beside itself, and
+/// the one that distinguishes this tier from F-410's joined list: each line
+/// carries its own depth, level count and excess, which do not collapse into a
+/// shared sentence.
+///
+/// WHAT THIS ROW USED TO SAY, AND WHY IT CHANGED. It used to put ONE
+/// placeholder at two occurrences and assert a single line, pinning "per
+/// declaration, not per occurrence". Since N1 (`design/SPEC_mdcli_mini.md`
+/// R-N1a) a placeholder at two use sites with the same path expression is
+/// refused outright, so that template no longer reaches the emitter at all and
+/// the per-occurrence half of the rule is unconstructible through the CLI. The
+/// per-declaration half is what remains observable, and it is what this row
+/// now measures: two firing slots, two lines, neither swallowed.
 #[test]
-fn note_is_said_once_per_declaration_not_per_occurrence() {
-    // One placeholder, two occurrences. The note is about the DECLARATION.
-    // (Two DIFFERENT firing slots would legitimately get one line each — this
-    // note carries a per-slot depth and level count that do not collapse into
-    // a shared sentence.)
+fn note_is_said_once_per_firing_slot() {
     let (_, stderr, code) = encode_keyed(
-        "wsh(or_d(pk(@0/84'/0'/0'/0/<0;1>/*),pk(@0/84'/0'/0'/0/<0;1>/*)))",
-        &[&format!("@0={K3}")],
+        "wsh(or_d(pk(@0/84'/0'/0'/0/<0;1>/*),pk(@1/48'/0'/0'/2'/0/<0;1>/*)))",
+        &[&format!("@0={K3}"), &format!("@1={K4}")],
     );
     assert_eq!(code, 0, "{stderr}");
+    let lines: Vec<&str> = stderr.lines().filter(|l| l.contains(KEYED)).collect();
     assert_eq!(
-        stderr.lines().filter(|l| l.contains(KEYED)).count(),
-        1,
-        "exactly one note per run: {stderr}"
+        lines.len(),
+        2,
+        "one line per firing slot, and both slots fire here: {stderr}"
     );
+    assert!(lines.iter().any(|l| l.contains("@0")), "{stderr}");
+    assert!(lines.iter().any(|l| l.contains("@1")), "{stderr}");
 }
 
 #[cfg(feature = "json")]

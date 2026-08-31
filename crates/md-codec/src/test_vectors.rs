@@ -158,12 +158,39 @@ pub const MANIFEST: &[Vector] = &[
         // the vector is not the place to exercise that disagreement.
         keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
         fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
-    Vector { name: "keyed_wsh_timelock_hashlock", template: "wsh(or_i(and_v(v:after(1000000),and_v(v:sha256(a84dce40975727c398023cfbd50d5db3b9662375521d0f1ac62dbd829b9a08ad),multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))),and_v(v:older(65535),multi(1,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))))",
+    // TWO SPENDING CLAUSES OVER FIVE DISTINCT KEYS. Until the mdcli-mini cycle
+    // the recovery clause reused @1 and @2 from the primary clause at the
+    // IDENTICAL path expression -- BIP 388's own forbidden example, and what
+    // R-N1a (`design/SPEC_mdcli_mini.md`) now refuses to mint. The recovery
+    // clause therefore takes FRESH placeholders. The vector's role is
+    // unchanged: it is still the degrading-multisig shape, a timelock and a
+    // hashlock over one `or_i` with different thresholds per clause, and it is
+    // still the corpus's only `sha256` + `after`/`older` combination.
+    //
+    // Operator ruling 2026-08-31, verbatim: "No carve out for reused keys
+    // unless different origin paths." A degrading vault that hands the SAME
+    // cosigner the recovery path is exactly the shape that ruling declines to
+    // carve out, so the corpus may not pin one.
+    //
+    // @4 is under the SECOND master (b8688df1) because 73c5da0a's records stop
+    // at 48'/0'/3'/2'. Every [fingerprint/path] in the descriptor is bound to
+    // exactly one xpub, which `md-cli/tests/corpus_origin_consistency.rs`
+    // checks (F-217: a corpus may not pin a wallet that cannot exist).
+    Vector { name: "keyed_wsh_timelock_hashlock", template: "wsh(or_i(and_v(v:after(1000000),and_v(v:sha256(a84dce40975727c398023cfbd50d5db3b9662375521d0f1ac62dbd829b9a08ad),multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))),and_v(v:older(65535),multi(1,@3/48'/0'/3'/2'/<0;1>/*,@4/48'/0'/0'/2'/<0;1>/*))))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR"), (3, "xpub6E6Z3Ss5TXJYNJp4U1q3NZ3pCn82i7KXQAKUtNnzLJ3cCdchQeSdFvXemizaHUF7wNwRQAB8mPdoZhGHLiv49cWPtCnoJY3Az3E8JKxH9Mq"), (4, "xpub6FQya7zGhR92kacYsNnjreouvnHJMpXYsUXnW6NJJAJRCKsa26TzDy4LdnGhEurr3d6y1J8PJ7EEMKQp74XTqYvmGJNogYXSKDszYHtF8mX")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a]), (3, [0x73, 0xc5, 0xda, 0x0a]), (4, [0xb8, 0x68, 0x8d, 0xf1])], force_chunked: true, path: None },
+    // `sortedmulti_a` AT A TAPROOT LEAF, with a key-path spend beside it.
+    //
+    // The internal key gets a placeholder that appears NOWHERE in the leaf.
+    // Until the mdcli-mini cycle it was @0 in both positions at the identical
+    // path expression -- one placeholder at two use sites, which BIP 388 names
+    // among its forbidden templates and R-N1a
+    // (`design/SPEC_mdcli_mini.md`) now refuses to mint. The vector's role is
+    // untouched: a keyed `tr` with BOTH a key path and a script path, and the
+    // leaf still holds two distinct keys.
+    Vector { name: "keyed_tr_sortedmulti_a", template: "tr(@0/48'/0'/0'/2'/<0;1>/*,sortedmulti_a(2,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))",
         keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
         fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
-    Vector { name: "keyed_tr_sortedmulti_a", template: "tr(@0/48'/0'/0'/2'/<0;1>/*,sortedmulti_a(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))",
-        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
-        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
     // UNSORTED multi_a, and it is the ONLY order-SENSITIVE tap leaf in the
     // corpus. Every other multi-key leaf here is sortedmulti_a, which sorts on
     // the derived keys and therefore reads the same whichever order a consumer
@@ -171,12 +198,18 @@ pub const MANIFEST: &[Vector] = &[
     // order in a tap leaf" was asserted by nothing. Found by mutation: reversing
     // a leaf's key indices in the Go port passed the entire suite.
     //
-    // Two keys is enough. Any permutation of two is a reversal, and a reversal
-    // changes the emitted script, so a wrong order cannot round-trip to the same
-    // address.
-    Vector { name: "keyed_tr_multi_a", template: "tr(@0/48'/0'/0'/2'/<0;1>/*,multi_a(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))",
-        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk")],
-        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
+    // Two keys IN THE LEAF is enough. Any permutation of two is a reversal, and
+    // a reversal changes the emitted script, so a wrong order cannot round-trip
+    // to the same address.
+    //
+    // The internal key is a THIRD placeholder, appearing nowhere in the leaf.
+    // It was @0 in both positions until the mdcli-mini cycle, which R-N1a
+    // (`design/SPEC_mdcli_mini.md`) now refuses to mint. The order-sensitivity
+    // role survives untouched -- what it needs is two DISTINCT keys in the leaf
+    // in a written order, and the leaf carried exactly that before and after.
+    Vector { name: "keyed_tr_multi_a", template: "tr(@0/48'/0'/0'/2'/<0;1>/*,multi_a(2,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])], force_chunked: true, path: None },
     // RIGHT-SPINE depth-2: {A,{B,C}}, leaf depths (1,2,2) -- the MIRROR of
     // keyed_tr_depth2's (2,2,1). Both are needed because a tree-rebuilding bug
     // can be chirality-dependent: mutation testing showed that "combine the top

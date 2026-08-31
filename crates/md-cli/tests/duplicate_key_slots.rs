@@ -38,7 +38,10 @@ fn encode(template: &str, k0: &str, k1: &str) -> std::process::Output {
 }
 
 const SAME_SITE: &str = "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))";
-/// The same policy shape with slot @1 on a DIFFERENT multipath branch.
+/// The same policy shape with slot @1 on a DIFFERENT multipath branch — the
+/// codec floor lets it past (it is two wallets, not a duplicate) and N1's
+/// R-N1d refuses it one layer up, because the two-placeholder SPELLING repeats
+/// the key in BIP 388's key information vector.
 const SPLIT_SITE: &str = "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))";
 
 #[test]
@@ -72,61 +75,71 @@ fn two_distinct_keys_still_encode() {
     );
 }
 
-/// THE BOUNDARY THAT MAKES THIS CHECK CORRECT RATHER THAN MERELY STRICT.
+/// THE BOUNDARY, AND WHAT N1 MOVED (SPEC_mdcli_mini.md R-N1d).
+///
+/// This row USED TO ASSERT THAT THE SPLIT FORM MINTS. It no longer does, and
+/// the boundary it drew is still exactly where it was — what changed is which
+/// side of it md is willing to write.
 ///
 /// The same xpub at two different multipath branches derives a DIFFERENT child
-/// at every address index — two different wallets, not a duplicate. Measured:
-/// `<0;1>` and `<2;3>` over one key give different addresses. A check comparing
-/// the key alone would refuse this legitimate policy.
+/// at every address index, so it is two wallets and not a duplicate: the
+/// codec floor (`validate_no_duplicate_key_slots`, F-218) is right to let it
+/// past, and it still does. R-N1d refuses it one layer up for a different
+/// reason — the TWO-PLACEHOLDER SPELLING repeats the key in BIP 388's key
+/// information vector, which rule (1) forbids, while md1 cannot write the
+/// one-placeholder spelling BIP 388 permits (F-417). The wallet is legal; both
+/// md1 spellings of it are not.
+///
+/// The single-slot contrast below is kept, and matters more than before: it is
+/// what makes the refusal's claim "the wallet is a legal descriptor" TRUE
+/// rather than asserted. If `<0;1>` and `<2;3>` derived the same child, R-N1d
+/// would be describing a duplicate and its message would be wrong.
 #[test]
-fn one_key_at_two_different_use_sites_is_not_a_duplicate() {
+fn one_key_at_two_different_use_sites_refuses_as_the_r_n1d_delta() {
     let out = encode(SPLIT_SITE, K0, K0);
-    assert!(
-        out.status.success(),
-        "one key at two DIFFERENT branches was refused as a duplicate: {}",
-        String::from_utf8_lossy(&out.stderr)
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the R-N1d delta was minted: {}",
+        String::from_utf8_lossy(&out.stdout)
     );
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("md1"),
+        "a card was printed alongside the refusal"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    let line = err
+        .lines()
+        .find(|l| l.starts_with("md: "))
+        .unwrap_or_else(|| panic!("no rendered line: {err}"));
+    // The full rendered line is pinned once, in tests/n1_admission_taxonomy.rs
+    // (`MSG_N1D`). What this row owns is that the DELTA is what fired here and
+    // not the codec floor's same-use-site message, which is false for it.
+    assert!(
+        line.starts_with(
+            "md: unsupported: @0 and @1 were given the SAME extended public key at \
+             DIFFERENT use sites"
+        ),
+        "{line}"
+    );
+    assert!(!line.contains("at the same use-site"), "{line}");
+    assert!(!line.to_lowercase().contains("invalid"), "{line}");
 
     // Non-vacuous: the two branch forms must actually be different wallets, or
-    // the boundary above is a distinction without a difference.
-    let addr = |t: &str| {
-        let o = md()
-            .args([
-                "address",
-                "--template",
-                t,
-                "--key",
-                &format!("@0={K0}"),
-                "--key",
-                &format!("@1={K0}"),
-                "--path",
-                "48'/0'/0'/2'",
-                "--count",
-                "1",
-            ])
-            .output()
-            .unwrap();
-        String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .find(|l| l.starts_with("bc1"))
-            .unwrap_or_default()
-            .to_owned()
-    };
-    let split = addr(SPLIT_SITE);
-    assert!(
-        !split.is_empty(),
-        "the split-use-site policy derives no address"
-    );
-    // The contrast is drawn on ONE slot, not on SAME_SITE.
+    // the boundary above is a distinction without a difference — and R-N1d's
+    // message, which calls the wallet a legal descriptor, would be false.
     //
-    // It used to be `addr(SAME_SITE)`: the same-use-site form was refused at
-    // encode but still DERIVABLE through `md address`, so the two policies
-    // could be compared. REVIEW-converter-whole-diff-r1 C1 closed that route
-    // (`t_row_one_key_in_two_slots_is_refused_by_address` below), so
-    // `addr(SAME_SITE)` now returns the empty string and the old `assert_ne!`
-    // would have passed for the wrong reason — a refusal compared against an
-    // address. The single-slot pair asserts the same underlying fact directly:
-    // one xpub at `<0;1>` and at `<2;3>` is two different children.
+    // The contrast is drawn on ONE slot, not on the two-slot forms.
+    //
+    // It used to be `addr(SAME_SITE)` vs `addr(SPLIT_SITE)`: the same-use-site
+    // form was refused at encode but still DERIVABLE through `md address`, so
+    // the two policies could be compared. REVIEW-converter-whole-diff-r1 C1
+    // closed that route (`t_row_one_key_in_two_slots_is_refused_by_address`
+    // below), and N1's R-N1d has now closed the split form's too, so BOTH
+    // two-slot spellings return the empty string and an `assert_ne!` over them
+    // would pass for the worst possible reason — two refusals compared against
+    // each other. The single-slot pair asserts the same underlying fact
+    // directly: one xpub at `<0;1>` and at `<2;3>` is two different children.
     let one_slot = |branch: &str| {
         let o = md()
             .args([
@@ -310,22 +323,44 @@ fn t_row_three_distinct_keys_still_compose() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("wsh(sortedmulti(2,"));
 }
 
-/// NOT MERELY STRICT, half 2: the DISJOINT use-site form BIP 388 permits and
-/// `md encode` accepts (row `one_key_at_two_different_use_sites_is_not_a_duplicate`
-/// above) must keep composing here too, or `md descriptor` would start refusing
-/// what `md encode` mints — a fourth answer from one binary.
+/// T/S PARITY ON THE DELTA (SPEC_mdcli_mini.md R-N1d).
+///
+/// This row USED TO ASSERT that the disjoint form keeps composing, on the
+/// ground that `md descriptor` must not refuse what `md encode` mints. That
+/// ground is intact and the row still enforces it — N1 moved BOTH verbs at
+/// once, so the two answers still agree. What it now pins is the other
+/// direction of the same rule: the delta refuses HERE too, so a shape `md
+/// encode` will not mint cannot be composed through a sibling verb instead.
+///
+/// The sibling row `one_key_at_two_different_use_sites_refuses_as_the_r_n1d_delta`
+/// pins the `md encode` half; between them the two verbs are held to one
+/// answer, which is what "a fourth answer from one binary" meant.
 #[test]
-fn t_row_one_key_at_two_disjoint_use_sites_still_composes() {
+fn t_row_one_key_at_two_disjoint_use_sites_refuses_as_the_r_n1d_delta() {
     let out = compose(
         "descriptor",
         SPLIT_SITE,
         &[&format!("@0={K0}"), &format!("@1={K0}")],
     );
-    assert!(
-        out.status.success(),
-        "the BIP-legal disjoint form was refused: {}",
-        String::from_utf8_lossy(&out.stderr)
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the R-N1d delta composed: {}",
+        String::from_utf8_lossy(&out.stdout)
     );
+    let err = String::from_utf8_lossy(&out.stderr);
+    let line = err
+        .lines()
+        .find(|l| l.starts_with("md: "))
+        .unwrap_or_else(|| panic!("no rendered line: {err}"));
+    assert!(
+        line.starts_with(
+            "md: unsupported: @0 and @1 were given the SAME extended public key at \
+             DIFFERENT use sites"
+        ),
+        "{line}"
+    );
+    assert!(!line.to_lowercase().contains("invalid"), "{line}");
 }
 
 /// THE SAME SLOT SUPPLIED TWICE IS NOT SHAPE (1) and keeps today's behaviour,

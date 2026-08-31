@@ -928,23 +928,26 @@ fn experimental_admits_a_keyless_spend_path() {
 /// `--experimental` relaxes ONLY the signature rule. The other four sanity
 /// rules still apply, because relaxing those admits scripts that are
 /// UNSPENDABLE rather than merely unguaranteed — a different, worse class.
+///
+/// THE REPEATED-KEYS CASE MOVED (`design/SPEC_mdcli_mini.md` R-N1a), and it is
+/// worth saying where it went rather than deleting it. Its refusal now comes
+/// from N1's admission taxonomy, upstream of miniscript: `substitute_synthetic`
+/// gives every `@i` a DISTINCT synthetic key, so the only way a repeated pubkey
+/// can reach rust-miniscript through md's template surface is a repeated
+/// PLACEHOLDER — and that is exactly what R-N1a refuses first, with or without
+/// `--experimental`. The rule under test is unchanged; what changed is which
+/// layer answers, and the sibling row below pins that answer so the move is
+/// recorded instead of being inferred from a green suite.
 #[test]
 fn experimental_still_enforces_the_other_sanity_rules() {
-    let cases = [
-        (
-            "timelock mixing",
-            format!(
-                "tr({NUMS_KEY},{{pk(@0/<0;1>/*),and_v(v:after(1000),\
+    let cases = [(
+        "timelock mixing",
+        format!(
+            "tr({NUMS_KEY},{{pk(@0/<0;1>/*),and_v(v:after(1000),\
                  and_v(v:after(1600000000),pk(@1/<0;1>/*)))}})"
-            ),
-            "heightlock and timelock",
         ),
-        (
-            "repeated keys",
-            format!("tr({NUMS_KEY},{{pk(@0/<0;1>/*),and_v(v:pk(@1/<0;1>/*),pk(@1/<0;1>/*))}})"),
-            "repeated pubkeys",
-        ),
-    ];
+        "heightlock and timelock",
+    )];
     for (label, policy, needle) in cases {
         let out = Command::cargo_bin("md")
             .unwrap()
@@ -973,6 +976,45 @@ fn experimental_still_enforces_the_other_sanity_rules() {
             "{label}: the refusal must state what --experimental does and does not do"
         );
     }
+}
+
+/// The repeated-keys shape is STILL refused under `--experimental` — by N1
+/// rather than by rust-miniscript, and this row is what says so out loud.
+///
+/// Verified by running it, not inferred: if the ordering ever changes, the
+/// assertion below names the rule that answered instead.
+#[test]
+fn experimental_does_not_admit_a_repeated_placeholder() {
+    let policy =
+        format!("tr({NUMS_KEY},{{pk(@0/<0;1>/*),and_v(v:pk(@1/<0;1>/*),pk(@1/<0;1>/*))}})");
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            &policy,
+            "--path",
+            "m/270028h/0h/0h/0h",
+            "--group-size",
+            "0",
+            "--experimental",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a repeated placeholder was minted under --experimental: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    let line = err
+        .lines()
+        .find(|l| l.starts_with("md: "))
+        .unwrap_or_else(|| panic!("no rendered line: {err}"));
+    assert!(
+        line.starts_with("md: unsupported: @1 appears at 2 use sites"),
+        "{line}"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────

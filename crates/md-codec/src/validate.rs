@@ -354,6 +354,21 @@ pub fn validate_xpub_bytes(d: &Descriptor) -> Result<(), Error> {
 ///   derives a different child at every index — `<0;1>` and `<2;3>` over one
 ///   key are two different wallets, not a duplicate. Measured, not assumed.
 ///
+/// **WHAT THIS DOES NOT SAY (corrected, mdcli-mini P2).** That a disjoint-use-
+/// site pair is not a DUPLICATE is a statement about this check's comparison,
+/// and it was read as a statement that the shape is fine to mint. It is not:
+/// spelled with two placeholders, the policy repeats the key in BIP 388's key
+/// information vector, which its rule (1) forbids. `md-cli` refuses that
+/// spelling one layer up (its N1 taxonomy's R-N1d,
+/// `design/SPEC_mdcli_mini.md`).
+///
+/// This validator deliberately keeps its own, narrower boundary. It is the
+/// WIRE-level floor and md-cli is not its only consumer, so widening it here
+/// would impose a host-side admission policy on every caller of this crate —
+/// and, because it runs inside `encode_payload`, it would make already-engraved
+/// plates of the disjoint shape unreadable through `inspect` and `verify`,
+/// which re-enter that path on a DECODED card.
+///
 /// DISTINCT FROM [`validate_origin_key_consistency`], and the pair is easy to
 /// conflate: one origin bound to two DIFFERENT keys is IMPOSSIBLE and refused
 /// as malformed; one key in two slots is merely UNSAFE. Separate errors,

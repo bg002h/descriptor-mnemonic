@@ -276,15 +276,25 @@ fn resolve_keys_fingerprints_and_precedence(
 /// **THE DETECTION IS THE ENGINE'S OWN CALL, NOT A SECOND COPY.** The rule that
 /// makes this check correct rather than merely strict is the use-site: one xpub
 /// at `<0;1>` and at `<2;3>` derives a different child at every index, which is
-/// two wallets and not a duplicate — BIP 388 permits it and `md encode` mints
-/// it (`tests/duplicate_key_slots.rs::one_key_at_two_different_use_sites_is_not_a_duplicate`,
-/// and measured through this very route before the fix: the disjoint template
-/// composed at exit 0). A payload-only comparison over the parsed `--key`
-/// values would not have that boundary and would newly refuse a wallet
-/// `md encode` accepts — a fourth answer from one binary, in place of the
-/// third. Calling the codec validator on the BUILT descriptor gets the
-/// boundary, the multipath handling and the `@N` expansion for free, and
-/// cannot drift from what `md encode` decides.
+/// two wallets and not a duplicate. Calling the codec validator on the BUILT
+/// descriptor gets that boundary, the multipath handling and the `@N` expansion
+/// for free, and cannot drift from what `md encode` decides.
+///
+/// **CORRECTED (mdcli-mini P2).** This comment used to add "BIP 388 permits it
+/// and `md encode` mints it" of the disjoint form. That conflated the WALLET
+/// with its SPELLING, and the second half is now false. BIP 388 permits the
+/// wallet — one key at two disjoint path sets — in its ONE-placeholder
+/// spelling; the TWO-placeholder spelling written here repeats the key in the
+/// key information vector, which rule (1) forbids, and md1 cannot write the
+/// one-placeholder spelling at all (F-417). So `md encode` refuses BOTH
+/// spellings from P2 onward, at [`crate::parse::reuse`]'s R-N1d, one layer
+/// above this check.
+///
+/// This check is UNCHANGED by that and still belongs here. It answers the
+/// SAME-use-site case (F-218) — a different wallet, a different message — and
+/// R-N1d deliberately does not absorb it. The boundary is still what keeps
+/// this call correct rather than merely strict; what sits on the far side of
+/// it is now refused for a reason this check does not know about.
 ///
 /// **THE WORDING IS THIS SIDE'S OWN.** `md_codec::Error::DuplicateKeySlots`
 /// is worded for the wire layer and cites no BIP; SPEC A3's diagnostic rule

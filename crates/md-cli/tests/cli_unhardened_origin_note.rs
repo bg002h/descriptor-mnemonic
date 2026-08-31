@@ -127,11 +127,17 @@ fn only_the_affected_slot_is_named() {
     assert_eq!(stdout, "md15pzqjmppp9gqpsgvzzshrwxrtzllpy97\n");
 }
 
+/// Two firing DECLARATIONS collapse into ONE line here — the tier-1 note joins
+/// its slots into a shared sentence, unlike F-411's per-slot tier.
+///
+/// The template used to be one placeholder at two occurrences. Since N1
+/// (`design/SPEC_mdcli_mini.md` R-N1a) that shape is refused before any
+/// advisory runs, so the occurrence spelling is unconstructible; two slots is
+/// the remaining way to ask the same question of the emitter, and it is the
+/// stronger one — a per-slot regression here would print two lines.
 #[test]
 fn note_is_emitted_once_per_run() {
-    // A placeholder may occur several times in one template; the note is about
-    // the DECLARATION, so it is said once, not once per occurrence.
-    let (_, stderr, code) = encode_template("wsh(or_d(pk(@0/0/<0;1>/*),pk(@0/0/<0;1>/*)))");
+    let (_, stderr, code) = encode_template("wsh(or_d(pk(@0/0/<0;1>/*),pk(@1/0/<0;1>/*)))");
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(
         stderr.lines().filter(|l| l.contains(NEEDLE)).count(),
