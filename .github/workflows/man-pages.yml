@@ -70,6 +70,43 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: gh release upload "$REF_NAME" md-man.tar.gz --clobber
 
+  # ── miniscript_rev derivation — READS Cargo.lock, never hand-typed ──────────
+  # md pinned `miniscript` to a `[patch.crates-io]` git-fork rev on 2026-08-20
+  # (root Cargo.toml, commit 5b4d20ad, for upstream PR #953/#915) — so the
+  # "md is fork-free" premise below is FALSE as of that commit, and a
+  # hardcoded `miniscript_rev: ""` silently fell out of sync with it. That
+  # drift is exactly what made `repro-x86_64-musl` / `repro-substrate` fail
+  # on the v0.14.0 release (`design/FOLLOWUPS.md`
+  # `release-musl-legs-fail-on-stale-miniscript-rev`): under `--offline` the
+  # two-block `--config` form cannot resolve the git-sourced `miniscript`
+  # dependency at all. Rather than hardcode the rev a second time (the same
+  # failure mode, just with a fresher-looking value), this job reads it
+  # straight out of the committed `Cargo.lock`'s `miniscript` `[[package]]`
+  # entry, so it can never drift from what actually builds again.
+  resolve-miniscript-rev:
+    runs-on: ubuntu-latest
+    outputs:
+      rev: ${{ steps.rev.outputs.rev }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: rev
+        run: |
+          set -euo pipefail
+          rev="$(awk '
+            /^name = "miniscript"$/ { in_pkg = 1; next }
+            in_pkg && /^source = / {
+              if (match($0, /rev=([0-9a-f]{40})/, m)) { print m[1] }
+              exit
+            }
+            /^\[\[package\]\]$/ { in_pkg = 0 }
+          ' Cargo.lock)"
+          if [ -z "$rev" ]; then
+            echo "::error::could not resolve a git rev for the 'miniscript' package from Cargo.lock (expected a source = \"git+...?rev=<40-hex>#...\" line under [[package]] name = \"miniscript\")" >&2
+            exit 1
+          fi
+          echo "resolved miniscript_rev=$rev"
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+
   # ── REPRODUCIBILITY: the toolkit-homed gate (the FIRST codec re-home) ───────
   # Calls the centralized reusable workflow from mnemonic-toolkit (F6: ONE
   # source of truth for Dockerfile.repro + ci/repro/*.sh + the gate jobs). The
@@ -79,12 +116,13 @@ jobs:
   # `needs.repro.outputs.image` so the PUBLISHED artifact is produced by the
   # IDENTICAL container the gate measured.
   #
-  # md does NOT depend on the miniscript [patch.crates-io] fork → it passes
-  # `miniscript_rev: ""` to select the TWO-block `--config` form (crates-io +
-  # vendored-sources only; NO git-fork stanza). Empirically verified offline:
-  # the two-block form resolves md-cli fully from committed `vendor/` (EXIT 0),
-  # and dropping `vendored-sources.directory` REDs (EXIT 101) — the directory
-  # block is load-bearing.
+  # md DOES depend on the miniscript [patch.crates-io] fork (since 2026-08-20,
+  # commit 5b4d20ad) → `miniscript_rev` must select the THREE-block `--config`
+  # form (the git-fork redirect stanza is MANDATORY under --offline once a
+  # git-sourced patch is in the lockfile; the two-block form cannot resolve
+  # it at all — this is exactly what failed for v0.14.0). The rev is read
+  # from Cargo.lock by `resolve-miniscript-rev` above rather than hardcoded
+  # here, so this can't go stale again the way the empty-string default did.
   #
   # run_aarch64: false — the x86_64 gate runs inline; the slow (~30-60min QEMU)
   # aarch64 byte-gate is exercised on demand via the toolkit reusable workflow's
@@ -96,6 +134,7 @@ jobs:
   # the empty default falls back to the CALLER's SHA, which does not exist in the
   # toolkit repo (the recipe checkout would 404).
   repro:
+    needs: resolve-miniscript-rev
     uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@6e37b18e50f9f857e439db1ebe2748fc91a54612
     permissions:
       contents: read
@@ -107,8 +146,8 @@ jobs:
       target: x86_64-unknown-linux-musl
       arch: x86_64
       run_aarch64: false
-      # md is fork-free ⇒ EMPTY rev selects the TWO-block --config form.
-      miniscript_rev: ""
+      # Derived from Cargo.lock by resolve-miniscript-rev, not hand-typed.
+      miniscript_rev: ${{ needs.resolve-miniscript-rev.outputs.rev }}
       # Source the centralized recipe from the toolkit at the P3a enabling commit.
       toolkit_ref: 6e37b18e50f9f857e439db1ebe2748fc91a54612
 
