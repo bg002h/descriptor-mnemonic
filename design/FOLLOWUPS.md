@@ -2508,6 +2508,13 @@ names both `--in` and `-` as the accepted spellings.
 
 ### `sibling-toolkit-md-manual-lockstep-for-the-converter` — `bg002h/mnemonic-toolkit`'s `md` CLI reference has not been checked against this cycle's new surface (repo: **mnemonic-toolkit**; owning phase: **operator's call — a cross-repo docs pass**)
 
+**CLOSED 2026-08-31 by the mini-cycle's P7 docs pass:** commit
+`95e3723d` on branch `mdcli-mini-docs` in mnemonic-toolkit updates
+`42-md.md` for both cycles' surface, verified against the built
+binary; `tests/lint.sh` all six steps green locally (the CI pin gap is
+filed as `toolkit-manual-gate-pinned-to-stale-md-release`). The
+toolkit branch awaits merge in its own repo.
+
 Filed 2026-08-30 from the wallet-form-converter cycle, folding
 REVIEW-converter-whole-diff-r1 N2. Severity **Nit**.
 
@@ -2575,3 +2582,36 @@ in both `cmd::descriptor::run` and `cmd::address::run`, names an
 `mk1`-prefixed string on the policy positional and an `md1`-prefixed
 string among `--from-mk1`'s values by name, symmetrically on both
 verbs.
+
+### `emit-md1-has-no-transcribe-ready-form` — the S→K mint prints bare md1 strings with no engraving-card output (repo: **descriptor-mnemonic**; owning phase: **operator's call — a small surface addition, own decision**)
+
+Filed 2026-08-31 from REVIEW-mdcli-mini-whole-diff-r1 M2 (deferred from
+the fold by design: a new output surface is not fold material).
+`md descriptor … --emit md1` mints the keyed card the S→K bridge
+exists for, but offers no `--out`, `--group-size`, `--separator`, and
+prints no engraving card — the transcribe-ready form `md encode`
+supplies, on the one card `md encode` cannot mint (the depth rule).
+An operator minting for a plate today pipes and formats by hand.
+
+### `toolkit-manual-gate-pinned-to-stale-md-release` — mnemonic-toolkit's manual CI installs md-cli v0.11.2, so the flag-coverage gate is not CI-live for the mini-cycle surface (repo: **mnemonic-toolkit**; owning phase: **the next md-cli publish**)
+
+Filed 2026-08-31 from DOCS-mdcli-mini-toolkit-pass (the docs agent ran
+the gate locally against the mdcli-mini binary — green — but
+`manual.yml` installs the released tag). Until a release carrying this
+cycle ships, the manual gate cannot regress-test the new surface in
+CI. On the next publish: bump the pin, confirm flag-coverage green in
+toolkit CI. Related residue found same pass, same repo: `md
+gui-schema` and several `--in`/`--out` flags remain undocumented.
+
+### `md-address-help-summary-is-blank` — `md address`'s subcommand summary line is empty at the source level (repo: **descriptor-mnemonic**; owning phase: **opportunistic — one doc-comment line**)
+
+Filed 2026-08-31 from DOCS-mdcli-mini-toolkit-pass, measured against
+the mdcli-mini binary's own `--help`.
+
+### `whole-diff-r1-nit-residue` — five nits from the cycle's whole-diff review, each larger than a wording touch (repo: **descriptor-mnemonic**; owning phase: **post-release residue, batch with the next cleanup pass**)
+
+Filed 2026-08-31. The five are itemized with reasoning in
+`design/agent-reports/FOLD-mdcli-mini-whole-diff-r1.md` (nits section):
+cross-file rendered-string consistency, a CI/script behavior nit, an
+error-context plumbing nit, missing test-fixture nits, and the
+session-date-vs-git-date convention question in the brainstorm.
