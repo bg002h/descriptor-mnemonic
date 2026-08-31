@@ -485,11 +485,11 @@ fn v_d_shape2_partially_overlapping_multipath_sets_also_refuse() {
 #[test]
 fn v_d_shape2_disjoint_sets_refuse_naming_mds_narrower_template_surface() {
     // {0,1} and {2,3} are DISJOINT, so BIP 388 permits this shape. md's own
-    // template surface does not -- `md encode` refuses `@0` at two positions
-    // ("@0 appears with inconsistent path/multipath/hardening", measured
-    // 2026-08-30, SPEC A3's "measured scope note"). Decompose must not emit a
-    // template md cannot ingest, so it refuses -- but NOT as a BIP violation,
-    // because there is none.
+    // template surface does not -- `md encode`/`md descriptor` refuse `@0`
+    // at two use sites outright, R-N1c
+    // (`crate::parse::reuse::Finding::MultipathDisjoint`, review r1 I5).
+    // Decompose must not emit a template md cannot ingest, so it refuses --
+    // but NOT as a BIP violation, because there is none.
     let d = format!("wsh(sortedmulti(2,{K0}/<0;1>/*,{K0}/<2;3>/*))");
     let (code, _, stderr) = run(&["decompose", &d]);
     assert_ne!(code, 0);

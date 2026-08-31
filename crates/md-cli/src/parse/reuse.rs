@@ -357,7 +357,12 @@ impl Finding {
 /// invented one: a refusal that names no way forward leaves an operator
 /// holding a legal wallet and no tool, which is the outcome these two rows
 /// exist to avoid.
-const ESCAPE: &str = "me sysw pack --as descriptor --in <your export file>";
+///
+/// `pub(crate)` (review r1 I5) so `decompose`'s D-row disjoint-multipath
+/// refusal — the SAME wallet R-N1c refuses, reached from a concrete
+/// descriptor instead of a template — can name the identical escape rather
+/// than its own vaguer wording drifting from this one.
+pub(crate) const ESCAPE: &str = "me sysw pack --as descriptor --in <your export file>";
 
 /// Classify, then apply the caller's disposition.
 ///

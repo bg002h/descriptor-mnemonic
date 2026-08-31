@@ -252,12 +252,14 @@ fn parse_descriptor(s: &str) -> Result<Descriptor<DescriptorPublicKey>, CliError
 ///
 /// The third case is real and has no BIP violation in it: the same expression
 /// twice with DISJOINT sets, which BIP 388 permits and md's own template
-/// surface does not (`md descriptor`/`md encode` refuse `@0` at two positions
-/// with "@0 appears with inconsistent path/multipath/hardening" — measured
-/// 2026-08-30, SPEC A3's "measured scope note"). Emitting that template would
-/// hand the operator something md itself refuses to ingest, so decompose
-/// refuses it too — naming md as the limit, NOT the BIP, because there is no
-/// BIP violation to name.
+/// surface does not — `md descriptor`/`md encode` refuse `@0` at two use
+/// sites outright, R-N1c
+/// (`crate::parse::reuse::Finding::MultipathDisjoint`, review r1 I5
+/// corrected the citation here after the classifier moved upstream of
+/// `resolve_placeholders`, where the message this comment used to quote
+/// lived). Emitting that template would hand the operator something md
+/// itself refuses to ingest, so decompose refuses it too — naming md as the
+/// limit, NOT the BIP, because there is no BIP violation to name.
 ///
 /// Grouping is by the whole extended key serialisation. `sanity_check` does
 /// NOT cover rule (1) here: measured 2026-08-30, the same xpub under two
@@ -331,12 +333,13 @@ fn check_no_repeated_key(occ: &[Occurrence]) -> Result<(), CliError> {
         return Err(CliError::Decompose(format!(
             "the key expression `{}` appears at {} positions with DISJOINT multipath sets \
              ({sets}). BIP 388 permits that shape — this is not a BIP violation — but md's \
-             template surface is narrower: `md encode` refuses one placeholder at two \
-             positions (\"@N appears with inconsistent path/multipath/hardening\"), so \
-             decompose would be handing you a template md itself cannot ingest. UNSUPPORTED \
-             here. Give each position its own key, or engrave this wallet by another route.",
+             template surface is narrower: it refuses one placeholder at two use sites \
+             outright (R-N1c), so decompose would be handing you a template md itself \
+             cannot ingest. UNSUPPORTED here. Keep this wallet as a descriptor instead: \
+             {escape}",
             occ[idxs[0]].record,
-            idxs.len()
+            idxs.len(),
+            escape = crate::parse::reuse::ESCAPE,
         )));
     }
     Ok(())
