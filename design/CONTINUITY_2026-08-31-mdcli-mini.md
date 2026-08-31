@@ -1,6 +1,25 @@
 # CONTINUITY — post-converter md-cli mini-cycle (opened 2026-08-31)
 
-## STATUS 2026-08-31 (final this session): SPEC GREEN + PLAN GREEN — AWAITING OPERATOR GO FOR P1
+## STATUS 2026-08-31 FINAL: CYCLE COMPLETE — merged to main, push in flight
+
+Operator said "Proceed"; all 7 phases implemented (P1-P6 one agent
+each, controller-verified gates + live probes after every phase; P7 =
+sweep + toolkit docs pass + whole-diff review). Whole-diff review:
+0C/5I/5M/5N → fold (9 commits, I2 swap-red proven) → r2 foldcheck
+9/9, 0 survivors, gate PASS → **0C/0I, loop closed**. Final suite:
+1186/1186, all six gate steps, matrix identical across 4 homes.
+Merged --ff-only to main at c589054d. Toolkit docs on branch
+mdcli-mini-docs (commit 95e3723d) in mnemonic-toolkit — AWAITS MERGE
+in that repo, gate green locally, CI pin gap filed. New FOLLOWUPS
+filed at close: emit-md1-has-no-transcribe-ready-form (operator's
+call), toolkit-manual-gate-pinned-to-stale-md-release (next publish),
+md-address-help-summary-is-blank, whole-diff-r1-nit-residue. Go
+vendor sync for 15 regenerated corpus files outstanding (fork
+follows, flagged in IMPL-mdcli-mini-P2.md). Worktrees
+descriptor-mnemonic-mdcli-mini and mnemonic-toolkit-mddocs clean up
+after push confirms.
+
+## (superseded) earlier same day: SPEC GREEN + PLAN GREEN — AWAITING OPERATOR GO FOR P1
 
 Both R0 loops CLOSED at 0C/0I. Spec GREEN at b8a64938 (4 rounds).
 Plan GREEN at the r4-foldcheck persist commit (4 rounds: 2C/7I →
