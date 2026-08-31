@@ -1,8 +1,9 @@
 # SPEC — post-converter md-cli mini-cycle (admission taxonomy, S→K mint, converter riders)
 
-Status: DRAFT r3 — REVIEW-mdcli-mini-spec-r1 (2C/7I/4M/2N, 15/15
-fixed per r2), -r2 (0C/3I/3M/1N, 7/7 fixed per r3) and -r3
-(0C/1I/1M/1N) are all folded; mechanical fold-check pending. Authored from `BRAINSTORM_mdcli_mini.md` as
+Status: **GREEN — 0C/0I, R0 loop closed 2026-08-31.** Rounds:
+r1 (2C/7I/4M/2N) → fold → r2 (15/15 fixed; 0C/3I/3M/1N new) → fold →
+r3 (7/7 fixed; 0C/1I/1M/1N new) → fold → r4 fold-check (3/3 fixed,
+0 contradictions). All reports verbatim in `design/agent-reports/`. Authored from `BRAINSTORM_mdcli_mini.md` as
 walked with the operator 2026-08-31; every ruling cited below carries
 its date and is recorded verbatim in the brainstorm's walk sections.
 
