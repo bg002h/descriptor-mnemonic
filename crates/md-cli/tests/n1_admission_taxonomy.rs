@@ -176,7 +176,10 @@ descriptor --in <your export file>";
 
 #[test]
 fn r_n1c_disjoint_multipath_sets_refuse_with_the_honest_message() {
-    let out = encode("wsh(multi(2,@0/<0;1>/*,@0/<2;3>/*))", &[&format!("@0={K0}")]);
+    let out = encode(
+        "wsh(multi(2,@0/<0;1>/*,@0/<2;3>/*))",
+        &[&format!("@0={K0}")],
+    );
     assert_refused(&out, MSG_N1C);
     let line = rendered_line(&out);
     // The three content statements and the escape, named individually so a

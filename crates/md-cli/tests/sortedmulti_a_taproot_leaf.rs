@@ -121,7 +121,8 @@ fn sortedmulti_a_is_order_invariant_and_multi_a_is_not() {
 /// both facts are asserted instead of one hiding the other.
 #[test]
 fn sortedmulti_a_nested_in_a_fragment_is_refused() {
-    let out = nested_refusal("tr(@2/<0;1>/*,and_v(v:sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*),older(144)))");
+    let out =
+        nested_refusal("tr(@2/<0;1>/*,and_v(v:sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*),older(144)))");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         err.contains("valid only as a taproot leaf"),
@@ -140,7 +141,8 @@ fn sortedmulti_a_nested_in_a_fragment_is_refused() {
 /// leaving the sibling above to pass for a reason nobody checked.
 #[test]
 fn sortedmulti_a_nested_with_a_repeated_placeholder_refuses_at_n1_first() {
-    let out = nested_refusal("tr(@0/<0;1>/*,and_v(v:sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*),older(144)))");
+    let out =
+        nested_refusal("tr(@0/<0;1>/*,and_v(v:sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*),older(144)))");
     let err = String::from_utf8_lossy(&out.stderr);
     let line = err
         .lines()

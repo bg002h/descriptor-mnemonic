@@ -89,7 +89,12 @@ pub enum Finding {
     HardeningDiffers { i: u8, a: String, b: String },
     /// **R-N1d** — one key at two placeholders whose use sites DIFFER. The
     /// same-use-site case is NOT this variant; it belongs to the codec floor.
-    KeyAtDisjointUseSites { a: u8, b: u8, sa: String, sb: String },
+    KeyAtDisjointUseSites {
+        a: u8,
+        b: u8,
+        sa: String,
+        sb: String,
+    },
 }
 
 /// The multipath set as the operator wrote it: `<0;1>`, or a plain-language
@@ -369,7 +374,10 @@ mod tests {
     #[test]
     fn the_site_count_is_the_real_count_not_two() {
         assert!(matches!(
-            find("wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@0/<0;1>/*),s:pk(@0/<0;1>/*)))", &[]),
+            find(
+                "wsh(thresh(2,pk(@0/<0;1>/*),s:pk(@0/<0;1>/*),s:pk(@0/<0;1>/*)))",
+                &[]
+            ),
             Some(Finding::SamePathExpression { i: 0, sites: 3 })
         ));
     }
@@ -421,7 +429,10 @@ mod tests {
     #[test]
     fn one_key_at_two_disjoint_use_sites_is_r_n1d() {
         assert!(matches!(
-            find("wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))", &[key(0, 7), key(1, 7)]),
+            find(
+                "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))",
+                &[key(0, 7), key(1, 7)]
+            ),
             Some(Finding::KeyAtDisjointUseSites { a: 0, b: 1, .. })
         ));
     }
@@ -433,7 +444,10 @@ mod tests {
     #[test]
     fn one_key_at_the_same_use_site_is_not_this_modules_case() {
         assert_eq!(
-            find("wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))", &[key(0, 7), key(1, 7)]),
+            find(
+                "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))",
+                &[key(0, 7), key(1, 7)]
+            ),
             None
         );
     }
@@ -441,7 +455,10 @@ mod tests {
     #[test]
     fn distinct_keys_and_distinct_placeholders_are_clean() {
         assert_eq!(
-            find("wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))", &[key(0, 7), key(1, 9)]),
+            find(
+                "wsh(multi(2,@0/<0;1>/*,@1/<2;3>/*))",
+                &[key(0, 7), key(1, 9)]
+            ),
             None
         );
         assert_eq!(
