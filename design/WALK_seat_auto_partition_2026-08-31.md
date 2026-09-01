@@ -34,3 +34,14 @@ measured live this session).
 
 Walk CLOSED — compact because the operator answered the three edge
 questions directly. Spec next; risk-set full gate applies.
+
+## Gate record
+
+Spec GREEN 0C/0I at d51d68f8 (+ wording alignment) after FIVE R0 rounds:
+r1 opus 5C/7I/5M/2N (BCH-twin false accusation, arm-1 deletion,
+class-drop, --seat ambiguity, k^n blow-up) -> r2 opus 0C/7I/6M/2N
+(shared-piece collapse, dynamic budget, AP3 narrowing, order split) ->
+r3 opus 0C/5I/6M/1N (4.17s timing measured, floor-row product collapse,
+cover fail-open, one-grind ambiguity, per-class cap) -> r4 sonnet 0C/1I
+(row-10 citation shape) -> r5 sonnet GREEN. Reports r1-r5 persisted.
+NEXT: implementation plan -> plan R0 -> implementer(s) -> whole-diff.
