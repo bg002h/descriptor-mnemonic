@@ -580,7 +580,8 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("chunk-set 11111"), "{msg}");
         assert!(
-            msg.contains("2 strings declare piece 1 of 2") && msg.contains("2 strings declare piece 2 of 2"),
+            msg.contains("2 strings declare piece 1 of 2")
+                && msg.contains("2 strings declare piece 2 of 2"),
             "the per-string evidence the tool already holds (W15(a)): {msg}"
         );
         assert!(msg.contains("piece order does not matter"), "{msg}");
