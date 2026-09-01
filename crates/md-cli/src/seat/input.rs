@@ -726,6 +726,37 @@ mod tests {
         assert!(seat_chunk_set_id_warnings(&clean_only).is_empty());
     }
 
+    /// Pins `chunk_set_id_mismatch_warning`'s WORDING against INDEPENDENT
+    /// literals — not by re-calling the function (which is tautological).
+    /// This is the interim R6-drift guard: it must stay byte-identical to
+    /// mk-cli's `chunk_set_id_mismatch_warning` and the mk corpus
+    /// `warning_text`. The mechanical cross-repo binding is the follow-up
+    /// `go-mk-vector-corpus-ingestion`; until then an md-cli-only edit that
+    /// drops the (declared, derived) pair or the remedy sentence fails here.
+    #[test]
+    fn csid_warning_wording_is_pinned_against_literals_not_the_function_itself() {
+        let w = chunk_set_id_mismatch_warning(0x99999, 0x69f0e);
+        assert!(w.starts_with("warning:"), "{w}");
+        assert!(
+            w.contains(
+                "this key card's stamped chunk-set id (99999) was not derived from its content"
+            ),
+            "{w}"
+        );
+        assert!(w.contains("which computes 69f0e"), "{w}");
+        assert!(
+            w.contains("diagnostics that name plates by id will call it 99999"),
+            "{w}"
+        );
+        assert!(
+            w.contains(
+                "To fix it, re-mint: run mk encode again without --chunk-set-id and the id is \
+                 derived from the key data automatically."
+            ),
+            "{w}"
+        );
+    }
+
     #[test]
     fn dedupe_strips_whitespace_and_drops_blanks() {
         let v = vec![
