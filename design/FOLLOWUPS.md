@@ -2769,3 +2769,21 @@ me-side mirror stays in place until it clears.
 - **Owning phase:** unscheduled candidate — raise at the chunk_set_id
   cycle's post-cycle burndown review.
 - **Status:** OPEN. **Tier:** `ux` / converter leg.
+
+### `md-cli-seat-warning-corpus-binding` — bind the seat warning text to the corpus, not a hand-copy
+
+- **Surfaced:** 2026-08-31, chunk_set_id whole-diff review (Minor 1,
+  `mnemonic-key/design/agent-reports/whole-diff-csid-review.md`): md-cli's
+  seat mismatch warning (P3) is a SECOND hand-maintained copy of the R2
+  wording — byte-identical to mk-cli and the corpus `warning_text` TODAY
+  (verified), but nothing tests it against the corpus, so a future edit to
+  either copy drifts silently. Spec Acceptance wants the (declared,derived)
+  pair + remedy asserted against the corpus row.
+- **What:** same cross-repo binding mechanism as the Go leg
+  (`go-mk-vector-corpus-ingestion`) — vendor/ingest the mk extension corpus
+  `warning_text` and assert md-cli's rendered warning matches it. Interim
+  cheap guard: a same-repo test pinning md-cli's warning to a literal
+  constant shared with the R5 messages, so an edit breaks a test.
+- **Owning phase:** post-cycle burndown of the chunk_set_id cycle (with the
+  Go ingestion leg — same F-425 vendoring pattern).
+- **Status:** OPEN. **Tier:** `test-infra` / R6-drift guard.
