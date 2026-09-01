@@ -135,8 +135,16 @@ group's R2 warnings, in that order.
   cards always verify, so no verified real card can be displaced; an
   extra verified card can only raise `|V|` above k, which refuses.
 - Piece-replacement (frankencard) surface unchanged from today. Surplus
-  cards: a GROUND same-id extra verified candidate hits `|V| > k` ⇒ AP2
-  refusal (stricter and earlier than a completeness refusal); LEGITIMATE
+  cards, from pieces the operator ALREADY supplied (no new piece
+  injected, so k is unchanged): a GROUND same-id extra verified candidate
+  hits `|V| > k` ⇒ AP2 refusal (stricter and earlier than a completeness
+  refusal). An attacker who instead INJECTS a wholly new, self-consistent
+  piece under the victim's id raises k TOGETHER WITH `|V|`, so the class
+  can legitimately SEAT (`|V| == k`) — the injected card then reaches the
+  ordinary satisfy/complete machinery exactly like the pre-existing
+  different-id surplus path (row 10c); this is not a new attack class,
+  only the AP1 ruling's already-accepted trade (a clean same-id collision
+  is, by design, indistinguishable from an injected one). LEGITIMATE
   extra cards — same-id across total-classes, or different-id — seat and
   then hit the downstream completeness/leftover refusal with
   distinguishable labels, exactly the surplus row's variants (b)/(c).
