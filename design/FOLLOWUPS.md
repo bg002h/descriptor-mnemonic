@@ -2793,4 +2793,8 @@ me-side mirror stays in place until it clears.
   constant shared with the R5 messages, so an edit breaks a test.
 - **Owning phase:** post-cycle burndown of the chunk_set_id cycle (with the
   Go ingestion leg — same F-425 vendoring pattern).
-- **Status:** OPEN. **Tier:** `test-infra` / R6-drift guard.
+- **Status:** DONE 2026-08-31 (interim guard shipped): the wording is
+  pinned against independent literals in-repo, so an md-cli-only edit
+  fails a test. The mechanical cross-repo corpus binding stays optional
+  future work; the fork leg (go-mk-vector-corpus-ingestion) shipped its
+  vendored seam the same day. **Tier:** `test-infra` / R6-drift guard.
