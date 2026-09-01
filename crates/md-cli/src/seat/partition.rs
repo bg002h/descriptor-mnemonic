@@ -125,7 +125,14 @@ pub fn partition(strings: &[&str]) -> Outcome {
     let mut pieces: Vec<Piece> = Vec::new();
     for s in strings {
         let Ok(key) = canonical_piece_key(s) else {
-            continue;
+            // M3 (whole-diff review): `partition` is `pub(crate)` and its
+            // OWN unit tests (below) call it directly on raw fixture text
+            // -- unlike `decode_cards`, which never reaches this arm
+            // (every string it passes already round-tripped through
+            // `group_key_of`). Refuse the WHOLE group rather than
+            // silently shrinking the piece set and seating on what
+            // remains: a fail-open shape in a test-facing entry point.
+            return Outcome::NoPartition;
         };
         if seen.contains(&key) {
             continue;
@@ -170,13 +177,22 @@ pub fn partition(strings: &[&str]) -> Outcome {
     }
 
     // §2.4 — static, saturating budget. A function of canonical piece
-    // COUNTS alone; decided before any decode.
-    let product: u64 = classes.iter().fold(1u64, |acc, c| {
+    // COUNTS alone; decided before any decode. I1 (whole-diff review):
+    // SUM across classes (each class is enumerated SEPARATELY below, in
+    // its own `verify_class` call), product WITHIN one class's own
+    // indices -- SPEC §2.4 and this constant's own doc comment above both
+    // say `Sigma_classes Pi_indexes count_i`; the shipped fold multiplied
+    // ACROSS classes too, a Pi over the whole group, which refuses a
+    // family of inputs SPEC row 7 requires to seat (fails closed, so
+    // never a wrong seat -- just an over-eager refusal) and, for a
+    // multi-class group, prints a candidate count the engine would never
+    // actually have to check.
+    let product: u64 = classes.iter().fold(0u64, |acc, c| {
         let class_product = c
             .by_index
             .values()
             .fold(1u64, |a, v| a.saturating_mul(v.len() as u64));
-        acc.saturating_mul(class_product)
+        acc.saturating_add(class_product)
     });
     if product > PARTITION_DECODE_BOUND {
         return Outcome::OverBudget { product };
@@ -203,15 +219,33 @@ pub fn partition(strings: &[&str]) -> Outcome {
         return Outcome::NoPartition;
     }
 
-    // SPEC §4 order key: ascending `mk_codec::bytecode::encode_bytecode`.
-    // Group-wide, not restarted per class (R0-seat-auto-partition-r5's §4
-    // cross-check: the ordinal keys off the shared id, not `(id, total)`).
-    seated_all.sort_by(|a, b| {
-        let ba = mk_codec::bytecode::encode_bytecode(a).unwrap_or_default();
-        let bb = mk_codec::bytecode::encode_bytecode(b).unwrap_or_default();
-        ba.cmp(&bb)
-    });
-    Outcome::Seated(seated_all)
+    order_and_seat(seated_all)
+}
+
+/// SPEC §4 order key: ascending `mk_codec::bytecode::encode_bytecode`,
+/// group-wide (never restarted per class -- R0-seat-auto-partition-r5's §4
+/// cross-check: the ordinal keys off the shared id, not `(id, total)`).
+///
+/// M5 (whole-diff review): a card that fails to re-encode refuses the
+/// GROUP rather than defaulting its sort key to empty -- two co-failing
+/// cards would otherwise tie on that default and fall back to enumeration
+/// (supply) order, making `#<k>` supply-order dependent, the one thing
+/// SPEC §4 exists to prevent. Unreachable through the real pipeline: every
+/// card here already round-tripped through `mk_codec::decode`, which
+/// enforces every `encode_bytecode` invariant (non-empty stubs, `depth ==
+/// path length`, path <= `MAX_PATH_COMPONENTS`) -- but this function is
+/// also called directly by its own unit test on a hand-built card that
+/// violates one, same rationale as M3.
+fn order_and_seat(seated_all: Vec<KeyCard>) -> Outcome {
+    let mut keyed: Vec<(Vec<u8>, KeyCard)> = Vec::with_capacity(seated_all.len());
+    for card in seated_all {
+        match mk_codec::bytecode::encode_bytecode(&card) {
+            Ok(key) => keyed.push((key, card)),
+            Err(_) => return Outcome::NoPartition,
+        }
+    }
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    Outcome::Seated(keyed.into_iter().map(|(_, c)| c).collect())
 }
 
 enum ClassVerdict {
@@ -494,6 +528,248 @@ mod tests {
         match partition(&strings) {
             Outcome::OverBudget { product } => assert_eq!(product, 531_441),
             other => panic!("expected OverBudget{{531441}}, got {other:?}"),
+        }
+    }
+
+    // ─── whole-diff-seat-ap-review findings (I1/I2/I3/M1-M5) ───────────
+
+    /// M3. `partition` is `pub(crate)` and ITS OWN unit tests (this module)
+    /// call it directly on raw fixture text, unlike `decode_cards`, which
+    /// never reaches an uncanonicalisable string here (every string it
+    /// passes already round-tripped through `group_key_of`). A malformed
+    /// line must refuse the WHOLE group, not silently shrink the piece set
+    /// and seat on what remains -- the failure mode is fail-OPEN in a
+    /// test-facing entry point.
+    #[test]
+    fn partition_refuses_rather_than_silently_drop_an_uncanonicalisable_string_m3() {
+        let mut owned: Vec<String> = mk1_lines(include_str!(
+            "../../tests/fixtures/seating/v-ap-canonical.txt"
+        ))
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        assert_eq!(
+            owned.len(),
+            4,
+            "the normally-seating pair (row 1's own fixture)"
+        );
+        owned.push("mk1notavalidstring".to_string());
+        let strings: Vec<&str> = owned.iter().map(String::as_str).collect();
+        match partition(&strings) {
+            Outcome::NoPartition => {}
+            other => panic!(
+                "an uncanonicalisable string must refuse the group, not silently drop it and \
+                 seat on the remaining pieces (M3): got {other:?}"
+            ),
+        }
+    }
+
+    // M2 (report: "out-of-range chunk indices inflate k_class and the
+    // budget product") is NOT applied here -- reproduction attempt found
+    // it unreachable, not merely untested. See the fold report for the
+    // full trace: `canonical_piece_key`/`group_key_of` both resolve a
+    // chunked string through `mk_codec::string_layer::StringLayerHeader::
+    // from_5bit_symbols`, which itself REFUSES `chunk_index >=
+    // total_chunks` (`vendor/mk-codec/src/string_layer/header.rs:160-162`,
+    // "chunked-header malformed: chunk_index = N >= total_chunks = M") --
+    // confirmed empirically: `synth_string(id, 2, 9, ..)` (a hand-built
+    // out-of-range header) makes `canonical_piece_key` return `Err`, not
+    // an out-of-range `Piece`. So no by_index entry with chunk_index >=
+    // total_chunks can ever be built, `partition`'s k_class/budget
+    // computations can never see one, and `classify`'s own `out_of_range`
+    // flag in `input.rs` is dead for the same reason -- no test in this
+    // suite has ever driven it true either. No code change made.
+
+    /// I1. SPEC §2.4 is `Sigma_classes Pi_indexes count_i` (the doc comment
+    /// on [`PARTITION_DECODE_BOUND`] already said so); the shipped fold
+    /// multiplied ACROSS classes too. One id, two total-classes: 2 cards x
+    /// 4 chunks (class product 2^4=16) and 3 cards x 11 chunks (3^11=
+    /// 177,147, the SAME shape as the row-4 floor fixture). Sigma_k=5 (AT
+    /// the AP3 cap, not exceeding it). Sigma=177,163 <= BOUND(200,000) --
+    /// SPEC row 7's "mixed-totals: both classes complete -> both seat".
+    /// Pi=2,834,352 > BOUND -- the shipped code refuses. These numbers are
+    /// the review's own measured PROBE (`spec_sum=177163`,
+    /// `code_product=2834352`), reproduced here from real, decodable
+    /// cards rather than argued.
+    #[test]
+    fn budget_sums_across_classes_not_products_i1_separating_row() {
+        const ID: u32 = 0xB_2001;
+        let (card_a1, str_a1) = real_card_at_exact_chunk_count(ID, 3, 1, 4);
+        let (card_a2, str_a2) = real_card_at_exact_chunk_count(ID, 3, 2, 4);
+        let (card_b1, str_b1) = real_card_at_exact_chunk_count(ID, 3, 3, 11);
+        let (card_b2, str_b2) = real_card_at_exact_chunk_count(ID, 3, 4, 11);
+        let (card_b3, str_b3) = real_card_at_exact_chunk_count(ID, 3, 5, 11);
+
+        let mut owned: Vec<String> = Vec::new();
+        for v in [str_a1, str_a2, str_b1, str_b2, str_b3] {
+            owned.extend(v);
+        }
+        assert_eq!(owned.len(), 4 + 4 + 11 + 11 + 11, "2x4 + 3x11 = 41 strings");
+        let strings: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        match partition(&strings) {
+            Outcome::Seated(cards) => {
+                assert_eq!(cards.len(), 5, "both classes fully seat: 2 + 3 cards");
+                for expected in [&card_a1, &card_a2, &card_b1, &card_b2, &card_b3] {
+                    assert!(
+                        cards.contains(expected),
+                        "missing an expected card: {expected:?}"
+                    );
+                }
+            }
+            other => panic!(
+                "SPEC row 7 (Sigma=177163 <= BOUND=200000): expected Seated(5), got {other:?} \
+                 -- if this is OverBudget{{product}} with product near 2,834,352, the budget \
+                 fold is still multiplying ACROSS classes instead of summing (I1)"
+            ),
+        }
+    }
+
+    /// I1, second row: the SUM must still correctly cap a genuinely
+    /// over-budget multi-class group -- proving the fix does not turn the
+    /// budget into a no-op for the multi-class case. Two classes at
+    /// total_chunks=12 sharing one id: 2 cards (2^12=4,096) and 3 cards
+    /// (3^12=531,441, the row-4 BOUNDARY fixture's own single-class
+    /// product). Sigma_k=5 (at the cap, not exceeding it). Sigma=535,537
+    /// > BOUND(200,000): OverBudget under the FIXED sum formula too.
+    #[test]
+    fn sum_still_refuses_a_genuinely_over_budget_two_class_group_i1() {
+        const ID: u32 = 0xB_2002;
+        const TOTAL_CHUNKS: u8 = 12;
+        let class_a: Vec<Vec<String>> = (0..2u8)
+            .map(|card| super::super::synth::synth_card_strings(ID, TOTAL_CHUNKS, card))
+            .collect();
+        // A second, ADDITIONAL total-class under the SAME id: reuse the
+        // synthetic chunker at a DIFFERENT total_chunks so it forms its
+        // own class (by_total groups by declared total, SPEC §2.1).
+        let class_b: Vec<Vec<String>> = (0..3u8)
+            .map(|card| super::super::synth::synth_card_strings(ID, TOTAL_CHUNKS + 1, card))
+            .collect();
+        let mut owned: Vec<String> = Vec::new();
+        owned.extend(class_a.into_iter().flatten());
+        owned.extend(class_b.into_iter().flatten());
+        assert_eq!(owned.len(), 2 * 12 + 3 * 13);
+        let strings: Vec<&str> = owned.iter().map(String::as_str).collect();
+        reset_decode_calls();
+        match partition(&strings) {
+            Outcome::OverBudget { product } => {
+                assert_eq!(product, 2u64.pow(12) + 3u64.pow(13));
+            }
+            other => panic!("expected OverBudget, got {other:?}"),
+        }
+        assert_eq!(
+            DECODE_CALLS.load(Ordering::SeqCst),
+            0,
+            "over-budget must refuse with ZERO decode calls"
+        );
+    }
+
+    /// Build ONE real, decodable card's mk1 strings at an EXACT
+    /// `target_total_chunks` and a PINNED `chunk_set_id` (independent of
+    /// the content-derived one) -- I1's separating fixture needs two
+    /// DIFFERENT total-classes sharing one id, which no `mk encode`
+    /// invocation can produce (its chunking is derived from bytecode
+    /// length, never chosen). Mirrors `seat::synth`'s own real-card
+    /// round-trip construction (mk-codec's public bytecode/string-layer
+    /// API only, see `synth.rs`'s
+    /// `real_card_round_trips_through_the_chunker`) with `frag_len`
+    /// computed BACKWARDS from the desired chunk count instead of
+    /// mk-codec's fixed 53-byte fragment size.
+    fn real_card_at_exact_chunk_count(
+        chunk_set_id: u32,
+        n_stubs: u32,
+        seed: u8,
+        target_total_chunks: u8,
+    ) -> (KeyCard, Vec<String>) {
+        use bitcoin::NetworkKind;
+        use bitcoin::bip32::{ChainCode, ChildNumber, DerivationPath, Fingerprint, Xpub};
+        use bitcoin::hashes::{Hash, sha256};
+        use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        use std::str::FromStr;
+
+        let path = DerivationPath::from_str("48'/0'/0'/2'").unwrap();
+        let secp = Secp256k1::new();
+        let mut sk_bytes = [0x11u8; 32];
+        sk_bytes[31] = seed;
+        let sk = SecretKey::from_slice(&sk_bytes).unwrap();
+        let xpub = Xpub {
+            network: NetworkKind::Main,
+            depth: 4,
+            parent_fingerprint: Fingerprint::from([seed; 4]),
+            child_number: ChildNumber::Hardened { index: 2 },
+            public_key: PublicKey::from_secret_key(&secp, &sk),
+            chain_code: ChainCode::from([seed; 32]),
+        };
+        let card = KeyCard::new(
+            (0..n_stubs).map(u32::to_be_bytes).collect(),
+            Some(Fingerprint::from([seed; 4])),
+            path,
+            xpub,
+        );
+        let bytecode = mk_codec::bytecode::encode_bytecode(&card).expect("card must encode");
+        let hash = sha256::Hash::hash(&bytecode);
+        let mut stream = bytecode.clone();
+        stream.extend_from_slice(&hash.to_byte_array()[..4]);
+
+        let frag_len = stream.len().div_ceil(target_total_chunks as usize);
+        let strings: Vec<String> = stream
+            .chunks(frag_len)
+            .enumerate()
+            .map(|(i, frag)| {
+                super::super::synth::synth_string(chunk_set_id, target_total_chunks, i as u8, frag)
+            })
+            .collect();
+        assert_eq!(
+            strings.len(),
+            target_total_chunks as usize,
+            "frag_len must hit the exact target chunk count"
+        );
+        (card, strings)
+    }
+
+    /// M5. `encode_bytecode`'s error is unreachable through the real
+    /// pipeline -- every card here already round-tripped through
+    /// `mk_codec::decode`, which enforces every `encode_bytecode`
+    /// invariant (non-empty stubs, `depth == path length`, path <=
+    /// `MAX_PATH_COMPONENTS`). This exercises the extracted
+    /// `order_and_seat` directly on a hand-built invariant-violating card
+    /// (empty `policy_id_stubs`, which `encode_bytecode` itself rejects)
+    /// to prove the fold closed the "silently default the order key"
+    /// shape, rather than asserting an unreachable production scenario.
+    #[test]
+    fn order_key_failure_refuses_rather_than_default_the_sort_key_m5() {
+        use bitcoin::NetworkKind;
+        use bitcoin::bip32::{ChainCode, ChildNumber, DerivationPath, Fingerprint, Xpub};
+        use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        use std::str::FromStr;
+
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[0x11u8; 32]).unwrap();
+        let xpub = Xpub {
+            network: NetworkKind::Main,
+            depth: 4,
+            parent_fingerprint: Fingerprint::from([0xAA; 4]),
+            child_number: ChildNumber::Hardened { index: 2 },
+            public_key: PublicKey::from_secret_key(&secp, &sk),
+            chain_code: ChainCode::from([0xAA; 32]),
+        };
+        let broken = KeyCard::new(
+            Vec::new(), // empty stubs: `encode_bytecode`'s own rejected shape
+            Some(Fingerprint::from([0xAA; 4])),
+            DerivationPath::from_str("48'/0'/0'/2'").unwrap(),
+            xpub,
+        );
+        assert!(
+            mk_codec::bytecode::encode_bytecode(&broken).is_err(),
+            "sanity: this hand-built card really does fail to re-encode"
+        );
+        match order_and_seat(vec![broken]) {
+            Outcome::NoPartition => {}
+            Outcome::Seated(_) => panic!(
+                "an order-key encode failure must refuse the group, not silently default the \
+                 sort key (M5) -- #<k> would become supply-order dependent"
+            ),
+            other => panic!("unexpected: {other:?}"),
         }
     }
 }

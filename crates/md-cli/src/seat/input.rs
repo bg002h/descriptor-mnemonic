@@ -1050,23 +1050,6 @@ mod tests {
             .collect()
     }
 
-    /// Row 3 -- shared-piece pair (2 cards, 13 shared stubs at chunk 0):
-    /// seats via reuse: `|V_class| = k_class = 2`, chunk 0's ONE canonical
-    /// piece counted in BOTH cards' cover.
-    #[test]
-    fn row3_shared_piece_pair_seats_two_cards_via_reuse() {
-        let strings =
-            seating_mk1_lines(include_str!("../../tests/fixtures/seating/v-ap-shared.txt"));
-        let (cards, notes) = decode_cards(&strings).expect("shared-piece pair must seat via reuse");
-        assert_eq!(cards.len(), 2);
-        assert_eq!(notes.len(), 1);
-        assert!(
-            notes[0].text.contains("2 different key cards"),
-            "{}",
-            notes[0].text
-        );
-    }
-
     /// Row 4 floor -- 3 cards, n=11, distinct stubs: seats within budget
     /// (177,147 candidates, well under `PARTITION_DECODE_BOUND`).
     #[test]
@@ -1151,6 +1134,18 @@ mod tests {
             msg.contains("Re-scan one card's pieces alone"),
             "arm 1's remedy: {msg}"
         );
+        // I3 (whole-diff review): these two clauses were pinned nowhere --
+        // the `mk inspect` id-check is W15(d)'s own named remedy ("an
+        // unnamed check is decoration"), and the re-mint clause is the
+        // ONLY place arm 1 names what to do if the collision is genuine.
+        assert!(
+            msg.contains("`mk inspect`"),
+            "W15(d)'s named id-check remedy: {msg}"
+        );
+        assert!(
+            msg.contains("re-mint (re-encoding without --chunk-set-id)"),
+            "the genuine-collision remedy: {msg}"
+        );
         assert!(
             !msg.contains("scan the missing piece"),
             "must NOT be arm 2's incomplete message: {msg}"
@@ -1191,6 +1186,36 @@ mod tests {
         );
     }
 
+    /// Row 10, the §Security guarantee's CORRECTED boundary (M4, whole-diff
+    /// review). The old wording read as an absolute ("a GROUND same-id
+    /// extra verified candidate hits `|V| > k` => AP2 refusal"), but that
+    /// only holds for a candidate assembled from pieces the operator
+    /// ALREADY supplied (k unchanged, row 9/10a's construction). An
+    /// attacker who instead INJECTS a wholly new, self-consistent card
+    /// under the victim's id raises k TOGETHER WITH `|V|`, so the class
+    /// legitimately SEATS (`|V| == k`) rather than AP2-refusing -- this is
+    /// not a new attack class (same exposure as the pre-existing
+    /// different-id surplus path, row 10c); it is the ALREADY-shipped
+    /// auto-partition behaviour, identical construction to row 1 /
+    /// `partition::tests::canonical_pair_seats_two_cards_v_equals_k`,
+    /// pinned here under its corrected §Security name.
+    #[test]
+    fn row10d_an_injected_new_card_sharing_the_victim_id_raises_k_with_v_and_seats() {
+        let strings = seating_mk1_lines(include_str!(
+            "../../tests/fixtures/seating/v-ap-canonical.txt"
+        ));
+        let (cards, notes) = decode_cards(&strings).expect(
+            "a genuinely new, self-consistent card sharing the victim's id SEATS -- k rose \
+             together with |V|, so this is not the AP2 |V| > k case",
+        );
+        assert_eq!(
+            cards.len(),
+            2,
+            "both the honest card and the injected one reach the caller"
+        );
+        assert_eq!(notes.len(), 1);
+    }
+
     /// Row 8 -- permutation invariance: the ORDER KEY (SPEC §4, ascending
     /// `encode_bytecode`) is a property of each card's OWN CONTENT, not of
     /// how the operator happened to type the strings. Feeding the shared
@@ -1219,6 +1244,80 @@ mod tests {
             by_ordinal(&forward),
             by_ordinal(&backward),
             "the SAME card must land on the SAME ordinal regardless of supply order"
+        );
+    }
+
+    // ─── I2 (whole-diff review): n_supplied vs n_distinct is a false PASS
+    // ─── in the shipped corpus -- neither fixture separates the two
+    // ─── counts, so a mutation deleting `n_distinct` entirely survives.
+    // ─── `v-ap-shared.txt`'s two chunk-0 lines are BYTE-IDENTICAL, so
+    // ─── step 1's raw dedupe (`dedupe_strings`) removes one BEFORE
+    // ─── `canonicalize_group` ever sees the group, leaving nothing for
+    // ─── canonicalisation to collapse (5 supplied, 5 distinct -- equal).
+
+    /// Row 3, upgraded to EXACT text (matching row 1's own rigor) rather
+    /// than `contains("2 different key cards")`, which cannot distinguish
+    /// `n_supplied` from `n_distinct` at all.
+    #[test]
+    fn row3_shared_piece_pair_seats_two_cards_via_reuse() {
+        let strings =
+            seating_mk1_lines(include_str!("../../tests/fixtures/seating/v-ap-shared.txt"));
+        let (cards, notes) = decode_cards(&strings).expect("shared-piece pair must seat via reuse");
+        assert_eq!(cards.len(), 2);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].text,
+            "note: these 5 supplied strings are 5 distinct pieces (chunks) carrying one \
+             stamped chunk-set id (chunk-set a1002), and they are 2 different key cards — each \
+             card's own 4-byte integrity check accepted its pieces, so they were separated. A \
+             shared stamped id can be a mint defect, an attack, or a deliberate choice at \
+             encode time — if it is unexpected, check each card alone with `mk inspect`."
+        );
+    }
+
+    /// I2's separating row: row 1's own 4-string, no-sharing pair (id
+    /// `a1001`, `v-ap-canonical.txt`) PLUS a BCH-correctable (<=4 flips)
+    /// TWIN of card 0's chunk 0 (`v-ap-bchtwin.txt`'s first line). The
+    /// twin is byte-DIFFERENT from its original, so step 1's raw dedupe
+    /// keeps BOTH (`n_supplied` = 5) -- but `canonicalize_group` (step 3,
+    /// per SPEC §1) collapses it back onto the original piece
+    /// (`n_distinct` = 4), and the group still seats as 2 cards. Asserting
+    /// the EXACT text (both numbers, not `contains`) is what actually
+    /// exercises spec row 3's "note distinguishes supplied strings from
+    /// distinct pieces": mutating the call site to
+    /// `ap1_note(n_supplied, n_supplied, k, set_id)` makes THIS test fail
+    /// (verified below), where it survived the whole suite before.
+    #[test]
+    fn row3b_note_separates_supplied_from_distinct_when_a_bch_twin_duplicates_a_supplied_piece_i2()
+    {
+        let mut strings: Vec<String> = seating_mk1_lines(include_str!(
+            "../../tests/fixtures/seating/v-ap-canonical.txt"
+        ));
+        assert_eq!(strings.len(), 4, "row 1's own no-sharing pair");
+        let twin_of_card0_chunk0 = seating_mk1_lines(include_str!(
+            "../../tests/fixtures/seating/v-ap-bchtwin.txt"
+        ))
+        .into_iter()
+        .next()
+        .expect("v-ap-bchtwin.txt carries at least one twin line");
+        strings.push(twin_of_card0_chunk0);
+        assert_eq!(
+            strings.len(),
+            5,
+            "4 genuine pieces + 1 BCH twin of one of them"
+        );
+
+        let (cards, notes) = decode_cards(&strings)
+            .expect("the twin collapses onto its original piece; the pair still seats");
+        assert_eq!(cards.len(), 2);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].text,
+            "note: these 5 supplied strings are 4 distinct pieces (chunks) carrying one \
+             stamped chunk-set id (chunk-set a1001), and they are 2 different key cards — each \
+             card's own 4-byte integrity check accepted its pieces, so they were separated. A \
+             shared stamped id can be a mint defect, an attack, or a deliberate choice at \
+             encode time — if it is unexpected, check each card alone with `mk inspect`."
         );
     }
 }

@@ -171,7 +171,11 @@ pub fn apply(
             .map(|(i, _)| i)
             .collect();
         if matches.is_empty() {
-            let known: Vec<String> = cards.iter().map(|c| c.set_id.to_string()).collect();
+            // M1 (whole-diff review): with a collided group present, the
+            // bare id repeats once per carrier (indistinguishable, and
+            // never the `#<k>` the operator needs to retry with) -- the
+            // full label carries the ordinal.
+            let known: Vec<String> = cards.iter().map(DecodedCard::label).collect();
             return Err(CliError::Seat(format!(
                 "--seat @{}: no supplied card has chunk-set id {:05x}. The cards supplied \
                  are: {}.",
@@ -406,6 +410,44 @@ mod tests {
             assert!(
                 msg.contains(&card.set_id.to_string()),
                 "lists what IS there: {msg}"
+            );
+        }
+    }
+
+    /// M1 (whole-diff review): with a COLLIDED group present, the old
+    /// rendering (bare `c.set_id.to_string()`) printed the SAME token for
+    /// BOTH collided cards ("12345, 12345") -- indistinguishable, and
+    /// never the `#<k>` an operator needs to retry `--seat` with.
+    /// `V_COLLIDE`'s two auto-partitioned cards share bare id `12345`,
+    /// told apart only by ordinal (SPEC §4). `POLICY` is the same
+    /// minimal, deliberately-non-matching 1-slot policy used at the CLI
+    /// level with `V_COLLIDE` (`seating_vectors.rs`'s
+    /// `V_AP_SURPLUS_B_POLICY`) -- it just needs one slot so `apply`
+    /// reaches the `matches.is_empty()` branch.
+    #[test]
+    fn v_seat_unk_no_such_card_refusal_lists_ordinal_labels_when_collided_cards_exist_m1() {
+        const POLICY: &str = "md1yqfdss5n9gqpsg5n2ysa4r774vcg";
+        const COLLIDE_MK1: &str = include_str!("../../tests/fixtures/seating/v-collide.txt");
+        let combined = format!("{POLICY}\n{COLLIDE_MK1}");
+        let c = case(&combined);
+        assert_eq!(
+            c.cards.len(),
+            2,
+            "V-COLLIDE auto-partitions to 2 cards sharing one bare id"
+        );
+        let labels: Vec<String> = c.cards.iter().map(DecodedCard::label).collect();
+        assert!(
+            labels.iter().all(|l| l.contains('#')),
+            "sanity: this IS a collided group, both labels carry an ordinal: {labels:?}"
+        );
+
+        let d = parse("@0=00000").unwrap(); // an id nothing supplied carries
+        let err = apply(&[d], &c.decls, &c.cards, &c.per_slot).unwrap_err();
+        let msg = err.to_string();
+        for label in &labels {
+            assert!(
+                msg.contains(label),
+                "lists the ORDINAL label, not a bare duplicated id (M1): {msg}"
             );
         }
     }

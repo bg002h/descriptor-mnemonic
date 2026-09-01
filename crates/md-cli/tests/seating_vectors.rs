@@ -435,12 +435,24 @@ fn v_seat_bad_a_contradicting_seat_refuses_from_the_command_line() {
             .output()
             .unwrap();
         let e = err_of(&o);
+        // M1 (whole-diff review): the "are:" list now renders each card's
+        // FULL label (`DecodedCard::label`, e.g. "12345 (stub abcdef01)"),
+        // not a bare id -- V_MIX has no collision here, so the label's
+        // leading token IS still a valid `--seat @i=<id>` value; take just
+        // that token.
         e.split("are: ")
             .nth(1)
             .expect("the unknown-id refusal lists what was supplied")
             .trim_end_matches(".\n")
             .split(", ")
-            .map(|s| s.trim().trim_end_matches('.').to_string())
+            .map(|s| {
+                s.trim()
+                    .trim_end_matches('.')
+                    .split(' ')
+                    .next()
+                    .expect("each entry has a leading id token")
+                    .to_string()
+            })
             .collect()
     };
     assert_eq!(ids.len(), 2, "{ids:?}");
@@ -917,6 +929,115 @@ fn row1_canonical_collision_reaches_the_command_byte_identical_to_the_unpinned_c
     assert!(
         !control_err.contains("note: these "),
         "control has no AP1 note (no collision)"
+    );
+}
+
+// ─── I3 (whole-diff review): arm 1/2/3 command-level coverage, restored ──
+//
+// Deviation 7 repurposed the old `v_collide_reaches_the_command` (which
+// asserted arm 1's message reaching the CLI) into the row above, which now
+// exercises the SEAT+note outcome instead. After that rewrite, zero
+// command-level rows drove any of the R5 classifier's three refusal arms.
+// These three are the NAMED inheritors of that lost arm-1/2/3 coverage
+// (spec row 12: "every retired assertion's inheriting row is named").
+
+/// A throwaway, deliberately minimal 1-slot policy -- same string as
+/// `V_AP_SURPLUS_B_POLICY` below, duplicated here (not reordered) because
+/// these three rows only need SOME valid keyless policy to get past `md`'s
+/// "no md1 policy phrase" refusal; none of arm 1/2/3 ever reaches policy
+/// matching.
+const V_ARM_THROWAWAY_POLICY: &str = "md1yqfdss5n9gqpsg5n2ysa4r774vcg";
+
+/// Arm 1 (merged, fail-closed via SPEC §2's engine reporting NoPartition):
+/// `v-ap-incomplete.txt`'s one complete 2-chunk class + one 3-chunk class
+/// missing a piece classifies `Failure::Merged` (mismatched declared
+/// totals), the auto-partition engine cannot admit the incomplete class,
+/// and the WHOLE group refuses via arm 1's `merged_refusal` -- unit-pinned
+/// at `seat::input::tests::row7b_incomplete_class_set_refuses_the_whole_group_via_arm_1`;
+/// this is that message reaching the real CLI, piece-count evidence AND
+/// the `mk inspect` id-check (W15(d)'s named remedy) both included.
+#[test]
+fn arm1_merged_v_ap_incomplete_reaches_the_command() {
+    let cards: Vec<String> = mk1(include_str!("fixtures/seating/v-ap-incomplete.txt"));
+    assert_eq!(cards.len(), 4);
+    let o = seat_cmd("descriptor", V_ARM_THROWAWAY_POLICY, &cards, &[])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
+    let e = err_of(&o);
+    assert!(e.contains("chunk-set a1006"), "{e}");
+    assert!(
+        e.contains("declares piece 1 of 2") && e.contains("declares piece 1 of 3"),
+        "the piece-count evidence W15(a) requires: {e}"
+    );
+    assert!(e.contains("piece order does not matter"), "{e}");
+    assert!(
+        e.contains("`mk inspect`"),
+        "W15(d)'s named id-check remedy, pinned nowhere at command level before I3: {e}"
+    );
+    assert!(
+        e.contains("re-mint (re-encoding without --chunk-set-id)"),
+        "{e}"
+    );
+}
+
+/// Arm 2 (incomplete): one 2-chunk card, only its first chunk supplied --
+/// received 1 < declared 2, no duplicates. Same literal as
+/// `seat::input::tests::r5_incomplete_one_of_two_chunks_classifies_as_incomplete`
+/// (chunk-set 33333), reaching the real CLI.
+#[test]
+fn arm2_incomplete_reaches_the_command() {
+    let card = "mk1qpxvenpqqsq4kj90xdeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4wgdpapgfl4pkhsdyytkwl5z8lphut2hvvpp5drdl5w8ame3clux"
+        .to_string();
+    let o = seat_cmd("descriptor", V_ARM_THROWAWAY_POLICY, &[card], &[])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
+    let e = err_of(&o);
+    assert!(e.contains("chunk-set 33333"), "{e}");
+    assert!(e.contains("should be 2"), "{e}");
+    assert!(e.contains("you supplied 1"), "{e}");
+    assert!(e.contains("scan the missing piece(s)"), "{e}");
+    assert!(
+        !e.contains("piece order does not matter"),
+        "must NOT be arm 1's message: {e}"
+    );
+    assert!(!e.contains("error:"), "no codec line on arm 2: {e}");
+}
+
+/// Arm 3 (terminal, no precondition of its own): chunk 0 of card T1 +
+/// chunk 1 of card T2, both pinned to chunk-set `22222`, both declaring
+/// `total_chunks = 2` -- the codec's own cross-chunk integrity hash
+/// refuses it. Same two literals as
+/// `seat::input::tests::r5_terminal_cross_chunk_hash_mismatch_classifies_as_terminal`,
+/// reaching the real CLI: human sentence first (W16(b)), `error:` line
+/// after.
+#[test]
+fn arm3_terminal_reaches_the_command() {
+    let cards = vec![
+        "mk1qpyg3zpqqsq4kj90xfeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4wgdpapgfl4pkhsdyytkwl5z8lphut2hvvpp5fkjjqxnyhx4glde"
+            .to_string(),
+        "mk1qpyg3zppwyp4dfykwfkgg6fxyxetdcmythf4hsqzd3v879jprztejzs7rlhgvt7a4x7n4h7uagdls".to_string(),
+    ];
+    let o = seat_cmd("descriptor", V_ARM_THROWAWAY_POLICY, &cards, &[])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
+    let e = err_of(&o);
+    assert!(e.contains("chunk-set 22222"), "{e}");
+    assert!(e.contains("do not form one key card"), "{e}");
+    assert!(e.contains("re-scan one card's pieces alone"), "{e}");
+    let error_line = e.lines().find(|l| l.starts_with("error: "));
+    assert!(
+        error_line.is_some_and(|l| l.contains("cross-chunk integrity hash mismatch")),
+        "the codec diagnostic is on its own labeled line (W16(b)): {e}"
+    );
+    assert!(
+        e.find("do not form one key card").unwrap() < e.find("error:").unwrap(),
+        "human sentence leads, codec line follows (W16(b)): {e}"
     );
 }
 
