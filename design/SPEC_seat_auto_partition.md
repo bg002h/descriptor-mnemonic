@@ -135,8 +135,11 @@ group's R2 warnings, in that order.
   cards always verify, so no verified real card can be displaced; an
   extra verified card can only raise `|V|` above k, which refuses.
 - Piece-replacement (frankencard) surface unchanged from today. Surplus
-  valid card injection: `|V| > k` ⇒ AP2 refusal (this replaces the r2
-  claim that it seats then fails completeness — stricter and earlier).
+  cards: a GROUND same-id extra verified candidate hits `|V| > k` ⇒ AP2
+  refusal (stricter and earlier than a completeness refusal); LEGITIMATE
+  extra cards — same-id across total-classes, or different-id — seat and
+  then hit the downstream completeness/leftover refusal with
+  distinguishable labels, exactly the surplus row's variants (b)/(c).
 
 ## Acceptance (vector rows; cited by name elsewhere — r3-M1)
 
