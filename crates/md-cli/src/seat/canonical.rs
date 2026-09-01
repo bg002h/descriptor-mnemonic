@@ -5,13 +5,12 @@
 //! > not re-derived bytes, so no new failure route; a string failing
 //! > `decode_string` is refused exactly as today.
 //!
-//! Ships as PRODUCTION code from P0 (plan `IMPLEMENTATION_PLAN_seat_auto_partition.md`
-//! P0 item 2), but is UNUSED by `seat::run` until P1 wires the
-//! canonicalisation stage in after [`super::input::dedupe_strings`] —
-//! P0's shape tests call THIS function directly, never a second
-//! implementation of the same rule (plan-r1 M3). The `#[allow(dead_code)]`
-//! below is that one-cycle gap made explicit, not an oversight: P1 step 1
-//! is the wiring commit that removes it.
+//! Shipped as PRODUCTION code from P0 (plan `IMPLEMENTATION_PLAN_seat_auto_partition.md`
+//! P0 item 2); wired into `seat::run` at P1 step 1, where
+//! [`super::input::canonicalize_group`] calls this same function right
+//! after [`super::input::dedupe_strings`] — P0's shape tests, and P1's
+//! engine (`super::partition`), all call THIS function directly, never a
+//! second implementation of the same rule (plan-r1 M3).
 //!
 //! Built only on mk-codec's public API ([`decode_string`],
 //! [`StringLayerHeader::from_5bit_symbols`]) — no local mirroring of BCH or
@@ -57,7 +56,6 @@ pub(crate) struct CanonicalPieceKey {
 /// produce one — `input.rs`'s `GroupId::Single` doc comment makes the same
 /// point). It is refused by name rather than silently coerced into a key
 /// that would claim an identity the wire format does not carry.
-#[allow(dead_code)] // unused by production until P1 wires the §1 stage (plan P0 item 2)
 pub(crate) fn canonical_piece_key(s: &str) -> Result<CanonicalPieceKey, CliError> {
     let decoded =
         decode_string(s).map_err(|e| CliError::Seat(format!("not a decodable mk1 string: {e}")))?;

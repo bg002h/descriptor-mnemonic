@@ -4,6 +4,28 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased]
+
+### Added
+
+- **Seat auto-partition**: when two or more DIFFERENT mk1 key cards were
+  minted sharing one stamped chunk-set id (a mint defect, an attack, or a
+  deliberate choice), `md descriptor`/`md address --from-mk1` now attempts
+  to untangle them instead of refusing outright — each candidate card's own
+  4-byte integrity check must verify it, and the group is auto-separated
+  only when that verification cleanly explains every supplied piece as
+  exactly the right number of distinct, fully-covering cards (capped at 5
+  colliding cards per id, and bounded to a static, pre-computed candidate
+  budget so a pathological input refuses rather than hangs). A successful
+  separation seats every card and emits one neutral note (asserting none of
+  the three possible origins); a genuinely ambiguous separation (more
+  verified candidates than cards) hard-refuses rather than guess.
+- Collided cards are labelled `<chunk-set-id>#<k>` (1-based, content-ordered)
+  everywhere a card is named. `--seat '@i=<chunk-set-id>#<k>'` binds one
+  specific collided carrier; the bare `@i=<chunk-set-id>` form now refuses
+  by name (listing the labels) when it names more than one collided card.
+  See `design/SPEC_seat_auto_partition.md`.
+
 ## md-cli [0.14.0] — 2026-08-31
 
 **SemVer-minor — the wallet-form converter + the post-converter mini-cycle. Consumes md-codec 0.42.0 (unchanged this release; the next md-codec publish is a separately gated decision, F-424).**

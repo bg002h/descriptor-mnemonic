@@ -17,6 +17,8 @@ const V_USP: &str = include_str!("fixtures/seating/v-usp.txt");
 const V_MIX: &str = include_str!("fixtures/seating/v-mix.txt");
 const V_B1_WARN: &str = include_str!("fixtures/seating/v-b1-warn.txt");
 const V_D_RT_KEYED: &str = include_str!("fixtures/decompose/v-d-rt.txt");
+const V_COLLIDE: &str = include_str!("fixtures/seating/v-collide.txt");
+const V_AP_ROW1_E2E: &str = include_str!("fixtures/seating/v-ap-row1-e2e.txt");
 
 fn lines(text: &str, hrp: &str) -> Vec<String> {
     text.lines()
@@ -830,27 +832,130 @@ fn v_ce1_reaches_the_command_and_seats() {
     assert!(out_of(&o).starts_with("wsh(multi(2,"));
 }
 
+// ─── SPEC row 1 (canonical-collision) at the command level ─────────────
+//
+// REWRITTEN from the pre-P1 `v_collide_reaches_the_command` (plan §12
+// churn note): auto-partition now SEATS a clean same-id collision instead
+// of refusing at reassembly, so this row moved from arm 1's message to the
+// seat+AP1-note outcome. `v-collide.txt` itself now demonstrates the
+// mixed-totals seat (unit-level, `seat::input`) and the surplus-variant-b
+// leftover (below) instead.
+//
+// Uses `v-ap-row1-e2e.txt`, NOT P0's `v-ap-canonical.txt` — flagged
+// deviation (P1 finding, not an engine defect): `v-ap-canonical.txt` and
+// its committed control BOTH refuse unconditionally via
+// `satisfy::check_no_impossible_card_pair`, because P0 minted both of that
+// pair's cards with `--origin-fingerprint <KEY N's fp>` and every key in
+// `keys.txt` shares ONE fingerprint (73c5da0a) — so the pair declares an
+// IDENTICAL (fingerprint, path) with different xpubs, which that
+// PRE-EXISTING, unrelated check refuses regardless of P1. Measured
+// directly against both files; see `v-ap-row1-e2e.txt`'s own header for
+// the full trace. The auto-partition ENGINE ITSELF correctly seats
+// `v-ap-canonical.txt`'s pair — proven independently at the engine-unit
+// level (`seat::partition::tests::canonical_pair_seats_two_cards_v_equals_k`)
+// and the decode_cards-unit level (`seat::input::tests::row1_canonical_collision_two_cards_seat_with_ap1_note`,
+// on an equivalent inline fixture) — this is purely a full-pipeline
+// fixture-authoring defect in a DIFFERENT, orthogonal check.
 #[test]
-fn v_collide_reaches_the_command() {
-    // Two cards pinned to one chunk-set id, offered against any policy: the
-    // input pipeline merges them and reassembly refuses, before the engine
-    // sees a card at all. R5 rewrite (SPEC contract 7): card A is 2 chunks,
-    // card B is 3, so this is "merged cards" (arm 1), not the old
-    // one-message-fits-all wrapper.
-    let collide: Vec<String> = mk1(include_str!("fixtures/seating/v-collide.txt"));
-    let mut cards = mk1(V_USP);
-    cards.extend(collide);
-    let o = seat_cmd("descriptor", V_USP, &cards, &[]).output().unwrap();
-    assert_eq!(o.status.code(), Some(1));
-    let e = err_of(&o);
-    assert!(e.contains("chunk-set 12345"), "{e}");
-    assert!(e.contains("piece order does not matter"), "{e}");
-    assert!(e.contains("`mk inspect`"), "{e}");
+fn row1_canonical_collision_reaches_the_command_byte_identical_to_the_unpinned_control() {
+    let pinned = seat_cmd("descriptor", V_AP_ROW1_E2E, &mk1(V_AP_ROW1_E2E), &[])
+        .output()
+        .unwrap();
+    assert!(pinned.status.success(), "{}", err_of(&pinned));
+    let control = seat_cmd("descriptor", V_BOUND_SEAT, &mk1(V_BOUND_SEAT), &[])
+        .output()
+        .unwrap();
+    assert!(control.status.success(), "{}", err_of(&control));
+
+    // stdout (the descriptor) byte-identical.
+    assert_eq!(out_of(&pinned), out_of(&control));
+
+    // Address byte-identical too.
+    let pinned_addr = seat_cmd("address", V_AP_ROW1_E2E, &mk1(V_AP_ROW1_E2E), &[])
+        .output()
+        .unwrap();
+    let control_addr = seat_cmd("address", V_BOUND_SEAT, &mk1(V_BOUND_SEAT), &[])
+        .output()
+        .unwrap();
+    assert!(pinned_addr.status.success(), "{}", err_of(&pinned_addr));
+    assert!(control_addr.status.success(), "{}", err_of(&control_addr));
+    assert_eq!(out_of(&pinned_addr), out_of(&control_addr));
+
+    // WalletPolicyId (the "composed wallet id" B1 note) byte-identical.
+    let pinned_err = err_of(&pinned);
+    let control_err = err_of(&control);
+    let wallet_id_line = |s: &str| {
+        s.lines()
+            .find(|l| l.starts_with("note: composed wallet id"))
+            .unwrap()
+            .to_string()
+    };
+    assert_eq!(wallet_id_line(&pinned_err), wallet_id_line(&control_err));
+
+    // The AP1 note, then the group's two R2 warnings, IN ORDER — the
+    // pinned side's own stderr; the control has neither (nothing pinned).
+    let lines: Vec<&str> = pinned_err.lines().collect();
+    let note_pos = lines
+        .iter()
+        .position(|l| l.starts_with("note: these "))
+        .expect("AP1 note present");
+    let warn_positions: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.starts_with("warning: this key card's stamped chunk-set id"))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(
+        warn_positions.len(),
+        2,
+        "two R2 mismatch warnings: {lines:?}"
+    );
     assert!(
-        !e.contains("re-mint one of them") && !e.contains("Two DIFFERENT cards pinned"),
-        "retired wording resurfaced: {e}"
+        warn_positions.iter().all(|&w| note_pos < w),
+        "AP1 note must precede both R2 warnings: {lines:?}"
+    );
+    assert!(
+        !control_err.contains("note: these "),
+        "control has no AP1 note (no collision)"
     );
 }
+
+// ─── SPEC row 10, surplus variant (b): same-id LEGITIMATE extra cards that
+// ─── seat, then leftover-refuse with DISTINGUISHABLE labels ────────────
+
+/// A fresh, minimal 1-slot policy, deliberately at an origin NEITHER of
+/// `v-collide.txt`'s two cards declares (`m/48'/0'/9'/2'`, vs their
+/// `0'/2'`/`1'/2'`), so BOTH seated collided cards become leftover
+/// together and their ordinal labels (`12345#1`/`12345#2`) both appear in
+/// ONE message. Minted with `md encode "wsh(pk(@0/48'/0'/9'/2'/<0;1>/*))"`.
+const V_AP_SURPLUS_B_POLICY: &str = "md1yqfdss5n9gqpsg5n2ysa4r774vcg";
+
+#[test]
+fn v_collide_surplus_variant_b_seats_then_refuses_leftover_with_distinguishable_labels() {
+    let o = seat_cmd("descriptor", V_AP_SURPLUS_B_POLICY, &mk1(V_COLLIDE), &[])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    let e = err_of(&o);
+    assert!(e.contains("1 slot(s) unfilled"), "{e}");
+    assert!(e.contains("2 card(s) left over"), "{e}");
+    assert!(e.contains("1 slots, 2 cards supplied"), "{e}");
+    // Both collided cards seated (auto-partition ran, SPEC §2), then BOTH
+    // are the leftover -- named by their DISTINGUISHABLE ordinal labels,
+    // never the bare (ambiguous) "12345" a pre-P1 build could never even
+    // reach this far to produce.
+    assert!(e.contains("12345#1 (stub 5b48af35)"), "{e}");
+    assert!(e.contains("12345#2 (stub 5b48af35)"), "{e}");
+    assert!(e.contains("[73c5da0a/48'/0'/0'/2']"), "{e}");
+    assert!(e.contains("[73c5da0a/48'/0'/1'/2']"), "{e}");
+}
+
+// ─── SPEC row 10, surplus variant (c): different-id extra card — the
+// ─── existing leftover path, UNCHANGED. Covered by the pre-existing
+// ─── `v_leftover_reaches_the_command_naming_the_card` row below
+// ─── (PATHOLOGICAL's own 11-card set + V_LEFTOVER's unrelated foreign
+// ─── card, no shared id anywhere) — re-confirmed green post-wiring, no
+// ─── new test needed.
 
 // ─── V-CSID-WARN — contract 6: the seat-path R2/R6 warning ─────────────
 

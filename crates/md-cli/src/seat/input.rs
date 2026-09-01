@@ -8,16 +8,26 @@
 //! The ORDER is the whole content. `mk decode` itself has no dedupe step —
 //! measured 2026-08-30, `mk decode S1 S2 S1 S2` refuses with *"chunked-header
 //! malformed: received 4 chunks, header declares total_chunks = 2"* — so a
-//! double scan of one card is only harmless because step 1 runs first. And
-//! step 3 running LAST is what keeps an id collision fatal: two different
-//! cards pinned to one chunk-set id merge into one group at step 2, so the
-//! seating engine never sees colliding cards as two candidates. **Since P3**
-//! (SPEC contract 7 / R5), the merge is caught by [`decode_cards`]'s own
-//! classifier — from the retained per-chunk headers, before `mk_codec::decode`
-//! is even called for the shapes it can name (merged cards, incomplete scan);
-//! only the residual "terminal" shapes still reach `mk_codec::decode` and
-//! surface its error verbatim on a labeled line. That is also why A5's
-//! "ambiguous `--seat` id" case is unreachable (plan §4 roster note).
+//! double scan of one card is only harmless because step 1 runs first. **Since
+//! P3** (SPEC contract 7 / R5), a group that does not form one key card is
+//! caught by [`decode_cards`]'s own classifier — from the retained per-chunk
+//! headers, before `mk_codec::decode` is even called for the shapes it can
+//! name (merged cards, incomplete scan); only the residual "terminal" shapes
+//! still reach `mk_codec::decode` and surface its error verbatim on a labeled
+//! line.
+//!
+//! **Since P1 (SPEC §2, seat auto-partition): step 3 running LAST no longer
+//! makes an id collision automatically fatal.** A group the classifier would
+//! flag `Failure::Merged` is now handed to [`crate::seat::partition`] FIRST:
+//! a clean collision (every canonical piece resolves to exactly the right
+//! number of verified, fully-covering cards) SEATS as several
+//! [`DecodedCard`]s sharing one `set_id`, distinguished by
+//! [`DecodedCard::ordinal`] — the seating engine genuinely DOES see colliding
+//! cards as several candidates now, deliberately. The classifier's own
+//! message is unchanged and still fires whenever the engine reports "no
+//! partition" (an inadmissible or under-verified group). Consequence for A5:
+//! `--seat`'s "ambiguous id" case, once unreachable, is now the documented
+//! `@i=<id>#<k>` grammar (SPEC §4) — see [`crate::seat::directive`].
 //!
 //! Step 1 normalises display separators AND case before comparing. The
 //! separator half mirrors [`crate::cmd::strip_md1_inputs`] on the md1 side: a
@@ -29,6 +39,7 @@
 //! dedupe this pipeline exists for. See [`dedupe_strings`].
 
 use crate::error::CliError;
+use crate::seat::canonical::{CanonicalPieceKey, canonical_piece_key};
 use mk_codec::KeyCard;
 use mk_codec::string_layer::{StringLayerHeader, decode_string};
 use std::collections::BTreeMap;
@@ -44,7 +55,7 @@ use std::fmt;
 /// 56-byte single-string ceiling, so every real card chunks — mk-codec's own
 /// `pipeline.rs` says so), which is why it is keyed by input position rather
 /// than by a wire value that does not exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GroupId {
     /// A chunked card, keyed by its 20-bit `chunk_set_id`.
     Chunked(u32),
@@ -74,11 +85,22 @@ pub struct DecodedCard {
     pub set_id: GroupId,
     /// The decoded card itself.
     pub card: KeyCard,
+    /// SPEC §4 — `Some(k)` (1-based) when this card is one of several
+    /// AUTO-PARTITIONED off ONE colliding `set_id` (`decode_cards`'s P1
+    /// partition branch is the only constructor of `Some`); `None` for
+    /// every card reassembled the ordinary, non-collided way. Mechanical
+    /// P1 step 0 (plan-r1 M4): the field exists from here, but every
+    /// construction site still sets it to `None` until step 4 wires the
+    /// real ordinal.
+    pub ordinal: Option<u32>,
 }
 
 impl DecodedCard {
-    /// `set-id (stub …)` — the identifier pair every A4/B1 message names a
-    /// card by. Stubs are joined with `,` when a card declares several.
+    /// `set-id (stub …)` / `set-id#k (stub …)` — the identifier pair every
+    /// A4/B1 message names a card by. Stubs are joined with `,` when a card
+    /// declares several. SPEC §4: a collided card's ordinal is part of its
+    /// name everywhere a card is named, so this one function is the single
+    /// source every A3/A4/A5/B1 message renders through.
     pub fn label(&self) -> String {
         let stubs: Vec<String> = self
             .card
@@ -86,7 +108,10 @@ impl DecodedCard {
             .iter()
             .map(|s| format!("{:02x}{:02x}{:02x}{:02x}", s[0], s[1], s[2], s[3]))
             .collect();
-        format!("{} (stub {})", self.set_id, stubs.join(","))
+        match self.ordinal {
+            Some(k) => format!("{}#{k} (stub {})", self.set_id, stubs.join(",")),
+            None => format!("{} (stub {})", self.set_id, stubs.join(",")),
+        }
     }
 }
 
@@ -321,14 +346,94 @@ fn terminal_refusal(set_id: GroupId, e: mk_codec::Error) -> CliError {
     ))
 }
 
+/// SPEC §3's AP1 note text, on a successful auto-partition — draft wording,
+/// with both counts SPEC §3 requires: `n_supplied` (this group's raw string
+/// count BEFORE SPEC §1's canonicalisation collapse) and `n_distinct` (the
+/// canonical piece count AFTER it) — two DIFFERENT numbers whenever a
+/// benign duplicate (BCH twin, literal repeat) was also present, one number
+/// when it was not. Neutral: names three possible origins, asserts none.
+fn ap1_note(n_supplied: usize, n_distinct: usize, n_cards: usize, set_id: GroupId) -> String {
+    let string_noun = if n_supplied == 1 { "string" } else { "strings" };
+    let piece_noun = if n_distinct == 1 { "piece" } else { "pieces" };
+    let card_noun = if n_cards == 1 { "card" } else { "cards" };
+    format!(
+        "note: these {n_supplied} supplied {string_noun} are {n_distinct} distinct {piece_noun} \
+         (chunks) carrying one stamped chunk-set id (chunk-set {set_id}), and they are \
+         {n_cards} different key {card_noun} — each card's own 4-byte integrity check accepted \
+         its pieces, so they were separated. A shared stamped id can be a mint defect, an \
+         attack, or a deliberate choice at encode time — if it is unexpected, check each card \
+         alone with `mk inspect`."
+    )
+}
+
+/// SPEC §3's AP1 note, tagged with the id GROUP it explains.
+///
+/// `decode_cards` can seat more than one colliding group in one call, and
+/// SPEC §5 requires each group's note to precede only ITS OWN group's R2
+/// warnings — never a global prepend (plan-r1 N3). Carrying `set_id` here,
+/// rather than returning a bare `String`, is what lets `seat::run` place
+/// each note correctly without re-deriving which group it belongs to.
+#[derive(Debug, Clone)]
+pub struct PartitionNote {
+    /// The colliding id this note explains.
+    pub set_id: GroupId,
+    /// The rendered SPEC §3 note text (no `note: ` prefix — callers push it
+    /// into `Seating.notes` the same way every other note arrives there).
+    pub text: String,
+}
+
+/// SPEC §1 -- collapse a GROUP's strings that canonicalise to the SAME
+/// piece, first appearance wins.
+///
+/// Every entry here has ALREADY been proven decodable by [`group_key_of`]
+/// (step 2, immediately above this function's only call site, propagates
+/// any decode failure with `?` before this ever runs), so
+/// [`canonical_piece_key`] is infallible for every `Chunked` entry;
+/// `Single`-headered entries (`info.is_none()`) carry no key to
+/// canonicalise against (SPEC §1: "out of scope") and pass through
+/// unchanged, one-for-one, never collapsed against each other or against a
+/// `Chunked` entry.
+fn canonicalize_group(group: &[(String, Option<ChunkInfo>)]) -> Vec<(String, Option<ChunkInfo>)> {
+    let mut seen: Vec<CanonicalPieceKey> = Vec::new();
+    let mut out = Vec::with_capacity(group.len());
+    for (s, info) in group {
+        let Some(_) = info else {
+            out.push((s.clone(), *info));
+            continue;
+        };
+        match canonical_piece_key(s) {
+            Ok(key) => {
+                if !seen.contains(&key) {
+                    seen.push(key);
+                    out.push((s.clone(), *info));
+                }
+                // else: a duplicate canonical piece (BCH-correctable twin or
+                // a literal duplicate step 1's coarser check missed) --
+                // first appearance already kept, this one is dropped.
+            }
+            // Structurally unreachable per this function's own contract
+            // (see the doc comment): pass through rather than panic, so an
+            // unforeseen future header shape is refused downstream exactly
+            // as today rather than silently dropped here.
+            Err(_) => out.push((s.clone(), *info)),
+        }
+    }
+    out
+}
+
 /// The whole pipeline: `&[String]` of mk1 strings in, reassembled cards out,
-/// in the normative order.
+/// in the normative order, plus any SPEC §2 auto-partition notes (P1 step 0
+/// — plan-r1 M5: the mechanical signature change lands first so every later
+/// test targets the final shape; `partition_notes` is always empty until P1
+/// step 3 wires the engine in).
 ///
 /// Groups are returned in ascending set-id order, NOT in supply order —
 /// determinism of everything downstream (the assignment vector, every
 /// refusal listing) must not depend on how the operator happened to type
 /// the strings, and V-ORD pins that.
-pub fn decode_cards(strings: &[String]) -> Result<Vec<DecodedCard>, CliError> {
+pub fn decode_cards(
+    strings: &[String],
+) -> Result<(Vec<DecodedCard>, Vec<PartitionNote>), CliError> {
     // Step 1.
     let deduped = dedupe_strings(strings);
     if deduped.is_empty() {
@@ -345,7 +450,23 @@ pub fn decode_cards(strings: &[String]) -> Result<Vec<DecodedCard>, CliError> {
     }
     // Step 3.
     let mut cards = Vec::with_capacity(groups.len());
+    let mut partition_notes: Vec<PartitionNote> = Vec::new();
     for (set_id, group) in groups {
+        // SPEC §1 (mk1-only; documented adjacent to `dedupe_strings` above,
+        // not inside it — that function also serves md1). Collapses pieces
+        // that canonicalise to the SAME `(chunk_set_id, total_chunks,
+        // chunk_index, symbol_tail)` -- a benign double transcription (BCH
+        // twins, literal duplicates step 1's coarser check missed) -- BEFORE
+        // `classify` ever sees the group, so it cannot misread a collapsed
+        // duplicate as a genuine second card. Run PER GROUP rather than once
+        // globally across `deduped`: `CanonicalPieceKey` embeds
+        // `chunk_set_id`, so two pieces can never canonicalise together
+        // across different groups, and canonicalising after step 2's
+        // grouping is what lets `n_supplied` (this group's count BEFORE the
+        // collapse) survive for P1 step 3's AP1 note, without a second pass.
+        let n_supplied = group.len();
+        let group = canonicalize_group(&group);
+        let n_distinct = group.len();
         let infos: Vec<ChunkInfo> = group.iter().filter_map(|(_, i)| *i).collect();
         // R5 arms 1/2: classify from the retained headers BEFORE ever
         // calling `mk_codec::decode`, so a merged/incomplete group gets the
@@ -354,7 +475,45 @@ pub fn decode_cards(strings: &[String]) -> Result<Vec<DecodedCard>, CliError> {
         // a `Single` group carries no chunk header to classify from.
         if !infos.is_empty() {
             match classify(&infos) {
-                Some(Failure::Merged) => return Err(merged_refusal(set_id, &infos)),
+                Some(Failure::Merged) => {
+                    // SPEC §2 — a genuine collision SIGNAL (duplicate chunk
+                    // index and/or disagreeing declared totals). Attempt
+                    // auto-partition as a PRE-PASS before falling through to
+                    // arm 1's shipped message; `Failure::Incomplete` below
+                    // never reaches the engine (module doc comment on
+                    // `partition` explains why that is safe, not merely
+                    // unreached).
+                    let group_strings: Vec<&str> = group.iter().map(|(s, _)| s.as_str()).collect();
+                    match crate::seat::partition::partition(&group_strings) {
+                        crate::seat::partition::Outcome::Seated(seated) => {
+                            let k = seated.len();
+                            for (i, card) in seated.into_iter().enumerate() {
+                                cards.push(DecodedCard {
+                                    set_id,
+                                    card,
+                                    ordinal: Some(i as u32 + 1),
+                                });
+                            }
+                            partition_notes.push(PartitionNote {
+                                set_id,
+                                text: ap1_note(n_supplied, n_distinct, k, set_id),
+                            });
+                            continue;
+                        }
+                        crate::seat::partition::Outcome::Ambiguous => {
+                            return Err(crate::seat::partition::ap2_refusal(set_id));
+                        }
+                        crate::seat::partition::Outcome::CapExceeded { sigma_k } => {
+                            return Err(crate::seat::partition::cap_refusal(set_id, sigma_k));
+                        }
+                        crate::seat::partition::Outcome::OverBudget { product } => {
+                            return Err(crate::seat::partition::budget_refusal(set_id, product));
+                        }
+                        crate::seat::partition::Outcome::NoPartition => {
+                            return Err(merged_refusal(set_id, &infos));
+                        }
+                    }
+                }
                 Some(Failure::Incomplete { declared_total }) => {
                     return Err(incomplete_refusal(set_id, group.len(), declared_total));
                 }
@@ -363,9 +522,13 @@ pub fn decode_cards(strings: &[String]) -> Result<Vec<DecodedCard>, CliError> {
         }
         let refs: Vec<&str> = group.iter().map(|(s, _)| s.as_str()).collect();
         let card = mk_codec::decode(&refs).map_err(|e| terminal_refusal(set_id, e))?;
-        cards.push(DecodedCard { set_id, card });
+        cards.push(DecodedCard {
+            set_id,
+            card,
+            ordinal: None,
+        });
     }
-    Ok(cards)
+    Ok((cards, partition_notes))
 }
 
 /// SPEC "The comparison" operand: `derive_chunk_set_id(encode_bytecode(card))`
@@ -398,9 +561,35 @@ pub fn chunk_set_id_mismatch_warning(declared: u32, derived: u32) -> String {
 /// in EXISTING group order (`cards` is already ascending set-id order, per
 /// `decode_cards`'s own contract) — `Single` groups have no declared id to
 /// compare and are silently skipped.
+///
+/// A thin wrapper over [`seat_notes`] with no AP1 notes to interleave —
+/// UNCHANGED signature and behaviour, so this function's own pinned tests
+/// keep testing exactly what they always tested. `seat::run` now calls
+/// [`seat_notes`] directly (it always has AP1 notes, even if empty), so this
+/// wrapper is exercised only by its own test module — kept as a real,
+/// independently-testable unit rather than folded away, mirroring how
+/// `canonical_piece_key` shipped one cycle ahead of its production caller.
+#[allow(dead_code)]
 pub fn seat_chunk_set_id_warnings(cards: &[DecodedCard]) -> Vec<String> {
-    let mut notes = Vec::new();
+    seat_notes(cards, &[])
+}
+
+/// SPEC §5 / plan-r1 N3 — interleave P1's SPEC §2 auto-partition notes with
+/// the R2/R6 mismatch warnings above, PER GROUP: a group's own AP1 note is
+/// emitted the moment its FIRST card is reached (which — `cards` being
+/// ascending set-id order and every card of one collided group being
+/// contiguous, per `decode_cards`'s own contract — is always ahead of every
+/// R2 warning that group can produce), never as a global prepend ahead of
+/// every group's warnings.
+pub fn seat_notes(cards: &[DecodedCard], ap_notes: &[PartitionNote]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut emitted: std::collections::HashSet<GroupId> = std::collections::HashSet::new();
     for c in cards {
+        if emitted.insert(c.set_id) {
+            if let Some(n) = ap_notes.iter().find(|n| n.set_id == c.set_id) {
+                out.push(n.text.clone());
+            }
+        }
         let GroupId::Chunked(declared) = c.set_id else {
             continue;
         };
@@ -408,10 +597,10 @@ pub fn seat_chunk_set_id_warnings(cards: &[DecodedCard]) -> Vec<String> {
             continue;
         };
         if declared != derived {
-            notes.push(chunk_set_id_mismatch_warning(declared, derived));
+            out.push(chunk_set_id_mismatch_warning(declared, derived));
         }
     }
-    notes
+    out
 }
 
 #[cfg(test)]
@@ -441,9 +630,10 @@ mod tests {
         let mut twice = one.clone();
         twice.extend(one.clone());
         assert_eq!(twice.len(), 60);
-        let cards = decode_cards(&twice).expect("a doubled full set must reassemble");
+        let (cards, notes) = decode_cards(&twice).expect("a doubled full set must reassemble");
         assert_eq!(cards.len(), 11, "the doubled set is still 11 cards");
-        let once = decode_cards(&one).expect("the single set must reassemble");
+        assert!(notes.is_empty(), "no collisions here, no partition notes");
+        let (once, _) = decode_cards(&one).expect("the single set must reassemble");
         assert_eq!(cards.len(), once.len());
         for (a, b) in cards.iter().zip(once.iter()) {
             assert_eq!(a.set_id, b.set_id);
@@ -467,7 +657,7 @@ mod tests {
             .collect();
         let mut mixed = one.clone();
         mixed.extend(grouped);
-        let cards = decode_cards(&mixed).expect("grouped + unbroken is one set, not two");
+        let (cards, _) = decode_cards(&mixed).expect("grouped + unbroken is one set, not two");
         assert_eq!(cards.len(), 11);
     }
 
@@ -476,8 +666,8 @@ mod tests {
         let one = pathological_mk1();
         let mut reversed = one.clone();
         reversed.reverse();
-        let a = decode_cards(&one).unwrap();
-        let b = decode_cards(&reversed).unwrap();
+        let (a, _) = decode_cards(&one).unwrap();
+        let (b, _) = decode_cards(&reversed).unwrap();
         let ids_a: Vec<GroupId> = a.iter().map(|c| c.set_id).collect();
         let ids_b: Vec<GroupId> = b.iter().map(|c| c.set_id).collect();
         assert_eq!(ids_a, ids_b, "groups are returned in set-id order");
@@ -485,44 +675,46 @@ mod tests {
 
     // ─── V-COLLIDE ──────────────────────────────────────────────────────
 
+    /// SPEC row 7a (mixed-totals, both classes complete): `v-collide.txt`'s
+    /// two DISAGREEING-total cards (card A 2-chunk, card B 3-chunk, one
+    /// pinned id) now AUTO-PARTITION apart instead of refusing at
+    /// reassembly (plan-r1 N1 / SPEC row 7 / row 10b — REWRITTEN per the
+    /// spec's own §12 churn note: this row moves from "refuses" to
+    /// "seats", and the OLD refusal assertions below move to
+    /// `r5_merged_two_cards_pinned_to_one_id_classify_as_merged`, which now
+    /// exercises the genuine-duplicate-index shape directly rather than via
+    /// this fixture).
     #[test]
-    fn v_collide_two_cards_pinned_to_one_chunk_set_id_refuse_at_reassembly() {
-        // NOTE: this row also subsumes A5's "ambiguous `--seat` id" case,
-        // which SPEC A3(a) step 3 makes UNREACHABLE (plan §4 roster note):
-        // colliding cards merge into one group and refuse HERE, so no
-        // ambiguous id can ever reach `--seat` parsing.
+    fn v_collide_two_cards_pinned_to_one_chunk_set_id_both_seat() {
         let strings: Vec<String> = include_str!("../../tests/fixtures/seating/v-collide.txt")
             .lines()
             .map(str::trim)
             .filter(|l| l.starts_with("mk1"))
             .map(str::to_string)
             .collect();
-        assert!(
-            strings.len() > 2,
-            "fixture must carry both pinned cards' chunks"
+        assert_eq!(strings.len(), 5, "card A (2 chunks) + card B (3 chunks)");
+        let (cards, notes) = decode_cards(&strings)
+            .expect("both total-classes trivially seat: k_class=1 each, Sigma k=2, tiny budget");
+        assert_eq!(cards.len(), 2, "both classes' one card each seats");
+        assert_eq!(notes.len(), 1, "one AP1 note for the one colliding group");
+        assert!(notes[0].set_id == GroupId::Chunked(0x12345));
+        assert!(notes[0].text.starts_with("note:"), "{}", notes[0].text);
+        // Ordinal identity (SPEC §4), both cards share the id, distinguished
+        // by `#<k>` -- ascending `encode_bytecode`, so which physical card
+        // (A or B) gets #1 vs #2 is decided by that order, not supply order.
+        let mut labels: Vec<String> = cards.iter().map(DecodedCard::label).collect();
+        labels.sort();
+        assert_eq!(
+            labels,
+            vec!["12345#1 (stub 5b48af35)", "12345#2 (stub 5b48af35)"]
         );
-        let err = decode_cards(&strings).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("chunk-set "),
-            "the refusal names the colliding set id: {msg}"
-        );
-        // R5 rewrite (SPEC contract 7): card A is 2 chunks, card B is 3 --
-        // DISAGREEING total_chunks is arm 1's second predicate, so this row
-        // is now "merged cards", not the old one-message-fits-all wrapper.
-        assert!(
-            msg.contains("piece 1 of 2") && msg.contains("piece 1 of 3"),
-            "the per-string evidence names both cards' declared shapes: {msg}"
-        );
-        assert!(
-            msg.contains("piece order does not matter"),
-            "arm 1 states order doesn't matter: {msg}"
-        );
-        assert!(
-            msg.contains("mk inspect"),
-            "the id-check is named as a runnable command: {msg}"
-        );
-        assert_no_retired_wording(&msg);
+        // Origins are preserved from each physical card, whichever ordinal
+        // it landed on -- one is 0'/2', the other 1'/2'.
+        let paths: std::collections::BTreeSet<String> = cards
+            .iter()
+            .map(|c| c.card.origin_path.to_string())
+            .collect();
+        assert!(paths.contains("48'/0'/0'/2'") && paths.contains("48'/0'/1'/2'"));
     }
 
     #[test]
@@ -540,6 +732,54 @@ mod tests {
             .collect();
         assert_eq!(a.len(), 2);
         assert!(decode_cards(&a).is_ok(), "card A alone decodes");
+    }
+
+    // ─── SPEC §1 canonicalisation (P1 step 1) — row 2, BCH-twin ────────
+
+    /// SPEC row 2: a card's two chunks, PLUS a 1-char-flipped (BCH
+    /// t=4-correctable) twin of each chunk — four raw strings, one
+    /// declared id, two of them duplicating chunk_index 0 and two
+    /// duplicating chunk_index 1. Without step 1's canonicalisation this
+    /// would classify as `Failure::Merged` (duplicate chunk index) and
+    /// refuse; WITH it, `decode_string` corrects each twin back to the
+    /// identical 5-bit data, `canonical_piece_key` sees ONE piece per
+    /// index, and the group reassembles as ONE card, silently (no error,
+    /// no partition note — this is not a collision at all).
+    #[test]
+    fn row2_bch_correctable_twin_collapses_to_one_card_silently() {
+        let canonical_card0: Vec<String> =
+            include_str!("../../tests/fixtures/seating/v-ap-canonical.txt")
+                .lines()
+                .map(str::trim)
+                .filter(|l| l.starts_with("mk1"))
+                .take(2) // card 0's own two chunks
+                .map(str::to_string)
+                .collect();
+        let twins: Vec<String> = include_str!("../../tests/fixtures/seating/v-ap-bchtwin.txt")
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("mk1"))
+            .map(str::to_string)
+            .collect();
+        assert_eq!(twins.len(), 2, "one flipped twin per chunk");
+
+        let mut strings = canonical_card0.clone();
+        strings.extend(twins);
+        assert_eq!(strings.len(), 4, "2 genuine chunks + 2 BCH-flipped twins");
+
+        let (cards, notes) = decode_cards(&strings)
+            .expect("a BCH-correctable double transcription must collapse and seat, not refuse");
+        assert_eq!(cards.len(), 1, "the twin collapses to ONE card, not two");
+        assert!(
+            notes.is_empty(),
+            "not a genuine collision, so no AP1 partition note: {notes:?}"
+        );
+
+        // The reconstructed card is byte-identical to decoding the genuine
+        // chunks alone (the twin contributes nothing new — same card).
+        let (alone, _) = decode_cards(&canonical_card0).unwrap();
+        assert_eq!(cards[0].card, alone[0].card);
+        assert_eq!(cards[0].set_id, alone[0].set_id);
     }
 
     // ─── R5 classifier (SPEC contract 7, plan P3) ──────────────────────
@@ -562,11 +802,18 @@ mod tests {
         );
     }
 
-    /// Situation 1 -- MERGED CARDS (W15 exemplar). Two DIFFERENT 2-chunk
-    /// cards, both pinned to chunk-set `11111`: 4 strings, two declaring
-    /// piece 1 of 2 and two declaring piece 2 of 2.
+    /// SPEC row 1 (canonical-collision), REWRITTEN from the pre-P1 arm-1
+    /// pin (plan §12 churn note: "→ canonical row"). Two DIFFERENT 2-chunk
+    /// cards, both pinned to chunk-set `11111`, no shared pieces at all (4
+    /// strings, 4 distinct canonical pieces) — the SAME fixture that used
+    /// to prove arm 1's message now proves the auto-partition seats it: a
+    /// clean, no-sharing 2-card collision is exactly what SPEC §2 exists to
+    /// untangle. Arm 1's own message is still pinned, unchanged, by
+    /// [`r5_classification_order_prefers_merged_over_incomplete`] (the
+    /// `44444` admissibility-failure shape, SPEC row 6) — this fixture no
+    /// longer exercises that path at all.
     #[test]
-    fn r5_merged_two_cards_pinned_to_one_id_classify_as_merged() {
+    fn row1_canonical_collision_two_cards_seat_with_ap1_note() {
         let strings: Vec<String> = [
             "mk1qpzyg3pqqsq4kj90x9eutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4wgdpapgfl4pkhsdyytkwl5z8lphut2hvvpp5x94fvrdwgu6g0lq",
             "mk1qpzyg3pp806lhaeh6reknylagmwyjycf8044xtt9flsdlkvt6f6cthyl99lqmcdjwej7x7ylmk0lq",
@@ -576,35 +823,29 @@ mod tests {
         .iter()
         .map(|s| s.to_string())
         .collect();
-        let err = decode_cards(&strings).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("chunk-set 11111"), "{msg}");
-        assert!(
-            msg.contains("2 strings declare piece 1 of 2")
-                && msg.contains("2 strings declare piece 2 of 2"),
-            "the per-string evidence the tool already holds (W15(a)): {msg}"
+        let (cards, notes) = decode_cards(&strings).expect("a clean 2-card collision must seat");
+        assert_eq!(cards.len(), 2);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].set_id, GroupId::Chunked(0x11111));
+        // Both counts pinned: 4 supplied strings ARE 4 distinct pieces here
+        // (no shared/BCH-twin collapse in this fixture, unlike V-AP-SHARED)
+        // -- and 2 different key cards.
+        assert_eq!(
+            notes[0].text,
+            "note: these 4 supplied strings are 4 distinct pieces (chunks) carrying one \
+             stamped chunk-set id (chunk-set 11111), and they are 2 different key cards — each \
+             card's own 4-byte integrity check accepted its pieces, so they were separated. A \
+             shared stamped id can be a mint defect, an attack, or a deliberate choice at \
+             encode time — if it is unexpected, check each card alone with `mk inspect`."
         );
-        assert!(msg.contains("piece order does not matter"), "{msg}");
-        assert!(
-            msg.contains("Re-scan one card's pieces alone"),
-            "the physical remedy (W15(c)): {msg}"
+        let mut labels: Vec<String> = cards.iter().map(DecodedCard::label).collect();
+        labels.sort();
+        assert_eq!(
+            labels,
+            vec!["11111#1 (stub 5b48af31)", "11111#2 (stub 5b48af31)"]
         );
-        assert!(
-            !msg.contains("plate"),
-            "counts CARDS, never plates (W16(a)): {msg}"
-        );
-        assert!(
-            msg.contains("`mk inspect`"),
-            "the id-check is a named command, not decoration (W15(d)): {msg}"
-        );
-        assert!(
-            msg.contains("Only if"),
-            "the id-check is gated on \"only if\", not asserted: {msg}"
-        );
-        assert_no_retired_wording(&msg);
-        // Not the other two situations' messages.
-        assert!(!msg.contains("scan the missing piece"), "{msg}");
-        assert!(!msg.contains("error:"), "no codec line on arm 1: {msg}");
+        // Physically distinct cards, not one card counted twice.
+        assert_ne!(cards[0].card.xpub, cards[1].card.xpub);
     }
 
     /// Situation 2 -- INCOMPLETE SCAN. One 2-chunk card, only its first
@@ -707,7 +948,7 @@ mod tests {
         ];
         let mut all = pinned.clone();
         all.extend(clean.clone());
-        let cards = decode_cards(&all).expect("both cards reassemble cleanly");
+        let (cards, _) = decode_cards(&all).expect("both cards reassemble cleanly");
         assert_eq!(cards.len(), 2);
         let warnings = seat_chunk_set_id_warnings(&cards);
         assert_eq!(
@@ -722,7 +963,7 @@ mod tests {
         );
 
         // The clean card alone -> silent (contract 6's clean-twin control).
-        let clean_only = decode_cards(&clean).unwrap();
+        let (clean_only, _) = decode_cards(&clean).unwrap();
         assert!(seat_chunk_set_id_warnings(&clean_only).is_empty());
     }
 
@@ -791,5 +1032,193 @@ mod tests {
         assert_eq!(GroupId::Chunked(0x1_C77F).to_string(), "1c77f");
         assert_eq!(GroupId::Chunked(0).to_string(), "00000");
         assert_eq!(GroupId::Chunked(0xF_FFFF).to_string(), "fffff");
+    }
+
+    // ─── SPEC §2/§3 outcomes, via `decode_cards` directly (P1 step 3) ──
+    //
+    // Engine-unit coverage (admissibility/cap/budget arithmetic, V=k) lives
+    // in `seat::partition`'s own tests, directly on these SAME P0 fixtures.
+    // What lives HERE is the OUTCOME as `decode_cards` actually returns or
+    // refuses it -- the pre-pass ordering and message content, re-asserted
+    // at this layer per plan-r1 I1 ("both layers are required").
+
+    fn seating_mk1_lines(text: &str) -> Vec<String> {
+        text.lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("mk1"))
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Row 3 -- shared-piece pair (2 cards, 13 shared stubs at chunk 0):
+    /// seats via reuse: `|V_class| = k_class = 2`, chunk 0's ONE canonical
+    /// piece counted in BOTH cards' cover.
+    #[test]
+    fn row3_shared_piece_pair_seats_two_cards_via_reuse() {
+        let strings =
+            seating_mk1_lines(include_str!("../../tests/fixtures/seating/v-ap-shared.txt"));
+        let (cards, notes) = decode_cards(&strings).expect("shared-piece pair must seat via reuse");
+        assert_eq!(cards.len(), 2);
+        assert_eq!(notes.len(), 1);
+        assert!(
+            notes[0].text.contains("2 different key cards"),
+            "{}",
+            notes[0].text
+        );
+    }
+
+    /// Row 4 floor -- 3 cards, n=11, distinct stubs: seats within budget
+    /// (177,147 candidates, well under `PARTITION_DECODE_BOUND`).
+    #[test]
+    fn row4_floor_set_seats_three_cards_within_budget() {
+        let strings =
+            seating_mk1_lines(include_str!("../../tests/fixtures/seating/v-ap-floor.txt"));
+        let (cards, notes) = decode_cards(&strings).expect("the floor set must seat");
+        assert_eq!(cards.len(), 3);
+        assert_eq!(notes.len(), 1);
+        assert!(
+            notes[0].text.contains("3 different key cards"),
+            "{}",
+            notes[0].text
+        );
+    }
+
+    /// Row 4 boundary -- the SAME shape at n=12 (531,441 candidates): the
+    /// first refusing size, budget refusal naming AP3's rationale.
+    #[test]
+    fn row4_boundary_set_refuses_over_budget_naming_ap3_rationale() {
+        let strings = seating_mk1_lines(include_str!(
+            "../../tests/fixtures/seating/v-ap-boundary.txt"
+        ));
+        let err = decode_cards(&strings).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("531441"), "names the computed product: {msg}");
+        assert!(
+            msg.contains(&crate::seat::partition::PARTITION_DECODE_BOUND.to_string()),
+            "names the fixed bound: {msg}"
+        );
+        assert!(
+            msg.contains("too long") && msg.contains("hang"),
+            "AP3's rationale (checking every candidate would take too long / could hang): {msg}"
+        );
+        assert!(msg.contains("Re-scan one card's pieces alone"), "{msg}");
+    }
+
+    /// Row 5 -- the over-budget synthetic set (n=32, 5 cards, 5^32-scale):
+    /// static refusal, ZERO decodes (checked at the engine-unit layer;
+    /// re-asserted HERE that the refusal reaches `decode_cards` with the
+    /// same shape as the boundary row's).
+    #[test]
+    fn row5_over_budget_synthetic_set_refuses_statically() {
+        const CHUNK_SET_ID: u32 = 0x7_7777;
+        const TOTAL_CHUNKS: u8 = 32;
+        let owned: Vec<Vec<String>> = (0..5u8)
+            .map(|card| crate::seat::synth::synth_card_strings(CHUNK_SET_ID, TOTAL_CHUNKS, card))
+            .collect();
+        let strings: Vec<String> = owned.into_iter().flatten().collect();
+        assert_eq!(strings.len(), 160);
+        let err = decode_cards(&strings).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("chunk-set 77777"), "{msg}");
+        assert!(
+            msg.contains(&u64::MAX.to_string()),
+            "the saturated product names itself: {msg}"
+        );
+    }
+
+    /// Row 7b -- incomplete-class set (a complete 2-chunk class + a
+    /// 3-chunk class genuinely missing index 2, one id): the WHOLE GROUP
+    /// refuses via arm 1 (r1-C3 fail-closed composition) -- even though the
+    /// 2-chunk class alone would trivially seat. This is the SAME
+    /// `merged_refusal` call/message the pre-P1 build made; P1 changes
+    /// only whether the engine is consulted first, never arm 1's wording.
+    #[test]
+    fn row7b_incomplete_class_set_refuses_the_whole_group_via_arm_1() {
+        let strings = seating_mk1_lines(include_str!(
+            "../../tests/fixtures/seating/v-ap-incomplete.txt"
+        ));
+        let err = decode_cards(&strings).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("chunk-set a1006"), "{msg}");
+        // Arm 1's own message shape (never arm 2's "scan the missing
+        // piece(s)", and never a codec `error:` line -- this is arm 1, not
+        // arm 3).
+        assert!(
+            msg.contains("piece order does not matter"),
+            "arm 1's message: {msg}"
+        );
+        assert!(
+            msg.contains("Re-scan one card's pieces alone"),
+            "arm 1's remedy: {msg}"
+        );
+        assert!(
+            !msg.contains("scan the missing piece"),
+            "must NOT be arm 2's incomplete message: {msg}"
+        );
+        assert!(!msg.contains("error:"), "no codec line -- not arm 3: {msg}");
+        assert_no_retired_wording(&msg);
+    }
+
+    /// Row 9 -- the AP2 fixture (committed, one-grind script): a GENUINE
+    /// ambiguity (`|V| = 4 > k = 2`) -- AP2 hard refusal, nothing seats.
+    #[test]
+    fn row9_ap2_fixture_hard_refuses_nothing_seats() {
+        let strings = seating_mk1_lines(include_str!("../../tests/fixtures/seating/v-ap2.txt"));
+        let err = decode_cards(&strings).unwrap_err();
+        let msg = err.to_string();
+        assert_eq!(
+            msg,
+            "seating refused: chunk-set a1999: these pieces (chunks) verify as more key cards \
+             than they can belong to, and the tool will not guess which cards are your wallet. \
+             This is not expected from accidental damage — treat the strings as untrusted and \
+             re-scan one card's pieces alone, from a source you trust."
+        );
+    }
+
+    /// Row 10(a) -- the AP2 fixture's OWN framing under §Security: a
+    /// GROUND same-id extra verified candidate raises `|V| > k` in one
+    /// class -- the SAME construction and refusal as row 9 (r3-I4's
+    /// `[2,3,3]` grind IS the ground-extra-candidate case), asserted here
+    /// under its §Security name so the row is not missed by number.
+    #[test]
+    fn row10a_ground_extra_verified_candidate_is_the_row9_ap2_construction() {
+        let strings = seating_mk1_lines(include_str!("../../tests/fixtures/seating/v-ap2.txt"));
+        assert!(
+            decode_cards(&strings)
+                .unwrap_err()
+                .to_string()
+                .contains("verify as more key cards than they can belong to")
+        );
+    }
+
+    /// Row 8 -- permutation invariance: the ORDER KEY (SPEC §4, ascending
+    /// `encode_bytecode`) is a property of each card's OWN CONTENT, not of
+    /// how the operator happened to type the strings. Feeding the shared
+    /// group's chunks in supply order vs. fully reversed must assign the
+    /// SAME physical card to `#1` and the SAME one to `#2`.
+    #[test]
+    fn row8_ordinal_assignment_is_invariant_under_supply_order() {
+        let strings: Vec<String> = seating_mk1_lines(include_str!(
+            "../../tests/fixtures/seating/v-ap-canonical.txt"
+        ));
+        assert_eq!(strings.len(), 4);
+        let mut reversed = strings.clone();
+        reversed.reverse();
+
+        let (forward, _) = decode_cards(&strings).unwrap();
+        let (backward, _) = decode_cards(&reversed).unwrap();
+        assert_eq!(forward.len(), 2);
+        assert_eq!(backward.len(), 2);
+
+        let by_ordinal = |cards: &[DecodedCard]| -> Vec<(Option<u32>, bitcoin::bip32::Xpub)> {
+            let mut v: Vec<_> = cards.iter().map(|c| (c.ordinal, c.card.xpub)).collect();
+            v.sort_by_key(|(k, _)| *k);
+            v
+        };
+        assert_eq!(
+            by_ordinal(&forward),
+            by_ordinal(&backward),
+            "the SAME card must land on the SAME ordinal regardless of supply order"
+        );
     }
 }

@@ -299,9 +299,14 @@ pub(crate) mod fixture {
         }
     }
 
-    /// Decode a fixture's mk1 half into cards.
+    /// Decode a fixture's mk1 half into cards. Discards any SPEC §2
+    /// auto-partition notes — the vast majority of callers use this to
+    /// reach a card SET, not to assert on the notes; rows that need the
+    /// notes call [`crate::seat::input::decode_cards`] directly.
     pub fn cards(text: &str) -> Vec<DecodedCard> {
-        decode_cards(&mk1_lines(text)).expect("fixture mk1 decodes")
+        decode_cards(&mk1_lines(text))
+            .expect("fixture mk1 decodes")
+            .0
     }
 
     pub const PATHOLOGICAL: &str =

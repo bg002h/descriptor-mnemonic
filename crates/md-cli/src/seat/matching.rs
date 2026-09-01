@@ -152,8 +152,20 @@ fn forward_check(per_slot: &[Vec<usize>], from: usize, used: &[bool]) -> bool {
 }
 
 /// The slot-ordered list of seated chunk-set ids — A3's tie-break key.
-fn assignment_vector(cards: &[DecodedCard], assignment: &[usize]) -> Vec<GroupId> {
-    assignment.iter().map(|c| cards[*c].set_id).collect()
+///
+/// SPEC §4 extends this key with the ordinal (`(GroupId, Option<u32>)`
+/// rather than bare `GroupId`): two candidate matchings can now assign
+/// DIFFERENT physical cards that happen to share one collided `set_id`
+/// (e.g. `12345#1` to one matching, `12345#2` to another) to the SAME
+/// slot. Without the ordinal, both would render the same key and the
+/// tie-break would stop discriminating between them at exactly the
+/// moment two DIFFERENT cards are in play — the ordinal is what keeps it
+/// total over every axis SPEC A3(a)'s principle names.
+fn assignment_vector(cards: &[DecodedCard], assignment: &[usize]) -> Vec<(GroupId, Option<u32>)> {
+    assignment
+        .iter()
+        .map(|c| (cards[*c].set_id, cards[*c].ordinal))
+        .collect()
 }
 
 /// Run A3.
@@ -217,8 +229,10 @@ const REMEDIES: &str = "Two remedies, both of which make the seating an assertio
      guess:\n  (1) re-mint the POLICY card with one --fingerprint per slot. It costs about \
      one extra md1 chunk and changes no path, no key and no policy — it only makes the \
      slots tell apart.\n  (2) assert the seating yourself with --seat '@i=<chunk-set-id>' \
-     (repeatable), using the ids printed above. A --seat must still satisfy the slot's \
-     declared origin, so it can never place a card the engine would not.";
+     (repeatable; add '#<k>' for a chunk-set id that auto-partitioned into several collided \
+     cards, e.g. '@0=12345#1'), using the ids (and, where shown, the '#<k>' labels) printed \
+     above. A --seat must still satisfy the slot's declared origin, so it can never place a \
+     card the engine would not.";
 
 fn ambiguity_refusal(
     decls: &[SlotDecl],
@@ -311,7 +325,7 @@ mod tests {
         let decls = slot_declarations(&policy).unwrap();
         let mut renders = Vec::new();
         for order in &orders {
-            let cards = crate::seat::input::decode_cards(order).unwrap();
+            let (cards, _) = crate::seat::input::decode_cards(order).unwrap();
             let per_slot = candidates(&decls, &cards);
             let out = decide(&policy, &decls, &cards, &per_slot).unwrap();
             let Outcome::Seated(a) = out else {
@@ -345,7 +359,7 @@ mod tests {
         }];
         let mut messages = Vec::new();
         for order in &orders {
-            let cards = crate::seat::input::decode_cards(order).unwrap();
+            let (cards, _) = crate::seat::input::decode_cards(order).unwrap();
             let per_slot = candidates(&decls, &cards);
             let err = decide(&policy, &decls, &cards, &per_slot)
                 .expect_err("r2's four-card two-group set must refuse");
@@ -431,7 +445,7 @@ mod tests {
         let decls = slot_declarations(&policy).unwrap();
         let mut renders = Vec::new();
         for order in [mk1.clone(), mk1.iter().rev().cloned().collect::<Vec<_>>()] {
-            let cards = crate::seat::input::decode_cards(&order).unwrap();
+            let (cards, _) = crate::seat::input::decode_cards(&order).unwrap();
             let per_slot = candidates(&decls, &cards);
             let Outcome::Seated(a) = decide(&policy, &decls, &cards, &per_slot).unwrap() else {
                 panic!()

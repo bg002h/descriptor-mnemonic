@@ -132,7 +132,7 @@ mod tests {
     fn diagnose(policy_text: &str, mk1: &[String]) -> String {
         let policy = policy(policy_text);
         let decls = slot_declarations(&policy).unwrap();
-        let cards = decode_cards(mk1).unwrap();
+        let (cards, _) = decode_cards(mk1).unwrap();
         let per_slot = candidates(&decls, &cards);
         match decide(&policy, &decls, &cards, &per_slot).unwrap() {
             Outcome::NoPerfectMatching => refusal(&decls, &cards, &per_slot).to_string(),
@@ -150,7 +150,7 @@ mod tests {
         // property of the string-layer header).
         let policy = policy(V_UNFILLED);
         let decls = slot_declarations(&policy).unwrap();
-        let cards = decode_cards(&mk1_lines(V_UNFILLED)).unwrap();
+        let (cards, _) = decode_cards(&mk1_lines(V_UNFILLED)).unwrap();
         assert_eq!(cards.len(), 10, "ten of the eleven cards");
         let victim = decls
             .iter()
@@ -189,7 +189,7 @@ mod tests {
         assert!(msg.contains("11 slots, 12 cards supplied"), "{msg}");
         assert!(msg.contains("which wallet do these belong to"), "{msg}");
         // Named by full chunk-set id AND stub.
-        let extra = decode_cards(&mk1_lines(V_LEFTOVER)).unwrap();
+        let (extra, _) = decode_cards(&mk1_lines(V_LEFTOVER)).unwrap();
         assert_eq!(extra.len(), 1);
         assert!(msg.contains(&extra[0].label()), "{msg}");
         assert!(
