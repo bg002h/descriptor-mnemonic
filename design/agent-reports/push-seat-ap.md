@@ -47,3 +47,38 @@ Overall: `test result: FAILED. 327 passed; 3 failed; 1 ignored`. Same 3-test fai
 ## Disposition
 
 Not a CI/infra flake — real logic regression: the seat partition budget check is enumerating/decoding candidates on paths documented and tested to refuse with zero decodes, plus 3 stale rustdoc intra-doc links from a prior rename (`input::canonicalize_group`, `seat::p0_shapes` no longer resolve). Needs a fix-and-recheck cycle on `main` before the next staging attempt; not pushed.
+
+## Attempt 2 — GREEN, SHIPPED
+
+**SHA staged:** `ed20ff856a845c0ec8c7b108d94815abf6a6e1b1` (main, tree clean at start; verified via `git status --short` before pushing)
+**CI run:** [33484872891](https://github.com/bg002h/descriptor-mnemonic/actions/runs/33484872891) on branch `ci/staging`, conclusion **success**, headSha confirmed `ed20ff856a845c0ec8c7b108d94815abf6a6e1b1`
+
+Old `ci/staging` ref (attempt 1, left in place at `4251069a`) was updated by a plain fast-forward push — no force-with-lease needed (`4251069a..ed20ff85`).
+
+## Job conclusions (9 of 9, all success)
+
+| Job | Conclusion |
+| --- | --- |
+| cargo doc | success |
+| freebsd compile-gate (whole-crate) | success |
+| musl compile/test (x86_64-unknown-linux-musl) | success |
+| cargo clippy | success |
+| cargo fmt | success |
+| cargo test (windows-latest) | success |
+| cargo test (macos-latest) | success |
+| **cargo test (ubuntu-latest)** (required check) | success |
+| musl compile/test (aarch64-unknown-linux-musl) | success |
+
+Both previously-failing classes from attempt 1 are gone: the 3 seat-partition decode-count assertions pass, and the 3 broken rustdoc intra-doc links resolve (`cargo doc` succeeded outright). Required checks `cargo clippy` and `cargo test (ubuntu-latest)` — both success. Every job success (none skipped, none failed) — meets the "every job success/skipped" bar.
+
+## Actions taken
+
+1. `git push origin main:refs/heads/ci/staging` — plain push succeeded (fast-forward, no lease needed): `4251069a..ed20ff85`.
+2. Found run `33484872891` for the exact new SHA on `ci/staging`; `gh run watch 33484872891 --repo bg002h/descriptor-mnemonic --exit-status` completed clean; `gh run view --json conclusion,status,headSha,jobs` confirmed `conclusion: success`, `headSha` matches, all 9 jobs `success`.
+3. `git push origin main` — output `54ab1cd6..ed20ff85  main -> main`, **no "Bypassed rule violations" line** — the required-check gate was satisfied by the staged SHA's own green run, not bypassed.
+4. `git push origin --delete ci/staging` — deleted.
+5. `git rev-parse origin/main` == `ed20ff856a845c0ec8c7b108d94815abf6a6e1b1` == local `HEAD`. Confirmed match.
+
+## Disposition
+
+Shipped. `origin/main` now at `ed20ff856a845c0ec8c7b108d94815abf6a6e1b1`. Whole staging run fully green across all 9 jobs (doc, musl x2, clippy, fmt, windows/macos/ubuntu test, freebsd compile-gate) — the exact set that was red or absent-context in attempt 1. `ci/staging` ref cleaned up. No force used, `enforce_admins` untouched, no commits made to `main` between staging and final push.
