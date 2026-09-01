@@ -50,7 +50,7 @@ suite invocation — a later slowdown there is attributable, not a mystery
    `decode_string`, and the string-layer encode entry plan-r1 verified.
    It constructs inputs; it is not an oracle.
 2. **The §1 canonical-key function** — authored ONCE as shipped code in
-   `src/seat/` (unused by production until P1 step 2 wires the stage);
+   `src/seat/` (unused by production until P1 step 1 wires the stage);
    P0's shape tests call THE SHIPPED FUNCTION, never a second
    implementation (plan-r1 M3).
 3. **Fixtures** (generated via generate.sh + the sibling `mk`; each file
@@ -62,7 +62,11 @@ suite invocation — a later slowdown there is attributable, not a mystery
    boundary n=12 sets, distinct stubs (row 4); over-budget 5^32-scale
    header set via the chunker (row 5); **group-cap set: 3+3 two-class,
    one id (plan-r1 I3 — without it the r3-I5 per-class-cap defect ships
-   green)**; the AP2 ground fixture + its committed generation script.
+   green)**; **incomplete-class set: one complete 2-chunk card + a
+   3-chunk card missing one piece, one id (plan-r2 I3 residue — the
+   r1-C3 fail-closed composition rule's separating input: the whole
+   group must refuse via arm 1, nothing seats, no pieces dropped)**;
+   the AP2 ground fixture + its committed generation script.
 4. **AP2 grind script (plan-r1 I5, specified):** a Rust test-support
    binary in this crate, deps = the already-vendored `bitcoin_hashes`
    ONLY (a new dep reddens `vendor-freshness`); implements r3's
@@ -73,7 +77,9 @@ suite invocation — a later slowdown there is attributable, not a mystery
    distinct-canonical-piece counts and products for rows 4/5 VIA the
    shipped key fn; the group-cap set's Σk = 6; the AP2 fixture's extra
    candidate verifies under `mk_codec::decode`.
-Gate: shape tests green; suite green; fmt/clippy clean.
+Gate: shape tests green; suite green; fmt/clippy clean; **fixture
+regeneration re-run yields a clean `git diff` (the determinism guard,
+in the gate itself — plan-r2)**.
 
 ## P1 — the feature (steps ordered so every test is written once)
 
@@ -97,7 +103,9 @@ Gate: shape tests green; suite green; fmt/clippy clean.
    entry; AP2 refusal; the note into `Seating.notes` with **per-GROUP
    interleaving: the note precedes ITS OWN group's R2 warnings**
    (plan-r1 N3 — not a global prepend). **RED at this step = the
-   END-TO-END rows 1, 3, 4 (floor + boundary), 5, 6, 7, 9, 10a** —
+   END-TO-END rows 1, 3, 4 (floor + boundary), 5, 6, 7 (BOTH sub-rows:
+   7a both-classes-complete seats; 7b one-class-incomplete refuses via
+   arm 1 on the P0 incomplete-class set — plan-r2), 9, 10a** —
    the same behaviours re-asserted at command level so the pre-pass
    ordering is tested (plan-r1 I1: both layers are required).
 4. **§4 identity** — order key; `#<k>` via the ordinal; `--seat`
