@@ -141,6 +141,12 @@ pub fn run(req: &SeatingRequest<'_>) -> Result<Seating, CliError> {
     }
 
     let cards = input::decode_cards(req.from_mk1)?;
+    // Contract 6 — after a chunked group reassembles CLEANLY (immediately
+    // above), recompute the operand and warn on stamped != derived. Ahead
+    // of the door/card-set checks deliberately: this is a property of the
+    // supplied cards themselves, not of how they satisfy this policy, so it
+    // belongs with reassembly rather than with PHASE B's disposition notes.
+    let csid_warnings = input::seat_chunk_set_id_warnings(&cards);
 
     // Declaration-only door checks.
     satisfy::check_no_repeated_placeholder(&policy)?;
@@ -168,7 +174,8 @@ pub fn run(req: &SeatingRequest<'_>) -> Result<Seating, CliError> {
 
     // PHASE B.
     let descriptor = compose::compose(&policy, &cards, &assignment)?;
-    let mut notes = disposition::notes(&policy, &descriptor, &cards)?;
+    let mut notes = csid_warnings;
+    notes.extend(disposition::notes(&policy, &descriptor, &cards)?);
     notes.push(disposition::address_zero_note(&descriptor, req.network)?);
     Ok(Seating { descriptor, notes })
 }

@@ -1,0 +1,20 @@
+# V-CSID-WARN — contract 6: a pinned chunk-set-id MISMATCH that still SEATS
+# cleanly gets one extra R2/R6 stderr warning naming (declared, derived).
+# Composition/stdout/wallet-id/exit code are UNCHANGED from V-USP; this is
+# V-USP's own policy card and KEY 5 card, byte-identical, plus KEY 1's card
+# RE-MINTED with --chunk-set-id pinned instead of derived.
+# Key material: crates/md-cli/tests/fixtures/pathological/keys.txt (KEY n =
+# its n-th record, 1-based).
+#   md encode "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<2;3>/*))"
+#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \
+#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35 \
+#     --chunk-set-id 0x99999
+#     (declared 99999; content still derives 69f0e — the CRUX mismatch)
+#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \
+#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35
+#     (natural mint, unchanged from V-USP: declared == derived == decb1)
+md1ypfdsssj5qqcy8ppgz6vpgtqalk0p3c4wjw32
+mk1qpnxvepqqsq4kj90x4eutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4wgdpapgfl4pkhsdyytkwl5z8lphut2hvvpp5fxwekt2hrvmq69e
+mk1qpnxvepp806lhaeh6reknylagmwyjycf8044xtt9flsdlkvt6f6cthyl995lpm5zlc7d38ev0su0k
+mk1qpmm93pqqsq4kj90xkux3r03q5zg3vs7llvu2xd8x2rk7av9gmew82jq5zap9302ynhp37ggd6z5u4emag0zr8gh9upnj5stuxqtzdn4uxkd
+mk1qpmm93ppwyp4dfykwfkgg6fxyxetdcmythf4hsqzd3v879jprztejzs7rl0vk8mlv7lzva7w6nage
