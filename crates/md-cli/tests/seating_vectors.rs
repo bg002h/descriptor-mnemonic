@@ -102,11 +102,10 @@ fn v_dup_the_full_split_set_supplied_twice_over_still_seats() {
 /// identical descriptor. Step 1 of P2's normative pipeline normalised
 /// WHITESPACE only, so one card scanned twice -- once lowercase, once
 /// uppercase -- survived dedupe as two strings, merged into one group at step
-/// 2 and blew up at step 3 with a message that BLAMED THE WRONG THING:
-///
-///   "Two DIFFERENT cards pinned to one chunk-set id merge into one group
-///    here and refuse exactly like this — re-mint one of them so the set ids
-///    differ"
+/// 2 and blew up at step 3 with a message that BLAMED THE WRONG THING: the
+/// pre-P3 wrapper reported the two survivors as though they were two
+/// DIFFERENT key cards pinned to one chunk-set id, with a fix that meant
+/// re-engraving the survivor whose stamped id it named.
 ///
 /// An operator who follows that re-engraves a plate to fix a problem that
 /// does not exist. SPEC A3(a) promises "an accidental double-scan is made
@@ -835,7 +834,9 @@ fn v_ce1_reaches_the_command_and_seats() {
 fn v_collide_reaches_the_command() {
     // Two cards pinned to one chunk-set id, offered against any policy: the
     // input pipeline merges them and reassembly refuses, before the engine
-    // sees a card at all.
+    // sees a card at all. R5 rewrite (SPEC contract 7): card A is 2 chunks,
+    // card B is 3, so this is "merged cards" (arm 1), not the old
+    // one-message-fits-all wrapper.
     let collide: Vec<String> = mk1(include_str!("fixtures/seating/v-collide.txt"));
     let mut cards = mk1(V_USP);
     cards.extend(collide);
@@ -843,7 +844,77 @@ fn v_collide_reaches_the_command() {
     assert_eq!(o.status.code(), Some(1));
     let e = err_of(&o);
     assert!(e.contains("chunk-set 12345"), "{e}");
-    assert!(e.contains("do not reassemble"), "{e}");
+    assert!(e.contains("piece order does not matter"), "{e}");
+    assert!(e.contains("`mk inspect`"), "{e}");
+    assert!(
+        !e.contains("re-mint one of them") && !e.contains("Two DIFFERENT cards pinned"),
+        "retired wording resurfaced: {e}"
+    );
+}
+
+// ─── V-CSID-WARN — contract 6: the seat-path R2/R6 warning ─────────────
+
+const V_CSID_WARN: &str = include_str!("fixtures/seating/v-csid-warn.txt");
+
+/// A pinned chunk-set-id mismatch that still SEATS gets exactly one extra
+/// stderr note; composition, stdout, wallet id and exit code are unchanged
+/// from V-USP itself.
+///
+/// V-USP/V-CSID-WARN are both the V-AMB fixture (same origin at both
+/// slots — see `v_amb_the_ambiguity_refusal_reaches_the_operator_with_exit_1`
+/// above): seating either needs `--seat '@0=<id>'` to disambiguate, which is
+/// orthogonal to contract 6 and asserted elsewhere; here it just needs to
+/// hold IDENTICALLY on both sides for the byte-identical-output comparison
+/// to mean anything.
+#[test]
+fn v_csid_seat_warning_fires_on_pinned_mismatch_and_composes_identically() {
+    let warned = seat_cmd(
+        "descriptor",
+        V_CSID_WARN,
+        &mk1(V_CSID_WARN),
+        &["--seat", "@0=99999"],
+    )
+    .output()
+    .unwrap();
+    assert!(warned.status.success(), "{}", err_of(&warned));
+    let clean = seat_cmd("descriptor", V_USP, &mk1(V_USP), &["--seat", "@0=69f0e"])
+        .output()
+        .unwrap();
+    assert!(clean.status.success(), "{}", err_of(&clean));
+    assert_eq!(
+        out_of(&warned),
+        out_of(&clean),
+        "composition/stdout is byte-identical to the clean twin (contract 6)"
+    );
+
+    let e = err_of(&warned);
+    let matches: Vec<&str> = e
+        .lines()
+        .filter(|l| l.contains("was not derived from its content"))
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "exactly one mismatch note, for the one mismatching group: {e}"
+    );
+    assert!(matches[0].contains("(99999)"), "{}", matches[0]);
+    assert!(matches[0].contains("computes 69f0e"), "{}", matches[0]);
+    assert!(matches[0].starts_with("warning:"), "{}", matches[0]);
+}
+
+/// The clean-twin control (V-USP unmodified): no card's declared id was
+/// pinned, so the warning never fires.
+#[test]
+fn v_csid_seat_no_warning_on_a_clean_card_set() {
+    let o = seat_cmd("descriptor", V_USP, &mk1(V_USP), &["--seat", "@0=69f0e"])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err_of(&o));
+    assert!(
+        !err_of(&o).contains("was not derived from its content"),
+        "{}",
+        err_of(&o)
+    );
 }
 
 // ─── V-R9 — --from-mk1 arity (design/SPEC_mdcli_mini.md "R9"; FOLLOWUPS
