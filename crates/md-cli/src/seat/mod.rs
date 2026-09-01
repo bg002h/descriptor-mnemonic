@@ -71,13 +71,18 @@
 //! `crates/md-cli/tests/n2_emit_md1.rs`. Closes
 //! `md-cannot-mint-a-keyed-card-from-a-split-set`.
 
+pub(crate) mod canonical;
 pub mod complete;
 pub mod compose;
 pub mod directive;
 pub mod disposition;
 pub mod input;
 pub mod matching;
+#[cfg(test)]
+mod p0_shapes;
 pub mod satisfy;
+#[cfg(test)]
+pub(crate) mod synth;
 
 use crate::error::CliError;
 use md_codec::encode::Descriptor;
