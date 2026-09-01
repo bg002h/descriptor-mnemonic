@@ -121,6 +121,11 @@ impl DecodedCard {
 /// Order preservation is not cosmetic: step 2's groups inherit it, and the
 /// `GroupId::Single` fallback keys on it.
 ///
+/// This is the RAW-string dedupe only. The SPEC §1 mk1 CANONICALISATION
+/// stage (BCH-corrected piece identity) runs separately, per group, in
+/// [`canonicalize_group`] — a byte-different transcription of one piece
+/// survives HERE and collapses THERE.
+///
 /// TWO NORMALISATIONS, EACH FOR A MEASURED REASON.
 ///
 /// - WHITESPACE, mirroring [`crate::cmd::strip_md1_inputs`]: a card
@@ -377,8 +382,9 @@ fn ap1_note(n_supplied: usize, n_distinct: usize, n_cards: usize, set_id: GroupI
 pub struct PartitionNote {
     /// The colliding id this note explains.
     pub set_id: GroupId,
-    /// The rendered SPEC §3 note text (no `note: ` prefix — callers push it
-    /// into `Seating.notes` the same way every other note arrives there).
+    /// The rendered SPEC §3 note text, INCLUDING its `note: ` prefix
+    /// (pinned byte-exact by the row-1 e2e test) — callers push it into
+    /// `Seating.notes` verbatim.
     pub text: String,
 }
 
@@ -1227,24 +1233,40 @@ mod tests {
             "../../tests/fixtures/seating/v-ap-canonical.txt"
         ));
         assert_eq!(strings.len(), 4);
-        let mut reversed = strings.clone();
-        reversed.reverse();
-
-        let (forward, _) = decode_cards(&strings).unwrap();
-        let (backward, _) = decode_cards(&reversed).unwrap();
-        assert_eq!(forward.len(), 2);
-        assert_eq!(backward.len(), 2);
-
         let by_ordinal = |cards: &[DecodedCard]| -> Vec<(Option<u32>, bitcoin::bip32::Xpub)> {
             let mut v: Vec<_> = cards.iter().map(|c| (c.ordinal, c.card.xpub)).collect();
             v.sort_by_key(|(k, _)| *k);
             v
         };
-        assert_eq!(
-            by_ordinal(&forward),
-            by_ordinal(&backward),
-            "the SAME card must land on the SAME ordinal regardless of supply order"
-        );
+        let (reference, _) = decode_cards(&strings).unwrap();
+        assert_eq!(reference.len(), 2);
+        let reference = by_ordinal(&reference);
+
+        // Exhaustive over all 4! = 24 supply orders (whole-diff N3 — the
+        // property was measured to hold 24/24; pin all of them for free).
+        let mut count = 0usize;
+        for a in 0..4 {
+            for b in 0..4 {
+                for c in 0..4 {
+                    for d in 0..4 {
+                        let idx = [a, b, c, d];
+                        let mut seen = [false; 4];
+                        if idx.iter().any(|&i| std::mem::replace(&mut seen[i], true)) {
+                            continue;
+                        }
+                        let perm: Vec<String> = idx.iter().map(|&i| strings[i].clone()).collect();
+                        let (cards, _) = decode_cards(&perm).unwrap();
+                        assert_eq!(
+                            by_ordinal(&cards),
+                            reference,
+                            "the SAME card must land on the SAME ordinal for supply order {idx:?}"
+                        );
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 24, "exhaustive permutation coverage");
     }
 
     // ─── I2 (whole-diff review): n_supplied vs n_distinct is a false PASS
