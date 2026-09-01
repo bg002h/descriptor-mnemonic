@@ -75,8 +75,9 @@ suite invocation — a later slowdown there is attributable, not a mystery
    regeneration documented in the file header.
 5. **Shape tests** (RED→GREEN): chunk-0 identity for row 3; per-index
    distinct-canonical-piece counts and products for rows 4/5 VIA the
-   shipped key fn; the group-cap set's Σk = 6; the AP2 fixture's extra
-   candidate verifies under `mk_codec::decode`.
+   shipped key fn; the group-cap set's Σk = 6; the incomplete-class set's
+   3-chunk class genuinely lacks one index (r1-C3's separating shape);
+   the AP2 fixture's extra candidate verifies under `mk_codec::decode`.
 Gate: shape tests green; suite green; fmt/clippy clean; **fixture
 regeneration re-run yields a clean `git diff` (the determinism guard,
 in the gate itself — plan-r2)**.
