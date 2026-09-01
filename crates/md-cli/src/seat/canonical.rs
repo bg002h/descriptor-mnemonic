@@ -7,7 +7,7 @@
 //!
 //! Shipped as PRODUCTION code from P0 (plan `IMPLEMENTATION_PLAN_seat_auto_partition.md`
 //! P0 item 2); wired into `seat::run` at P1 step 1, where
-//! [`super::input::canonicalize_group`] calls this same function right
+//! `super::input::canonicalize_group` calls this same function right
 //! after [`super::input::dedupe_strings`] — P0's shape tests, and P1's
 //! engine (`super::partition`), all call THIS function directly, never a
 //! second implementation of the same rule (plan-r1 M3).

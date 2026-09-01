@@ -92,17 +92,25 @@ pub enum Outcome {
     NoPartition,
 }
 
-/// Test-only instrumentation: counts calls into [`verify_candidate`], the
-/// ENGINE's single `mk_codec::decode` call site. Rows 5 and 6's "zero
-/// decodes" claims are proved by resetting this to 0, running [`partition`],
-/// and asserting it is STILL 0 — not inferred from reading the code.
+// Test-only instrumentation: counts calls into `verify_candidate`, the
+// ENGINE's single `mk_codec::decode` call site. Rows 5 and 6's "zero
+// decodes" claims are proved by resetting this to 0, running [`partition`],
+// and asserting it is STILL 0 — not inferred from reading the code.
+// THREAD-LOCAL, deliberately: CI's `cargo test` runs tests as threads in
+// ONE process, so a global counter bleeds across concurrently running
+// tests (measured: 8/61/25 phantom decodes on zero-decode refusal paths,
+// staging run 33484120763) while nextest's process-per-test isolation
+// hides the bleed locally. `partition()` is synchronous on the calling
+// thread, so a thread-local isolates correctly under BOTH runners.
 #[cfg(test)]
-pub(crate) static DECODE_CALLS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+thread_local! {
+    pub(crate) static DECODE_CALLS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
 
 fn verify_candidate(refs: &[&str]) -> Option<KeyCard> {
     #[cfg(test)]
-    DECODE_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    DECODE_CALLS.with(|c| c.set(c.get() + 1));
     mk_codec::decode(refs).ok()
 }
 
@@ -115,9 +123,9 @@ struct Class<'a> {
 
 /// SPEC §2: run the whole partition contract over one id group's raw
 /// strings (already proven decodable by `group_key_of` upstream — see
-/// [`super::input::canonicalize_group`], whose collapse this function
+/// `super::input::canonicalize_group`, whose collapse this function
 /// idempotently repeats so it stays independently testable directly on raw
-/// fixture text, exactly as [`super::p0_shapes`] already does).
+/// fixture text, exactly as `super::p0_shapes` already does).
 pub fn partition(strings: &[&str]) -> Outcome {
     // Canonicalise + collapse duplicates (SPEC §1, via the shipped key fn —
     // never a second implementation, plan-r1 M3).
@@ -346,7 +354,6 @@ pub fn ap2_refusal(set_id: GroupId) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
 
     fn mk1_lines(text: &str) -> Vec<&str> {
         text.lines()
@@ -356,7 +363,11 @@ mod tests {
     }
 
     fn reset_decode_calls() {
-        DECODE_CALLS.store(0, Ordering::SeqCst);
+        DECODE_CALLS.with(|c| c.set(0));
+    }
+
+    fn decode_calls() -> usize {
+        DECODE_CALLS.with(std::cell::Cell::get)
     }
 
     // ─── budget measurement (re-derives PARTITION_DECODE_BOUND's comment) ──
@@ -405,7 +416,7 @@ mod tests {
             other => panic!("expected NoPartition, got {other:?}"),
         }
         assert_eq!(
-            DECODE_CALLS.load(Ordering::SeqCst),
+            decode_calls(),
             0,
             "admissibility failure must be decided with ZERO decode calls"
         );
@@ -422,7 +433,7 @@ mod tests {
             other => panic!("expected CapExceeded{{6}}, got {other:?}"),
         }
         assert_eq!(
-            DECODE_CALLS.load(Ordering::SeqCst),
+            decode_calls(),
             0,
             "the cap fires before any candidate is enumerated or decoded"
         );
@@ -474,7 +485,7 @@ mod tests {
             other => panic!("expected OverBudget, got {other:?}"),
         }
         assert_eq!(
-            DECODE_CALLS.load(Ordering::SeqCst),
+            decode_calls(),
             0,
             "over-budget must refuse with ZERO decode calls -- no hang"
         );
@@ -658,7 +669,7 @@ mod tests {
             other => panic!("expected OverBudget, got {other:?}"),
         }
         assert_eq!(
-            DECODE_CALLS.load(Ordering::SeqCst),
+            decode_calls(),
             0,
             "over-budget must refuse with ZERO decode calls"
         );
