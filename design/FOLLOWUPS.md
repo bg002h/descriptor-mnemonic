@@ -2774,8 +2774,14 @@ me-side mirror stays in place until it clears.
   spec → R0 → plan → R0 → implement → whole-diff. The csid-mismatch
   interaction (both partitions verify but ids are pinned) needs a
   vector row, per the original entry.
-- **Status:** OPEN — SCHEDULED (next after me-cli). **Tier:** `ux` /
-  converter leg / risk-set.
+- **Status:** DONE 2026-09-01 — SHIPPED on main (merge 2e6dd5ba). Full
+  gate: walk AP1-AP3 -> spec GREEN after 5 R0 rounds -> plan GREEN after
+  3 -> P0+P1 TDD -> whole-diff review (0C/3I fold, Sigma-vs-Pi budget
+  bug caught) -> re-review GREEN 0C/0I. Same-id collisions now untangle
+  and seat (V=k, fail-closed); ambiguity hard-refuses; #k ordinals; 13
+  acceptance rows at unit+e2e. Reports in design/agent-reports/
+  (R0-seat-auto-partition-*, impl-seat-ap-*, whole-diff-seat-ap-*).
+  **Tier:** `ux` / converter leg / risk-set.
 
 ### `md-cli-seat-warning-corpus-binding` — bind the seat warning text to the corpus, not a hand-copy
 
