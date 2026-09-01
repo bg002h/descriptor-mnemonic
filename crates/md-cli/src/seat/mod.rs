@@ -71,13 +71,19 @@
 //! `crates/md-cli/tests/n2_emit_md1.rs`. Closes
 //! `md-cannot-mint-a-keyed-card-from-a-split-set`.
 
+pub(crate) mod canonical;
 pub mod complete;
 pub mod compose;
 pub mod directive;
 pub mod disposition;
 pub mod input;
 pub mod matching;
+#[cfg(test)]
+mod p0_shapes;
+pub(crate) mod partition;
 pub mod satisfy;
+#[cfg(test)]
+pub(crate) mod synth;
 
 use crate::error::CliError;
 use md_codec::encode::Descriptor;
@@ -140,13 +146,19 @@ pub fn run(req: &SeatingRequest<'_>) -> Result<Seating, CliError> {
         )));
     }
 
-    let cards = input::decode_cards(req.from_mk1)?;
+    let (cards, partition_notes) = input::decode_cards(req.from_mk1)?;
     // Contract 6 — after a chunked group reassembles CLEANLY (immediately
     // above), recompute the operand and warn on stamped != derived. Ahead
     // of the door/card-set checks deliberately: this is a property of the
     // supplied cards themselves, not of how they satisfy this policy, so it
     // belongs with reassembly rather than with PHASE B's disposition notes.
-    let csid_warnings = input::seat_chunk_set_id_warnings(&cards);
+    //
+    // SPEC §5 / plan-r1 N3: a colliding group's AP1 note precedes only ITS
+    // OWN group's R2 warnings, never a global prepend — `seat_notes`
+    // interleaves both in one pass over `cards` (already ascending set-id
+    // order), rather than computing the R2 list first and prepending every
+    // note in front of it.
+    let csid_warnings = input::seat_notes(&cards, &partition_notes);
 
     // Declaration-only door checks.
     satisfy::check_no_repeated_placeholder(&policy)?;

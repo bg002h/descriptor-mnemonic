@@ -570,3 +570,194 @@ header "$f" V-LEGACY-P2SH "a bare sh(sortedmulti(...)) policy, seated from two f
   mint "$(xpub_of 1)" "m/48'/0'/1'/2'" "$LEGACY_P2SH_WALLET_ID" --origin-fingerprint 73c5da0a
 } >> "$f"
 echo "wrote: $f"
+
+# ── SEAT AUTO-PARTITION (P0 fixtures) ───────────────────────────────────────
+# design/IMPLEMENTATION_PLAN_seat_auto_partition.md P0 item 3 /
+# design/SPEC_seat_auto_partition.md Acceptance rows 1-10. Chunk-count
+# targets below were MEASURED against vendored mk-codec 0.5.0 + mk 0.13.0
+# (2026-08-31): `m/48'/0'/0'/2'` is the ONLY standard-table entry among the
+# pathological paths (1-byte indicator); `m/48'/0'/1'/2'` falls through to
+# the explicit-path encoding (larger), which is why a 1-stub card at the
+# first path is 2 chunks and at the second is 3 (already true of the
+# shipped v-collide.txt). Stub counts for the many-stub rows were found by
+# direct measurement, not derived from the byte-length model in prose
+# (`crates/md-cli/design/agent-reports/R0-seat-auto-partition-r3.md` P-i is
+# a different path/fp shape and does not transfer):
+#   N=13  stubs, path 0 (std),      fp present -> n=3  (row 3 / row 9 shape)
+#   N=120 stubs, path 0 (std),      fp present -> n=11 (row 4 floor)
+#   N=128 stubs, path 0 (std),      fp present -> n=12 (row 4 boundary)
+# DISTINCT stub lists (r3-M1/NEW-M1/r3-I2): each card's stub list starts
+# with that card's own index byte, so no two cards' stub lists agree at ANY
+# position -- the per-index piece count is the full card count, never
+# collapsed by an accidental shared prefix.
+AP_PATH0="m/48'/0'/0'/2'"   # standard-table indicator -> smallest bytecode
+AP_PATH1="m/48'/0'/1'/2'"   # explicit-path -> one chunk larger at 1 stub
+
+mint_manystub() { # mint_manystub <xpub> <path> <fp> <chunk-set-id> <card-index 1..> <stub-count>
+  local xpub="$1" path="$2" fp="$3" csid="$4" card="$5" n="$6"
+  local stubs=()
+  for j in $(seq 1 "$n"); do
+    stubs+=(--policy-id-stub "$(printf '%02x%06x' "$card" "$j")")
+  done
+  "$MK" encode --xpub "$xpub" --origin-path "$path" --origin-fingerprint "$fp" \
+        --chunk-set-id "$csid" --group-size 0 "${stubs[@]}" 2>/dev/null
+}
+
+# Flip ONE bech32 data-part character (well within the BCH t=4 correction
+# radius) at a fixed offset past the "mk1" HRP+separator, to a DIFFERENT
+# alphabet character -- guarantees a non-zero perturbation, same technique
+# `mk-codec`'s own `decode_rejects_5_symbol_burst_in_last_chunk_data_part`
+# test uses. `decode_string` corrects it back to the IDENTICAL 5-bit data,
+# so the canonical piece key (SPEC §1) is unchanged -- the property row 2
+# needs (double transcription collapses to one piece).
+flip_one_char() { # flip_one_char <mk1-string> <offset-into-data-part>
+  local s="$1" off="$2"
+  local pos=$((3 + off)) # skip "mk1"
+  local before="${s:0:$pos}" c="${s:$pos:1}" after="${s:$((pos + 1))}"
+  local flipped="q"
+  [ "$c" = "q" ] && flipped="p"
+  printf '%s%s%s\n' "$before" "$flipped" "$after"
+}
+
+# ── V-AP-CANONICAL — row 1 / row 12's new minimal 2-slot fixture ───────────
+# Two DIFFERENT 1-stub cards, BOTH at the standard-table path (2 chunks
+# each -- "2x2"), pinned to ONE chunk-set id. A 2-slot sortedmulti template
+# at that SAME declared origin (fp-free, V-BOUND-SEAT's shape) so either
+# assignment order seats identically once P1 seats via reuse-free auto-
+# partition. `v-ap-canonical-control.txt` is the SAME two cards WITHOUT a
+# pinned id (each keeps its own content-derived id, so they do NOT collide)
+# -- the byte-identity comparison P1's e2e row 1 needs.
+AP_CANON_TPL="wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*))"
+AP_CANON_ID=0xA1001
+
+f="$HERE/v-ap-canonical.txt"
+header "$f" V-AP-CANONICAL "row 1: two 1-stub 2-chunk cards, PINNED to one id (0x$(printf %x $AP_CANON_ID))"
+{
+  echo "#   md encode \"$AP_CANON_TPL\""
+  echo "#   mk encode --xpub <KEY 0> --origin-fingerprint <KEY 0's fp> \\"
+  echo "#     --origin-path $AP_PATH0 --policy-id-stub 5b48af35 --chunk-set-id $AP_CANON_ID"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint <KEY 1's fp> \\"
+  echo "#     --origin-path $AP_PATH0 --policy-id-stub 5b48af35 --chunk-set-id $AP_CANON_ID"
+  "$MD" encode "$AP_CANON_TPL" --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "$AP_PATH0" 5b48af35 --origin-fingerprint "$(fp_of 0)" --chunk-set-id $AP_CANON_ID
+  mint "$(xpub_of 1)" "$AP_PATH0" 5b48af35 --origin-fingerprint "$(fp_of 1)" --chunk-set-id $AP_CANON_ID
+} >> "$f"
+echo "wrote: $f"
+
+f="$HERE/v-ap-canonical-control.txt"
+header "$f" V-AP-CANONICAL-CONTROL "the SAME two cards, UNPINNED (natural, non-colliding ids)"
+{
+  echo "#   md encode \"$AP_CANON_TPL\""
+  echo "#   mk encode --xpub <KEY 0> --origin-fingerprint <KEY 0's fp> \\"
+  echo "#     --origin-path $AP_PATH0 --policy-id-stub 5b48af35   (no --chunk-set-id)"
+  echo "#   mk encode --xpub <KEY 1> --origin-fingerprint <KEY 1's fp> \\"
+  echo "#     --origin-path $AP_PATH0 --policy-id-stub 5b48af35   (no --chunk-set-id)"
+  echo "# P1's e2e row 1 asserts this control's seating is byte-identical to"
+  echo "# v-ap-canonical.txt's (descriptor, address, WalletPolicyId) once the"
+  echo "# pinned pair is auto-partitioned apart."
+  "$MD" encode "$AP_CANON_TPL" --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "$AP_PATH0" 5b48af35 --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 1)" "$AP_PATH0" 5b48af35 --origin-fingerprint "$(fp_of 1)"
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-AP-BCHTWIN — row 2 ────────────────────────────────────────────────────
+# v-ap-canonical.txt's FIRST card (both its chunks), each with ONE bech32
+# data-part character flipped -- a double transcription that must collapse
+# to the SAME canonical piece as the clean original (SPEC §1).
+f="$HERE/v-ap-bchtwin.txt"
+header "$f" V-AP-BCHTWIN "v-ap-canonical.txt's card 0, both chunks, 1-char BCH-correctable flips"
+{
+  echo "# Derived from v-ap-canonical.txt's card 0 (KEY 0 at $AP_PATH0, chunk-set"
+  echo "# $(printf %x $AP_CANON_ID)): each chunk has ONE data-part character flipped"
+  echo "# (well inside the BCH t=4 correction radius), so decode_string corrects"
+  echo "# it back to the identical 5-bit data -- SPEC §1's canonical-piece key is"
+  echo "# therefore unchanged, and the twin must collapse to ONE piece, not two."
+  card0=$(mint "$(xpub_of 0)" "$AP_PATH0" 5b48af35 --origin-fingerprint "$(fp_of 0)" --chunk-set-id $AP_CANON_ID)
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    flip_one_char "$line" 20
+  done <<< "$card0"
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-AP-SHARED — row 3 ──────────────────────────────────────────────────────
+# Two cards SHARING an identical 13-stub list (chunk 0 is a pure function of
+# the stub list at N=13 -- measured n=3; r3-M4/NEW-I1's threshold), each
+# card's OTHER two chunks distinct (different fp/xpub). Pinned to one id.
+AP_SHARED_ID=0xA1002
+f="$HERE/v-ap-shared.txt"
+header "$f" V-AP-SHARED "row 3: two cards sharing 13 identical stubs (chunk 0), n=3, pinned"
+{
+  echo "# Both cards carry the SAME 13 policy-id-stub values (chunk 0 is a pure"
+  echo "# function of header+stubs at N=13 -- measured), different fingerprints"
+  echo "# and xpubs, one pinned chunk-set id ($(printf %x $AP_SHARED_ID))."
+  stubs=(); for j in $(seq 1 13); do stubs+=(--policy-id-stub "$(printf '5a%06x' "$j")"); done
+  "$MK" encode --xpub "$(xpub_of 0)" --origin-path "$AP_PATH0" --origin-fingerprint "$(fp_of 0)" \
+        --chunk-set-id $AP_SHARED_ID --group-size 0 "${stubs[@]}" 2>/dev/null
+  "$MK" encode --xpub "$(xpub_of 1)" --origin-path "$AP_PATH0" --origin-fingerprint "$(fp_of 1)" \
+        --chunk-set-id $AP_SHARED_ID --group-size 0 "${stubs[@]}" 2>/dev/null
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-AP-FLOOR / V-AP-BOUNDARY — row 4 ──────────────────────────────────────
+# 3 cards, DISTINCT stub lists (own card-index byte leads every stub), one
+# pinned id: N=120 -> n=11 (floor, seats within budget); N=128 -> n=12
+# (boundary, the first refusing size -- measured, matches the spec text's
+# "128-stub mint (n=12)" exactly).
+mint_ap_set() { # mint_ap_set <file> <label> <desc> <chunk-set-id> <stub-count>
+  local f="$1" label="$2" desc="$3" csid="$4" n="$5"
+  header "$f" "$label" "$desc"
+  {
+    echo "# 3 cards, $n policy-id-stubs each, card i's stub j = 0x{i:02x}{j:06x}"
+    echo "# (DISTINCT at every position across cards), one pinned chunk-set id"
+    echo "# ($(printf %x "$csid"))."
+    for i in 0 1 2; do
+      mint_manystub "$(xpub_of "$i")" "$AP_PATH0" "$(fp_of "$i")" "$csid" "$i" "$n"
+    done
+  } >> "$f"
+  echo "wrote: $f"
+}
+mint_ap_set "$HERE/v-ap-floor.txt" V-AP-FLOOR \
+  "row 4 floor: 3 cards, n=11, distinct stub lists -> seats within budget" 0xA1003 120
+mint_ap_set "$HERE/v-ap-boundary.txt" V-AP-BOUNDARY \
+  "row 4 boundary: same shape at n=12 -> budget refusal (first refusing size)" 0xA1004 128
+
+# ── V-AP-GROUPCAP — group-cap set (plan-r1 I3 / r3-I5) ──────────────────────
+# 3+3 TWO-CLASS group, one pinned id: 3 cards at the 2-chunk path, 3 at the
+# 3-chunk path -- Sigma_classes k = 6, which a PER-CLASS cap (r3-I5's
+# pre-existing defect) would miss.
+AP_GROUPCAP_ID=0xA1005
+f="$HERE/v-ap-groupcap.txt"
+header "$f" V-AP-GROUPCAP "3+3 two-class group, one pinned id (Sigma k = 6)"
+{
+  echo "# Class A (2-chunk, $AP_PATH0): KEY 0,1,2. Class B (3-chunk, $AP_PATH1): KEY 3,4,5."
+  echo "# All six pinned to chunk-set $(printf %x $AP_GROUPCAP_ID); one distinct"
+  echo "# policy-id-stub per card so every card is trivially distinguishable."
+  for i in 0 1 2; do
+    mint "$(xpub_of "$i")" "$AP_PATH0" "$(printf 'a0%06x' "$i")" \
+         --origin-fingerprint "$(fp_of "$i")" --chunk-set-id $AP_GROUPCAP_ID
+  done
+  for i in 3 4 5; do
+    mint "$(xpub_of "$i")" "$AP_PATH1" "$(printf 'a1%06x' "$i")" \
+         --origin-fingerprint "$(fp_of "$i")" --chunk-set-id $AP_GROUPCAP_ID
+  done
+} >> "$f"
+echo "wrote: $f"
+
+# ── V-AP-INCOMPLETE — incomplete-class set (plan-r2 I3 residue) ────────────
+# One COMPLETE 2-chunk card + a 3-chunk card MISSING its last piece, one
+# pinned id -- r1-C3's separating shape: the whole group must refuse via
+# arm 1 (nothing seats, no pieces silently dropped).
+AP_INCOMPLETE_ID=0xA1006
+f="$HERE/v-ap-incomplete.txt"
+header "$f" V-AP-INCOMPLETE "one complete 2-chunk card + a 3-chunk card missing 1 piece, one id"
+{
+  echo "# KEY 6 at $AP_PATH0 (2 chunks, BOTH supplied) + KEY 7 at $AP_PATH1 (3"
+  echo "# chunks, only chunk_index 0 and 1 supplied -- chunk_index 2 dropped)."
+  echo "# Pinned chunk-set $(printf %x $AP_INCOMPLETE_ID)."
+  mint "$(xpub_of 6)" "$AP_PATH0" a2000006 --origin-fingerprint "$(fp_of 6)" --chunk-set-id $AP_INCOMPLETE_ID
+  incomplete_card=$(mint "$(xpub_of 7)" "$AP_PATH1" a2000007 --origin-fingerprint "$(fp_of 7)" --chunk-set-id $AP_INCOMPLETE_ID)
+  echo "$incomplete_card" | head -n -1
+} >> "$f"
+echo "wrote: $f"

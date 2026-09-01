@@ -176,7 +176,7 @@ mod tests {
     fn seat_with(text: &str, mk1: &[String]) -> (Descriptor, Descriptor, Vec<DecodedCard>) {
         let policy = policy(text);
         let decls = slot_declarations(&policy).unwrap();
-        let cards = decode_cards(mk1).unwrap();
+        let (cards, _) = decode_cards(mk1).unwrap();
         let per_slot = candidates(&decls, &cards);
         let Outcome::Seated(a) = decide(&policy, &decls, &cards, &per_slot).unwrap() else {
             panic!("this fixture must seat")
@@ -358,7 +358,7 @@ mod tests {
 
         // Swap the card at @0 for the foreign one: same path, same stub,
         // another master.
-        let genuine_cards = decode_cards(&genuine).unwrap();
+        let (genuine_cards, _) = decode_cards(&genuine).unwrap();
         let victim = genuine_cards
             .iter()
             .find(|c| c.card.origin_path.to_string().contains("0'/2'"))

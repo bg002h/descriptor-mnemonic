@@ -431,14 +431,18 @@ enum Command {
         #[allow(rustdoc::invalid_html_tags)]
         /// Assert the seating of one slot: --seat '@i=<chunk-set-id>',
         /// repeatable. The id is the FULL five-hex-digit label a seating
-        /// refusal prints beside each card, never a prefix. The named card
-        /// must still satisfy the slot's declared origin, so --seat can only
-        /// choose among seatings the engine already permits -- it never
-        /// places a card the engine would not, never silences a stub
-        /// warning, and never fills a missing-card gap.
+        /// refusal prints beside each card, never a prefix. If that id
+        /// auto-partitioned into several collided cards, add '#<k>' (the
+        /// 1-based ordinal from its own '<id>#<k>' label) to bind one
+        /// specific carrier -- the bare id alone refuses as ambiguous
+        /// among them. The named card must still satisfy the slot's
+        /// declared origin, so --seat can only choose among seatings the
+        /// engine already permits -- it never places a card the engine
+        /// would not, never silences a stub warning, and never fills a
+        /// missing-card gap.
         #[arg(
             long = "seat",
-            value_name = "@i=CHUNK-SET-ID",
+            value_name = "@i=CHUNK-SET-ID[#K]",
             conflicts_with = "template"
         )]
         seats: Vec<String>,
@@ -665,14 +669,18 @@ enum Command {
         #[allow(rustdoc::invalid_html_tags)]
         /// Assert the seating of one slot: --seat '@i=<chunk-set-id>',
         /// repeatable. The id is the FULL five-hex-digit label a seating
-        /// refusal prints beside each card, never a prefix. The named card
-        /// must still satisfy the slot's declared origin, so --seat can only
-        /// choose among seatings the engine already permits -- it never
-        /// places a card the engine would not, never silences a stub
-        /// warning, and never fills a missing-card gap.
+        /// refusal prints beside each card, never a prefix. If that id
+        /// auto-partitioned into several collided cards, add '#<k>' (the
+        /// 1-based ordinal from its own '<id>#<k>' label) to bind one
+        /// specific carrier -- the bare id alone refuses as ambiguous
+        /// among them. The named card must still satisfy the slot's
+        /// declared origin, so --seat can only choose among seatings the
+        /// engine already permits -- it never places a card the engine
+        /// would not, never silences a stub warning, and never fills a
+        /// missing-card gap.
         #[arg(
             long = "seat",
-            value_name = "@i=CHUNK-SET-ID",
+            value_name = "@i=CHUNK-SET-ID[#K]",
             conflicts_with = "template"
         )]
         seats: Vec<String>,

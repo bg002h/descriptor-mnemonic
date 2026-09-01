@@ -1,0 +1,41 @@
+# V-AP-ROW1-E2E — row 1 (canonical-collision) at the FULL COMMAND level.
+# GENERATED 2026-08-31 by hand with `mk` 0.13.0 on PATH, P1 cycle (NOT part
+# of P0's fixture set). Key material: crates/md-cli/tests/fixtures/pathological/keys.txt
+# (KEY n = its n-th record, 1-based). Policy: reuses v-bound-seat.txt's OWN
+# md1 line verbatim (its policy declares BOTH slots at the SAME bare path
+# m/48'/0'/0'/2', no fingerprint -- the shape row 1 needs).
+#
+#   mk encode --xpub <KEY 1> --origin-fingerprint 73c5da0a \
+#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35 --chunk-set-id 0xA1099
+#   mk encode --xpub <KEY 5> --origin-fingerprint b8688df1 \
+#     --origin-path m/48'/0'/0'/2' --policy-id-stub 5b48af35 --chunk-set-id 0xA1099
+#
+# WHY THIS FIXTURE EXISTS (P1 finding, not a P0 defect in the ENGINE):
+# `v-ap-canonical.txt` + `v-ap-canonical-control.txt` (P0's own row-1
+# fixtures) cannot reach a seating AT ALL, pinned OR unpinned: BOTH of that
+# pair's two cards were minted with `--origin-fingerprint <KEY N's fp>`,
+# and EVERY key in keys.txt records the SAME shared fingerprint (73c5da0a)
+# -- so both cards declare the IDENTICAL (fingerprint, path), which
+# `satisfy::check_no_impossible_card_pair` refuses UNCONDITIONALLY (an
+# ORTHOGONAL, pre-existing check -- "two cards claiming the identical
+# (fingerprint, path) with DIFFERENT xpubs... impossible from one master").
+# Measured directly: `md descriptor` on EITHER v-ap-canonical.txt OR its
+# control refuses with that exact message, confirming the control was
+# ALSO never seatable -- this is not something P1 changed or can fix by
+# adjusting the engine (SPEC §2 has no case here; the refusal fires before
+# the engine's own group-id-scoped stage is even reached, on the CARD-SET
+# check that runs ahead of A2/A3 for every seating, collided or not).
+#
+# THIS fixture sidesteps it exactly the way v-bound-seat.txt already does
+# for the SAME two-slot-one-path shape: explicit, DISTINCT fingerprints per
+# card (73c5da0a / b8688df1, not the shared per-key default), which is
+# philosophically closer to "two real different masters" anyway. The
+# UNPINNED CONTROL for this fixture is `v-bound-seat.txt` itself (same two
+# keys, same fingerprints, same path, same stub -- natural, non-colliding
+# ids 69f0e/decb1 instead of a pinned a1099); the P1 e2e row-1 test compares
+# THIS pinned pair's seating against THAT already-committed control.
+md1ypfdsssj5qqcy8ppgz3sm00zqft5cf
+mk1qp5yyepqqsq4kj90x4eutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4wgdpapgfl4pkhsdyytkwl5z8lphut2hvvpp5gss57dx27rm9ff8
+mk1qp5yyepp806lhaeh6reknylagmwyjycf8044xtt9flsdlkvt6f6cthyl995lpm5zy82m5nzulmvdl
+mk1qp5yyepqqsq4kj90xkux3r03q5zg3vs7llvu2xd8x2rk7av9gmew82jq5zap9302ynhp37ggd6z5u4emag0zr8gh9upnjs04qfwrfnfezykm
+mk1qp5yyeppwyp4dfykwfkgg6fxyxetdcmythf4hsqzd3v879jprztejzs7rl0vk8mlj8ug385gt6pl8

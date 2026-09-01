@@ -20,27 +20,39 @@
 //!   characters on the 11-card fixture, so a shorter value is refused as a
 //!   prefix rather than resolved.
 //!
-//! A5's "ambiguous id" case is UNREACHABLE, settled by SPEC A3(a) step 3 and
-//! pinned by V-COLLIDE: two cards pinned to one chunk-set id merge into one
-//! group in the input pipeline and refuse at reassembly, so no ambiguous id
-//! survives to reach this parser.
+//! **A5's "ambiguous id" case IS reachable since SPEC §2 (seat auto-partition,
+//! P1)** — this is a correction of the pre-P1 claim below, kept for
+//! history: two cards pinned to one chunk-set id used to merge into one
+//! group and refuse at reassembly (V-COLLIDE), so no ambiguous id ever
+//! survived to reach this parser. Auto-partition changes that: a clean
+//! collision now SEATS as several `DecodedCard`s sharing one `set_id`,
+//! distinguished only by [`DecodedCard::ordinal`] — so a bare
+//! `@i=<chunk-set-id>` naming a COLLIDED id is genuinely ambiguous among
+//! its `#<k>` carriers, and SPEC §4 defines the grammar that resolves it:
+//! `@i=<id>#<k>` binds the k-th (1-based) collided carrier; every other
+//! shape refuses by name (see [`parse`]/[`apply`]).
 
 use crate::error::CliError;
 use crate::seat::input::{DecodedCard, GroupId};
 use crate::seat::satisfy::{SlotDecl, satisfies};
 
-/// One parsed `--seat '@i=<chunk-set-id>'`.
+/// One parsed `--seat '@i=<chunk-set-id>'` / `--seat '@i=<chunk-set-id>#<k>'`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeatDirective {
     /// Placeholder index `@i`.
     pub i: u8,
     /// The full 20-bit chunk-set id named on the flag.
     pub set_id: u32,
+    /// SPEC §4 — `Some(k)` when the flag names a collided carrier by its
+    /// 1-based ordinal (`@i=<id>#<k>`); `None` for the bare `@i=<id>` form.
+    pub ordinal: Option<u32>,
 }
 
-/// Parse `@i=<chunk-set-id>`. The id is five hex digits (`0x` prefix
-/// optional), matching what `GroupId`'s `Display` prints and what
-/// `mk encode --chunk-set-id` accepts.
+/// Parse `@i=<chunk-set-id>` or `@i=<chunk-set-id>#<k>` (SPEC §4). The id is
+/// five hex digits (`0x` prefix optional), matching what `GroupId`'s
+/// `Display` prints and what `mk encode --chunk-set-id` accepts; `#<k>`,
+/// when present, is the 1-based ordinal a collided card's own label carries
+/// (`DecodedCard::label`).
 pub fn parse(arg: &str) -> Result<SeatDirective, CliError> {
     let (lhs, rhs) = arg.split_once('=').ok_or_else(|| {
         CliError::Seat(format!(
@@ -53,27 +65,62 @@ pub fn parse(arg: &str) -> Result<SeatDirective, CliError> {
         .unwrap_or(lhs)
         .parse()
         .map_err(|_| CliError::Seat(format!("--seat slot index must be 0..255, got: {lhs}")))?;
-    let digits = rhs
+
+    // SPEC §4: an optional `#<k>` ordinal suffix on the id. Split on the
+    // id/ordinal boundary FIRST so the id half's own hex-digit validation
+    // below stays exactly as strict as it always was.
+    let (id_part, ordinal_part) = match rhs.split_once('#') {
+        Some((id, k)) => (id, Some(k)),
+        None => (rhs, None),
+    };
+
+    let digits = id_part
         .strip_prefix("0x")
-        .or_else(|| rhs.strip_prefix("0X"))
-        .unwrap_or(rhs);
+        .or_else(|| id_part.strip_prefix("0X"))
+        .unwrap_or(id_part);
     if !digits.chars().all(|c| c.is_ascii_hexdigit()) || digits.is_empty() {
         return Err(CliError::Seat(format!(
-            "--seat @{i}: `{rhs}` is not a chunk-set id. Expected five hex digits, the \
+            "--seat @{i}: `{id_part}` is not a chunk-set id. Expected five hex digits, the \
              label printed beside each card in a seating refusal."
         )));
     }
     if digits.len() != 5 {
         return Err(CliError::Seat(format!(
-            "--seat @{i}: `{rhs}` is {} hex digit(s); a chunk-set id is exactly five. \
+            "--seat @{i}: `{id_part}` is {} hex digit(s); a chunk-set id is exactly five. \
              Supply the card's FULL id, never a prefix — prefixes collide (measured at \
              six characters on an eleven-card set), so a prefix could seat the wrong key.",
             digits.len()
         )));
     }
     let set_id = u32::from_str_radix(digits, 16)
-        .map_err(|e| CliError::Seat(format!("--seat @{i}: `{rhs}` is not hex: {e}")))?;
-    Ok(SeatDirective { i, set_id })
+        .map_err(|e| CliError::Seat(format!("--seat @{i}: `{id_part}` is not hex: {e}")))?;
+
+    let ordinal = match ordinal_part {
+        None => None,
+        Some(k_str) => {
+            if k_str.is_empty() || !k_str.chars().all(|c| c.is_ascii_digit()) {
+                return Err(CliError::Seat(format!(
+                    "--seat @{i}: `#{k_str}` after the chunk-set id must be `#<k>` with k a \
+                     positive integer — the collided card's 1-based ordinal, exactly as its \
+                     own label prints it (e.g. `{set_id:05x}#1`)."
+                )));
+            }
+            let k: u32 = k_str.parse().map_err(|_| {
+                CliError::Seat(format!(
+                    "--seat @{i}: `#{k_str}` is not a valid ordinal (must fit a 32-bit count)."
+                ))
+            })?;
+            if k == 0 {
+                return Err(CliError::Seat(format!(
+                    "--seat @{i}: `#0` is not a valid ordinal — collided cards are numbered \
+                     from #1, matching their own label."
+                )));
+            }
+            Some(k)
+        }
+    };
+
+    Ok(SeatDirective { i, set_id, ordinal })
 }
 
 /// Apply every directive to the A2 candidate sets.
@@ -89,19 +136,21 @@ pub fn apply(
     per_slot: &[Vec<usize>],
 ) -> Result<Vec<Vec<usize>>, CliError> {
     let mut out = per_slot.to_vec();
-    let mut pinned: Vec<(u8, u32)> = Vec::new();
+    let mut pinned: Vec<(u8, u32, Option<u32>)> = Vec::new();
     for d in directives {
-        if let Some((_, previous)) = pinned.iter().find(|(i, _)| *i == d.i) {
-            if *previous != d.set_id {
+        if let Some((_, prev_id, prev_ord)) = pinned.iter().find(|(i, _, _)| *i == d.i) {
+            if *prev_id != d.set_id || *prev_ord != d.ordinal {
+                let prev_suffix = prev_ord.map(|k| format!("#{k}")).unwrap_or_default();
+                let this_suffix = d.ordinal.map(|k| format!("#{k}")).unwrap_or_default();
                 return Err(CliError::Seat(format!(
-                    "--seat @{}: named twice with different chunk-set ids ({previous:05x} \
-                     and {:05x}). One card per slot.",
-                    d.i, d.set_id
+                    "--seat @{}: named twice with different chunk-set values ({prev_id:05x}\
+                     {prev_suffix} and {:05x}{this_suffix}). One card per slot.",
+                    d.i, d.set_id,
                 )));
             }
             continue;
         }
-        pinned.push((d.i, d.set_id));
+        pinned.push((d.i, d.set_id, d.ordinal));
 
         let Some(decl) = decls.iter().find(|s| s.i == d.i) else {
             return Err(CliError::Seat(format!(
@@ -111,11 +160,22 @@ pub fn apply(
                 decls.len().saturating_sub(1)
             )));
         };
-        let Some(card_idx) = cards
+
+        // SPEC §4's `--seat` grammar: resolve which card(s) share this
+        // bare id, THEN decide by the `#<k>` half — never a prefix, and
+        // never a guess among collided carriers.
+        let matches: Vec<usize> = cards
             .iter()
-            .position(|c| c.set_id == GroupId::Chunked(d.set_id))
-        else {
-            let known: Vec<String> = cards.iter().map(|c| c.set_id.to_string()).collect();
+            .enumerate()
+            .filter(|(_, c)| c.set_id == GroupId::Chunked(d.set_id))
+            .map(|(i, _)| i)
+            .collect();
+        if matches.is_empty() {
+            // M1 (whole-diff review): with a collided group present, the
+            // bare id repeats once per carrier (indistinguishable, and
+            // never the `#<k>` the operator needs to retry with) -- the
+            // full label carries the ordinal.
+            let known: Vec<String> = cards.iter().map(DecodedCard::label).collect();
             return Err(CliError::Seat(format!(
                 "--seat @{}: no supplied card has chunk-set id {:05x}. The cards supplied \
                  are: {}.",
@@ -123,6 +183,44 @@ pub fn apply(
                 d.set_id,
                 known.join(", ")
             )));
+        }
+        let card_idx = match d.ordinal {
+            Some(k) => {
+                if matches.len() == 1 {
+                    return Err(CliError::Seat(format!(
+                        "--seat @{}: chunk-set {:05x}#{k} — this id is not part of a \
+                         collision (only one card supplied it). Use `{:05x}` alone.",
+                        d.i, d.set_id, d.set_id
+                    )));
+                }
+                match matches.iter().find(|&&idx| cards[idx].ordinal == Some(k)) {
+                    Some(&idx) => idx,
+                    None => {
+                        let max = matches.len();
+                        return Err(CliError::Seat(format!(
+                            "--seat @{}: chunk-set {:05x}#{k} — this id's collided carriers \
+                             are numbered #1..#{max}; #{k} is out of range.",
+                            d.i, d.set_id
+                        )));
+                    }
+                }
+            }
+            None => {
+                if matches.len() > 1 {
+                    let labels: Vec<String> =
+                        matches.iter().map(|&idx| cards[idx].label()).collect();
+                    return Err(CliError::Seat(format!(
+                        "--seat @{}: chunk-set {:05x} names {} collided cards, not one — bind \
+                         a specific carrier with `{:05x}#<k>`. Cards supplied: {}.",
+                        d.i,
+                        d.set_id,
+                        matches.len(),
+                        d.set_id,
+                        labels.join(", ")
+                    )));
+                }
+                matches[0]
+            }
         };
         let card = &cards[card_idx];
         // THE SAFETY ARGUMENT. `--seat` chooses among seatings A2 already
@@ -316,6 +414,44 @@ mod tests {
         }
     }
 
+    /// M1 (whole-diff review): with a COLLIDED group present, the old
+    /// rendering (bare `c.set_id.to_string()`) printed the SAME token for
+    /// BOTH collided cards ("12345, 12345") -- indistinguishable, and
+    /// never the `#<k>` an operator needs to retry `--seat` with.
+    /// `V_COLLIDE`'s two auto-partitioned cards share bare id `12345`,
+    /// told apart only by ordinal (SPEC §4). `POLICY` is the same
+    /// minimal, deliberately-non-matching 1-slot policy used at the CLI
+    /// level with `V_COLLIDE` (`seating_vectors.rs`'s
+    /// `V_AP_SURPLUS_B_POLICY`) -- it just needs one slot so `apply`
+    /// reaches the `matches.is_empty()` branch.
+    #[test]
+    fn v_seat_unk_no_such_card_refusal_lists_ordinal_labels_when_collided_cards_exist_m1() {
+        const POLICY: &str = "md1yqfdss5n9gqpsg5n2ysa4r774vcg";
+        const COLLIDE_MK1: &str = include_str!("../../tests/fixtures/seating/v-collide.txt");
+        let combined = format!("{POLICY}\n{COLLIDE_MK1}");
+        let c = case(&combined);
+        assert_eq!(
+            c.cards.len(),
+            2,
+            "V-COLLIDE auto-partitions to 2 cards sharing one bare id"
+        );
+        let labels: Vec<String> = c.cards.iter().map(DecodedCard::label).collect();
+        assert!(
+            labels.iter().all(|l| l.contains('#')),
+            "sanity: this IS a collided group, both labels carry an ordinal: {labels:?}"
+        );
+
+        let d = parse("@0=00000").unwrap(); // an id nothing supplied carries
+        let err = apply(&[d], &c.decls, &c.cards, &c.per_slot).unwrap_err();
+        let msg = err.to_string();
+        for label in &labels {
+            assert!(
+                msg.contains(label),
+                "lists the ORDINAL label, not a bare duplicated id (M1): {msg}"
+            );
+        }
+    }
+
     #[test]
     fn v_seat_unk_a_prefix_is_refused_as_a_prefix() {
         let err = parse("@0=abc").unwrap_err().to_string();
@@ -349,14 +485,16 @@ mod tests {
             parse("@2=0x1c77f").unwrap(),
             SeatDirective {
                 i: 2,
-                set_id: 0x1_c77f
+                set_id: 0x1_c77f,
+                ordinal: None,
             }
         );
         assert_eq!(
             parse("@2=1C77F").unwrap(),
             SeatDirective {
                 i: 2,
-                set_id: 0x1_c77f
+                set_id: 0x1_c77f,
+                ordinal: None,
             }
         );
     }
@@ -383,10 +521,129 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            msg.contains("named twice with different chunk-set ids"),
+            msg.contains("named twice with different chunk-set values"),
             "{msg}"
         );
         // The same directive twice is not a contradiction.
         assert!(apply(&[a, a], &c.decls, &c.cards, &c.per_slot).is_ok());
+    }
+
+    // ─── SPEC §4 -- row 8's `--seat` grammar over a collided id ─────────
+    //
+    // `v-ap-canonical.txt`: a clean 2-card collision at id `a1001`,
+    // 2-slot sortedmulti policy at ONE shared path (both slots satisfy
+    // BOTH cards under A2, so id-resolution alone decides which card
+    // lands where -- exactly what these rows are about). Built directly
+    // via `decode_cards`/`policy` rather than `satisfy::fixture::cards`
+    // (below `seat::run`'s card-set checks entirely -- this module tests
+    // ONLY directive parsing/application, never the full pipeline).
+    struct CollidedCase {
+        decls: Vec<SlotDecl>,
+        cards: Vec<DecodedCard>,
+        per_slot: Vec<Vec<usize>>,
+    }
+    fn collided_case() -> CollidedCase {
+        let text = include_str!("../../tests/fixtures/seating/v-ap-canonical.txt");
+        let md1: Vec<&str> = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("md1"))
+            .collect();
+        let policy = md_codec::decode_md1_string(md1[0]).unwrap();
+        let mk1: Vec<String> = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("mk1"))
+            .map(str::to_string)
+            .collect();
+        let (cards, notes) = crate::seat::input::decode_cards(&mk1).unwrap();
+        assert_eq!(cards.len(), 2, "the pair auto-partitions to two cards");
+        assert_eq!(notes.len(), 1);
+        let decls = crate::seat::satisfy::slot_declarations(&policy).unwrap();
+        let per_slot = crate::seat::matching::candidates(&decls, &cards);
+        CollidedCase {
+            decls,
+            cards,
+            per_slot,
+        }
+    }
+
+    #[test]
+    fn v_seat_ordinal_resolves_each_collided_carrier_distinctly() {
+        let c = collided_case();
+        let d1 = parse("@0=a1001#1").unwrap();
+        let narrowed1 = apply(&[d1], &c.decls, &c.cards, &c.per_slot).unwrap();
+        assert_eq!(narrowed1[0].len(), 1);
+        let d2 = parse("@0=a1001#2").unwrap();
+        let narrowed2 = apply(&[d2], &c.decls, &c.cards, &c.per_slot).unwrap();
+        assert_eq!(narrowed2[0].len(), 1);
+        assert_ne!(
+            narrowed1[0][0], narrowed2[0][0],
+            "#1 and #2 must resolve to DIFFERENT physical cards"
+        );
+        // @1 (untouched by either directive) still carries both candidates.
+        assert_eq!(narrowed1[1].len(), 2);
+    }
+
+    #[test]
+    fn v_seat_bare_id_on_a_collided_group_is_ambiguous_names_both_labels() {
+        let c = collided_case();
+        let d = parse("@0=a1001").unwrap();
+        let msg = apply(&[d], &c.decls, &c.cards, &c.per_slot)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("names 2 collided cards"), "{msg}");
+        assert!(msg.contains("a1001#<k>"), "{msg}");
+        assert!(msg.contains("a1001#1"), "{msg}");
+        assert!(msg.contains("a1001#2"), "{msg}");
+    }
+
+    #[test]
+    fn v_seat_ordinal_on_a_non_collided_id_refuses_naming_the_bare_id() {
+        // PATHOLOGICAL's cards: no id is collided, so #1 on any of them
+        // must refuse as "not part of a collision", never resolve.
+        let text = crate::seat::satisfy::fixture::PATHOLOGICAL;
+        let cards = crate::seat::satisfy::fixture::cards(text);
+        let policy = crate::seat::satisfy::fixture::policy(text);
+        let decls = crate::seat::satisfy::slot_declarations(&policy).unwrap();
+        let per_slot = crate::seat::matching::candidates(&decls, &cards);
+        let id = cards[0].set_id.to_string();
+        let d = parse(&format!("@0={id}#1")).unwrap();
+        let msg = apply(&[d], &decls, &cards, &per_slot)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("not part of a collision"), "{msg}");
+        assert!(msg.contains(&format!("Use `{id}`")), "{msg}");
+    }
+
+    #[test]
+    fn v_seat_ordinal_out_of_range_refuses_naming_the_valid_range() {
+        let c = collided_case();
+        let d = parse("@0=a1001#3").unwrap();
+        let msg = apply(&[d], &c.decls, &c.cards, &c.per_slot)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("numbered #1..#2"), "{msg}");
+        assert!(msg.contains("#3 is out of range"), "{msg}");
+    }
+
+    #[test]
+    fn v_seat_ordinal_zero_refuses_at_parse_time() {
+        let err = parse("@0=a1001#0").unwrap_err().to_string();
+        assert!(err.contains("not a valid ordinal"), "{err}");
+        assert!(err.contains("numbered from #1"), "{err}");
+    }
+
+    #[test]
+    fn v_seat_ordinal_hash_without_digits_refuses_at_parse_time() {
+        let err = parse("@0=a1001#").unwrap_err().to_string();
+        assert!(err.contains("must be `#<k>`"), "{err}");
+        assert!(err.contains("positive integer"), "{err}");
+    }
+
+    #[test]
+    fn v_seat_ordinal_non_numeric_suffix_refuses_at_parse_time() {
+        let err = parse("@0=a1001#abc").unwrap_err().to_string();
+        assert!(err.contains("must be `#<k>`"), "{err}");
     }
 }
