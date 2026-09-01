@@ -2766,9 +2766,16 @@ me-side mirror stays in place until it clears.
   refusal behavior (A3-adjacent); do NOT implement without an operator
   ruling. Interaction with the csid-mismatch warning (both partitions
   verified but ids pinned) needs a vector row.
-- **Owning phase:** unscheduled candidate — raise at the chunk_set_id
-  cycle's post-cycle burndown review.
-- **Status:** OPEN. **Tier:** `ux` / converter leg.
+- **Owning phase:** scheduled — **operator ruled PURSUE 2026-08-31**
+  (reversing the earlier defer), to start once the me-cli-csid-warning
+  review closes green. Risk-set: changes normative seat refusal
+  behaviour, so it gets the full gate — walk WITH the operator (when is
+  auto-resolving a collision SAFE vs. when must it still refuse?) →
+  spec → R0 → plan → R0 → implement → whole-diff. The csid-mismatch
+  interaction (both partitions verify but ids are pinned) needs a
+  vector row, per the original entry.
+- **Status:** OPEN — SCHEDULED (next after me-cli). **Tier:** `ux` /
+  converter leg / risk-set.
 
 ### `md-cli-seat-warning-corpus-binding` — bind the seat warning text to the corpus, not a hand-copy
 
