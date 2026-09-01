@@ -171,11 +171,16 @@ group's R2 warnings, in that order.
    (~2^32 + KeyCard-validity; regeneration documented; a BCH twin is
    NOT a valid fixture — it must seat per the bch-twin row) → AP2
    refusal, nothing seats.
-10. **surplus row:** injected extra valid card ground to verify →
-    `|V| > k` ⇒ AP2 refusal (per §Security — updated from the r2
-    leftover-refusal expectation); an extra valid card with a DIFFERENT
-    id still seats-then-leftover-refuses downstream with distinguishable
-    labels, as today.
+10. **surplus rows, three variants (r4-I1):**
+    (a) same-id GROUND extra verified candidate in one class →
+    `|V| > k` ⇒ AP2 refusal (per §Security);
+    (b) same-id LEGITIMATE extra cards that seat — the shipped
+    `v-collide.txt` fixture exactly: both cards pinned 12345, one
+    2-chunk and one 3-chunk, so BOTH total-classes seat via §2 and the
+    template's completeness then refuses downstream with
+    DISTINGUISHABLE `12345#1`/`12345#2` leftover labels — this variant
+    inherits the r1-I2 guarantee;
+    (c) different-id extra card → today's leftover path, unchanged.
 11. **mutation gates:** disable the partition attempt → canonical row
     fails; force-seat when `|V| > k` → ap2 row fails; skip
     canonicalisation → bch-twin row fails; skip the static budget →
@@ -186,8 +191,10 @@ group's R2 warnings, in that order.
     `r5_classification_order_prefers_merged_over_incomplete` KEPT
     (missing-index row); `v_collide_two_cards_pinned_…` REWRITTEN
     (mixed-totals row); `v_collide_reaches_the_command` REWRITTEN with a
-    new minimal 2-slot fixture (its shipped input carries a full extra
-    card set → leftover path, row 10's different-id variant). Plus:
+    new minimal 2-slot fixture for the seat+note outcome (its shipped
+    input carries a full extra card set and both collided cards seat →
+    it becomes the surplus row's variant (b), the same-id
+    seats-then-leftover case with distinguishable labels). Plus:
     `REMEDIES` (`matching.rs:216-221`) gains `#<k>`; `directive::parse`
     per §4; doc invariants `input.rs:12-20`, `input.rs:490-493`,
     `directive.rs:23-26` rewritten; the §1 stage documented adjacent to
