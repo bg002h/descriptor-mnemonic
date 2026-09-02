@@ -2730,8 +2730,18 @@ pub fn parse_template_ext(
         // (follow-up md-encode-keyless-template-sigless-path-not-gated). MINTING
         // verbs only, for the reason given in the experimental branch above.
         if matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
-            d.sanity_check()
-                .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+            d.sanity_check().map_err(|e| {
+                // The signature rule is the one `--experimental` relaxes; say so,
+                // the way `md compose` does, instead of only the library's line.
+                let hint = if e.to_string().contains("require a signature") {
+                    " -- a spend path that needs no key. `md compose` refuses the same shape \
+                     without --experimental; pass --experimental here to encode it as \
+                     EXPERIMENTAL (whoever holds the preimage can spend: bearer access)"
+                } else {
+                    ""
+                };
+                CliError::TemplateParse(format!("miniscript parse failed: {e}{hint}"))
+            })?;
         }
         d
     };

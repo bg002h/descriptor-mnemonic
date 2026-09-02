@@ -466,9 +466,10 @@ fn composed_templates_encode_and_round_trip_through_the_wire() {
     let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
     let back = reassemble(&refs).unwrap();
     assert_eq!(back, c.descriptor);
-    if let Ok(s) = encode_md1_string(&c.descriptor) {
-        assert!(s.starts_with("md1"));
-    }
+    // Not `if let Ok`: a guard around an assertion is a PASS that stops running
+    // the day the shape outgrows one string (exec review M-2).
+    let s = encode_md1_string(&c.descriptor).expect("a two-path wsh fits one md1 string");
+    assert!(s.starts_with("md1"));
 }
 
 // ---- §4f declared origins and the invariant (wsh half) --------------------------

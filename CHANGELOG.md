@@ -46,9 +46,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   for `wsh`, `sh(wsh)` and `sh` too, and `--experimental` relaxes exactly the
   signature rule (malleability, resource limits, repeated keys and timelock
   mixing still apply) with the existing warning. The gate is applied on MINTING
-  verbs only, so reading verbs (`md verify`, `md inspect`) keep reading
-  already-engraved plates of newly-refused shapes. Closes descriptor-mnemonic
-  follow-up `md-encode-keyless-template-sigless-path-not-gated`.
+  verbs only, so reading verbs (`md verify`, `md inspect`, `md decode`,
+  `md address <chunks>`) keep reading already-engraved plates of newly-refused
+  shapes. Closes descriptor-mnemonic follow-up
+  `md-encode-keyless-template-sigless-path-not-gated`.
+  **Blast radius, stated plainly:** the same gate runs for every verb that
+  parses an operator-supplied TEMPLATE under the minting disposition —
+  `md descriptor --template`, `md address --template` and `md vectors` — so a
+  signature-free template that `md compose --experimental` prints is refused by
+  `md descriptor --template`/`md address --template`, which have NO
+  `--experimental` opt-out yet (follow-up
+  `md-descriptor-address-template-lack-experimental`; the card-input routes
+  `md descriptor <chunks>` / `md address <chunks>` are unaffected, so the
+  encoded card still derives). And because `wsh`/`sh` never ran the sanity gate
+  before, two more classes become refusals at mint for the first time:
+  MALLEABLE scripts (e.g. `wsh(or_d(j:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))`; 30 of
+  7,980 generated shapes) and MIXED heightlock/timelock (`after(100)` with
+  `after(500000000)` in one script). No flag relaxes those two — both describe
+  defective wallets, and `tr` has refused them all along. The refusal for a
+  signature-free path now names `--experimental` and what it means.
 
 ## md-codec [Unreleased]
 

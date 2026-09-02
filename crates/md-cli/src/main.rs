@@ -290,6 +290,8 @@ enum Command {
         /// Admit key-less paths and unsorted-where-sorted-was-legal, with a warning.
         #[arg(long)]
         experimental: bool,
+        /// Emit JSON: the origin-less template, the inline-origin template, the
+        /// slot map, the taproot internal-key path and the EXPERIMENTAL marks.
         #[arg(long)]
         json: bool,
     },
