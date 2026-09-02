@@ -689,3 +689,119 @@ fn compose_with_uses_declared_origins_and_fills_unseated_slots_with_the_lowest_f
         )
     );
 }
+
+// ---- §4d presets --------------------------------------------------------------------
+
+use md_codec::compose::presets;
+
+#[test]
+fn presets_compose_and_carry_the_documented_shapes() {
+    let p = presets::plain_multisig(Wrapper::Wsh, 2, 3).unwrap();
+    assert_eq!(text(&p), text(&list(Wrapper::Wsh, vec![keys(2, 3)])));
+
+    let p = presets::simple_timelocked_inheritance(Wrapper::Wsh, 65535).unwrap();
+    assert_eq!(p.paths.len(), 2);
+    assert_eq!(p.paths[1].lock, Some(Lock::OlderBlocks(65535)));
+
+    let p = presets::kofn_recovery(Wrapper::Tr, 2, 3, 52560).unwrap();
+    assert_eq!(
+        p.paths[0].keys,
+        Some(KeySet {
+            k: 2,
+            n: 3,
+            sorted: true
+        })
+    );
+    assert_eq!(p.paths[1].lock, Some(Lock::OlderBlocks(52560)));
+
+    let p = presets::tiered_recovery(Wrapper::Wsh, 2, 2, 2, 3, 4032).unwrap();
+    assert_eq!(p.paths.len(), 2);
+
+    let p = presets::hashlock_gated(Wrapper::Wsh, H1, 144).unwrap();
+    assert!(p.paths[0].hash.is_some());
+    assert_eq!(p.paths[1].lock, Some(Lock::OlderBlocks(144)));
+
+    let p = presets::decaying_multisig(Wrapper::Wsh, 2, 3, 1, 2, 1000, 2000, 4_000_000).unwrap();
+    assert_eq!(p.paths.len(), 3);
+    assert_eq!(
+        p.paths[1].keys,
+        Some(KeySet {
+            k: 1,
+            n: 2,
+            sorted: true
+        }),
+        "the recovery quorum is no harder than the primary: that is the decay"
+    );
+    // Same threshold over MORE keys is admitted: it is no harder to satisfy.
+    assert!(presets::decaying_multisig(Wrapper::Wsh, 2, 3, 2, 5, 1000, 2000, 4_000_000).is_ok());
+    assert_eq!(p.paths[2].lock, Some(Lock::AfterHeight(4_000_000)));
+    for l in [
+        presets::plain_multisig(Wrapper::Wsh, 2, 3).unwrap(),
+        presets::simple_timelocked_inheritance(Wrapper::Wsh, 65535).unwrap(),
+        presets::kofn_recovery(Wrapper::Tr, 2, 3, 52560).unwrap(),
+        presets::tiered_recovery(Wrapper::Wsh, 2, 2, 2, 3, 4032).unwrap(),
+        presets::hashlock_gated(Wrapper::Wsh, H1, 144).unwrap(),
+        presets::decaying_multisig(Wrapper::Wsh, 2, 3, 1, 2, 1000, 2000, 4_000_000).unwrap(),
+    ] {
+        compose(&l).unwrap_or_else(|e| panic!("{l:?}: {e}"));
+    }
+}
+
+#[test]
+fn presets_lower_to_their_pinned_templates() {
+    // Spec §10 item 3: "the five presets as Concrete policies + expected
+    // templates". The Concrete-policy half is the §5b cross-check in
+    // `compose_crosscheck.rs`; this is the expected-template half, pinned as
+    // literals so a preset that drifts in SHAPE (which tier carries the lock,
+    // which quorum is smaller) fails here.
+    let h = "a8".repeat(32);
+    let cases: Vec<(&str, PathList, String)> = vec![
+        ("plain_multisig", presets::plain_multisig(Wrapper::Wsh, 2, 3).unwrap(),
+         "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))".to_string()),
+        ("simple_timelocked_inheritance", presets::simple_timelocked_inheritance(Wrapper::Wsh, 65535).unwrap(),
+         "wsh(or_i(pkh(@0/<0;1>/*),and_v(v:pkh(@1/<0;1>/*),older(65535))))".to_string()),
+        ("kofn_recovery", presets::kofn_recovery(Wrapper::Tr, 2, 3, 52560).unwrap(),
+         format!("tr({NUMS},{{multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pk(@3/<0;1>/*),older(52560))}})")),
+        ("tiered_recovery", presets::tiered_recovery(Wrapper::Wsh, 2, 2, 2, 3, 4032).unwrap(),
+         "wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*),and_v(v:multi(2,@2/<0;1>/*,@3/<0;1>/*,@4/<0;1>/*),older(4032))))".to_string()),
+        ("hashlock_gated", presets::hashlock_gated(Wrapper::Wsh, H1, 144).unwrap(),
+         format!("wsh(or_i(and_v(v:pkh(@0/<0;1>/*),sha256({h})),and_v(v:pkh(@1/<0;1>/*),older(144))))")),
+        ("decaying_multisig", presets::decaying_multisig(Wrapper::Wsh, 2, 3, 1, 2, 1000, 2000, 4_000_000).unwrap(),
+         "wsh(or_i(and_v(v:multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),older(1000)),or_i(and_v(v:multi(1,@3/<0;1>/*,@4/<0;1>/*),older(2000)),and_v(v:pkh(@5/<0;1>/*),after(4000000)))))".to_string()),
+    ];
+    for (name, list, expected) in cases {
+        assert_eq!(text(&list), expected, "{name}");
+    }
+}
+
+#[test]
+fn presets_refuse_parameters_the_grammar_refuses() {
+    assert!(matches!(
+        presets::plain_multisig(Wrapper::Wsh, 3, 2),
+        Err(ComposeError::BadThreshold { .. })
+    ));
+    assert!(matches!(
+        presets::simple_timelocked_inheritance(Wrapper::Wsh, 0),
+        Err(ComposeError::LockOutOfRange { path: 1, .. })
+    ));
+    assert!(matches!(
+        presets::kofn_recovery(Wrapper::Wsh, 2, 3, 70_000),
+        Err(ComposeError::LockOutOfRange { path: 1, .. })
+    ));
+    // The refusal names the tier that carries the bad lock, not tier 1.
+    assert_eq!(
+        presets::tiered_recovery(Wrapper::Wsh, 2, 2, 2, 3, 70_000)
+            .unwrap_err()
+            .to_string(),
+        "path 2: older in blocks needs 1..=65535"
+    );
+    // Decay must be a decay: later tiers unlock LATER, and the recovery quorum is not larger.
+    assert!(matches!(
+        presets::decaying_multisig(Wrapper::Wsh, 2, 3, 1, 2, 2000, 1000, 4_000_000),
+        Err(ComposeError::PresetShape { .. })
+    ));
+    assert!(matches!(
+        presets::decaying_multisig(Wrapper::Wsh, 1, 2, 2, 3, 1000, 2000, 4_000_000),
+        Err(ComposeError::PresetShape { .. })
+    ));
+}

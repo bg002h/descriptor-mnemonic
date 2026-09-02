@@ -26,6 +26,7 @@ use crate::render::{RenderError, descriptor_to_template};
 use crate::tag::Tag;
 
 mod lowering;
+pub mod presets;
 mod tr;
 
 /// Spec §4: at most eight spend paths.

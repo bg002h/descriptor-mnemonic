@@ -187,3 +187,42 @@ fn every_family_entry_passes_the_5b_cross_check() {
         }
     }
 }
+
+#[test]
+fn every_preset_passes_the_5b_cross_check() {
+    use md_codec::compose::presets;
+    let cases: Vec<(&str, PathList)> = vec![
+        (
+            "plain_multisig",
+            presets::plain_multisig(Wrapper::Wsh, 2, 3).unwrap(),
+        ),
+        (
+            "simple_timelocked_inheritance",
+            presets::simple_timelocked_inheritance(Wrapper::Wsh, 65535).unwrap(),
+        ),
+        (
+            "kofn_recovery_tr",
+            presets::kofn_recovery(Wrapper::Tr, 2, 3, 52560).unwrap(),
+        ),
+        (
+            "kofn_recovery_wsh",
+            presets::kofn_recovery(Wrapper::Wsh, 2, 3, 52560).unwrap(),
+        ),
+        (
+            "tiered_recovery",
+            presets::tiered_recovery(Wrapper::Wsh, 2, 2, 2, 3, 4032).unwrap(),
+        ),
+        (
+            "hashlock_gated",
+            presets::hashlock_gated(Wrapper::Wsh, H, 144).unwrap(),
+        ),
+        (
+            "decaying_multisig",
+            presets::decaying_multisig(Wrapper::Wsh, 2, 3, 1, 2, 1000, 2000, 4_000_000).unwrap(),
+        ),
+    ];
+    for (name, list) in cases {
+        let addr = cross_check(name, &list, false);
+        assert!(addr.starts_with("bc1"), "{name}: {addr}");
+    }
+}
