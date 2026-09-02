@@ -2804,3 +2804,53 @@ me-side mirror stays in place until it clears.
   fails a test. The mechanical cross-repo corpus binding stays optional
   future work; the fork leg (go-mk-vector-corpus-ingestion) shipped its
   vendored seam the same day. **Tier:** `test-infra` / R6-drift guard.
+
+### `md-older-zero-time-units-not-refused` — `older(0x400000)` (bit 22 set, 16-bit value ZERO) encodes to a card whose "lock" enforces nothing; md-codec's BIP-68 mask guard lacks the zero-value clause the toolkit gate has (repo: **descriptor-mnemonic**; owning phase: **next md-codec patch — Rust first, vector, then the Go port** ) `#funds-safety` `#codec`
+
+Filed 2026-09-01 from the mnemonic-engrave wallet-policy composer brainstorm
+(`design/BRAINSTORM_wallet_policy_composer.md` ruling C20), while sourcing the
+admitted `older()`/`after()` ranges.
+
+**Measured on md 0.14.0 (`~/.cargo/bin/md`):**
+```
+$ md encode "wsh(and_v(v:pkh(@0/<0;1>/*),older(4194304)))"      # 0x400000
+md1yqpqqxpye5kuqpqqqqqvkwqu7r50qu85
+$ md encode "wsh(and_v(v:pkh(@0/<0;1>/*),older(65536)))"
+md: codec error: older(65536) is not what consensus enforces: BIP-68 reads only the low 16 bits ...
+```
+**Why it is a wrong result, not a nit.** BIP-68 l.46: "A relative time-based
+lock-time of zero indicates an input which can be included in any block." So
+`older(0x400000)` is a time-based lock of ZERO 512-second units — the path is
+spendable immediately, while the template TEXT says a lock exists and the
+device's structural summary would describe a timelocked path. A silently
+weakened spend condition on a funds-bearing card.
+
+**Cause.** `crates/md-codec/src/validate.rs:218-225`:
+`CONSENSUS_BITS = 0xFFFF | (1 << 22)` and the guard is only
+`if v & !consensus_bits != 0` — it catches bits 16-21 and 23-30 (masked to a
+different value) but not a zero 16-bit value under the type flag.
+rust-miniscript admits it upstream (`primitives/relative_locktime.rs:73`:
+`is_relative_lock_time() && seq != Sequence::ZERO`; `0x400000 != 0`), so
+nothing refuses it. The toolkit's authoring gate already has the right
+predicate — `mnemonic-toolkit/design/SPEC_older_timelock_mask_gate.md` l.19-24:
+**reject iff `(n & !0x0040_FFFF) != 0 || (n & 0x0000_FFFF) == 0`**, with the
+comment that the `== 0` clause "is load-bearing" and exists for exactly
+`older(0x400000)`.
+
+**Fix.** Add the `(v & 0xFFFF) == 0` disjunct to `walk_older`, reuse
+`Error::RelativeTimelockTruncated` or add a sibling whose message says "locks
+for 0 units — no lock at all", add the vector `older(4194304)` → refused (plus
+`older(4194305)` → accepted as the boundary), and bump md-codec (PATCH; a
+refusal widening on an unreachable-by-honest-tooling value).
+
+**Go port (fork `seedhammer/md`), measured 2026-09-01:** NO mirror of the
+mask guard exists — `grep -n -i -E 'mask|0xffff|truncat' md/*.go` hits only the
+bit-stream helpers in `md/bits.go` (`errTruncated`, a byte `mask`), nothing in
+timelock handling, and `script_emit.go:404-410` emits whatever `older` value
+the wire carries. The
+port relies on md having refused the card at mint. Per the Rust-primary rule
+the Go side gets the convergence port AFTER this lands, and the composer's
+on-device lock entry (mnemonic-engrave ruling C11/C20) enforces the ranges
+itself so the emitter never depends on this guard.
+
+- **Status:** OPEN. **Tier:** `funds-safety` / PATCH.
