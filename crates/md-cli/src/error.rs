@@ -39,6 +39,11 @@ pub enum CliError {
     Compile(String),
     Mismatch(String),
     BadArg(String),
+    /// `md compose` refusals: structural (§4e), lock band (§4c), DSL, or an
+    /// EXPERIMENTAL shape without `--experimental`. The message is complete in
+    /// itself; `main`'s generic arm prefixes `md: ` and exits 1 (`BadArg`,
+    /// above, is the one variant with its own arm, exiting 2).
+    Compose(String),
     /// A refusal from the seating engine (SPEC "NORMATIVE — the seating
     /// engine": A1-A5, B1-B2), including its input pipeline.
     ///
@@ -124,6 +129,7 @@ impl fmt::Display for CliError {
             CliError::Compile(m) => write!(f, "compile error: {m}"),
             CliError::Mismatch(m) => write!(f, "MISMATCH: {m}"),
             CliError::BadArg(m) => write!(f, "{m}"),
+            CliError::Compose(m) => write!(f, "{m}"),
             CliError::Seat(m) => write!(f, "seating refused: {m}"),
             CliError::KeyReuse(m) => write!(f, "key reuse refused: {m}"),
             CliError::Unsupported(m) => write!(f, "unsupported: {m}"),

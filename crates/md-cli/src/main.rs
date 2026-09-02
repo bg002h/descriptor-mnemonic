@@ -276,6 +276,23 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Lower an ORDERED list of spend paths to a BIP-388 template by FIXED rules
+    /// (SPEC_wallet_policy_composer.md §5). The opposite of `compile`: no search,
+    /// no cost model, the same text from every implementation.
+    Compose {
+        /// tr | wsh | sh-wsh | sh
+        #[arg(long, value_name = "WRAPPER", required = true)]
+        wrapper: String,
+        /// One spend path in listed order: `<k>of<n>[,older=N|older=Nu|after=H|after=Tt][,sha256=HEX][,unsorted]`
+        /// or `keyless,sha256=HEX[,older=..|after=..]`. Repeatable.
+        #[arg(long = "path", value_name = "PATH", required = true, action = clap::ArgAction::Append)]
+        paths: Vec<String>,
+        /// Admit key-less paths and unsorted-where-sorted-was-legal, with a warning.
+        #[arg(long)]
+        experimental: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Emit the CONCRETE output descriptor -- real xpubs, key origins and the
     /// BIP-380 checksum -- for pasting into a coordinator.
     ///
@@ -971,6 +988,12 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 "compile requires the cli-compiler feature; rebuild with --features cli-compiler".into()))
             }
         }
+        Command::Compose {
+            wrapper,
+            paths,
+            experimental,
+            json,
+        } => cmd::compose::run(&wrapper, &paths, experimental, json),
         Command::Descriptor {
             phrases,
             template,

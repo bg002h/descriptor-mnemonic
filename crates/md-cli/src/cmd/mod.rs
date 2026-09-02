@@ -148,6 +148,7 @@ pub mod build;
 pub mod bytecode;
 #[cfg(feature = "cli-compiler")]
 pub mod compile;
+pub mod compose;
 pub mod decode;
 pub mod decompose;
 pub mod descriptor;
