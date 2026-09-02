@@ -241,3 +241,291 @@ fn lock_operand_bands_are_inclusive_at_both_ends() {
         "0x400000 alone is a lock of ZERO units, i.e. none (filed md-older-zero-time-units-not-refused)"
     );
 }
+
+// ---- §5 wsh lowering, by rendered text -----------------------------------------
+
+fn text(list: &PathList) -> String {
+    descriptor_to_template(&compose(list).unwrap().descriptor).unwrap()
+}
+
+/// Every slot's origin, in slot order, read from `path_decl` (the rendered
+/// text never carries origins: descriptor-mnemonic F-219).
+fn origins(c: &Composed) -> Vec<OriginPath> {
+    match &c.descriptor.path_decl.paths {
+        PathDeclPaths::Shared(o) => vec![o.clone(); c.descriptor.n as usize],
+        PathDeclPaths::Divergent(v) => v.clone(),
+    }
+}
+
+#[test]
+fn unseated_slots_take_ascending_default_accounts_under_the_wrapper_script_type() {
+    let c = compose(&list(Wrapper::Wsh, vec![keys(2, 3)])).unwrap();
+    assert_eq!(
+        origins(&c),
+        vec![
+            hardened(&[48, 0, 0, 2]),
+            hardened(&[48, 0, 1, 2]),
+            hardened(&[48, 0, 2, 2])
+        ]
+    );
+    assert_eq!(
+        template_with_origins(&c).unwrap(),
+        "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))"
+    );
+    // One slot: a shared declaration, not a one-element divergent list.
+    let c = compose(&list(Wrapper::Wsh, vec![keys(1, 1)])).unwrap();
+    assert!(matches!(
+        c.descriptor.path_decl.paths,
+        PathDeclPaths::Shared(_)
+    ));
+    assert_eq!(origins(&c), vec![hardened(&[48, 0, 0, 2])]);
+    // Script types: sh(wsh) is 1', sh is 2', tr is 3'.
+    let c = compose(&list(Wrapper::ShWsh, vec![keys(2, 2)])).unwrap();
+    assert_eq!(
+        origins(&c),
+        vec![hardened(&[48, 0, 0, 1]), hardened(&[48, 0, 1, 1])]
+    );
+    let c = compose(&list(Wrapper::Sh, vec![keys(2, 2)])).unwrap();
+    assert_eq!(
+        origins(&c),
+        vec![hardened(&[48, 0, 0, 2]), hardened(&[48, 0, 1, 2])]
+    );
+    // tr's 3' is asserted in Task 3, once the taproot lowering exists.
+}
+
+#[test]
+fn template_with_origins_inlines_two_digit_slots_without_touching_their_prefixes() {
+    // Hand-written, NOT printer-generated: `@1/` must not be rewritten inside
+    // `@10/` or `@11/`. Twelve slots: a 9-of-9 head and a 3-of-3 tail.
+    let c = compose(&list(Wrapper::Wsh, vec![keys(9, 9), keys(3, 3)])).unwrap();
+    assert_eq!(
+        template_with_origins(&c).unwrap(),
+        "wsh(or_d(multi(9,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*,@3/48'/0'/3'/2'/<0;1>/*,@4/48'/0'/4'/2'/<0;1>/*,@5/48'/0'/5'/2'/<0;1>/*,@6/48'/0'/6'/2'/<0;1>/*,@7/48'/0'/7'/2'/<0;1>/*,@8/48'/0'/8'/2'/<0;1>/*),multi(3,@9/48'/0'/9'/2'/<0;1>/*,@10/48'/0'/10'/2'/<0;1>/*,@11/48'/0'/11'/2'/<0;1>/*)))"
+    );
+}
+
+#[test]
+fn sole_unlocked_multi_path_under_wsh_is_sortedmulti() {
+    assert_eq!(
+        text(&list(Wrapper::Wsh, vec![keys(2, 3)])),
+        "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))"
+    );
+}
+
+#[test]
+fn sole_unsorted_multi_path_under_wsh_is_multi_and_experimental() {
+    let c = compose(&list(Wrapper::Wsh, vec![unsorted(2, 3)])).unwrap();
+    assert_eq!(
+        descriptor_to_template(&c.descriptor).unwrap(),
+        "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))"
+    );
+    assert_eq!(c.experimental, vec![Experimental::UnsortedKeys(0)]);
+}
+
+#[test]
+fn single_key_under_wsh_is_pkh() {
+    assert_eq!(
+        text(&list(Wrapper::Wsh, vec![keys(1, 1)])),
+        "wsh(pkh(@0/<0;1>/*))"
+    );
+}
+
+#[test]
+fn a_locked_multi_path_is_unsorted_multi_without_the_experimental_mark() {
+    // Sorted forms cannot nest inside a fragment (BIP-383/388; md refuses), so
+    // the lowering forces `multi` and does NOT report it as chosen-unsorted.
+    let c = compose(&list(
+        Wrapper::Wsh,
+        vec![with_lock(keys(2, 3), Lock::OlderBlocks(26280)), keys(1, 1)],
+    ))
+    .unwrap();
+    assert_eq!(
+        descriptor_to_template(&c.descriptor).unwrap(),
+        "wsh(or_i(and_v(v:multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),older(26280)),pkh(@3/<0;1>/*)))"
+    );
+    assert!(c.experimental.is_empty());
+}
+
+#[test]
+fn two_path_wsh_with_a_bare_multi_head_uses_or_d() {
+    // The reference two-path wallet, wsh form (spec §5, C21/C23).
+    let l = list(
+        Wrapper::Wsh,
+        vec![keys(2, 3), with_lock(keys(1, 1), Lock::OlderBlocks(26280))],
+    );
+    assert_eq!(
+        text(&l),
+        "wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pkh(@3/<0;1>/*),older(26280))))"
+    );
+}
+
+#[test]
+fn a_single_key_head_uses_or_i_not_or_d() {
+    // I1/C21: or_d(pkh(P1), R) is dominated and publishes P1's key.
+    let l = list(
+        Wrapper::Wsh,
+        vec![keys(1, 1), with_lock(keys(1, 1), Lock::OlderBlocks(100))],
+    );
+    assert_eq!(
+        text(&l),
+        "wsh(or_i(pkh(@0/<0;1>/*),and_v(v:pkh(@1/<0;1>/*),older(100))))"
+    );
+}
+
+#[test]
+fn conjunct_order_is_keys_hash_lock() {
+    let p = with_lock(with_hash(keys(2, 3), H1), Lock::AfterHeight(1_000_000));
+    let l = list(Wrapper::Wsh, vec![p, keys(1, 1)]);
+    let h = "a8".repeat(32);
+    assert_eq!(
+        text(&l),
+        format!(
+            "wsh(or_i(and_v(v:multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:sha256({h}),after(1000000))),pkh(@3/<0;1>/*)))"
+        )
+    );
+}
+
+#[test]
+fn a_keyless_wsh_path_is_admitted_and_marked_experimental() {
+    let l = list(
+        Wrapper::Wsh,
+        vec![keys(2, 3), keyless(H1, Some(Lock::AfterHeight(1_383_520)))],
+    );
+    let c = compose(&l).unwrap();
+    let h = "a8".repeat(32);
+    assert_eq!(
+        descriptor_to_template(&c.descriptor).unwrap(),
+        format!(
+            "wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:sha256({h}),after(1383520))))"
+        )
+    );
+    assert_eq!(c.experimental, vec![Experimental::KeylessPath(1)]);
+}
+
+#[test]
+fn eight_paths_chain_right_associatively_and_the_last_stands_alone() {
+    let paths: Vec<SpendPath> = (0..8)
+        .map(|i| with_lock(keys(1, 1), Lock::OlderBlocks(100 + i)))
+        .collect();
+    let t = text(&list(Wrapper::Wsh, paths));
+    assert_eq!(t.matches("or_i(").count(), 7, "{t}");
+    assert!(t.ends_with(",older(107))))))))))"), "{t}");
+}
+
+#[test]
+fn legacy_wrappers_wrap_the_single_sorted_multi() {
+    assert_eq!(
+        text(&list(Wrapper::ShWsh, vec![keys(2, 3)])),
+        "sh(wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*)))"
+    );
+    assert_eq!(
+        text(&list(Wrapper::Sh, vec![keys(2, 3)])),
+        "sh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))"
+    );
+}
+
+#[test]
+fn a_time_lock_of_one_unit_encodes_as_0x400001() {
+    let c = compose(&list(
+        Wrapper::Wsh,
+        vec![with_lock(keys(1, 1), Lock::OlderUnits(1))],
+    ))
+    .unwrap();
+    let text = descriptor_to_template(&c.descriptor).unwrap();
+    assert!(text.contains("older(4194305)"), "{text}");
+}
+
+#[test]
+fn slots_are_numbered_by_first_appearance_and_canonicalisation_is_identity() {
+    let l = list(
+        Wrapper::Wsh,
+        vec![keys(2, 3), with_lock(keys(1, 1), Lock::OlderBlocks(26280))],
+    );
+    let c = compose(&l).unwrap();
+    let indices: Vec<u8> = c.slots.iter().map(|s| s.index).collect();
+    assert_eq!(indices, vec![0, 1, 2, 3]);
+    assert_eq!(c.slots[3].path, 1);
+    let mut d = c.descriptor.clone();
+    canonicalize_placeholder_indices(&mut d).unwrap();
+    assert_eq!(
+        d, c.descriptor,
+        "compose must emit canonical numbering itself"
+    );
+}
+
+#[test]
+fn composed_templates_encode_and_round_trip_through_the_wire() {
+    let l = list(
+        Wrapper::Wsh,
+        vec![keys(2, 3), with_lock(keys(1, 1), Lock::OlderBlocks(26280))],
+    );
+    let c = compose(&l).unwrap();
+    let (_bytes, bits) = encode_payload(&c.descriptor).unwrap();
+    assert!(bits > 0);
+    let chunks = split(&c.descriptor).unwrap();
+    let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
+    let back = reassemble(&refs).unwrap();
+    assert_eq!(back, c.descriptor);
+    if let Ok(s) = encode_md1_string(&c.descriptor) {
+        assert!(s.starts_with("md1"));
+    }
+}
+
+// ---- §4f declared origins and the invariant (wsh half) --------------------------
+
+#[test]
+fn compose_with_refuses_two_slots_at_one_origin_unless_both_fingerprints_differ() {
+    let l = list(Wrapper::Wsh, vec![keys(2, 2)]);
+    let same = hardened(&[48, 0, 0, 2]);
+    // Neither fingerprinted: refused.
+    let d = vec![
+        Some(SlotOrigin {
+            origin: same.clone(),
+            fingerprint: None,
+        }),
+        Some(SlotOrigin {
+            origin: same.clone(),
+            fingerprint: None,
+        }),
+    ];
+    assert_eq!(
+        compose_with(&l, &d).unwrap_err(),
+        ComposeError::IndistinguishableSlots { a: 0, b: 1 }
+    );
+    // One fingerprinted: still refused (the one-card-fills-two-slots case).
+    let d = vec![
+        Some(SlotOrigin {
+            origin: same.clone(),
+            fingerprint: Some([9, 9, 9, 9]),
+        }),
+        Some(SlotOrigin {
+            origin: same.clone(),
+            fingerprint: None,
+        }),
+    ];
+    assert_eq!(
+        compose_with(&l, &d).unwrap_err(),
+        ComposeError::IndistinguishableSlots { a: 0, b: 1 }
+    );
+    // Both fingerprinted and distinct: admitted, as a shared origin.
+    let d = vec![
+        Some(SlotOrigin {
+            origin: same.clone(),
+            fingerprint: Some([9, 9, 9, 9]),
+        }),
+        Some(SlotOrigin {
+            origin: same,
+            fingerprint: Some([8, 8, 8, 8]),
+        }),
+    ];
+    assert!(compose_with(&l, &d).is_ok());
+}
+
+#[test]
+fn compose_with_refuses_a_declaration_slice_of_the_wrong_length() {
+    let l = list(Wrapper::Wsh, vec![keys(2, 2)]);
+    assert_eq!(
+        compose_with(&l, &[None]).unwrap_err(),
+        ComposeError::WrongSlotCount { got: 1, want: 2 }
+    );
+}
