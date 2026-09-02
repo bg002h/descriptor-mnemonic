@@ -2921,3 +2921,19 @@ the host refuses the shape unless asked. `md compose` (Stage 0) gates it in the
 library (`Experimental::KeylessPath`) and in the CLI; `md encode` should agree
 on the unkeyed input: same refusal wording, same `--experimental` relaxation,
 same warning. Rust first; the fork's `sysw`/`md` admission mirrors it later.
+
+### `md-descriptor-address-template-lack-experimental` — `md descriptor --template` and `md address --template` parse under the minting disposition and now refuse a signature-free spend path, but have no `--experimental` opt-out (repo: **descriptor-mnemonic**; owning phase: **next md-cli patch after the composer's Stage 0 merge; does NOT gate the composer** ) `#admission` `#experimental` `#cli`
+
+Filed 2026-09-02 from the composer Stage 0 whole-diff execution review
+(mnemonic-engrave `design/agent-reports/composer-S0-exec-review-r0.md`, I-1).
+Measured OLD (`b19dca7b`) vs NEW (`9820e618`): the template `md compose
+--experimental --wrapper wsh --path 2of3 --path keyless,sha256=<H>,after=1383520`
+prints derives an address with OLD `md address --template … --key …` and is
+refused by NEW with "All spend paths must require a signature";
+`--experimental` is "unexpected argument" on both verbs (it exists on `encode`,
+`verify` and `compose` only). The card-input routes (`md address <chunks>`,
+`md descriptor <chunks>`, `md decode`) are unaffected, so nothing engraved is
+unreadable — which is why this is a follow-up, not a blocker. **Fix:** thread
+`--experimental` through `cmd/build.rs::build_descriptor` (shared by
+`descriptor.rs` and `address.rs`) to `parse_template_ext`, with the same loud
+bearer-access warning `encode` prints; keep the default refusal.
