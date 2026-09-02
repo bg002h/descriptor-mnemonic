@@ -2676,29 +2676,64 @@ pub fn parse_template_ext(
     let (substituted, key_map) = substitute_synthetic(template, ctx)?;
     let ms_desc = if experimental {
         // Parse the tree WITHOUT `from_str`'s tr-only sanity gate, then re-apply
-        // every rule except `top_unsafe` ourselves, per leaf.
+        // every rule except `top_unsafe` ourselves -- per leaf for `tr`, on the
+        // one script for `wsh`, `sh(wsh)` and `sh`.
         let tree = miniscript::expression::Tree::from_str(&substituted)
             .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
         let d = <MsDescriptor<DescriptorPublicKey> as miniscript::expression::FromTree>::from_tree(
             tree.root(),
         )
         .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
-        if let MsDescriptor::Tr(ref inner) = d {
-            let relaxed = miniscript::miniscript::analyzable::ExtParams::new().top_unsafe();
-            for item in inner.leaves() {
-                item.miniscript().ext_check(&relaxed).map_err(|e| {
-                    CliError::TemplateParse(format!(
-                        "miniscript parse failed even with --experimental: {e} \
-                         (--experimental relaxes ONLY the signature rule; malleability, \
-                         resource limits, repeated keys and timelock mixing still apply)"
-                    ))
-                })?;
+        let relaxed = miniscript::miniscript::analyzable::ExtParams::new().top_unsafe();
+        // `ext_check` returns miniscript's analysis error, not `miniscript::Error`;
+        // a generic helper takes whatever it is.
+        fn relaxed_err<E: std::fmt::Display>(e: E) -> CliError {
+            CliError::TemplateParse(format!(
+                "miniscript parse failed even with --experimental: {e} \
+                 (--experimental relaxes ONLY the signature rule; malleability, \
+                 resource limits, repeated keys and timelock mixing still apply)"
+            ))
+        }
+        // MINTING verbs only (`Disposition::Refuse`: encode). Reading verbs
+        // (`Warn`: verify, inspect) must keep reading already-engraved plates
+        // whose shapes the sanity rules reject -- the N1 C1 placement
+        // constraint; measured: an unconditional check here made `md verify`
+        // refuse a legacy `sh(multi(1,@0/**,@0/**))` plate (repeated keys),
+        // failing n1_admission_taxonomy's two reading-verb tests.
+        let minting = matches!(reuse, crate::parse::reuse::Disposition::Refuse);
+        match &d {
+            MsDescriptor::Tr(inner) => {
+                for item in inner.leaves() {
+                    item.miniscript().ext_check(&relaxed).map_err(relaxed_err)?;
+                }
             }
+            MsDescriptor::Wsh(w) if minting => {
+                w.as_inner().ext_check(&relaxed).map_err(relaxed_err)?
+            }
+            MsDescriptor::Sh(sh) if minting => match sh.as_inner() {
+                miniscript::descriptor::ShInner::Wsh(w) => {
+                    w.as_inner().ext_check(&relaxed).map_err(relaxed_err)?
+                }
+                miniscript::descriptor::ShInner::Ms(ms) => {
+                    ms.ext_check(&relaxed).map_err(relaxed_err)?
+                }
+                miniscript::descriptor::ShInner::Wpkh(_) => {}
+            },
+            _ => {}
         }
         d
     } else {
-        MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
-            .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?
+        let d = MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
+            .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+        // `from_str` runs the sanity gate for `tr` only; `md compose` refuses a
+        // signature-free path under every wrapper, and `encode` must agree
+        // (follow-up md-encode-keyless-template-sigless-path-not-gated). MINTING
+        // verbs only, for the reason given in the experimental branch above.
+        if matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
+            d.sanity_check()
+                .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+        }
+        d
     };
     let tree = walk_root(&ms_desc, &key_map)?;
 
