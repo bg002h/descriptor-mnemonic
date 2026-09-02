@@ -2889,3 +2889,30 @@ true headers — the host has the account xpubs when it exports. Cross-ref
 mnemonic-engrave F-449 (unspendable-xpub form), which touches the same export.
 
 - **Status:** OPEN. **Tier:** `recon` / `interop`.
+
+### `md-encode-keyless-template-sigless-path-not-gated` — an UNKEYED template whose spend path needs no signature (`and_v(v:sha256(H),after(N))`) encodes with exit 0 and no warning, while the same shape KEYED is refused without `--experimental` (repo: **descriptor-mnemonic**; owning phase: **next md-cli patch, alongside `md compose` (composer Stage 0), which gates it correctly** ) `#admission` `#experimental`
+
+Filed 2026-09-01 from the mnemonic-engrave wallet-policy composer Stage 0 plan
+(`design/IMPLEMENTATION_PLAN_composer_S0_md_compose.md`), while verifying that
+compose-shaped unkeyed templates with inline origins encode.
+
+**Measured on `target/debug/md` at `3b0944fb`:**
+```
+$ md encode "wsh(or_d(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*),and_v(v:sha256(a8a8…a8),after(1383520))))"
+chunk-set-id: 0x3ee58
+md1f8mjcqs9qjtvyyy5jmpprjjtvyy49gqpsfsxpzrye4m29g4z52329g4q6xvdgtdqavtat
+md1f8mjcqs252329g4z52329g4z52329g4z52329g4z52329gdsq9guvq2q8uaha9yndk0
+group size: 5 … note: stdout is a keyless descriptor template (no keys)
+$ echo $?
+0
+$ md encode --experimental "<same>"
+warning: --experimental relaxed the signature rule. This descriptor has at least one spend path that needs NO key … THE PLATE IS BEARER ACCESS. …
+```
+The unkeyed path prints no warning and needs no flag; only the keyed path runs
+rust-miniscript's sanity check, which is where the signature rule lives. A
+template is not funds-bearing, but it is the artifact the composer hands to the
+seating step, and the spec's EXPERIMENTAL gate (composer spec C16, §4b) assumes
+the host refuses the shape unless asked. `md compose` (Stage 0) gates it in the
+library (`Experimental::KeylessPath`) and in the CLI; `md encode` should agree
+on the unkeyed input: same refusal wording, same `--experimental` relaxation,
+same warning. Rust first; the fork's `sysw`/`md` admission mirrors it later.
