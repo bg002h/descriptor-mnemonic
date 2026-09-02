@@ -35,6 +35,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   template, the slot map, the taproot internal-key path and the EXPERIMENTAL
   list. Key-less paths and unsorted-where-sorted-was-legal require
   `--experimental`. See `design/SPEC_wallet_policy_composer.md` §4, §5, §10.
+- `md compose --preset`: an unknown `<param>=` token is named before the
+  `<k>of<n>` count is checked, so a stray `=x` after a well-formed `2of3` no
+  longer reports "got 0"; and `--path`'s `older=<n>u` / `after=<t>t` spellings
+  refuse by naming what the suffix means and the `--path` remedy (S0b
+  whole-diff review M-2, M-3). `md compose` gains its README row.
 - `md compose --preset <name>[,<k>of<n>]*[,<param>=<value>]*` (F-453): the six
   `md_codec::compose::presets` archetypes (`plain-multisig`,
   `simple-timelocked-inheritance`, `kofn-recovery`, `tiered-recovery`,

@@ -183,6 +183,86 @@ fn preset_refuses_an_extra_parameter() {
 }
 
 #[test]
+fn preset_names_an_unknown_parameter_before_counting_kofn() {
+    // S0b whole-diff review M-2: a stray `=x` after a well-formed `2of3` turns
+    // the token into a named parameter; the refusal must name that token, not
+    // report "got 0" about a command that visibly contains `2of3`.
+    md().args([
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--preset",
+        "plain-multisig,2of3=x",
+    ])
+    .assert()
+    .failure()
+    .code(1)
+    .stderr(predicate::str::contains(
+        "preset plain-multisig admits no 2of3= parameter",
+    ));
+    md().args([
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--preset",
+        "plain-multisig,bogus=1",
+    ])
+    .assert()
+    .failure()
+    .code(1)
+    .stderr(predicate::str::contains(
+        "preset plain-multisig admits no bogus= parameter",
+    ));
+}
+
+#[test]
+fn preset_names_the_path_remedy_for_u_and_t_suffixes() {
+    // S0b whole-diff review M-3: `older=<n>u` and `after=<t>t` are legal
+    // `--path` spellings the preset grammar cannot express; the refusal says
+    // what the suffix means and where it works, as the band case already did.
+    md().args([
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--preset",
+        "simple-timelocked-inheritance,older=100u",
+    ])
+    .assert()
+    .failure()
+    .code(1)
+    .stderr(predicate::str::contains(
+        "preset simple-timelocked-inheritance older: `100u` is --path's `u` (older in 512-second units) spelling, which presets cannot express -- use --path with `older=100u` instead",
+    ));
+    md().args([
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--preset",
+        "decaying-multisig,2of2,1of1,older1=13140,older2=26280,after=500000001t",
+    ])
+    .assert()
+    .failure()
+    .code(1)
+    .stderr(predicate::str::contains(
+        "preset decaying-multisig after: `500000001t` is --path's `t` (after as a Unix time) spelling, which presets cannot express -- use --path with `after=500000001t` instead",
+    ));
+    // A suffix on a non-number stays the generic refusal.
+    md().args([
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--preset",
+        "simple-timelocked-inheritance,older=xu",
+    ])
+    .assert()
+    .failure()
+    .code(1)
+    .stderr(predicate::str::contains(
+        "preset simple-timelocked-inheritance older: `xu` is not a number in 0..=4294967295",
+    ));
+}
+
+#[test]
 fn preset_propagates_a_parameter_the_constructor_rejects() {
     // kofn_recovery's own `blocks()` guard, not the CLI's --path pre-check:
     // exercises the SAME ComposeError::LockOutOfRange a hand-built --path list

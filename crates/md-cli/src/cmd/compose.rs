@@ -273,9 +273,32 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
         Ok(())
     };
     let need_u32 = |k: &str| -> Result<u32, CliError> {
-        let v = named
+        let v: &str = named
             .get(k)
+            .map(|v| &**v)
             .ok_or_else(|| CliError::Compose(format!("{ctx} needs {k}=<n>")))?;
+        // `--path` spells a 512-second-unit relative lock `older=<n>u` and a
+        // Unix-time absolute lock `after=<t>t`; the preset grammar has neither
+        // kind, so an operator carrying either suffix over from `--path` is
+        // told what it means and where it works, in the shape
+        // `need_after_height` uses for the band, rather than a bare "is not a
+        // number" (S0b whole-diff review M-3).
+        let suffixed = if k.starts_with("older") {
+            v.strip_suffix('u')
+                .map(|rest| (rest, "`u` (older in 512-second units)"))
+        } else if k == "after" {
+            v.strip_suffix('t')
+                .map(|rest| (rest, "`t` (after as a Unix time)"))
+        } else {
+            None
+        };
+        if let Some((rest, meaning)) = suffixed {
+            if rest.parse::<u32>().is_ok() {
+                return Err(CliError::Compose(format!(
+                    "{ctx} {k}: `{v}` is --path's {meaning} spelling, which presets cannot express -- use --path with `{k}={v}` instead"
+                )));
+            }
+        }
         parse_u32(v, &format!("{ctx} {k}"))
     };
     // `presets::decaying_multisig`'s `after_height` argument always builds
@@ -298,15 +321,15 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
     let map_ce = |e: md_codec::compose::ComposeError| CliError::Compose(e.to_string());
     match name {
         "plain-multisig" => {
-            need_ofs(1)?;
             named_only(&[])?;
+            need_ofs(1)?;
             let (k, n) = ofs[0];
             let list = presets::plain_multisig(wrapper, k, n).map_err(map_ce)?;
             Ok((PresetParams::PlainMultisig { k, n }, list))
         }
         "simple-timelocked-inheritance" => {
-            need_ofs(0)?;
             named_only(&["older"])?;
+            need_ofs(0)?;
             let older_blocks = need_u32("older")?;
             let list =
                 presets::simple_timelocked_inheritance(wrapper, older_blocks).map_err(map_ce)?;
@@ -316,16 +339,16 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
             ))
         }
         "kofn-recovery" => {
-            need_ofs(1)?;
             named_only(&["older"])?;
+            need_ofs(1)?;
             let (k, n) = ofs[0];
             let older_blocks = need_u32("older")?;
             let list = presets::kofn_recovery(wrapper, k, n, older_blocks).map_err(map_ce)?;
             Ok((PresetParams::KofnRecovery { k, n, older_blocks }, list))
         }
         "tiered-recovery" => {
-            need_ofs(2)?;
             named_only(&["older"])?;
+            need_ofs(2)?;
             let (k1, n1) = ofs[0];
             let (k2, n2) = ofs[1];
             let older_blocks = need_u32("older")?;
@@ -343,8 +366,8 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
             ))
         }
         "hashlock-gated" => {
-            need_ofs(0)?;
             named_only(&["sha256", "older"])?;
+            need_ofs(0)?;
             let hex = named
                 .get("sha256")
                 .ok_or_else(|| CliError::Compose(format!("{ctx} needs sha256=<64 hex>")))?;
@@ -360,8 +383,8 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
             ))
         }
         "decaying-multisig" => {
-            need_ofs(2)?;
             named_only(&["older1", "older2", "after"])?;
+            need_ofs(2)?;
             let (k1, n1) = ofs[0];
             let (k2, n2) = ofs[1];
             let older1 = need_u32("older1")?;

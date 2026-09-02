@@ -331,14 +331,22 @@ pub fn family() -> Vec<(&'static str, PathList, String, Vec<&'static str>)> {
     ]
 }
 
-/// Tags with exactly ONE legal shape, exempt from the two-vector rule and said
-/// so here: a taptree with m = 0 leaves is one unlocked single key and nothing
-/// else (spec §12 item 1). The six `preset:<name>` tags join it for the SAME
-/// structural reason: F-453's deliverable is explicitly ONE MANIFEST vector
-/// per archetype, so each has exactly one legal vector by construction, not by
-/// coverage gap. §12 item 1's own required-tag list (`compose_vectors.rs`) is
-/// NOT extended with `preset:*` — presets are not one of the axes that list
-/// names, so nothing there needs touching.
+/// Tags exempt from the two-vector rule, on two DIFFERENT grounds, each named
+/// here so a reader does not take one for the other (S0b whole-diff review
+/// M-1):
+/// - `spine:0` has exactly ONE legal shape: a taptree with m = 0 leaves is one
+///   unlocked single key and nothing else — spec §12 item 1's own exemption.
+/// - `head:hashed` and the six `preset:<name>` tags have MANY legal shapes
+///   (`plain-multisig,2of4` under `tr` is as legal a `preset:plain-multisig`
+///   vector as the one shipped) but ONE vector by deliverable scope: F-453
+///   specifies one MANIFEST vector per archetype, and `head:hashed` had no
+///   vector at all before it. The test pins them at exactly one so that a
+///   second vector forces an explicit decision here instead of silently
+///   widening the exemption.
+///
+/// §12 item 1's own required-tag list (`compose_vectors.rs`) is NOT extended
+/// with `preset:*` — presets are not one of the axes that list names, so
+/// nothing there needs touching.
 pub const SINGULAR_TAGS: &[&str] = &[
     "spine:0",
     // R0 fidelity N-1: the ONLY family vector whose head path is a single key
