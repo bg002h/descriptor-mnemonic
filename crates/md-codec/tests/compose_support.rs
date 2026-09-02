@@ -147,6 +147,7 @@ pub fn concrete_policy(list: &PathList, c: &Composed, keys: &[String]) -> String
     acc
 }
 
+use md_codec::compose::presets;
 use md_codec::compose::{KeySet, Lock, SpendPath, Wrapper};
 
 pub fn k(k: u8, n: u8) -> SpendPath {
@@ -297,10 +298,56 @@ pub fn family() -> Vec<(&'static str, PathList, String, Vec<&'static str>)> {
         ("compose_tr_thirty_two_slots", pl(Wrapper::Tr, tr32),
          format!("tr({NUMS},{{multi_a(4,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*,@3/<0;1>/*),{{multi_a(4,@4/<0;1>/*,@5/<0;1>/*,@6/<0;1>/*,@7/<0;1>/*),{{multi_a(4,@8/<0;1>/*,@9/<0;1>/*,@10/<0;1>/*,@11/<0;1>/*),{{multi_a(4,@12/<0;1>/*,@13/<0;1>/*,@14/<0;1>/*,@15/<0;1>/*),{{multi_a(4,@16/<0;1>/*,@17/<0;1>/*,@18/<0;1>/*,@19/<0;1>/*),{{multi_a(4,@20/<0;1>/*,@21/<0;1>/*,@22/<0;1>/*,@23/<0;1>/*),{{multi_a(4,@24/<0;1>/*,@25/<0;1>/*,@26/<0;1>/*,@27/<0;1>/*),multi_a(4,@28/<0;1>/*,@29/<0;1>/*,@30/<0;1>/*,@31/<0;1>/*)}}}}}}}}}}}}}})"),
          vec!["w:tr", "paths:8", "slots:32", "ik:nums", "spine:7", "lock:none", "fp:none", "origins:default-tr"]),
+        // ---- presets (F-453): ONE vector per archetype, built by CALLING the
+        // constructor (so a drifted parameter order or default changes the
+        // PathList here too), with a hand-typed expected-text literal (so a
+        // drifted LOWERING still fails `every_family_entry_renders_as_listed`).
+        // Parameters: 2-of-3 and older=26280 wherever the archetype leaves
+        // them free (the journey's own canonical values, §4d fixes no
+        // defaults); every vector stays within the four journey xpubs.
+        ("keyed_compose_preset_plain_multisig", presets::plain_multisig(Wrapper::Wsh, 2, 3).unwrap(),
+         "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))".to_string(),
+         vec!["w:wsh", "paths:1", "head:bare-multi", "lock:none", "sorted", "ik:none", "fp:one-seed-one-path", "origins:default-wsh", "preset:plain-multisig"]),
+        ("keyed_compose_preset_simple_timelocked_inheritance", presets::simple_timelocked_inheritance(Wrapper::Wsh, 26280).unwrap(),
+         "wsh(or_i(pkh(@0/<0;1>/*),and_v(v:pkh(@1/<0;1>/*),older(26280))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:single", "lock:blocks", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:simple-timelocked-inheritance"]),
+        ("keyed_compose_preset_kofn_recovery", presets::kofn_recovery(Wrapper::Tr, 2, 3, 26280).unwrap(),
+         format!("tr({NUMS},{{multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pk(@3/<0;1>/*),older(26280))}})"),
+         vec!["w:tr", "paths:2", "ik:nums", "spine:2", "lock:blocks", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-tr", "preset:kofn-recovery"]),
+        ("keyed_compose_preset_tiered_recovery", presets::tiered_recovery(Wrapper::Wsh, 2, 2, 1, 2, 26280).unwrap(),
+         "wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*),and_v(v:multi(1,@2/<0;1>/*,@3/<0;1>/*),older(26280))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:bare-multi", "lock:blocks", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh", "preset:tiered-recovery"]),
+        ("keyed_compose_preset_hashlock_gated", presets::hashlock_gated(Wrapper::Wsh, H, 26280).unwrap(),
+         format!("wsh(or_i(and_v(v:pkh(@0/<0;1>/*),sha256({HH})),and_v(v:pkh(@1/<0;1>/*),older(26280))))"),
+         // R0 fidelity N-1: the head path is one key PLUS a hash, unlocked --
+         // neither head:bare-multi (n = 1), head:single (is_bare_single needs
+         // no hash), nor head:locked (no lock). `head:hashed` names this
+         // fourth shape; it joins SINGULAR_TAGS below since this is the only
+         // family vector with it.
+         vec!["w:wsh", "paths:2", "head:hashed", "lock:blocks", "hash", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
+        ("keyed_compose_preset_decaying_multisig", presets::decaying_multisig(Wrapper::Wsh, 2, 2, 1, 1, 13140, 26280, 1_000_000).unwrap(),
+         "wsh(or_i(and_v(v:multi(2,@0/<0;1>/*,@1/<0;1>/*),older(13140)),or_i(and_v(v:pkh(@2/<0;1>/*),older(26280)),and_v(v:pkh(@3/<0;1>/*),after(1000000)))))".to_string(),
+         vec!["w:wsh", "paths:3", "head:locked", "lock:blocks", "lock:height", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh", "preset:decaying-multisig"]),
     ]
 }
 
 /// Tags with exactly ONE legal shape, exempt from the two-vector rule and said
 /// so here: a taptree with m = 0 leaves is one unlocked single key and nothing
-/// else (spec §12 item 1).
-pub const SINGULAR_TAGS: &[&str] = &["spine:0"];
+/// else (spec §12 item 1). The six `preset:<name>` tags join it for the SAME
+/// structural reason: F-453's deliverable is explicitly ONE MANIFEST vector
+/// per archetype, so each has exactly one legal vector by construction, not by
+/// coverage gap. §12 item 1's own required-tag list (`compose_vectors.rs`) is
+/// NOT extended with `preset:*` — presets are not one of the axes that list
+/// names, so nothing there needs touching.
+pub const SINGULAR_TAGS: &[&str] = &[
+    "spine:0",
+    // R0 fidelity N-1: the ONLY family vector whose head path is a single key
+    // plus a hash, unlocked (neither bare-multi, single, nor locked).
+    "head:hashed",
+    "preset:plain-multisig",
+    "preset:simple-timelocked-inheritance",
+    "preset:kofn-recovery",
+    "preset:tiered-recovery",
+    "preset:hashlock-gated",
+    "preset:decaying-multisig",
+];
