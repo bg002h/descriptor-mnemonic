@@ -7,7 +7,8 @@
 
 use crate::error::CliError;
 use md_codec::compose::{
-    Experimental, KeySet, Lock, PathList, SpendPath, Wrapper, compose, template_with_origins,
+    Experimental, KeySet, Lock, PathList, SpendPath, Wrapper, compose, presets,
+    template_with_origins,
 };
 use md_codec::render::descriptor_to_template;
 
@@ -115,21 +116,7 @@ pub fn parse_path(s: &str) -> Result<SpendPath, CliError> {
                         "path `{s}`: at most one hash per path"
                     )));
                 }
-                if value.len() != 64
-                    || !value
-                        .bytes()
-                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-                {
-                    return Err(CliError::Compose(format!(
-                        "path `{s}`: sha256 needs 64 hex characters, lowercase"
-                    )));
-                }
-                let mut h = [0u8; 32];
-                for (i, chunk) in value.as_bytes().chunks(2).enumerate() {
-                    let hi = (chunk[0] as char).to_digit(16).expect("checked") as u8;
-                    let lo = (chunk[1] as char).to_digit(16).expect("checked") as u8;
-                    h[i] = (hi << 4) | lo;
-                }
+                let h = parse_sha256_hex(value, &format!("path `{s}`"))?;
                 path.hash = Some(h);
             }
             other => {
@@ -140,6 +127,313 @@ pub fn parse_path(s: &str) -> Result<SpendPath, CliError> {
         }
     }
     Ok(path)
+}
+
+/// `value` as 32 lowercase-hex bytes, or a `{ctx}: sha256 needs ...` refusal.
+/// Shared by `--path ...,sha256=HEX` and `--preset hashlock-gated,sha256=HEX`.
+fn parse_sha256_hex(value: &str, ctx: &str) -> Result<[u8; 32], CliError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(CliError::Compose(format!(
+            "{ctx}: sha256 needs 64 hex characters, lowercase"
+        )));
+    }
+    let mut h = [0u8; 32];
+    for (i, chunk) in value.as_bytes().chunks(2).enumerate() {
+        let hi = (chunk[0] as char).to_digit(16).expect("checked") as u8;
+        let lo = (chunk[1] as char).to_digit(16).expect("checked") as u8;
+        h[i] = (hi << 4) | lo;
+    }
+    Ok(h)
+}
+
+fn hex32(h: &[u8; 32]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(64);
+    for b in h {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
+/// The resolved parameters of one `--preset` invocation, named for `--json`'s
+/// `preset` field (SPEC §4d, C2). One variant per `md_codec::compose::presets`
+/// constructor, same field names as its arguments.
+#[derive(Debug, Clone, Copy)]
+pub enum PresetParams {
+    PlainMultisig {
+        k: u8,
+        n: u8,
+    },
+    SimpleTimelockedInheritance {
+        older_blocks: u32,
+    },
+    KofnRecovery {
+        k: u8,
+        n: u8,
+        older_blocks: u32,
+    },
+    TieredRecovery {
+        k1: u8,
+        n1: u8,
+        k2: u8,
+        n2: u8,
+        older_blocks: u32,
+    },
+    HashlockGated {
+        sha256: [u8; 32],
+        older_blocks: u32,
+    },
+    DecayingMultisig {
+        k1: u8,
+        n1: u8,
+        k2: u8,
+        n2: u8,
+        older1: u32,
+        older2: u32,
+        after_height: u32,
+    },
+}
+
+/// The six archetype names, kebab-case, in the order `--preset --help` and
+/// every "expected one of" refusal lists them.
+pub const PRESET_NAMES: [&str; 6] = [
+    "plain-multisig",
+    "simple-timelocked-inheritance",
+    "kofn-recovery",
+    "tiered-recovery",
+    "hashlock-gated",
+    "decaying-multisig",
+];
+
+fn parse_kofn(tok: &str, ctx: &str) -> Result<(u8, u8), CliError> {
+    let (k, n) = tok
+        .split_once("of")
+        .ok_or_else(|| CliError::Compose(format!("{ctx}: `{tok}` is not <k>of<n>")))?;
+    let k = k
+        .parse::<u8>()
+        .map_err(|_| CliError::Compose(format!("{ctx}: k `{k}` is not a small number")))?;
+    let n = n
+        .parse::<u8>()
+        .map_err(|_| CliError::Compose(format!("{ctx}: n `{n}` is not a small number")))?;
+    Ok((k, n))
+}
+
+/// `--preset <name>[,<k>of<n>]*[,<param>=<value>]*` (SPEC §4d, C2; the CLI
+/// grammar this task defines). The `<k>of<n>` tokens are consumed IN LISTED
+/// ORDER to fill the archetype's key-set parameters (tier 1 before tier 2,
+/// where an archetype has two); `<param>=<value>` tokens are matched BY NAME,
+/// in any order, against exactly the constructor's remaining arguments.
+/// `unsorted` is never a preset parameter: every `presets::*` key set is
+/// `sorted: true` by construction (`presets::ks`), so there is nothing for it
+/// to toggle. Every constructor call runs through `checked` (`validate`), so
+/// a legacy-wrapper shape or an out-of-band lock surfaces as the SAME
+/// `ComposeError` a hand-built `--path` list with the same shape would give.
+pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList), CliError> {
+    let mut parts = s.split(',');
+    let name = parts.next().unwrap_or("");
+    if !PRESET_NAMES.contains(&name) {
+        return Err(CliError::Compose(format!(
+            "--preset {name}: expected one of {}",
+            PRESET_NAMES.join(", ")
+        )));
+    }
+    let ctx = format!("preset {name}");
+    let mut ofs: Vec<(u8, u8)> = Vec::new();
+    let mut named: std::collections::BTreeMap<&str, &str> = std::collections::BTreeMap::new();
+    for tok in parts {
+        match tok.split_once('=') {
+            Some((k, v)) => {
+                if named.insert(k, v).is_some() {
+                    return Err(CliError::Compose(format!("{ctx}: `{k}=` given twice")));
+                }
+            }
+            None => ofs.push(parse_kofn(tok, &ctx)?),
+        }
+    }
+    let need_ofs = |want: usize| -> Result<(), CliError> {
+        if ofs.len() != want {
+            return Err(CliError::Compose(format!(
+                "{ctx} needs exactly {want} <k>of<n> parameter{}, got {}",
+                if want == 1 { "" } else { "s" },
+                ofs.len()
+            )));
+        }
+        Ok(())
+    };
+    let named_only = |allowed: &[&str]| -> Result<(), CliError> {
+        for k in named.keys() {
+            if !allowed.contains(k) {
+                return Err(CliError::Compose(format!("{ctx} admits no {k}= parameter")));
+            }
+        }
+        Ok(())
+    };
+    let need_u32 = |k: &str| -> Result<u32, CliError> {
+        let v = named
+            .get(k)
+            .ok_or_else(|| CliError::Compose(format!("{ctx} needs {k}=<n>")))?;
+        parse_u32(v, &format!("{ctx} {k}"))
+    };
+    // `presets::decaying_multisig`'s `after_height` argument always builds
+    // `Lock::AfterHeight` (never `AfterTime`), and the preset grammar has no
+    // `t`-suffix to ask for a time lock at all -- unlike `--path`'s
+    // `after=<H>|after=<T>t`. A value at or above the Unix-time band therefore
+    // cannot be satisfied by retyping it; the only remedy is `--path`, which
+    // this names, mirroring `--path`'s own "reads as a block height" wording
+    // (`parse_path`'s `after` arm, above) rather than propagating the bare
+    // `ComposeError::LockOutOfRange` text with no remedy.
+    let need_after_height = |k: &str| -> Result<u32, CliError> {
+        let v = need_u32(k)?;
+        if v >= md_codec::compose::LOCKTIME_THRESHOLD {
+            return Err(CliError::Compose(format!(
+                "{ctx}: {k}={v} reads as a block height and is above the height band (1..=499999999); presets cannot express a Unix time -- use --path with `after={v}t` instead"
+            )));
+        }
+        Ok(v)
+    };
+    let map_ce = |e: md_codec::compose::ComposeError| CliError::Compose(e.to_string());
+    match name {
+        "plain-multisig" => {
+            need_ofs(1)?;
+            named_only(&[])?;
+            let (k, n) = ofs[0];
+            let list = presets::plain_multisig(wrapper, k, n).map_err(map_ce)?;
+            Ok((PresetParams::PlainMultisig { k, n }, list))
+        }
+        "simple-timelocked-inheritance" => {
+            need_ofs(0)?;
+            named_only(&["older"])?;
+            let older_blocks = need_u32("older")?;
+            let list =
+                presets::simple_timelocked_inheritance(wrapper, older_blocks).map_err(map_ce)?;
+            Ok((
+                PresetParams::SimpleTimelockedInheritance { older_blocks },
+                list,
+            ))
+        }
+        "kofn-recovery" => {
+            need_ofs(1)?;
+            named_only(&["older"])?;
+            let (k, n) = ofs[0];
+            let older_blocks = need_u32("older")?;
+            let list = presets::kofn_recovery(wrapper, k, n, older_blocks).map_err(map_ce)?;
+            Ok((PresetParams::KofnRecovery { k, n, older_blocks }, list))
+        }
+        "tiered-recovery" => {
+            need_ofs(2)?;
+            named_only(&["older"])?;
+            let (k1, n1) = ofs[0];
+            let (k2, n2) = ofs[1];
+            let older_blocks = need_u32("older")?;
+            let list =
+                presets::tiered_recovery(wrapper, k1, n1, k2, n2, older_blocks).map_err(map_ce)?;
+            Ok((
+                PresetParams::TieredRecovery {
+                    k1,
+                    n1,
+                    k2,
+                    n2,
+                    older_blocks,
+                },
+                list,
+            ))
+        }
+        "hashlock-gated" => {
+            need_ofs(0)?;
+            named_only(&["sha256", "older"])?;
+            let hex = named
+                .get("sha256")
+                .ok_or_else(|| CliError::Compose(format!("{ctx} needs sha256=<64 hex>")))?;
+            let sha256 = parse_sha256_hex(hex, &ctx)?;
+            let older_blocks = need_u32("older")?;
+            let list = presets::hashlock_gated(wrapper, sha256, older_blocks).map_err(map_ce)?;
+            Ok((
+                PresetParams::HashlockGated {
+                    sha256,
+                    older_blocks,
+                },
+                list,
+            ))
+        }
+        "decaying-multisig" => {
+            need_ofs(2)?;
+            named_only(&["older1", "older2", "after"])?;
+            let (k1, n1) = ofs[0];
+            let (k2, n2) = ofs[1];
+            let older1 = need_u32("older1")?;
+            let older2 = need_u32("older2")?;
+            let after_height = need_after_height("after")?;
+            let list =
+                presets::decaying_multisig(wrapper, k1, n1, k2, n2, older1, older2, after_height)
+                    .map_err(map_ce)?;
+            Ok((
+                PresetParams::DecayingMultisig {
+                    k1,
+                    n1,
+                    k2,
+                    n2,
+                    older1,
+                    older2,
+                    after_height,
+                },
+                list,
+            ))
+        }
+        other => Err(CliError::Compose(format!(
+            "preset {other}: internal error -- PRESET_NAMES advertises this name but no lowering rule exists for it (this is a bug in md, not a mistake in your command)"
+        ))),
+    }
+}
+
+#[cfg(feature = "json")]
+fn preset_params_json(p: &PresetParams) -> serde_json::Value {
+    let (name, params) = match *p {
+        PresetParams::PlainMultisig { k, n } => {
+            ("plain-multisig", serde_json::json!({ "k": k, "n": n }))
+        }
+        PresetParams::SimpleTimelockedInheritance { older_blocks } => (
+            "simple-timelocked-inheritance",
+            serde_json::json!({ "older_blocks": older_blocks }),
+        ),
+        PresetParams::KofnRecovery { k, n, older_blocks } => (
+            "kofn-recovery",
+            serde_json::json!({ "k": k, "n": n, "older_blocks": older_blocks }),
+        ),
+        PresetParams::TieredRecovery {
+            k1,
+            n1,
+            k2,
+            n2,
+            older_blocks,
+        } => (
+            "tiered-recovery",
+            serde_json::json!({ "k1": k1, "n1": n1, "k2": k2, "n2": n2, "older_blocks": older_blocks }),
+        ),
+        PresetParams::HashlockGated {
+            sha256,
+            older_blocks,
+        } => (
+            "hashlock-gated",
+            serde_json::json!({ "sha256": hex32(&sha256), "older_blocks": older_blocks }),
+        ),
+        PresetParams::DecayingMultisig {
+            k1,
+            n1,
+            k2,
+            n2,
+            older1,
+            older2,
+            after_height,
+        } => (
+            "decaying-multisig",
+            serde_json::json!({ "k1": k1, "n1": n1, "k2": k2, "n2": n2, "older1": older1, "older2": older2, "after_height": after_height }),
+        ),
+    };
+    serde_json::json!({ "name": name, "params": params })
 }
 
 fn describe(e: &Experimental) -> String {
@@ -155,18 +449,28 @@ fn describe(e: &Experimental) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     wrapper: &str,
     paths: &[String],
+    preset: Option<&str>,
     experimental: bool,
     json: bool,
 ) -> Result<u8, CliError> {
     let wrapper = parse_wrapper(wrapper)?;
-    let paths: Vec<SpendPath> = paths
-        .iter()
-        .map(|p| parse_path(p))
-        .collect::<Result<_, _>>()?;
-    let list = PathList { wrapper, paths };
+    let (list, preset_params): (PathList, Option<PresetParams>) = match preset {
+        Some(spec) => {
+            let (params, list) = parse_preset(wrapper, spec)?;
+            (list, Some(params))
+        }
+        None => {
+            let paths: Vec<SpendPath> = paths
+                .iter()
+                .map(|p| parse_path(p))
+                .collect::<Result<_, _>>()?;
+            (PathList { wrapper, paths }, None)
+        }
+    };
     let composed = compose(&list).map_err(|e| CliError::Compose(e.to_string()))?;
     if !composed.experimental.is_empty() && !experimental {
         let mut msg = String::from("this policy needs --experimental:");
@@ -181,7 +485,9 @@ pub fn run(
     }
     // `unsorted` where sorted was never available is dropped by the lowering
     // (spec §5a: the §8b confirm fires only where sorted was legal); say so
-    // rather than accept a typed request silently.
+    // rather than accept a typed request silently. No preset ever sets
+    // `sorted: false` (`presets::ks` always sorts), so this loop is inert for
+    // every `--preset` list and unchanged from `--path`'s behaviour.
     for (i, p) in list.paths.iter().enumerate() {
         if matches!(p.keys, Some(KeySet { n, sorted: false, .. }) if n >= 2)
             && !composed
@@ -206,6 +512,7 @@ pub fn run(
             .map(|s| serde_json::json!({ "index": s.index, "path": s.path, "ordinal": s.ordinal }))
             .collect();
         let exp: Vec<String> = composed.experimental.iter().map(describe).collect();
+        let preset_json = preset_params.as_ref().map(preset_params_json);
         let v = serde_json::json!({
             "schema": SCHEMA,
             "template": template,
@@ -214,6 +521,7 @@ pub fn run(
             "slots": slots,
             "internal_key_path": composed.internal_key_path,
             "experimental": exp,
+            "preset": preset_json,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
         crate::output_advisory::emit_output_class_advisory(
@@ -239,5 +547,45 @@ fn wrapper_name(w: Wrapper) -> &'static str {
         Wrapper::Wsh => "wsh",
         Wrapper::ShWsh => "sh-wsh",
         Wrapper::Sh => "sh",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // R0 round-1 fold-verification (Important): the ORIGINAL version of this
+    // test iterated a hand-typed `[(&str, &str); 6]` fixture and asserted its
+    // `.len() == 6` -- a tautology that cannot fail under any edit to
+    // `PRESET_NAMES` or the `match` in `parse_preset`. Confirmed live: adding
+    // a 7th, unmatched name to `PRESET_NAMES` compiled, passed clippy, passed
+    // all 31 CLI tests, and then PANICKED (`unreachable!()`, exit 101) on a
+    // real `md compose --preset <name>,...` invocation. This version iterates
+    // `PRESET_NAMES` ITSELF and calls `parse_preset` directly (only possible
+    // from inside this crate -- `cli_compose_preset.rs` is a black-box
+    // integration test with no access to either), so a name added to
+    // `PRESET_NAMES` with no matching valid-parameter fixture or no matching
+    // `match` arm fails HERE, not in production.
+    #[test]
+    fn every_preset_name_parses_with_some_valid_parameters() {
+        fn valid_params(name: &str) -> &'static str {
+            match name {
+                "plain-multisig" => "2of3",
+                "simple-timelocked-inheritance" => "older=26280",
+                "kofn-recovery" => "2of3,older=26280",
+                "tiered-recovery" => "2of2,1of2,older=26280",
+                "hashlock-gated" => {
+                    "sha256=a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8,older=26280"
+                }
+                "decaying-multisig" => "2of2,1of1,older1=13140,older2=26280,after=1000000",
+                other => panic!(
+                    "PRESET_NAMES gained `{other}` with no valid-parameter fixture in this test"
+                ),
+            }
+        }
+        for name in PRESET_NAMES {
+            let spec = format!("{name},{}", valid_params(name));
+            parse_preset(Wrapper::Wsh, &spec).unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
     }
 }

@@ -279,19 +279,29 @@ enum Command {
     /// Lower an ORDERED list of spend paths to a BIP-388 template by FIXED rules
     /// (SPEC_wallet_policy_composer.md §5). The opposite of `compile`: no search,
     /// no cost model, the same text from every implementation.
+    #[command(group = clap::ArgGroup::new("path_source").required(true).args(["paths", "preset"]))]
     Compose {
         /// tr | wsh | sh-wsh | sh
         #[arg(long, value_name = "WRAPPER", required = true)]
         wrapper: String,
         /// One spend path in listed order: `<k>of<n>[,older=N|older=Nu|after=H|after=Tt][,sha256=HEX][,unsorted]`
-        /// or `keyless,sha256=HEX[,older=..|after=..]`. Repeatable.
-        #[arg(long = "path", value_name = "PATH", required = true, action = clap::ArgAction::Append)]
+        /// or `keyless,sha256=HEX[,older=..|after=..]`. Repeatable. Mutually
+        /// exclusive with --preset.
+        #[arg(long = "path", value_name = "PATH", action = clap::ArgAction::Append)]
         paths: Vec<String>,
+        /// One of the six named archetypes (SPEC_wallet_policy_composer.md
+        /// §4d): `<name>[,<k>of<n>]*[,<param>=<value>]*`, e.g.
+        /// `kofn-recovery,2of3,older=26280`. Mutually exclusive with --path.
+        /// For decaying-multisig, `older1` locks the FIRST (primary) tier and
+        /// `older2` the second -- the primary tier does not spend immediately.
+        #[arg(long, value_name = "PRESET")]
+        preset: Option<String>,
         /// Admit key-less paths and unsorted-where-sorted-was-legal, with a warning.
         #[arg(long)]
         experimental: bool,
         /// Emit JSON: the origin-less template, the inline-origin template, the
-        /// slot map, the taproot internal-key path and the EXPERIMENTAL marks.
+        /// slot map, the taproot internal-key path, the EXPERIMENTAL marks, and
+        /// (with --preset) the resolved preset name and parameters.
         #[arg(long)]
         json: bool,
     },
@@ -993,9 +1003,10 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
         Command::Compose {
             wrapper,
             paths,
+            preset,
             experimental,
             json,
-        } => cmd::compose::run(&wrapper, &paths, experimental, json),
+        } => cmd::compose::run(&wrapper, &paths, preset.as_deref(), experimental, json),
         Command::Descriptor {
             phrases,
             template,
