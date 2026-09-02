@@ -529,3 +529,163 @@ fn compose_with_refuses_a_declaration_slice_of_the_wrong_length() {
         ComposeError::WrongSlotCount { got: 1, want: 2 }
     );
 }
+
+// ---- §5 taproot lowering ---------------------------------------------------------
+
+const NUMS: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+
+#[test]
+fn two_path_taproot_with_no_single_key_uses_nums_and_two_leaves() {
+    // The reference two-path wallet, tr form (brainstorm §3.4), all slots unseated.
+    // With two leaves the unlocked multi is NOT sole, so it is multi_a.
+    let l = list(
+        Wrapper::Tr,
+        vec![keys(2, 3), with_lock(keys(1, 1), Lock::OlderBlocks(26280))],
+    );
+    let c = compose(&l).unwrap();
+    assert_eq!(
+        descriptor_to_template(&c.descriptor).unwrap(),
+        format!(
+            "tr({NUMS},{{multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pk(@3/<0;1>/*),older(26280))}})"
+        )
+    );
+    assert_eq!(c.internal_key_path, None);
+}
+
+#[test]
+fn the_unlocked_single_key_becomes_the_internal_key_and_slot_zero() {
+    // Path 1: 2-of-2 locked; path 2: single unlocked key; path 3: single locked key.
+    let l = list(
+        Wrapper::Tr,
+        vec![
+            with_lock(keys(2, 2), Lock::OlderBlocks(100)),
+            keys(1, 1),
+            with_lock(keys(1, 1), Lock::AfterHeight(900_000)),
+        ],
+    );
+    let c = compose(&l).unwrap();
+    assert_eq!(c.internal_key_path, Some(1));
+    assert_eq!(c.slots[0].path, 1, "the extracted key is @0");
+    assert_eq!(
+        descriptor_to_template(&c.descriptor).unwrap(),
+        "tr(@0/<0;1>/*,{and_v(v:multi_a(2,@1/<0;1>/*,@2/<0;1>/*),older(100)),and_v(v:pk(@3/<0;1>/*),after(900000))})"
+    );
+    let mut d = c.descriptor.clone();
+    canonicalize_placeholder_indices(&mut d).unwrap();
+    assert_eq!(d, c.descriptor);
+}
+
+#[test]
+fn a_single_remaining_leaf_is_written_bare() {
+    let l = list(
+        Wrapper::Tr,
+        vec![keys(1, 1), with_lock(keys(1, 1), Lock::OlderBlocks(65535))],
+    );
+    assert_eq!(
+        text(&l),
+        "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(65535)))"
+    );
+}
+
+#[test]
+fn a_lone_single_key_is_a_key_path_only_tr() {
+    assert_eq!(text(&list(Wrapper::Tr, vec![keys(1, 1)])), "tr(@0/<0;1>/*)");
+}
+
+#[test]
+fn a_sole_unlocked_multi_leaf_is_sortedmulti_a() {
+    let l = list(Wrapper::Tr, vec![keys(2, 3)]);
+    assert_eq!(
+        text(&l),
+        format!("tr({NUMS},sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))")
+    );
+}
+
+#[test]
+fn four_leaves_form_a_right_spine() {
+    let paths: Vec<SpendPath> = (0..4)
+        .map(|i| with_lock(keys(1, 1), Lock::OlderBlocks(10 + i)))
+        .collect();
+    let t = text(&list(Wrapper::Tr, paths));
+    // {P1,{P2,{P3,P4}}}: three opening braces, and the deepest pair is P3,P4.
+    assert_eq!(t.matches('{').count(), 3, "{t}");
+    assert!(
+        t.contains("older(12)),and_v(v:pk(@3/<0;1>/*),older(13))}}})"),
+        "{t}"
+    );
+}
+
+#[test]
+fn only_the_first_listed_unlocked_single_key_is_extracted() {
+    // Two unlocked single keys: the first is the internal key, the second stays a leaf.
+    let l = list(Wrapper::Tr, vec![keys(2, 2), keys(1, 1), keys(1, 1)]);
+    let c = compose(&l).unwrap();
+    assert_eq!(c.internal_key_path, Some(1));
+    assert_eq!(
+        descriptor_to_template(&c.descriptor).unwrap(),
+        "tr(@0/<0;1>/*,{multi_a(2,@1/<0;1>/*,@2/<0;1>/*),pk(@3/<0;1>/*)})"
+    );
+}
+
+#[test]
+fn taproot_templates_round_trip_through_the_wire() {
+    let l = list(
+        Wrapper::Tr,
+        vec![keys(2, 3), with_lock(keys(1, 1), Lock::OlderBlocks(26280))],
+    );
+    let c = compose(&l).unwrap();
+    let chunks = split(&c.descriptor).unwrap();
+    let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
+    assert_eq!(reassemble(&refs).unwrap(), c.descriptor);
+}
+
+#[test]
+fn tr_default_origins_use_script_type_three() {
+    let c = compose(&list(Wrapper::Tr, vec![keys(2, 2)])).unwrap();
+    assert_eq!(
+        origins(&c),
+        vec![hardened(&[48, 0, 0, 3]), hardened(&[48, 0, 1, 3])]
+    );
+}
+
+#[test]
+fn compose_with_uses_declared_origins_and_fills_unseated_slots_with_the_lowest_free_account() {
+    let l = list(
+        Wrapper::Tr,
+        vec![keys(2, 2), with_lock(keys(1, 1), Lock::OlderBlocks(100))],
+    );
+    let fp_a = [0x73, 0xc5, 0xda, 0x0a];
+    // Slot @0 seated at account 1, slot @2 seated at account 0; slot @1 unseated.
+    let declared = vec![
+        Some(SlotOrigin {
+            origin: hardened(&[48, 0, 1, 3]),
+            fingerprint: Some(fp_a),
+        }),
+        None,
+        Some(SlotOrigin {
+            origin: hardened(&[48, 0, 0, 3]),
+            fingerprint: Some([1, 2, 3, 4]),
+        }),
+    ];
+    let c = compose_with(&l, &declared).unwrap();
+    // Accounts 0 and 1 are taken, so the unseated slot @1 gets account 2.
+    assert_eq!(
+        origins(&c),
+        vec![
+            hardened(&[48, 0, 1, 3]),
+            hardened(&[48, 0, 2, 3]),
+            hardened(&[48, 0, 0, 3])
+        ]
+    );
+    assert_eq!(
+        c.descriptor.tlv.fingerprints,
+        Some(vec![(0, fp_a), (2, [1, 2, 3, 4])])
+    );
+    // No path is an unlocked single key (the 1-of-1 is locked), so NUMS and two leaves.
+    assert_eq!(
+        template_with_origins(&c).unwrap(),
+        format!(
+            "tr({NUMS},{{multi_a(2,@0/48'/0'/1'/3'/<0;1>/*,@1/48'/0'/2'/3'/<0;1>/*),and_v(v:pk(@2/48'/0'/0'/3'/<0;1>/*),older(100))}})"
+        )
+    );
+}
