@@ -2854,3 +2854,38 @@ on-device lock entry (mnemonic-engrave ruling C11/C20) enforces the ranges
 itself so the emitter never depends on this guard.
 
 - **Status:** OPEN. **Tier:** `funds-safety` / PATCH.
+
+### `md-descriptor-depth0-xpub-ledger-registration` — `md descriptor` re-serialises every key as a DEPTH-0 xpub under a depth-4 origin; Core, Liana and Sparrow accept it, Ledger's BIP-388 registration likely does not (repo: **descriptor-mnemonic**; owning phase: **recon — settle on Speculos; then decide whether to carry depth/child-number**)
+
+Filed 2026-09-01 from the mnemonic-engrave composer recon
+`design/agent-reports/composer-recon-same-fingerprint-two-accounts-import.md`
+§6(b), controller-verified where marked.
+
+**The fact.** md1's `Pubkeys` TLV holds 65 bytes per key (chain code ‖ compressed
+point) and no depth, parent fingerprint or child number, so `md descriptor`
+rebuilds each xpub as depth 0 (`xpub661MyMwAqRbc…` prefix) while its origin says
+`[fp/48'/0'/1'/2']` — a 4-step origin on a depth-0 record.
+
+**Measured 2026-09-01 (controller re-ran):** Bitcoin Core v25 imports such
+descriptors with `success: true` (single-chain form; multipath needs v25+ BIP-389
+which the local build lacks); Liana's `LianaDescriptor::from_str` accepts them and
+shows the contradiction in its parse (`depth: 0, parent_fingerprint: 00000000` with
+`origin: Some((73c5da0a, 48'/0'/1'/2'))`); Sparrow's drongo accepts the keystores.
+None objects.
+
+**The risk — UNVERIFIED, Ledger-specific.** `app-bitcoin-new/src/handler/register_wallet.c`
+decides "is this key mine" by `memcmp` of the WHOLE serialized 78-byte xpub against
+one re-derived on-device at the declared origin. A depth-0 record cannot equal a
+device-derived depth-4 one, so every key would classify as external and a policy
+with no internal key is refused (`EC_REGISTER_WALLET_POLICY_HAS_NO_INTERNAL_KEY`).
+Inference from the 82-byte base58 decode and the BIP-32 record layout, not a
+measurement — the struct definition was not located and no Speculos run exists.
+
+**What to do.** (1) Recon: run Ledger's app under Speculos with an md-produced
+descriptor; confirm or refute. (2) If confirmed: either carry depth + child number
+on the md1 wire (an additive TLV, F-417's extension seam, with a criticality story)
+or have `md descriptor` accept `--key` inputs at export time to re-serialise with
+true headers — the host has the account xpubs when it exports. Cross-ref
+mnemonic-engrave F-449 (unspendable-xpub form), which touches the same export.
+
+- **Status:** OPEN. **Tier:** `recon` / `interop`.
