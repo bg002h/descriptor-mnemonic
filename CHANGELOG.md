@@ -25,6 +25,58 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   specific collided carrier; the bare `@i=<chunk-set-id>` form now refuses
   by name (listing the labels) when it names more than one collided card.
   See `design/SPEC_seat_auto_partition.md`.
+- **`md compose`** (new subcommand, unconditional — not behind `cli-compiler`):
+  lowers an ORDERED list of spend paths to a BIP-388 template by FIXED rules
+  (`--wrapper tr|wsh|sh-wsh|sh`, repeatable `--path <k>of<n>[,older=N|older=Nu|after=H|after=Tt][,sha256=HEX][,unsorted]`
+  or `--path keyless,sha256=HEX[,...]`). The opposite contract to `md compile`:
+  no search, no cost model, the same text from every implementation, so the Go
+  port can reproduce it byte for byte. Prints the inline-origin template
+  `md encode` reads back to the same card; `--json` adds the origin-less
+  template, the slot map, the taproot internal-key path and the EXPERIMENTAL
+  list. Key-less paths and unsorted-where-sorted-was-legal require
+  `--experimental`. See `design/SPEC_wallet_policy_composer.md` §4, §5, §10.
+
+### Changed
+
+- **`md encode` now runs miniscript's sanity gate under EVERY wrapper, not only
+  `tr`.** A spend path that requires no signature (e.g. a bare `sha256`
+  hashlock leg under `wsh`) previously encoded with exit 0 and no warning,
+  keyed or unkeyed, while the same shape under `tr` was refused — because
+  `Descriptor::from_str` applies that gate for `tr` alone. It is now refused
+  for `wsh`, `sh(wsh)` and `sh` too, and `--experimental` relaxes exactly the
+  signature rule (malleability, resource limits, repeated keys and timelock
+  mixing still apply) with the existing warning. The gate is applied on MINTING
+  verbs only, so reading verbs (`md verify`, `md inspect`) keep reading
+  already-engraved plates of newly-refused shapes. Closes descriptor-mnemonic
+  follow-up `md-encode-keyless-template-sigless-path-not-gated`.
+
+## md-codec [Unreleased]
+
+### Added
+
+- **`md_codec::compose`** (new module, unconditional): the normative,
+  search-free lowering from an ordered spend-path list to a BIP-388 wallet
+  policy — structural refusals (§4e), the BIP-68/65/379 lock bands (§4c), the
+  `or_d`/`or_i` wsh chain, the taproot right spine with internal-key extraction
+  and NUMS, first-appearance slot numbering (so
+  `canonicalize_placeholder_indices` is the identity on its output), the §4f
+  default origins `m/48'/0'/account'/T'` with the pairwise-distinguishability
+  invariant, and `compose::presets` — plain k-of-n plus the five toolkit
+  archetypes as path lists. Errors are a separate `ComposeError`, never
+  `md_codec::Error`, which stays a pure wire/decode taxonomy.
+- **28 tagged compose vectors** covering the spec's §12 item 1 tag table, 26 of
+  them in `test_vectors::MANIFEST` (22 `keyed_compose_*`, which `md vectors`
+  exports as `.conformance.json` records for the Go port to check itself
+  against; the two key-less-wsh entries stay out of `MANIFEST` because the
+  exporter parses under the minting disposition, which now refuses a
+  signature-free path). Every family member and every preset also passes the
+  §5b cross-check: convert, `sanity_check`, derive an address, and lift to the
+  same semantic policy as rust-miniscript's COMPILER over the same conditions.
+
+### Changed
+
+- Dev-dependency on `miniscript`'s `compiler` feature (test-only; the crate is
+  already a workspace dependency, so `Cargo.lock` is unchanged).
 
 ## md-cli [0.14.0] — 2026-08-31
 
