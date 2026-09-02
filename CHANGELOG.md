@@ -35,6 +35,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   template, the slot map, the taproot internal-key path and the EXPERIMENTAL
   list. Key-less paths and unsorted-where-sorted-was-legal require
   `--experimental`. See `design/SPEC_wallet_policy_composer.md` §4, §5, §10.
+- `md compose --preset <name>[,<k>of<n>]*[,<param>=<value>]*` (F-453): the six
+  `md_codec::compose::presets` archetypes (`plain-multisig`,
+  `simple-timelocked-inheritance`, `kofn-recovery`, `tiered-recovery`,
+  `hashlock-gated`, `decaying-multisig`) as one-tap presets, mutually
+  exclusive with `--path` (a clap `ArgGroup`; exactly one of the two is
+  required). `--json` gains a `preset` field naming the resolved preset and
+  its parameters (`null` for a `--path`-built policy). No new lowering
+  behaviour: every preset is a thin call into the already-shipped
+  constructors. See `design/SPEC_wallet_policy_composer.md` §4d.
 
 ### Changed
 
@@ -88,6 +97,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   signature-free path). Every family member and every preset also passes the
   §5b cross-check: convert, `sanity_check`, derive an address, and lift to the
   same semantic policy as rust-miniscript's COMPILER over the same conditions.
+- Six more compose vectors, `keyed_compose_preset_<name>`, one per archetype
+  (F-453) -- the family and the MANIFEST grow to 34 tagged / 32 in MANIFEST,
+  all keyed, all within the four journey xpubs, each carrying a new singular
+  `preset:<name>` tag.
 
 ### Changed
 
