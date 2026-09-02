@@ -173,3 +173,17 @@ fn a_keyless_wsh_path_is_admitted_with_top_unsafe_and_refused_by_the_default_san
     .expect("top_unsafe admits the keyless path and nothing else");
     assert!(insane.lift().is_ok());
 }
+
+#[test]
+fn every_family_entry_passes_the_5b_cross_check() {
+    for (name, list, _, tags) in family() {
+        let keyless = tags.contains(&"keyless-wsh");
+        let addr = cross_check(name, &list, keyless);
+        if !keyless {
+            assert!(
+                addr.starts_with("bc1") || addr.starts_with('3'),
+                "{name}: {addr}"
+            );
+        }
+    }
+}

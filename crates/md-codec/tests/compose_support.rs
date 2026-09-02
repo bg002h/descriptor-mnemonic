@@ -146,3 +146,161 @@ pub fn concrete_policy(list: &PathList, c: &Composed, keys: &[String]) -> String
     }
     acc
 }
+
+use md_codec::compose::{KeySet, Lock, SpendPath, Wrapper};
+
+pub fn k(k: u8, n: u8) -> SpendPath {
+    SpendPath {
+        keys: Some(KeySet { k, n, sorted: true }),
+        hash: None,
+        lock: None,
+    }
+}
+pub fn u(k: u8, n: u8) -> SpendPath {
+    SpendPath {
+        keys: Some(KeySet {
+            k,
+            n,
+            sorted: false,
+        }),
+        hash: None,
+        lock: None,
+    }
+}
+pub fn lk(mut p: SpendPath, l: Lock) -> SpendPath {
+    p.lock = Some(l);
+    p
+}
+pub fn hs(mut p: SpendPath, h: [u8; 32]) -> SpendPath {
+    p.hash = Some(h);
+    p
+}
+pub fn kl(h: [u8; 32], l: Option<Lock>) -> SpendPath {
+    SpendPath {
+        keys: None,
+        hash: Some(h),
+        lock: l,
+    }
+}
+pub fn pl(w: Wrapper, paths: Vec<SpendPath>) -> PathList {
+    PathList { wrapper: w, paths }
+}
+
+/// (vector name, path list, rendered text WITHOUT origins, tags). The text is
+/// the fixed spelling the Go builder reproduces; origins are added by
+/// `template_with_origins` for the MANIFEST form. Tags are the spec rows:
+/// `w:<wrapper>`, `paths:<n>`, `head:<bare-multi|single|locked>`,
+/// `ik:<extracted-first|extracted-later|nums|none>`,
+/// `lock:<none|blocks|units|height|time>`, `hash`, `sorted`, `unsorted`,
+/// `keyless-wsh`, `spine:<m>`, `slots:32`; the §4f default-origin tag
+/// `origins:default-<wrapper>` (every family vector is unseated, so every one
+/// carries the wrapper's default origins); and the MANIFEST binding's
+/// fingerprint case, the spec's three: `fp:distinct` (four distinct declared
+/// fingerprints), `fp:one-seed-one-path` (one master fingerprint on two or
+/// more slots of ONE path), `fp:one-seed-two-paths` (one master fingerprint
+/// across two or more paths); `fp:none` marks the unkeyed vectors. `no-corpus`
+/// marks an entry pinned by these tests and the §5b cross-check but NOT stored
+/// in `MANIFEST`: the exporter and the corpus tests parse under the MINTING
+/// disposition, which after Task 8 refuses a signature-free path unless
+/// `--experimental`, so the two keyless-wsh vectors cannot be exported. Stage 2
+/// mirrors them from this list directly.
+pub fn family() -> Vec<(&'static str, PathList, String, Vec<&'static str>)> {
+    let tr32: Vec<SpendPath> = (0..8).map(|_| k(4, 4)).collect();
+    vec![
+        // ---- wsh family
+        ("keyed_compose_wsh_sole_sortedmulti", pl(Wrapper::Wsh, vec![k(2, 3)]),
+         "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))".to_string(),
+         vec!["w:wsh", "paths:1", "head:bare-multi", "lock:none", "sorted", "ik:none", "fp:one-seed-one-path", "origins:default-wsh"]),
+        ("keyed_compose_wsh_two_path_or_d", pl(Wrapper::Wsh, vec![k(2, 3), lk(k(1, 1), Lock::OlderBlocks(26280))]),
+         "wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pkh(@3/<0;1>/*),older(26280))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:bare-multi", "lock:blocks", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh"]),
+        // Same list as the previous entry; the MANIFEST binds four DISTINCT fingerprints.
+        ("keyed_compose_wsh_two_path_distinct_fingerprints", pl(Wrapper::Wsh, vec![k(2, 3), lk(k(1, 1), Lock::OlderBlocks(26280))]),
+         "wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pkh(@3/<0;1>/*),older(26280))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:bare-multi", "lock:blocks", "ik:none", "fp:distinct", "origins:default-wsh"]),
+        ("keyed_compose_wsh_single_head_or_i", pl(Wrapper::Wsh, vec![k(1, 1), lk(k(1, 1), Lock::OlderUnits(15188))]),
+         "wsh(or_i(pkh(@0/<0;1>/*),and_v(v:pkh(@1/<0;1>/*),older(4209492))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:single", "lock:units", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh"]),
+        ("keyed_compose_wsh_locked_head_or_i", pl(Wrapper::Wsh, vec![lk(k(2, 2), Lock::AfterHeight(905_000)), k(1, 1)]),
+         "wsh(or_i(and_v(v:multi(2,@0/<0;1>/*,@1/<0;1>/*),after(905000)),pkh(@2/<0;1>/*)))".to_string(),
+         vec!["w:wsh", "paths:2", "head:locked", "lock:height", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh"]),
+        ("keyed_compose_wsh_hash_and_time", pl(Wrapper::Wsh, vec![k(1, 1), lk(hs(k(2, 2), H), Lock::AfterTime(1_893_456_000))]),
+         format!("wsh(or_i(pkh(@0/<0;1>/*),and_v(v:multi(2,@1/<0;1>/*,@2/<0;1>/*),and_v(v:sha256({HH}),after(1893456000)))))"),
+         vec!["w:wsh", "paths:2", "head:single", "lock:time", "hash", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh"]),
+        ("keyed_compose_wsh_three_paths", pl(Wrapper::Wsh, vec![k(1, 1), lk(k(1, 1), Lock::OlderBlocks(4032)), lk(k(1, 1), Lock::AfterHeight(1_000_000))]),
+         "wsh(or_i(pkh(@0/<0;1>/*),or_i(and_v(v:pkh(@1/<0;1>/*),older(4032)),and_v(v:pkh(@2/<0;1>/*),after(1000000)))))".to_string(),
+         vec!["w:wsh", "paths:3", "head:single", "lock:blocks", "lock:height", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh"]),
+        ("keyed_compose_wsh_unsorted_sole", pl(Wrapper::Wsh, vec![u(2, 3)]),
+         "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))".to_string(),
+         vec!["w:wsh", "paths:1", "head:bare-multi", "lock:none", "unsorted", "ik:none", "fp:one-seed-one-path", "origins:default-wsh"]),
+        // ---- legacy wrappers
+        ("keyed_compose_sh_wsh_sole", pl(Wrapper::ShWsh, vec![k(2, 3)]),
+         "sh(wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*)))".to_string(),
+         vec!["w:sh-wsh", "paths:1", "head:bare-multi", "lock:none", "sorted", "ik:none", "fp:one-seed-one-path", "origins:default-sh-wsh"]),
+        ("keyed_compose_sh_wsh_one_of_two", pl(Wrapper::ShWsh, vec![k(1, 2)]),
+         "sh(wsh(sortedmulti(1,@0/<0;1>/*,@1/<0;1>/*)))".to_string(),
+         vec!["w:sh-wsh", "paths:1", "head:bare-multi", "lock:none", "sorted", "ik:none", "fp:one-seed-one-path", "origins:default-sh-wsh"]),
+        ("keyed_compose_sh_sole", pl(Wrapper::Sh, vec![k(2, 2)]),
+         "sh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*))".to_string(),
+         vec!["w:sh", "paths:1", "head:bare-multi", "lock:none", "sorted", "ik:none", "fp:one-seed-one-path", "origins:default-sh"]),
+        ("keyed_compose_sh_two_of_four", pl(Wrapper::Sh, vec![k(2, 4)]),
+         "sh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*,@3/<0;1>/*))".to_string(),
+         vec!["w:sh", "paths:1", "head:bare-multi", "lock:none", "sorted", "ik:none", "fp:one-seed-one-path", "origins:default-sh"]),
+        // ---- taproot family
+        ("keyed_compose_tr_two_path_nums", pl(Wrapper::Tr, vec![k(2, 3), lk(k(1, 1), Lock::OlderBlocks(26280))]),
+         format!("tr({NUMS},{{multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pk(@3/<0;1>/*),older(26280))}})"),
+         vec!["w:tr", "paths:2", "ik:nums", "spine:2", "lock:blocks", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-tr"]),
+        // Same list as the previous entry; the MANIFEST binds four DISTINCT fingerprints.
+        ("keyed_compose_tr_two_path_distinct_fingerprints", pl(Wrapper::Tr, vec![k(2, 3), lk(k(1, 1), Lock::OlderBlocks(26280))]),
+         format!("tr({NUMS},{{multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:pk(@3/<0;1>/*),older(26280))}})"),
+         vec!["w:tr", "paths:2", "ik:nums", "spine:2", "lock:blocks", "fp:distinct", "origins:default-tr"]),
+        ("keyed_compose_tr_extracted_first", pl(Wrapper::Tr, vec![k(1, 1), lk(k(1, 1), Lock::OlderBlocks(65535))]),
+         "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(65535)))".to_string(),
+         vec!["w:tr", "paths:2", "ik:extracted-first", "spine:1", "lock:blocks", "fp:one-seed-two-paths", "origins:default-tr"]),
+        ("keyed_compose_tr_extracted_later_four_paths", pl(Wrapper::Tr, vec![lk(k(1, 1), Lock::OlderBlocks(10)), lk(k(1, 1), Lock::AfterHeight(1_000_000)), k(1, 1), lk(k(1, 1), Lock::OlderUnits(100))]),
+         "tr(@0/<0;1>/*,{and_v(v:pk(@1/<0;1>/*),older(10)),{and_v(v:pk(@2/<0;1>/*),after(1000000)),and_v(v:pk(@3/<0;1>/*),older(4194404))}})".to_string(),
+         vec!["w:tr", "paths:4", "ik:extracted-later", "spine:3", "lock:blocks", "lock:height", "lock:units", "fp:one-seed-two-paths", "origins:default-tr"]),
+        ("keyed_compose_tr_three_paths_extracted_later", pl(Wrapper::Tr, vec![lk(k(1, 1), Lock::OlderBlocks(10)), k(1, 1), lk(k(1, 1), Lock::OlderUnits(5))]),
+         "tr(@0/<0;1>/*,{and_v(v:pk(@1/<0;1>/*),older(10)),and_v(v:pk(@2/<0;1>/*),older(4194309))})".to_string(),
+         vec!["w:tr", "paths:3", "ik:extracted-later", "spine:2", "lock:blocks", "lock:units", "fp:one-seed-two-paths", "origins:default-tr"]),
+        ("keyed_compose_tr_nums_three_leaves", pl(Wrapper::Tr, vec![lk(k(1, 1), Lock::OlderBlocks(1)), lk(k(1, 1), Lock::OlderBlocks(2)), lk(k(2, 2), Lock::AfterHeight(2))]),
+         format!("tr({NUMS},{{and_v(v:pk(@0/<0;1>/*),older(1)),{{and_v(v:pk(@1/<0;1>/*),older(2)),and_v(v:multi_a(2,@2/<0;1>/*,@3/<0;1>/*),after(2))}}}})"),
+         vec!["w:tr", "paths:3", "ik:nums", "spine:3", "lock:blocks", "lock:height", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-tr"]),
+        ("keyed_compose_tr_sole_sortedmulti_a", pl(Wrapper::Tr, vec![k(2, 3)]),
+         format!("tr({NUMS},sortedmulti_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))"),
+         vec!["w:tr", "paths:1", "ik:nums", "spine:1", "lock:none", "sorted", "fp:one-seed-one-path", "origins:default-tr"]),
+        ("keyed_compose_tr_key_path_only", pl(Wrapper::Tr, vec![k(1, 1)]),
+         "tr(@0/<0;1>/*)".to_string(),
+         vec!["w:tr", "paths:1", "ik:extracted-first", "spine:0", "lock:none", "origins:default-tr"]),
+        ("keyed_compose_tr_unsorted_sole_leaf", pl(Wrapper::Tr, vec![u(2, 2)]),
+         format!("tr({NUMS},multi_a(2,@0/<0;1>/*,@1/<0;1>/*))"),
+         vec!["w:tr", "paths:1", "ik:nums", "spine:1", "lock:none", "unsorted", "fp:one-seed-one-path", "origins:default-tr"]),
+        ("keyed_compose_tr_hash_leaf", pl(Wrapper::Tr, vec![k(2, 2), lk(hs(k(1, 1), H), Lock::AfterTime(1_893_456_000))]),
+         format!("tr({NUMS},{{multi_a(2,@0/<0;1>/*,@1/<0;1>/*),and_v(v:pk(@2/<0;1>/*),and_v(v:sha256({HH}),after(1893456000)))}})"),
+         vec!["w:tr", "paths:2", "ik:nums", "spine:2", "hash", "lock:time", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-tr"]),
+        // ---- unkeyed: EXPERIMENTAL shapes and the size boundaries (more slots than the four journey keys)
+        ("compose_wsh_keyless_hash_path", pl(Wrapper::Wsh, vec![k(2, 3), kl(H, Some(Lock::AfterHeight(1_383_520)))]),
+         format!("wsh(or_d(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*),and_v(v:sha256({HH}),after(1383520))))"),
+         vec!["w:wsh", "paths:2", "head:bare-multi", "keyless-wsh", "hash", "lock:height", "ik:none", "fp:none", "origins:default-wsh", "no-corpus"]),
+        ("compose_wsh_keyless_hash_only", pl(Wrapper::Wsh, vec![k(1, 1), kl(H, None)]),
+         format!("wsh(or_i(pkh(@0/<0;1>/*),sha256({HH})))"),
+         vec!["w:wsh", "paths:2", "head:single", "keyless-wsh", "hash", "lock:none", "ik:none", "fp:none", "origins:default-wsh", "no-corpus"]),
+        ("compose_wsh_eight_paths", pl(Wrapper::Wsh, (0..8).map(|i| lk(k(1, 1), Lock::OlderBlocks(100 + i))).collect()),
+         "wsh(or_i(and_v(v:pkh(@0/<0;1>/*),older(100)),or_i(and_v(v:pkh(@1/<0;1>/*),older(101)),or_i(and_v(v:pkh(@2/<0;1>/*),older(102)),or_i(and_v(v:pkh(@3/<0;1>/*),older(103)),or_i(and_v(v:pkh(@4/<0;1>/*),older(104)),or_i(and_v(v:pkh(@5/<0;1>/*),older(105)),or_i(and_v(v:pkh(@6/<0;1>/*),older(106)),and_v(v:pkh(@7/<0;1>/*),older(107))))))))))".to_string(),
+         vec!["w:wsh", "paths:8", "head:locked", "lock:blocks", "ik:none", "fp:none", "origins:default-wsh"]),
+        ("compose_tr_seven_leaves", pl(Wrapper::Tr, (0..8).map(|i| if i == 0 { k(1, 1) } else { lk(k(1, 1), Lock::OlderBlocks(100 + i)) }).collect()),
+         "tr(@0/<0;1>/*,{and_v(v:pk(@1/<0;1>/*),older(101)),{and_v(v:pk(@2/<0;1>/*),older(102)),{and_v(v:pk(@3/<0;1>/*),older(103)),{and_v(v:pk(@4/<0;1>/*),older(104)),{and_v(v:pk(@5/<0;1>/*),older(105)),{and_v(v:pk(@6/<0;1>/*),older(106)),and_v(v:pk(@7/<0;1>/*),older(107))}}}}}})".to_string(),
+         vec!["w:tr", "paths:8", "ik:extracted-first", "spine:7", "lock:blocks", "fp:none", "origins:default-tr"]),
+        ("compose_wsh_thirty_two_slots", pl(Wrapper::Wsh, vec![k(9, 9), k(9, 9), k(9, 9), k(5, 5)]),
+         "wsh(or_d(multi(9,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*,@3/<0;1>/*,@4/<0;1>/*,@5/<0;1>/*,@6/<0;1>/*,@7/<0;1>/*,@8/<0;1>/*),or_d(multi(9,@9/<0;1>/*,@10/<0;1>/*,@11/<0;1>/*,@12/<0;1>/*,@13/<0;1>/*,@14/<0;1>/*,@15/<0;1>/*,@16/<0;1>/*,@17/<0;1>/*),or_d(multi(9,@18/<0;1>/*,@19/<0;1>/*,@20/<0;1>/*,@21/<0;1>/*,@22/<0;1>/*,@23/<0;1>/*,@24/<0;1>/*,@25/<0;1>/*,@26/<0;1>/*),multi(5,@27/<0;1>/*,@28/<0;1>/*,@29/<0;1>/*,@30/<0;1>/*,@31/<0;1>/*)))))".to_string(),
+         vec!["w:wsh", "paths:4", "slots:32", "head:bare-multi", "lock:none", "ik:none", "fp:none", "origins:default-wsh"]),
+        ("compose_tr_thirty_two_slots", pl(Wrapper::Tr, tr32),
+         format!("tr({NUMS},{{multi_a(4,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*,@3/<0;1>/*),{{multi_a(4,@4/<0;1>/*,@5/<0;1>/*,@6/<0;1>/*,@7/<0;1>/*),{{multi_a(4,@8/<0;1>/*,@9/<0;1>/*,@10/<0;1>/*,@11/<0;1>/*),{{multi_a(4,@12/<0;1>/*,@13/<0;1>/*,@14/<0;1>/*,@15/<0;1>/*),{{multi_a(4,@16/<0;1>/*,@17/<0;1>/*,@18/<0;1>/*,@19/<0;1>/*),{{multi_a(4,@20/<0;1>/*,@21/<0;1>/*,@22/<0;1>/*,@23/<0;1>/*),{{multi_a(4,@24/<0;1>/*,@25/<0;1>/*,@26/<0;1>/*,@27/<0;1>/*),multi_a(4,@28/<0;1>/*,@29/<0;1>/*,@30/<0;1>/*,@31/<0;1>/*)}}}}}}}}}}}}}})"),
+         vec!["w:tr", "paths:8", "slots:32", "ik:nums", "spine:7", "lock:none", "fp:none", "origins:default-tr"]),
+    ]
+}
+
+/// Tags with exactly ONE legal shape, exempt from the two-vector rule and said
+/// so here: a taptree with m = 0 leaves is one unlocked single key and nothing
+/// else (spec §12 item 1).
+pub const SINGULAR_TAGS: &[&str] = &["spine:0"];
