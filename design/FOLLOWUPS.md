@@ -2890,7 +2890,7 @@ mnemonic-engrave F-449 (unspendable-xpub form), which touches the same export.
 
 - **Status:** OPEN. **Tier:** `recon` / `interop`.
 
-### `md-encode-keyless-template-sigless-path-not-gated` — an UNKEYED template whose spend path needs no signature (`and_v(v:sha256(H),after(N))`) encodes with exit 0 and no warning, while the same shape KEYED is refused without `--experimental` (repo: **descriptor-mnemonic**; owning phase: **next md-cli patch, alongside `md compose` (composer Stage 0), which gates it correctly** ) `#admission` `#experimental`
+### `md-encode-keyless-template-sigless-path-not-gated` — a `wsh` template whose spend path needs no signature (`and_v(v:sha256(H),after(N))`) encodes with exit 0 and no warning, KEYED OR UNKEYED, while the same shape under `tr` is refused without `--experimental` (repo: **descriptor-mnemonic**; owning phase: **composer Stage 0, Task 8 of `IMPLEMENTATION_PLAN_composer_S0_md_compose.md`, alongside `md compose`** ) `#admission` `#experimental`
 
 Filed 2026-09-01 from the mnemonic-engrave wallet-policy composer Stage 0 plan
 (`design/IMPLEMENTATION_PLAN_composer_S0_md_compose.md`), while verifying that
@@ -2908,8 +2908,13 @@ $ echo $?
 $ md encode --experimental "<same>"
 warning: --experimental relaxed the signature rule. This descriptor has at least one spend path that needs NO key … THE PLATE IS BEARER ACCESS. …
 ```
-The unkeyed path prints no warning and needs no flag; only the keyed path runs
-rust-miniscript's sanity check, which is where the signature rule lives. A
+**Correction, same day:** the KEYED wsh form encodes too (measured: `--key @0..@2`
++ `--fingerprint`, exit 0, no warning). The gate is per WRAPPER, not per key
+state: `Descriptor::from_str` runs the sanity check for `tr` only (the
+`parse_template_ext` comment calls it "`from_str`'s tr-only sanity gate"), and
+`parse_template_ext` never calls `sanity_check()` itself, so `wsh` and `sh(wsh)`
+are never gated. The `tr` form of the same shape IS refused: "template parse
+error: miniscript parse failed: All spend paths must require a signature". A
 template is not funds-bearing, but it is the artifact the composer hands to the
 seating step, and the spec's EXPERIMENTAL gate (composer spec C16, §4b) assumes
 the host refuses the shape unless asked. `md compose` (Stage 0) gates it in the
