@@ -26,6 +26,16 @@ pub const FP: [u8; 4] = [0x73, 0xc5, 0xda, 0x0a];
 pub const NUMS: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 pub const H: [u8; 32] = [0xa8; 32];
 pub const HH: &str = "a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8";
+/// The hashlock corpus's own anchor digest: sha256 of sha256 of "correct horse
+/// battery staple" (mnemonic-secret `hashlock-v0.8.json`, derivation[0].sha256_h).
+/// Unlike `H`, a preimage for this one EXISTS and is written down, which is what
+/// makes `keyed_compose_wsh_timelock_hashlock` a wallet somebody could actually
+/// spend from rather than a shape.
+pub const HL: [u8; 32] = [
+    0xb8, 0x67, 0xdb, 0x87, 0x54, 0x79, 0xbc, 0xc0, 0x28, 0x73, 0x52, 0xcd, 0xaa, 0x4a, 0x17, 0x55,
+    0x68, 0x9b, 0x83, 0x38, 0x77, 0x7d, 0x09, 0x15, 0xe9, 0xac, 0xd9, 0xf6, 0xed, 0xbc, 0x96, 0xcb,
+];
+pub const HLH: &str = "b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb";
 
 pub fn hardened(values: &[u32]) -> OriginPath {
     OriginPath {
@@ -228,6 +238,13 @@ pub fn family() -> Vec<(&'static str, PathList, String, Vec<&'static str>)> {
         ("keyed_compose_wsh_hash_and_time", pl(Wrapper::Wsh, vec![k(1, 1), lk(hs(k(2, 2), H), Lock::AfterTime(1_893_456_000))]),
          format!("wsh(or_i(pkh(@0/<0;1>/*),and_v(v:multi(2,@1/<0;1>/*,@2/<0;1>/*),and_v(v:sha256({HH}),after(1893456000)))))"),
          vec!["w:wsh", "paths:2", "head:single", "lock:time", "hash", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh"]),
+        // The same three-path shape with a HASHLOCK on the tail: the policy the
+        // SeedHammer II's composer builds, and the one the fork's
+        // TestDeviceDerivesTheComposerTimelockHashlockPolicy derives an address
+        // from. Its digest is HL, whose preimage exists.
+        ("keyed_compose_wsh_timelock_hashlock", pl(Wrapper::Wsh, vec![k(1, 1), lk(k(1, 1), Lock::OlderBlocks(144)), lk(hs(k(1, 1), HL), Lock::AfterHeight(800_000))]),
+         format!("wsh(or_i(pkh(@0/<0;1>/*),or_i(and_v(v:pkh(@1/<0;1>/*),older(144)),and_v(v:pkh(@2/<0;1>/*),and_v(v:sha256({HLH}),after(800000))))))"),
+         vec!["w:wsh", "paths:3", "head:single", "lock:blocks", "lock:height", "hash", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh"]),
         ("keyed_compose_wsh_three_paths", pl(Wrapper::Wsh, vec![k(1, 1), lk(k(1, 1), Lock::OlderBlocks(4032)), lk(k(1, 1), Lock::AfterHeight(1_000_000))]),
          "wsh(or_i(pkh(@0/<0;1>/*),or_i(and_v(v:pkh(@1/<0;1>/*),older(4032)),and_v(v:pkh(@2/<0;1>/*),after(1000000)))))".to_string(),
          vec!["w:wsh", "paths:3", "head:single", "lock:blocks", "lock:height", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh"]),

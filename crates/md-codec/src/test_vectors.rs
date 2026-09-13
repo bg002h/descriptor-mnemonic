@@ -300,6 +300,24 @@ pub const MANIFEST: &[Vector] = &[
             (6, [0x07,0x08,0x09,0x0A]), (7, [0x08,0x09,0x0A,0x0B]),
         ],
         force_chunked: false, path: None },
+    // THE COMPOSER'S OWN OUTPUT, keyed and derivable: three spend paths under
+    // one wsh wrapper carrying `pkh`, a RELATIVE timelock, an ABSOLUTE timelock
+    // and a `sha256` hashlock. It exists because the device can now BUILD this
+    // shape (hashlock H6 + the composer's lock editor) and nothing pinned that
+    // an address derived from it agrees with this crate's -- the fork's
+    // `TestDeviceDerivesTheTimelockHashlockPolicy` asserts exactly that against
+    // this vector's conformance record.
+    //
+    // The digest is the hashlock corpus's own anchor: sha256 of sha256 of
+    // "correct horse battery staple" (hashlock-v0.8.json derivation[0].sha256_h),
+    // so a preimage for it exists and is written down rather than being a
+    // 32-byte constant nobody can open.
+    Vector { name: "keyed_compose_wsh_timelock_hashlock",
+        template: "wsh(or_i(pkh(@0/48'/0'/0'/2'/<0;1>/*),or_i(and_v(v:pkh(@1/48'/0'/1'/2'/<0;1>/*),older(144)),and_v(v:pkh(@2/48'/0'/2'/2'/<0;1>/*),and_v(v:sha256(b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb),after(800000))))))",
+        keys: &[(0, "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf"), (1, "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk"), (2, "xpub6EGx8sPr9FxPPE1rbZazhqWwpMXA3Hf5DYKtZbL7c4BSddzmQktp96UaTvecEkoCZysuaj79GMCFZYT1KKk7Ph2M3Kf5g8B82KZ8TZ9SKQR")],
+        fingerprints: &[(0, [0x73, 0xc5, 0xda, 0x0a]), (1, [0x73, 0xc5, 0xda, 0x0a]), (2, [0x73, 0xc5, 0xda, 0x0a])],
+        force_chunked: true, path: None },
+
     // ── COMPOSE VECTORS (composer S0, 2026-09-02) ──────────────────────────────
     //
     // The FIXED lowering's own corpus (SPEC_wallet_policy_composer.md §12 item 1).
