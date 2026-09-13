@@ -29,11 +29,37 @@ mod lowering;
 pub mod presets;
 mod tr;
 
+// THESE LIMITS ARE NECESSARY AND NOT SUFFICIENT (F-515).
+//
+// A policy inside every one of them can still be unmintable, because the md1
+// wire also caps a card at 64 CHUNKS (`Error::TooManyChunks`, spec §9.8) and
+// that ceiling is a function of the encoded SIZE -- the keys, their origins and
+// every lock operand -- none of which the composer sees. `md compose` takes no
+// keys at all, so it cannot predict the chunk count and does not pretend to.
+//
+// Measured over 1000 generated policies inside these limits: 10 of them needed
+// 65 to 67 chunks and were refused at `md encode`, after the operator had
+// already chosen the shape and the keys. That is the worst moment to learn it,
+// and naming the second ceiling here is the cheapest place to say so.
+//
+// Do not "fix" this by lowering MAX_SLOTS. The two ceilings are independent and
+// the wire one depends on inputs the composer does not have; a slot limit low
+// enough to guarantee 64 chunks would refuse most policies that fit.
+
 /// Spec §4: at most eight spend paths.
+///
+/// Necessary, not sufficient — see the note above: the 64-chunk wire cap is a
+/// separate ceiling that depends on the keys.
 pub const MAX_PATHS: usize = 8;
 /// Spec §4b: at most nine keys in one path.
+///
+/// Necessary, not sufficient — see the note above.
 pub const MAX_KEYS_PER_PATH: u8 = 9;
 /// Spec §4b: the wire's 5-bit `path_decl.n` caps a policy at 32 slots.
+///
+/// Necessary, not sufficient — see the note above. This bounds the slot COUNT;
+/// the 64-chunk cap bounds the encoded SIZE, and a policy can pass this and
+/// fail that.
 pub const MAX_SLOTS: u8 = 32;
 /// BIP-68: bit 22 selects 512-second units.
 pub const SEQUENCE_TYPE_FLAG: u32 = 1 << 22;

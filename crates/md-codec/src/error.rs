@@ -258,7 +258,20 @@ pub enum Error {
     ChunkHeaderChunkedFlagMissing,
 
     /// Encoding requires more chunks than the spec maximum (64).
-    #[error("encoding requires {needed} chunks; max is 64 per spec §9.8")]
+    ///
+    /// A SECOND CEILING, independent of the composer's slot and path limits
+    /// (F-515). This one is a function of the encoded SIZE — the keys, their
+    /// origins and every lock operand — so a policy that passes every documented
+    /// composer limit can still land here, and it lands here at `encode`, after
+    /// the operator has chosen both the shape and the keys. The message names
+    /// the levers because "too big" alone leaves them guessing which of three
+    /// things to change.
+    #[error(
+        "encoding requires {needed} chunks; max is 64 per spec §9.8. \
+         This ceiling is on the encoded SIZE, not the slot count, so it is not \
+         implied by the composer's limits: reduce the number of keys, shorten \
+         their origin paths, or drop a spend path"
+    )]
     ChunkCountExceedsMax {
         /// Number of chunks needed.
         needed: usize,
