@@ -563,6 +563,36 @@ pub fn run(
     for e in &composed.experimental {
         eprintln!("warning: EXPERIMENTAL: {}", describe(e));
     }
+    // EVERY PATH CARRIES A HASHLOCK, so the preimage is the ONLY way to spend
+    // this wallet -- lose it and the coins are gone, with no keyed escape and no
+    // maturation to wait out.
+    //
+    // THE ASYMMETRY IS THE POINT (phase 1 journey walk, F-A1). `md` already
+    // warns on the `keyless` shape, where the hashlock is an extra way IN, and
+    // said nothing about the shape where it is the only way in -- so the
+    // direction that loses money was the unwarned one. `keyless` stays an
+    // EXPERIMENTAL refusal; this is a warning, not a gate, because the shape is
+    // legitimate (it is how a pure hashlock escrow is written) and because
+    // sha256 wallets have composed this way since before the cycle.
+    if !list.paths.is_empty() && list.paths.iter().all(|p| p.hash.is_some()) {
+        let kinds: Vec<&str> = {
+            let mut k: Vec<&str> = list
+                .paths
+                .iter()
+                .filter_map(|p| p.hash.map(|h| h.kind().token()))
+                .collect();
+            k.sort_unstable();
+            k.dedup();
+            k
+        };
+        eprintln!(
+            "warning: EVERY path of this wallet needs the hashlock preimage ({}): \
+             there is no path that spends with keys alone, so losing the preimage \
+             loses the coins -- no key can recover them and no timelock matures. \
+             Add a keyed path if that is not what you meant.",
+            kinds.join(", ")
+        );
+    }
     // `unsorted` where sorted was never available is dropped by the lowering
     // (spec §5a: the §8b confirm fires only where sorted was legal); say so
     // rather than accept a typed request silently. No preset ever sets

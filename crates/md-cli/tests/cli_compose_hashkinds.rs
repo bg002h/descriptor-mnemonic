@@ -147,3 +147,64 @@ fn the_preset_takes_every_kind_and_the_json_names_it() {
         );
     }
 }
+
+/// When EVERY path carries a hashlock, the preimage is the only way to spend:
+/// no keyed escape, no timelock to wait out. Lose it and the coins are gone.
+///
+/// **This closes an asymmetry, which is why it is a warning and not a gate**
+/// (phase 1 journey walk, F-A1). `md` already warned on the `keyless` shape —
+/// the hashlock as an extra way *in* — and said nothing about the shape where
+/// it is the only way in, so the direction that loses money was the unwarned
+/// one. The shape stays legal: it is how a pure hashlock escrow is written, and
+/// `sha256` wallets have composed this way since before this cycle.
+#[test]
+fn a_wallet_with_no_keys_only_path_warns_that_the_preimage_is_the_only_key() {
+    // Every kind, including sha256 — the hazard predates the new ones.
+    for kind in ["sha256", "hash256", "ripemd160", "hash160"] {
+        let h = hex_for(kind);
+        let (ok, _, se) = md(&[
+            "compose",
+            "--wrapper",
+            "wsh",
+            "--path",
+            &format!("2of3,{kind}={h}"),
+        ]);
+        assert!(ok, "{kind}: the shape is legal, not refused:\n{se}");
+        assert!(
+            se.contains("EVERY path of this wallet needs the hashlock preimage"),
+            "{kind}: no warning on the shape where the preimage is the only \
+             way to spend:\n{se}"
+        );
+        assert!(
+            se.contains(kind),
+            "{kind}: the warning must name the kind in hand:\n{se}"
+        );
+        assert!(
+            se.contains("no key can recover them"),
+            "{kind}: the warning must say what is lost, not just that something \
+             is unusual:\n{se}"
+        );
+    }
+}
+
+/// ...and it stays QUIET when a keyed path exists. A warning that fires on the
+/// safe shape too is a warning operators learn to skip.
+#[test]
+fn a_wallet_with_a_keyed_escape_gets_no_preimage_warning() {
+    let h = hex_for("ripemd160");
+    let (ok, _, se) = md(&[
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--path",
+        &format!("2of3,ripemd160={h}"),
+        "--path",
+        "1of1,older=144",
+    ]);
+    assert!(ok, "refused:\n{se}");
+    assert!(
+        !se.contains("EVERY path of this wallet"),
+        "the second path spends with keys and a timelock, so the preimage is \
+         NOT the only way in:\n{se}"
+    );
+}
