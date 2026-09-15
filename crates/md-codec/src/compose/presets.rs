@@ -3,7 +3,7 @@
 //! `mnemonic build-descriptor`'s goldens, not byte-identical to them: this
 //! lowering is one fixed spelling.
 
-use super::{ComposeError, KeySet, Lock, PathList, SpendPath, Wrapper, validate};
+use super::{ComposeError, HashLock, KeySet, Lock, PathList, SpendPath, Wrapper, validate};
 
 fn ks(k: u8, n: u8) -> SpendPath {
     SpendPath {
@@ -85,9 +85,13 @@ pub fn tiered_recovery(
 }
 
 /// A key plus a hash now; a second key after `older_blocks`.
+///
+/// **`hash` is a `HashLock`, not a bare `[u8; 32]`** (SPEC_hashlock_kinds §9.1).
+/// The bare array could only ever mean `sha256`, so the preset could not build
+/// the other three fragments at all.
 pub fn hashlock_gated(
     wrapper: Wrapper,
-    hash: [u8; 32],
+    hash: HashLock,
     older_blocks: u32,
 ) -> Result<PathList, ComposeError> {
     let mut gated = ks(1, 1);

@@ -7,7 +7,7 @@
 
 use crate::error::CliError;
 use md_codec::compose::{
-    Experimental, KeySet, Lock, PathList, SpendPath, Wrapper, compose, presets,
+    Experimental, HashKind, HashLock, KeySet, Lock, PathList, SpendPath, Wrapper, compose, presets,
     template_with_origins,
 };
 use md_codec::render::descriptor_to_template;
@@ -110,14 +110,18 @@ pub fn parse_path(s: &str) -> Result<SpendPath, CliError> {
                     "path `{s}`: at most one lock per path"
                 )));
             }
-            "sha256" => {
+            // The four hash fragments are SIBLING options, not a rename of
+            // one (spec §9): `sha256=` is kind-specific, so `hash256=`,
+            // `ripemd160=` and `hash160=` sit beside it. This is the operand
+            // `ms hashlock --kind <k>` prints on its card.
+            "sha256" | "hash256" | "ripemd160" | "hash160" => {
                 if path.hash.is_some() {
                     return Err(CliError::Compose(format!(
                         "path `{s}`: at most one hash per path"
                     )));
                 }
-                let h = parse_sha256_hex(value, &format!("path `{s}`"))?;
-                path.hash = Some(h);
+                let kind = kind_for_option(name).expect("the match arm lists exactly these four");
+                path.hash = Some(parse_hash_hex(kind, value, &format!("path `{s}`"))?);
             }
             other => {
                 return Err(CliError::Compose(format!(
@@ -129,34 +133,71 @@ pub fn parse_path(s: &str) -> Result<SpendPath, CliError> {
     Ok(path)
 }
 
-/// `value` as 32 lowercase-hex bytes, or a `{ctx}: sha256 needs ...` refusal.
-/// Shared by `--path ...,sha256=HEX` and `--preset hashlock-gated,sha256=HEX`.
-fn parse_sha256_hex(value: &str, ctx: &str) -> Result<[u8; 32], CliError> {
-    if value.len() != 64
+/// The option name -> kind map, and the ONLY place that mapping is written.
+/// Case is rejected, never folded, so an uppercase spelling falls through to
+/// the caller's `unknown option` refusal rather than being quietly accepted.
+fn kind_for_option(name: &str) -> Option<HashKind> {
+    match name {
+        "sha256" => Some(HashKind::Sha256),
+        "hash256" => Some(HashKind::Hash256),
+        "ripemd160" => Some(HashKind::Ripemd160),
+        "hash160" => Some(HashKind::Hash160),
+        _ => None,
+    }
+}
+
+/// `value` as `kind.digest_len()` lowercase-hex bytes, or a
+/// `{ctx}: <kind> needs N hex characters` refusal.
+/// Shared by `--path ...,<kind>=HEX` and `--preset hashlock-gated,<kind>=HEX`.
+///
+/// **THE WIDTH COMES FROM `digest_len()`, never from a literal** (spec §5:
+/// "the only place a length is written"). A 40-hex `sha256` and a 64-hex
+/// `ripemd160` are both refusals here, and the message names the kind's OWN
+/// width -- an operator who pasted the wrong digest needs to be told which
+/// one they should have.
+fn parse_hash_hex(kind: HashKind, value: &str, ctx: &str) -> Result<HashLock, CliError> {
+    let want = kind.digest_len() * 2;
+    if value.len() != want
         || !value
             .bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     {
         return Err(CliError::Compose(format!(
-            "{ctx}: sha256 needs 64 hex characters, lowercase"
+            "{ctx}: {} needs {want} hex characters, lowercase",
+            kind.token()
         )));
     }
+    // The loop fills exactly `digest_len()` bytes; the tail of the array stays
+    // zero and IS the alloc-gate padding (spec §5), which `HashLock::digest`
+    // never hands back.
     let mut h = [0u8; 32];
     for (i, chunk) in value.as_bytes().chunks(2).enumerate() {
         let hi = (chunk[0] as char).to_digit(16).expect("checked") as u8;
         let lo = (chunk[1] as char).to_digit(16).expect("checked") as u8;
         h[i] = (hi << 4) | lo;
     }
-    Ok(h)
+    Ok(HashLock::new(kind, h))
 }
 
-fn hex32(h: &[u8; 32]) -> String {
-    use std::fmt::Write as _;
-    let mut out = String::with_capacity(64);
-    for b in h {
-        let _ = write!(out, "{b:02x}");
-    }
-    out
+/// The four kinds, in the order the CLI and the JSON present them.
+const KINDS: [HashKind; 4] = [
+    HashKind::Sha256,
+    HashKind::Hash256,
+    HashKind::Ripemd160,
+    HashKind::Hash160,
+];
+
+/// A hashlock's digest as hex AT ITS KIND'S WIDTH -- 40 characters or 64,
+/// never the alloc-gate padding.
+fn hex_digest(h: &HashLock) -> String {
+    h.digest().iter().fold(
+        String::with_capacity(h.kind().digest_len() * 2),
+        |mut acc, b| {
+            use std::fmt::Write as _;
+            let _ = write!(acc, "{b:02x}");
+            acc
+        },
+    )
 }
 
 /// The resolved parameters of one `--preset` invocation, named for `--json`'s
@@ -184,7 +225,8 @@ pub enum PresetParams {
         older_blocks: u32,
     },
     HashlockGated {
-        sha256: [u8; 32],
+        /// Which hash, and the digest at that kind's width.
+        hash: HashLock,
         older_blocks: u32,
     },
     DecayingMultisig {
@@ -366,21 +408,31 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
             ))
         }
         "hashlock-gated" => {
-            named_only(&["sha256", "older"])?;
+            named_only(&["sha256", "hash256", "ripemd160", "hash160", "older"])?;
             need_ofs(0)?;
-            let hex = named
-                .get("sha256")
-                .ok_or_else(|| CliError::Compose(format!("{ctx} needs sha256=<64 hex>")))?;
-            let sha256 = parse_sha256_hex(hex, &ctx)?;
+            // EXACTLY ONE of the four, not "sha256 or else". Two would compose
+            // a wallet whose hashlock branch is not the one the operator cut a
+            // plate for, so it is a refusal rather than a precedence rule.
+            let mut found = KINDS
+                .iter()
+                .filter_map(|k| named.get(k.token()).map(|v| (*k, v)));
+            let (kind, hex) = found.next().ok_or_else(|| {
+                CliError::Compose(format!(
+                    "{ctx} needs one of sha256=<64 hex>, hash256=<64 hex>, \
+                     ripemd160=<40 hex> or hash160=<40 hex>"
+                ))
+            })?;
+            if let Some((other, _)) = found.next() {
+                return Err(CliError::Compose(format!(
+                    "{ctx}: at most one hash per path, got {} and {}",
+                    kind.token(),
+                    other.token()
+                )));
+            }
+            let hash = parse_hash_hex(kind, hex, &ctx)?;
             let older_blocks = need_u32("older")?;
-            let list = presets::hashlock_gated(wrapper, sha256, older_blocks).map_err(map_ce)?;
-            Ok((
-                PresetParams::HashlockGated {
-                    sha256,
-                    older_blocks,
-                },
-                list,
-            ))
+            let list = presets::hashlock_gated(wrapper, hash, older_blocks).map_err(map_ce)?;
+            Ok((PresetParams::HashlockGated { hash, older_blocks }, list))
         }
         "decaying-multisig" => {
             named_only(&["older1", "older2", "after"])?;
@@ -436,12 +488,17 @@ fn preset_params_json(p: &PresetParams) -> serde_json::Value {
             "tiered-recovery",
             serde_json::json!({ "k1": k1, "n1": n1, "k2": k2, "n2": n2, "older_blocks": older_blocks }),
         ),
-        PresetParams::HashlockGated {
-            sha256,
-            older_blocks,
-        } => (
+        PresetParams::HashlockGated { hash, older_blocks } => (
             "hashlock-gated",
-            serde_json::json!({ "sha256": hex32(&sha256), "older_blocks": older_blocks }),
+            // `kind` + `digest`, not `sha256`: the old key was wrong for three
+            // of the four kinds, and a consumer reading it could not tell which
+            // fragment the wallet commits to. This is a breaking change to a
+            // machine-readable contract and is recorded as one.
+            serde_json::json!({
+                "kind": hash.kind().token(),
+                "digest": hex_digest(&hash),
+                "older_blocks": older_blocks,
+            }),
         ),
         PresetParams::DecayingMultisig {
             k1,

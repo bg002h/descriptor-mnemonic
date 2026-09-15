@@ -469,7 +469,7 @@ fn preset_refuses_a_non_numeric_named_value() {
 }
 
 #[test]
-fn preset_refuses_a_missing_or_malformed_sha256() {
+fn preset_refuses_a_missing_or_malformed_hash() {
     md().args([
         "compose",
         "--wrapper",
@@ -480,8 +480,12 @@ fn preset_refuses_a_missing_or_malformed_sha256() {
     .assert()
     .failure()
     .code(1)
+    // The preset takes FOUR sibling options now (SPEC_hashlock_kinds §9), so
+    // the refusal names all four with their own widths -- naming only sha256
+    // would send an operator holding a ripemd160 digest looking for a 64-hex
+    // value they do not have.
     .stderr(predicate::str::contains(
-        "preset hashlock-gated needs sha256=<64 hex>",
+        "needs one of sha256=<64 hex>, hash256=<64 hex>, ripemd160=<40 hex> or hash160=<40 hex>",
     ));
     md().args([
         "compose",
@@ -496,6 +500,33 @@ fn preset_refuses_a_missing_or_malformed_sha256() {
     .stderr(predicate::str::contains(
         "sha256 needs 64 hex characters, lowercase",
     ));
+    // A 20-byte kind is refused at ITS width, not at sha256's.
+    md().args([
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--preset",
+        "hashlock-gated,ripemd160=ab,older=1",
+    ])
+    .assert()
+    .failure()
+    .code(1)
+    .stderr(predicate::str::contains(
+        "ripemd160 needs 40 hex characters, lowercase",
+    ));
+    // Two kinds is a refusal, not a precedence rule: the wrong one composes a
+    // wallet the operator's plate does not satisfy.
+    md().args([
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--preset",
+        "hashlock-gated,sha256=a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8,ripemd160=09e7bb5051d89788fb4e4b374126721dbcc2946b,older=1",
+    ])
+    .assert()
+    .failure()
+    .code(1)
+    .stderr(predicate::str::contains("at most one hash per path"));
 }
 
 #[test]

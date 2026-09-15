@@ -7,7 +7,9 @@
 
 use std::str::FromStr;
 
-use md_codec::compose::{Composed, PathList, SlotOrigin, compose, compose_with};
+use md_codec::compose::{
+    Composed, HashKind, HashLock, PathList, SlotOrigin, compose, compose_with,
+};
 use md_codec::encode::Descriptor;
 use md_codec::origin_path::{OriginPath, PathComponent};
 use md_codec::tag::Tag;
@@ -24,17 +26,18 @@ pub const XPUB: [&str; 4] = [
 ];
 pub const FP: [u8; 4] = [0x73, 0xc5, 0xda, 0x0a];
 pub const NUMS: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
-pub const H: [u8; 32] = [0xa8; 32];
+pub const H: HashLock = HashLock::new(HashKind::Sha256, [0xa8; 32]);
 pub const HH: &str = "a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8";
 /// The hashlock corpus's own anchor digest: sha256 of sha256 of "correct horse
 /// battery staple" (mnemonic-secret `hashlock-v0.8.json`, derivation[0].sha256_h).
 /// Unlike `H`, a preimage for this one EXISTS and is written down, which is what
 /// makes `keyed_compose_wsh_timelock_hashlock` a wallet somebody could actually
 /// spend from rather than a shape.
-pub const HL: [u8; 32] = [
+pub const HL_BYTES: [u8; 32] = [
     0xb8, 0x67, 0xdb, 0x87, 0x54, 0x79, 0xbc, 0xc0, 0x28, 0x73, 0x52, 0xcd, 0xaa, 0x4a, 0x17, 0x55,
     0x68, 0x9b, 0x83, 0x38, 0x77, 0x7d, 0x09, 0x15, 0xe9, 0xac, 0xd9, 0xf6, 0xed, 0xbc, 0x96, 0xcb,
 ];
+pub const HL: HashLock = HashLock::new(HashKind::Sha256, HL_BYTES);
 pub const HLH: &str = "b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb";
 
 pub fn hardened(values: &[u32]) -> OriginPath {
@@ -133,7 +136,10 @@ pub fn concrete_policy(list: &PathList, c: &Composed, keys: &[String]) -> String
             });
         }
         if let Some(h) = p.hash {
-            parts.push(format!("sha256({})", hex(&h)));
+            // The oracle names the KIND, like the lowering it checks. Spelling
+            // `sha256` here would make this helper agree with a kind-blind
+            // lowering and disagree with a correct one.
+            parts.push(format!("{}({})", h.kind().token(), hex(h.digest())));
         }
         if let Some(lock) = p.lock {
             let (tag, v) = lock.operand().expect("validated");
@@ -182,11 +188,11 @@ pub fn lk(mut p: SpendPath, l: Lock) -> SpendPath {
     p.lock = Some(l);
     p
 }
-pub fn hs(mut p: SpendPath, h: [u8; 32]) -> SpendPath {
+pub fn hs(mut p: SpendPath, h: HashLock) -> SpendPath {
     p.hash = Some(h);
     p
 }
-pub fn kl(h: [u8; 32], l: Option<Lock>) -> SpendPath {
+pub fn kl(h: HashLock, l: Option<Lock>) -> SpendPath {
     SpendPath {
         keys: None,
         hash: Some(h),

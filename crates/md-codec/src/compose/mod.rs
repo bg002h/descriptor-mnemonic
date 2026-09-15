@@ -142,13 +142,100 @@ pub struct KeySet {
     pub sorted: bool,
 }
 
+/// Which hash the SCRIPT commits to (SPEC_hashlock_kinds §5).
+///
+/// **Deliberately NOT the wire `Tag` set.** A hashlock field typed as `Tag`
+/// can hold `Wpkh`; these four are the only fragments that take a preimage.
+/// `tag()` is the total function from here into the wire set.
+///
+/// NOT the same axis as the preimage METHOD (how the preimage was derived from
+/// a phrase, which lives in `ms-codec`). The two share the token `sha256` and
+/// mean different things.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum HashKind {
+    /// `sha256(X)`.
+    Sha256,
+    /// `hash256(X)` = `sha256(sha256(X))`.
+    Hash256,
+    /// `ripemd160(X)`, the bare primitive.
+    Ripemd160,
+    /// `hash160(X)` = `ripemd160(sha256(X))`.
+    Hash160,
+}
+
+impl HashKind {
+    /// **THE ONLY PLACE A DIGEST LENGTH IS WRITTEN** (spec §5). The hex rule is
+    /// `digest_len() * 2`, which is what makes the parser, the validator and
+    /// the formatter agree by construction instead of by review.
+    pub const fn digest_len(self) -> usize {
+        match self {
+            HashKind::Sha256 | HashKind::Hash256 => 32,
+            HashKind::Ripemd160 | HashKind::Hash160 => 20,
+        }
+    }
+
+    /// The wire tag. Total by construction — every kind has exactly one.
+    pub fn tag(self) -> Tag {
+        match self {
+            HashKind::Sha256 => Tag::Sha256,
+            HashKind::Hash256 => Tag::Hash256,
+            HashKind::Ripemd160 => Tag::Ripemd160,
+            HashKind::Hash160 => Tag::Hash160,
+        }
+    }
+
+    /// The lowercase miniscript fragment name, which is also `md compose`'s
+    /// option name (`ripemd160=<hex>`). Case is rejected, never folded.
+    pub fn token(self) -> &'static str {
+        match self {
+            HashKind::Sha256 => "sha256",
+            HashKind::Hash256 => "hash256",
+            HashKind::Ripemd160 => "ripemd160",
+            HashKind::Hash160 => "hash160",
+        }
+    }
+}
+
+/// A hashlock: which hash, and the digest it commits to (spec §5).
+///
+/// **The digest is a fixed `[u8; 32]` for the alloc gate**, so a 20-byte kind
+/// carries twelve bytes of zero padding. That padding is unobservable through
+/// `digest()`, and `digest()` is the only way callers should read it — a
+/// lowering that reaches past it commits the padding into the script, which
+/// still compiles, still round-trips, and produces a wallet nobody can spend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct HashLock {
+    kind: HashKind,
+    digest: [u8; 32],
+}
+
+impl HashLock {
+    /// Build one. `digest`'s tail beyond `kind.digest_len()` is padding and is
+    /// never read back.
+    pub const fn new(kind: HashKind, digest: [u8; 32]) -> Self {
+        HashLock { kind, digest }
+    }
+
+    /// Which hash the script commits to.
+    pub const fn kind(&self) -> HashKind {
+        self.kind
+    }
+
+    /// The digest AT ITS KIND'S WIDTH — 20 bytes or 32, never the padding.
+    pub fn digest(&self) -> &[u8] {
+        &self.digest[..self.kind.digest_len()]
+    }
+}
+
 /// One spend path: keys, optional hash, optional lock (spec §4b).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpendPath {
     /// `None` is a keyless path: wsh-only, needs `hash`, EXPERIMENTAL.
     pub keys: Option<KeySet>,
-    /// A `sha256(H)` hashlock; H is the SHA-256 of a 32-byte preimage.
-    pub hash: Option<[u8; 32]>,
+    /// A hashlock: which hash the script commits to, and the digest. H is the
+    /// digest of a 32-byte preimage under `HashLock::kind` (spec §3 F1 — the
+    /// preimage is 32 bytes for every kind; only the digest width moves).
+    pub hash: Option<HashLock>,
     /// At most one timelock.
     pub lock: Option<Lock>,
 }

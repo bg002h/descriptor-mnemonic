@@ -6,14 +6,14 @@
 use md_codec::canonicalize::canonicalize_placeholder_indices;
 use md_codec::chunk::{reassemble, split};
 use md_codec::compose::{
-    ComposeError, Composed, Experimental, KeySet, Lock, MAX_PATHS, MAX_SLOTS, PathList, SlotOrigin,
-    SpendPath, Wrapper, compose, compose_with, template_with_origins,
+    ComposeError, Composed, Experimental, HashKind, HashLock, KeySet, Lock, MAX_PATHS, MAX_SLOTS,
+    PathList, SlotOrigin, SpendPath, Wrapper, compose, compose_with, template_with_origins,
 };
 use md_codec::encode::{encode_md1_string, encode_payload};
 use md_codec::origin_path::{OriginPath, PathComponent, PathDeclPaths};
 use md_codec::render::descriptor_to_template;
 
-const H1: [u8; 32] = [0xa8; 32];
+const H1: HashLock = HashLock::new(HashKind::Sha256, [0xa8; 32]);
 
 fn keys(k: u8, n: u8) -> SpendPath {
     SpendPath {
@@ -40,12 +40,12 @@ fn with_lock(mut p: SpendPath, lock: Lock) -> SpendPath {
     p
 }
 
-fn with_hash(mut p: SpendPath, h: [u8; 32]) -> SpendPath {
+fn with_hash(mut p: SpendPath, h: HashLock) -> SpendPath {
     p.hash = Some(h);
     p
 }
 
-fn keyless(h: [u8; 32], lock: Option<Lock>) -> SpendPath {
+fn keyless(h: HashLock, lock: Option<Lock>) -> SpendPath {
     SpendPath {
         keys: None,
         hash: Some(h),

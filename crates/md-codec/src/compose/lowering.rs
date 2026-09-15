@@ -3,8 +3,8 @@
 //! the `pub(super)` pieces here.
 
 use super::{
-    ComposeError, Composed, Experimental, KeySet, PathList, Slot, SlotOrigin, SpendPath, Wrapper,
-    default_origin,
+    ComposeError, Composed, Experimental, HashKind, KeySet, PathList, Slot, SlotOrigin, SpendPath,
+    Wrapper, default_origin,
 };
 use crate::encode::Descriptor;
 use crate::origin_path::{OriginPath, PathDecl, PathDeclPaths};
@@ -62,7 +62,9 @@ fn and_v(a: Node, b: Node) -> Node {
     }
 }
 
-/// `and_v(v:KEYS, and_v(v:sha256(H), LOCK))`, dropping absent parts (spec §5).
+/// `and_v(v:KEYS, and_v(v:<hashop>(H), LOCK))`, dropping absent parts (spec §5).
+/// `<hashop>` is the path's `HashLock` kind -- sha256, hash256, ripemd160 or
+/// hash160 -- not a literal (SPEC_hashlock_kinds §3 F1).
 pub(super) fn path_body(p: &Numbered<'_>, tap: bool, sorted_legal: bool) -> Node {
     let mut parts: Vec<Node> = Vec::with_capacity(3);
     if let Some(ks) = p.path.keys {
@@ -74,9 +76,29 @@ pub(super) fn path_body(p: &Numbered<'_>, tap: bool, sorted_legal: bool) -> Node
         parts.push(key_leaf(single, multi, sorted, ks, &p.slots, sorted_legal));
     }
     if let Some(h) = p.path.hash {
+        // THE BODY'S WIDTH IS THE KIND'S, never 32 by default. The digest is
+        // stored in a fixed [u8; 32] for the alloc gate (spec §5), so a
+        // 20-byte kind carries twelve bytes of padding that `digest()` hides;
+        // writing the whole array here would commit that padding into the
+        // script -- which compiles, round-trips, and cannot be spent.
+        //
+        // Matched on the KIND, not on digest_len(), so a fifth kind is a
+        // compile error here rather than a silent fall-through.
+        let body = match h.kind() {
+            HashKind::Sha256 | HashKind::Hash256 => {
+                let mut b = [0u8; 32];
+                b.copy_from_slice(h.digest());
+                Body::Hash256Body(b)
+            }
+            HashKind::Ripemd160 | HashKind::Hash160 => {
+                let mut b = [0u8; 20];
+                b.copy_from_slice(h.digest());
+                Body::Hash160Body(b)
+            }
+        };
         parts.push(Node {
-            tag: Tag::Sha256,
-            body: Body::Hash256Body(h),
+            tag: h.kind().tag(),
+            body,
         });
     }
     if let Some(lock) = p.path.lock {
