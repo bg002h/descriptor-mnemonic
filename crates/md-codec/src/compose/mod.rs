@@ -203,10 +203,52 @@ impl HashKind {
 /// `digest()`, and `digest()` is the only way callers should read it — a
 /// lowering that reaches past it commits the padding into the script, which
 /// still compiles, still round-trips, and produces a wallet nobody can spend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy)]
 pub struct HashLock {
     kind: HashKind,
     digest: [u8; 32],
+}
+
+// Eq/Ord/Hash are HAND-WRITTEN over `(kind, digest())`, NOT derived.
+//
+// Deriving them compares the whole `[u8; 32]`, which makes the alloc-gate
+// padding OBSERVABLE: two `Ripemd160` locks with identical 20-byte digests but
+// different bytes at index 31 would be `!=`, hash differently, and both sit in
+// one `HashSet` -- while `digest()` says they are the same lock. That
+// contradicts spec §5's "unobservable", and §5 also mandates that eleven
+// map/set/equality sites re-key on this exact type, so the trap would be
+// load-bearing rather than theoretical. (R0 round 1, I-1.)
+//
+// The Go port inherits this: `==` on a struct holding a `[32]byte` compares all
+// 32 bytes and cannot be overridden, so the port must compare the slice
+// explicitly.
+impl PartialEq for HashLock {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.digest() == other.digest()
+    }
+}
+
+impl Eq for HashLock {}
+
+impl core::hash::Hash for HashLock {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
+        self.digest().hash(state);
+    }
+}
+
+impl PartialOrd for HashLock {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HashLock {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.kind
+            .cmp(&other.kind)
+            .then_with(|| self.digest().cmp(other.digest()))
+    }
 }
 
 impl HashLock {

@@ -194,3 +194,50 @@ fn every_kind_round_trips_compose_to_md1_to_template() {
         }
     }
 }
+
+/// Spec §5: the alloc-gate padding is **unobservable**. That is a property of
+/// the TYPE, not of how carefully callers use it — §5 mandates that eleven
+/// map/set/equality sites re-key on `HashLock`, so a derived `Eq` comparing all
+/// 32 bytes would make the padding load-bearing at every one of them.
+///
+/// Derived traits shipped for one round and made it observable (R0 round 1,
+/// I-1); `Eq`/`Ord`/`Hash` are hand-written over `(kind, digest())` now.
+#[test]
+fn the_padding_is_unobservable_through_eq_ord_and_hash() {
+    use std::collections::HashSet;
+
+    let mut a = [0u8; 32];
+    for (i, b) in a.iter_mut().take(20).enumerate() {
+        *b = 0xA0 | (i as u8 & 0x0F);
+    }
+    let mut b = a;
+    b[31] = 0xFF; // padding only — beyond ripemd160's 20 bytes
+    b[20] = 0x01;
+
+    let la = HashLock::new(HashKind::Ripemd160, a);
+    let lb = HashLock::new(HashKind::Ripemd160, b);
+
+    assert_eq!(la.digest(), lb.digest(), "fixture: same visible digest");
+    assert_eq!(la, lb, "padding must not make two equal locks unequal");
+    assert_eq!(
+        la.cmp(&lb),
+        core::cmp::Ordering::Equal,
+        "padding must not order two equal locks"
+    );
+
+    let mut set = HashSet::new();
+    set.insert(la);
+    set.insert(lb);
+    assert_eq!(
+        set.len(),
+        1,
+        "padding must not split one lock into two keys"
+    );
+
+    // ...and a DIFFERENT kind over the same bytes is still a different lock.
+    assert_ne!(
+        la,
+        HashLock::new(HashKind::Hash160, a),
+        "the kind is part of identity: the same 32 bytes mean different things"
+    );
+}

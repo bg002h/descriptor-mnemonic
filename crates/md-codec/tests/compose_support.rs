@@ -383,13 +383,13 @@ pub fn family() -> Vec<(&'static str, PathList, String, Vec<&'static str>)> {
          vec!["w:wsh", "paths:2", "head:hashed", "lock:blocks", "hash", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
         ("keyed_compose_preset_hashlock_gated_hash256", presets::hashlock_gated(Wrapper::Wsh, HK256, 26280).unwrap(),
          "wsh(or_i(and_v(v:pkh(@0/<0;1>/*),hash256(98a20fc25dbcdf236fb0307e3f82cad47fca2e807f3ef82c31993549641cd488)),and_v(v:pkh(@1/<0;1>/*),older(26280))))".to_string(),
-         vec!["w:wsh", "paths:2", "head:single", "hash", "lock:blocks", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
+         vec!["w:wsh", "paths:2", "head:hashed", "lock:blocks", "hash", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
         ("keyed_compose_preset_hashlock_gated_ripemd160", presets::hashlock_gated(Wrapper::Wsh, HRIPE, 26280).unwrap(),
          "wsh(or_i(and_v(v:pkh(@0/<0;1>/*),ripemd160(09e7bb5051d89788fb4e4b374126721dbcc2946b)),and_v(v:pkh(@1/<0;1>/*),older(26280))))".to_string(),
-         vec!["w:wsh", "paths:2", "head:single", "hash", "lock:blocks", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
+         vec!["w:wsh", "paths:2", "head:hashed", "lock:blocks", "hash", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
         ("keyed_compose_preset_hashlock_gated_hash160", presets::hashlock_gated(Wrapper::Wsh, H160K, 26280).unwrap(),
          "wsh(or_i(and_v(v:pkh(@0/<0;1>/*),hash160(b5b72c0e6896ff59dfa99e0d1052a9c0214cd0bd)),and_v(v:pkh(@1/<0;1>/*),older(26280))))".to_string(),
-         vec!["w:wsh", "paths:2", "head:single", "hash", "lock:blocks", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
+         vec!["w:wsh", "paths:2", "head:hashed", "lock:blocks", "hash", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
         ("keyed_compose_preset_decaying_multisig", presets::decaying_multisig(Wrapper::Wsh, 2, 2, 1, 1, 13140, 26280, 1_000_000).unwrap(),
          "wsh(or_i(and_v(v:multi(2,@0/<0;1>/*,@1/<0;1>/*),older(13140)),or_i(and_v(v:pkh(@2/<0;1>/*),older(26280)),and_v(v:pkh(@3/<0;1>/*),after(1000000)))))".to_string(),
          vec!["w:wsh", "paths:3", "head:locked", "lock:blocks", "lock:height", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh", "preset:decaying-multisig"]),
@@ -401,22 +401,30 @@ pub fn family() -> Vec<(&'static str, PathList, String, Vec<&'static str>)> {
 /// M-1):
 /// - `spine:0` has exactly ONE legal shape: a taptree with m = 0 leaves is one
 ///   unlocked single key and nothing else — spec §12 item 1's own exemption.
-/// - `head:hashed` and the six `preset:<name>` tags have MANY legal shapes
+/// - the five remaining `preset:<name>` tags have MANY legal shapes
 ///   (`plain-multisig,2of4` under `tr` is as legal a `preset:plain-multisig`
 ///   vector as the one shipped) but ONE vector by deliverable scope: F-453
-///   specifies one MANIFEST vector per archetype, and `head:hashed` had no
-///   vector at all before it. The test pins them at exactly one so that a
-///   second vector forces an explicit decision here instead of silently
-///   widening the exemption.
+///   specifies one MANIFEST vector per archetype. The test pins them at exactly
+///   one so that a second vector forces an explicit decision here instead of
+///   silently widening the exemption.
+///
+///   **That is exactly what happened to `head:hashed` and
+///   `preset:hashlock-gated` in SPEC_hashlock_kinds phase 1**, and the
+///   mechanism is worth recording: the three new vectors were first tagged
+///   `head:single`, which is wrong for this shape (`is_bare_single` requires
+///   `hash.is_none()`), and the wrong tag KEPT THIS GATE QUIET. Tagging them
+///   correctly reds it, which is the gate working. Both tags now have four
+///   vectors -- one per hash kind -- so both left the exemption and the
+///   ordinary "at least two" rule applies, which is the stronger check.
 ///
 /// §12 item 1's own required-tag list (`compose_vectors.rs`) is NOT extended
 /// with `preset:*` — presets are not one of the axes that list names, so
 /// nothing there needs touching.
 pub const SINGULAR_TAGS: &[&str] = &[
     "spine:0",
-    // R0 fidelity N-1: the ONLY family vector whose head path is a single key
-    // plus a hash, unlocked (neither bare-multi, single, nor locked).
-    "head:hashed",
+    // `head:hashed` LEFT this list in SPEC_hashlock_kinds phase 1: the
+    // hashlock-gated preset now has one vector per hash kind, so the shape
+    // "one key plus a hash, unlocked" has four and not one.
     "preset:plain-multisig",
     "preset:simple-timelocked-inheritance",
     "preset:kofn-recovery",
