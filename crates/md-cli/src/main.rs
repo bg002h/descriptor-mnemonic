@@ -284,9 +284,10 @@ enum Command {
         /// tr | wsh | sh-wsh | sh
         #[arg(long, value_name = "WRAPPER", required = true)]
         wrapper: String,
-        /// One spend path in listed order: `<k>of<n>[,older=N|older=Nu|after=H|after=Tt][,sha256=HEX][,unsorted]`
-        /// or `keyless,sha256=HEX[,older=..|after=..]`. Repeatable. Mutually
-        /// exclusive with --preset.
+        /// One spend path in listed order: `<k>of<n>[,older=N|older=Nu|after=H|after=Tt][,<hash>=HEX][,unsorted]`
+        /// or `keyless,<hash>=HEX[,older=..|after=..]`, where `<hash>` is one of
+        /// `sha256`/`hash256` (64 hex) or `ripemd160`/`hash160` (40 hex), at most
+        /// one per path. Repeatable. Mutually exclusive with --preset.
         #[arg(long = "path", value_name = "PATH", action = clap::ArgAction::Append)]
         paths: Vec<String>,
         /// One of the six named archetypes (SPEC_wallet_policy_composer.md

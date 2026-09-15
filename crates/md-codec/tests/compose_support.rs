@@ -37,6 +37,39 @@ pub const HL_BYTES: [u8; 32] = [
     0xb8, 0x67, 0xdb, 0x87, 0x54, 0x79, 0xbc, 0xc0, 0x28, 0x73, 0x52, 0xcd, 0xaa, 0x4a, 0x17, 0x55,
     0x68, 0x9b, 0x83, 0x38, 0x77, 0x7d, 0x09, 0x15, 0xe9, 0xac, 0xd9, 0xf6, 0xed, 0xbc, 0x96, 0xcb,
 ];
+/// The `hash256` digest of the SAME preimage as the ms-codec KAT's
+/// `correct horse battery staple` row, so the md1 vectors and the hashlock
+/// corpus agree on one preimage across two repos.
+pub const HK256: HashLock = HashLock::new(
+    HashKind::Hash256,
+    [
+        0x98, 0xa2, 0x0f, 0xc2, 0x5d, 0xbc, 0xdf, 0x23, 0x6f, 0xb0, 0x30, 0x7e, 0x3f, 0x82, 0xca,
+        0xd4, 0x7f, 0xca, 0x2e, 0x80, 0x7f, 0x3e, 0xf8, 0x2c, 0x31, 0x99, 0x35, 0x49, 0x64, 0x1c,
+        0xd4, 0x88,
+    ],
+);
+/// The `ripemd160` digest of the SAME preimage as the ms-codec KAT's
+/// `correct horse battery staple` row, so the md1 vectors and the hashlock
+/// corpus agree on one preimage across two repos.
+pub const HRIPE: HashLock = HashLock::new(
+    HashKind::Ripemd160,
+    [
+        0x09, 0xe7, 0xbb, 0x50, 0x51, 0xd8, 0x97, 0x88, 0xfb, 0x4e, 0x4b, 0x37, 0x41, 0x26, 0x72,
+        0x1d, 0xbc, 0xc2, 0x94, 0x6b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ],
+);
+/// The `hash160` digest of the SAME preimage as the ms-codec KAT's
+/// `correct horse battery staple` row, so the md1 vectors and the hashlock
+/// corpus agree on one preimage across two repos.
+pub const H160K: HashLock = HashLock::new(
+    HashKind::Hash160,
+    [
+        0xb5, 0xb7, 0x2c, 0x0e, 0x68, 0x96, 0xff, 0x59, 0xdf, 0xa9, 0x9e, 0x0d, 0x10, 0x52, 0xa9,
+        0xc0, 0x21, 0x4c, 0xd0, 0xbd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ],
+);
 pub const HL: HashLock = HashLock::new(HashKind::Sha256, HL_BYTES);
 pub const HLH: &str = "b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb";
 
@@ -348,6 +381,15 @@ pub fn family() -> Vec<(&'static str, PathList, String, Vec<&'static str>)> {
          // fourth shape; it joins SINGULAR_TAGS below since this is the only
          // family vector with it.
          vec!["w:wsh", "paths:2", "head:hashed", "lock:blocks", "hash", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
+        ("keyed_compose_preset_hashlock_gated_hash256", presets::hashlock_gated(Wrapper::Wsh, HK256, 26280).unwrap(),
+         "wsh(or_i(and_v(v:pkh(@0/<0;1>/*),hash256(98a20fc25dbcdf236fb0307e3f82cad47fca2e807f3ef82c31993549641cd488)),and_v(v:pkh(@1/<0;1>/*),older(26280))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:single", "hash", "lock:blocks", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
+        ("keyed_compose_preset_hashlock_gated_ripemd160", presets::hashlock_gated(Wrapper::Wsh, HRIPE, 26280).unwrap(),
+         "wsh(or_i(and_v(v:pkh(@0/<0;1>/*),ripemd160(09e7bb5051d89788fb4e4b374126721dbcc2946b)),and_v(v:pkh(@1/<0;1>/*),older(26280))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:single", "hash", "lock:blocks", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
+        ("keyed_compose_preset_hashlock_gated_hash160", presets::hashlock_gated(Wrapper::Wsh, H160K, 26280).unwrap(),
+         "wsh(or_i(and_v(v:pkh(@0/<0;1>/*),hash160(b5b72c0e6896ff59dfa99e0d1052a9c0214cd0bd)),and_v(v:pkh(@1/<0;1>/*),older(26280))))".to_string(),
+         vec!["w:wsh", "paths:2", "head:single", "hash", "lock:blocks", "ik:none", "fp:one-seed-two-paths", "origins:default-wsh", "preset:hashlock-gated"]),
         ("keyed_compose_preset_decaying_multisig", presets::decaying_multisig(Wrapper::Wsh, 2, 2, 1, 1, 13140, 26280, 1_000_000).unwrap(),
          "wsh(or_i(and_v(v:multi(2,@0/<0;1>/*,@1/<0;1>/*),older(13140)),or_i(and_v(v:pkh(@2/<0;1>/*),older(26280)),and_v(v:pkh(@3/<0;1>/*),after(1000000)))))".to_string(),
          vec!["w:wsh", "paths:3", "head:locked", "lock:blocks", "lock:height", "ik:none", "fp:one-seed-one-path", "fp:one-seed-two-paths", "origins:default-wsh", "preset:decaying-multisig"]),
@@ -379,6 +421,8 @@ pub const SINGULAR_TAGS: &[&str] = &[
     "preset:simple-timelocked-inheritance",
     "preset:kofn-recovery",
     "preset:tiered-recovery",
-    "preset:hashlock-gated",
+    // NOT singular since SPEC_hashlock_kinds phase 1: the preset has one vector
+    // per hash kind (sha256, hash256, ripemd160, hash160), so the ordinary
+    // "at least two" rule applies and is a stronger check than an exemption.
     "preset:decaying-multisig",
 ];
