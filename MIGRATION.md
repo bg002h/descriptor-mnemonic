@@ -2,6 +2,50 @@
 
 Migration steps for upgrading between major releases of `md-codec` (formerly `wdm-codec`).
 
+## md-codec v0.42.0 → v0.43.0 + md-cli v0.14.0 → v0.15.0 [BREAKING]
+
+**All four miniscript hash fragments become authorable** (SPEC_hashlock_kinds
+phase 1). **No wire-format change** — tags `0x1D`–`0x20` were already allocated
+and already decoded, rendered and lowered; what changes is that `compose` can now
+*produce* the other three. A v0.42-encoded payload decodes byte-identically under
+v0.43, and every existing `sha256` vector's corpus file is unchanged.
+
+### Library consumers (md-codec)
+
+- **`SpendPath.hash` is `Option<HashLock>`, was `Option<[u8; 32]>`.** The bare
+  array could only ever mean `sha256`.
+- **New `HashKind`** (`Sha256`, `Hash256`, `Ripemd160`, `Hash160`) with
+  `digest_len()`, `tag()` and `token()`. Deliberately **not** the wire `Tag` set:
+  a hashlock field typed as `Tag` can hold `Wpkh`. `tag()` is the total function
+  into the wire set.
+- **New `HashLock`** — `HashLock::new(kind, [u8; 32])`, `kind()`, `digest()`.
+  The digest is a fixed array for the alloc gate, so a 20-byte kind carries
+  twelve bytes of zero padding; **`digest()` is the only correct way to read it**
+  and returns exactly `kind.digest_len()` bytes. Reaching past it commits the
+  padding into the script, which compiles, round-trips, and cannot be spent.
+- **`presets::hashlock_gated`'s second parameter is a `HashLock`.**
+  Mechanical fix for an existing caller: `presets::hashlock_gated(w, h, n)`
+  becomes `presets::hashlock_gated(w, HashLock::new(HashKind::Sha256, h), n)`.
+
+### CLI consumers (md-cli)
+
+- **`--path` and `--preset` gain three sibling options** beside `sha256=`:
+  `hash256=` (64 hex), `ripemd160=` and `hash160=` (40 hex). At most one per
+  path; two is a refusal, not a precedence rule.
+- **BREAKING, `--json`:** the `hashlock-gated` preset params key **`sha256`
+  becomes `kind` + `digest`**. The old key was wrong for three of the four kinds,
+  and a consumer reading it could not tell which fragment the wallet commits to.
+  A consumer reading `sha256` now gets nothing rather than a stale value.
+- **A refusal message changed**: `preset hashlock-gated needs sha256=<64 hex>`
+  now names all four options with their own widths. Per-kind width errors read
+  `ripemd160 needs 40 hex characters, lowercase`.
+
+### What did NOT change
+
+`sh(wsh)` still cannot carry a hashlock, for any kind including `sha256` —
+`legacy wrappers hold one plain sorted multisig only (n >= 2, no lock, no hash)`.
+That rule predates this cycle and is deliberate narrowness.
+
 ## md-codec v0.31.0 → md-codec v0.32.0
 
 **No wire-format change.** v0.30/v0.31-encoded payloads decode byte-identically under v0.32. The change is API-only: `Descriptor::derive_address` now covers every BIP-388-parseable shape (was a hand-rolled 5-shape allow-list: `Pkh`, `Wpkh`, `TrKeyPathOnly`, `WshMulti`, `ShWshMulti`). The new implementation routes through a generic AST → `miniscript::Descriptor` converter, so multi-leaf tap-trees, `tr(NUMS, ...)`, `sh(multi)` / `sh(sortedmulti)`, arbitrary `wsh(<miniscript>)`, and tap-leaf miniscript all derive without the allow-list gate.

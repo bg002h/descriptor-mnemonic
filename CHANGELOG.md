@@ -4,7 +4,35 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## md-cli [Unreleased]
+## md-cli [0.15.0] — 2026-09-15
+
+### Added
+
+- **`md compose` authors all four miniscript hash kinds** (SPEC_hashlock_kinds
+  phase 1). `--path` and `--preset` gain three sibling options beside `sha256=`:
+  `hash256=` (64 hex), `ripemd160=` and `hash160=` (40 hex). At most one hash per
+  path — two is a refusal, not a precedence rule, because the wrong one composes
+  a wallet the operator's plate does not satisfy. Uppercase is rejected, never
+  folded, matching `ms hashlock --kind`.
+
+  This closes a gap where `md-codec` could already *decode* and render all four
+  — an `md1` carrying a `ripemd160` hashlock read back correctly — while
+  `md compose` refused the operand `ms hashlock --kind ripemd160` prints.
+
+### Breaking
+
+- **`--json`: the `hashlock-gated` preset params key `sha256` becomes `kind` +
+  `digest`.** The old key was wrong for three of the four kinds, and a consumer
+  reading it could not tell which fragment the wallet commits to.
+- Refusal text: `preset hashlock-gated needs sha256=<64 hex>` now names all four
+  options with their own widths; per-kind width errors read
+  `ripemd160 needs 40 hex characters, lowercase`.
+
+### Migration notes
+
+- See MIGRATION.md md-codec v0.42.0 → v0.43.0 + md-cli v0.14.0 → v0.15.0.
+
+### Also in this release (previously unreleased)
 
 ### Added
 
@@ -80,7 +108,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   defective wallets, and `tr` has refused them all along. The refusal for a
   signature-free path now names `--experimental` and what it means.
 
-## md-codec [Unreleased]
+## md-codec [0.43.0] — 2026-09-15
+
+### Added
+
+- **`HashKind`** (`Sha256`, `Hash256`, `Ripemd160`, `Hash160`) with
+  `digest_len()`, `tag()` and `token()`. Deliberately **not** the 30-value wire
+  `Tag` set — a hashlock field typed as `Tag` can hold `Wpkh`; `tag()` is the
+  total function into it. `digest_len()` is **the only place a digest length is
+  written**, which is what makes the parser, the validator and the formatter
+  agree by construction rather than by review.
+- **`HashLock`** — `new(kind, [u8; 32])`, `kind()`, `digest()`. The digest is a
+  fixed array for the alloc gate, so a 20-byte kind carries twelve bytes of zero
+  padding; `digest()` returns exactly `kind.digest_len()` bytes and is the only
+  correct way to read it.
+- One `hashlock-gated` vector per kind, with digests of the **same preimage** as
+  `ms-codec`'s KAT row, so the two corpora agree across repos.
+
+### Breaking
+
+- **`SpendPath.hash` is `Option<HashLock>`**, was `Option<[u8; 32]>`.
+- **`presets::hashlock_gated`'s second parameter is a `HashLock`.**
+
+### What did not change
+
+- **No wire-format change.** Tags `0x1D`–`0x20` were already allocated and
+  already decoded; a v0.42-encoded payload decodes byte-identically, and every
+  existing `sha256` corpus file is unchanged.
+
+### Migration notes
+
+- See MIGRATION.md md-codec v0.42.0 → v0.43.0 + md-cli v0.14.0 → v0.15.0.
+
+### Also in this release (previously unreleased)
 
 ### Added
 
