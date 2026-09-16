@@ -74,16 +74,47 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         crate::parse::reuse::Disposition::Refuse,
     )?;
     if args.experimental {
-        // LOUD, on stderr, every time. This authors a card for a wallet whose
-        // guarantees rust-miniscript declines to vouch for, and the card itself
-        // carries no record that a flag was used to create it — the operator's
-        // memory and this line are the only trace.
-        eprintln!(
-            "warning: --experimental relaxed the signature rule. This descriptor has at least \
-             one spend path that needs NO key, so whoever learns its preimage can spend it \
-             alone. If that preimage is engraved, THE PLATE IS BEARER ACCESS. Malleability, \
-             resource limits, repeated keys and timelock mixing were still checked."
-        );
+        // F-599: this warning used to fire on the FLAG and never consult the
+        // DESCRIPTOR, so `md encode --in pk.tmpl --experimental` on
+        // `wpkh(@0/<0;1>/*)` -- a single-key wallet whose one spend path needs
+        // a signature -- announced "THE PLATE IS BEARER ACCESS". A warning
+        // that cannot distinguish a bearer plate from a single-sig wallet
+        // teaches the operator to ignore it, and the one time it is true is
+        // the time that matters.
+        //
+        // `--experimental` relaxes EXACTLY ONE rule (`top_unsafe`, which is
+        // rust-miniscript's `requires_sig()`; see `parse_template_ext`). So
+        // the honest question is not "was the flag passed" but "did it change
+        // the answer": re-parse the same template WITHOUT it. Parsing then is
+        // proof the flag relaxed nothing here.
+        let needed_the_flag = parse_template_ext(
+            args.template,
+            &parsed_keys,
+            &parsed_fps,
+            false,
+            crate::parse::reuse::Disposition::Refuse,
+        )
+        .is_err();
+        if needed_the_flag {
+            // LOUD, on stderr, every time. This authors a card for a wallet
+            // whose guarantees rust-miniscript declines to vouch for, and the
+            // card itself carries no record that a flag was used to create it
+            // — the operator's memory and this line are the only trace.
+            eprintln!(
+                "warning: --experimental relaxed the signature rule. This descriptor has at \
+                 least one spend path that needs NO key, so whoever learns its preimage can \
+                 spend it alone. If that preimage is engraved, THE PLATE IS BEARER ACCESS. \
+                 Malleability, resource limits, repeated keys and timelock mixing were still \
+                 checked."
+            );
+        } else {
+            eprintln!(
+                "note: --experimental was not needed for this descriptor. Every spend path \
+                 here requires a signature, so the flag relaxed nothing and this card is \
+                 not bearer access. Re-run without it to get the same plate under the \
+                 unrelaxed rules."
+            );
+        }
     }
     apply_path_override(&mut descriptor, args.path)?;
 

@@ -925,6 +925,57 @@ fn experimental_admits_a_keyless_spend_path() {
     );
 }
 
+/// F-599: the bearer warning was gated on the FLAG and never consulted the
+/// DESCRIPTOR, so `md encode --experimental` on `wpkh(@0/<0;1>/*)` -- a
+/// single-key wallet whose one spend path requires a signature -- announced
+/// "THE PLATE IS BEARER ACCESS".
+///
+/// A warning that cannot tell a bearer plate from a single-sig wallet teaches
+/// the operator to ignore it, and the one time it is true is the time that
+/// matters. `--experimental` relaxes exactly one rule, so the honest question
+/// is whether it changed the answer: re-parse without it.
+///
+/// The positive case is `experimental_admits_a_keyless_spend_path` above, which
+/// still asserts BEARER ACCESS -- the pair is what makes either meaningful.
+///
+/// MUTATION: restore the unconditional `eprintln!` -> this test fails.
+#[test]
+fn experimental_does_not_claim_bearer_access_for_a_wallet_that_needs_no_relaxing() {
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wpkh(@0/<0;1>/*)",
+            "--path",
+            "m/84h/0h/0h",
+            "--group-size",
+            "0",
+            "--experimental",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "a single-key wallet must still encode with --experimental: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !err.contains("BEARER ACCESS"),
+        "a single-key wallet is announced as bearer access:\n{err}"
+    );
+    assert!(
+        !err.contains("needs NO key"),
+        "a single-key wallet is told it has a key-less spend path:\n{err}"
+    );
+    // And it says so plainly, rather than going silent -- the operator passed a
+    // flag and deserves to know it did nothing.
+    assert!(
+        err.contains("--experimental was not needed"),
+        "the flag was a no-op and nothing said so:\n{err}"
+    );
+}
+
 /// `--experimental` relaxes ONLY the signature rule. The other four sanity
 /// rules still apply, because relaxing those admits scripts that are
 /// UNSPENDABLE rather than merely unguaranteed — a different, worse class.
