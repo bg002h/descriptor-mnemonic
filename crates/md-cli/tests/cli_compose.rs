@@ -209,3 +209,89 @@ fn compose_json_names_slots_internal_key_and_experimental() {
     .stdout(predicate::str::contains("\"index\": 0"))
     .stdout(predicate::str::contains("\"experimental\": []"));
 }
+
+/// F-603: `--json`'s `experimental[]` carried the STDERR sentence, which numbers
+/// paths from 1, while `slots[].path` in the same object counts from 0. A
+/// consumer joining the two got a false statement with no parse error to warn
+/// it.
+///
+/// MEASURED on the object this test builds: `experimental` says "path 2 has no
+/// key" and `slots[].path == 2` holds key slots @3 and @4. Both fields are
+/// right about their own numbering; the object as a whole is not.
+///
+/// The fix is ADDITIVE -- `experimental[]` keeps its exact prose so nothing
+/// that reads it breaks, and `"schema": "md-cli/1"` stays honest, since
+/// docs/json-schema-v1.md bumps the version only on BREAKING changes. This test
+/// asserts the trap is still reproducible AND that the new field is free of it;
+/// if the prose is ever made 0-based, the first half fails and this test should
+/// be rewritten rather than deleted.
+///
+/// MUTATION: emit `i + 1` in `experimental_json` and the join assertion fails.
+#[test]
+fn compose_json_experimental_paths_join_the_slot_map() {
+    const SHA: &str = "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881";
+    let out = md()
+        .args([
+            "compose",
+            "--wrapper",
+            "wsh",
+            "--json",
+            "--experimental",
+            "--path",
+            "2of3",
+            "--path",
+            &format!("keyless,sha256={SHA}"),
+            "--path",
+            "1of2,older=144",
+        ])
+        .assert()
+        .success();
+    let v: serde_json::Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+
+    let slot_paths: Vec<u64> = v["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["path"].as_u64().unwrap())
+        .collect();
+
+    // The prose is 1-based and unchanged -- it is what stderr prints.
+    assert_eq!(
+        v["experimental"][0].as_str().unwrap(),
+        "path 2 has no key (bearer access to whoever holds the preimage)"
+    );
+    // And it still collides: read as a slots[].path value, "2" has key slots.
+    assert!(
+        slot_paths.contains(&2),
+        "the prose/slot-map collision this field exists to route around is gone; \
+         re-read F-603 before changing this test (slot paths {slot_paths:?})"
+    );
+
+    // The joinable field is 0-based, and the join is TRUE: the key-less path
+    // carries no key slots.
+    let e = &v["experimental_paths"][0];
+    assert_eq!(e["kind"].as_str().unwrap(), "keyless_path");
+    let p = e["path"].as_u64().unwrap();
+    assert_eq!(p, 1, "experimental_paths[].path must be 0-based");
+    assert!(
+        !slot_paths.contains(&p),
+        "path {p} is reported key-less but holds key slots {slot_paths:?}"
+    );
+
+    // Unchanged for the no-experimental case: the new array is empty too.
+    md().args([
+        "compose",
+        "--wrapper",
+        "tr",
+        "--json",
+        "--path",
+        "2of2",
+        "--path",
+        "1of1",
+    ])
+    .assert()
+    .success()
+    .stdout(predicates::prelude::predicate::str::contains(
+        "\"experimental_paths\": []",
+    ));
+}

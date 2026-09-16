@@ -289,3 +289,51 @@ fn encode_refuses_from_policy_together_with_in() {
     assert_eq!(code, Some(2), "stderr={err}");
     assert!(err.contains("cannot be used with"), "stderr={err}");
 }
+
+/// F-592: the conflict error's own Usage line showed the conflict.
+///
+/// `md verify --in FILE <strings>` refused with `Usage: md verify --template
+/// <TEMPLATE> --in <FILE> [STRINGS]...` -- the two alternatives printed side by
+/// side, as if supplying both were the shape being asked for.
+///
+/// Fixed with the mechanism `md compose` already used for `--path`/`--preset`:
+/// a clap ArgGroup, which renders the alternation. Applied to all five reading
+/// verbs with this shape, not just the one the journey hit. NOT applied to
+/// `md encode`, whose third source (`--from-policy`) and hand-written
+/// "TEMPLATE required" message mean a non-required group changes nothing --
+/// measured, then reverted rather than left as inert configuration.
+///
+/// MUTATION: drop the ArgGroup from any of the five and that subcommand's
+/// assertion fails.
+#[test]
+fn the_reading_verbs_render_in_and_argv_as_alternatives() {
+    for (verb, extra, placeholder) in [
+        ("verify", &["--template", "wpkh(@0/<0;1>/*)"][..], "STRINGS"),
+        ("decode", &[][..], "STRINGS"),
+        ("inspect", &[][..], "STRINGS"),
+        ("bytecode", &[][..], "STRINGS"),
+        ("decompose", &[][..], "DESCRIPTORS"),
+    ] {
+        let mut cmd = Command::cargo_bin("md").unwrap();
+        cmd.arg(verb).args(extra);
+        let err = String::from_utf8(
+            cmd.args(["--in", "/dev/null", "md1yqpqqxqq8xtwhw4xwn4qh"])
+                .assert()
+                .failure()
+                .get_output()
+                .stderr
+                .clone(),
+        )
+        .unwrap();
+        let want = format!("<{placeholder}|--in <FILE>>");
+        assert!(
+            err.contains(&want),
+            "md {verb}: usage line does not offer the two as alternatives \
+             (want {want:?}):\n{err}"
+        );
+        assert!(
+            !err.contains(&format!("--in <FILE> [{placeholder}")),
+            "md {verb}: usage line still shows the conflicting combination:\n{err}"
+        );
+    }
+}

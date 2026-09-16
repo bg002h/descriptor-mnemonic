@@ -48,6 +48,30 @@ Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with brea
 | `template` | string |
 | `context` | `"tap"` or `"segwitv0"` |
 
+### `compose --json`
+| Field | Type |
+|---|---|
+| `schema` | string |
+| `template` | string — the origin-less template |
+| `template_with_origins` | string — the inline-origin form `md encode` reads back |
+| `wrapper` | string — `"tr"`/`"wsh"`/`"sh-wsh"`/`"sh"` |
+| `slots` | array of `{ "index": u32, "path": usize, "ordinal": u32 }` — `path` is **0-based** |
+| `internal_key_path` | usize or `null` — taproot only |
+| `experimental` | array of string — **PROSE for humans**, byte-identical to the `warning: EXPERIMENTAL:` lines on stderr. Its path numbers count from **1**. |
+| `experimental_paths` | array of `{ "kind": "keyless_path"\|"unsorted_keys", "path": usize }` — `path` is **0-based** and joins `slots[].path` |
+| `preset` | `{ "name": string, "params": object }` or `null` — present with `--preset` |
+
+**Join on `experimental_paths[].path`, never on the numbers inside
+`experimental[]` (F-603).** The two count differently on purpose: the prose is
+the human-facing stderr sentence, where "path 1" means the first path. Reading
+its number as a `slots[].path` value yields a false statement with no parse
+error to warn you — measured on a three-path wallet whose object says "path 2
+has no key" while `slots[].path == 2` carries key slots @3 and @4.
+
+`experimental_paths` was added alongside `experimental` rather than replacing
+it, so no consumer of the prose array breaks and the schema version does not
+move.
+
 ### `address --json`
 | Field | Type |
 |---|---|

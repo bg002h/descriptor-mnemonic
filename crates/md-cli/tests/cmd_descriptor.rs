@@ -319,3 +319,69 @@ fn a_descriptor_without_key_origins_says_it_cannot_be_signed() {
         String::from_utf8_lossy(&origins.stderr)
     );
 }
+
+/// F-611: `--help` used to promise "real xpubs", and every xpub `md descriptor`
+/// emits serialises at DEPTH 0 whatever depth the supplied key had.
+///
+/// Not a codec bug and not fixable here: a card stores a key as chain code +
+/// compressed point with no BIP-32 metadata, so depth, parent fingerprint and
+/// child number are documented placeholders. Only chain code and point
+/// participate in CKDpub, so every derived address is identical either way.
+/// What the operator needed to be told is that the xpub STRING will not match
+/// a signer's own export byte-for-byte.
+///
+/// MEASURED, both ends: the input below is depth 4 (parent fingerprint
+/// 1cf29716, child 80000002) and what comes back is depth 0 with both fields
+/// zeroed.
+///
+/// This test pins the FACT, not just the sentence. A test asserting only the
+/// help text would stay green if the codec ever started carrying real
+/// metadata, leaving the warning in place and wrong.
+#[test]
+fn descriptor_emits_depth_zero_xpubs_and_says_so() {
+    const IN_XPUB: &str = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
+
+    let supplied: bitcoin::bip32::Xpub = IN_XPUB.parse().unwrap();
+    assert_eq!(supplied.depth, 4, "the fixture must be a non-zero depth");
+
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            "wpkh(@0/48'/0'/0'/2'/<0;1>/*)",
+            "--key",
+            &format!("@0={IN_XPUB}"),
+            "--fingerprint",
+            "@0=73c5da0a",
+        ])
+        .assert()
+        .success();
+    let text = String::from_utf8(out.get_output().stdout.clone()).unwrap();
+
+    let emitted_str = text
+        .split(']')
+        .nth(1)
+        .and_then(|s| s.split('/').next())
+        .expect("an xpub after the origin");
+    let emitted: bitcoin::bip32::Xpub = emitted_str.parse().unwrap();
+
+    assert_eq!(emitted.depth, 0, "emitted xpub: {emitted_str}");
+    assert_eq!(emitted.parent_fingerprint.to_string(), "00000000");
+    assert_eq!(u32::from(emitted.child_number), 0);
+    // The point and chain code -- the parts CKDpub uses -- survive intact,
+    // which is why the addresses are right despite the string differing.
+    assert_eq!(emitted.public_key, supplied.public_key);
+    assert_eq!(emitted.chain_code, supplied.chain_code);
+    assert_ne!(
+        emitted_str, IN_XPUB,
+        "if the strings ever match, the placeholder metadata is gone and the \
+         --help warning below must be deleted"
+    );
+
+    md().args(["descriptor", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::prelude::predicate::str::contains(
+            "EVERY EMITTED XPUB SERIALISES AT DEPTH 0",
+        ));
+}

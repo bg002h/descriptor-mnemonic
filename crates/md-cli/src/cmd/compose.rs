@@ -550,6 +550,27 @@ fn preset_params_json(p: &PresetParams) -> serde_json::Value {
     serde_json::json!({ "name": name, "params": params })
 }
 
+/// F-603: the machine-readable twin of `describe`.
+///
+/// `describe` numbers paths from 1 because that is how a human reads "the
+/// first path", and `--json`'s `experimental[]` carried those same sentences
+/// while `slots[].path` next to them counted from 0. A consumer joining the two
+/// got a FALSE statement with no parse error to warn it: the six-path wallet's
+/// object said "path 4 has no key" while listing @6 and @7 as key slots on
+/// path 4.
+///
+/// Additive rather than a type change: `experimental[]` keeps its exact prose,
+/// so nothing that reads it breaks and `"schema": "md-cli/1"` stays honest
+/// (docs/json-schema-v1.md: the version bumps on BREAKING changes). This is the
+/// field to join on.
+fn experimental_json(e: &Experimental) -> serde_json::Value {
+    let (kind, path) = match e {
+        Experimental::KeylessPath(i) => ("keyless_path", *i),
+        Experimental::UnsortedKeys(i) => ("unsorted_keys", *i),
+    };
+    serde_json::json!({ "kind": kind, "path": path })
+}
+
 fn describe(e: &Experimental) -> String {
     match e {
         Experimental::KeylessPath(i) => format!(
@@ -690,6 +711,11 @@ pub fn run(
             .map(|s| serde_json::json!({ "index": s.index, "path": s.path, "ordinal": s.ordinal }))
             .collect();
         let exp: Vec<String> = composed.experimental.iter().map(describe).collect();
+        let exp_paths: Vec<serde_json::Value> = composed
+            .experimental
+            .iter()
+            .map(experimental_json)
+            .collect();
         let preset_json = preset_params.as_ref().map(preset_params_json);
         let v = serde_json::json!({
             "schema": SCHEMA,
@@ -699,6 +725,7 @@ pub fn run(
             "slots": slots,
             "internal_key_path": composed.internal_key_path,
             "experimental": exp,
+            "experimental_paths": exp_paths,
             "preset": preset_json,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap());

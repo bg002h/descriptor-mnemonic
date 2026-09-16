@@ -187,8 +187,9 @@ enum Command {
     #[command(
         after_long_help = "EXAMPLES:\n  $ md decode md1yqpqqxqq8xtwhw4xwn4qh\n  wpkh(@0/<0;1>/*)"
     )]
+    #[command(group = clap::ArgGroup::new("decode_source").required(true).args(["strings", "in_file"]))]
     Decode {
-        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
+        #[arg(num_args = 1..)]
         strings: Vec<String>,
         /// Read md1 strings from FILE, one per line (SPEC §6b). Display
         /// separators are stripped per line, so a card copied off the
@@ -201,8 +202,9 @@ enum Command {
         json: bool,
     },
     /// Verify backup strings re-encode to a given template.
+    #[command(group = clap::ArgGroup::new("verify_source").required(true).args(["strings", "in_file"]))]
     Verify {
-        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
+        #[arg(num_args = 1..)]
         strings: Vec<String>,
         /// Read md1 strings from FILE, one per line (SPEC §6b).
         #[arg(long = "in", value_name = "FILE")]
@@ -236,8 +238,9 @@ enum Command {
         experimental: bool,
     },
     /// Decode + pretty-print everything the codec sees.
+    #[command(group = clap::ArgGroup::new("inspect_source").required(true).args(["strings", "in_file"]))]
     Inspect {
-        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
+        #[arg(num_args = 1..)]
         strings: Vec<String>,
         /// Read md1 strings from FILE, one per line (SPEC §6b).
         #[arg(long = "in", value_name = "FILE")]
@@ -248,8 +251,9 @@ enum Command {
         json: bool,
     },
     /// Dump the raw payload bits in an annotated layout.
+    #[command(group = clap::ArgGroup::new("bytecode_source").required(true).args(["strings", "in_file"]))]
     Bytecode {
-        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
+        #[arg(num_args = 1..)]
         strings: Vec<String>,
         /// Read md1 strings from FILE, one per line (SPEC §6b).
         #[arg(long = "in", value_name = "FILE")]
@@ -306,13 +310,20 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Emit the CONCRETE output descriptor -- real xpubs, key origins and the
+    /// Emit the CONCRETE output descriptor -- real keys, key origins and the
     /// BIP-380 checksum -- for pasting into a coordinator.
     ///
     /// Everything else this CLI prints for a wallet policy is a TEMPLATE (@0,
     /// @1, ...) or an address. Neither is what "paste your descriptor" means.
     /// Multipath (<0;1>) by default, which is the form a coordinator wants;
     /// --chain collapses it.
+    ///
+    /// EVERY EMITTED XPUB SERIALISES AT DEPTH 0 (F-611). A card stores a key as
+    /// chain code + point with no BIP-32 metadata, so depth, parent fingerprint
+    /// and child number are filled with placeholders. Only chain code and point
+    /// participate in CKDpub, so addresses are correct and identical either
+    /// way -- but the xpub STRING will not match a signer's own export
+    /// byte-for-byte. Match on the key origin, not the xpub text.
     // R9 (`design/SPEC_mdcli_mini.md`): `from_mk1` joins this group, with
     // `.multiple(true)`, so `--from-mk1`'s mere presence satisfies
     // `required(true)` even when a swallowed positional leaves `phrases`
@@ -769,10 +780,11 @@ enum Command {
     #[command(
         after_long_help = "EXAMPLES:\n  $ md decompose wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf/<0;1>/*) --emit template\n  wpkh(@0/48'/0'/0'/2'/<0;1>/*)"
     )]
+    #[command(group = clap::ArgGroup::new("decompose_source").required(true).args(["descriptors", "in_file"]))]
     Decompose {
         /// The concrete output descriptor. Exactly one; two are refused with
         /// the receive/change-pair guidance. Use `-` to read it from stdin.
-        #[arg(required_unless_present = "in_file", num_args = 1.., conflicts_with = "in_file")]
+        #[arg(num_args = 1..)]
         descriptors: Vec<String>,
         /// Read the descriptor from FILE instead of argv — decompose's own
         /// input material (SPEC §6b). Blank lines and `#` comments are
