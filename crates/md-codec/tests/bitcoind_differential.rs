@@ -481,6 +481,109 @@ fn corpus() -> Vec<Shape> {
                 tlv: pubkeys(vec![(0u8, account_xpub_bytes("m/84'/0'/0'"))]),
             },
         },
+        // ─── F-538: THE OTHER THREE HASH KINDS, MEASURED BY CORE ────────────
+        //
+        // SPEC_hashlock_kinds §12 item 1 asks that each kind's address match
+        // Core's measured value. Shape 12 above covered sha256 and nothing
+        // covered the rest -- so the corpus that pins these addresses came
+        // from rust-miniscript, the same library md-codec's converter
+        // delegates to, and agreed with itself. A wrong hashop would have
+        // produced a self-consistent address and passed.
+        //
+        // Core is a different implementation in a different language. These
+        // three are shape 12 with the tag and body changed and nothing else,
+        // so a difference here is the hashop or the width and cannot be
+        // anything about keys, paths or the wrapper.
+        // 12a. hash256 = sha256d. SAME 32-byte body as shape 12 and a DIFFERENT opcode --
+        //      the pair with no structural signal between them (§3 F4), which is
+        //      exactly why an external oracle is worth having here.
+        Shape {
+            label: "wsh(and_v(v:pk, hash256))",
+            desc: Descriptor {
+                n: 1,
+                path_decl: PathDecl {
+                    n: 1,
+                    paths: PathDeclPaths::Shared(origin(&[(true, 84), (true, 0), (true, 0)])),
+                },
+                use_site_path: UseSitePath::standard_multipath(),
+                tree: Node {
+                    tag: Tag::Wsh,
+                    body: Body::Children(vec![Node {
+                        tag: Tag::AndV,
+                        body: Body::Children(vec![
+                            Node {
+                                tag: Tag::Verify,
+                                body: Body::Children(vec![pkk(0)]),
+                            },
+                            Node {
+                                tag: Tag::Hash256,
+                                body: Body::Hash256Body([0x42; 32]),
+                            },
+                        ]),
+                    }]),
+                },
+                tlv: pubkeys(vec![(0u8, account_xpub_bytes("m/84'/0'/0'"))]),
+            },
+        },
+        // 12b. ripemd160, the bare primitive. 20-byte body.
+        Shape {
+            label: "wsh(and_v(v:pk, ripemd160))",
+            desc: Descriptor {
+                n: 1,
+                path_decl: PathDecl {
+                    n: 1,
+                    paths: PathDeclPaths::Shared(origin(&[(true, 84), (true, 0), (true, 0)])),
+                },
+                use_site_path: UseSitePath::standard_multipath(),
+                tree: Node {
+                    tag: Tag::Wsh,
+                    body: Body::Children(vec![Node {
+                        tag: Tag::AndV,
+                        body: Body::Children(vec![
+                            Node {
+                                tag: Tag::Verify,
+                                body: Body::Children(vec![pkk(0)]),
+                            },
+                            Node {
+                                tag: Tag::Ripemd160,
+                                body: Body::Hash160Body([0x42; 20]),
+                            },
+                        ]),
+                    }]),
+                },
+                tlv: pubkeys(vec![(0u8, account_xpub_bytes("m/84'/0'/0'"))]),
+            },
+        },
+        // 12c. hash160 = ripemd160(sha256(x)). Same 20-byte WIDTH as 12b and a different
+        //      function -- the second same-width pair.
+        Shape {
+            label: "wsh(and_v(v:pk, hash160))",
+            desc: Descriptor {
+                n: 1,
+                path_decl: PathDecl {
+                    n: 1,
+                    paths: PathDeclPaths::Shared(origin(&[(true, 84), (true, 0), (true, 0)])),
+                },
+                use_site_path: UseSitePath::standard_multipath(),
+                tree: Node {
+                    tag: Tag::Wsh,
+                    body: Body::Children(vec![Node {
+                        tag: Tag::AndV,
+                        body: Body::Children(vec![
+                            Node {
+                                tag: Tag::Verify,
+                                body: Body::Children(vec![pkk(0)]),
+                            },
+                            Node {
+                                tag: Tag::Hash160,
+                                body: Body::Hash160Body([0x42; 20]),
+                            },
+                        ]),
+                    }]),
+                },
+                tlv: pubkeys(vec![(0u8, account_xpub_bytes("m/84'/0'/0'"))]),
+            },
+        },
         // 13. absolute-timelock wsh(and_v(v:pk, after(800000))) — a height
         //     CLTV. Mirrors shape 9 with Tag::Older→Tag::After (the OTHER
         //     Body::Timelock tag) at a block height < 500_000_000 so it is
