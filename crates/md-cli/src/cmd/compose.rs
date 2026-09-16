@@ -647,6 +647,40 @@ pub fn run(
     let template = descriptor_to_template(&composed.descriptor).map_err(CliError::Render)?;
     let with_origins = template_with_origins(&composed).map_err(CliError::Render)?;
 
+    // F-600: compose's contract is stated four lines from the end of this
+    // function -- "The inline-origin form: what `md encode` reads back to the
+    // same card". It was emitting, at EXIT 0, templates `md encode` refuses:
+    //
+    //   md compose --wrapper wsh --experimental \
+    //     --path 2of3 --path keyless,sha256=<h> --path keyless,ripemd160=<h>
+    //   -> exit 0, prints wsh(or_d(multi(2,…),or_i(sha256(…),ripemd160(…))))
+    //   md encode --in that --experimental
+    //   -> "Miniscript is malleable"
+    //
+    // Two key-less hash paths next to each other compile to an `or_i` of two
+    // hash fragments, which is malleable -- and `--experimental` relaxes ONLY
+    // the signature rule, so nothing downstream will ever take it. The operator
+    // got a plausible template, a zero exit, and a wall at the next verb.
+    //
+    // So compose now reads back what it is about to emit, with the SAME parser
+    // `md encode` uses. This is not a second implementation of the rules: it is
+    // the same function, which is what keeps the two verbs from drifting.
+    if let Err(e) = crate::parse::template::parse_template_ext(
+        &with_origins,
+        &[],
+        &[],
+        experimental,
+        crate::parse::reuse::Disposition::Refuse,
+    ) {
+        return Err(CliError::Compose(format!(
+            "composed a template that `md encode` refuses, so nothing was emitted:\n  {e}\n\
+             \n\
+             This is a defect in the path list, not in the hashes. Two key-less hash paths \
+             side by side compile to a malleable `or_i`; give one of them a key, a timelock, \
+             or fold them into one path."
+        )));
+    }
+
     #[cfg(feature = "json")]
     if json {
         use crate::format::json::SCHEMA;
