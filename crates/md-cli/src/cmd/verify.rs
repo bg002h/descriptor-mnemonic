@@ -62,8 +62,27 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
     let (decoded_bytes, decoded_bits) = encode_payload(&decoded)?;
     let (expected_bytes, expected_bits) = encode_payload(&expected)?;
     if decoded_bytes != expected_bytes || decoded_bits != expected_bits {
+        // F-582: the message named two numbers and no cause, and the most
+        // common cause is a flag the operator simply did not repeat.
+        // Fingerprints are PART OF THE PAYLOAD, so verifying a plate minted
+        // with `--fingerprint` against a template without it mismatches on
+        // size -- on a plate set that is perfectly correct.
+        //
+        // The failure mode is the reaction, not the message: the operator who
+        // makes verification pass by re-minting WITHOUT --fingerprint gets a
+        // set two gates bless and a third had already condemned as unseatable.
+        // So the hint points at the template side, never at re-minting.
+        let hint = if parsed_fps.is_empty() && decoded_bytes.len() > expected_bytes.len() {
+            "\n      The card is LARGER than the template. Fingerprints are part of the \
+             payload, and none were given here: if this plate was minted with \
+             --fingerprint, pass the SAME values to verify. Do not re-mint without \
+             them to make this pass -- that is a different wallet, and its keys may \
+             not be seatable."
+        } else {
+            ""
+        };
         return Err(CliError::Mismatch(format!(
-            "expected {expected_bits}-bit payload, got {decoded_bits}-bit ({} vs {} bytes)",
+            "expected {expected_bits}-bit payload, got {decoded_bits}-bit ({} vs {} bytes){hint}",
             expected_bytes.len(),
             decoded_bytes.len()
         )));
