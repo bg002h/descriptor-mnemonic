@@ -497,8 +497,11 @@ fn preset_refuses_a_missing_or_malformed_hash() {
     .assert()
     .failure()
     .code(1)
+    // F-551: the refusal names the clause the input VIOLATED. A wrong WIDTH is
+    // told the number it gave; a wrong CASE is told about case and not about a
+    // length it already satisfied.
     .stderr(predicate::str::contains(
-        "sha256 needs 64 hex characters, lowercase",
+        "sha256 needs exactly 64 hex characters, got 2",
     ));
     // A 20-byte kind is refused at ITS width, not at sha256's.
     md().args([
@@ -511,8 +514,11 @@ fn preset_refuses_a_missing_or_malformed_hash() {
     .assert()
     .failure()
     .code(1)
+    // F-551, and this row is why it mattered: a 20-byte kind refused at ITS
+    // width now says the number it counted, so the message cannot be read as
+    // md being wrong about the length.
     .stderr(predicate::str::contains(
-        "ripemd160 needs 40 hex characters, lowercase",
+        "ripemd160 needs exactly 40 hex characters, got 2",
     ));
     // Two kinds is a refusal, not a precedence rule: the wrong one composes a
     // wallet the operator's plate does not satisfy.

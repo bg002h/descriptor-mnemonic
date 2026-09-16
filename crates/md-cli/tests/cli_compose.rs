@@ -132,7 +132,12 @@ fn compose_refuses_structural_defects_with_the_spec_wording() {
     ])
     .assert()
     .failure()
-    .stderr(predicate::str::contains("sha256 needs 64 hex characters"));
+    // F-551: "needs exactly N ... got M". The old wording ended ", lowercase",
+    // which named a second rule the input might already satisfy -- and did, for
+    // an uppercase digest of the right length.
+    .stderr(predicate::str::contains(
+        "sha256 needs exactly 64 hex characters",
+    ));
     md().args(["compose", "--wrapper", "sh", "--path", "1of1"])
         .assert()
         .failure()

@@ -117,3 +117,156 @@ fn a_keyless_hashlock_reaches_a_descriptor_and_an_address_at_every_kind() {
         );
     }
 }
+
+/// F-551: `md compose`'s hash refusals name the clause the input VIOLATED.
+///
+/// Two of them named a rule the input already satisfied:
+///
+///   `ripemd160=09E7BB..` (40 chars, uppercase) -> "needs 40 hex characters,
+///   lowercase" — the length is right, so the message reads as md being wrong
+///   about the length.
+///
+///   `RIPEMD160=..` -> a bare "unknown option `RIPEMD160`". `ms hashlock`'s own
+///   card says: "If it answers `unknown option ripemd160`, that support has not
+///   shipped in your md yet" — so a CURRENT md printing that for a CASE error
+///   sent the operator hunting a newer release of a tool already correct.
+///
+/// MUTATION: restore the combined width-or-case check -> the uppercase row
+/// fails. MUTATION: drop the `looks_like_a_kind` hint -> the last row fails.
+#[test]
+fn compose_hash_refusals_name_the_clause_that_was_violated() {
+    const D40: &str = "09e7bb5051d89788fb4e4b374126721dbcc2946b";
+
+    // Uppercase at the RIGHT width: the case clause, not the width one.
+    let r = md()
+        .args([
+            "compose",
+            "--wrapper",
+            "wsh",
+            "--path",
+            "2of3",
+            "--path",
+            &format!("keyless,ripemd160={}", D40.to_ascii_uppercase()),
+            "--experimental",
+        ])
+        .assert()
+        .failure();
+    let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+    assert!(
+        e.contains("LOWERCASE") && e.contains("never folded"),
+        "an uppercase digest of the RIGHT length must be refused for its CASE:\n{e}"
+    );
+    assert!(
+        !e.contains("needs exactly 40"),
+        "the refusal still names the width, which this input satisfies:\n{e}"
+    );
+
+    // Wrong width: the width clause, and it says what was counted.
+    let r = md()
+        .args([
+            "compose",
+            "--wrapper",
+            "wsh",
+            "--path",
+            "2of3",
+            "--path",
+            "keyless,sha256=abc",
+            "--experimental",
+        ])
+        .assert()
+        .failure();
+    let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+    assert!(
+        e.contains("needs exactly 64") && e.contains("got 3"),
+        "a wrong-width digest must be told the number it gave:\n{e}"
+    );
+
+    // An uppercase OPTION NAME must not read as "your md is too old".
+    let r = md()
+        .args([
+            "compose",
+            "--wrapper",
+            "wsh",
+            "--path",
+            "2of3",
+            "--path",
+            &format!("keyless,RIPEMD160={D40}"),
+            "--experimental",
+        ])
+        .assert()
+        .failure();
+    let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+    assert!(
+        e.contains("This md supports all four"),
+        "a mis-CASED kind name still reads as missing support, which is what \
+         `ms hashlock`'s card teaches the operator to conclude:\n{e}"
+    );
+}
+
+/// F-548: `md decompose --emit commands` adds `--experimental` for exactly the
+/// template that needs it.
+///
+/// That block prints under a "ready to run" banner and, for a keyless path,
+/// printed `md encode` commands that are NOT — they fail with "All spend paths
+/// must require a signature". The emitter already knew: it appends a note
+/// saying the template may not be accepted, and printed the command without
+/// the flag that accepts it.
+///
+/// THIS PINS THE CONDITION, not the rendering. The emitter keys on
+/// `parse_template` failing with the signature rule, and scopes the flag to
+/// that string — a template md rejects for some OTHER reason must not be handed
+/// `--experimental`, which would only move the failure and imply the flag was
+/// the answer. If that error text ever changes, the flag silently stops being
+/// emitted and no rendering test would notice; this one does.
+///
+/// (The end-to-end `decompose` walk needs a concrete descriptor whose xpubs are
+/// account-level at a 4-deep origin, which the fixtures here do not carry.)
+#[test]
+fn the_keyless_signature_rule_is_what_decompose_keys_on() {
+    // A keyless hashlock path: refused, and BY THE SIGNATURE RULE.
+    let keyless = md()
+        .args([
+            "compose",
+            "--wrapper",
+            "wsh",
+            "--path",
+            "2of2",
+            "--path",
+            "keyless,ripemd160=09e7bb5051d89788fb4e4b374126721dbcc2946b",
+            "--experimental",
+        ])
+        .assert()
+        .success();
+    let t = String::from_utf8_lossy(&keyless.get_output().stdout)
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+
+    // `md descriptor` without the flag is the same gate decompose consults.
+    let r = md()
+        .args(["descriptor", "--template", &t, "--key", K0, "--key", K1])
+        .assert()
+        .failure();
+    let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+    assert!(
+        e.contains("require a signature"),
+        "decompose scopes its --experimental to this exact string; if the wording \
+         moved, the flag stops being emitted silently:\n{e}"
+    );
+
+    // And a KEYED policy must not trip it, or every decomposition would be
+    // handed a flag it does not need.
+    let keyed = md()
+        .args(["compose", "--wrapper", "wsh", "--path", "2of2"])
+        .assert()
+        .success();
+    let t2 = String::from_utf8_lossy(&keyed.get_output().stdout)
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    md().args(["descriptor", "--template", &t2, "--key", K0, "--key", K1])
+        .assert()
+        .success();
+}

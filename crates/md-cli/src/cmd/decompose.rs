@@ -165,20 +165,39 @@ fn commands(d: &Decomposition) -> Result<Vec<String>, CliError> {
             format!("--key {}", sh_quote(&format!("@{i}={}", o.xpub)))
         })
         .collect();
+    // F-548: EMIT THE FLAG THE NOTE ALREADY DESCRIBES. This block says "ready to
+    // run" and, for a keyless path, printed commands that are not: `md encode`
+    // refuses with "All spend paths must require a signature". The emitter
+    // already KNEW -- it appends a note saying the template may not be accepted
+    // -- and still printed the command without the flag that accepts it.
+    //
+    // Scoped to the signature rule specifically. A template md rejects for some
+    // OTHER reason must not be handed `--experimental`, which would only move
+    // the failure and imply the flag was the answer.
+    let experimental = crate::parse::template::parse_template(&d.template, &[], &[])
+        .err()
+        .is_some_and(|e| e.to_string().contains("require a signature"));
+    let xflag = if experimental {
+        " \\\n  --experimental"
+    } else {
+        ""
+    };
     out.push(format!(
-        "md encode {} \\\n  {} \\\n  {}",
+        "md encode {} \\\n  {} \\\n  {}{}",
         sh_quote(&d.template),
         keys.join(" \\\n  "),
-        fps.join(" \\\n  ")
+        fps.join(" \\\n  "),
+        xflag
     ));
     out.push(String::new());
     out.push(
         "# ── route 2: the SPLIT set — a keyless policy card + one mk1 card per key ──".into(),
     );
     out.push(format!(
-        "md encode {} \\\n  {} \\\n  --out policy.md1",
+        "md encode {} \\\n  {}{} \\\n  --out policy.md1",
         sh_quote(&d.template),
-        fps.join(" \\\n  ")
+        fps.join(" \\\n  "),
+        xflag
     ));
     out.push("cat > keys.txt <<'MDKEYS'".into());
     out.extend(d.occurrences.iter().map(|o| o.record.clone()));

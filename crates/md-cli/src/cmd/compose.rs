@@ -124,8 +124,26 @@ pub fn parse_path(s: &str) -> Result<SpendPath, CliError> {
                 path.hash = Some(parse_hash_hex(kind, value, &format!("path `{s}`"))?);
             }
             other => {
+                // ENUMERATE THE HASH KINDS WHEN THE TYPO LOOKS LIKE ONE (F-551).
+                //
+                // `ms hashlock`'s card tells the operator: "If it answers
+                // `unknown option ripemd160`, that support has not shipped in
+                // your md yet." So a CURRENT md printing that bare string for a
+                // CASE error sent them hunting for a newer release of a tool
+                // that was already correct.
+                let looks_like_a_kind = matches!(
+                    other.to_ascii_lowercase().as_str(),
+                    "sha256" | "hash256" | "ripemd160" | "hash160"
+                );
+                let hint = if looks_like_a_kind {
+                    " -- the four hash kinds are `sha256`, `hash256`, `ripemd160` and \
+                     `hash160`, LOWERCASE; case is rejected, never folded. This md \
+                     supports all four"
+                } else {
+                    ""
+                };
                 return Err(CliError::Compose(format!(
-                    "path `{s}`: unknown option `{other}`"
+                    "path `{s}`: unknown option `{other}`{hint}"
                 )));
             }
         }
@@ -157,13 +175,29 @@ fn kind_for_option(name: &str) -> Option<HashKind> {
 /// one they should have.
 fn parse_hash_hex(kind: HashKind, value: &str, ctx: &str) -> Result<HashLock, CliError> {
     let want = kind.digest_len() * 2;
-    if value.len() != want
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-    {
+    // NAME THE CLAUSE THAT WAS VIOLATED, not the whole rule (F-551). This said
+    // "needs 40 hex characters, lowercase" to an operator whose input WAS 40
+    // characters and differed only in case -- a message naming a rule the input
+    // already satisfies, which reads as the tool being wrong about the length.
+    // `me sysw pack` and `ms --kind` both get this right; md was the outlier.
+    if value.len() != want {
         return Err(CliError::Compose(format!(
-            "{ctx}: {} needs {want} hex characters, lowercase",
+            "{ctx}: {} needs exactly {want} hex characters, got {}",
+            kind.token(),
+            value.len()
+        )));
+    }
+    if let Some(bad) = value.bytes().find(|b| !b.is_ascii_hexdigit()) {
+        return Err(CliError::Compose(format!(
+            "{ctx}: {} takes hex only; `{}` is not a hex digit",
+            kind.token(),
+            bad as char
+        )));
+    }
+    if value.bytes().any(|b| b.is_ascii_uppercase()) {
+        return Err(CliError::Compose(format!(
+            "{ctx}: {} is {want} LOWERCASE hex; case is rejected, never folded \
+             (SPEC_hashlock_kinds §6 -- the wire spelling is what gets hashed)",
             kind.token()
         )));
     }
