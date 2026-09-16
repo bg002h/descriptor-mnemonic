@@ -10,12 +10,39 @@ pub fn run(
 ) -> Result<u8, CliError> {
     // P3 §6b: argv, `--in FILE` or `-`; separators stripped on intake (§3.2).
     let strings = crate::cmd::read_md1_inputs(strings, in_file, "--in")?;
-    let descriptor = if strings.len() == 1 {
-        decode_md1_string(&strings[0])?
+    let decoded = if strings.len() == 1 {
+        decode_md1_string(&strings[0])
     } else {
         let refs: Vec<&str> = strings.iter().map(String::as_str).collect();
-        reassemble(&refs)?
+        reassemble(&refs)
     };
+    // F-594: the comment below says a plate "must still READ, or the refusal has
+    // taken away the only tool that could tell its holder what they have". A
+    // TEMPLATE card minted without `--path` fails here on "non-canonical wrapper
+    // requires explicit origin for @0", while `md decode` reads the same card
+    // and reports `origin: «unspecified — supply on restore»`. The card is not
+    // corrupt, which is the operator's natural conclusion from a bare codec
+    // error, and `md bytecode` has no flag that could supply the origin.
+    //
+    // Both routes below were RUN before being named: `md decode` on that exact
+    // md1 prints the policy, and re-minting the same policy with `--path bip84`
+    // produces a card `md bytecode` reads (payload-bits: 338).
+    let descriptor = decoded.map_err(|e| {
+        // The EXIT CODE and the error type do not move -- only the guidance is
+        // added, on its own stderr line, so nothing downstream changes.
+        if e.to_string().contains("requires explicit origin") {
+            eprintln!(
+                "md: this card is a TEMPLATE minted without an origin, and a non-canonical \
+                 wrapper needs one to resolve.\n      \
+                 It is NOT corrupt -- `md decode` reads this same card and shows the origin \
+                 as «unspecified — supply on restore». `md bytecode` has no flag that can \
+                 supply one, so either:\n      \
+                 \x20   md decode <the same card>          # read what it holds\n      \
+                 \x20   md encode <policy> --path bip84    # mint a card carrying an origin"
+            );
+        }
+        CliError::Codec(e)
+    })?;
     // N1's WARN disposition on the CARD (plan P3 step 2, Acceptance 5). A
     // plate already carrying a shape this cycle newly refuses must still
     // READ, or the refusal has taken away the only tool that could tell its

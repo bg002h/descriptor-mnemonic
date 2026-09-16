@@ -69,3 +69,89 @@ fn bytecode_json_has_payload_fields() {
         .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
         .stdout(predicates::str::contains("\"payload_bytes\":"));
 }
+
+/// F-594: `md bytecode` refused a card `md encode` had just minted, with a bare
+/// codec error — `non-canonical wrapper requires explicit origin for @0`. The
+/// operator's natural conclusion is that their plate is corrupt. It is not:
+/// `md decode` reads the same card and reports the origin as
+/// «unspecified — supply on restore», and `md bytecode` has no flag that could
+/// supply one, so the refusal was a dead end.
+///
+/// This file's own sibling comment in `cmd/bytecode.rs` states the principle it
+/// violated: a plate "must still READ, or the refusal has taken away the only
+/// tool that could tell its holder what they have."
+///
+/// The exit code and the error type are deliberately unchanged — only guidance
+/// is added — and both named routes were RUN before being printed.
+///
+/// MUTATION: delete the `eprintln!` -> the first two assertions fail while the
+/// exit-code assertion still passes, which is the point: the verdict was never
+/// what was wrong.
+#[test]
+fn a_template_card_without_an_origin_is_not_reported_as_corrupt() {
+    let minted = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wsh(and_v(v:sha256(2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881),pk(@0/<0;1>/*)))",
+            "--group-size",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert!(minted.status.success(), "mint failed");
+    let md1 = String::from_utf8_lossy(&minted.stdout)
+        .lines()
+        .find(|l| l.starts_with("md1"))
+        .expect("no md1 minted")
+        .to_string();
+
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(["bytecode", &md1])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("NOT corrupt"),
+        "the refusal still reads as a corrupt plate:\n{err}"
+    );
+    assert!(
+        err.contains("md decode") && err.contains("--path"),
+        "the refusal names neither way forward:\n{err}"
+    );
+    // The verdict itself was never the defect.
+    assert!(!out.status.success(), "the card must still be refused");
+
+    // Control: the SAME policy minted WITH an origin reads clean and silent.
+    let with_origin = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wsh(and_v(v:sha256(2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881),pk(@0/<0;1>/*)))",
+            "--path",
+            "bip84",
+            "--group-size",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let md1b = String::from_utf8_lossy(&with_origin.stdout)
+        .lines()
+        .find(|l| l.starts_with("md1"))
+        .expect("no md1")
+        .to_string();
+    let ok = Command::cargo_bin("md")
+        .unwrap()
+        .args(["bytecode", &md1b])
+        .output()
+        .unwrap();
+    assert!(
+        ok.status.success(),
+        "a card with an origin must still decode"
+    );
+    assert!(
+        !String::from_utf8_lossy(&ok.stderr).contains("NOT corrupt"),
+        "the hint fires on a card that decoded fine"
+    );
+}
