@@ -137,5 +137,35 @@ fn emit_origins_stderr(d: &md_codec::encode::Descriptor, w: &mut impl std::io::W
             }
         }
     }
+    // F-595: the origin is on STDERR and the template on STDOUT, so the
+    // pasteable half is missing exactly what the next verb needs --
+    // `md address --template "$(md decode …)"` fails with "non-canonical
+    // wrapper requires explicit origin for @0". The restoring operator has
+    // plates, not the original policy file; that is the point of the backup.
+    //
+    // Naming the flag costs one line and was VERIFIED before being printed:
+    // `md address --template <this stdout> --key @0=<xpub> --path m/84'/0'/0'`
+    // returned bc1qdukhd56x6vy40sf65mrltzj0p7ydx3h0h48tlhv9kge8n84dueksklvjez.
+    //
+    // Only when every @N shares ONE origin: `--path` takes a single PATH, so
+    // naming it for a card with divergent per-@N origins would be prescribing a
+    // remedy that cannot carry them -- the F-581 defect.
+    let shared: Vec<&_> = expanded.iter().collect();
+    let one_origin = shared
+        .first()
+        .map(|h| shared.iter().all(|e| e.origin_path == h.origin_path))
+        .unwrap_or(false);
+    if one_origin {
+        let mut path = String::from("m");
+        for c in &expanded[0].origin_path.components {
+            let _ = write!(path, "/{}{}", c.value, if c.hardened { "'" } else { "" });
+        }
+        let _ = writeln!(
+            out,
+            "note: the template above does NOT carry the origin. Verbs that resolve a \
+             non-canonical wrapper need it:\n      md address --template <the line above> \
+             --key @i=<xpub> --path {path}"
+        );
+    }
     let _ = w.write_all(out.as_bytes());
 }

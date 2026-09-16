@@ -146,3 +146,63 @@ fn decode_json_emits_schema_and_descriptor() {
         .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
         .stdout(predicates::str::contains("\"descriptor\":"));
 }
+
+/// F-595: `md decode` prints the template on STDOUT and the origins as a
+/// `note:` on STDERR, so the pasteable half is missing exactly what the next
+/// verb needs. `md address --template "$(md decode …)"` failed with
+/// "non-canonical wrapper requires explicit origin for @0". The restoring
+/// operator has plates, not the original policy file -- that is the point of
+/// the backup.
+///
+/// The note now names the flag. This test RUNS what it prescribes rather than
+/// matching its text (the F-581 lesson from the same session).
+///
+/// MUTATION: delete the note -> the first assertion fails. MUTATION: emit it
+/// for divergent per-@N origins too -> `--path` takes a single PATH and could
+/// not carry them, which is the very defect being fixed.
+#[test]
+fn decodes_note_names_a_flag_that_actually_derives() {
+    let minted = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wsh(and_v(v:sha256(2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881),pk(@0/<0;1>/*)))",
+            "--path", "bip84", "--group-size", "0",
+        ])
+        .output().unwrap();
+    let md1 = String::from_utf8_lossy(&minted.stdout)
+        .lines()
+        .find(|l| l.starts_with("md1"))
+        .expect("no md1")
+        .to_string();
+
+    let dec = Command::cargo_bin("md")
+        .unwrap()
+        .args(["decode", &md1])
+        .output()
+        .unwrap();
+    let tmpl = String::from_utf8_lossy(&dec.stdout).trim().to_string();
+    let note = String::from_utf8_lossy(&dec.stderr).to_string();
+    assert!(
+        note.contains("does NOT carry the origin") && note.contains("--path"),
+        "decode does not tell the operator the template is missing the origin:\n{note}"
+    );
+
+    // Pull the path OUT OF THE NOTE and use it, so the test breaks if the note
+    // ever names a path the card does not carry.
+    let path = note
+        .lines()
+        .find_map(|l| l.split("--path ").nth(1))
+        .expect("the note names no --path value")
+        .trim()
+        .to_string();
+
+    Command::cargo_bin("md")
+        .unwrap()
+        .args(["address", "--template", &tmpl])
+        .args(["--key", "@0=xpub6EddmgK6uMbst7251zES359MJzfz3o2wTJWeefTzSiPJf1FUg6easA2Uk3jUbztBffWS4Dg2oWjhomvU2jJKr4EZukDfxVxb4VJva3jXGAK"])
+        .args(["--path", &path, "--count", "1"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("bc1q"));
+}
