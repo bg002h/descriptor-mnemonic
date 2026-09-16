@@ -554,6 +554,18 @@ enum Command {
         /// on exactly the two modes the FOLLOWUP exists for.
         #[arg(long = "verify-against", value_name = "md1|FILE")]
         verify_against: Option<String>,
+        /// Accept a template with a spend path that requires no signature,
+        /// mirroring `md encode --experimental`.
+        ///
+        /// Without this, a card authored with `--experimental` could be
+        /// VERIFIED but never rendered: `md descriptor` and `md address` both
+        /// refused it, and the refusal PRESCRIBED this flag, which did not
+        /// exist here -- so the operator's next action was guaranteed to fail
+        /// with a clap error (F-547). `md verify` already carries it for the
+        /// same reason: holding a plate you cannot read is worse than not
+        /// authoring it.
+        #[arg(long)]
+        experimental: bool,
     },
 
     /// Derive bitcoin addresses from a wallet-policy-mode descriptor.
@@ -732,6 +744,18 @@ enum Command {
         /// Emit JSON output.
         #[arg(long)]
         json: bool,
+        /// Accept a template with a spend path that requires no signature,
+        /// mirroring `md encode --experimental`.
+        ///
+        /// Without this, a card authored with `--experimental` could be
+        /// VERIFIED but never rendered: `md descriptor` and `md address` both
+        /// refused it, and the refusal PRESCRIBED this flag, which did not
+        /// exist here -- so the operator's next action was guaranteed to fail
+        /// with a clap error (F-547). `md verify` already carries it for the
+        /// same reason: holding a plate you cannot read is worse than not
+        /// authoring it.
+        #[arg(long)]
+        experimental: bool,
     },
     /// Turn a CONCRETE output descriptor back into the pieces md engraves:
     /// the keyless BIP-388 template, one origin-notated key line per slot, and
@@ -1026,10 +1050,12 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             separator,
             json,
             verify_against,
+            experimental,
         } => {
             let chain = if change { Some(1) } else { chain };
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::descriptor::run(cmd::descriptor::DescriptorArgs {
+                experimental,
                 phrases: &phrases,
                 template: template.as_deref(),
                 keys: &keys,
@@ -1063,10 +1089,12 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             index,
             count,
             json,
+            experimental,
         } => {
             let chain = if change { 1 } else { chain };
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::address::run(cmd::address::AddressArgs {
+                experimental,
                 phrases: &phrases,
                 template: template.as_deref(),
                 keys: &keys,

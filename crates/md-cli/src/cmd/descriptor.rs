@@ -47,6 +47,9 @@ pub enum Emit {
 }
 
 pub struct DescriptorArgs<'a> {
+    /// Mirrors `md encode --experimental` (F-547): without it a card
+    /// authored with that flag can be verified but never rendered.
+    pub experimental: bool,
     pub phrases: &'a [String],
     pub template: Option<&'a str>,
     pub keys: &'a [String],
@@ -116,6 +119,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
             ));
         }
         build_descriptor(&DescriptorInput {
+            experimental: args.experimental,
             phrases: args.phrases,
             template: args.template,
             keys: args.keys,

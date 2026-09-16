@@ -12,7 +12,7 @@ use crate::parse::keys::{
     ParsedFingerprint, ParsedKey, ScriptCtx, parse_fingerprint, parse_key_with_origin,
 };
 use crate::parse::path::apply_path_override_per_slot;
-use crate::parse::template::{ctx_for_template, lex_placeholders, parse_template};
+use crate::parse::template::{ctx_for_template, lex_placeholders};
 use bitcoin::bip32::DerivationPath;
 use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
@@ -32,6 +32,13 @@ pub struct DescriptorInput<'a> {
     /// Names the calling subcommand, so a refusal reads in the operator's terms
     /// rather than in the shared helper's.
     pub cmd: &'static str,
+    /// Mirrors `md encode --experimental` and `md verify --experimental`
+    /// (F-547). Without it, a card authored with `--experimental` could be
+    /// VERIFIED but never turned into a descriptor or an address -- the
+    /// operator would hold a plate and have no way to learn where to send
+    /// funds, which is worse than not authoring it. That is `md verify`'s own
+    /// stated reasoning, and it applies unchanged to these two verbs.
+    pub experimental: bool,
 }
 
 pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliError> {
@@ -62,7 +69,13 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
                 ctx,
                 args.network,
             )?;
-        let mut descriptor = parse_template(template, &parsed_keys, &parsed_fps)?;
+        let mut descriptor = crate::parse::template::parse_template_ext(
+            template,
+            &parsed_keys,
+            &parsed_fps,
+            args.experimental,
+            crate::parse::reuse::Disposition::Refuse,
+        )?;
         apply_path_override_per_slot(
             &mut descriptor,
             args.path,
