@@ -206,3 +206,89 @@ fn decodes_note_names_a_flag_that_actually_derives() {
         .success()
         .stdout(predicates::str::contains("bc1q"));
 }
+
+/// F-610: `md encode --experimental` shouts "THE PLATE IS BEARER ACCESS" at the
+/// person who MINTS. `md decode` is the verb the RESTORER runs — possibly a
+/// different person, years later — and it said nothing about a spend path that
+/// needs no signature. `cmd/encode.rs` names the gap itself: "the card itself
+/// carries no record that a flag was used to create it — the operator's memory
+/// and this line are the only trace."
+///
+/// The key-less path IS visible in the template, to a reader who can read
+/// miniscript. The decode side is where the audience least able to do that is
+/// standing.
+///
+/// THE DISPOSITION IS THE TRICK, and the first version of this got it wrong:
+/// `Disposition::Warn` is the READ-side disposition and returns Ok for a
+/// key-less path, so the check compiled, installed, and printed nothing. The
+/// question is "would a MINTING verb refuse this?", so it is asked with
+/// `Refuse`.
+///
+/// MUTATION: switch the predicate back to `Warn` -> the warning silently stops
+/// firing and this test fails. That is the exact bug this test exists for.
+#[test]
+fn decoding_a_bearer_card_warns_the_restorer() {
+    const H: &str = "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881";
+
+    // A policy with a genuinely key-less arm: refused without --experimental.
+    let minted = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            &format!("wsh(or_d(pk(@0/<0;1>/*),and_v(v:sha256({H}),after(100))))"),
+            "--path",
+            "bip84",
+            "--experimental",
+            "--group-size",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert!(minted.status.success(), "mint failed");
+    let md1 = String::from_utf8_lossy(&minted.stdout)
+        .lines()
+        .find(|l| l.starts_with("md1"))
+        .expect("no md1")
+        .to_string();
+
+    let dec = Command::cargo_bin("md")
+        .unwrap()
+        .args(["decode", &md1])
+        .output()
+        .unwrap();
+    assert!(dec.status.success(), "a bearer card must still decode");
+    let err = String::from_utf8_lossy(&dec.stderr);
+    assert!(
+        err.contains("needs NO KEY") && err.contains("BEARER ACCESS"),
+        "the restorer is told nothing about the key-less path:\n{err}"
+    );
+
+    // Control: an ordinary multisig card must NOT carry the warning, or it is
+    // noise and will be ignored on the card that matters.
+    let plain = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",
+            "--path",
+            "bip48",
+            "--group-size",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let plain_md1 = String::from_utf8_lossy(&plain.stdout)
+        .lines()
+        .find(|l| l.starts_with("md1"))
+        .expect("no md1")
+        .to_string();
+    let plain_dec = Command::cargo_bin("md")
+        .unwrap()
+        .args(["decode", &plain_md1])
+        .output()
+        .unwrap();
+    assert!(
+        !String::from_utf8_lossy(&plain_dec.stderr).contains("NO KEY"),
+        "an ordinary multisig card is called bearer access"
+    );
+}

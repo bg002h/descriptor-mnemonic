@@ -68,6 +68,53 @@ pub fn run(
     if partial {
         println!("{ORIGIN_UNSPECIFIED_MARKER}");
     }
+
+    // F-610: `md encode --experimental` shouts "THE PLATE IS BEARER ACCESS" at
+    // the person who MINTS. `md decode` is the verb the RESTORER runs --
+    // possibly a different person, years later -- and it said nothing about a
+    // spend path that needs no signature. encode.rs:76 names the gap itself:
+    // "the card itself carries no record that a flag was used to create it —
+    // the operator's memory and this line are the only trace."
+    //
+    // The key-less path IS visible in the template above, to a reader who can
+    // read miniscript. The decode side is where the audience least able to do
+    // that is standing.
+    //
+    // SAME PREDICATE AS F-599, not a second implementation: re-parse the
+    // rendered template WITHOUT `--experimental`. Failing there means the
+    // signature rule is what rejects it -- that flag relaxes exactly one rule.
+    // A template that parses cleanly says nothing, so this cannot become noise.
+    if crate::parse::template::parse_template_ext(
+        &template,
+        &[],
+        &[],
+        false,
+        // REFUSE, NOT WARN, AND THAT IS THE WHOLE TRICK. `Disposition::Warn` is
+        // the READ-side disposition -- deliberately lenient so a plate already
+        // carrying a newly-refused shape can still be read -- so it returns Ok
+        // here and the check silently never fires. Measured: the first version
+        // of this used Warn, compiled, installed, and printed nothing on a
+        // bearer card. The question being asked is "would a MINTING verb refuse
+        // this?", so it must be asked in the minting disposition.
+        crate::parse::reuse::Disposition::Refuse,
+    )
+    .is_err()
+        && crate::parse::template::parse_template_ext(
+            &template,
+            &[],
+            &[],
+            true,
+            crate::parse::reuse::Disposition::Refuse,
+        )
+        .is_ok()
+    {
+        eprintln!(
+            "warning: this card has at least one spend path that needs NO KEY. Whoever \
+             learns its preimage can spend that path alone — if the preimage is engraved, \
+             THE PLATE IS BEARER ACCESS. It was minted with --experimental; the card carries \
+             no record of that, so this is derived from the policy itself."
+        );
+    }
     // THE ORIGINS, ON STDERR (F-219).
     //
     // The rendered template writes `@0/<0;1>/*` — the per-key origin lives in
