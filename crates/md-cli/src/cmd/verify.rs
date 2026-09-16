@@ -78,6 +78,35 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
              --fingerprint, pass the SAME values to verify. Do not re-mint without \
              them to make this pass -- that is a different wallet, and its keys may \
              not be seatable."
+        } else if decoded_bytes.len() == expected_bytes.len() && decoded_bits == expected_bits {
+            // F-606: when only the CONTENT differs the message read
+            // "expected 1447-bit payload, got 1447-bit (181 vs 181 bytes)" --
+            // it offered two identical numbers as its evidence, at exactly the
+            // moment the operator is standing over a plate and a descriptor
+            // wanting to know WHICH field drifted. The verdict was right; the
+            // evidence was vacuous.
+            //
+            // The first differing byte is the cheapest true thing available
+            // here, and it localises the drift without decoding either side
+            // again.
+            let at = decoded_bytes
+                .iter()
+                .zip(expected_bytes.iter())
+                .position(|(a, b)| a != b);
+            match at {
+                Some(i) => &format!(
+                    "\n      Same SIZE, different CONTENT -- the byte counts above are not the \
+                     difference. First byte that differs: offset {i} (template {:#04x}, card \
+                     {:#04x}). A changed digest, key or path shows up exactly like this.",
+                    expected_bytes[i], decoded_bytes[i]
+                ),
+                // Equal length, equal bytes, unequal bits: the tail bit-count
+                // differs. Naming it beats repeating the byte counts.
+                None => {
+                    "\n      Same bytes and same size: the payloads differ only in their \
+                         trailing BIT count."
+                }
+            }
         } else {
             ""
         };

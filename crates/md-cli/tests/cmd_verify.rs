@@ -156,3 +156,84 @@ fn a_mismatch_caused_by_missing_fingerprints_says_so() {
         .assert()
         .success();
 }
+
+/// F-606: when only the CONTENT differs, the MISMATCH message offered two
+/// IDENTICAL numbers as its evidence —
+/// `expected 1447-bit payload, got 1447-bit (181 vs 181 bytes)` — at exactly
+/// the moment the operator is standing over a plate and a descriptor wanting to
+/// know which field drifted. The verdict was right; the evidence was vacuous.
+///
+/// The first differing byte is the cheapest true thing available and localises
+/// the drift without decoding either side again.
+///
+/// MUTATION: delete the equal-size branch -> the offset assertion fails while
+/// the MISMATCH verdict still holds, which is the point: the verdict was never
+/// what was wrong.
+#[test]
+fn a_same_size_mismatch_names_the_first_differing_byte() {
+    const H1: &str = "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881";
+    const H2: &str = "252f10c83610ebca1a059c0bae8255eba2f95be4d1d7bcfa89d7248a82d9f111";
+
+    let dir = tempfile::tempdir().unwrap();
+    let plate = dir.path().join("v1.md1");
+    let minted = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "encode",
+            &format!("wsh(and_v(v:sha256({H1}),pk(@0/<0;1>/*)))"),
+            "--path",
+            "bip84",
+            "--group-size",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert!(minted.status.success(), "mint failed");
+    let md1 = String::from_utf8_lossy(&minted.stdout)
+        .lines()
+        .find(|l| l.starts_with("md1"))
+        .expect("no md1")
+        .to_string();
+    std::fs::write(&plate, &md1).unwrap();
+
+    // Same policy shape, ONE digest changed: identical payload size.
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "verify",
+            "--template",
+            &format!("wsh(and_v(v:sha256({H2}),pk(@0/<0;1>/*)))"),
+            "--path",
+            "bip84",
+            "--in",
+            &plate.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "a changed digest must MISMATCH");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("Same SIZE, different CONTENT"),
+        "the message still offers two identical numbers as evidence:\n{err}"
+    );
+    assert!(
+        err.contains("First byte that differs: offset"),
+        "the message does not localise the drift:\n{err}"
+    );
+
+    // Control: the card verified against its OWN template is silent OK, so the
+    // branch cannot be firing unconditionally.
+    Command::cargo_bin("md")
+        .unwrap()
+        .args([
+            "verify",
+            "--template",
+            &format!("wsh(and_v(v:sha256({H1}),pk(@0/<0;1>/*)))"),
+            "--path",
+            "bip84",
+            "--in",
+            &plate.display().to_string(),
+        ])
+        .assert()
+        .success();
+}
