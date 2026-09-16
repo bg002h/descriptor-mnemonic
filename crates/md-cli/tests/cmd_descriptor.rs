@@ -252,3 +252,70 @@ fn a_keyless_card_is_refused_by_the_command_not_by_clap() {
         "a checksummed descriptor was printed for a keyless card"
     );
 }
+
+/// F-601: `md descriptor --help` promises "the CONCRETE output descriptor --
+/// real xpubs, key origins and the BIP-380 checksum -- for pasting into a
+/// coordinator". With no `--fingerprint` it emitted no `[fingerprint/path]` at
+/// all, exit 0, and the only stderr line was the generic watch-only note.
+///
+/// A descriptor with no key origins CANNOT BE SIGNED -- a signer has nothing to
+/// match against its own master fingerprint. It still imports, still derives
+/// the right addresses and still watches, which is what makes the silence
+/// dangerous: the operator finds out when they try to spend.
+///
+/// Not a refusal -- a watch-only descriptor is a legitimate thing to want.
+///
+/// MUTATION: delete the warning -> the first assertion fails. MUTATION: make
+/// it unconditional -> the `--fingerprint` control fails.
+#[test]
+fn a_descriptor_without_key_origins_says_it_cannot_be_signed() {
+    const TMPL: &str = "wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*,@2/48'/0'/2'/2'/<0;1>/*))";
+    const K: [&str; 3] = [
+        "xpub6EddmgK6uMbst7251zES359MJzfz3o2wTJWeefTzSiPJf1FUg6easA2Uk3jUbztBffWS4Dg2oWjhomvU2jJKr4EZukDfxVxb4VJva3jXGAK",
+        "xpub6EPimu5ztRjy6dfECvb9AQNAadNHN8qumZYQhvdPWh9U9xJ9XMi328aXAFMGHwc11wZWrmdwsHUWJn5in6BHywGrbJx5ZLUWe8xhNPRf5kL",
+        "xpub6EVA2mZiCBtGYbGM5eEs42k8tso4QekUog2t8U14UDyjUYpKByLYcXB8t3yVAvapQymRSK2MDM84cspZa5udQEEUSVGo28RJJt47eeC846C",
+    ];
+
+    let bare = md()
+        .args(["descriptor", "--template", TMPL])
+        .args(["--key", &format!("@0={}", K[0])])
+        .args(["--key", &format!("@1={}", K[1])])
+        .args(["--key", &format!("@2={}", K[2])])
+        .output()
+        .unwrap();
+    assert!(
+        bare.status.success(),
+        "a watch-only descriptor is still emitted"
+    );
+    let err = String::from_utf8_lossy(&bare.stderr);
+    assert!(
+        err.contains("NO key origins") && err.contains("cannot be signed"),
+        "an unsignable descriptor was emitted in silence:\n{err}"
+    );
+    assert!(
+        !String::from_utf8_lossy(&bare.stdout).contains('['),
+        "this case is supposed to have no origins; the fixture drifted"
+    );
+
+    // Control: with origins present there is nothing to warn about.
+    let origins = md()
+        .args(["descriptor", "--template", TMPL])
+        .args(["--key", &format!("@0={}", K[0])])
+        .args(["--key", &format!("@1={}", K[1])])
+        .args(["--key", &format!("@2={}", K[2])])
+        .args(["--fingerprint", "@0=aabbccdd"])
+        .args(["--fingerprint", "@1=11223344"])
+        .args(["--fingerprint", "@2=55667788"])
+        .output()
+        .unwrap();
+    assert!(origins.status.success());
+    assert!(
+        String::from_utf8_lossy(&origins.stdout).contains("[aabbccdd/"),
+        "the control does not actually carry origins; it proves nothing"
+    );
+    assert!(
+        !String::from_utf8_lossy(&origins.stderr).contains("NO key origins"),
+        "a descriptor WITH origins is told it has none:\n{}",
+        String::from_utf8_lossy(&origins.stderr)
+    );
+}

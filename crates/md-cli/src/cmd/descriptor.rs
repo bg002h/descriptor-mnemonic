@@ -201,6 +201,27 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         None => md_codec::to_miniscript_descriptor_multipath(&descriptor)?.to_string(),
     };
 
+    // F-601: `--help` promises "the CONCRETE output descriptor -- real xpubs,
+    // key origins and the BIP-380 checksum -- for pasting into a coordinator".
+    // With no `--fingerprint`, no `[fingerprint/path]` is emitted at all, and
+    // the only stderr line was the generic watch-only note. A descriptor
+    // without key origins CANNOT BE SIGNED: a signer has nothing to match
+    // against its own master fingerprint, so it cannot tell that a key is its
+    // own. It still imports, still derives the right addresses, and still
+    // watches -- which is exactly what makes the silence dangerous. The
+    // operator discovers it when they try to spend.
+    //
+    // Not a refusal: a watch-only descriptor is a legitimate thing to want,
+    // and `md descriptor` is how you get one. It is a warning because the
+    // artifact does less than the help says.
+    if !rendered.contains('[') {
+        eprintln!(
+            "warning: this descriptor carries NO key origins, so no signer can match a key to \
+             its own master fingerprint — it will import and watch, but it cannot be signed. \
+             Pass --fingerprint '@i=<8 hex>' per key to emit [fingerprint/path] origins."
+        );
+    }
+
     #[cfg(feature = "json")]
     if args.json {
         use crate::format::json::SCHEMA;
