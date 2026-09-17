@@ -2937,3 +2937,47 @@ unreadable — which is why this is a follow-up, not a blocker. **Fix:** thread
 `--experimental` through `cmd/build.rs::build_descriptor` (shared by
 `descriptor.rs` and `address.rs`) to `parse_template_ext`, with the same loud
 bearer-access warning `encode` prints; keep the default refusal.
+
+### `md-codec-unpublishable-while-patched-to-miniscript-master` — crates.io is stuck at 0.42.0 / 0.13.0
+
+- **Surfaced:** 2026-09-17, surveying the constellation for a release while
+  preparing a demo. Operator asked whether outdated members could be published.
+- **What is true, measured not assumed:**
+  - `cargo publish --dry-run -p md-codec` **fails to compile**: no
+    `derive_at_index`, no `into_definite`, no `Terminal::SortedMultiA`.
+  - The workspace carries `[patch.crates-io] miniscript = { git =
+    "rust-bitcoin/rust-miniscript", rev = "ff4732e" }`, and **a `[patch]` never
+    carries into a published crate**. A published md-codec would declare
+    `miniscript = "13.0.0"` and not build for anyone.
+  - Those APIs are still unreleased: crates.io's latest miniscript is
+    **13.1.0 (2026-06-09)**, checked 2026-09-17. No release in three months.
+  - So crates.io is frozen at **md-codec 0.42.0 / md-cli 0.13.0** while the tree
+    is at 0.43.0 / 0.15.0.
+- **This is NOT merely a packaging nit.** The pin exists for PR #953, which fixes
+  `Descriptor`'s `Display` flattening a non-caterpillar taptree —
+  `tr(K,{{pk(A),pk(B)},pk(C)})` rendered as `tr(K,{{pk(A),pk(B),pk(C)}})`, which
+  **Bitcoin Core rejects**. Dropping the patch to make a publish compile would
+  ship a crate that emits descriptors no other wallet can parse. Not publishing
+  is the SAFE outcome here, and that is worth stating plainly so a future reader
+  does not "fix" it by loosening the pin.
+- **What is NOT at risk:** the published md-cli 0.13.0 has neither `compose` nor
+  `descriptor` (both are newer), so the vulnerable `Display` path is not
+  reachable from its CLI surface at all. Verified byte-identical output between
+  published 0.13.0 and local 0.15.0 for `decode`, `repair` and `inspect`,
+  including on a nested `tr(K,{{pk,pk},pk})` — md-codec renders TEMPLATES with
+  its own renderer, and only the CONCRETE descriptor path goes through
+  miniscript.
+- **Options, in the order I would take them:**
+  1. **Wait for an upstream release** carrying #953. Cleanest; not in our control.
+  2. **Render the concrete descriptor ourselves**, as md-codec already renders
+     templates. Removes the #953 coupling and a standing "upstream changed
+     Display" risk. Does NOT fully free the crate on its own: rev ff4732e also
+     carries #915, which moved `sortedmulti` into a `Terminal`, so the tree is
+     coupled to unreleased upstream INTERNALS in a second way.
+  3. Publish a renamed miniscript fork — puts this project on the hook for
+     maintaining a consensus-adjacent library. Avoid.
+  4. Do not publish md-codec/md-cli; ship git installs and release binaries.
+     Status quo, and respectable.
+- **Status:** open.
+- **Tier:** release-engineering. Not blocking anything shipped; blocks only
+  `cargo install md-cli` being current.
