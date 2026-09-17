@@ -135,7 +135,8 @@ jobs:
           "$BIN" --version
           # A real round trip, not just --version.
           MD1="$("$BIN" encode 'wpkh(@0/<0;1>/*)' --group-size 0 | grep '^md1')"
-          "$BIN" decode "$MD1" | grep -q 'wpkh(@0' || { echo "::error::round trip failed"; exit 1; }
+          DEC="$("$BIN" decode "$MD1")"
+          case "$DEC" in *'wpkh(@0'*) ;; *) echo "::error::round trip failed"; exit 1 ;; esac
           echo "round trip ok: $MD1"
 
       - name: Stage binary
