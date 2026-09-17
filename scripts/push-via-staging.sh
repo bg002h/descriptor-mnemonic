@@ -1,147 +1,176 @@
 #!/usr/bin/env bash
-# push-via-staging.sh -- the ci/staging push ritual as a command, for THIS repo.
+# push-via-staging.sh -- the ci/staging push ritual as a command.
+#
+# ONE FILE, EVERY REPO. This script is repo-agnostic: it derives the slug from
+# `origin` and discovers what to wait for from the live branch-protection rule.
+# Nothing in it names a repository, a context or a workflow. Keep the copies
+# byte-identical; if it needs to learn something, teach it here and re-sync.
+# (Unified 2026-09-17 from four copies that had drifted three generations apart:
+# two repos discovered contexts, one hardcoded a single wrong one, one hardcoded
+# a stale list whose own header warned it would "silently wait for the wrong
+# job". Running one repo's copy inside another waited for a context that repo
+# never emits.)
 #
 # WHY IT EXISTS. A required status check binds to a COMMIT SHA, not a branch, so
-# a commit pushed straight to `main` carries no check when the protection rule
+# a commit pushed straight at a protected branch carries no check when the rule
 # is evaluated: GitHub reports the contexts as "expected" and the push is
-# BYPASSED rather than satisfied. Measured here 2026-08-30 on a plain
-# `git push origin main`:
+# BYPASSED rather than satisfied:
 #
-#     remote: Bypassed rule violations for refs/heads/main:
-#     remote: - 2 of 2 required status checks are expected.
+#     remote: Bypassed rule violations for refs/heads/master:
+#     remote: - 4 of 4 required status checks are expected.
 #
-# `strict: false` on the rule is what makes that fixable -- GitHub asks only
-# whether the commit carries a passing context, not whether it is up to date --
-# so let the SHA earn one first on `ci/staging`, then push the branch. That is
-# the whole ritual, and this script IS it; running it is the discipline.
+# `strict: false` is what makes that fixable -- GitHub asks only whether the
+# commit carries a passing context, not whether it is up to date. So let the SHA
+# earn one on `ci/staging` first, then push the branch. This script IS the
+# ritual; running it is the discipline.
 #
-#     scripts/push-via-staging.sh          # pushes the current branch
-#     scripts/push-via-staging.sh main     # explicit branch
+#     scripts/push-via-staging.sh            # current branch
+#     scripts/push-via-staging.sh master     # explicit
 #
-# THE FREEZE RULE -- READ THIS BEFORE RUNNING.
-# The ritual assumes the branch tip DOES NOT MOVE for the whole window. Make no
-# commits to the branch between the staging push and the final push. Measured on
-# a sibling repo 2026-08-16: a controller committed twice while CI ran, the
-# final push carried a tip two commits past the gated one, `strict: false`
-# accepted it against the older gated ancestor, and two commits reached
-# origin/main with ZERO CI signal while the push printed "Bypassed rule
-# violations". Empty your hands first: commit everything, verify a clean tree,
-# THEN run this. The script re-checks the tip before pushing and aborts if it
-# moved -- but the fix at that point is to re-stage the new tip, not to push.
+# IT DISCOVERS WHAT TO WAIT FOR, rather than being told. Two things went wrong
+# on 2026-09-16 that a single hardcoded REQUIRED_CONTEXT cannot express:
 #
-# REQUIRED CONTEXTS, resolved against the live rule on 2026-08-30
-# (`gh api repos/bg002h/descriptor-mnemonic/branches/main/protection`):
+#   * mnemonic-secret requires FOUR contexts. Waiting for one and pushing means
+#     pushing while three are still running.
+#   * the seedhammer fork's `main` is UNPROTECTED (the API returns 404). There
+#     is no context to earn and no bypass is possible -- but the CI signal still
+#     matters, and that repo fires THREE runs on a staging push, because
+#     image.yml triggers on `push` AND on `create`. Waiting for "the" run waits
+#     for whichever appeared first.
 #
-#     cargo test (ubuntu-latest)
-#     cargo clippy
+# So: protected -> wait for every required context. Unprotected -> wait for
+# every workflow run on the SHA and require all of them green. Either way a
+# FAILURE STOPS THE PUSH.
 #
-# BOTH are waited for. The other ci.yml jobs (fmt, doc, the macOS/Windows test
-# legs, freebsd-compile-gate, musl-check) are NOT required by the rule; they are
-# reported after the push, informationally, and never gate it. Override with
-# REQUIRED_CONTEXTS="a|b" if the rule changes -- and update this header when you
-# do, because a stale list here silently waits for the wrong job.
+# A CONTEXT THAT NEVER RUNS IS NOT A CONTEXT THAT IS SLOW. Workflows are often
+# path-filtered on `push`, so a commit touching only docs triggers none of them
+# and the required contexts never appear at all. Waiting cannot fix that, and
+# pushing anyway can only BYPASS. The script names this case specifically and
+# points at the pull-request route, because those same workflows are usually
+# unfiltered on `pull_request` (measured 2026-09-17 on mnemonic-toolkit, where a
+# design/-only commit drew exactly one non-required job).
 #
-# `.github/workflows/ci.yml` builds `ci/**` for exactly this reason and explains
-# it at the trigger. `enforce_admins` is false DELIBERATELY -- the maintainer's
-# own escape hatch, ruled 2026-08-15, and NOT to be flipped. The no-bypass rule
-# binds automation, not the human.
-#
-# RUN SELECTION IS FILTERED, NOT `.[0]` OF EVERYTHING -- FOLLOWUPS
-# `push-staging-script-watches-an-order-dependent-run` (2026-08-31,
-# `design/agent-reports/push-2026-08-31-mdcli-mini.md`). One SHA now
-# triggers THREE workflows on this repo (`CI`, `fuzz-smoke`,
-# `bitcoind-differential`); an unfiltered `gh run list ... -q '.[0]...'` is
-# list-order-dependent across all three, and the push agent measured it
-# selecting `bitcoind-differential` (run 33364380344, one job, no required
-# context could ever appear there) while `CI` (run 33364380379, the run
-# actually carrying both required contexts) sat unselected -- a 1800s stall
-# ending in a FATAL "last: absent" false alarm, never a wrong push. `gh run
-# list` is filtered to `--workflow "$CI_WORKFLOW" --branch ci/staging`: the
-# workflow name narrows out the other two workflows, and the branch filter
-# is REQUIRED alongside it -- once this SHA also lands on `main` (this
-# script's own last step), a SECOND `CI`-workflow run appears for the same
-# SHA (headBranch `main`), so workflow name alone stops being unique the
-# moment the ritual completes. `--branch ci/staging` is exactly the run
-# THIS script's own staging push (below) triggers, so it is also the
-# semantically right selector, not just a disambiguator. Override with
-# CI_WORKFLOW="..." if the workflow is ever renamed -- and update this
-# header when you do, same discipline as REQUIRED_CONTEXTS above.
+# FREEZE: no commits to the branch between invocation and completion. The tip is
+# re-checked immediately before the final push and the run aborts if it moved --
+# measured 2026-08-16, when two commits landed mid-window and reached the remote
+# with no CI signal at all.
 set -euo pipefail
+
 cd "$(git rev-parse --show-toplevel)"
 
 BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
-REPO="${REPO:-bg002h/descriptor-mnemonic}"
-# Pipe-separated, so a context containing spaces stays one field.
-REQUIRED_CONTEXTS="${REQUIRED_CONTEXTS:-cargo test (ubuntu-latest)|cargo clippy}"
-# The workflow that carries REQUIRED_CONTEXTS -- see the RUN SELECTION note
-# above. Must match `.github/workflows/ci.yml`'s `name:` field.
-CI_WORKFLOW="${CI_WORKFLOW:-CI}"
+TIP="$(git rev-parse HEAD)"   # full 40 chars: an abbreviated SHA makes gh queries
+                              # return empty, which reads as "nothing ran".
+SLUG="$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
+echo "== $SLUG @ $BRANCH -- staging $TIP ($(git rev-list --count "origin/$BRANCH..HEAD" 2>/dev/null || echo '?') ahead)"
 
-[ -z "$(git status --porcelain)" ] || {
-  echo "FATAL: working tree is dirty -- commit or stash before staging a push" >&2
+if [ -n "$(git status --porcelain)" ]; then
+  echo "FATAL: working tree is dirty. Empty your hands before a push window." >&2
   git status --short >&2
-  exit 1; }
-
-TIP=$(git rev-parse HEAD)   # full 40 chars: an abbreviated SHA makes gh queries
-                            # return empty, which reads exactly like "no run".
-AHEAD=$(git rev-list --count "origin/$BRANCH..HEAD" 2>/dev/null || echo '?')
-echo "== staging $TIP (branch $BRANCH, $AHEAD ahead of origin/$BRANCH)"
-echo "== FREEZE $BRANCH now: no commits until this script finishes"
-git push origin "HEAD:refs/heads/ci/staging"
-
-RUN_ID=""
-for _ in $(seq 1 30); do
-  # Filtered to the CI workflow on the ci/staging branch -- see the RUN
-  # SELECTION header note. An unfiltered `.[0]` is order-dependent across
-  # the other workflows this SHA also triggers (FOLLOWUPS
-  # push-staging-script-watches-an-order-dependent-run).
-  RUN_ID=$(gh run list --repo "$REPO" --commit "$TIP" --workflow "$CI_WORKFLOW" --branch ci/staging \
-             --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
-  [ -n "$RUN_ID" ] && break
-  sleep 10   # an empty gh result can be a race, never a conclusion
-done
-[ -n "$RUN_ID" ] || { echo "FATAL: no '$CI_WORKFLOW' workflow run appeared for $TIP on ci/staging" >&2; exit 1; }
-echo "== run $RUN_ID; waiting for required contexts: $REQUIRED_CONTEXTS"
-
-# Judge PER-JOB conclusions. A run-level conclusion is the wrong question here:
-# it can be 'failure' because a NON-required job failed, and it can still be
-# 'in_progress' after both required jobs are green.
-IFS='|' read -r -a WANTED <<< "$REQUIRED_CONTEXTS"
-for _ in $(seq 1 180); do
-  JOBS=$(gh run view "$RUN_ID" --repo "$REPO" --json jobs -q '.jobs[] | .name + "\t" + (.conclusion // "pending")' 2>/dev/null || true)
-  all_green=1
-  for name in "${WANTED[@]}"; do
-    conc=$(printf '%s\n' "$JOBS" | awk -F'\t' -v n="$name" '$1==n {print $2}')
-    case "$conc" in
-      success) ;;
-      failure|cancelled|timed_out|action_required)
-        echo "FATAL: required job '$name' concluded '$conc' -- NOT pushing $BRANCH" >&2; exit 1 ;;
-      "") all_green=0 ;;   # the job has not appeared in the run yet
-      *) all_green=0 ;;    # pending / in_progress
-    esac
-  done
-  [ "$all_green" = 1 ] && break
-  sleep 10
-done
-for name in "${WANTED[@]}"; do
-  conc=$(gh run view "$RUN_ID" --repo "$REPO" --json jobs -q ".jobs[] | select(.name==\"$name\") | .conclusion // empty" 2>/dev/null || true)
-  [ "$conc" = success ] || {
-    echo "FATAL: timed out waiting for required context '$name' (last: '${conc:-absent}')" >&2; exit 1; }
-done
-
-[ "$(git rev-parse HEAD)" = "$TIP" ] || {
-  echo "FATAL: the tip moved during the window -- the freeze rule was broken." >&2
-  echo "       Re-run this script to stage the NEW tip; do not push now." >&2
-  exit 1; }
-
-OUT=$(git push origin "HEAD:$BRANCH" 2>&1); echo "$OUT"
-if printf '%s' "$OUT" | grep -qi "bypassed rule violations"; then
-  echo "FATAL: bypass message detected -- the check was NOT satisfied." >&2
-  echo "       ci/staging is left in place for forensics; do not delete it." >&2
   exit 1
 fi
-git push origin --delete ci/staging
+echo "== FREEZE $BRANCH now: no commits until this script finishes"
 
-echo "== post-push straggler report (non-required jobs, informational):"
-gh run view "$RUN_ID" --repo "$REPO" --json jobs -q '.jobs[] | .name + ": " + (.conclusion // .status)' || true
-echo "== OK: $TIP is on $BRANCH with both required checks earned"
+# `gh api` prints its 404 body to STDOUT, so `2>/dev/null` does not suppress it
+# and a naive mapfile captures {"message":"Branch not protected"...} as one
+# bogus "context" the script would then wait forever to see. The EXIT CODE is
+# the honest signal: 0 protected, 1 not.
+if PROT="$(gh api "repos/$SLUG/branches/$BRANCH/protection" 2>/dev/null)"; then
+  mapfile -t CONTEXTS < <(printf '%s' "$PROT" | jq -r '.required_status_checks.contexts[]?')
+else
+  CONTEXTS=()
+fi
+if [ "${#CONTEXTS[@]}" -gt 0 ]; then
+  echo "== required contexts (${#CONTEXTS[@]}): ${CONTEXTS[*]}"
+else
+  echo "== branch is NOT protected: no context to earn, so no bypass is possible."
+  echo "==   The CI signal still gates this push -- every run on the SHA must be green."
+fi
+
+git push origin "HEAD:refs/heads/ci/staging"
+
+# An empty `gh` result is a RACE, never a conclusion (measured: runs can take
+# ~30 s to appear). Poll for existence before polling for completion.
+for _ in $(seq 1 30); do
+  [ "$(gh run list --repo "$SLUG" --commit "$TIP" --json databaseId -q 'length' 2>/dev/null || echo 0)" != "0" ] && break
+  sleep 10
+done
+if [ "$(gh run list --repo "$SLUG" --commit "$TIP" --json databaseId -q 'length' 2>/dev/null || echo 0)" = "0" ]; then
+  echo "FATAL: no workflow run appeared for $TIP after 5 minutes" >&2; exit 1
+fi
+
+echo "== waiting for every run on $TIP to conclude"
+for _ in $(seq 1 180); do
+  PENDING="$(gh run list --repo "$SLUG" --commit "$TIP" --json status \
+             -q '[.[]|select(.status!="completed")]|length' 2>/dev/null || echo 1)"
+  [ "$PENDING" = "0" ] && break
+  sleep 10
+done
+gh run list --repo "$SLUG" --commit "$TIP" --json name,conclusion \
+  -q '.[]|"   \(.name) -> \(.conclusion)"'
+
+# Job-level conclusions: a required CONTEXT is a job name, not a workflow name.
+mapfile -t JOBS < <(
+  gh run list --repo "$SLUG" --commit "$TIP" --json databaseId -q '.[].databaseId' \
+  | while read -r id; do gh run view "$id" --repo "$SLUG" --json jobs \
+      -q '.jobs[]|"\(.name)\t\(.conclusion // "pending")"'; done
+)
+fail=0
+MISSING=()
+if [ "${#CONTEXTS[@]}" -gt 0 ]; then
+  for ctx in "${CONTEXTS[@]}"; do
+    # Exact string compare, never a regex: context names contain parentheses --
+    # "test (ubuntu-latest)" as a pattern matches the literal text WITHOUT them,
+    # so a regex match silently never fires and the wait looks like slowness.
+    got="$(printf '%s\n' "${JOBS[@]}" | awk -F'\t' -v c="$ctx" '$1==c{print $2; exit}')"
+    echo "   context '$ctx' -> ${got:-MISSING}"
+    if [ -z "$got" ]; then MISSING+=("$ctx"); fail=1
+    elif [ "$got" != "success" ]; then fail=1
+    fi
+  done
+else
+  for row in "${JOBS[@]}"; do
+    name="${row%%$'\t'*}"; conc="${row##*$'\t'}"
+    case "$conc" in
+      success|skipped) ;;
+      *) echo "   job '$name' -> $conc"; fail=1 ;;
+    esac
+  done
+fi
+
+if [ "${#MISSING[@]}" -gt 0 ]; then
+  echo
+  echo "FATAL: ${#MISSING[@]} required context(s) NEVER RAN for $TIP:"
+  printf '         %s\n' "${MISSING[@]}"
+  echo "       This is not slowness -- the job did not start, so waiting cannot"
+  echo "       earn it and pushing could only BYPASS the rule."
+  echo "       Most likely the workflow is PATH-FILTERED on 'push' and these"
+  echo "       commits touch none of the filtered paths. Check with:"
+  echo "           awk '/^on:/,/^jobs:/' .github/workflows/<workflow>.yml"
+  echo "       Those workflows are usually UNFILTERED on 'pull_request', so the"
+  echo "       route for such a change is a PR, which runs them unconditionally:"
+  echo "           git push origin HEAD:refs/heads/<topic>"
+  echo "           gh pr create --repo $SLUG --base $BRANCH --head <topic>"
+  echo "           # merge once the required contexts are green"
+  git push origin --delete ci/staging || true
+  exit 1
+fi
+if [ "$fail" != "0" ]; then
+  echo "FATAL: CI is not green for $TIP -- NOT pushing $BRANCH." >&2
+  echo "       A red suite is a finding, not an obstacle: fix it and re-run." >&2
+  git push origin --delete ci/staging || true
+  exit 1
+fi
+
+[ "$(git rev-parse HEAD)" = "$TIP" ] || {
+  echo "FATAL: the tip moved during the window -- re-stage the new tip" >&2; exit 1; }
+
+OUT="$(git push origin "HEAD:$BRANCH" 2>&1)"; echo "$OUT"
+if echo "$OUT" | grep -qi "bypassed rule violations"; then
+  echo "FATAL: bypass message detected -- ci/staging left in place for forensics" >&2; exit 1
+fi
+git push origin --delete ci/staging
+git fetch -q origin
+[ "$(git rev-parse "origin/$BRANCH")" = "$TIP" ] || {
+  echo "FATAL: origin/$BRANCH is not $TIP after the push" >&2; exit 1; }
+echo "== OK: $TIP is on $BRANCH, CI green, no bypass"
