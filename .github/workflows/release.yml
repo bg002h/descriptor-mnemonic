@@ -55,9 +55,25 @@ env:
   MINISIGN_PUBKEY: 'RWQPmgBXsuw5yi8W0SfDr8KF+IqY/Z5U2p724emSODS1UPfJBP3agbKW'
 
 jobs:
+  # THE SUITE, ON EACH OS THAT CAN RUN IT.
+  #
+  # Running the real tests on a real Mac is the strongest functional evidence
+  # available short of owning the hardware -- stronger than any local VM, since
+  # this IS macOS. Which repos can do it is not uniform and the list is set per
+  # repo: a suite that hardcodes /usr/bin/zsh or /usr/bin/fish is Linux-bound
+  # and stays there rather than being weakened to travel.
+  #
+  # Windows is never in this list: these suites assert POSIX file modes via
+  # std::os::unix, which does not compile there. The per-platform acceptance
+  # check in the build job is what covers Windows, and it runs the commands the
+  # documentation actually hands to people.
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -133,11 +149,34 @@ jobs:
           BIN="target/${{ matrix.target }}/release/md"
           [ "${{ runner.os }}" = "Windows" ] && BIN="$BIN.exe"
           "$BIN" --version
-          # A real round trip, not just --version.
+          # A REAL acceptance pass, on this platform, using the commands the
+          # demo hands to people. Deterministic on every target: same policy,
+          # same md1, same Template-ID, same corrections.
           MD1="$("$BIN" encode 'wpkh(@0/<0;1>/*)' --group-size 0 | grep '^md1')"
           DEC="$("$BIN" decode "$MD1")"
-          case "$DEC" in *'wpkh(@0'*) ;; *) echo "::error::round trip failed"; exit 1 ;; esac
-          echo "round trip ok: $MD1"
+          case "$DEC" in *'wpkh(@0'*) ;; *) echo "::error::round trip failed: $DEC"; exit 1 ;; esac
+
+          # compose -> the zen-hodl policy the demo builds on the device
+          ZEN="$("$BIN" compose --wrapper tr --path '1of1,older=32768' 2>/dev/null)"
+          case "$ZEN" in *'older(32768)'*) ;; *) echo "::error::compose failed: $ZEN"; exit 1 ;; esac
+
+          # BCH repair: four damaged characters, named and corrected
+          BADMD1=md1yqfdsqsjuqqpr5e55uzqqgqqqrqqvf4d7h59r2
+          GOODMD1=md1yqfdsssjuqqcr5e55uqqqgqqq6qqvf4d7h59r2
+          if "$BIN" decode "$BADMD1" >/dev/null 2>&1; then
+            echo "::error::the damaged string decoded; BCH detection is broken here"; exit 1
+          fi
+          REP="$("$BIN" repair "$BADMD1" || true)"
+          case "$REP" in *"$GOODMD1"*) ;; *) echo "::error::repair did not restore: $REP"; exit 1 ;; esac
+          case "$REP" in *'4 corrections'*) ;; *) echo "::error::correction count changed: $REP"; exit 1 ;; esac
+
+          # cross-implementation identity: must match what the DEVICE shows
+          ID="$("$BIN" inspect "$GOODMD1" | grep 'wallet-descriptor-template-id:' | awk '{print $2}')"
+          [ "$ID" = "73c33a5dea17b45376a6246995df0cbb" ] || {
+            echo "::error::Template-ID is $ID on this platform, not 73c33a5d... -- the"
+            echo "::error::identity hash is not platform-independent, which breaks the"
+            echo "::error::whole point of a template id"; exit 1; }
+          echo "acceptance ok on this platform: $MD1 / $ID"
 
       - name: Stage binary
         shell: bash
