@@ -2978,6 +2978,33 @@ bearer-access warning `encode` prints; keep the default refusal.
      maintaining a consensus-adjacent library. Avoid.
   4. Do not publish md-codec/md-cli; ship git installs and release binaries.
      Status quo, and respectable.
+- **THE REAL FIX IS A BINARY RELEASE, NOT CRATES.IO** (added 2026-09-17 after
+  the operator asked whether the merged PR or the GitHub release covered it):
+  - **Publishing against the merged PR is impossible**, tested directly rather
+    than remembered: a crate declaring a `git` dependency fails
+    `cargo publish --dry-run` with *"the `git` specification will be removed
+    from the dependency declaration"*. crates.io strips it. "Merged upstream"
+    does nothing until it is RELEASED.
+  - **A GitHub release binary sidesteps the whole problem**, because it is
+    compiled HERE, where `[patch]` applies — so a released `md` binary carries
+    #953. The constraint was only ever about crates.io.
+  - But **this repo has no release workflow at all** — only `man-pages.yml`,
+    which is why `descriptor-mnemonic-md-cli-v0.14.0` ships nothing but
+    `md-man.tar.gz`. Measured across the constellation:
+
+    | release | binaries |
+    | --- | --- |
+    | `mnemonic-engrave` v0.9.0 | linux amd64/arm64, **macos amd64/arm64**, windows, SHA256SUMS + minisig |
+    | `mnemonic-secret` ms-cli-v0.18.0 | linux musl x86_64/aarch64 only |
+    | `descriptor-mnemonic` md-cli-v0.14.0 | **man pages only** |
+
+  - **Proposed:** model a release workflow on `mnemonic-engrave`'s
+    `.github/workflows/release.yml`, whose 3-runner matrix is already proven —
+    ubuntu builds native x86_64 plus cross aarch64, `macos-latest` builds both
+    Apple targets via `rustup target add`, windows builds msvc. Add macOS
+    targets to `ms` while there. That removes "install Rust first" for every
+    user and makes the crates.io freeze cosmetic.
 - **Status:** open.
 - **Tier:** release-engineering. Not blocking anything shipped; blocks only
-  `cargo install md-cli` being current.
+  `cargo install md-cli` being current — and a binary release would make even
+  that moot.
