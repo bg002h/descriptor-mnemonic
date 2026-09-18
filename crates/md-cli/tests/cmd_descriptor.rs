@@ -321,28 +321,42 @@ fn a_descriptor_without_key_origins_says_it_cannot_be_signed() {
 }
 
 /// F-611: `--help` used to promise "real xpubs", and every xpub `md descriptor`
-/// emits serialises at DEPTH 0 whatever depth the supplied key had.
+/// emitted serialised at DEPTH 0 whatever depth the supplied key had.
 ///
-/// Not a codec bug and not fixable here: a card stores a key as chain code +
-/// compressed point with no BIP-32 metadata, so depth, parent fingerprint and
-/// child number are documented placeholders. Only chain code and point
-/// participate in CKDpub, so every derived address is identical either way.
-/// What the operator needed to be told is that the xpub STRING will not match
-/// a signer's own export byte-for-byte.
+/// F-611's original note said this was "not fixable here". That was HALF
+/// right, and the half that was wrong is now fixed: a card carries the key
+/// ORIGIN, and an origin's component count IS the depth while its terminal
+/// component IS the child number, so two of the three placeholder fields were
+/// recoverable all along. `assemble_origin_and_xkey` now derives the origin
+/// and the header from one value instead of two, and a depth-4 key no longer
+/// renders as a master-looking xpub under a depth-4 origin.
 ///
-/// MEASURED, both ends: the input below is depth 4 (parent fingerprint
-/// 1cf29716, child 80000002) and what comes back is depth 0 with both fields
-/// zeroed.
+/// The parent fingerprint is the genuinely unrecoverable one -- it is
+/// hash160 of the PARENT point, which a card does not store -- so it stays
+/// 00000000 and the operator still must not expect a byte-for-byte match
+/// against a signer's own export. That narrower warning is what `--help` now
+/// carries, and this test pins both halves: what is now right, and what is
+/// still lossy.
+///
+/// MEASURED, both ends: the input below is depth 4, parent fingerprint
+/// 1cf29716, child 80000002. What comes back is depth 4 and child 80000002
+/// with the parent fingerprint alone zeroed.
 ///
 /// This test pins the FACT, not just the sentence. A test asserting only the
-/// help text would stay green if the codec ever started carrying real
-/// metadata, leaving the warning in place and wrong.
+/// help text would stay green if the codec ever started carrying a real parent
+/// fingerprint, leaving the warning in place and wrong.
 #[test]
-fn descriptor_emits_depth_zero_xpubs_and_says_so() {
+fn descriptor_emits_zero_parent_fingerprint_and_says_so() {
     const IN_XPUB: &str = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
 
     let supplied: bitcoin::bip32::Xpub = IN_XPUB.parse().unwrap();
     assert_eq!(supplied.depth, 4, "the fixture must be a non-zero depth");
+    assert_ne!(
+        supplied.parent_fingerprint.to_string(),
+        "00000000",
+        "the fixture must carry a REAL parent fingerprint, or the loss this \
+         test pins would be invisible"
+    );
 
     let out = md()
         .args([
@@ -365,23 +379,33 @@ fn descriptor_emits_depth_zero_xpubs_and_says_so() {
         .expect("an xpub after the origin");
     let emitted: bitcoin::bip32::Xpub = emitted_str.parse().unwrap();
 
-    assert_eq!(emitted.depth, 0, "emitted xpub: {emitted_str}");
+    // RECOVERED from the key origin: both of these were zero before the
+    // `assemble_origin_and_xkey` fix.
+    assert_eq!(
+        emitted.depth, supplied.depth,
+        "depth is the origin's component count: {emitted_str}"
+    );
+    assert_eq!(
+        emitted.child_number, supplied.child_number,
+        "child number is the origin's terminal component: {emitted_str}"
+    );
+    // STILL LOST, and necessarily: hash160 of the PARENT point is not on the
+    // wire. This is the assertion the --help warning stands on.
     assert_eq!(emitted.parent_fingerprint.to_string(), "00000000");
-    assert_eq!(u32::from(emitted.child_number), 0);
     // The point and chain code -- the parts CKDpub uses -- survive intact,
     // which is why the addresses are right despite the string differing.
     assert_eq!(emitted.public_key, supplied.public_key);
     assert_eq!(emitted.chain_code, supplied.chain_code);
     assert_ne!(
         emitted_str, IN_XPUB,
-        "if the strings ever match, the placeholder metadata is gone and the \
-         --help warning below must be deleted"
+        "if the strings ever match, the parent fingerprint is no longer lost \
+         and the --help warning below must be deleted"
     );
 
     md().args(["descriptor", "--help"])
         .assert()
         .success()
         .stdout(predicates::prelude::predicate::str::contains(
-            "EVERY EMITTED XPUB SERIALISES AT DEPTH 0",
+            "EMITTED XPUBS CARRY A ZERO PARENT FINGERPRINT",
         ));
 }

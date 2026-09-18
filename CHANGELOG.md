@@ -4,6 +4,51 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.44.0] — 2026-09-18
+
+### Fixed
+
+- **A rendered key no longer contradicts the origin printed beside it.** Every
+  xpub emitted by `to_miniscript` serialised at `depth 0`, `parent_fingerprint
+  00000000`, `child_number 0` — so a 2-of-3 rendered as
+  `[73c5da0a/48'/0'/0'/2']xpub661MyMwAqRbc…`: a master-looking key claiming to
+  sit four levels down.
+
+  `assemble_origin_and_xkey` built the origin from `origin_path` and the header
+  from nothing at all, and that independence was the defect. Both now come from
+  one `origin_path_to_derivation` call: **depth is the origin's component count
+  and child number is its terminal component**, neither of which needed a wire
+  change — the card carried them all along.
+
+  **`parent_fingerprint` is still `00000000`, necessarily.** It is
+  `hash160(parent_point)[..4]`, the parent point is not on the md1 wire, and no
+  origin can recover it. An emitted xpub STRING therefore still will not match a
+  signer's own export byte-for-byte; `md descriptor --help` now says exactly
+  that instead of the broader depth-0 warning, and
+  `md-descriptor-depth0-xpub-ledger-registration` stays OPEN for the
+  Ledger `memcmp` half.
+
+  **No address, wallet id or wire byte moved.** Only `chain_code` and
+  `public_key` participate in CKDpub, so the addresses were always correct.
+  Verified two ways: Bitcoin Core v25 derives the same addresses from both
+  spellings (`bitcoind_address_differential`, run against a live node), and the
+  44-file conformance corpus regenerated to a diff of 176 `"descriptor"` lines
+  and **zero** address or id lines.
+
+  New `rendered_xpub_header.rs` pins the invariant over three accounts chosen to
+  span two depths and three terminal components, with a companion test asserting
+  that spread so the check cannot decay into a tautology.
+
+## md-cli [0.16.0] — 2026-09-18
+
+### Changed
+
+- **`md descriptor` emits xpubs whose depth and child number match their key
+  origin** (md-codec 0.44.0, above). The `--help` warning narrows from "EVERY
+  EMITTED XPUB SERIALISES AT DEPTH 0" to "EMITTED XPUBS CARRY A ZERO PARENT
+  FINGERPRINT", which is the part that is still true. The committed conformance
+  corpus under `crates/md-codec/tests/vectors/` is regenerated accordingly.
+
 ## md-cli [0.15.0] — 2026-09-15
 
 ### Added

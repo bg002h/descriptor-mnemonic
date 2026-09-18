@@ -117,13 +117,35 @@ fn assemble_origin_and_xkey(
     e: &ExpandedKey,
 ) -> Result<(DescriptorOrigin, bitcoin::bip32::Xpub), Error> {
     let xpub_bytes = e.xpub.ok_or(Error::MissingPubkey { idx: e.idx })?;
-    let xkey = xpub_from_tlv_bytes(e.idx, &xpub_bytes)?;
-    let origin = e.fingerprint.map(|fp| {
-        (
-            Fingerprint::from(fp),
-            origin_path_to_derivation(&e.origin_path),
-        )
-    });
+    // ONE derivation path feeds BOTH halves. They used to be computed
+    // independently -- the origin from `origin_path`, the header from nothing
+    // at all -- and that independence is precisely how a depth-0 xpub came to
+    // be rendered under a depth-4 origin: `[fp/48'/0'/0'/2']xpub661MyMwAqRbc..`,
+    // a master-looking key claiming to sit four levels down. Core and Sparrow
+    // ignore the header (only `chain_code` + `public_key` participate in
+    // CKDpub, so the ADDRESSES were always right), but mk-codec's card encoder
+    // rejects an xpub whose depth/child disagree with its origin, so the
+    // rendered descriptor could not round-trip back into a key card.
+    let path = origin_path_to_derivation(&e.origin_path);
+    let mut xkey = xpub_from_tlv_bytes(e.idx, &xpub_bytes)?;
+    // `depth` and `child_number` ARE recoverable -- they are the component
+    // count and the terminal component of the origin the card carries.
+    // Encoding caps a path at `MAX_PATH_COMPONENTS` (4-bit depth field), so
+    // this only fires for an in-memory `Descriptor` that never went through
+    // `encode`; refuse rather than truncate into a wrong header.
+    xkey.depth = u8::try_from(path.len()).map_err(|_| Error::PathDepthExceeded {
+        got: path.len(),
+        max: crate::origin_path::MAX_PATH_COMPONENTS,
+    })?;
+    xkey.child_number = path
+        .as_ref()
+        .last()
+        .copied()
+        .unwrap_or(ChildNumber::Normal { index: 0 });
+    // `parent_fingerprint` is the one field md1 genuinely cannot carry: it is
+    // `hash160(parent_pubkey)[..4]` and the PARENT pubkey is not on the wire.
+    // It stays zero -- a truthful "unknown", never invented.
+    let origin = e.fingerprint.map(|fp| (Fingerprint::from(fp), path));
     Ok((origin, xkey))
 }
 

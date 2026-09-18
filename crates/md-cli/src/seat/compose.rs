@@ -52,10 +52,13 @@ use std::collections::BTreeMap;
 /// followed by the 33-byte compressed point, the layout
 /// `md_codec::derive::xpub_from_tlv_bytes` reads back.
 ///
-/// The xpub's DEPTH, parent fingerprint and child number are deliberately
-/// not carried: they are not part of the payload, and md-codec reconstructs
-/// a depth-0 `Xpub` from these 65 bytes. That is the known limitation r1 C3
-/// records for the DECOMPOSE side; on the compose side nothing reads them.
+/// The xpub's depth, PARENT FINGERPRINT and child number are not part of this
+/// payload. Depth and child number are nonetheless recovered on the way back
+/// out — `to_miniscript::assemble_origin_and_xkey` reads them off the key
+/// origin the card carries — so only the parent fingerprint is genuinely lost,
+/// and a rendered key no longer contradicts the origin printed beside it. That
+/// residue is the known limitation r1 C3 records for the DECOMPOSE side; on the
+/// compose side nothing reads any of them.
 pub fn payload_of(xpub: &Xpub) -> [u8; 65] {
     let mut out = [0u8; 65];
     out[..32].copy_from_slice(xpub.chain_code.as_ref());

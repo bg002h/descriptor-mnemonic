@@ -318,11 +318,13 @@ enum Command {
     /// Multipath (<0;1>) by default, which is the form a coordinator wants;
     /// --chain collapses it.
     ///
-    /// EVERY EMITTED XPUB SERIALISES AT DEPTH 0 (F-611). A card stores a key as
-    /// chain code + point with no BIP-32 metadata, so depth, parent fingerprint
-    /// and child number are filled with placeholders. Only chain code and point
-    /// participate in CKDpub, so addresses are correct and identical either
-    /// way -- but the xpub STRING will not match a signer's own export
+    /// EMITTED XPUBS CARRY A ZERO PARENT FINGERPRINT (F-611). A card stores a
+    /// key as chain code + point, with no BIP-32 metadata. Depth and child
+    /// number are recovered from the key origin the card DOES carry, so they
+    /// are correct; the parent fingerprint is hash160 of the PARENT point,
+    /// which is not on the wire, and is emitted as 00000000. Only chain code
+    /// and point participate in CKDpub, so addresses are correct either way --
+    /// but the xpub STRING still will not match a signer's own export
     /// byte-for-byte. Match on the key origin, not the xpub text.
     // R9 (`design/SPEC_mdcli_mini.md`): `from_mk1` joins this group, with
     // `.multiple(true)`, so `--from-mk1`'s mere presence satisfies
