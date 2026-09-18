@@ -2888,7 +2888,36 @@ or have `md descriptor` accept `--key` inputs at export time to re-serialise wit
 true headers — the host has the account xpubs when it exports. Cross-ref
 mnemonic-engrave F-449 (unspendable-xpub form), which touches the same export.
 
-- **Status:** OPEN. **Tier:** `recon` / `interop`.
+**PARTIALLY ADDRESSED 2026-09-18 — depth and child number now carried, WITHOUT a
+new TLV.** Remedy (2)'s first branch priced this as an additive wire extension.
+It did not need one: the card already carries the key ORIGIN, and an origin's
+component count IS the depth while its terminal component IS the child number.
+`to_miniscript::assemble_origin_and_xkey` built the origin and the header from
+two independent values, which is the whole defect; it now derives both from one
+`origin_path_to_derivation` call. `md descriptor` emits depth-4 keys under
+depth-4 origins, and the 44-file conformance corpus was regenerated — the diff is
+176 `"descriptor"` lines and **zero** address or id lines, so no wire byte, no
+wallet id and no address moved.
+
+**THE LEDGER RISK IS NOT CLOSED, and this entry stays OPEN for it.**
+`register_wallet.c` is reported to `memcmp` the WHOLE 78-byte serialized record,
+and the third header field — `parent_fingerprint` — is `hash160` of the PARENT
+point, which md1 genuinely does not carry and no origin can recover. It is still
+emitted as `00000000`, so a device-derived record still cannot compare equal. The
+fix narrows the contradiction (the origin and the depth beside it now agree) but
+does not remove it. Remedy (2)'s SECOND branch — re-serialising from `--key`
+inputs at export time, where the host holds the true xpubs — remains the only
+route that closes the memcmp, and the Speculos recon in (1) is still what decides
+whether any of it is needed.
+
+Measured the same day, with Bitcoin Core v25 as an independent oracle: the three
+keys `restore` printed and the three on the mk1 cards had byte-identical chain
+codes and public keys, differing ONLY in the header, and Core derived the same
+address from both spellings. That is why every gate in four repos stayed green
+while the strings were wrong — nothing downstream reads the header.
+
+- **Status:** OPEN — Ledger/Speculos recon and the parent-fingerprint half.
+  Depth + child number shipped in md-codec 0.44.0. **Tier:** `recon` / `interop`.
 
 ### `md-encode-keyless-template-sigless-path-not-gated` — a `wsh` template whose spend path needs no signature (`and_v(v:sha256(H),after(N))`) encodes with exit 0 and no warning, KEYED OR UNKEYED, while the same shape under `tr` is refused without `--experimental` (repo: **descriptor-mnemonic**; owning phase: **composer Stage 0, Task 8 of `IMPLEMENTATION_PLAN_composer_S0_md_compose.md`, alongside `md compose`** ) `#admission` `#experimental`
 
