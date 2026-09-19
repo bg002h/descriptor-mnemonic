@@ -4,6 +4,39 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.44.1] — 2026-09-19
+
+### Fixed
+
+- **An all-zero master fingerprint no longer reads as an identity claim.**
+  `validate_origin_key_consistency` refuses two slots that bind one
+  `(fingerprint, origin path)` pair to two different xpubs. Its documented scope
+  already exempted slots with no fingerprint — "without one, the origin path
+  names no master" — but `Some([0u8; 4])` satisfied the `Some(_)` while meaning
+  exactly what `None` means: `[0,0,0,0]` is the ABSENT sentinel, the same value
+  BIP-32 uses for a depth-0 key's parent fingerprint.
+
+  **Measured consequence, and it was not cosmetic.** `mnemonic bundle` emits
+  `[00000000/m]` for a WIF slot (a WIF has no master and no path), so a legal
+  2-of-2 of two DISTINCT WIFs was refused. Worse, the refusal reached **decode**:
+  `chunk::reassemble` recomputes the encoding id through
+  `compute_md1_encoding_id` → `encode_payload` → the validators, so a card of
+  that shape **already engraved stopped being readable**. A backup one cannot
+  read is a worse outcome than a missing advisory.
+
+  What the exemption gives up is one advisory on a genuine master whose
+  fingerprint is literally `00000000` — a 1-in-2^32 accident on a card that
+  names its master with the sentinel for "no master". A real shared fingerprint
+  still contradicts, pinned by a control test so the exemption cannot quietly
+  become "this validator never fires":
+  `tests/zero_fingerprint_is_absent.rs`.
+
+## md-cli [0.16.1] — 2026-09-19
+
+### Changed
+
+- Picks up md-codec 0.44.1 (above). No CLI surface change.
+
 ## md-codec [0.44.0] — 2026-09-18
 
 ### Fixed

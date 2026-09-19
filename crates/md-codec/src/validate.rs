@@ -418,8 +418,10 @@ pub fn validate_no_duplicate_key_slots(d: &Descriptor) -> Result<(), Error> {
 /// question could be asked.
 ///
 /// SCOPE, stated rather than implied:
-/// - Both slots must carry a fingerprint. Without one, the origin path names no
-///   master, so no contradiction is provable and none is claimed.
+/// - Both slots must carry a fingerprint, and an all-zero one does NOT count:
+///   `[0u8; 4]` is the absent sentinel, so a slot carrying it names no master
+///   just as surely as a slot carrying none. Without a master the origin path
+///   names no key, so no contradiction is provable and none is claimed.
 /// - Both slots must carry an xpub. A template has no keys to disagree about.
 /// - Two slots holding the SAME xpub at the same origin are CONSISTENT here.
 ///   That is key reuse across slots, a different hazard with a different
@@ -436,14 +438,40 @@ pub fn validate_origin_key_consistency(d: &Descriptor) -> Result<(), Error> {
     let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
         return Ok(());
     };
+    // `[0u8; 4]` is the ABSENT sentinel, not a master. It is what a producer
+    // writes when there IS no master to name -- the same value BIP-32 uses for
+    // a depth-0 key's parent fingerprint -- so two slots carrying it are two
+    // ABSENCES, and the scope note above ("without one ... no contradiction is
+    // provable") is about exactly them. `Some([0,0,0,0])` satisfied the
+    // `Some(_)` while meaning what `None` means.
+    //
+    // MEASURED: `mnemonic bundle` emits `[00000000/m]` for a WIF slot, since a
+    // WIF has no master and no path, so a legal 2-of-2 of two DISTINCT WIFs was
+    // refused. And because `chunk::reassemble` recomputes the encoding id via
+    // `encode_payload`, that refusal reached DECODE -- an already-engraved card
+    // of that shape stopped being READABLE, which is a far worse outcome than
+    // the advisory this check exists to give.
+    //
+    // What the exemption gives up: a genuine master whose fingerprint really is
+    // `00000000`, a 1-in-2^32 accident, loses one advisory on a card that names
+    // its master with the sentinel for "no master". Nothing else narrows -- a
+    // real shared fingerprint still contradicts, pinned by the control test in
+    // `tests/zero_fingerprint_is_absent.rs`.
+    const ABSENT_FINGERPRINT: [u8; 4] = [0, 0, 0, 0];
     for (i, a) in expanded.iter().enumerate() {
         let (Some(fp_a), Some(x_a)) = (a.fingerprint, a.xpub) else {
             continue;
         };
+        if fp_a == ABSENT_FINGERPRINT {
+            continue;
+        }
         for b in &expanded[i + 1..] {
             let (Some(fp_b), Some(x_b)) = (b.fingerprint, b.xpub) else {
                 continue;
             };
+            if fp_b == ABSENT_FINGERPRINT {
+                continue;
+            }
             if fp_a != fp_b || a.origin_path != b.origin_path || x_a == x_b {
                 continue;
             }

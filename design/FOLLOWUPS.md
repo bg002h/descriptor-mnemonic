@@ -3037,3 +3037,48 @@ bearer-access warning `encode` prints; keep the default refusal.
 - **Tier:** release-engineering. Not blocking anything shipped; blocks only
   `cargo install md-cli` being current — and a binary release would make even
   that moot.
+
+### `encode-time-policy-reaches-decode-via-the-encoding-id` — a new admission rule retroactively makes older cards UNREADABLE (repo: **descriptor-mnemonic**; owning phase: next md-codec cycle — treat as blocking for any new encode-side refusal)
+
+**Filed 2026-09-19**, found while adopting md-codec 0.44 in the toolkit.
+
+**The chain, traced not guessed:**
+
+```
+chunk::reassemble  ->  compute_md1_encoding_id  ->  encode_payload  ->  validate_*
+   (DECODE)                 (identity.rs:40)          (encode.rs:118)
+```
+
+`reassemble` recomputes the md1 encoding id to verify the chunk set, and that
+recomputation goes through the full ENCODE path — including every admission
+validator. So an encode-time POLICY refusal added today makes every previously
+engraved card of that shape **stop decoding**, retroactively.
+
+**This is not hypothetical.** 0.43's `OriginKeyContradiction` did exactly that to
+any multi-chunk card carrying two WIF slots (`[00000000/m]` on both). The
+specific instance is fixed in 0.44.1 by exempting the absent-fingerprint
+sentinel — but the CLASS is still open, and it will recur the next time an
+encode-side rule is added, which this codec has done three times in two
+releases (`DuplicateKeySlots`, `OriginKeyContradiction`,
+`RelativeTimelockTruncated`).
+
+**Why it matters more here than in most codecs.** The artifact is stamped in
+metal. A refusal that fires at MINT is a service — it stops a bad plate being
+made. The same refusal firing at READ is the opposite: the plate already exists,
+the operator is holding it, and the tool now says the backup is invalid. Several
+of this codec's own refusal messages promise the opposite ("The engraved card
+remains a faithful backup").
+
+**Shape of the fix.** Identity computation over an EXISTING card must not apply
+admission policy — it needs a serialization-only path (`encode_payload_unchecked`
+or an `EncodeOpts { validate: false }`), used by `compute_md1_encoding_id` and
+anything else on a read path. Admission stays where minting happens. A test that
+mints a card under today's rules, adds a new refusal, and asserts the card still
+READS would pin it.
+
+**Care required:** the read path must stay byte-identical, since the id is a
+hash of the payload — this is a change to WHICH checks run, never to what is
+produced.
+
+- **Status:** OPEN. **Tier:** `correctness` / `funds-adjacent` (a backup that
+  cannot be read).
