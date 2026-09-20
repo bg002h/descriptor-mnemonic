@@ -686,6 +686,18 @@ pub fn run(
     // So compose now reads back what it is about to emit, with the SAME parser
     // `md encode` uses. This is not a second implementation of the rules: it is
     // the same function, which is what keeps the two verbs from drifting.
+    //
+    // THAT SHAPE NO LONGER REACHES HERE. md-codec 0.45 states the rule instead
+    // of discovering it: `compose::validate` refuses a path list with more than
+    // one key-less path (`ComposeError::TooManyKeylessPaths`), because the
+    // device's Go port has no miniscript library to read back with and was
+    // cutting such a policy into steel (composer fable review r0, lens 1 C-1).
+    // The read-back STAYS as defence in depth over every OTHER way `md encode`
+    // could refuse compose's output -- resource limits, repeated keys, timelock
+    // mixing -- but it no longer knows which rule was broken, so it names the
+    // parser's reason and stops guessing. The old hint here guessed "give one
+    // of them a key, a timelock, or fold them into one path", and a timelock is
+    // exactly what does NOT work.
     if let Err(e) = crate::parse::template::parse_template_ext(
         &with_origins,
         &[],
@@ -696,9 +708,8 @@ pub fn run(
         return Err(CliError::Compose(format!(
             "composed a template that `md encode` refuses, so nothing was emitted:\n  {e}\n\
              \n\
-             This is a defect in the path list, not in the hashes. Two key-less hash paths \
-             side by side compile to a malleable `or_i`; give one of them a key, a timelock, \
-             or fold them into one path."
+             This is a defect in the path list, not in the keys or the hashes: the reason \
+             above is the rule that was broken. Change the path the reason names."
         )));
     }
 

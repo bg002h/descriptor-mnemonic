@@ -2,13 +2,39 @@
 //!
 //! ## Composition
 //!
-//! Seating a candidate assignment is exactly one edit to the keyless policy:
-//! fill its `Pubkeys` TLV. Every other field — the tree, the origin-path
-//! declaration, the `Fingerprints` TLV, the use-site paths — is the POLICY
-//! CARD's and stays untouched, which is what "the declaration is the
-//! constraint" means once an assignment exists. In particular a card's own
-//! fingerprint never overwrites a fingerprint-free declaration: the policy
-//! author's choice not to state one is inherited, not corrected.
+//! Seating a candidate assignment is TWO edits to the keyless policy: fill its
+//! `Pubkeys` TLV, and fill an ABSENT per-slot fingerprint from the card that
+//! seated that slot. Every other field — the tree, the origin-path
+//! declaration, the use-site paths — is the POLICY CARD's and stays untouched,
+//! which is what "the declaration is the constraint" means once an assignment
+//! exists.
+//!
+//! ## The fingerprint rule, exactly (composer fable review r0, lens 3, I-2)
+//!
+//! - **A fingerprint the policy card DECLARES is never overwritten.** That
+//!   rule stands unchanged. A card whose fingerprint disagrees cannot reach
+//!   here anyway — A2 (`satisfy::satisfies`) refuses it — so the guarantee is
+//!   belt and braces, and its test drives the assignment A2 would reject.
+//! - **A slot with NO declared fingerprint takes the seated card's, when the
+//!   card states one.** This was previously inherited as "the policy author's
+//!   choice not to state one". It is not a choice. A composer template minted
+//!   with an UNSEATED slot (SPEC §8p) has no fingerprint there because the key
+//!   was not known yet, and the host is the moment it becomes known.
+//! - **Nothing is invented.** A privacy-preserving card states no master, so
+//!   the slot stays fingerprint-free.
+//!
+//! WHY IT MATTERS, and it is not cosmetic. `to_miniscript` drops the WHOLE
+//! origin when the fingerprint is absent (`e.fingerprint.map(…)`), so a
+//! host-completed partial template rendered its completed key as a bare xpub
+//! with no `[fp/path]` — a BIP-380 key no coordinator and no HWI can attribute
+//! to a signer — and the completed wallet's id differed from the id the device
+//! mints for the same keys seated on-device. SPEC §5 l.218: "EVERY slot
+//! declares an origin (§4f) and, when seated, the master fingerprint of the
+//! seated key."
+//!
+//! A card's fingerprint is carried VERBATIM, all-zero included: `00000000` is
+//! md1's absent-master sentinel (md-codec 0.44.1) and transcribing it is what
+//! makes the host's id agree with the device's, which writes the same bytes.
 //!
 //! ## The comparison form (SPEC A3 / THE PRINCIPLE)
 //!
@@ -67,6 +93,9 @@ pub fn payload_of(xpub: &Xpub) -> [u8; 65] {
 }
 
 /// Seat `assignment[slot] = card index` into a copy of the keyless policy.
+///
+/// See the module doc for the fingerprint rule: an ABSENT one is filled from
+/// the seated card, a DECLARED one is never touched.
 pub fn compose(
     policy: &Descriptor,
     cards: &[DecodedCard],
@@ -81,6 +110,28 @@ pub fn compose(
     // md_codec::tlv requires strictly ascending @i.
     pubkeys.sort_by_key(|(i, _)| *i);
     seated.tlv.pubkeys = Some(pubkeys);
+
+    // Fill ABSENT fingerprints only. `assignment` is indexed by @N — the same
+    // index the `Pubkeys` TLV above is keyed by — so a slot's declaration is
+    // found by that index and nothing is re-derived.
+    let mut fingerprints: Vec<(u8, [u8; 4])> = seated.tlv.fingerprints.clone().unwrap_or_default();
+    let mut filled = false;
+    for (slot, card_idx) in assignment.iter().enumerate() {
+        let i = slot as u8;
+        if fingerprints.iter().any(|(j, _)| *j == i) {
+            // DECLARED. Never overwritten, whatever the card says.
+            continue;
+        }
+        if let Some(fp) = cards[*card_idx].card.origin_fingerprint {
+            fingerprints.push((i, fp.to_bytes()));
+            filled = true;
+        }
+    }
+    if filled {
+        // Strictly ascending @i, as md_codec::tlv requires.
+        fingerprints.sort_by_key(|(i, _)| *i);
+        seated.tlv.fingerprints = Some(fingerprints);
+    }
     Ok(seated)
 }
 
@@ -279,8 +330,23 @@ mod tests {
     }
 
     #[test]
-    fn composition_touches_only_the_pubkeys_tlv() {
+    fn composition_touches_only_the_pubkeys_and_absent_fingerprints() {
+        // The tree, the origin-path declaration and the use-site paths are
+        // the POLICY CARD's and are never edited.
+        //
+        // The fingerprint assertion is narrower than it was before the I-2
+        // fill and says so: it holds here because PATHOLOGICAL declares a
+        // fingerprint for EVERY slot, which the first assertion measures
+        // rather than assumes -- so there is nothing absent to fill and the
+        // TLV really must come through untouched. The case where one IS
+        // absent has its own tests below.
         let policy = policy(PATHOLOGICAL);
+        let declared = policy.tlv.fingerprints.clone().unwrap_or_default();
+        assert_eq!(
+            declared.len(),
+            usize::from(policy.n),
+            "this row's premise: PATHOLOGICAL declares every slot's fingerprint"
+        );
         let seated = seat_unique(PATHOLOGICAL);
         assert!(policy.tlv.pubkeys.is_none());
         assert!(seated.is_wallet_policy());
@@ -398,5 +464,100 @@ mod tests {
             panic!("fixture shape: wsh(sortedmulti(...))");
         }
         assert!(!spend_equal(&seated, &as_multi).unwrap());
+    }
+
+    // ── the ABSENT-fingerprint fill (composer fable review r0, lens 3, I-2) ──
+
+    /// The declared fingerprint for each slot of a fixture's policy card,
+    /// read off the card rather than assumed.
+    fn declared_fps(policy: &Descriptor) -> Vec<Option<[u8; 4]>> {
+        let decls = policy.tlv.fingerprints.clone().unwrap_or_default();
+        (0..policy.n)
+            .map(|i| decls.iter().find(|(j, _)| *j == i).map(|(_, f)| *f))
+            .collect()
+    }
+
+    #[test]
+    fn the_c13_fixture_really_is_a_partial_template() {
+        // The premise. If the fixture were fully declared, every assertion
+        // below would pass for the wrong reason.
+        let policy = policy(V_PARTIAL_C13);
+        assert_eq!(
+            declared_fps(&policy),
+            vec![Some(*b"\x73\xc5\xda\x0a"), Some(*b"\xb8\x68\x8d\xf1"), None],
+            "@2 must be the UNSEATED slot"
+        );
+        // ...and the completion card for @2 does carry one.
+        let cards = cards(V_PARTIAL_C13);
+        assert!(
+            cards.iter().any(|c| c.card.origin_fingerprint.is_some()),
+            "the host card must state a fingerprint, or there is nothing to inherit"
+        );
+    }
+
+    #[test]
+    fn seating_fills_an_absent_fingerprint_from_the_seated_card() {
+        let policy = policy(V_PARTIAL_C13);
+        let seated = seat_unique(V_PARTIAL_C13);
+        let cards = cards(V_PARTIAL_C13);
+        // The card that seats @2 -- found the same way `seat_unique` finds it.
+        let decls = slot_declarations(&policy).unwrap();
+        let card = cards
+            .iter()
+            .find(|c| satisfies(&decls[2], c))
+            .expect("a card seats @2");
+        let want = card.card.origin_fingerprint.expect("the card states one");
+        assert_eq!(
+            declared_fps(&seated)[2],
+            Some(want.to_bytes()),
+            "@2's fingerprint was not inherited from the card that seated it"
+        );
+    }
+
+    #[test]
+    fn seating_never_overwrites_a_fingerprint_the_policy_already_declares() {
+        // The rule that STANDS. Driven past `satisfies` on purpose: the CLI
+        // could never assemble this assignment (A2 refuses a card whose
+        // fingerprint disagrees with the declaration), so the only way to
+        // prove `compose` itself does not overwrite is to hand it the
+        // assignment `satisfies` would have rejected.
+        let policy = policy(V_PARTIAL_C13);
+        let cards = cards(V_PARTIAL_C13);
+        let decls = slot_declarations(&policy).unwrap();
+        let wrong = cards
+            .iter()
+            .position(|c| c.card.origin_fingerprint.map(|f| f.to_bytes()) != decls[0].fingerprint)
+            .expect("a card whose fingerprint is not @0's");
+        assert!(
+            !satisfies(&decls[0], &cards[wrong]),
+            "the control must be a card A2 really would refuse at @0"
+        );
+        let seated = compose(&policy, &cards, &[wrong, 1, 2]).unwrap();
+        assert_eq!(
+            declared_fps(&seated)[0],
+            declared_fps(&policy)[0],
+            "a declared fingerprint was overwritten by the seated card"
+        );
+    }
+
+    #[test]
+    fn a_fingerprint_free_card_leaves_an_absent_declaration_absent() {
+        // Nothing is invented. A privacy-preserving card states no master, so
+        // there is nothing to inherit and the slot stays fingerprint-free --
+        // which is also what keeps `md descriptor`'s output honest.
+        let policy = policy(V_FPFREE_CARD);
+        let cards = cards(V_FPFREE_CARD);
+        let fp_free = cards
+            .iter()
+            .position(|c| c.card.origin_fingerprint.is_none())
+            .expect("V-FPFREE-CARD has a privacy-preserving card");
+        let mut stripped = policy.clone();
+        stripped.tlv.fingerprints = None;
+        let seated = compose(&stripped, &cards, &[fp_free, 1]).unwrap();
+        assert_eq!(
+            declared_fps(&seated)[0],
+            None,
+            "a fingerprint was invented for a card that states none"
+        );
     }
 }

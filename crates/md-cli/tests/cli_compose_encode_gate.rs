@@ -81,12 +81,27 @@ fn encode_still_admits_a_signed_wsh_policy_without_the_flag() {
 /// ```
 ///
 /// The operator got a plausible template, a zero exit and a wall at the next
-/// verb. `compose` now reads back what it is about to emit, using the SAME
-/// parser `encode` uses — not a second copy of the rules, which is what keeps
-/// the two from drifting.
+/// verb. `compose` read back what it was about to emit, using the SAME parser
+/// `encode` uses — not a second copy of the rules, which is what keeps the two
+/// from drifting.
 ///
-/// MUTATION: delete the read-back in `cmd::compose::run` -> the first two
-/// assertions fail (exit 0, and a template on stdout).
+/// WHICH LAYER REFUSES IT CHANGED IN md-codec 0.45 (composer fable review r0,
+/// lens 1 C-1). A read-back is not portable: the device's Go port has no
+/// miniscript library, so it could not reach this verdict at all and cut such
+/// a policy into steel. The rule is now STATED in `compose::validate` — at
+/// most one key-less path — so this shape is refused BEFORE lowering, and the
+/// message names the rule and the remedy instead of quoting the parser. The
+/// read-back stays behind it for everything else `md encode` can refuse.
+///
+/// What this test pins is the CONTRACT, not the layer: for this path list
+/// `md compose` exits non-zero, prints no template, and says why.
+///
+/// MUTATION (run, fold-A review M-2): delete the `TooManyKeylessPaths` arm in
+/// `compose::validate` -> assertions 2 and 4 fail (the message becomes the
+/// parser's "Miniscript is malleable" quoted by the read-back, which names no
+/// paths and no remedy -- assertion 3 SURVIVES because that quote contains the
+/// word "malleable"); delete the read-back too and the first two fail (exit 0,
+/// and a template on stdout).
 #[test]
 fn compose_refuses_to_emit_a_template_encode_would_reject() {
     let out = md()
@@ -115,15 +130,24 @@ fn compose_refuses_to_emit_a_template_encode_would_reject() {
         String::from_utf8_lossy(&out.stdout)
     );
     let err = String::from_utf8_lossy(&out.stderr);
+    // It must name WHICH paths, not just "invalid" -- naming them is what tells
+    // the operator what to change. (Paths 2 and 3 are the two key-less ones.)
     assert!(
-        err.contains("`md encode` refuses"),
-        "the refusal does not say who refuses it:\n{err}"
+        err.contains("paths 2 and 3"),
+        "the refusal does not name the offending paths:\n{err}"
     );
-    // It must name the actual reason, not just "invalid" -- the reason is what
-    // tells the operator which path to change.
+    // And the rule that was broken.
     assert!(
         err.contains("malleable"),
         "the refusal does not name the rule that was broken:\n{err}"
+    );
+    // And a remedy that WORKS. The pre-0.45 hint offered a timelock, which does
+    // not help at all: `older`/`after` need no signature either, so the path
+    // stays unsafe and the `or_i` stays malleable. A remedy that does not work
+    // is worse than no remedy -- it costs the operator a second attempt.
+    assert!(
+        err.contains("a timelock does not help"),
+        "the refusal offers no working remedy, or offers the one that fails:\n{err}"
     );
 }
 

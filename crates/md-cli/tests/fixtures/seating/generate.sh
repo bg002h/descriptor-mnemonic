@@ -761,3 +761,40 @@ header "$f" V-AP-INCOMPLETE "one complete 2-chunk card + a 3-chunk card missing 
   echo "$incomplete_card" | head -n -1
 } >> "$f"
 echo "wrote: $f"
+
+# ── V-PARTIAL-C13 — a PARTIAL template, one slot left unseated (§8p) ────────
+#
+# The composer fable review r0, lens 3, case C13: the device minted a 2-of-3
+# with @0 and @1 seated from `key:` records and @2 LEFT UNSEATED, so the
+# template declares an origin for @2 (at the lowest free account, 1) and no
+# fingerprint for it. The operator completes the wallet on the host from a
+# third, host-minted card.
+#
+# Divergent path_decl `[48'/0'/0'/2', 48'/0'/0'/2', 48'/0'/1'/2']` with two
+# DISTINCT fingerprints on the two account-0 slots -- without that they would
+# be indistinguishable and the mint is refused.
+#
+# The report's own template stub is b02b4403 and this template reproduces it,
+# which is what says the shape is the reported one: the template id is
+# key-stable, so the substituted fingerprints (the report's 3f635a63 is not in
+# keys.txt) do not move it.
+C13_TPL="wsh(sortedmulti(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/0'/2'/<0;1>/*,@2/48'/0'/1'/2'/<0;1>/*))"
+f="$HERE/v-partial-c13.txt"
+header "$f" V-PARTIAL-C13 "partial template: @0 and @1 seated, @2 unseated at the lowest free account"
+{
+  echo "#   md encode \"$C13_TPL\" \\"
+  echo "#     --fingerprint @0=73c5da0a --fingerprint @1=b8688df1"
+  echo "#   mk encode --xpub <KEY 1>  --origin-fingerprint 73c5da0a \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub b02b4403"
+  echo "#   mk encode --xpub <KEY 5>  --origin-fingerprint b8688df1 \\"
+  echo "#     --origin-path m/48'/0'/0'/2' --policy-id-stub b02b4403"
+  echo "#   mk encode --xpub <KEY 10> --origin-fingerprint 28645006 \\"
+  echo "#     --origin-path m/48'/0'/1'/2' --policy-id-stub b02b4403"
+  echo "# KEY 10 is the HOST-minted completion card for the unseated slot."
+  "$MD" encode "$C13_TPL" \
+        --fingerprint @0=73c5da0a --fingerprint @1=b8688df1 --group-size 0 2>/dev/null
+  mint "$(xpub_of 0)" "m/$(path_of 0)" b02b4403 --origin-fingerprint "$(fp_of 0)"
+  mint "$(xpub_of 4)" "m/$(path_of 4)" b02b4403 --origin-fingerprint "$(fp_of 4)"
+  mint "$(xpub_of 9)" "m/$(path_of 9)" b02b4403 --origin-fingerprint "$(fp_of 9)"
+} >> "$f"
+echo "wrote: $f"
