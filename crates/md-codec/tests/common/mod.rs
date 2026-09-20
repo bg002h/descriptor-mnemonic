@@ -221,8 +221,29 @@ fn kofn_recovery_tree() -> Node {
 /// template-only (no TLVs) — the same shape `tests/policy_shape.rs`'s
 /// private `kofn_recovery()` pins, reused here as a card with no key
 /// material at all: `fp_partition`/`key_partition` have nothing to group.
+///
+/// Carries the same EXPLICIT non-empty shared origin path every sibling
+/// built on `kofn_recovery_tree()` (`seated`, `seated_pubkeys`,
+/// `seated_same_key`) already sets, for the same reason stated on
+/// `shared_origin_48`: `wsh(or_d(...))` is not one of `canonical_origin`'s
+/// recognized shapes, so `descriptor_of`'s default empty shared path leaves
+/// `@0..@3`'s origin unresolved. Added for Task 4 (`skeleton_key.rs`'s
+/// `seated_and_unseated_do_not_share_a_key` / `the_serialization_is_stable_
+/// and_documented`, both call `skeleton(&kofn_recovery()).unwrap()`):
+/// `skeleton()` gates on `expand_per_at_n` succeeding BEFORE building a
+/// `Skeleton` at all (design §1A (a3)), so a `kofn_recovery()` with an
+/// unresolved origin would refuse there regardless of holding zero TLV
+/// data. Does not change `partitions.rs`'s
+/// `a_template_only_card_partitions_to_nothing`: `fp_partition`/
+/// `key_partition` still come back empty with a resolvable origin -- every
+/// slot's `expanded.get(slot).and_then(|e| e.fingerprint / .xpub)` is
+/// `None` regardless, since no TLV is attached, so `group_ascending` skips
+/// every slot exactly as before, just via per-slot absence instead of a
+/// whole-descriptor expand failure.
 pub fn kofn_recovery() -> md_codec::encode::Descriptor {
-    descriptor_of(kofn_recovery_tree(), 4)
+    let mut d = descriptor_of(kofn_recovery_tree(), 4);
+    d.path_decl = shared_origin_48(4);
+    d
 }
 
 /// The explicit non-empty shared origin path (`m/48'`) every Task 3 fixture
@@ -321,6 +342,82 @@ pub fn seated_same_key_with_overrides(
         d.tlv.origin_path_overrides = Some(origin_overrides.to_vec());
     }
     d
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Task 4 (Skeleton / SkeletonKey) fixtures.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// `tr(NUMS,{pk(@0),pk(@1)})` — a taproot policy with a provably
+/// unspendable internal key (NUMS) and two tapscript leaves. Needs an
+/// EXPLICIT origin (`shared_origin_48`): `canonical_origin` returns `None`
+/// for any `tr(...)` carrying a TapTree, `is_nums` notwithstanding
+/// (`canonical_origin.rs`'s `(Tag::Tr, Body::Tr { tree: Some(_), .. }) =>
+/// None` arm does not consult `is_nums` at all), so `descriptor_of`'s
+/// default empty shared path would leave `expand_per_at_n` unable to
+/// resolve `@0`/`@1`.
+pub fn tr_nums_two_leaves() -> md_codec::encode::Descriptor {
+    let tree = tr_node(
+        true,
+        0,
+        Some(taptree2(keyarg(Tag::PkK, 0), keyarg(Tag::PkK, 1))),
+    );
+    let mut d = descriptor_of(tree, 2);
+    d.path_decl = shared_origin_48(2);
+    d
+}
+
+/// The same shape, with a REAL (non-NUMS) internal key at `@0` — the
+/// Nunchuk shape F-449 records: an internal key that is a real xpub but
+/// treated as unspendable by a coordinator's own convention, which this
+/// walk cannot tell apart from a genuinely spendable one
+/// (`KeyPathKind::Xpub`'s own doc comment in `policy_shape.rs`). Same
+/// explicit-origin need as `tr_nums_two_leaves` (TapTree present).
+pub fn tr_unspendable_xpub_two_leaves() -> md_codec::encode::Descriptor {
+    let tree = tr_node(
+        false,
+        0,
+        Some(taptree2(keyarg(Tag::PkK, 1), keyarg(Tag::PkK, 2))),
+    );
+    let mut d = descriptor_of(tree, 3);
+    d.path_decl = shared_origin_48(3);
+    d
+}
+
+/// `sh(wsh(multi(2,@0,@1,@2)))` — root=Sh, inner_wsh=true. Canonical
+/// (`canonical_origin`'s BIP48-type-1 row), so `descriptor_of`'s default
+/// empty shared path resolves without an override.
+pub fn sh_wsh_2of3() -> md_codec::encode::Descriptor {
+    let tree = wrap(
+        Tag::Sh,
+        wrap(Tag::Wsh, multikeys(Tag::Multi, 2, vec![0, 1, 2])),
+    );
+    descriptor_of(tree, 3)
+}
+
+/// `sh(multi(2,@0,@1,@2))` — root=Sh, inner_wsh=false: the bare legacy
+/// P2SH multi `sh_wsh_2of3` is NOT a wrapper spelling of. Legacy
+/// `sh(multi)` has no canonical-origin row (`canonical_origin.rs`'s
+/// "sh(sortedmulti) legacy … => None" applies identically to `sh(multi)`:
+/// neither `is_wsh_inner_multi`-wrapped nor BIP49), so needs an explicit
+/// origin.
+pub fn bare_sh_2of3() -> md_codec::encode::Descriptor {
+    let tree = wrap(Tag::Sh, multikeys(Tag::Multi, 2, vec![0, 1, 2]));
+    let mut d = descriptor_of(tree, 3);
+    d.path_decl = shared_origin_48(3);
+    d
+}
+
+/// `wsh(tr(NUMS))` — structurally nonsensical: `tr`/`TapTree` cannot appear
+/// inside a branch (`policy_shape::collect`'s own `Tag::Tr | Tag::TapTree
+/// => false` arm is the mechanism that refuses it). `n = 0`: the inner `tr`
+/// is NUMS-only with no TapTree, so no placeholder is referenced anywhere
+/// in this tree — `expand_per_at_n`'s `for idx in 0..d.n` loop is trivially
+/// satisfied, and the ONLY reason `skeleton()` refuses this descriptor is
+/// `PolicyShape::complete == false`.
+pub fn unclassifiable() -> md_codec::encode::Descriptor {
+    let tree = wrap(Tag::Wsh, tr_node(true, 0, None));
+    descriptor_of(tree, 0)
 }
 
 /// n biased to the kiw-width boundaries (exercises kiw 0..5).
