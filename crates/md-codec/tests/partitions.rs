@@ -4,6 +4,7 @@
 //! all-zero fingerprint/xpub sentinel never groups with another occurrence
 //! of itself.
 mod common;
+use md_codec::origin_path::{OriginPath, PathComponent};
 use md_codec::policy_shape::{fp_partition, key_partition, policy_shape};
 
 #[test]
@@ -56,4 +57,68 @@ fn a_template_only_card_partitions_to_nothing() {
             .all(|p| p.is_empty())
     );
     assert!(key_partition(&d).is_empty());
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Fix round 1, I-1 / I-2: two mutation-confirmed coverage gaps in
+// `key_partition` (see task-3-report.md's "Fix round 1" appendix for the
+// mutation each of these was proven against).
+// ─────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn an_absent_xpub_is_its_own_singleton() {
+    // md-codec's ABSENT-xpub sentinel is the same all-zero convention as the
+    // fingerprint one; two absent-keyed slots are NOT known to be the same
+    // key, and grouping them would assert an identity nobody measured — the
+    // same argument `an_absent_fingerprint_is_its_own_singleton` pins for
+    // `fp_partition`, now pinned for `key_partition`'s xpub half.
+    let d = common::seated_pubkeys(&[
+        (0, [0x00; 65]),
+        (1, [0x00; 65]),
+        (2, [0xaa; 65]),
+        (3, [0xbb; 65]),
+    ]);
+    let kp = key_partition(&d);
+    assert_eq!(
+        kp,
+        vec![vec![0u8], vec![1], vec![2], vec![3]],
+        "absent xpubs never join, and neither do the two genuinely distinct \
+         real ones: {kp:?}"
+    );
+}
+
+#[test]
+fn key_partition_does_not_group_same_xpub_at_different_origins() {
+    // @0 and @3 carry the IDENTICAL xpub bytes, but @3's origin is
+    // overridden away from the shared `m/48'` baseline every other fixture
+    // in this file uses. `key_partition` groups on `(xpub, origin_path)`
+    // per the brief — same bytes at a different origin is NOT the same key
+    // record, and must not merge.
+    let different_origin = OriginPath {
+        components: vec![PathComponent {
+            hardened: true,
+            value: 99,
+        }],
+    };
+    let d = common::seated_same_key_with_overrides(&[0, 3], &[(3, different_origin)]);
+    let kp = key_partition(&d);
+    assert!(
+        !kp.contains(&vec![0u8, 3]),
+        "same xpub bytes at different origins must not merge: {kp:?}"
+    );
+    assert!(kp.contains(&vec![0u8]), "@0 stays its own group: {kp:?}");
+    assert!(kp.contains(&vec![3u8]), "@3 stays its own group: {kp:?}");
+}
+
+#[test]
+fn key_partition_groups_same_xpub_at_the_same_origin() {
+    // The positive control for the test above: identical construction path,
+    // no origin override, so @0 and @3 share both xpub bytes AND origin —
+    // they must merge.
+    let d = common::seated_same_key_with_overrides(&[0, 3], &[]);
+    let kp = key_partition(&d);
+    assert!(
+        kp.contains(&vec![0u8, 3]),
+        "same xpub bytes at the same origin must merge: {kp:?}"
+    );
 }

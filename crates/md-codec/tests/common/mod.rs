@@ -225,6 +225,24 @@ pub fn kofn_recovery() -> md_codec::encode::Descriptor {
     descriptor_of(kofn_recovery_tree(), 4)
 }
 
+/// The explicit non-empty shared origin path (`m/48'`) every Task 3 fixture
+/// below uses, so `expand_per_at_n` resolves instead of raising
+/// `MissingExplicitOrigin` — `wsh(or_d(...))` is not one of
+/// `canonical_origin`'s recognized shapes, and `descriptor_of`'s default
+/// shared path is empty. Factored out (fix round 1, I-1/I-2) once a third
+/// and fourth fixture needed the identical block.
+fn shared_origin_48(n: u8) -> PathDecl {
+    PathDecl {
+        n,
+        paths: PathDeclPaths::Shared(OriginPath {
+            components: vec![PathComponent {
+                hardened: true,
+                value: 48,
+            }],
+        }),
+    }
+}
+
 /// The same `kofn_recovery` shape, with a per-`@N` fingerprint TLV built
 /// from `fps` (ascending `(idx, fingerprint)` pairs — callers pass every
 /// slot's fingerprint including the ABSENT `[0u8; 4]` sentinel where wanted)
@@ -232,16 +250,22 @@ pub fn kofn_recovery() -> md_codec::encode::Descriptor {
 /// resolves instead of refusing on `MissingExplicitOrigin`.
 pub fn seated(fps: &[(u8, [u8; 4])]) -> md_codec::encode::Descriptor {
     let mut d = descriptor_of(kofn_recovery_tree(), 4);
-    d.path_decl = PathDecl {
-        n: 4,
-        paths: PathDeclPaths::Shared(OriginPath {
-            components: vec![PathComponent {
-                hardened: true,
-                value: 48,
-            }],
-        }),
-    };
+    d.path_decl = shared_origin_48(4);
     d.tlv.fingerprints = Some(fps.to_vec());
+    d
+}
+
+/// The same `kofn_recovery` shape, with a per-`@N` xpub (`Pubkeys`) TLV
+/// built from `pks` (ascending `(idx, xpub bytes)` pairs — callers pass the
+/// ABSENT `[0u8; 65]` sentinel for any slot that should carry no key) and
+/// the shared explicit origin path, so `expand_per_at_n` resolves. Mirrors
+/// `seated`, but exercises `key_partition`'s xpub half rather than
+/// `fp_partition`'s fingerprint half — added fix round 1, I-1: the absent-
+/// xpub singleton rule had zero coverage crate-wide before this.
+pub fn seated_pubkeys(pks: &[(u8, [u8; 65])]) -> md_codec::encode::Descriptor {
+    let mut d = descriptor_of(kofn_recovery_tree(), 4);
+    d.path_decl = shared_origin_48(4);
+    d.tlv.pubkeys = Some(pks.to_vec());
     d
 }
 
@@ -256,15 +280,7 @@ pub fn seated(fps: &[(u8, [u8; 4])]) -> md_codec::encode::Descriptor {
 /// `fp_partition` — must still see them as one key.
 pub fn seated_same_key(same_key_idxs: &[u8]) -> md_codec::encode::Descriptor {
     let mut d = descriptor_of(kofn_recovery_tree(), 4);
-    d.path_decl = PathDecl {
-        n: 4,
-        paths: PathDeclPaths::Shared(OriginPath {
-            components: vec![PathComponent {
-                hardened: true,
-                value: 48,
-            }],
-        }),
-    };
+    d.path_decl = shared_origin_48(4);
     let shared_xpub = {
         let mut x = [0x11u8; 65];
         x[32] = 0x02; // a distinct, valid-looking compressed-pubkey prefix
@@ -284,6 +300,26 @@ pub fn seated_same_key(same_key_idxs: &[u8]) -> md_codec::encode::Descriptor {
         })
         .collect();
     d.tlv.pubkeys = Some(pubkeys);
+    d
+}
+
+/// `seated_same_key`, with a per-`@N` `OriginPathOverrides` TLV layered on
+/// top — so a caller can move one of `same_key_idxs`' slots to a DIFFERENT
+/// resolved origin than the shared `m/48'` baseline while its xpub bytes
+/// stay identical to the others'. `origin_overrides` empty is byte-for-byte
+/// `seated_same_key`. Added fix round 1, I-2: `key_partition`'s
+/// `origin_path` half of its `(xpub, origin_path)` key had zero coverage —
+/// every prior fixture put every slot at the one shared baseline path, so
+/// nothing could tell "grouped because same key" apart from "grouped
+/// because the origin check was never applied at all".
+pub fn seated_same_key_with_overrides(
+    same_key_idxs: &[u8],
+    origin_overrides: &[(u8, OriginPath)],
+) -> md_codec::encode::Descriptor {
+    let mut d = seated_same_key(same_key_idxs);
+    if !origin_overrides.is_empty() {
+        d.tlv.origin_path_overrides = Some(origin_overrides.to_vec());
+    }
     d
 }
 

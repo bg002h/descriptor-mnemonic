@@ -729,13 +729,43 @@ where
 /// re-derive the shape, since [`policy_shape`] already is the one place
 /// that walk is implemented.
 ///
-/// If `d`'s per-`@N` data cannot be expanded at all (for example a
-/// template-only card with no explicit origin and a non-canonical wrapper —
-/// see `crate::canonicalize::expand_per_at_n`'s `MissingExplicitOrigin`),
-/// there is no fingerprint data to group by construction, so every branch's
-/// group list is empty rather than propagating that error: a caller asking
-/// "which slots share a signer" about a card with no signer data gets "none
-/// known", the same honest answer group_ascending gives per-slot.
+/// # When `expand_per_at_n` fails: empty, but NOT proof there is no data
+///
+/// If `crate::canonicalize::expand_per_at_n(d)` fails (typically
+/// `Error::MissingExplicitOrigin` — some `@N`'s origin path neither has an
+/// explicit `path_decl`/override nor a canonical default for `d`'s
+/// wrapper), every branch's group list comes back empty rather than
+/// propagating the error.
+///
+/// **A prior version of this comment claimed that case meant "there is no
+/// fingerprint data to group, by construction." That is false in general —
+/// fix round 1, I-3 — and the failure is reachable with real data present:**
+/// `expand_per_at_n`'s origin check is all-or-nothing **per descriptor**,
+/// not per-slot (it returns on the *first* `@N` whose origin cannot
+/// resolve), so ONE unresolved slot collapses every OTHER slot's real
+/// `fingerprints`/`pubkeys` TLV entries to "unknown" here too. This is not a
+/// hand-built edge case: `crate::decode::DecodeOpts::partial()` — an
+/// already-shipped, documented "dead-card" decode mode used by `md decode`/
+/// `md inspect` — deliberately swallows exactly that error so a card with an
+/// unresolved origin still decodes, real key TLVs intact. Measured: a
+/// `kofn_recovery`-shaped descriptor built with a real `fingerprints` entry
+/// on slot 0 but no resolvable origin produces `fp_partition` output
+/// (`[[], []]`) byte-identical to the genuinely template-only card this
+/// function's test suite exercises.
+///
+/// So: **a caller cannot distinguish "no key data" from "key data present
+/// but this descriptor's origin never resolved" by looking at this
+/// function's return value.** The design (`DESIGN_coordinator_compatibility.md`
+/// §1A, clause (a3)) names the unresolved-origin case its OWN verdict —
+/// `Unproven { reason: NoEvidence }` — deliberately distinct from (a2)
+/// template-only's `Unproven { reason: KeysAbsent }`. A caller that must
+/// keep that distinction (the coordinator-compat `Skeleton` builder is the
+/// motivating one) MUST check `expand_per_at_n`'s success independently —
+/// or equivalently, `Descriptor::unresolved_origin_indices()` — rather than
+/// inferring it from whether this function's output is empty, and MUST
+/// derive "keys are present" from the raw TLV
+/// (`d.tlv.fingerprints.is_some() || d.tlv.pubkeys.is_some()`), never from
+/// partition emptiness.
 pub fn fp_partition(d: &crate::encode::Descriptor, s: &PolicyShape) -> Vec<Vec<Vec<u8>>> {
     let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
         return s.branches.iter().map(|_| Vec::new()).collect();
@@ -769,9 +799,19 @@ pub fn fp_partition(d: &crate::encode::Descriptor, s: &PolicyShape) -> Vec<Vec<V
 /// which is the whole reason this is a second function rather than a
 /// per-branch view of the first.
 ///
-/// Same expansion-failure handling as `fp_partition`, for the same reason:
-/// no per-`@N` data means nothing to group, so the result is empty rather
-/// than an error the caller did not ask this function to raise.
+/// # When `expand_per_at_n` fails: empty, but NOT proof there is no data
+///
+/// Same collapse as [`fp_partition`]'s, and the same correction applies
+/// (fix round 1, I-3): an `expand_per_at_n` failure returns `Vec::new()`
+/// here too, and that is reachable with real `pubkeys` TLV data present —
+/// see `fp_partition`'s doc comment for the mechanism
+/// (`DecodeOpts::partial()`'s dead-card mode, and the all-or-nothing-per-
+/// descriptor shape of the origin check) and the measured counterexample.
+/// The same constraint on callers holds: this function's emptiness does
+/// NOT mean "no keys were recorded," and a caller needing that distinction
+/// must check `expand_per_at_n` (or `Descriptor::unresolved_origin_indices()`)
+/// directly rather than inferring it from this return value, and must
+/// derive `keys_present` from the raw TLV rather than partition emptiness.
 pub fn key_partition(d: &crate::encode::Descriptor) -> Vec<Vec<u8>> {
     let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
         return Vec::new();
