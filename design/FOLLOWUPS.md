@@ -3080,5 +3080,13 @@ READS would pin it.
 hash of the payload — this is a change to WHICH checks run, never to what is
 produced.
 
-- **Status:** OPEN. **Tier:** `correctness` / `funds-adjacent` (a backup that
+**RESOLVED 2026-09-19, md-codec 0.44.2.** `compute_md1_encoding_id` serialises
+through a new `encode_payload_for_identity`, which applies no admission policy.
+Hashing a card that already exists is not minting one. The bytes are unchanged —
+every admission check is a pure refusal — so no id, address or wire byte moved.
+`tests/mint_policy_does_not_reach_decode.rs` pins the CLASS with a control
+(minting is still refused) beside the point (hashing still succeeds), so the
+next encode-side rule cannot re-break reads.
+
+- **Status:** ✓ RESOLVED (md-codec 0.44.2). **Tier:** `correctness` / `funds-adjacent` (a backup that
   cannot be read).

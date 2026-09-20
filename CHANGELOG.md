@@ -4,6 +4,44 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.44.2] — 2026-09-19
+
+### Fixed
+
+- **Mint-time refusals no longer make already-written cards unreadable.**
+  `validate_origin_key_consistency` and `validate_no_duplicate_key_slots` are
+  encode-side on purpose — the first says so itself: *"Enforced on encode rather
+  than on decode, deliberately: this stops new impossible cards without making
+  already-written ones unreadable, and a card that cannot be read is a backup
+  that cannot be restored."*
+
+  The implementation leaked. `chunk::reassemble` — a DECODE path — verifies a
+  chunk set by recomputing the md1 encoding id, `compute_md1_encoding_id` called
+  `encode_payload`, and `encode_payload` applies admission policy. Every rule
+  added to the mint path therefore made older cards of that shape stop decoding,
+  retroactively.
+
+  **Measured:** a 2-of-2 emitted by the shipped `mnemonic` toolkit stopped
+  reading under 0.43/0.44 — `verify-bundle` reporting `md1_decode: fail
+  OriginKeyContradiction` over a backup whose keys were perfectly intact.
+
+  `compute_md1_encoding_id` now serialises through `encode_payload_for_identity`,
+  which applies no admission policy. **The bytes are unchanged** — every
+  admission check is a pure refusal — so no id, address or wire byte moves;
+  only which checks run. Structural errors still surface, since those come from
+  the writers rather than the rules.
+
+  Pinned by `tests/mint_policy_does_not_reach_decode.rs` as a CLASS, not an
+  instance: minting the shape is still refused (control), and hashing it still
+  succeeds. That is the test that would have caught the WIF regression fixed in
+  0.44.1, and whichever rule is added next.
+
+## md-cli [0.16.2] — 2026-09-19
+
+### Changed
+
+- Picks up md-codec 0.44.2 (above). No CLI surface change.
+
 ## md-codec [0.44.1] — 2026-09-19
 
 ### Fixed
