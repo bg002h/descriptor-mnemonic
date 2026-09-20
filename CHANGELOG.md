@@ -4,6 +4,51 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.45.0] — 2026-09-19
+
+### Changed
+
+- **A policy now holds AT MOST ONE key-less spend path.** `compose::validate`
+  refuses a path list with two or more (`ComposeError::TooManyKeylessPaths`),
+  before any lowering. This is a BEHAVIOUR CHANGE: lists that composed at
+  0.44.x now fail.
+
+  Nothing is lost. Paths chain right-leaning as `or_i(P, rest)` (`or_d` under a
+  bare-multi head), and `or_i(l, r)` is non-malleable only if `l.safe ||
+  r.safe` — `safe` meaning every satisfaction needs a signature. A key-less
+  path is never safe, so two of them ANYWHERE leave some `or_i` on the spine
+  with two unsafe arms, and the result is malleable: `md encode` already
+  refused it (*"Miniscript is malleable"*) and Bitcoin Core refuses the import
+  (*"not sane: malleable witnesses exist"*) — keyed path included. The lists
+  this refuses are exactly the ones nothing downstream would take.
+
+  **A timelock does not help**, and the message says so. `older`/`after` need
+  no signature either, so `and_v(v:sha256(H),older(5))` is still unsafe. The
+  pre-0.45 hint in `md compose` offered a timelock as a remedy; it never
+  worked.
+
+  **Measured** over 859 wsh path lists of 2 to 4 paths built from five keyed
+  and four key-less atoms, driven through `md compose --experimental` at md-cli
+  0.16.2: all 504 lists with two or more key-less paths were refused after
+  lowering, all 355 with at most one were emitted, zero counterexamples. The
+  rule is exact.
+
+  **Why it moved into the codec.** Until now the primary reached this verdict
+  only by re-parsing its own output in `md compose` (md-cli F-600). A read-back
+  is not portable: the SeedHammer II's Go port has no miniscript library, so it
+  could not reach the verdict at all — the composer fable review r0 (lens 1,
+  C-1) drove two key-less paths through the device's production composer and
+  got a consent screen, addresses, and a plate for a wallet no wallet will
+  import. The rule belongs where the knowledge is, in the function
+  `md/compose.go` ports.
+
+  Conformance vector for the port:
+  `crates/md-codec/tests/vectors/compose_refusal_keyless_cap.json` — three
+  refused lists (adjacent, timelocked, split by a keyed path) and one ADMITTED
+  control, each driven by `tests/compose_keyless_cap.rs`. Precedence is pinned
+  too: `KeylessUnderTr` still comes first under `tr`, `NoKeyedPath` still comes
+  first when no path has a key.
+
 ## md-codec [0.44.2] — 2026-09-19
 
 ### Fixed
@@ -35,6 +80,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   instance: minting the shape is still refused (control), and hashing it still
   succeeds. That is the test that would have caught the WIF regression fixed in
   0.44.1, and whichever rule is added next.
+
+## md-cli [0.17.0] — 2026-09-19
+
+### Changed
+
+- **`md compose` refuses a second key-less path by NAME, not by read-back.**
+  Follows md-codec 0.45.0's `ComposeError::TooManyKeylessPaths`. The shape was
+  already refused — `md compose` re-parsed its own output and quoted the
+  parser's *"Miniscript is malleable"* (F-600) — so the exit code and the empty
+  stdout are unchanged. What changed is the message: it now names the two
+  paths, the rule, and a remedy that works.
+
+  The old hint said *"give one of them a key, a timelock, or fold them into one
+  path"*. **A timelock does not help** — `older`/`after` need no signature, so
+  the path stays unsafe and the `or_i` stays malleable — and the new message
+  says that instead of offering it.
+
+  The read-back stays, as defence in depth over every other way `md encode` can
+  refuse compose's output (resource limits, repeated keys, timelock mixing),
+  but it no longer guesses which rule was broken: it names the parser's reason
+  and stops there.
 
 ## md-cli [0.16.2] — 2026-09-19
 
