@@ -120,6 +120,59 @@ pub fn descriptor_of(tree: Node, n: u8) -> md_codec::encode::Descriptor {
     }
 }
 
+/// `wsh(or_i(and_v(v:pkh(@0),older(a)), or_i(and_v(v:pkh(@1),older(b)),
+/// and_v(v:pkh(@2),older(c)))))` — three `older` branches, so the abstract
+/// renderer's per-kind class numbering (equal values share a class,
+/// different ones don't) has something to distinguish.
+pub fn three_older_descriptor(a: u32, b: u32, c: u32) -> md_codec::encode::Descriptor {
+    let branch = |i: u8, v: u32| {
+        node2(
+            Tag::AndV,
+            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            timelock(Tag::Older, v),
+        )
+    };
+    let tree = wrap(
+        Tag::Wsh,
+        node2(
+            Tag::OrI,
+            branch(0, a),
+            node2(Tag::OrI, branch(1, b), branch(2, c)),
+        ),
+    );
+    descriptor_of(tree, 3)
+}
+
+/// `wsh(or_i(and_v(v:pkh(@0),sha256(a)),and_v(v:pkh(@1),sha256(b))))` — two
+/// `sha256` branches, symmetric with [`three_older_descriptor`] but for
+/// digests rather than lock values.
+pub fn two_sha256_descriptor(a: [u8; 32], b: [u8; 32]) -> md_codec::encode::Descriptor {
+    let branch = |i: u8, h: [u8; 32]| {
+        node2(
+            Tag::AndV,
+            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            hash32(Tag::Sha256, h),
+        )
+    };
+    let tree = wrap(Tag::Wsh, node2(Tag::OrI, branch(0, a), branch(1, b)));
+    descriptor_of(tree, 2)
+}
+
+/// `wsh(or_d(multi(2,@0,@1,@2), and_v(v:pkh(@3), older(26280))))` — same
+/// shape as `tests/policy_shape.rs`'s private `kofn_recovery()`, reused here
+/// to pin that abstracting a lock leaves each key's use-site path
+/// (`descriptor_of`'s standard `/<0;1>/*` multipath) untouched.
+pub fn kofn_recovery_with_use_site() -> md_codec::encode::Descriptor {
+    let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
+    let recovery = node2(
+        Tag::AndV,
+        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        timelock(Tag::Older, 26280),
+    );
+    let tree = wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery));
+    descriptor_of(tree, 4)
+}
+
 /// n biased to the kiw-width boundaries (exercises kiw 0..5).
 fn n_strategy() -> impl Strategy<Value = u8> {
     prop_oneof![
