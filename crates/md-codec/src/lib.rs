@@ -30,10 +30,12 @@ pub mod identity;
 mod nums;
 pub mod origin_path;
 pub mod phrase;
+pub mod policy_shape;
 // The `@N`-template renderer is pure AST string-walking (no miniscript/derive
 // dependency); it sources the NUMS H-point from the ungated `nums` module, so
 // it is unconditional — available with or without the `derive` feature.
 pub mod render;
+pub mod skeleton;
 pub mod tag;
 pub mod test_vectors;
 pub mod tlv;
