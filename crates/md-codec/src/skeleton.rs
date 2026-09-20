@@ -240,7 +240,7 @@ fn render_slots(slots: &[u8]) -> String {
 /// Render a list of groups, already ordered by each group's lowest slot
 /// (`group_ascending`'s guarantee) — `[[g0][g1]...]`. One balanced bracket
 /// expression: self-delimiting, so concatenating two of these (as
-/// [`render_fp_partition`]'s per-path calls do) is unambiguous without a
+/// `render_fp_partition`'s per-path calls do) is unambiguous without a
 /// separator between them.
 fn render_group_list(groups: &[Vec<u8>]) -> String {
     let mut out = String::from("[");
@@ -251,7 +251,7 @@ fn render_group_list(groups: &[Vec<u8>]) -> String {
     out
 }
 
-/// Render `fp_partition` — one [`render_group_list`] per path, in template
+/// Render `fp_partition` — one `render_group_list` per path, in template
 /// traversal order (`PolicyShape::branches`'s own order), wrapped in one
 /// more bracket level so the whole thing is ONE balanced expression. That
 /// is what makes concatenating it directly with `key_partition`'s own
@@ -279,7 +279,7 @@ fn key_path_kind_label(k: KeyPathKind) -> &'static str {
 ///
 /// Exactly, and this is the ONE spelling (design §1A): the abstract
 /// template, `U+001F`, then `fp_partition` and `key_partition` rendered per
-/// [`render_fp_partition`]/[`render_group_list`] (slots ascending, groups
+/// `render_fp_partition`/`render_group_list` (slots ascending, groups
 /// ordered by their lowest slot, paths in template traversal order — all
 /// three already guaranteed by [`policy_shape`]'s `group_ascending` and
 /// `PolicyShape::branches`' own order, so this function does no reordering

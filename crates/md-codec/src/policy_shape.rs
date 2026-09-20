@@ -135,7 +135,7 @@ pub enum KeyPathKind {
 
 /// One timelock, in wire units. Mirrors the fork's `LockKind`/`Lock`
 /// (`md/compose.go:60-76`), read back off the decoded operand by
-/// [`lock_from_wire`].
+/// `lock_from_wire`.
 ///
 /// Deliberately NOT [`crate::compose::Lock`]: that type's `OlderBlocks(u16)`/
 /// `OlderUnits(u16)`/`AfterHeight(u32)`/`AfterTime(u32)` payloads are the
@@ -686,7 +686,7 @@ pub(crate) fn lock_from_wire(tag: Tag, operand: u32) -> Lock {
 // order, cluster equal keys together, EXCEPT that a key equal to its
 // type's ABSENT sentinel never joins another occurrence of itself — each
 // absent-keyed slot is its own singleton, because an unmeasured absence is
-// not a measured identity. That mechanism is [`group_ascending`], the ONE
+// not a measured identity. That mechanism is `group_ascending`, the ONE
 // implementation both partitions call; only the per-slot key extractor and
 // its ABSENT test differ between them.
 // ─────────────────────────────────────────────────────────────────────────
@@ -751,7 +751,7 @@ where
 /// Exists for Liana's `DuplicateOriginSamePath`.
 ///
 /// One entry per `s.branches[i]`, in the same order; each entry is that
-/// branch's slots grouped by master fingerprint, per [`group_ascending`]'s
+/// branch's slots grouped by master fingerprint, per `group_ascending`'s
 /// absence rule: two slots whose fingerprint is the ABSENT `[0u8; 4]`
 /// sentinel are NOT known to share a signer and never join each other, and
 /// a slot with no fingerprint recorded at all does not appear in any group.
@@ -827,7 +827,7 @@ pub fn fp_partition(d: &crate::encode::Descriptor, s: &PolicyShape) -> Vec<Vec<V
 /// Groups every slot `0..d.n` by `(xpub bytes, origin path)` — "derivation"
 /// in the design's clause means the origin path, the only derivation a
 /// decoded md1 carries; there is no BIP-32 chain-code/depth data to derive
-/// with. Per [`group_ascending`]'s absence rule: a slot whose xpub is the
+/// with. Per `group_ascending`'s absence rule: a slot whose xpub is the
 /// ABSENT `[0u8; 65]` sentinel is its own singleton by the same argument as
 /// the fingerprint rule (an unmeasured absence asserts no identity), and a
 /// slot with no xpub recorded at all does not appear in any group.
