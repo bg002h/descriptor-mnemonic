@@ -24,7 +24,7 @@
 //! rendering that cannot be re-parsed is the defect the wider cycle's
 //! invariant exists to prevent.
 //!
-//! # Two extensions over the Go original
+//! # Three extensions over the Go original
 //!
 //! 1. [`Branch::slots`] retains *which* placeholder indices a branch
 //!    references. The Go original (`branchOf`, `md/policy_shape.go:239-245`)
@@ -43,6 +43,15 @@
 //!    makes it a coordinator RULE, not a codec-observable property. `Xpub`
 //!    says only "a real extended key, not NUMS"; a coordinator that needs
 //!    the finer distinction computes it itself, one layer above this type.
+//! 3. A spendable (non-NUMS) taproot internal key is pushed as its own
+//!    [`Branch`], first in [`PolicyShape::branches`], in [`policy_shape`]'s
+//!    `Tag::Tr` arm. NOT ported from the Go: `policy_shape.go`'s
+//!    `walkTapTree` appends one branch per taptree LEAF only and never adds
+//!    one for the key path — a spendable internal key is an independently
+//!    satisfiable spend path (one Schnorr signature, no script, no taptree
+//!    proof) in its own right, and omitting it undercounts every
+//!    spendable-internal-key taproot policy's spend paths. See the inline
+//!    comment at the push site for the full rationale.
 //!
 //! # Type reuse: hashlocks come from `compose`, locks do not
 //!

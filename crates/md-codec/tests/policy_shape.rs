@@ -483,6 +483,46 @@ fn sh_wsh_unwraps_to_the_same_shape_as_bare_wsh() {
     );
 }
 
+/// Final whole-branch review, I-1: the single-branch fixture above cannot
+/// tell whether the `sh(wsh(...))` unwrap actually runs, because a
+/// single-`multi` script decomposes identically with or without it --
+/// `plain_multi` fails on `Tag::Wsh` either way, then `sole_multi` finds the
+/// same one multi under the (still-present, one-level-shallower) `Wsh`
+/// wrapper regardless. `sh(wsh(or_d(sortedmulti(2,@0,@1,@2),
+/// and_v(v:pkh(@3),older(26280)))))` is wire-reachable (18 bytes / 139 bits,
+/// strict-decodes byte-identical -- reviewer-measured) and MULTI-branch: with
+/// the unwrap disabled, `inner` stays the still-wrapped `Wsh` node, and
+/// `split_branches`'s catch-all arm (`_ => branch_of(n, depth)`) has no
+/// special case for `Tag::Wsh` -- it hands the whole node to `branch_of`,
+/// whose `collect` walk treats `Tag::Wsh`'s child as plain conjunction and
+/// recurses straight through the `or_d(...)` inside it (`collect` has no
+/// alternative-splitting logic; only `split_branches` does), merging what
+/// must be two independently satisfiable spend paths into one branch and
+/// changing every slot set involved.
+#[test]
+fn sh_wsh_with_multiple_branches_unwraps_correctly() {
+    let d = common::sh_wsh_or_d_sortedmulti_and_recovery();
+    let shape = policy_shape(&d);
+    assert!(shape.complete);
+    assert_eq!(
+        shape.branches.len(),
+        2,
+        "the unwrap must not merge the two independently satisfiable spend paths: {:?}",
+        shape.branches
+    );
+    assert_eq!(shape.branches[0].slots, vec![0, 1, 2]);
+    assert_eq!(shape.branches[1].slots, vec![3]);
+    assert_eq!(
+        (
+            shape.branches[0].k,
+            shape.branches[0].n,
+            shape.branches[0].sorted
+        ),
+        (2, 3, true),
+        "the primary leg is sortedmulti(2,@0,@1,@2)"
+    );
+}
+
 /// `andor(X, Y, Z)` is `(X and Y) or Z`: two branches, the first a
 /// conjunction of X and Y (walked, never emitted, as a synthetic `and_v`).
 #[test]

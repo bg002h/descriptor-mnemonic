@@ -48,6 +48,28 @@ fn after_locks_carry_height_and_time_bands() {
 }
 
 #[test]
+fn older_locks_carry_blocks_and_units_bands() {
+    // wsh(or_i(and_v(v:pkh(@0),older(10)),and_v(v:pkh(@1),older((1<<22)|10))))
+    //
+    // Final whole-branch review, I-2: the `older-blocks`/`older-units` band
+    // label was unguarded -- collapsing the two labels merges the
+    // SkeletonKey of two wire-reachable, semantically different policies (10
+    // blocks vs. 10 units of 512 seconds) into one, and 581 tests stayed
+    // green. This is the `older` equivalent of
+    // `after_locks_carry_height_and_time_bands` above: Task 2 guarded
+    // `after`'s two bands and never added the `older` equivalent.
+    let units = (1u32 << 22) | 10;
+    let d = common::two_older_descriptor(10, units);
+    let t = descriptor_to_abstract_template(&d).unwrap();
+    assert!(t.contains("older(older-blocks#1)"), "got {t}");
+    assert!(t.contains("older(older-units#1)"), "got {t}");
+    assert!(
+        !t.contains("older(10)") && !t.contains(&format!("older({units})")),
+        "no literal lock value may survive: {t}"
+    );
+}
+
+#[test]
 fn digests_carry_a_class_too_symmetric_with_locks() {
     let d = common::two_sha256_descriptor([0x11; 32], [0x11; 32]);
     let t = descriptor_to_abstract_template(&d).unwrap();

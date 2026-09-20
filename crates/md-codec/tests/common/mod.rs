@@ -163,6 +163,28 @@ pub fn two_after_descriptor(height: u32, time: u32) -> md_codec::encode::Descrip
     descriptor_of(tree, 2)
 }
 
+/// `wsh(or_i(and_v(v:pkh(@0),older(blocks)),and_v(v:pkh(@1),older(units))))`
+/// — final whole-branch review, I-2: the `older` equivalent of
+/// [`two_after_descriptor`]. One `older` branch below `SEQUENCE_TYPE_FLAG`
+/// (blocks) and one with it set (512-second units), so the abstract
+/// renderer's blocks/units band split has a case in each band — Task 2
+/// added this coverage for `after`'s height/time bands and never the
+/// `older` equivalent.
+pub fn two_older_descriptor(blocks: u32, units: u32) -> md_codec::encode::Descriptor {
+    let branch = |i: u8, v: u32| {
+        node2(
+            Tag::AndV,
+            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            timelock(Tag::Older, v),
+        )
+    };
+    let tree = wrap(
+        Tag::Wsh,
+        node2(Tag::OrI, branch(0, blocks), branch(1, units)),
+    );
+    descriptor_of(tree, 2)
+}
+
 /// `wsh(or_i(and_v(v:pkh(@0),sha256(a)),and_v(v:pkh(@1),sha256(b))))` — two
 /// `sha256` branches, symmetric with [`three_older_descriptor`] but for
 /// digests rather than lock values.
@@ -348,6 +370,74 @@ pub fn seated_same_key_with_overrides(
 // Task 4 (Skeleton / SkeletonKey) fixtures.
 // ─────────────────────────────────────────────────────────────────────────
 
+/// `wsh(or_d(and_v(v:pkh(@3), older(26280)), multi(2,@0,@1,@2)))` — the
+/// `kofn_recovery` shape with its two `or_d` operands SWAPPED (recovery leg
+/// first, the multi second), so branch 0 is the HIGH-numbered slot [3] and
+/// branch 1 is the LOW-numbered slots [0,1,2]. This is deliberate, not a
+/// typo: with the un-swapped order, branch 0's rendered group list always
+/// starts with a lower digit than branch 1's (branch 0 always holds the
+/// smaller placeholder indices), so it is *already* in ascending
+/// lexicographic order — a mutation that `sort()`s the per-path list before
+/// emitting it is then a no-op and cannot be caught. Swapping the operands
+/// makes branch 0's group list ("[[3]]"-shaped) sort lexicographically AFTER
+/// branch 1's ("[[0,1][2]]"-shaped, a comma-bearing group) — the string a
+/// `sort()` mutation produces then differs from the branch (template
+/// traversal) order this crate's grammar requires.
+fn kofn_recovery_first_tree() -> Node {
+    let recovery = node2(
+        Tag::AndV,
+        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        timelock(Tag::Older, 26280),
+    );
+    let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
+    wrap(Tag::Wsh, node2(Tag::OrD, recovery, primary))
+}
+
+/// The [`kofn_recovery_first_tree`] shape with BOTH a `Fingerprints` TLV
+/// (asymmetric: branch 0 -- the recovery leg, slot 3 -- gets one group;
+/// branch 1 -- the multi, slots 0/1/2 -- has slots 0 and 1 sharing a
+/// fingerprint and slot 2 standing alone, a 2-member group) AND a `Pubkeys`
+/// TLV (slots 0 and 3 -- in DIFFERENT branches -- share a key; slots 1 and 2
+/// are distinct). Built for the final whole-branch review's I-3: one
+/// fixture whose `fp_partition` (multi-path, asymmetric, with a 2-member
+/// group, and in an order that `sort()` would actually change — see
+/// [`kofn_recovery_first_tree`]) and `key_partition` (non-empty, and
+/// DIFFERENT from `fp_partition`) are both non-trivial, so a single golden
+/// `SkeletonKey` test can pin all five of the review's serialization
+/// mutations: reversing OR sorting the per-path order changes this
+/// deliberately-unsorted `fp_partition`; dropping the `,` inside a group
+/// changes the `{0,1}` pair; dropping the outer `[`/`]` unbalances a
+/// non-empty group list; and swapping the `key_partition`/`fp_partition`
+/// emission order changes the string because the two render to different
+/// text.
+pub fn seated_and_keyed_asymmetric() -> md_codec::encode::Descriptor {
+    let mut d = descriptor_of(kofn_recovery_first_tree(), 4);
+    d.path_decl = shared_origin_48(4);
+    d.tlv.fingerprints = Some(vec![
+        (0, [0xaa; 4]),
+        (1, [0xaa; 4]),
+        (2, [0xbb; 4]),
+        (3, [0xcc; 4]),
+    ]);
+    let shared_xpub = {
+        let mut x = [0x11u8; 65];
+        x[32] = 0x02;
+        x
+    };
+    let distinct = |seed: u8| {
+        let mut x = [seed; 65];
+        x[32] = 0x03;
+        x
+    };
+    d.tlv.pubkeys = Some(vec![
+        (0, shared_xpub),
+        (1, distinct(0x22)),
+        (2, distinct(0x33)),
+        (3, shared_xpub),
+    ]);
+    d
+}
+
 /// `tr(NUMS,{pk(@0),pk(@1)})` — a taproot policy with a provably
 /// unspendable internal key (NUMS) and two tapscript leaves. Needs an
 /// EXPLICIT origin (`shared_origin_48`): `canonical_origin` returns `None`
@@ -393,6 +483,32 @@ pub fn sh_wsh_2of3() -> md_codec::encode::Descriptor {
         wrap(Tag::Wsh, multikeys(Tag::Multi, 2, vec![0, 1, 2])),
     );
     descriptor_of(tree, 3)
+}
+
+/// `sh(wsh(or_d(sortedmulti(2,@0,@1,@2), and_v(v:pkh(@3),older(26280)))))` —
+/// final whole-branch review, I-1: `sh_wsh_2of3`'s single-`multi` shape
+/// cannot tell whether the `sh(wsh(...))` unwrap in `policy_shape` actually
+/// runs (a bare threshold decomposes identically either way). This shape is
+/// MULTI-branch, so the unwrap's absence is observable: without it, the two
+/// `or_d` alternatives collapse into one branch and every slot set changes.
+/// Wire-reachable (reviewer-measured: 18 bytes / 139 bits, strict-decodes
+/// byte-identical). NOT canonical: `canonical_origin`'s `sh(wsh(...))` row
+/// only recognizes a bare `multi`/`sortedmulti` directly inside the `wsh`
+/// (`is_wsh_inner_multi`); this fixture's inner is `or_d(...)`, the same
+/// non-canonical shape `kofn_recovery_tree`'s bare `wsh(or_d(...))` is, so it
+/// needs the same explicit non-empty shared origin path.
+pub fn sh_wsh_or_d_sortedmulti_and_recovery() -> md_codec::encode::Descriptor {
+    let primary = multikeys(Tag::SortedMulti, 2, vec![0, 1, 2]);
+    let recovery = node2(
+        Tag::AndV,
+        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        timelock(Tag::Older, 26280),
+    );
+    let inner = node2(Tag::OrD, primary, recovery);
+    let tree = wrap(Tag::Sh, wrap(Tag::Wsh, inner));
+    let mut d = descriptor_of(tree, 4);
+    d.path_decl = shared_origin_48(4);
+    d
 }
 
 /// `sh(multi(2,@0,@1,@2))` — root=Sh, inner_wsh=false: the bare legacy

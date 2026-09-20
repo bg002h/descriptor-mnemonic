@@ -248,3 +248,63 @@ fn root_and_inner_wsh_are_read_correctly() {
     let tr = skeleton(&common::tr_nums_two_leaves()).unwrap();
     assert_eq!((tr.root, tr.inner_wsh), (RootKind::Tr, false));
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Final whole-branch review, I-3: golden literal-key tests.
+//
+// Every key assertion above compares two COMPUTED keys (`assert_ne!`
+// between two `skeleton_key()` calls). That is invisible to any mutation
+// that changes serialization UNIFORMLY on both sides -- the reviewer applied
+// five, separately, and 581/581 stayed green each time:
+//
+//   1. `for path in fp.iter().rev()`             (render_fp_partition)
+//   2. paths rendered then `sort()`ed              (render_fp_partition)
+//   3. drop the `,` between slots                  (render_slots)
+//   4. drop the outer `[`/`]`                       (render_group_list)
+//   5. emit key_partition before fp_partition       (skeleton_key)
+//
+// These two tests pin LITERAL expected strings instead, computed by running
+// the shipped code once (not hand-derived) and pasted here as byte-for-byte
+// literals. `\u{1f}` marks the same U+001F separator `skeleton_key`'s own
+// doc comment names.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// `seated_and_keyed_asymmetric()`: multi-path (the recovery-first `or_d`
+/// shape, two branches — see [`common::kofn_recovery_first_tree`]'s doc for
+/// why the operands are swapped from `kofn_recovery`'s order), with an
+/// ASYMMETRIC `fp_partition` (branch 0, the recovery leg, is the singleton
+/// {3}; branch 1, the multi, groups slots {0,1} together and {2} alone) and
+/// a non-empty, cross-branch `key_partition` ({0,3} share a key). One
+/// fixture exercises all five of the final review's mutations: 1 (reverse
+/// the per-path order) and 2 (sort the per-path order) both change this
+/// string because branch 0's rendering ("[[3]]") sorts AFTER branch 1's
+/// ("[[0,1][2]]") — the opposite of template-traversal order, so neither
+/// mutation is a no-op; 3 (drop the `,` between slots) needs a 2+-member
+/// group, which {0,1} supplies; 4 (drop the outer `[`/`]`) needs a
+/// non-empty group list, which every group here is; 5 (swap the
+/// `key_partition`/`fp_partition` emission order) needs the two to render to
+/// DIFFERENT text, which they do (asymmetric fp groups vs. one cross-branch
+/// pair plus two singletons).
+#[test]
+fn golden_key_multi_path_asymmetric_fp_and_key_partition() {
+    let s = skeleton(&common::seated_and_keyed_asymmetric()).unwrap();
+    assert_eq!(
+        skeleton_key(&s).as_str(),
+        "wsh(or_d(and_v(v:pkh(@3/<0;1>/*),older(older-blocks#1)),multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*)))\u{1f}[[[3]][[0,1][2]]][[0,3][1][2]]\u{1f}NotTaproot"
+    );
+}
+
+/// `tr_unspendable_xpub_two_leaves()`: a taproot policy with a KEY-PATH
+/// branch (I-5's extension -- a spendable/`Xpub` internal key pushed as
+/// `branches[0]`) plus two tapscript leaves. `fp_partition`/`key_partition`
+/// are both empty here (no TLVs attached) — this golden's job is the
+/// `tr(...)` template shape and the `key_path_kind` label, not the five
+/// partition-serialization mutations (the first golden above covers those).
+#[test]
+fn golden_key_taproot_with_key_path_branch() {
+    let s = skeleton(&common::tr_unspendable_xpub_two_leaves()).unwrap();
+    assert_eq!(
+        skeleton_key(&s).as_str(),
+        "tr(@0/<0;1>/*,{pk(@1/<0;1>/*),pk(@2/<0;1>/*)})\u{1f}[[][][]][]\u{1f}Xpub"
+    );
+}
