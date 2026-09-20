@@ -4,6 +4,43 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.45.1] — 2026-09-20
+
+### Added
+
+- **`policy_shape`** — a structural summary of any decoded policy: the spend
+  paths, each with the placeholder slots it references, its threshold, locks
+  and hashlocks. Ported from the fork's `md/policy_shape.go`, which had no Rust
+  counterpart, with two deliberate extensions over the original: `Branch.slots`
+  retains WHICH slots a branch references (the Go builds that map and then
+  keeps only its length), and a taproot key path becomes branch 0 when the
+  internal key is not NUMS (the Go appends one branch per leaf only). Both are
+  needed by the key below; neither changes existing behaviour.
+
+- **`skeleton`** — `Skeleton` and `SkeletonKey`: one canonical string derived
+  from a decoded policy, for looking up measurements about which wallet
+  coordinators import it. Membership is fixed and exhaustive: wrapper,
+  `sh(wsh)` nesting, abstract template, per-path fingerprint partition,
+  whole-policy key partition, internal-key kind. The serialization is pinned by
+  golden tests and its injectivity was proven over 190,032 enumerated partition
+  pairs — a collision would mean evidence measured on one policy claimed for
+  another.
+
+  `skeleton()` returns `Err` rather than a key for a descriptor whose keys will
+  not expand: a partial decode produces partitions byte-identical to a
+  template-only card, so a key built from one would silently equal the other's.
+
+- **`render::descriptor_to_abstract_template`** — the existing template
+  renderer with lock values and digests replaced by per-kind equality classes
+  (`older(older-blocks#1)`, `sha256(#1)`), so two policies differing only in a
+  concrete lock value share a template. Threaded through the existing
+  `render_node` as a private mode; the literal renderer is untouched.
+
+### Notes
+
+- Purely additive. No existing public item changed signature or behaviour, and
+  every pre-existing test is unmodified.
+
 ## md-codec [0.45.0] — 2026-09-19
 
 ### Changed
