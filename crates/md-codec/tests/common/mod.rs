@@ -143,6 +143,26 @@ pub fn three_older_descriptor(a: u32, b: u32, c: u32) -> md_codec::encode::Descr
     descriptor_of(tree, 3)
 }
 
+/// `wsh(or_i(and_v(v:pkh(@0),after(height)),and_v(v:pkh(@1),after(time))))`
+/// — one `after` branch below `LOCKTIME_THRESHOLD` (a height) and one at or
+/// above it (a time), so the abstract renderer's height/time band split has
+/// a case in each band, straddling the boundary a mutation of
+/// `LOCKTIME_THRESHOLD` would move.
+pub fn two_after_descriptor(height: u32, time: u32) -> md_codec::encode::Descriptor {
+    let branch = |i: u8, v: u32| {
+        node2(
+            Tag::AndV,
+            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            timelock(Tag::After, v),
+        )
+    };
+    let tree = wrap(
+        Tag::Wsh,
+        node2(Tag::OrI, branch(0, height), branch(1, time)),
+    );
+    descriptor_of(tree, 2)
+}
+
 /// `wsh(or_i(and_v(v:pkh(@0),sha256(a)),and_v(v:pkh(@1),sha256(b))))` — two
 /// `sha256` branches, symmetric with [`three_older_descriptor`] but for
 /// digests rather than lock values.

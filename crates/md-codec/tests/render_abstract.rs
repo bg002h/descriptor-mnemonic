@@ -27,6 +27,27 @@ fn equal_lock_values_share_a_class_and_different_ones_do_not() {
 }
 
 #[test]
+fn after_locks_carry_height_and_time_bands() {
+    // wsh(or_i(and_v(v:pkh(@0),after(499999999)),
+    //          and_v(v:pkh(@1),after(500000000))))
+    //
+    // 499_999_999 and 500_000_000 straddle LOCKTIME_THRESHOLD by exactly
+    // one, so this pins the height/time split at its boundary: a mutation
+    // that moves the threshold (e.g. to 800_000_000) reclassifies
+    // 500_000_000 from after-time into after-height, which this test
+    // catches (nothing asserts on a literal `after(...)` today without it —
+    // R0 fix round 1, I-1).
+    let d = common::two_after_descriptor(499_999_999, 500_000_000);
+    let t = descriptor_to_abstract_template(&d).unwrap();
+    assert!(t.contains("after(after-height#1)"), "got {t}");
+    assert!(t.contains("after(after-time#1)"), "got {t}");
+    assert!(
+        !t.contains("499999999") && !t.contains("500000000"),
+        "no literal lock value may survive: {t}"
+    );
+}
+
+#[test]
 fn digests_carry_a_class_too_symmetric_with_locks() {
     let d = common::two_sha256_descriptor([0x11; 32], [0x11; 32]);
     let t = descriptor_to_abstract_template(&d).unwrap();

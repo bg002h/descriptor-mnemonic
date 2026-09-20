@@ -64,7 +64,7 @@
 //! [`Branch::locks`] is `Vec<Lock>`, a decode-side type distinct from
 //! `compose::Lock` — deliberately, not by oversight; see [`Lock`]'s doc.
 
-use crate::compose::{HashKind, HashLock};
+use crate::compose::{HashKind, HashLock, LOCKTIME_THRESHOLD, SEQUENCE_TYPE_FLAG};
 use crate::tag::Tag;
 use crate::tree::{Body, Node};
 use std::collections::BTreeSet;
@@ -592,10 +592,20 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
 /// `older`/`after` node denotes. `older` carries bit 22 for 512-second
 /// units; `after` is a time at or above 500,000,000 and a height below it
 /// (BIP-68 / BIP-65, the same split §4c's bands are built on).
-fn lock_from_wire(tag: Tag, operand: u32) -> Lock {
-    const SEQUENCE_TYPE_FLAG: u32 = 1 << 22;
-    const LOCKTIME_THRESHOLD: u32 = 500_000_000;
-
+///
+/// `pub(crate)`: `crate::render`'s abstract-mode template renderer needs
+/// the same kind/value split to classify `older`/`after` operands into
+/// equality classes. THE ONE DEFINITION of the bit-22-flag / 500,000,000
+/// threshold split — `SEQUENCE_TYPE_FLAG`/`LOCKTIME_THRESHOLD` are imported
+/// from `crate::compose` rather than redeclared, so there is exactly one
+/// place either constant is written and exactly one place this split is
+/// computed. An earlier draft had three: `compose`'s constants (unused
+/// here), a local copy of both constants in this function, and a third
+/// copy of the whole if/else in `render.rs`. A mutation of any single
+/// threshold went undetected by the full crate suite under that shape;
+/// collapsing to one call site each is what makes a mutation of
+/// `LOCKTIME_THRESHOLD` observable at all.
+pub(crate) fn lock_from_wire(tag: Tag, operand: u32) -> Lock {
     if tag == Tag::Older {
         if operand & SEQUENCE_TYPE_FLAG != 0 {
             return Lock {

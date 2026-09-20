@@ -16,10 +16,10 @@
 //! CLI's `CliError::TemplateParse` to the dedicated [`RenderError`] so
 //! `md_codec::Error` stays a pure wire/decode taxonomy.
 
-use crate::compose::{HashKind, HashLock, LOCKTIME_THRESHOLD, SEQUENCE_TYPE_FLAG};
+use crate::compose::{HashKind, HashLock};
 use crate::encode::Descriptor;
 use crate::nums::NUMS_H_POINT_X_ONLY_HEX;
-use crate::policy_shape::LockKind;
+use crate::policy_shape::{LockKind, lock_from_wire};
 use crate::tag::Tag;
 use crate::tree::{Body, Node};
 use crate::use_site_path::UseSitePath;
@@ -127,23 +127,6 @@ fn class_index<T: PartialEq>(seen: &mut Vec<T>, value: T) -> usize {
             seen.len()
         }
     }
-}
-
-/// The kind + operator-unit value a wire `older`/`after` operand denotes —
-/// same split [`crate::policy_shape`]'s decode-side walk uses, computed here
-/// from `crate::compose`'s public `SEQUENCE_TYPE_FLAG`/`LOCKTIME_THRESHOLD`
-/// constants rather than a second copy of the magic numbers.
-fn lock_kind_and_value(tag: Tag, operand: u32) -> (LockKind, u32) {
-    if tag == Tag::Older {
-        if operand & SEQUENCE_TYPE_FLAG != 0 {
-            return (LockKind::OlderUnits, operand & !SEQUENCE_TYPE_FLAG);
-        }
-        return (LockKind::OlderBlocks, operand);
-    }
-    if operand >= LOCKTIME_THRESHOLD {
-        return (LockKind::AfterTime, operand);
-    }
-    (LockKind::AfterHeight, operand)
 }
 
 /// The abstract-mode class label for a lock kind — distinct from the bare
@@ -283,9 +266,9 @@ fn render_node(
             match ctx.mode {
                 Mode::Literal => write!(out, "older({v})").unwrap(),
                 Mode::Abstract => {
-                    let (kind, value) = lock_kind_and_value(Tag::Older, v);
-                    let class = ctx.class_for_lock(kind, value);
-                    write!(out, "older({}#{class})", lock_class_label(kind)).unwrap();
+                    let lock = lock_from_wire(Tag::Older, v);
+                    let class = ctx.class_for_lock(lock.kind, lock.value);
+                    write!(out, "older({}#{class})", lock_class_label(lock.kind)).unwrap();
                 }
             }
             Ok(())
@@ -302,9 +285,9 @@ fn render_node(
             match ctx.mode {
                 Mode::Literal => write!(out, "after({v})").unwrap(),
                 Mode::Abstract => {
-                    let (kind, value) = lock_kind_and_value(Tag::After, v);
-                    let class = ctx.class_for_lock(kind, value);
-                    write!(out, "after({}#{class})", lock_class_label(kind)).unwrap();
+                    let lock = lock_from_wire(Tag::After, v);
+                    let class = ctx.class_for_lock(lock.kind, lock.value);
+                    write!(out, "after({}#{class})", lock_class_label(lock.kind)).unwrap();
                 }
             }
             Ok(())
