@@ -24,7 +24,7 @@
 //! Both routes feed the ONE [`skeleton`]/[`skeleton_key`] implementation;
 //! this file computes nothing about the key itself.
 //!
-//! ## Why the reconstruction is trustworthy despite being hand-rolled
+//! ## Why the reconstruction is trustworthy -- and exactly how far that goes
 //!
 //! `parse_descriptor` below does not depend on getting the use-site path
 //! right by construction -- it HARDCODES `UseSitePath::standard_multipath()`
@@ -35,10 +35,49 @@
 //! (`md_codec::to_miniscript_descriptor`) and asserting the re-rendered
 //! chain-0 and chain-1 descriptor strings are byte-identical to the
 //! originals, checksum included. A wrong fingerprint, a dropped origin
-//! component, a mis-numbered placeholder, or a wrong use-site guess would
-//! all show up there, before the conformance assertion ever runs -- the
-//! round trip is the guard against this file's own walker being wrong, not
-//! a decoration.
+//! component, a mis-numbered placeholder, or a wrong use-site guess all show
+//! up there, before the conformance assertion ever runs.
+//!
+//! **What that round trip does NOT certify -- measured, not assumed (review
+//! round 1, I-1 / M-1).** Two limits, both real, neither changing today's
+//! result (zero disagreements, all 46 vectors, see below), both narrowing
+//! what a future maintainer growing this corpus may assume from a clean run:
+//!
+//! 1. **Only an EXECUTED arm is certified.** Instrumenting the walker over
+//!    the 46-vector corpus alone shows 32 of its 48 `Terminal`/root decision
+//!    points are hit. Five of the misses are refusals or pre-empted by a
+//!    more specific arm (`Terminal::PkK`/`PkH`/`RawPkH` panic on md1's own
+//!    invariant; `Terminal::SortedMulti`/`SortedMultiA` in the generic path
+//!    are caught by the three legal-position special cases first). **The
+//!    remaining eleven are LIVE conversions the 46-vector corpus alone never
+//!    reaches:** `Terminal::True`, `Terminal::False`, `Terminal::Alt`,
+//!    `Terminal::DupIf`, `Terminal::NonZero`, `Terminal::ZeroNotEqual`,
+//!    `Terminal::AndB`, `Terminal::AndOr`, `Terminal::OrC`, a bare root
+//!    `Tag::Pkh` (`MsDescriptor::Pkh`), and `sh(wpkh(...))`
+//!    (`ShInner::Wpkh`). A wrong `Tag` mapping in any of those eleven would
+//!    be invisible to both the round trip and the conformance comparison,
+//!    because the arm never runs -- an untested arm cannot be certified by a
+//!    gate no matter how strong the gate is on the arms it does exercise.
+//!    `eleven_uncovered_arms_round_trip` (below, same file, since the walker
+//!    is private to it) closes exactly this gap: one small hand-built
+//!    descriptor per arm -- several lifted directly from
+//!    `tests/proptest_to_miniscript.rs`'s `self_test_*` cells and
+//!    `tests/bitcoind_differential.rs`'s `andor` shape, already proven valid
+//!    there rather than invented here -- run through this same
+//!    `parse_descriptor` self-check. All eleven are proven by that test, as
+//!    of this fold; if the corpus grows to cover any of them directly, that
+//!    is a welcome overlap, not a reason to remove the dedicated case.
+//! 2. **The round trip pins only the RENDERED PROJECTION of the descriptor,
+//!    never the whole `Descriptor` value.** `Body::Tr { key_index }` under
+//!    `is_nums: true` is a concrete, verified example: `to_miniscript_descriptor`
+//!    ignores `key_index` whenever `is_nums` is set, so a walker that wrote a
+//!    wrong value there would still round-trip and still pass this gate.
+//!    Harmless TODAY because `skeleton_key` also never reads `key_index`
+//!    under `is_nums` (`key_path_kind` reads `is_nums`, not `key_index`) --
+//!    but that is a fact about what `skeleton_key` happens to need, not
+//!    about what this round trip checks. A future `Skeleton` field reading
+//!    an unrendered part of `Descriptor` would need a different guard than
+//!    this one.
 //!
 //! Placeholder NUMBERING is deliberately not matched to the chunk route's:
 //! `canonicalize_placeholder_indices` is called on the descriptor-route
@@ -46,6 +85,8 @@
 //! first-occurrence canonical numbering regardless of the order this
 //! walker happened to assign indices in (design note, and the brief's own
 //! likely-cause #2).
+
+mod common;
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -576,7 +617,10 @@ fn parse_descriptor(desc0_str: &str, desc1_str: &str, name: &str) -> MdDescripto
         .to_string();
     assert_eq!(
         re0, desc0_str,
-        "{name}: the descriptor-route reconstruction does not round-trip chain 0"
+        "{name}: the descriptor-route reconstruction does not round-trip chain 0 \
+         (likely cause #1: the use-site guess above is wrong for this vector -- \
+         a wrong VALUE trips here first; chain 1 only catches a use-site that is \
+         right for chain 0 and wrong for chain 1)"
     );
     let re1 = to_miniscript_descriptor(&d, 1)
         .unwrap_or_else(|e| panic!("{name}: re-render chain 1: {e}"))
@@ -632,4 +676,187 @@ fn chunks_and_descriptor_yield_the_same_key() {
         checked >= 40,
         "only {checked} vectors keyed -- the gate is checking almost nothing"
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Review round 1, I-1: direct unit coverage for the eleven walker arms the
+// 46-vector corpus alone never reaches. See the module doc's "What that
+// round trip does NOT certify" section for the full accounting.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// A descriptor built from `tests/common/mod.rs`'s `descriptor_with_pubkeys`
+/// (real xpubs, no fingerprints) with a fingerprint TLV entry ADDED for every
+/// slot. `descriptor_with_pubkeys` alone renders keys with no `[origin]`
+/// bracket at all (`to_miniscript.rs::assemble_origin_and_xkey`'s `origin`
+/// field is `e.fingerprint.map(...)` -- `None` fingerprint means no bracket,
+/// regardless of the divergent origin PATH `descriptor_with_pubkeys` already
+/// sets), and `parse_descriptor` refuses a key with no bracket outright (its
+/// own "likely cause #3" panic). The value is arbitrary -- these fixtures
+/// exist to exercise `Tag` mappings, not to pin a specific fingerprint.
+fn with_fingerprints(mut d: MdDescriptor) -> MdDescriptor {
+    let fp = [0x73, 0xc5, 0xda, 0x0a];
+    d.tlv.fingerprints = Some((0..d.n).map(|i| (i, fp)).collect());
+    d
+}
+
+/// Ten hand-built descriptors covering the eleven arms I-1 named (`Alt` and
+/// `AndB` share one fixture, a tap leaf). Each row: the fixture, and a
+/// content marker proving the FORWARD rendering actually reaches the
+/// fragment it claims to -- the sugar spellings are miniscript's own Display
+/// output and match `tests/proptest_to_miniscript.rs`'s own pins for the
+/// same fragments (`tv:` = `and_v(_,1)`, `u:` = `or_i(_,0)`, `dv:` =
+/// `dupif(verify(_))`, `j:` = `nonzero`, `n:` = `zeronotequal`, `a:` = `alt`).
+/// Coverage is then the SAME `parse_descriptor` self-check the main gate
+/// uses: a wrong `Tag` mapping anywhere in the fixture makes the reconstructed
+/// `Descriptor` re-render differently, and `parse_descriptor`'s own
+/// `assert_eq!` catches it before this function's `marker` check ever would.
+#[test]
+fn eleven_uncovered_arms_round_trip() {
+    use common::{descriptor_with_pubkeys, keyarg, node2, node3, timelock, tr_node, wrap};
+
+    let true_node = || Node {
+        tag: Tag::True,
+        body: Body::Empty,
+    };
+    let false_node = || Node {
+        tag: Tag::False,
+        body: Body::Empty,
+    };
+
+    let cases: Vec<(&str, MdDescriptor, &str)> = vec![
+        (
+            "Terminal::True -- wsh(and_v(v:pk,1)), tv: sugar",
+            with_fingerprints(descriptor_with_pubkeys(wrap(
+                Tag::Wsh,
+                node2(
+                    Tag::AndV,
+                    wrap(Tag::Verify, keyarg(Tag::PkK, 0)),
+                    true_node(),
+                ),
+            ))),
+            "tv:pk(",
+        ),
+        (
+            "Terminal::False -- wsh(or_i(pk,0)), u: sugar",
+            with_fingerprints(descriptor_with_pubkeys(wrap(
+                Tag::Wsh,
+                node2(Tag::OrI, keyarg(Tag::PkK, 0), false_node()),
+            ))),
+            "u:pk(",
+        ),
+        (
+            "Terminal::OrC -- wsh(and_v(or_c(pk,v:pk),1)), t:or_c( sugar",
+            with_fingerprints(descriptor_with_pubkeys(wrap(
+                Tag::Wsh,
+                node2(
+                    Tag::AndV,
+                    node2(
+                        Tag::OrC,
+                        keyarg(Tag::PkK, 0),
+                        wrap(Tag::Verify, keyarg(Tag::PkK, 1)),
+                    ),
+                    true_node(),
+                ),
+            ))),
+            "t:or_c(",
+        ),
+        (
+            "Terminal::DupIf -- wsh(or_i(pk,dv:older)), dv: sugar",
+            with_fingerprints(descriptor_with_pubkeys(wrap(
+                Tag::Wsh,
+                node2(
+                    Tag::OrI,
+                    keyarg(Tag::PkK, 0),
+                    wrap(Tag::DupIf, wrap(Tag::Verify, timelock(Tag::Older, 144))),
+                ),
+            ))),
+            "dv:older(",
+        ),
+        (
+            "Terminal::NonZero -- wsh(j:pk), j: sugar",
+            with_fingerprints(descriptor_with_pubkeys(wrap(
+                Tag::Wsh,
+                wrap(Tag::NonZero, keyarg(Tag::PkK, 0)),
+            ))),
+            "j:pk(",
+        ),
+        (
+            "Terminal::ZeroNotEqual -- wsh(or_i(pk,n:and_v)), n: sugar",
+            with_fingerprints(descriptor_with_pubkeys(wrap(
+                Tag::Wsh,
+                node2(
+                    Tag::OrI,
+                    keyarg(Tag::PkK, 0),
+                    wrap(
+                        Tag::ZeroNotEqual,
+                        node2(
+                            Tag::AndV,
+                            wrap(Tag::Verify, keyarg(Tag::PkK, 1)),
+                            timelock(Tag::Older, 144),
+                        ),
+                    ),
+                ),
+            ))),
+            "n:and_v(",
+        ),
+        (
+            "Terminal::Alt + Terminal::AndB -- tr tap leaf and_b(pk,a:pk_h)",
+            with_fingerprints(descriptor_with_pubkeys(tr_node(
+                false,
+                0,
+                Some(node2(
+                    Tag::AndB,
+                    keyarg(Tag::PkK, 1),
+                    wrap(Tag::Alt, keyarg(Tag::PkH, 2)),
+                )),
+            ))),
+            "and_b(pk(",
+        ),
+        (
+            "Terminal::AndOr -- wsh(andor(pk,older(144),pk))",
+            with_fingerprints(descriptor_with_pubkeys(wrap(
+                Tag::Wsh,
+                node3(
+                    Tag::AndOr,
+                    keyarg(Tag::PkK, 0),
+                    timelock(Tag::Older, 144),
+                    keyarg(Tag::PkK, 1),
+                ),
+            ))),
+            "andor(pk(",
+        ),
+        (
+            "root MsDescriptor::Pkh -- bare pkh(@0)",
+            with_fingerprints(descriptor_with_pubkeys(keyarg(Tag::Pkh, 0))),
+            "pkh(",
+        ),
+        (
+            "ShInner::Wpkh -- sh(wpkh(@0))",
+            with_fingerprints(descriptor_with_pubkeys(wrap(Tag::Sh, keyarg(Tag::Wpkh, 0)))),
+            "sh(wpkh(",
+        ),
+    ];
+
+    assert_eq!(
+        cases.len(),
+        10,
+        "ten fixtures cover the eleven named arms (Alt+AndB share one, a tap leaf)"
+    );
+
+    for (label, d, marker) in &cases {
+        let rendered0 = to_miniscript_descriptor(d, 0)
+            .unwrap_or_else(|e| panic!("{label}: forward render chain 0: {e}"))
+            .to_string();
+        assert!(
+            rendered0.contains(marker),
+            "{label}: fixture does not actually reach the claimed fragment -- rendered {rendered0}"
+        );
+        let rendered1 = to_miniscript_descriptor(d, 1)
+            .unwrap_or_else(|e| panic!("{label}: forward render chain 1: {e}"))
+            .to_string();
+        // The walker's own round-trip self-check IS the coverage proof: if
+        // this call returns without panicking, `parse_descriptor` walked the
+        // arm named by `label` and reproduced it byte-for-byte.
+        let _ = parse_descriptor(&rendered0, &rendered1, label);
+    }
 }
