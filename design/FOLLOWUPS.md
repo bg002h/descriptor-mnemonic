@@ -3090,3 +3090,25 @@ next encode-side rule cannot re-break reads.
 
 - **Status:** ✓ RESOLVED (md-codec 0.44.2). **Tier:** `correctness` / `funds-adjacent` (a backup that
   cannot be read).
+
+### `md-descriptor-network-regtest-renders-mainnet-xpub` — `md descriptor --network regtest` still prints `xpub` keys, which a regtest Core refuses (repo: **descriptor-mnemonic**; owning phase: next md-cli output pass; tier: ux)
+
+**Filed 2026-09-20**, composer fable review r0, lens 3 N-2
+(`mnemonic-engrave/design/agent-reports/composer-fable-r0-steel-restore.md`).
+Core regtest answers `Multi: key 'xpub6DXuQW…' is not valid`; every Core check
+in that review re-versioned the keys by hand. The device is mainnet-only, so
+the operator journey is unaffected; a test/regtest journey is. Render the
+network's version bytes when `--network` is not mainnet, or refuse the flag.
+
+### `f600-readback-has-no-reachable-input` — the md-cli compose read-back is defence in depth with no live test (repo: **descriptor-mnemonic**; owning phase: whenever the lowering changes; tier: test-infra)
+
+**Filed 2026-09-20** from the fold-A implementation report
+(`composer-fable-r0-fold-rust-implementation.md`, §residue). Once md-codec
+0.45.0's `validate()` refuses a second key-less path, the F-600 read-back in
+`crates/md-cli/src/cmd/compose.rs` — which caught exactly that shape after
+lowering — has no known reachable input: mixed absolute lock kinds, 32-slot
+`wsh`/`tr`, eight single-key paths, nine-key paths and unsorted variants all
+compose cleanly. It stays as the guard for resource limits, repeated keys and
+timelock mixing should the lowering ever change, but no CLI input exercises it.
+If every gate must have a live test, manufacture one (a synthetic lowering that
+exceeds a resource limit) or record that this one is intentionally latent.
