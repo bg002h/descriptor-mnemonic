@@ -335,6 +335,7 @@ pub(crate) mod fixture {
     pub const V_CE1_FOREIGN: &str = include_str!("../../tests/fixtures/seating/v-ce1-foreign.txt");
     pub const V_SPENDEQ_KEYED: &str =
         include_str!("../../tests/fixtures/seating/v-spendeq-keyed.txt");
+    pub const V_PARTIAL_C13: &str = include_str!("../../tests/fixtures/seating/v-partial-c13.txt");
 }
 
 #[cfg(test)]
