@@ -198,6 +198,32 @@ fn a_policy_with_no_keyed_path_still_reports_that() {
     assert_eq!(err, ComposeError::NoKeyedPath);
 }
 
+#[test]
+fn a_legacy_wrapper_with_two_keyless_paths_still_reports_the_legacy_rule() {
+    // Fold-A review M-1: the cap's remedy ("fold them into one path") leaves
+    // `sh` with two paths, which is still not one sorted multisig, so the
+    // legacy rule -- whose remedy "use wsh or tr" works -- must come first.
+    let err = validate(&PathList {
+        wrapper: Wrapper::Sh,
+        paths: vec![keyed(2, 3), keyless(H1, None), keyless(H2, None)],
+    })
+    .unwrap_err();
+    assert_eq!(err, ComposeError::LegacyWrapperShape);
+}
+
+#[test]
+fn a_policy_over_the_slot_cap_still_reports_the_slot_cap() {
+    // Same argument: 36 slots folded into fewer paths are still 36 slots.
+    let mut paths = vec![keyed(9, 9), keyed(9, 9), keyed(9, 9), keyed(9, 9)];
+    paths.push(keyless(H1, None));
+    paths.push(keyless(H2, None));
+    let err = validate(&wsh(paths)).unwrap_err();
+    assert!(
+        matches!(err, ComposeError::TooManySlots { got: 36, .. }),
+        "{err:?}"
+    );
+}
+
 // ---- the conformance vector ------------------------------------------------
 //
 // `vectors/compose_refusal_keyless_cap.json` is what the Go port vendors and
@@ -281,19 +307,32 @@ fn every_case_in_the_conformance_vector_behaves_as_recorded() {
                     .map(|n| format!("{n} slots"))
                     .expect_err(name);
                 let want = &case["error"];
-                assert_eq!(
-                    err,
-                    ComposeError::TooManyKeylessPaths {
-                        first: usize::try_from(want["first"].as_u64().expect("first")).unwrap(),
-                        second: usize::try_from(want["second"].as_u64().expect("second")).unwrap(),
+                let idx = |k: &str| usize::try_from(want[k].as_u64().expect(k)).unwrap();
+                let expected = match want["kind"].as_str().expect("kind") {
+                    "TooManyKeylessPaths" => ComposeError::TooManyKeylessPaths {
+                        first: idx("first"),
+                        second: idx("second"),
                     },
-                    "{name}"
-                );
-                assert_eq!(
-                    err.to_string(),
-                    case["message"].as_str().expect("message"),
-                    "{name}: the operator-facing wording is normative too"
-                );
+                    // The precedence cases (fold-A review N-1): a port that
+                    // orders the cap ahead of these rules still refuses, but
+                    // names a rule whose remedy does not work.
+                    "KeylessUnderTr" => ComposeError::KeylessUnderTr { path: idx("path") },
+                    "NoKeyedPath" => ComposeError::NoKeyedPath,
+                    "LegacyWrapperShape" => ComposeError::LegacyWrapperShape,
+                    "TooManySlots" => ComposeError::TooManySlots {
+                        got: idx("got"),
+                        max: u8::try_from(idx("max")).unwrap(),
+                    },
+                    other => panic!("{name}: unknown error kind {other}"),
+                };
+                assert_eq!(err, expected, "{name}");
+                if let Some(msg) = case["message"].as_str() {
+                    assert_eq!(
+                        err.to_string(),
+                        msg,
+                        "{name}: the operator-facing wording is normative too"
+                    );
+                }
             }
             "admitted" => {
                 admitted += 1;

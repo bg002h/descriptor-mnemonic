@@ -118,11 +118,12 @@ fn the_fixture_header_still_records_this_mint() {
         V_PARTIAL_C13.contains(C13_TPL),
         "the fixture no longer records the template this test builds against"
     );
-    for (_, fp) in SLOTS.iter().take(2) {
+    for (i, (_, fp)) in SLOTS.iter().take(2).enumerate() {
+        // Each fingerprint at ITS slot -- an OR over the two slots would pass
+        // with both declared at @0 (fold-A review N-3).
         assert!(
-            V_PARTIAL_C13.contains(&format!("--fingerprint @0={fp}"))
-                || V_PARTIAL_C13.contains(&format!("--fingerprint @1={fp}")),
-            "the fixture no longer declares {fp}"
+            V_PARTIAL_C13.contains(&format!("--fingerprint @{i}={fp}")),
+            "the fixture no longer declares {fp} at @{i}"
         );
     }
     assert!(

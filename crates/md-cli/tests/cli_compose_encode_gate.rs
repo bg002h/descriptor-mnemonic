@@ -96,10 +96,12 @@ fn encode_still_admits_a_signed_wsh_policy_without_the_flag() {
 /// What this test pins is the CONTRACT, not the layer: for this path list
 /// `md compose` exits non-zero, prints no template, and says why.
 ///
-/// MUTATION: delete the `TooManyKeylessPaths` arm in `compose::validate` ->
-/// the last two assertions fail (the message becomes the parser's "Miniscript
-/// is malleable" quoted by the read-back); delete the read-back too and the
-/// first two fail (exit 0, and a template on stdout).
+/// MUTATION (run, fold-A review M-2): delete the `TooManyKeylessPaths` arm in
+/// `compose::validate` -> assertions 2 and 4 fail (the message becomes the
+/// parser's "Miniscript is malleable" quoted by the read-back, which names no
+/// paths and no remedy -- assertion 3 SURVIVES because that quote contains the
+/// word "malleable"); delete the read-back too and the first two fail (exit 0,
+/// and a template on stdout).
 #[test]
 fn compose_refuses_to_emit_a_template_encode_would_reject() {
     let out = md()

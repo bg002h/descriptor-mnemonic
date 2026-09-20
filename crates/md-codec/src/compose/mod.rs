@@ -538,17 +538,6 @@ pub fn validate(list: &PathList) -> Result<usize, ComposeError> {
     if !any_keyed {
         return Err(ComposeError::NoKeyedPath);
     }
-    // AT MOST ONE KEY-LESS PATH (spec §4e; composer fable review r0, lens 1
-    // C-1). Two of them make the spine malleable wherever they sit -- see
-    // `ComposeError::TooManyKeylessPaths` for the type-system reason and
-    // `tests/compose_keyless_cap.rs` for the 859-shape measurement. The rule
-    // is STATED here rather than discovered by re-parsing the output, because
-    // the device's Go port has no miniscript library to re-parse with: before
-    // this, `md compose`'s read-back (md-cli F-600) was the only thing that
-    // knew, and the port cut such a policy into steel.
-    if let (Some(&first), Some(&second)) = (keyless.first(), keyless.get(1)) {
-        return Err(ComposeError::TooManyKeylessPaths { first, second });
-    }
     if slots > usize::from(MAX_SLOTS) {
         return Err(ComposeError::TooManySlots {
             got: slots,
@@ -564,6 +553,24 @@ pub fn validate(list: &PathList) -> Result<usize, ComposeError> {
         if !(sole && sorted) {
             return Err(ComposeError::LegacyWrapperShape);
         }
+    }
+    // AT MOST ONE KEY-LESS PATH (spec §4e; composer fable review r0, lens 1
+    // C-1). Two of them make the spine malleable wherever they sit -- see
+    // `ComposeError::TooManyKeylessPaths` for the type-system reason and
+    // `tests/compose_keyless_cap.rs` for the 859-shape measurement. The rule
+    // is STATED here rather than discovered by re-parsing the output, because
+    // the device's Go port has no miniscript library to re-parse with: before
+    // this, `md compose`'s read-back (md-cli F-600) was the only thing that
+    // knew, and the port cut such a policy into steel.
+    //
+    // PRECEDENCE (fold-A review, M-1): this runs AFTER `TooManySlots` and
+    // `LegacyWrapperShape`, because its remedy -- "fold them into one path" --
+    // does not cure either of those: 36 slots folded are still 36, and `sh`
+    // with two paths is still not one sorted multisig. A remedy that does not
+    // work is worse than no remedy. The two rules above (`KeylessUnderTr`,
+    // `NoKeyedPath`) also precede it, by the same argument.
+    if let (Some(&first), Some(&second)) = (keyless.first(), keyless.get(1)) {
+        return Err(ComposeError::TooManyKeylessPaths { first, second });
     }
     Ok(slots)
 }
