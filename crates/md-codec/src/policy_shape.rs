@@ -232,8 +232,8 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
         Tag::Tr => {
             let Body::Tr {
                 is_nums,
+                key_index,
                 tree: inner_tree,
-                ..
             } = &tree.body
             else {
                 return incomplete();
@@ -243,6 +243,29 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
             } else {
                 KeyPathKind::Xpub
             };
+            // Fix round 1, I-5 (design §1A): "a 'path' for `tr` is a
+            // taptree LEAF, plus the key path as path 0 when the internal
+            // key is spendable." A spendable (non-NUMS) internal key is an
+            // independently satisfiable spend path in its own right — one
+            // Schnorr signature against it, no script, no taptree proof —
+            // and MUST be its own `Branch`, FIRST in `s.branches`, or a
+            // later rule counting unlocked spend paths (or grouping
+            // fingerprints per path) undercounts every spendable-internal-
+            // key taproot policy. NOT ported from the Go: `policy_shape.go`'s
+            // `walkTapTree` appends one branch per LEAF only and never adds
+            // one for the key path — an earlier draft of this design
+            // section claimed "the port inherits it," which was wrong.
+            if !*is_nums {
+                s.branches.push(Branch {
+                    k: 0,
+                    n: 0,
+                    slots: vec![*key_index],
+                    sorted: false,
+                    locks: Vec::new(),
+                    hashlocks: Vec::new(),
+                    depth: 0,
+                });
+            }
             if let Some(t) = inner_tree {
                 walk_tap_tree(t, 1, &mut s);
             }
@@ -763,9 +786,15 @@ where
 /// motivating one) MUST check `expand_per_at_n`'s success independently —
 /// or equivalently, `Descriptor::unresolved_origin_indices()` — rather than
 /// inferring it from whether this function's output is empty, and MUST
-/// derive "keys are present" from the raw TLV
-/// (`d.tlv.fingerprints.is_some() || d.tlv.pubkeys.is_some()`), never from
-/// partition emptiness.
+/// derive "keys are present" from the raw TLV, never from partition
+/// emptiness. **Corrected, fix round 1 (Task 4, I-1):** the shipped rule is
+/// `Descriptor::is_wallet_policy()` — the `Pubkeys` TLV present and
+/// non-empty — not `d.tlv.fingerprints.is_some() ||
+/// d.tlv.pubkeys.is_some()` as an earlier draft of this comment claimed. A
+/// `Fingerprints`-only card (no `Pubkeys`) is not "wallet-policy mode" by
+/// that predicate's own definition, even though its `fp_partition` can be
+/// non-empty; `crate::skeleton::skeleton`'s own test suite pins this
+/// (`keys_present_is_read_from_tlv_presence_not_partition_emptiness`).
 pub fn fp_partition(d: &crate::encode::Descriptor, s: &PolicyShape) -> Vec<Vec<Vec<u8>>> {
     let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
         return s.branches.iter().map(|_| Vec::new()).collect();

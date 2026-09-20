@@ -361,36 +361,72 @@ fn bare_nums_taproot_keypath_only_reports_no_branches() {
     assert_eq!(shape.tap_depth, 0);
 }
 
-/// A key-path-only real-key `tr` also has no leaves, and its key path is
-/// `Xpub` (this walk verifies nothing about spendability — see
-/// `KeyPathKind::Xpub`'s doc comment).
+/// A key-path-only real-key `tr` has NO tapscript leaves, but the key path
+/// ITSELF is a spend path (design §1A, fix round 1 I-5: "a 'path' for `tr`
+/// is a taptree leaf, plus the key path as path 0 when the internal key is
+/// spendable"): one Schnorr signature against a real (non-NUMS) internal
+/// key satisfies this output with no script and no taptree proof at all, so
+/// treating this policy as having NO spend path would be wrong, not merely
+/// incomplete. Renamed from `bare_xpub_taproot_keypath_only_reports_no_
+/// branches` (fix round 1): that name and assertion predate I-5 and were
+/// simply incorrect once the key path counts.
 #[test]
-fn bare_xpub_taproot_keypath_only_reports_no_branches() {
+fn bare_xpub_taproot_keypath_only_reports_the_key_path_as_its_one_branch() {
     let tree = common::tr_node(false, 0, None);
     let shape = policy_shape(&common::descriptor_of(tree, 1));
     assert!(shape.complete);
     assert_eq!(shape.key_path, KeyPathKind::Xpub);
-    assert!(shape.branches.is_empty());
+    assert_eq!(
+        shape.branches.len(),
+        1,
+        "the key path is its own spend path, not zero"
+    );
+    assert_eq!(shape.branches[0].slots, vec![0], "the internal key's slot");
+    assert_eq!(
+        shape.branches[0].k, 0,
+        "no threshold node -- a single Schnorr signature, not a multi"
+    );
+    assert_eq!(shape.branches[0].depth, 0);
+    assert!(shape.branches[0].locks.is_empty());
+    assert!(shape.branches[0].hashlocks.is_empty());
+    assert_eq!(shape.tap_depth, 0);
 }
 
-/// One tapscript leaf: `Xpub` key path, one branch, depth 0 (a single leaf
-/// sits directly under the tr, not under a `TapTree` fork).
+/// A spendable internal key PLUS one tapscript leaf: two spend paths, key
+/// path first (design §1A "path 0"), the leaf second. Renamed from
+/// `taproot_with_one_leaf_reports_xpub_keypath_and_depth_zero` (fix round 1,
+/// I-5): that name/assertion (`branches.len() == 1`) predates the key-path
+/// branch and undercounted this policy's spend paths by one.
 #[test]
-fn taproot_with_one_leaf_reports_xpub_keypath_and_depth_zero() {
+fn taproot_with_one_leaf_reports_the_key_path_then_the_leaf() {
     let tree = common::tr_node(false, 0, Some(keyarg(Tag::PkK, 1)));
     let shape = policy_shape(&common::descriptor_of(tree, 2));
     assert!(shape.complete);
     assert_eq!(shape.key_path, KeyPathKind::Xpub);
-    assert_eq!(shape.branches.len(), 1);
+    assert_eq!(
+        shape.branches.len(),
+        2,
+        "the key path (@0) plus the one tapscript leaf (@1)"
+    );
+    assert_eq!(
+        shape.branches[0].slots,
+        vec![0],
+        "key path is path 0, per design §1A"
+    );
     assert_eq!(shape.branches[0].depth, 0);
+    assert_eq!(shape.branches[1].slots, vec![1], "the leaf");
+    assert_eq!(shape.branches[1].depth, 0);
     assert_eq!(shape.tap_depth, 0);
 }
 
-/// `{{A,B},{C,{D,E}}}` — five leaves, unbalanced, depths 2,2,2,3,3. Ported
+/// `{{A,B},{C,{D,E}}}` — five leaves, unbalanced, depths 2,2,2,3,3, PLUS the
+/// spendable key path as branch 0 at depth 0 (fix round 1, I-5). Ported
 /// from `TestPolicyShapeReportsEveryLeafOfADeepTree`
 /// (md/policy_shape_test.go:193-218): pins the objection SPEC §4.2/C3
 /// raises — a summary must not describe one leaf and stay silent about the
-/// others.
+/// others. `tap_depth` is unaffected by the key-path branch: it is computed
+/// only inside `walk_tap_tree`'s taptree descent, and the key path is not
+/// part of the taptree.
 #[test]
 fn deep_taptree_reports_every_leaf_and_the_correct_max_depth() {
     let leaf = |i: u8| keyarg(Tag::PkK, i);
@@ -407,14 +443,19 @@ fn deep_taptree_reports_every_leaf_and_the_correct_max_depth() {
     );
     assert_eq!(
         shape.branches.len(),
-        5,
-        "branches = {}, want 5 -- a leaf was dropped",
+        6,
+        "branches = {}, want 6 (key path + 5 leaves) -- a path was dropped",
         shape.branches.len()
     );
     assert_eq!(shape.tap_depth, 3);
     assert_eq!(shape.key_path, KeyPathKind::Xpub);
+    assert_eq!(
+        shape.branches[0].slots,
+        vec![0],
+        "key path is path 0, per design §1A"
+    );
     let depths: Vec<u8> = shape.branches.iter().map(|b| b.depth).collect();
-    assert_eq!(depths, vec![2, 2, 2, 3, 3]);
+    assert_eq!(depths, vec![0, 2, 2, 2, 3, 3]);
 }
 
 // ---------------------------------------------------------------------

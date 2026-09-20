@@ -59,6 +59,48 @@ fn a_template_only_card_partitions_to_nothing() {
     assert!(key_partition(&d).is_empty());
 }
 
+/// Task 4 fix round 1: `common::kofn_recovery()` gained an explicit
+/// resolvable origin path so `skeleton()`'s stricter gate could accept it
+/// (see `crates/md-codec/src/skeleton.rs`'s module doc and
+/// `common::kofn_recovery`'s own doc comment). That fix made this crate's
+/// only exercise of `fp_partition`/`key_partition`'s `expand_per_at_n`
+/// EARLY-RETURN branches (`let Ok(expanded) = ... else { return ... }`,
+/// `policy_shape.rs` lines ~799/~845) go dead crate-wide: nothing else
+/// calls either function directly on a descriptor whose origin fails to
+/// resolve. `skeleton()` cannot revive them either — its own Gate 1 refuses
+/// exactly that input before either function is ever called. This test
+/// calls `fp_partition`/`key_partition` DIRECTLY (bypassing `skeleton()`)
+/// on `common::dead_card_real_fingerprints_unresolved_origin()` — real
+/// `Fingerprints` TLV data, unresolved origin — to pin the ORIGINAL claim
+/// those branches' doc comment makes: a card carrying real key data still
+/// collapses to the SAME empty output as a genuinely template-only card
+/// when called this way, which is precisely why `skeleton()` must never be
+/// allowed to reach this path with real key data present.
+#[test]
+fn expand_failure_collapses_real_key_data_to_the_same_empty_shape_as_no_keys() {
+    let dead = common::dead_card_real_fingerprints_unresolved_origin();
+    assert!(
+        md_codec::canonicalize::expand_per_at_n(&dead).is_err(),
+        "fixture sanity: origin must genuinely fail to resolve"
+    );
+    let shape = policy_shape(&dead);
+    let dead_fp = fp_partition(&dead, &shape);
+    let dead_kp = key_partition(&dead);
+    assert!(
+        dead_fp.iter().all(|p| p.is_empty()),
+        "real fingerprints TLV data is present, but expand failure hides it: {dead_fp:?}"
+    );
+    assert!(dead_kp.is_empty());
+
+    // Byte-identical to the template-only card sharing this tree.
+    let template_only = common::kofn_recovery();
+    assert_eq!(
+        dead_fp,
+        fp_partition(&template_only, &policy_shape(&template_only))
+    );
+    assert_eq!(dead_kp, key_partition(&template_only));
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Fix round 1, I-1 / I-2: two mutation-confirmed coverage gaps in
 // `key_partition` (see task-3-report.md's "Fix round 1" appendix for the

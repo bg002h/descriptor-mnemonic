@@ -54,6 +54,20 @@ pub struct Skeleton {
     pub inner_wsh: bool,
     /// The canonical `@i` template with lock values and digests abstracted
     /// to `kind#class`, and the use-site path kept (design §1A).
+    ///
+    /// NOT INJECTIVE against the underlying descriptor (design §1A, "the
+    /// key's blind spots"): two policies with the same structure but
+    /// DIFFERENT lock values, or DIFFERENT hashlock digests, render the same
+    /// `kind#class` label whenever each is the only value of its kind in its
+    /// own policy — `older(100)` and `older(65535)` both render
+    /// `older(older-blocks#1)`, and two distinct `sha256` preimages both
+    /// render `sha256(#1)`. This is an intentional design tradeoff (a
+    /// too-coarse key would be *structurally* impossible instead), not a
+    /// bug in this renderer — but it means `SkeletonKey` equality is
+    /// necessary, not sufficient, evidence that two policies are
+    /// byte-identical, and a coordinator refusal keyed on an exact lock
+    /// value or a known-preimage list can disagree across two policies that
+    /// share a `SkeletonKey`.
     pub template: String,
     /// The semantic decomposition: branches, their slots, locks, hashlocks,
     /// and the taproot internal-key kind.
@@ -275,10 +289,26 @@ fn key_path_kind_label(k: KeyPathKind) -> &'static str {
 /// `root`/`inner_wsh` are NOT separately serialized here: both are
 /// recoverable from `template`'s own literal wrapper spelling (`sh(`,
 /// `wsh(`, `sh(wsh(`, …), so appending them as a fourth token would encode
-/// the same fact twice — the `SkeletonKey` string and `Skeleton::root`
-/// disagreeing is structurally impossible, not a case this function has to
-/// guard against. `keys_present` is excluded per design §1A: it selects a
-/// verdict, it is not part of the policy's identity.
+/// the same fact twice. **This is a property of today's `render.rs` prefix
+/// table, proven by an argument (fix round 1, I-4's review: the seven root
+/// prefixes are pairwise distinguishable at the string's start), NOT a
+/// type-level guarantee** — `Skeleton::root`/`Skeleton::inner_wsh` are
+/// tested directly (`crates/md-codec/tests/skeleton_key.rs`'s
+/// `root_and_inner_wsh_are_read_correctly`) precisely because a future
+/// change to either `root_kind` or `render_node`'s prefix choices could
+/// silently break the redundancy without this function noticing. Likewise
+/// `key_path_kind` IS separately serialized even though it is *currently*
+/// redundant with `template` too (`is_nums` always changes the internal-key
+/// rendering) — see `crates/md-codec/tests/skeleton_key.rs`'s
+/// `key_path_kind_is_part_of_the_key_independent_of_template` for why it is
+/// kept in the string anyway. `keys_present` is excluded per design §1A: it
+/// selects a verdict, it is not part of the policy's identity.
+///
+/// `template` is also not injective ON TREES, independent of the
+/// abstraction in its own doc comment: `Tag::Pkh` and `Tag::PkH` both
+/// render `pkh(@i/...)`, and `Verify(PkK)` and `Verify(Check(PkK))` both
+/// render `v:pk(@i/...)` — two spellings of one miniscript fragment each,
+/// so sharing a key is correct, not a defect (fix round 1, N-1).
 pub fn skeleton_key(s: &Skeleton) -> SkeletonKey {
     let mut out = s.template.clone();
     out.push('\u{001F}');

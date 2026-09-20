@@ -420,6 +420,29 @@ pub fn unclassifiable() -> md_codec::encode::Descriptor {
     descriptor_of(tree, 0)
 }
 
+/// A "dead card" (fix round 1, I-1): the SAME `kofn_recovery` shape, with a
+/// REAL `Fingerprints` TLV attached, but WITHOUT an explicit origin
+/// (`descriptor_of`'s default empty shared path is left as-is — the point
+/// of this fixture). This is exactly `DecodeOpts::partial()`'s dead-card
+/// decode mode (`md decode`/`md inspect` on a card whose `@N` origin never
+/// resolved): real key TLVs intact, origin unresolved. Per
+/// `policy_shape::fp_partition`'s own doc comment, WITHOUT `skeleton()`'s
+/// `expand_per_at_n` gate this card's `fp_partition`/`key_partition` would
+/// collapse to the exact same empty shape as a genuinely template-only card
+/// sharing this tree — and since the tree is `kofn_recovery`'s, with the
+/// SAME template, the resulting `SkeletonKey` would be byte-identical to
+/// `kofn_recovery()`'s. That collision is what the gate exists to prevent.
+pub fn dead_card_real_fingerprints_unresolved_origin() -> md_codec::encode::Descriptor {
+    let mut d = descriptor_of(kofn_recovery_tree(), 4);
+    d.tlv.fingerprints = Some(vec![
+        (0, [0xaa; 4]),
+        (1, [0xbb; 4]),
+        (2, [0xcc; 4]),
+        (3, [0xdd; 4]),
+    ]);
+    d
+}
+
 /// n biased to the kiw-width boundaries (exercises kiw 0..5).
 fn n_strategy() -> impl Strategy<Value = u8> {
     prop_oneof![
