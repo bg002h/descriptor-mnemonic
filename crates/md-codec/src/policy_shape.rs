@@ -65,6 +65,7 @@
 //! `compose::Lock` — deliberately, not by oversight; see [`Lock`]'s doc.
 
 use crate::compose::{HashKind, HashLock, LOCKTIME_THRESHOLD, SEQUENCE_TYPE_FLAG};
+use crate::origin_path::OriginPath;
 use crate::tag::Tag;
 use crate::tree::{Body, Node};
 use std::collections::BTreeSet;
@@ -628,4 +629,160 @@ pub(crate) fn lock_from_wire(tag: Tag, operand: u32) -> Lock {
         kind: LockKind::AfterHeight,
         value: operand,
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Task 3: the two partitions over key identity.
+//
+// Two DIFFERENT relations, kept as two DIFFERENT functions (design §1A):
+//
+// - [`fp_partition`] is PER SPEND PATH: which slots within one `Branch`
+//   share a master fingerprint. It exists for Liana's
+//   `DuplicateOriginSamePath`.
+// - [`key_partition`] is WHOLE-POLICY: which slots anywhere in the
+//   descriptor share `(xpub bytes, origin path)`. It exists for Liana's
+//   `DuplicateKey`.
+//
+// Collapsing them into one function/one output would make one of the two
+// refusals uncomputable: `DuplicateOriginSamePath` needs the per-path
+// scoping (two slots that share a fingerprint but sit in DIFFERENT spend
+// paths are not what it is about), and `DuplicateKey` needs to see across
+// branches (the `seated_same_key` fixture in `tests/common/mod.rs` puts its
+// two same-key slots in DIFFERENT branches on purpose, to pin exactly this).
+//
+// Both, however, group by the SAME MECHANISM: walk slots in ascending
+// order, cluster equal keys together, EXCEPT that a key equal to its
+// type's ABSENT sentinel never joins another occurrence of itself — each
+// absent-keyed slot is its own singleton, because an unmeasured absence is
+// not a measured identity. That mechanism is [`group_ascending`], the ONE
+// implementation both partitions call; only the per-slot key extractor and
+// its ABSENT test differ between them.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The ABSENT-fingerprint sentinel: `crate::validate::validate_origin_key_consistency`
+/// already establishes (and `tests/zero_fingerprint_is_absent.rs` pins) that
+/// an all-zero master fingerprint is what a producer writes when there is no
+/// master to name, not a claim about one. That constant is private to its
+/// call site there, so this is a SEPARATE definition of the same documented
+/// value, not a shared one — see the module-level note in the Task 3 report
+/// for why centralizing it was left out of this task's scope (only
+/// `policy_shape.rs` is in this task's file list).
+const ABSENT_FINGERPRINT: [u8; 4] = [0u8; 4];
+
+/// The ABSENT-xpub sentinel, by the same argument the brief gives for
+/// fingerprints: an all-zero 65-byte xpub slot names no key, so two slots
+/// carrying it are two absences, not one shared identity.
+const ABSENT_XPUB: [u8; 65] = [0u8; 65];
+
+/// Cluster `slots` (visited in ascending order) into equal-key groups,
+/// EXCLUDING any slot for which `key_of` returns `None` (no data recorded
+/// at all — not even "known absent") and SPLITTING every slot whose key
+/// satisfies `is_absent` into its own singleton group, regardless of
+/// whether an earlier or later slot carries the identical absent value.
+///
+/// Because `slots` is visited ascending and each group's members are
+/// appended in that same order, groups come out already ascending
+/// internally, and in first-occurrence order — which for a strictly
+/// ascending input is exactly "ordered by each group's lowest slot".
+///
+/// Linear `Vec` + `find`, not a `HashMap`: slot counts are bounded by `n`
+/// (`u8`, so ≤ 256, and every concrete caller caps it far lower — see
+/// `descriptor_with_pubkeys`'s `n ≤ 32`), so a scan is simpler and no
+/// slower than hashing for this size, and it needs no `Hash` bound on `K`
+/// (`OriginPath`, part of `key_partition`'s key, does not derive `Hash`).
+fn group_ascending<K, S, F, A>(slots: S, key_of: F, is_absent: A) -> Vec<Vec<u8>>
+where
+    K: PartialEq,
+    S: IntoIterator<Item = u8>,
+    F: Fn(u8) -> Option<K>,
+    A: Fn(&K) -> bool,
+{
+    let mut groups: Vec<(K, Vec<u8>)> = Vec::new();
+    for slot in slots {
+        let Some(key) = key_of(slot) else { continue };
+        if is_absent(&key) {
+            // Never search: an absent value must not merge with another
+            // absent value, even though the two are byte-identical.
+            groups.push((key, vec![slot]));
+            continue;
+        }
+        match groups.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, members)) => members.push(slot),
+            None => groups.push((key, vec![slot])),
+        }
+    }
+    groups.into_iter().map(|(_, members)| members).collect()
+}
+
+/// Per spend-path fingerprint partition (design §1A) — which of a
+/// `Branch`'s slots are known to share a signer, WITHIN that one branch.
+/// Exists for Liana's `DuplicateOriginSamePath`.
+///
+/// One entry per `s.branches[i]`, in the same order; each entry is that
+/// branch's slots grouped by master fingerprint, per [`group_ascending`]'s
+/// absence rule: two slots whose fingerprint is the ABSENT `[0u8; 4]`
+/// sentinel are NOT known to share a signer and never join each other, and
+/// a slot with no fingerprint recorded at all does not appear in any group.
+///
+/// `d` and `s` must describe the same descriptor (`s = policy_shape(d)` at
+/// the call site, as every test here does) — this function does not
+/// re-derive the shape, since [`policy_shape`] already is the one place
+/// that walk is implemented.
+///
+/// If `d`'s per-`@N` data cannot be expanded at all (for example a
+/// template-only card with no explicit origin and a non-canonical wrapper —
+/// see `crate::canonicalize::expand_per_at_n`'s `MissingExplicitOrigin`),
+/// there is no fingerprint data to group by construction, so every branch's
+/// group list is empty rather than propagating that error: a caller asking
+/// "which slots share a signer" about a card with no signer data gets "none
+/// known", the same honest answer group_ascending gives per-slot.
+pub fn fp_partition(d: &crate::encode::Descriptor, s: &PolicyShape) -> Vec<Vec<Vec<u8>>> {
+    let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
+        return s.branches.iter().map(|_| Vec::new()).collect();
+    };
+    s.branches
+        .iter()
+        .map(|br| {
+            group_ascending(
+                br.slots.iter().copied(),
+                |slot| expanded.get(slot as usize).and_then(|e| e.fingerprint),
+                |fp| *fp == ABSENT_FINGERPRINT,
+            )
+        })
+        .collect()
+}
+
+/// Whole-policy key partition (design §1A) — which slots ANYWHERE in the
+/// descriptor, across every spend path, are known to be the same key.
+/// Exists for Liana's `DuplicateKey`.
+///
+/// Groups every slot `0..d.n` by `(xpub bytes, origin path)` — "derivation"
+/// in the design's clause means the origin path, the only derivation a
+/// decoded md1 carries; there is no BIP-32 chain-code/depth data to derive
+/// with. Per [`group_ascending`]'s absence rule: a slot whose xpub is the
+/// ABSENT `[0u8; 65]` sentinel is its own singleton by the same argument as
+/// the fingerprint rule (an unmeasured absence asserts no identity), and a
+/// slot with no xpub recorded at all does not appear in any group.
+///
+/// Unlike [`fp_partition`], this is not scoped to one branch: two slots in
+/// different spend paths that share a key both land in the same group here,
+/// which is the whole reason this is a second function rather than a
+/// per-branch view of the first.
+///
+/// Same expansion-failure handling as `fp_partition`, for the same reason:
+/// no per-`@N` data means nothing to group, so the result is empty rather
+/// than an error the caller did not ask this function to raise.
+pub fn key_partition(d: &crate::encode::Descriptor) -> Vec<Vec<u8>> {
+    let Ok(expanded) = crate::canonicalize::expand_per_at_n(d) else {
+        return Vec::new();
+    };
+    group_ascending(
+        0..d.n,
+        |slot| {
+            expanded
+                .get(slot as usize)
+                .and_then(|e| e.xpub.map(|xpub| (xpub, e.origin_path.clone())))
+        },
+        |(xpub, _origin): &([u8; 65], OriginPath)| *xpub == ABSENT_XPUB,
+    )
 }

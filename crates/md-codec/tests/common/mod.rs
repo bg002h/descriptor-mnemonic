@@ -193,6 +193,100 @@ pub fn kofn_recovery_with_use_site() -> md_codec::encode::Descriptor {
     descriptor_of(tree, 4)
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Task 3 (fp_partition / key_partition) fixtures.
+// Shape: `wsh(or_d(multi(2,@0,@1,@2), and_v(v:pkh(@3), older(26280))))` —
+// the SAME shape as `tests/policy_shape.rs`'s private `kofn_recovery()`
+// (Task 1), reused here so `policy_shape`'s branch decomposition is a fact
+// already pinned by Task 1's suite: branch 0 (the `multi`) references slots
+// [0,1,2], branch 1 (the recovery leg) references slot [3].
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Build the `kofn_recovery` tree with an EXPLICIT non-empty shared origin
+/// path (`m/48'`), so `expand_per_at_n` succeeds instead of raising
+/// `MissingExplicitOrigin` — `wsh(or_d(...))` is not one of
+/// `canonical_origin`'s recognized shapes, and `descriptor_of`'s default
+/// shared path is empty.
+fn kofn_recovery_tree() -> Node {
+    let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
+    let recovery = node2(
+        Tag::AndV,
+        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        timelock(Tag::Older, 26280),
+    );
+    wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery))
+}
+
+/// `wsh(or_d(multi(2,@0,@1,@2), and_v(v:pkh(@3), older(26280))))`,
+/// template-only (no TLVs) — the same shape `tests/policy_shape.rs`'s
+/// private `kofn_recovery()` pins, reused here as a card with no key
+/// material at all: `fp_partition`/`key_partition` have nothing to group.
+pub fn kofn_recovery() -> md_codec::encode::Descriptor {
+    descriptor_of(kofn_recovery_tree(), 4)
+}
+
+/// The same `kofn_recovery` shape, with a per-`@N` fingerprint TLV built
+/// from `fps` (ascending `(idx, fingerprint)` pairs — callers pass every
+/// slot's fingerprint including the ABSENT `[0u8; 4]` sentinel where wanted)
+/// and an explicit non-empty shared origin path so `expand_per_at_n`
+/// resolves instead of refusing on `MissingExplicitOrigin`.
+pub fn seated(fps: &[(u8, [u8; 4])]) -> md_codec::encode::Descriptor {
+    let mut d = descriptor_of(kofn_recovery_tree(), 4);
+    d.path_decl = PathDecl {
+        n: 4,
+        paths: PathDeclPaths::Shared(OriginPath {
+            components: vec![PathComponent {
+                hardened: true,
+                value: 48,
+            }],
+        }),
+    };
+    d.tlv.fingerprints = Some(fps.to_vec());
+    d
+}
+
+/// The same `kofn_recovery` shape (slots @0..@3, split across the two
+/// branches Task 1 pins), with a `Pubkeys` TLV where every slot named in
+/// `same_key_idxs` carries the IDENTICAL 65-byte xpub, every other slot
+/// carries a distinct one, and every slot resolves to the SAME shared
+/// origin path — so the only thing that can make two slots share a
+/// `key_partition` group is `same_key_idxs` itself. Exercises the
+/// WHOLE-POLICY relation across branches: @0 lives in the primary `multi`
+/// branch, @3 in the recovery branch, and `key_partition` — unlike
+/// `fp_partition` — must still see them as one key.
+pub fn seated_same_key(same_key_idxs: &[u8]) -> md_codec::encode::Descriptor {
+    let mut d = descriptor_of(kofn_recovery_tree(), 4);
+    d.path_decl = PathDecl {
+        n: 4,
+        paths: PathDeclPaths::Shared(OriginPath {
+            components: vec![PathComponent {
+                hardened: true,
+                value: 48,
+            }],
+        }),
+    };
+    let shared_xpub = {
+        let mut x = [0x11u8; 65];
+        x[32] = 0x02; // a distinct, valid-looking compressed-pubkey prefix
+        x
+    };
+    let pubkeys = (0..4u8)
+        .map(|i| {
+            if same_key_idxs.contains(&i) {
+                (i, shared_xpub)
+            } else {
+                // Distinct per-slot filler, never colliding with
+                // `shared_xpub` or another filler slot.
+                let mut x = [0x22u8 + i; 65];
+                x[32] = 0x03;
+                (i, x)
+            }
+        })
+        .collect();
+    d.tlv.pubkeys = Some(pubkeys);
+    d
+}
+
 /// n biased to the kiw-width boundaries (exercises kiw 0..5).
 fn n_strategy() -> impl Strategy<Value = u8> {
     prop_oneof![
