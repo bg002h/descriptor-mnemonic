@@ -98,6 +98,27 @@ pub fn taptree2(l: Node, r: Node) -> Node {
         body: Body::Children(vec![l, r]),
     }
 }
+/// Build a template-only `Descriptor` around `tree` with `n` placeholders.
+/// (Tests are a separate crate, so `md_codec::` is correct HERE.)
+/// Template-only is deliberate: Task 1 tests structure, not key identity.
+///
+/// None of `PathDecl`, `UseSitePath` or `TlvSection` derives `Default`, so
+/// this uses the spelling `rg 'Descriptor \{' crates/md-codec/tests` already
+/// establishes (`crates/md-codec/tests/sh_wpkh_canonical.rs`'s
+/// `sh_wpkh_descriptor`): an empty shared origin path, the standard
+/// `<0;1>/*` use-site path, and `TlvSection::new_empty()`.
+pub fn descriptor_of(tree: Node, n: u8) -> md_codec::encode::Descriptor {
+    md_codec::encode::Descriptor {
+        n,
+        path_decl: PathDecl {
+            n,
+            paths: PathDeclPaths::Shared(OriginPath { components: vec![] }),
+        },
+        use_site_path: UseSitePath::standard_multipath(),
+        tree,
+        tlv: TlvSection::new_empty(),
+    }
+}
 
 /// n biased to the kiw-width boundaries (exercises kiw 0..5).
 fn n_strategy() -> impl Strategy<Value = u8> {
