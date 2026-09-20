@@ -32,13 +32,39 @@
 //!    discarding it. A verbatim port would leave a later task with no
 //!    source for its data (the fingerprint partition needs the slot set,
 //!    not just its size).
-//! 2. [`KeyPathKind`] gains a fourth value, [`KeyPathKind::UnspendableXpub`].
-//!    The Go enum is three-valued and an unspendable-xpub internal key falls
-//!    into `Spendable` there, which is a distinction Nunchuk makes and
-//!    F-449 records. This walk does not yet populate that variant — it has
-//!    no key material to compare against — but the type exists for the task
-//!    that will.
+//! 2. [`KeyPathKind`] renames the Go's third value from `Spendable` to
+//!    [`KeyPathKind::Xpub`]. This walk verifies nothing about spendability —
+//!    the wire's only internal-key discriminant is `Body::Tr::is_nums`
+//!    (`crate::tree::Body::Tr`), and an unspendable-xpub internal key (the
+//!    Nunchuk shape F-449 records) is, on the wire, an ordinary `key_index`
+//!    structurally identical to a spendable one. Telling the two apart needs
+//!    re-deriving a specific coordinator's `unspendable_internal_key`
+//!    function over the whole descriptor — Liana's does exactly that — which
+//!    makes it a coordinator RULE, not a codec-observable property. `Xpub`
+//!    says only "a real extended key, not NUMS"; a coordinator that needs
+//!    the finer distinction computes it itself, one layer above this type.
+//!
+//! # Type reuse: hashlocks come from `compose`, locks do not
+//!
+//! [`Branch::hashlocks`] is `Vec<`[`crate::compose::HashLock`]`>` — this
+//! module does NOT define its own hashlock type. `compose::HashLock` keeps
+//! its `digest: [u8; 32]` field private specifically because a 20-byte kind
+//! (`Ripemd160`/`Hash160`) carries twelve bytes of alloc-gate padding, and
+//! `compose::HashLock`'s hand-written `PartialEq`/`Eq`/`Hash`/`Ord` compare
+//! only the *visible* digest (`digest()`, sliced to `HashKind::digest_len()`)
+//! — deriving those traits over the raw array would make the padding
+//! observable, which is exactly the documented trap at
+//! `crate::compose::HashLock`'s own doc comment. An earlier draft of this
+//! module defined its own `HashLock { kind, digest: [u8; 32], len: u8 }`
+//! with *derived* `PartialEq`/`Eq`, reopening that trap and duplicating
+//! `HashKind::digest_len()` (documented there as "the only place a digest
+//! length is written") in a second `len` field. Reusing `compose`'s types
+//! closes both at once.
+//!
+//! [`Branch::locks`] is `Vec<Lock>`, a decode-side type distinct from
+//! `compose::Lock` — deliberately, not by oversight; see [`Lock`]'s doc.
 
+use crate::compose::{HashKind, HashLock};
 use crate::tag::Tag;
 use crate::tree::{Body, Node};
 use std::collections::BTreeSet;
@@ -70,32 +96,45 @@ pub enum RootKind {
     ShWpkh,
 }
 
-/// A taproot internal key. Four-valued: the Go original has three
+/// A taproot internal key. Three-valued, matching the Go original
 /// (`KeyPathNone` / `KeyPathNUMS` / `KeyPathSpendable`,
-/// `md/policy_shape.go:32-40`), and an unspendable-xpub internal key falls
-/// into `Spendable` there.
+/// `md/policy_shape.go:32-40`) in cardinality but NOT in the third name —
+/// see [`KeyPathKind::Xpub`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyPathKind {
     /// Not a taproot policy.
     NotTaproot,
     /// Provably unspendable internal key: script paths only (BIP-341 NUMS
-    /// H-point).
+    /// H-point). The wire's only internal-key discriminant
+    /// (`crate::tree::Body::Tr::is_nums`) says exactly this and nothing
+    /// more.
     Nums,
-    /// EXTENSION (not in the Go original): an internal key that is a real
-    /// extended public key but is treated as unspendable by convention
-    /// (Nunchuk's key-path-disabled shape, F-449). This walk does not yet
-    /// distinguish it from [`KeyPathKind::Spendable`] — doing so needs the
-    /// decoded key material, which a later task supplies — but the variant
-    /// exists so that task does not have to widen this enum again.
-    UnspendableXpub,
-    /// A real key can spend directly, without satisfying any leaf. This is
-    /// the condition a leaf-only summary would have hidden.
-    Spendable,
+    /// A real extended key sits in the internal-key slot — `is_nums = false`
+    /// on the wire. Named `Xpub`, NOT the Go's `Spendable`: this walk
+    /// verifies nothing about whether the key can actually spend. An
+    /// internal key can be a real xpub and still be *treated* as
+    /// unspendable by convention (Nunchuk's key-path-disabled shape, F-449
+    /// records it) — recognising that needs re-deriving a specific
+    /// coordinator's `unspendable_internal_key`-style function over the
+    /// whole descriptor (Liana's does exactly this), which makes it a
+    /// coordinator RULE, not a codec-observable property. Do not "restore
+    /// fidelity" with the Go name here: a coordinator that needs the finer
+    /// distinction computes it itself, one layer above this type.
+    Xpub,
 }
 
 /// One timelock, in wire units. Mirrors the fork's `LockKind`/`Lock`
 /// (`md/compose.go:60-76`), read back off the decoded operand by
 /// [`lock_from_wire`].
+///
+/// Deliberately NOT [`crate::compose::Lock`]: that type's `OlderBlocks(u16)`/
+/// `OlderUnits(u16)`/`AfterHeight(u32)`/`AfterTime(u32)` payloads are the
+/// *operator's* input range for composing a policy, capped where the spec
+/// caps them (16 bits for the two `older` bands); a value read back off the
+/// wire by this decode-side walk is not bound by that composer-input cap and
+/// must fit whatever 32-bit operand a decoded `after`/`older` node actually
+/// carries. Do not "fix" this duplication by merging the two — the narrower
+/// type cannot hold every value the wider one must represent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lock {
     /// Which of the four `after`/`older` bands this value denotes.
@@ -119,38 +158,6 @@ pub enum LockKind {
     OlderBlocks,
     /// `older(0x400000 + u)` — u units of 512 seconds, 1..=65535.
     OlderUnits,
-}
-
-/// A hashlock: which hash, and the digest it commits to. Mirrors the fork's
-/// `HashLock` (`md/compose.go:351-356`).
-///
-/// `digest` is a fixed 32 bytes so every kind fits in one field; `len` says
-/// how many of those bytes are meaningful (32 for `Sha256`/`Hash256`, 20 for
-/// `Ripemd160`/`Hash160`) — the rest is always zero, filled in by this
-/// module and never read. Compare `(kind, len, digest)` as a whole rather
-/// than trusting only the visible prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashLock {
-    /// Which hash the script commits to.
-    pub kind: HashKind,
-    /// The digest, zero-padded past `len` bytes.
-    pub digest: [u8; 32],
-    /// How many bytes of `digest` are the real hash (32 or 20).
-    pub len: u8,
-}
-
-/// Which hash a hashlock's script commits to. Mirrors the fork's `HashKind`
-/// (`md/compose.go:242-259`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HashKind {
-    /// `sha256(X)` — the bare form on the wire.
-    Sha256,
-    /// `hash256(X) = sha256(sha256(X))`.
-    Hash256,
-    /// `ripemd160(X)`, the bare primitive.
-    Ripemd160,
-    /// `hash160(X) = ripemd160(sha256(X))`.
-    Hash160,
 }
 
 /// One independently satisfiable spend path: a tapscript leaf, or the whole
@@ -233,7 +240,7 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
             s.key_path = if *is_nums {
                 KeyPathKind::Nums
             } else {
-                KeyPathKind::Spendable
+                KeyPathKind::Xpub
             };
             if let Some(t) = inner_tree {
                 walk_tap_tree(t, 1, &mut s);
@@ -525,11 +532,7 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
             } else {
                 HashKind::Hash256
             };
-            br.hashlocks.push(HashLock {
-                kind,
-                digest: *h,
-                len: 32,
-            });
+            br.hashlocks.push(HashLock::new(kind, *h));
             true
         }
         Tag::Ripemd160 | Tag::Hash160 => {
@@ -541,13 +544,14 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
             } else {
                 HashKind::Hash160
             };
+            // `HashLock::new` takes the full 32-byte alloc-gate slot; the
+            // trailing 12 bytes are padding that `HashLock`'s own `digest()`
+            // never exposes and its `PartialEq`/`Hash`/`Ord` never compare,
+            // so zero-filling here is a courtesy (predictable `Debug` output)
+            // rather than a correctness requirement.
             let mut digest = [0u8; 32];
             digest[..20].copy_from_slice(h);
-            br.hashlocks.push(HashLock {
-                kind,
-                digest,
-                len: 20,
-            });
+            br.hashlocks.push(HashLock::new(kind, digest));
             true
         }
         Tag::True | Tag::False => true,
