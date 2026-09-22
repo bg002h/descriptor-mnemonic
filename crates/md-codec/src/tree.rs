@@ -89,9 +89,22 @@ pub enum Body {
 ///
 /// `wire_version` is the wire version this write targets (see
 /// [`crate::encode::Descriptor::wire_version`]). Stage 1b task 2 threads it
-/// through every recursive call site; no encoding decision reads it yet —
-/// wire bytes are unchanged until the following task starts distinguishing
-/// `InternalKey::LianaUnspendable` from `InternalKey::NumsPoint` at version 8.
+/// through every recursive call site; no encoding decision reads it yet.
+///
+/// CORRECTION (fix round 1, I-1): an earlier version of this comment claimed
+/// "wire bytes are unchanged until the following task". That is true only
+/// for version-4 trees (proven by stage 1a's byte-equality gate over all 65
+/// vendored vectors). It is FALSE for a tree carrying
+/// `InternalKey::LianaUnspendable`: [`crate::encode::Descriptor::wire_version`]
+/// already returns 8 for that tree, but this function's `Body::Tr` arm below
+/// still writes the same v4 NUMS bit pattern for `LianaUnspendable` that it
+/// writes for `NumsPoint` — the kind bit doesn't exist until task 3. So such
+/// a tree currently encodes as header version 8 over a still-version-4 body,
+/// a transient intermediate state task 3 closes. See
+/// [`crate::encode::Descriptor::wire_version`]'s doc comment for the two
+/// measured consequences (a silent decode-side downgrade to `NumsPoint`, and
+/// a chunk-set-id mismatch on `split`/`reassemble`).
+///
 /// `#[allow(clippy::only_used_in_recursion)]`: true today, deliberately — the
 /// next task adds the first non-recursive read of `wire_version` in the
 /// `Body::Tr` arm.
@@ -219,6 +232,11 @@ pub const MAX_DECODE_DEPTH: u8 = 128;
 /// body still decodes to `InternalKey::NumsPoint` regardless of version, the
 /// same as before this task. The following task is what makes version 8
 /// decode bit 4 as `InternalKey::LianaUnspendable`.
+///
+/// This is the decode-side half of the transient state documented on
+/// [`crate::encode::Descriptor::wire_version`]: today, a header-version-8
+/// payload always decodes its `Tr` internal key as `NumsPoint`, because
+/// nothing on the wire distinguishes it from a version-4 one yet.
 ///
 /// Top-level entry point. Internally threads a recursion-depth counter that
 /// errors out at [`MAX_DECODE_DEPTH`] before parsing the next node, so a

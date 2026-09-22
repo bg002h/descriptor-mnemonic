@@ -44,6 +44,23 @@ impl Descriptor {
     /// NEVER a constant: identity.rs's two hash sites call write_node
     /// directly, and a constant v4 would make kind 0 and kind 1 hash
     /// identically while their addresses differ.
+    ///
+    /// TRANSIENT STATE (stage 1b task 2, closed by task 3): this function's
+    /// return value can currently outrun what `write_node`/`read_node`
+    /// actually encode. Version-4 bytes are unchanged — stage 1a's
+    /// byte-equality gate proves it over all 65 vendored vectors — but a
+    /// tree carrying `InternalKey::LianaUnspendable` now returns 8 here
+    /// while `Body::Tr`'s match arm (tree.rs) still writes the same v4 NUMS
+    /// bit pattern for it that it writes for `NumsPoint`, because task 3 is
+    /// what adds the kind bit. So today, for such a tree:
+    /// `encode_md1_string` → `decode_md1_string` round-trips it back as
+    /// `NumsPoint` (a silent kind-1 → kind-0 downgrade under a v8 label),
+    /// and `split` → `reassemble` fails with a chunk-set-id mismatch (the
+    /// chunk header claims v8, the reassembled payload hashes as v4). No
+    /// in-repo path constructs `LianaUnspendable` outside a test helper, so
+    /// nothing ships in this state — but the next task's job is precisely
+    /// to make `write_node`/`read_node` agree with this function, not to
+    /// leave this comment true forever.
     pub fn wire_version(&self) -> u8 {
         fn needs_v8(n: &Node) -> bool {
             match &n.body {

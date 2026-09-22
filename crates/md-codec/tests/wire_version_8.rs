@@ -1,11 +1,18 @@
 //! Stage 1b task 2: wire version 8 (the header, the accepted-version set, and
 //! `Descriptor::wire_version()` derived from the tree — not assumed).
 //!
-//! No wire bytes change in this task; nothing emits version 8 yet. This gate
-//! only proves the plumbing: the dispatch-safety arithmetic, the accepted
-//! version set, the mismatch message naming both accepted versions, and that
-//! `wire_version()` reads the tree (kind 1 ⇒ 8, kind 0 ⇒ 4) rather than
-//! assuming `Slot(0)`/kind 0 everywhere.
+//! Version-4 bytes are unchanged in this task (stage 1a's byte-equality gate
+//! proves it over all 65 vendored vectors). This gate proves the plumbing:
+//! the dispatch-safety arithmetic, the accepted version set, the mismatch
+//! message naming both accepted versions, and that `wire_version()` reads
+//! the tree (kind 1 ⇒ 8, kind 0 ⇒ 4) rather than assuming `Slot(0)`/kind 0
+//! everywhere. It deliberately does NOT round-trip a `LianaUnspendable`
+//! descriptor through `encode_md1_string`/`split` — `wire_version()` already
+//! returns 8 for one, but `Body::Tr`'s wire encoding doesn't carry the kind
+//! bit until task 3, so such a round trip currently mis-decodes as
+//! `NumsPoint` (and a chunked one fails to reassemble). See
+//! `Descriptor::wire_version`'s doc comment for the measured detail; this
+//! task does not fix or pin that transient state, since task 3 removes it.
 
 use md_codec::error::Error;
 use md_codec::header::Header;
