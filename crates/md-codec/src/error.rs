@@ -27,10 +27,11 @@ pub enum Error {
         available: usize,
     },
 
-    /// Wire-format version field doesn't match v0.30 (=4). Returned when a
-    /// payload or chunk-header is read with a version value outside the
-    /// accepted v0.30 set. Per SPEC v0.30 §2.4 + §2.5 + §11.1.
-    #[error("wire-format version mismatch: got {got}, expected 4")]
+    /// Wire-format version field is outside the accepted set (`{4, 8}`).
+    /// Returned when a payload or chunk-header is read with a version value
+    /// outside that set. Per SPEC v0.30 §2.4 + §2.5 + §11.1 and stage 1b's
+    /// SPEC §6a row (the accepted set grew from `{4}` to `{4, 8}`).
+    #[error("wire-format version mismatch: got {got}; accepted versions: 4, 8")]
     WireVersionMismatch {
         /// Version value parsed from the wire.
         got: u8,

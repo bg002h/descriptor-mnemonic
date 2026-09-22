@@ -59,15 +59,16 @@ impl ChunkHeader {
 
     /// Decode a chunk header (37 bits) from `r`.
     ///
-    /// Returns [`Error::WireVersionMismatch`] if the 4-bit version field
-    /// is not `WF_REDESIGN_VERSION` per SPEC §2.5 (e.g., v0.x chunked
-    /// payloads where version=0 in the first 3 wire bits become version=0
-    /// or version=1 under the v0.30 4-bit read depending on prior bits).
-    /// Returns [`Error::ChunkHeaderChunkedFlagMissing`] if the chunked-flag
-    /// bit is not set after the version check passes.
+    /// Returns [`Error::WireVersionMismatch`] if the 4-bit version field is
+    /// outside the accepted set (`{4, 8}`; see `Header::is_supported_version`)
+    /// per SPEC §2.5 (e.g., v0.x chunked payloads where version=0 in the
+    /// first 3 wire bits become version=0 or version=1 under the v0.30 4-bit
+    /// read depending on prior bits). Returns
+    /// [`Error::ChunkHeaderChunkedFlagMissing`] if the chunked-flag bit is
+    /// not set after the version check passes.
     pub fn read(r: &mut BitReader) -> Result<Self, Error> {
         let version = r.read_bits(4)? as u8;
-        if version != Header::WF_REDESIGN_VERSION {
+        if !Header::is_supported_version(version) {
             return Err(Error::WireVersionMismatch { got: version });
         }
         let chunked = r.read_bits(1)? != 0;
@@ -276,7 +277,7 @@ pub fn split(d: &Descriptor) -> Result<Vec<String>, Error> {
         // (full 8 bits per byte, no further fractional content). Chunk's
         // exact bit count = 37 + 8 × |chunk_payload_bytes|.
         let header = ChunkHeader {
-            version: Header::WF_REDESIGN_VERSION,
+            version: d.wire_version(),
             chunk_set_id,
             count,
             index,

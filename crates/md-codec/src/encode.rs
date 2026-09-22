@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::header::Header;
 use crate::origin_path::{PathDecl, PathDeclPaths};
 use crate::tlv::TlvSection;
-use crate::tree::{Body, Node, write_node};
+use crate::tree::{Body, InternalKey, Node, write_node};
 use crate::use_site_path::UseSitePath;
 
 /// Top-level descriptor parsed/built from a v0.30 wire payload.
@@ -38,6 +38,28 @@ impl Descriptor {
         // ⌈log₂(n)⌉ for n ≥ 2; clamp to 0 at n ∈ {0, 1}.
         // Identity: ⌈log₂(n)⌉ = bit_length(n-1) for n ≥ 2.
         (32 - (self.n as u32).saturating_sub(1).leading_zeros()) as u8
+    }
+
+    /// The minimum wire version that can express this tree (SPEC §3d).
+    /// NEVER a constant: identity.rs's two hash sites call write_node
+    /// directly, and a constant v4 would make kind 0 and kind 1 hash
+    /// identically while their addresses differ.
+    pub fn wire_version(&self) -> u8 {
+        fn needs_v8(n: &Node) -> bool {
+            match &n.body {
+                Body::Tr { internal_key, tree } => {
+                    *internal_key == InternalKey::LianaUnspendable
+                        || tree.as_deref().is_some_and(needs_v8)
+                }
+                Body::Children(cs) | Body::Variable { children: cs, .. } => cs.iter().any(needs_v8),
+                _ => false,
+            }
+        }
+        if needs_v8(&self.tree) {
+            Header::WF_UNSPENDABLE_VERSION
+        } else {
+            Header::WF_REDESIGN_VERSION
+        }
     }
 
     /// Returns `true` iff this descriptor is in **wallet-policy mode** per
@@ -171,14 +193,14 @@ fn encode_payload_inner(d: &Descriptor, admission: Admission) -> Result<(Vec<u8>
 
     let mut w = BitWriter::new();
     let header = Header {
-        version: Header::WF_REDESIGN_VERSION,
+        version: d.wire_version(),
         divergent_paths: matches!(d.path_decl.paths, PathDeclPaths::Divergent(_)),
     };
     header.write(&mut w);
     d.path_decl.write(&mut w)?;
     d.use_site_path.write(&mut w)?;
     let kiw = d.key_index_width();
-    write_node(&mut w, &d.tree, kiw)?;
+    write_node(&mut w, &d.tree, kiw, d.wire_version())?;
     d.tlv.write(&mut w, kiw)?;
     let total_bits = w.bit_len();
     Ok((w.into_bytes(), total_bits))
