@@ -21,7 +21,7 @@
 mod liana_cases;
 use liana_cases::{
     ORIGINLESS_SPENDABLE_TR, case, near_miss_liana_recipe_over_different_leaves,
-    self_referential_liana_key_descriptor,
+    self_referential_liana_key_descriptor, self_referential_liana_key_descriptor_at_leaf_use_site,
 };
 
 use std::process::Command as StdCommand;
@@ -213,5 +213,40 @@ fn decompose_still_refuses_a_repeat_when_the_repeat_is_the_recognised_internal_k
     assert!(
         err.contains("BIP 388"),
         "must be the BIP-388 repeat refusal, not something else: {err}"
+    );
+}
+
+/// Fix round 1 re-review Minor, folded rather than deferred. The SAME
+/// recognised internal key reused at a DISJOINT leaf use-site
+/// (`/<2;3>/*` against the internal key's `/<0;1>/*`) — the variant the
+/// same-use-site test above cannot reach, because `retain` matches by
+/// RENDERED TEXT and these two renderings differ.
+///
+/// Under the OLD ordering this was accepted at exit 0, emitting
+/// `tr(UNSPENDABLE(liana),{pk(@0/<2;3>/*),pk(@1/...)})` — md handed the
+/// operator a slot for a value it had ITSELF just proved unspendable, and
+/// would have asked them to mint a card for a key with no private key. That
+/// is the same defect class as I-2, hiding one use-site away from it.
+///
+/// Refusal comes from the pre-existing disjoint-multipath branch, which is
+/// md's own one-path-per-slot limit (F-417) rather than a BIP violation — so
+/// this test pins the OUTCOME (refused, cleanly) and deliberately does not
+/// pin the wording; see the follow-up on making the message name the real
+/// problem.
+#[test]
+fn decompose_refuses_the_recognised_internal_key_reused_at_a_disjoint_use_site() {
+    let err = md_err(&[
+        "decompose",
+        &self_referential_liana_key_descriptor_at_leaf_use_site("<2;3>"),
+        "--emit",
+        "template",
+    ]);
+    assert!(
+        !err.contains("internal:"),
+        "internal invariant leaked, not a real refusal: {err}"
+    );
+    assert!(
+        err.contains("UNSUPPORTED"),
+        "must be a clean md-unsupported refusal: {err}"
     );
 }

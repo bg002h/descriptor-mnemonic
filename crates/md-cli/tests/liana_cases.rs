@@ -126,6 +126,19 @@ pub fn near_miss_liana_recipe_over_different_leaves() -> String {
 /// pubkey bytes) BY CONSTRUCTION. `X` is then placed at BOTH the internal
 /// key position and a `pk()` leaf position, verbatim.
 pub fn self_referential_liana_key_descriptor() -> String {
+    self_referential_liana_key_descriptor_at_leaf_use_site("<0;1>")
+}
+
+/// The same construction with the LEAF's use-site under the caller's control,
+/// so one derivation of `X` serves both the same-use-site and the
+/// disjoint-use-site variants.
+///
+/// `X` does NOT depend on the use-site: SPEC §2 hashes the leaves' PUBLIC
+/// KEYS, and a multipath suffix changes neither the xpub nor the pubkey it
+/// carries. So the SAME `X` is recognised as this descriptor's own recipe
+/// output whatever path the leaf is spelled with — which is exactly why the
+/// disjoint variant is reachable at all.
+pub fn self_referential_liana_key_descriptor_at_leaf_use_site(leaf_use_site: &str) -> String {
     use bitcoin::Network;
     use bitcoin::secp256k1::PublicKey;
     use std::str::FromStr;
@@ -157,5 +170,7 @@ pub fn self_referential_liana_key_descriptor() -> String {
     let x = md_codec::nums::liana_unspendable_xpub(&leaves, Network::Bitcoin);
     let x_str = x.to_string();
 
-    format!("tr({x_str}/<0;1>/*,{{pk({x_str}/<0;1>/*),pk({other_leaf_display}/<0;1>/*)}})")
+    format!(
+        "tr({x_str}/<0;1>/*,{{pk({x_str}/{leaf_use_site}/*),pk({other_leaf_display}/<0;1>/*)}})"
+    )
 }
