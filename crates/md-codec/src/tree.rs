@@ -197,6 +197,27 @@ pub fn write_node(
                     // all 65 vendored vectors).
                     if wire_version == Header::WF_UNSPENDABLE_VERSION {
                         w.write_bits(u64::from(*internal_key == InternalKey::LianaUnspendable), 1);
+                    } else {
+                        // fix round 1 I-1: a non-NumsPoint unspendable kind
+                        // has no wire representation at version 4 -- writing
+                        // one here would silently downgrade it to NumsPoint
+                        // on the wire with no error and no assert, the exact
+                        // failure this stage exists to prevent. This is a
+                        // programming-error guard, not an input-error one
+                        // (the caller controls both `internal_key` and
+                        // `wire_version`; `encode_payload` never reaches
+                        // this branch because it derives `wire_version` from
+                        // the tree via `Descriptor::wire_version()`, but
+                        // `write_node` is `pub` within the crate and two
+                        // identity sites in `identity.rs` call it directly).
+                        // Mirrors the `is_nums`/`key_index` invariant this
+                        // sum type replaced, which was also debug_assert-only
+                        // (see `InternalKey`'s doc comment).
+                        debug_assert!(
+                            *internal_key != InternalKey::LianaUnspendable,
+                            "LianaUnspendable has no wire representation at version {wire_version} (only at {}) -- kind bit would be silently dropped",
+                            Header::WF_UNSPENDABLE_VERSION
+                        );
                     }
                 }
             }
