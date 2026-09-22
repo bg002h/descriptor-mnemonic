@@ -27,7 +27,7 @@ pub mod encode;
 pub mod error;
 pub mod header;
 pub mod identity;
-mod nums;
+pub mod nums;
 pub mod origin_path;
 pub mod phrase;
 pub mod policy_shape;
