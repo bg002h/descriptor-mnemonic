@@ -5,7 +5,7 @@ use crate::encode::Descriptor;
 use crate::error::Error;
 use crate::origin_path::PathDeclPaths;
 use crate::tag::Tag;
-use crate::tree::{Body, Node};
+use crate::tree::{Body, InternalKey, Node};
 use crate::use_site_path::UseSitePath;
 
 /// Validate the BIP 388 well-formedness of placeholder usage in the tree.
@@ -81,23 +81,19 @@ fn walk_for_placeholders(
                 }
             }
         }
-        Body::Tr {
-            is_nums,
-            key_index,
-            tree,
-        } => {
-            // SPEC v0.30 §7 + §11: when `is_nums = true` the internal key is
-            // the BIP-341 NUMS H-point (not a placeholder reference); skip
-            // registration. Otherwise `key_index` must be in `0..n`; out-of-
-            // range raises `NUMSSentinelConflict` per SPEC §11 (Phase G
-            // finalizes the variant's full doc-comment).
-            if !*is_nums {
-                if (*key_index as usize) >= seen.len() {
+        Body::Tr { internal_key, tree } => {
+            // SPEC v0.30 §7 + §11: when the internal key is not a `Slot`,
+            // it is not a placeholder reference; skip registration.
+            // Otherwise the slot index must be in `0..n`; out-of-range
+            // raises `NUMSSentinelConflict` per SPEC §11 (Phase G finalizes
+            // the variant's full doc-comment).
+            if let InternalKey::Slot(i) = internal_key {
+                if (*i as usize) >= seen.len() {
                     return Err(Error::NUMSSentinelConflict);
                 }
-                if !seen[*key_index as usize] {
-                    seen[*key_index as usize] = true;
-                    first_occurrences.push(*key_index);
+                if !seen[*i as usize] {
+                    seen[*i as usize] = true;
+                    first_occurrences.push(*i);
                 }
             }
             if let Some(t) = tree {
@@ -652,7 +648,7 @@ mod tests {
     }
     use super::*;
     use crate::tag::Tag;
-    use crate::tree::{Body, Node};
+    use crate::tree::{Body, InternalKey, Node};
 
     #[test]
     fn placeholder_usage_ok_for_2_of_3() {
@@ -807,15 +803,14 @@ mod tests {
 
     #[test]
     fn placeholder_usage_rejects_out_of_range_in_tr_key_index() {
-        // SPEC v0.30 §7 + §11: `is_nums = false` with `key_index >= n` is a
+        // SPEC v0.30 §7 + §11: `InternalKey::Slot(i)` with `i >= n` is a
         // `NUMSSentinelConflict` (distinct from KeyArg's
-        // `PlaceholderIndexOutOfRange`; NUMS is signalled by `is_nums = true`
-        // with `key_index` unused on wire).
+        // `PlaceholderIndexOutOfRange`; NUMS is signalled by
+        // `InternalKey::NumsPoint`, which has no wire-carried index).
         let root = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 3,
+                internal_key: InternalKey::Slot(3),
                 tree: None,
             },
         };
@@ -825,15 +820,14 @@ mod tests {
 
     #[test]
     fn placeholder_usage_accepts_nums_flag_in_tr() {
-        // SPEC v0.30 §7: `is_nums = true` is the NUMS-H-point signal and
-        // MUST pass validation. validate_placeholder_usage requires every
-        // @i in 0..n to be referenced; the @0 reference here satisfies that
-        // for n=1.
+        // SPEC v0.30 §7: `InternalKey::NumsPoint` is the NUMS-H-point signal
+        // and MUST pass validation. validate_placeholder_usage requires
+        // every @i in 0..n to be referenced; the @0 reference here satisfies
+        // that for n=1.
         let root = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: true,
-                key_index: 0,
+                internal_key: InternalKey::NumsPoint,
                 tree: Some(Box::new(Node {
                     tag: Tag::PkK,
                     body: Body::KeyArg { index: 0 },
@@ -841,7 +835,7 @@ mod tests {
             },
         };
         validate_placeholder_usage(&root, 1)
-            .expect("is_nums flag + @0 reference must validate under v0.30");
+            .expect("NumsPoint + @0 reference must validate under v0.30");
     }
 }
 
@@ -851,7 +845,7 @@ mod explicit_origin_required_tests {
     use crate::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
     use crate::tag::Tag;
     use crate::tlv::TlvSection;
-    use crate::tree::{Body, Node};
+    use crate::tree::{Body, InternalKey, Node};
     use crate::use_site_path::UseSitePath;
 
     fn empty_path() -> OriginPath {
@@ -981,8 +975,7 @@ mod explicit_origin_required_tests {
         let d = single_key_descriptor(Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: None,
             },
         });
@@ -995,8 +988,7 @@ mod explicit_origin_required_tests {
         let d = single_key_descriptor(Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: Some(Box::new(Node {
                     tag: Tag::PkK,
                     body: Body::KeyArg { index: 0 },
@@ -1099,8 +1091,7 @@ mod explicit_origin_required_tests {
         let d = single_key_descriptor(Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: None,
             },
         });
@@ -1178,8 +1169,7 @@ mod explicit_origin_required_tests {
         let d = single_key_descriptor(Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: Some(Box::new(Node {
                     tag: Tag::PkK,
                     body: Body::KeyArg { index: 0 },
@@ -1204,8 +1194,7 @@ mod explicit_origin_required_tests {
             tree: Node {
                 tag: Tag::Tr,
                 body: Body::Tr {
-                    is_nums: false,
-                    key_index: 0,
+                    internal_key: InternalKey::Slot(0),
                     tree: Some(Box::new(Node {
                         tag: Tag::PkK,
                         body: Body::KeyArg { index: 1 },

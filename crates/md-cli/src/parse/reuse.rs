@@ -60,7 +60,7 @@ use crate::error::CliError;
 use crate::parse::keys::ParsedKey;
 use crate::parse::template::PlaceholderOccurrence;
 use md_codec::encode::Descriptor;
-use md_codec::tree::{Body, Node};
+use md_codec::tree::{Body, InternalKey, Node};
 
 /// What a verb does with a finding. NEVER a second implementation of the
 /// predicate — only what happens after it fires.
@@ -512,13 +512,11 @@ fn count_occurrences(node: &Node, counts: &mut [u32]) {
                 }
             }
         }
-        Body::Tr {
-            is_nums,
-            key_index,
-            tree,
-        } => {
-            if !*is_nums && (*key_index as usize) < counts.len() {
-                counts[*key_index as usize] += 1;
+        Body::Tr { internal_key, tree } => {
+            if let InternalKey::Slot(i) = internal_key {
+                if (*i as usize) < counts.len() {
+                    counts[*i as usize] += 1;
+                }
             }
             if let Some(t) = tree {
                 count_occurrences(t, counts);

@@ -7,7 +7,7 @@ use md_codec::encode::Descriptor;
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
-use md_codec::tree::{Body, Node};
+use md_codec::tree::{Body, InternalKey, Node};
 use md_codec::use_site_path::UseSitePath;
 use proptest::prelude::*;
 
@@ -86,8 +86,11 @@ pub fn tr_node(is_nums: bool, key_index: u8, tree: Option<Node>) -> Node {
     Node {
         tag: Tag::Tr,
         body: Body::Tr {
-            is_nums,
-            key_index,
+            internal_key: if is_nums {
+                InternalKey::NumsPoint
+            } else {
+                InternalKey::Slot(key_index)
+            },
             tree: tree.map(Box::new),
         },
     }
@@ -609,13 +612,9 @@ fn referenced_indices(node: &Node, out: &mut std::collections::BTreeSet<u8>) {
         Body::MultiKeys { indices, .. } => {
             out.extend(indices.iter().copied());
         }
-        Body::Tr {
-            is_nums,
-            key_index,
-            tree,
-        } => {
-            if !is_nums {
-                out.insert(*key_index);
+        Body::Tr { internal_key, tree } => {
+            if let InternalKey::Slot(i) = internal_key {
+                out.insert(*i);
             }
             if let Some(t) = tree {
                 referenced_indices(t, out);
@@ -647,13 +646,9 @@ fn renumber_tree(node: &mut Node, perm: &std::collections::BTreeMap<u8, u8>) {
                 *i = perm[&*i];
             }
         }
-        Body::Tr {
-            is_nums,
-            key_index,
-            tree,
-        } => {
-            if !*is_nums {
-                *key_index = perm[&*key_index];
+        Body::Tr { internal_key, tree } => {
+            if let InternalKey::Slot(i) = internal_key {
+                *internal_key = InternalKey::Slot(perm[&*i]);
             }
             if let Some(t) = tree {
                 renumber_tree(t, perm);
@@ -722,8 +717,7 @@ pub fn descriptor_strategy() -> BoxedStrategy<Descriptor> {
         Just(Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: None
             }
         }),
@@ -765,8 +759,7 @@ pub fn descriptor_strategy() -> BoxedStrategy<Descriptor> {
             let tree = Node {
                 tag: Tag::Tr,
                 body: Body::Tr {
-                    is_nums: false,
-                    key_index: 0,
+                    internal_key: InternalKey::Slot(0),
                     tree: Some(Box::new(leaf)),
                 },
             };
@@ -778,8 +771,7 @@ pub fn descriptor_strategy() -> BoxedStrategy<Descriptor> {
             let tree = Node {
                 tag: Tag::Tr,
                 body: Body::Tr {
-                    is_nums: false,
-                    key_index: 0,
+                    internal_key: InternalKey::Slot(0),
                     tree: Some(Box::new(tt)),
                 },
             };
@@ -879,13 +871,9 @@ pub fn assign_sequential_indices(node: &mut Node, next: &mut u8) {
                 *next += 1;
             }
         }
-        Body::Tr {
-            is_nums,
-            key_index,
-            tree,
-        } => {
-            if !*is_nums {
-                *key_index = *next;
+        Body::Tr { internal_key, tree } => {
+            if let InternalKey::Slot(i) = internal_key {
+                *i = *next;
                 *next += 1;
             }
             if let Some(t) = tree {

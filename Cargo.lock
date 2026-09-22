@@ -517,6 +517,7 @@ dependencies = [
  "hex",
  "miniscript",
  "proptest",
+ "serde",
  "serde_json",
  "thiserror",
 ]

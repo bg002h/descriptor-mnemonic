@@ -4,7 +4,7 @@
 use super::lowering::{Numbered, experimental, finish, number, path_body};
 use super::{ComposeError, Composed, PathList, SlotOrigin, SpendPath};
 use crate::tag::Tag;
-use crate::tree::{Body, Node};
+use crate::tree::{Body, InternalKey, Node};
 
 /// The first-listed unlocked, unhashed one-key path, if any (spec §5, M1).
 fn internal_key_path(list: &PathList) -> Option<usize> {
@@ -42,8 +42,10 @@ pub(super) fn lower_tr(
     let tree = Node {
         tag: Tag::Tr,
         body: Body::Tr {
-            is_nums: ik.is_none(),
-            key_index: 0,
+            internal_key: match ik {
+                Some(_) => InternalKey::Slot(0), // numbering assigns @0; see number()
+                None => InternalKey::NumsPoint,
+            },
             tree: spine(leaves),
         },
     };

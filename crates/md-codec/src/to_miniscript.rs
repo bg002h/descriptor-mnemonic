@@ -14,7 +14,7 @@ use crate::encode::Descriptor;
 use crate::error::Error;
 use crate::origin_path::OriginPath;
 use crate::tag::Tag;
-use crate::tree::{Body, Node};
+use crate::tree::{Body, InternalKey, Node};
 use crate::use_site_path::UseSitePath;
 
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
@@ -333,15 +333,15 @@ fn node_to_descriptor(
         (
             Tag::Tr,
             Body::Tr {
-                is_nums,
-                key_index,
+                internal_key: ik,
                 tree,
             },
         ) => {
-            let internal_key = if *is_nums {
-                build_nums_internal_key()?
-            } else {
-                lookup_key(keys, *key_index)?
+            let internal_key = match ik {
+                InternalKey::NumsPoint | InternalKey::LianaUnspendable => {
+                    build_nums_internal_key()?
+                }
+                InternalKey::Slot(i) => lookup_key(keys, *i)?,
             };
             let script_tree = if let Some(t) = tree {
                 Some(tree_to_taptree(t, keys)?)

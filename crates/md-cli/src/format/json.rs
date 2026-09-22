@@ -122,7 +122,7 @@ use md_codec::encode::Descriptor;
 use md_codec::origin_path::{OriginPath, PathDecl, PathDeclPaths};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
-use md_codec::tree::{Body, Node};
+use md_codec::tree::{Body, InternalKey, Node};
 use md_codec::use_site_path::UseSitePath;
 
 /// Serde mirror of [`md_codec::tag::Tag`] anchoring the JSON `tag` field
@@ -345,15 +345,22 @@ impl From<&Body> for JsonBody {
                 k: *k,
                 indices: indices.clone(),
             },
-            Body::Tr {
-                is_nums,
-                key_index,
-                tree,
-            } => JsonBody::Tr {
-                is_nums: *is_nums,
-                key_index: *key_index,
-                tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
-            },
+            Body::Tr { internal_key, tree } => {
+                // Stage 1a: the JSON schema is a published v1 surface and
+                // keeps emitting `is_nums`/`key_index` unchanged. Both
+                // NumsPoint and LianaUnspendable map to `is_nums: true,
+                // key_index: 0` -- LianaUnspendable is never constructed
+                // yet, and stage 1b is what versions this schema.
+                let (is_nums, key_index) = match internal_key {
+                    InternalKey::Slot(i) => (false, *i),
+                    InternalKey::NumsPoint | InternalKey::LianaUnspendable => (true, 0),
+                };
+                JsonBody::Tr {
+                    is_nums,
+                    key_index,
+                    tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
+                }
+            }
             Body::Hash256Body(h) => JsonBody::Hash256Body(hex(h)),
             Body::Hash160Body(h) => JsonBody::Hash160Body(hex(h)),
             Body::Timelock(v) => JsonBody::Timelock(*v),
@@ -456,7 +463,7 @@ mod descriptor_json_tests {
     /// `Body::Tr` with a `TapTree` child and asserts JSON output.
     #[test]
     fn tr_with_taptree_serializes_taptree_string() {
-        use md_codec::tree::{Body, Node};
+        use md_codec::tree::{Body, InternalKey, Node};
         let leaf = Node {
             tag: Tag::PkK,
             body: Body::KeyArg { index: 1 },
@@ -468,8 +475,7 @@ mod descriptor_json_tests {
         let tr = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: Some(Box::new(tap_branch)),
             },
         };

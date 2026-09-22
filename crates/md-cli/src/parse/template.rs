@@ -1158,7 +1158,7 @@ mod sub_tests {
 }
 
 use md_codec::tag::Tag;
-use md_codec::tree::{Body, Node};
+use md_codec::tree::{Body, InternalKey, Node};
 use miniscript::{Descriptor as MsDescriptor, DescriptorPublicKey};
 
 /// Walk the miniscript Descriptor's outermost wrapper and emit a `Node`.
@@ -1602,8 +1602,7 @@ fn walk_tr(
         return Ok(Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: true,
-                key_index: 0,
+                internal_key: InternalKey::NumsPoint,
                 tree,
             },
         });
@@ -1627,8 +1626,7 @@ fn walk_tr(
     Ok(Node {
         tag: Tag::Tr,
         body: Body::Tr {
-            is_nums: false,
-            key_index,
+            internal_key: InternalKey::Slot(key_index),
             tree,
         },
     })
@@ -1882,12 +1880,8 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr {
-                is_nums: _,
-                key_index,
-                tree,
-            } => {
-                assert_eq!(key_index, 0);
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(internal_key, InternalKey::Slot(0));
                 assert!(tree.is_none());
             }
             _ => panic!("expected Body::Tr"),
@@ -1902,12 +1896,8 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr {
-                is_nums: _,
-                key_index,
-                tree,
-            } => {
-                assert_eq!(key_index, 0);
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(internal_key, InternalKey::Slot(0));
                 let leaf = tree.unwrap();
                 assert_eq!(leaf.tag, Tag::PkK);
                 assert!(matches!(leaf.body, Body::KeyArg { index: 1 }));
@@ -1931,12 +1921,8 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         let leaf = match root.body {
-            Body::Tr {
-                is_nums: _,
-                key_index,
-                tree,
-            } => {
-                assert_eq!(key_index, 0);
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(internal_key, InternalKey::Slot(0));
                 tree.expect("tap tree must be present")
             }
             _ => panic!("expected Body::Tr"),
@@ -1979,13 +1965,12 @@ mod tr_tests {
             "NUMS internal key MUST emit Tag::Tr with is_nums = true"
         );
         let tree = match root.body {
-            Body::Tr {
-                is_nums,
-                key_index,
-                tree,
-            } => {
-                assert!(is_nums, "NUMS internal key must set is_nums = true");
-                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(
+                    internal_key,
+                    InternalKey::NumsPoint,
+                    "NUMS internal key must be InternalKey::NumsPoint"
+                );
                 tree.expect("multi_a leaf must be present")
             }
             _ => panic!("expected Body::Tr"),
@@ -2011,13 +1996,12 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         match root.body {
-            Body::Tr {
-                is_nums,
-                key_index,
-                tree,
-            } => {
-                assert!(is_nums, "NUMS internal key must set is_nums = true");
-                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(
+                    internal_key,
+                    InternalKey::NumsPoint,
+                    "NUMS internal key must be InternalKey::NumsPoint"
+                );
                 assert!(
                     tree.is_none(),
                     "tree must be None for tr(<NUMS>) with no script arg"
@@ -2079,12 +2063,8 @@ mod tr_tests {
         let root = walk_root(&d, &km).unwrap();
         assert_eq!(root.tag, Tag::Tr);
         let tree = match root.body {
-            Body::Tr {
-                is_nums: _,
-                key_index,
-                tree,
-            } => {
-                assert_eq!(key_index, 0, "internal key is @0");
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(internal_key, InternalKey::Slot(0), "internal key is @0");
                 tree.expect("tap tree must be present")
             }
             _ => panic!("expected Body::Tr"),
@@ -2254,13 +2234,12 @@ mod tr_tests {
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         let tree = match root.body {
-            Body::Tr {
-                is_nums,
-                key_index,
-                tree,
-            } => {
-                assert!(is_nums, "NUMS internal key must set is_nums = true");
-                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(
+                    internal_key,
+                    InternalKey::NumsPoint,
+                    "NUMS internal key must be InternalKey::NumsPoint"
+                );
                 tree.expect("tap tree must be present")
             }
             _ => panic!("expected Body::Tr"),
@@ -2286,13 +2265,12 @@ mod tr_tests {
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&s).unwrap();
         let root = walk_root(&d, &km).unwrap();
         let tree = match root.body {
-            Body::Tr {
-                is_nums,
-                key_index,
-                tree,
-            } => {
-                assert!(is_nums, "NUMS internal key must set is_nums = true");
-                assert_eq!(key_index, 0, "is_nums = true implies key_index = 0");
+            Body::Tr { internal_key, tree } => {
+                assert_eq!(
+                    internal_key,
+                    InternalKey::NumsPoint,
+                    "NUMS internal key must be InternalKey::NumsPoint"
+                );
                 tree.expect("tap tree must be present")
             }
             _ => panic!("expected Body::Tr"),

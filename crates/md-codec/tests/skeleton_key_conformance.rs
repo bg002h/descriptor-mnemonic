@@ -106,7 +106,7 @@ use md_codec::skeleton::{skeleton, skeleton_key};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
 use md_codec::to_miniscript_descriptor;
-use md_codec::tree::{Body, Node};
+use md_codec::tree::{Body, InternalKey, Node};
 use md_codec::use_site_path::UseSitePath;
 
 /// BIP-341 NUMS H-point x-only coordinate. Same value as `src/nums.rs`
@@ -513,19 +513,15 @@ fn ms_descriptor_to_node(desc: &MsDescriptor<DescriptorPublicKey>, reg: &mut Key
             }
         }
         MsDescriptor::Tr(tr) => {
-            let (is_nums, key_index) = if is_nums_key(tr.internal_key()) {
-                (true, 0u8)
+            let internal_key = if is_nums_key(tr.internal_key()) {
+                InternalKey::NumsPoint
             } else {
-                (false, reg.register(tr.internal_key()))
+                InternalKey::Slot(reg.register(tr.internal_key()))
             };
             let tree = tr.tap_tree().map(|tt| Box::new(taptree_to_node(tt, reg)));
             Node {
                 tag: Tag::Tr,
-                body: Body::Tr {
-                    is_nums,
-                    key_index,
-                    tree,
-                },
+                body: Body::Tr { internal_key, tree },
             }
         }
         MsDescriptor::Bare(_) => panic!("bare top-level descriptors are not an md1 shape"),

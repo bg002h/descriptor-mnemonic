@@ -13,6 +13,22 @@ pub struct Node {
     pub body: Body,
 }
 
+/// The taproot internal key. Replaces the `is_nums: bool` + `key_index: u8`
+/// pair, whose invariant ("is_nums = true implies key_index = 0, no wire
+/// representation otherwise") was enforced only by a debug_assert.
+// Copy is deliberate: the type is one byte plus a discriminant and is passed
+// by value at ~98 sites; Hash mirrors what Body already derives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InternalKey {
+    /// A real, spendable key at this placeholder slot.
+    Slot(u8),
+    /// The BIP-341 NUMS H-point, spelled as raw x-only hex. Wire kind 0.
+    NumsPoint,
+    /// Liana's unspendable xpub, DERIVED from the leaf keys (SPEC §2).
+    /// Wire kind 1, legal only at wire version 8.
+    LianaUnspendable,
+}
+
 /// Body shape for a [`Node`], determined by its [`Tag`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Body {
@@ -38,20 +54,14 @@ pub enum Body {
         /// emitted as `kiw` bits.
         indices: Vec<u8>,
     },
-    /// Tr's body: NUMS flag, key index, optional tap-script-tree root.
-    /// Per SPEC v0.30 §7: wire shape is
-    /// `Tag::Tr | is_nums(1) | [key_index(kiw) iff !is_nums] | has_tree(1) | [tree iff has_tree]`.
-    /// When `is_nums = true`, the internal key is the BIP-341 NUMS H-point
-    /// `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`
-    /// and `key_index` is unused on the wire (encoder writes 0 by convention;
-    /// decoder ignores). When `is_nums = false`, `key_index` is a `0..n`
-    /// placeholder index encoded at `kiw` bits.
+    /// Tr's body: the taproot internal key plus an optional tap-script-tree root.
+    /// Per SPEC v0.30 §7 the wire shape is
+    /// `Tag::Tr | is_nums(1) | [key_index(kiw) iff !is_nums] | has_tree(1) | [tree]`.
+    /// `InternalKey` replaces the former `is_nums`/`key_index` pair; stage 1a
+    /// changes no wire bytes.
     Tr {
-        /// `true` iff the internal key is the BIP-341 NUMS H-point.
-        is_nums: bool,
-        /// Internal-key index into the descriptor's key table. Unused when
-        /// `is_nums = true` (no wire representation).
-        key_index: u8,
+        /// The internal key. See [`InternalKey`].
+        internal_key: InternalKey,
         /// Optional tap-script-tree root.
         tree: Option<Box<Node>>,
     },
@@ -137,20 +147,19 @@ pub fn write_node(w: &mut BitWriter, node: &Node, key_index_width: u8) -> Result
                 w.write_bits(u64::from(*idx), key_index_width as usize);
             }
         }
-        Body::Tr {
-            is_nums,
-            key_index,
-            tree,
-        } => {
-            // SPEC v0.30 §7: is_nums(1) | [key_index(kiw) iff !is_nums] |
-            // has_tree(1) | [tree iff has_tree].
-            debug_assert!(
-                !(*is_nums && *key_index != 0),
-                "is_nums=true implies key_index=0 (no wire representation otherwise)"
-            );
-            w.write_bits(u64::from(*is_nums), 1);
-            if !*is_nums {
-                w.write_bits(u64::from(*key_index), key_index_width as usize);
+        Body::Tr { internal_key, tree } => {
+            // SPEC v0.30 §7, UNCHANGED at wire version 4:
+            // is_nums(1) | [key_index(kiw) iff !is_nums] | has_tree(1) | [tree]
+            match internal_key {
+                InternalKey::Slot(i) => {
+                    w.write_bits(0, 1);
+                    w.write_bits(u64::from(*i), key_index_width as usize);
+                }
+                // Stage 1a: both non-slot kinds still write exactly the v4 NUMS
+                // encoding. STAGE 1B is what makes them differ, and only at v8.
+                InternalKey::NumsPoint | InternalKey::LianaUnspendable => {
+                    w.write_bits(1, 1);
+                }
             }
             w.write_bits(u64::from(tree.is_some()), 1);
             if let Some(t) = tree {
@@ -269,10 +278,10 @@ fn read_node_with_depth(r: &mut BitReader, key_index_width: u8, depth: u8) -> Re
             // SPEC v0.30 §7: is_nums(1) | [key_index(kiw) iff !is_nums] |
             // has_tree(1) | [tree iff has_tree].
             let is_nums = r.read_bits(1)? != 0;
-            let key_index = if is_nums {
-                0
+            let internal_key = if is_nums {
+                InternalKey::NumsPoint
             } else {
-                r.read_bits(key_index_width as usize)? as u8
+                InternalKey::Slot(r.read_bits(key_index_width as usize)? as u8)
             };
             let has_tree = r.read_bits(1)? != 0;
             let tree = if has_tree {
@@ -284,11 +293,7 @@ fn read_node_with_depth(r: &mut BitReader, key_index_width: u8, depth: u8) -> Re
             } else {
                 None
             };
-            Body::Tr {
-                is_nums,
-                key_index,
-                tree,
-            }
+            Body::Tr { internal_key, tree }
         }
         Tag::After | Tag::Older => {
             let v = r.read_bits(32)? as u32;
@@ -466,8 +471,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: None,
             },
         };
@@ -516,8 +520,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: Some(Box::new(Node {
                     tag: Tag::MultiA,
                     body: Body::MultiKeys {
@@ -541,8 +544,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: true,
-                key_index: 0,
+                internal_key: InternalKey::NumsPoint,
                 tree: None,
             },
         };
@@ -553,15 +555,14 @@ mod tests {
         assert_eq!(read_node(&mut r, 2).unwrap(), n);
     }
 
-    /// v0.30 Phase F — `Body::Tr { is_nums: false, key_index, .. }` round-
-    /// trips with explicit key_index written at kiw width.
+    /// v0.30 Phase F — `Body::Tr { internal_key: InternalKey::Slot(_), .. }`
+    /// round-trips with explicit key_index written at kiw width.
     #[test]
     fn tr_is_nums_false_round_trip() {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 2,
+                internal_key: InternalKey::Slot(2),
                 tree: None,
             },
         };
@@ -698,8 +699,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: true,
-                key_index: 0,
+                internal_key: InternalKey::NumsPoint,
                 tree: None,
             },
         };
@@ -721,8 +721,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: true,
-                key_index: 0,
+                internal_key: InternalKey::NumsPoint,
                 tree: Some(Box::new(Node {
                     tag: Tag::AndV,
                     body: Body::Children(vec![
@@ -757,8 +756,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: true,
-                key_index: 0,
+                internal_key: InternalKey::NumsPoint,
                 tree: Some(Box::new(Node {
                     tag: Tag::MultiA,
                     body: Body::MultiKeys {
@@ -783,8 +781,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: true,
-                key_index: 0,
+                internal_key: InternalKey::NumsPoint,
                 tree: None,
             },
         };
@@ -810,8 +807,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: Some(Box::new(Node {
                     tag: Tag::TapTree,
                     body: Body::Children(vec![
@@ -856,8 +852,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: Some(Box::new(Node {
                     tag: Tag::TapTree,
                     body: Body::Children(vec![mk_branch(1, 2), mk_branch(3, 4)]),
@@ -881,8 +876,7 @@ mod tests {
         let n = Node {
             tag: Tag::Tr,
             body: Body::Tr {
-                is_nums: false,
-                key_index: 0,
+                internal_key: InternalKey::Slot(0),
                 tree: Some(Box::new(Node {
                     tag: Tag::TapTree,
                     body: Body::Children(vec![

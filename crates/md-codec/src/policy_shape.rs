@@ -76,7 +76,7 @@
 use crate::compose::{HashKind, HashLock, LOCKTIME_THRESHOLD, SEQUENCE_TYPE_FLAG};
 use crate::origin_path::OriginPath;
 use crate::tag::Tag;
-use crate::tree::{Body, Node};
+use crate::tree::{Body, InternalKey, Node};
 use std::collections::BTreeSet;
 
 /// The top-level wrapper. Six-valued, mirroring the fork's `ScriptKind`
@@ -240,17 +240,15 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
     match tree.tag {
         Tag::Tr => {
             let Body::Tr {
-                is_nums,
-                key_index,
+                internal_key,
                 tree: inner_tree,
             } = &tree.body
             else {
                 return incomplete();
             };
-            s.key_path = if *is_nums {
-                KeyPathKind::Nums
-            } else {
-                KeyPathKind::Xpub
+            s.key_path = match internal_key {
+                InternalKey::Slot(_) => KeyPathKind::Xpub,
+                InternalKey::NumsPoint | InternalKey::LianaUnspendable => KeyPathKind::Nums,
             };
             // Fix round 1, I-5 (design §1A): "a 'path' for `tr` is a
             // taptree LEAF, plus the key path as path 0 when the internal
@@ -264,11 +262,11 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
             // `walkTapTree` appends one branch per LEAF only and never adds
             // one for the key path — an earlier draft of this design
             // section claimed "the port inherits it," which was wrong.
-            if !*is_nums {
+            if let InternalKey::Slot(i) = internal_key {
                 s.branches.push(Branch {
                     k: 0,
                     n: 0,
-                    slots: vec![*key_index],
+                    slots: vec![*i],
                     sorted: false,
                     locks: Vec::new(),
                     hashlocks: Vec::new(),

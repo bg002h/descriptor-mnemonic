@@ -21,7 +21,7 @@ use crate::encode::Descriptor;
 use crate::nums::NUMS_H_POINT_X_ONLY_HEX;
 use crate::policy_shape::{LockKind, lock_from_wire};
 use crate::tag::Tag;
-use crate::tree::{Body, Node};
+use crate::tree::{Body, InternalKey, Node};
 use crate::use_site_path::UseSitePath;
 use std::fmt::Write as _;
 
@@ -183,18 +183,18 @@ fn render_node(
         Tag::Tr => {
             out.push_str("tr(");
             match &node.body {
-                Body::Tr {
-                    is_nums,
-                    key_index,
-                    tree,
-                } => {
-                    // SPEC v0.30 §7: is_nums=true encodes the BIP-341 NUMS
-                    // H-point as the implicit internal key; render as the
-                    // literal x-only hex. Otherwise render @{key_index}.
-                    if *is_nums {
-                        out.push_str(NUMS_H_POINT_X_ONLY_HEX);
-                    } else {
-                        render_key(*key_index, default_usp, overrides, out)?;
+                Body::Tr { internal_key, tree } => {
+                    // SPEC v0.30 §7: NumsPoint (and, stage 1a, the
+                    // not-yet-constructed LianaUnspendable) encodes the
+                    // BIP-341 NUMS H-point as the implicit internal key;
+                    // render as the literal x-only hex. A Slot renders @{i}.
+                    match internal_key {
+                        InternalKey::NumsPoint | InternalKey::LianaUnspendable => {
+                            out.push_str(NUMS_H_POINT_X_ONLY_HEX);
+                        }
+                        InternalKey::Slot(i) => {
+                            render_key(*i, default_usp, overrides, out)?;
+                        }
                     }
                     if let Some(t) = tree {
                         out.push(',');

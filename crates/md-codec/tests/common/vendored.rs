@@ -28,6 +28,12 @@ fn vendored_vectors_dir() -> std::path::PathBuf {
 /// Every vector name under `tests/vectors/*.phrase.txt`, sorted. ALL of
 /// them -- unlike `dump_skeleton_keys.rs`'s `keyed_phrase_files`, this does
 /// NOT filter to `keyed_*` (that yields 46; the corpus this reads is 65).
+///
+/// `#[allow(dead_code)]`: not every spliced-in consumer calls this -- e.g.
+/// `tests/internal_key_refactor.rs` iterates the golden's own vector list
+/// instead of re-listing the vectors directory, so this function is dead
+/// code in that compilation unit specifically.
+#[allow(dead_code)]
 fn all_vendored_vector_names() -> Vec<String> {
     let dir = vendored_vectors_dir();
     let mut names: Vec<String> = std::fs::read_dir(&dir)

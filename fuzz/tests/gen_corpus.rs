@@ -24,7 +24,7 @@ use md_codec::encode::{Descriptor, encode_md1_string, encode_payload};
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
-use md_codec::tree::{Body, Node};
+use md_codec::tree::{Body, InternalKey, Node};
 use md_codec::use_site_path::UseSitePath;
 
 // ---------------------------------------------------------------------------
@@ -180,8 +180,7 @@ fn catalog() -> Vec<(&'static str, Descriptor)> {
             Node {
                 tag: Tag::Tr,
                 body: Body::Tr {
-                    is_nums: false,
-                    key_index: 0,
+                    internal_key: InternalKey::Slot(0),
                     tree: None,
                 },
             },
