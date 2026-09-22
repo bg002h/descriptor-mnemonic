@@ -534,6 +534,107 @@ pub fn validate_no_empty_origin_overrides(d: &Descriptor) -> Result<(), Error> {
     Ok(())
 }
 
+/// SPEC §6 rows 1, 2 and 4: the three ENCODE-SIDE structural refusals for a
+/// wire-kind-1 (Liana unspendable) taproot internal key that are decidable
+/// from the tree and use-site alone. Row 6 (the minimum-version rule) needs
+/// the wire version actually about to be written, which this function does
+/// not see — it lives separately, in
+/// [`validate_minimal_wire_version`].
+///
+/// Row 4 (kind 1 is meaningless anywhere but the descriptor's own root)
+/// applies wherever a `LianaUnspendable` internal key is found, walking the
+/// WHOLE tree. Rows 1 and 2 (the `sortedmulti_a`-leaf and canonical-use-site
+/// rules) apply only when the descriptor's own root is the kind-1 node —
+/// they are properties of the wallet's taproot OUTPUT, which only the root
+/// `tr()` is. A `LianaUnspendable` key can never be reached by a NESTED
+/// `tr()` node either (`Tag::Tr` is a forbidden tap-script-tree leaf per
+/// `validate_tap_script_tree`/`is_forbidden_leaf_tag`), so the only way a
+/// non-root kind-1 key is structurally reachable at all is `tr()` nested
+/// under `sh`/`wsh` — which row 4 refuses outright, making rows 1/2's
+/// root-only scope exhaustive rather than a gap.
+pub fn validate_unspendable_shape(d: &Descriptor) -> Result<(), Error> {
+    reject_nested_unspendable(&d.tree, true)?;
+    if let Body::Tr {
+        internal_key: InternalKey::LianaUnspendable,
+        tree,
+    } = &d.tree.body
+    {
+        if let Some(t) = tree {
+            if contains_sortedmulti_a(t) {
+                return Err(Error::UnspendableWithSortedMultiA);
+            }
+        }
+        if d.use_site_path != UseSitePath::standard_multipath() {
+            return Err(Error::UnspendableUseSiteNotCanonical);
+        }
+    }
+    Ok(())
+}
+
+/// SPEC §6 row 4: refuse a `LianaUnspendable` internal key found anywhere
+/// other than the descriptor's own root `tr()`. `is_root` is `true` only on
+/// the initial call from [`validate_unspendable_shape`]; every recursive
+/// call passes `false`.
+fn reject_nested_unspendable(node: &Node, is_root: bool) -> Result<(), Error> {
+    if let Body::Tr { internal_key, tree } = &node.body {
+        if *internal_key == InternalKey::LianaUnspendable && !is_root {
+            return Err(Error::UnspendableNotRootTr);
+        }
+        if let Some(t) = tree {
+            reject_nested_unspendable(t, false)?;
+        }
+        return Ok(());
+    }
+    match &node.body {
+        Body::Children(children) => {
+            for c in children {
+                reject_nested_unspendable(c, false)?;
+            }
+        }
+        Body::Variable { children, .. } => {
+            for c in children {
+                reject_nested_unspendable(c, false)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// SPEC §6 row 1: `true` iff a `Tag::SortedMultiA` node appears anywhere in
+/// this subtree — called with a kind-1 `tr()`'s own tap-script tree.
+fn contains_sortedmulti_a(node: &Node) -> bool {
+    if matches!(node.tag, Tag::SortedMultiA) {
+        return true;
+    }
+    match &node.body {
+        Body::Children(children) => children.iter().any(contains_sortedmulti_a),
+        Body::Variable { children, .. } => children.iter().any(contains_sortedmulti_a),
+        _ => false,
+    }
+}
+
+/// SPEC §6 row 6 (the minimum-version rule): refuse writing
+/// [`crate::header::Header::WF_UNSPENDABLE_VERSION`] when the tree does not
+/// need it. Takes `version` — the value actually about to be written —
+/// rather than recomputing it, because the only way to observe this refusal
+/// is a caller that forces a non-minimal version past what
+/// `Descriptor::wire_version()` itself would choose: no public encoder path
+/// can construct that state, since `encode_payload_inner` always derives its
+/// version from `d.wire_version()`, which is minimal by construction.
+pub fn validate_minimal_wire_version(d: &Descriptor, version: u8) -> Result<(), Error> {
+    let minimal = d.wire_version();
+    if version == crate::header::Header::WF_UNSPENDABLE_VERSION
+        && minimal != crate::header::Header::WF_UNSPENDABLE_VERSION
+    {
+        return Err(Error::NonMinimalWireVersion {
+            got: version,
+            minimal,
+        });
+    }
+    Ok(())
+}
+
 impl Descriptor {
     /// The ascending `@N` indices whose origin cannot be resolved: a pure
     /// query mirroring [`validate_explicit_origin_required`]'s SEMANTICS
