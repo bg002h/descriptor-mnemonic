@@ -448,13 +448,24 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
     let liana_internal_key = walk::liana_internal_key_match(&desc, network);
 
     let mut occurrences = walk::collect_occurrences(&desc)?;
+    // I-2 fix (review r1, Important): `check_no_repeated_key` MUST run on the
+    // FULL occurrence set — including the recognised internal key's own
+    // occurrence — before the retain below ever removes anything.
+    // `retain(|o| &o.display != marker_key)` matches by RENDERED TEXT, not by
+    // tree position, so if that same key ALSO appears as a tapleaf key (a
+    // constructible shape — SPEC §2's recipe always uses the fixed BIP-341
+    // NUMS point as its own public key, so placing that same xpub as a leaf
+    // contributes a known, position-independent value to the hash), running
+    // the retain first would drop BOTH occurrences before BIP-388's
+    // pairwise-distinctness/disjointness check ever saw either of them — the
+    // repeat refusal silently stops firing for exactly the shape it exists
+    // to catch. Refuse repeats BEFORE numbering too: `order_by_appearance`
+    // locates each key expression by its rendering, which is unambiguous
+    // only once every expression is unique.
+    check_no_repeated_key(&occurrences)?;
     if let Some(marker_key) = &liana_internal_key {
         occurrences.retain(|o| &o.display != marker_key);
     }
-    // Refuse repeats BEFORE numbering: `order_by_appearance` locates each key
-    // expression by its rendering, which is unambiguous only once every
-    // expression is unique.
-    check_no_repeated_key(&occurrences)?;
 
     let descriptor = desc.to_string();
     walk::order_by_appearance(&mut occurrences, &format!("{desc:#}"));

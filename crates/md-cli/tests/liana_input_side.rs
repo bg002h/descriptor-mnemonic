@@ -19,7 +19,10 @@
 
 #[path = "liana_cases.rs"]
 mod liana_cases;
-use liana_cases::{ORIGINLESS_SPENDABLE_TR, case};
+use liana_cases::{
+    ORIGINLESS_SPENDABLE_TR, case, near_miss_liana_recipe_over_different_leaves,
+    self_referential_liana_key_descriptor,
+};
 
 use std::process::Command as StdCommand;
 
@@ -149,5 +152,66 @@ fn md_encode_refuses_a_literal_internal_key_inside_an_otherwise_valid_template()
     assert!(
         err.contains("decompose"),
         "must name the other working route: {err}"
+    );
+}
+
+/// I-1 fix round 1 (Important, M17 on Task 9's mutation list). Weakening
+/// `liana_internal_key_match`'s discriminating property from FULL byte
+/// equality (`actual_xpub == recomputed`) to a NUMS-pubkey/depth-0
+/// PATTERN-MATCH leaves the suite at 1475/1475 green — because every
+/// existing test hands the recogniser a key that legitimately matches its
+/// OWN tree, and a pattern-match accepts every one of those too (it is a
+/// strict superset of the real check on inputs the real check accepts). The
+/// only shape that separates the two is the near miss this test pins: a
+/// real, valid Liana recipe output — genuine NUMS pubkey, depth 0, zero
+/// parent fingerprint, zero child number — computed over a DIFFERENT leaf
+/// set than the one actually present. A positive-only suite cannot see a
+/// weakening here BY CONSTRUCTION; only a case the real check must REJECT
+/// and a pattern-match would WRONGLY ACCEPT can gate it.
+#[test]
+fn decompose_does_not_recognise_lianas_own_recipe_computed_over_the_wrong_leaves() {
+    let (out, err, code) = md(&[
+        "decompose",
+        &near_miss_liana_recipe_over_different_leaves(),
+        "--emit",
+        "template",
+    ]);
+    assert_eq!(code, 0, "decompose failed: {err}");
+    assert!(out.contains("tr(@0/"), "must fall through to a slot: {out}");
+    assert!(
+        !out.contains("UNSPENDABLE(liana)"),
+        "must NOT be wrongly relabelled as this wallet's own recipe: {out}"
+    );
+    assert!(
+        err.contains("state NO origin"),
+        "must still annotate as a phantom slot: {err}"
+    );
+}
+
+/// I-2 fix round 1 (Important). The recognised Liana-unspendable internal
+/// key also appears, byte-identically, as a `pk()` tapleaf key — the shape
+/// that exposed `decompose/mod.rs`'s retain (which matches by RENDERED
+/// TEXT, not tree position) running BEFORE `check_no_repeated_key` instead
+/// of after: with the ordering bug, the retain would drop BOTH occurrences
+/// (the internal key's and the leaf's) before the repeat check ever saw
+/// either, and the leaf key would silently vanish from the slot set and the
+/// mint commands with no refusal at all. The fixed ordering must still
+/// refuse this — BIP-388's disjointness rule, since both occurrences share
+/// the identical `/<0;1>/*` use-site.
+#[test]
+fn decompose_still_refuses_a_repeat_when_the_repeat_is_the_recognised_internal_key() {
+    let err = md_err(&[
+        "decompose",
+        &self_referential_liana_key_descriptor(),
+        "--emit",
+        "template",
+    ]);
+    assert!(
+        !err.contains("internal:"),
+        "internal invariant leaked, not a real refusal: {err}"
+    );
+    assert!(
+        err.contains("BIP 388"),
+        "must be the BIP-388 repeat refusal, not something else: {err}"
     );
 }

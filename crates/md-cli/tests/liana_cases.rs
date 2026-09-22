@@ -67,3 +67,95 @@ pub const ORIGINLESS_SPENDABLE_TR: &str = concat!(
     "tr(xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i/<0;1>/*,",
     "and_v(v:pk([73c5da0a/48'/0'/1'/3']xpub6DXuQW1Q2JpZzLV9igdwdnmCSoaPVd4ZNZnvfgUsGvQ8AbNAhEmfBEMCMHctwZBuxWK8HkjqUW5F72MCSJCFfisVwRY62Kb1FuDZ66nNQe1/<0;1>/*),older(26280)))"
 );
+
+/// I-1 fix round 1 (Important, M17 on Task 9's mutation list) — the
+/// STRONGEST near miss: an internal key that IS a real, valid Liana recipe
+/// output (genuine BIP-341 NUMS pubkey, depth 0, zero parent fingerprint,
+/// zero child number — every structural property a NUMS-pubkey/depth-0
+/// PATTERN-MATCH would accept), computed over `preset-hashlock-gated-tr`'s
+/// own (2-leaf) key set — swapped into `preset-kofn-recovery-tr`'s own
+/// (DIFFERENT, 4-leaf) script tree. Recomputing SPEC §2 over the leaves
+/// ACTUALLY present here reproduces `preset-kofn-recovery-tr`'s own 4-leaf
+/// recipe xpub, which is NOT this descriptor's internal key — so only a
+/// comparison that recomputes and checks full byte equality can tell this
+/// apart from the real thing. A pattern-match cannot: it would wrongly
+/// accept this and relabel a DIFFERENT wallet's unspendable key as this
+/// one's. No checksum suffix: the swap invalidates the original one, and
+/// `md decompose` accepts checksum-less input.
+///
+/// WHY A POSITIVE-ONLY TEST SUITE CANNOT CATCH THIS (the review's own
+/// finding, recorded here so it survives independent of the review report):
+/// every existing positive test hands the recogniser an internal key that
+/// legitimately matches its OWN tree's leaves. A weakened pattern-match
+/// recognises those cases too — pattern-matching is a SUPERSET of the real
+/// check on every input where the real check accepts. The only shape that
+/// separates the two is one the real check REJECTS and the pattern-match
+/// ACCEPTS: a key that looks right but was computed over the wrong leaves.
+pub fn near_miss_liana_recipe_over_different_leaves() -> String {
+    let kofn = case("preset-kofn-recovery-tr");
+    let kofn_recipe = case("preset-kofn-recovery-tr").expected_xpub;
+    let hashlock_recipe = case("preset-hashlock-gated-tr").expected_xpub;
+    let bare = kofn
+        .descriptor_with_checksum
+        .rsplit_once('#')
+        .map(|(body, _)| body)
+        .unwrap_or(kofn.descriptor_with_checksum.as_str());
+    let swapped = bare.replacen(&kofn_recipe, &hashlock_recipe, 1);
+    assert_ne!(
+        swapped, bare,
+        "the kofn recipe xpub must appear exactly once, as the internal key, \
+         for this swap to do anything"
+    );
+    swapped
+}
+
+/// I-2 fix round 1 (Important) — a tr() whose RECOGNISED Liana-unspendable
+/// internal key ALSO appears, byte-identically, as a tapleaf key: the
+/// exact shape that exposed `decompose/mod.rs`'s retain running BEFORE
+/// `check_no_repeated_key` instead of after.
+///
+/// CONSTRUCTIBLE, not merely hypothetical: SPEC §2 step 2 fixes the
+/// recipe's own public key to the BIP-341 NUMS point REGARDLESS of chain
+/// code, so placing that SAME xpub as a leaf contributes a FIXED,
+/// known-in-advance 33-byte value to the leaf-pubkey hash no matter what
+/// chain code the xpub itself carries. That makes the self-referential
+/// point directly computable (not searched for): hash the NUMS point's own
+/// compressed bytes together with one other real leaf's pubkey bytes via
+/// the SAME `liana_unspendable_xpub` the recogniser itself calls, and the
+/// result — call it X — satisfies X == recompute(leaves including X's own
+/// pubkey bytes) BY CONSTRUCTION. `X` is then placed at BOTH the internal
+/// key position and a `pk()` leaf position, verbatim.
+pub fn self_referential_liana_key_descriptor() -> String {
+    use bitcoin::Network;
+    use bitcoin::secp256k1::PublicKey;
+    use std::str::FromStr;
+
+    // BIP-341 NUMS H-point, byte-identical to `md_codec::nums::
+    // NUMS_H_POINT_X_ONLY_HEX` and md-cli's own (both crate-private)
+    // `parse::template::NUMS_H_POINT_X_ONLY_HEX` — a third copy of one
+    // fixed, published constant, not a fourth source of truth for it.
+    const NUMS_H_POINT_X_ONLY_HEX: &str =
+        "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+    let nums_pubkey = PublicKey::from_str(&format!("02{NUMS_H_POINT_X_ONLY_HEX}"))
+        .expect("BIP-341 NUMS H-point is a fixed, valid compressed secp256k1 point");
+
+    // A real, distinct, vendored xpub (WITH an origin) as the other leaf —
+    // any second leaf works; this is `preset-kofn-recovery-tr`'s own first
+    // `multi_a` key, reused only for its real, valid xpub bytes.
+    let other_leaf_display = "[73c5da0a/48'/0'/0'/3']xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i";
+    let other_leaf_xpub = bitcoin::bip32::Xpub::from_str(
+        "xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i",
+    )
+    .expect("valid xpub");
+
+    // Leaf order matches the tree built below: `{pk(X),pk(OTHER)}` walks
+    // left-to-right, X first.
+    let leaves: Vec<[u8; 33]> = vec![
+        nums_pubkey.serialize(),
+        other_leaf_xpub.public_key.serialize(),
+    ];
+    let x = md_codec::nums::liana_unspendable_xpub(&leaves, Network::Bitcoin);
+    let x_str = x.to_string();
+
+    format!("tr({x_str}/<0;1>/*,{{pk({x_str}/<0;1>/*),pk({other_leaf_display}/<0;1>/*)}})")
+}
