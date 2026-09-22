@@ -552,6 +552,23 @@ pub fn validate_no_empty_origin_overrides(d: &Descriptor) -> Result<(), Error> {
 /// non-root kind-1 key is structurally reachable at all is `tr()` nested
 /// under `sh`/`wsh` — which row 4 refuses outright, making rows 1/2's
 /// root-only scope exhaustive rather than a gap.
+///
+/// **Row 2 checks the WHOLE effective use-site, not just the shared
+/// default (fix round 1, PER-KEY OVERRIDE GAP).** Liana's positional
+/// pairing (SPEC §6 row 2) is a per-LEAF-KEY property: `@1/<2;3>/*` derives
+/// a different address than `@1/<0;1>/*` regardless of what the shared
+/// default says. A first cut here checked only `d.use_site_path`, and
+/// `d.tlv.use_site_path_overrides` (populated straight from a template's
+/// per-placeholder path -- `parse/template.rs:843-858` in md-cli) let a
+/// single `@N` diverge from an otherwise-canonical card and still mint --
+/// MEASURED through the operator CLI: `tr(UNSPENDABLE(liana),
+/// {pk(@0/<0;1>/*),pk(@1/<2;3>/*)})` minted and the override survived
+/// intact through decode. Liana would derive `@1` from `0/i`; a use-site-
+/// following device derives it from `2/i` -- two implementations
+/// disagreeing about which addresses are the wallet's, on a plate that
+/// looks canonical at a glance. So every override entry is checked here
+/// too, with the same error -- the operator does not care which field
+/// carried the divergence.
 pub fn validate_unspendable_shape(d: &Descriptor) -> Result<(), Error> {
     reject_nested_unspendable(&d.tree, true)?;
     if let Body::Tr {
@@ -566,6 +583,13 @@ pub fn validate_unspendable_shape(d: &Descriptor) -> Result<(), Error> {
         }
         if d.use_site_path != UseSitePath::standard_multipath() {
             return Err(Error::UnspendableUseSiteNotCanonical);
+        }
+        if let Some(overrides) = &d.tlv.use_site_path_overrides {
+            for (_, usp) in overrides {
+                if *usp != UseSitePath::standard_multipath() {
+                    return Err(Error::UnspendableUseSiteNotCanonical);
+                }
+            }
         }
     }
     Ok(())

@@ -175,6 +175,42 @@ fn tr_liana_at_use_site(a: u32, b: u32) -> Descriptor {
     d
 }
 
+/// A kind-1 tr whose SHARED use-site stays the canonical `<0;1>/*`, but a
+/// single `@N`'s PER-KEY override (`d.tlv.use_site_path_overrides`)
+/// diverges -- fix round 1's finding: the whole-descriptor check
+/// (`tr_liana_at_use_site` above) cannot see this at all, because
+/// `d.use_site_path` is untouched. MEASURED through the operator CLI
+/// before the fix: `md encode 'tr(UNSPENDABLE(liana),
+/// {pk(@0/<0;1>/*),pk(@1/<2;3>/*)})' --path bip48` minted, and `md decode`
+/// showed the `@1` override intact. `parse/template.rs:843-858` builds
+/// `use_site_path_overrides` straight from a per-placeholder path, so this
+/// is reachable from a plain template, not a hand-crafted wire.
+///
+/// `keyed_compose_tr_nums_three_leaves` has `use_site_path_overrides: null`
+/// (its own `.descriptor.json` confirms it), so starting from
+/// `kind1_from_vector` and adding exactly one override entry is what
+/// isolates this shape from `tr_liana_at_use_site`'s whole-descriptor one.
+fn tr_liana_with_noncanonical_override(idx: u8, a: u32, b: u32) -> Descriptor {
+    let mut d = kind1_from_vector("keyed_compose_tr_nums_three_leaves");
+    d.tlv.use_site_path_overrides = Some(vec![(
+        idx,
+        UseSitePath {
+            multipath: Some(vec![
+                Alternative {
+                    hardened: false,
+                    value: a,
+                },
+                Alternative {
+                    hardened: false,
+                    value: b,
+                },
+            ]),
+            wildcard_hardened: false,
+        },
+    )]);
+    d
+}
+
 /// A kind-1 `tr()` nested inside `wsh(...)` -- the shape §6 row 4 refuses.
 /// `wsh(tr(...))` is not a real BIP-380 shape and `kind1_from_vector` has no
 /// vendored vector to swap (every vendored `tr` is a ROOT `tr`), so this is
@@ -251,5 +287,19 @@ fn kind_1_nested_under_wsh_is_refused() {
     assert!(matches!(
         encode_payload(&wsh_wrapping_tr_liana()),
         Err(Error::UnspendableNotRootTr)
+    ));
+}
+
+/// Fix round 1: a non-canonical PER-KEY override must be refused even when
+/// the shared `use_site_path` is canonical. `tr_liana_at_use_site` above
+/// pins the whole-descriptor half of row 2; this pins the override half --
+/// the two are independent code paths in `validate_unspendable_shape` and
+/// each needs its own test, or one half has no gate (see mutation
+/// verification in the task 7 report).
+#[test]
+fn kind_1_with_a_noncanonical_per_key_override_is_refused() {
+    assert!(matches!(
+        encode_payload(&tr_liana_with_noncanonical_override(1, 2, 3)),
+        Err(Error::UnspendableUseSiteNotCanonical)
     ));
 }
