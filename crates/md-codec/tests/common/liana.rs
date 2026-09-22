@@ -27,6 +27,13 @@ use md_codec::tree::{Body, InternalKey};
 /// `cases.json`'s TLV bytes alone -- it would have no taptree, no older(),
 /// no fingerprints and no divergent origins, all of which a byte-identical
 /// descriptor gate needs.
+///
+/// `#[allow(dead_code)]`: this file is spliced into several crate roots
+/// (see the header comment), and not every consumer needs a kind-1
+/// Descriptor -- e.g. a root that only checks `case(name).leaf_pubkeys()`
+/// against the recipe never calls this, so it is dead code in that
+/// compilation unit specifically.
+#[allow(dead_code)]
 fn kind1_from_vector(vector_name: &str) -> Descriptor {
     let mut d = decode_vendored(&load_vendored_phrase(vector_name))
         .unwrap_or_else(|e| panic!("{vector_name}: decode: {e}"));
@@ -46,6 +53,14 @@ fn kind1_from_vector(vector_name: &str) -> Descriptor {
 
 /// One vendored Liana evidence case -- see `scripts/vendor-liana-evidence.sh`
 /// for exactly how each field was extracted.
+///
+/// `#[allow(dead_code)]`: this file is spliced into several crate roots
+/// (see the header comment), and different roots read different fields --
+/// e.g. a descriptor-equality root reads `descriptor_with_checksum` and
+/// never touches `liana_receive`/`liana_change`, which an address-equality
+/// root reads instead. No single compilation unit is expected to read
+/// every field, so some are dead code in any one of them specifically.
+#[allow(dead_code)]
 #[derive(serde::Deserialize, Clone)]
 struct Case {
     name: String,
@@ -60,6 +75,13 @@ struct Case {
 
 impl Case {
     /// The 33-byte compressed pubkeys SPEC section 2 hashes, in wire order.
+    ///
+    /// `#[allow(dead_code)]`: not every spliced-in consumer calls this --
+    /// e.g. a root that only asserts `descriptor_with_checksum` or the
+    /// `liana_receive`/`liana_change` addresses never decodes
+    /// `leaf_pubkeys_hex`, so this method is dead code in that
+    /// compilation unit specifically.
+    #[allow(dead_code)]
     fn leaf_pubkeys(&self) -> Vec<[u8; 33]> {
         self.leaf_pubkeys_hex
             .iter()
@@ -73,10 +95,21 @@ impl Case {
 /// Every vendored case -- all EIGHT, including the four Liana refused on
 /// policy shape: section 2's recipe is correct for those too, and one of
 /// them is the only nested taptree in the evidence.
+///
+/// `#[allow(dead_code)]`: not every spliced-in consumer needs the whole
+/// set -- e.g. a root exercising a single named case goes through `case`
+/// below (which calls this internally) rather than iterating the corpus
+/// itself, so this function has no direct caller in that compilation unit
+/// specifically. (And in the other direction, a root that iterates
+/// `all_cases()` directly, rather than looking up cases by name, leaves
+/// `case` below with no caller -- hence its own `#[allow(dead_code)]`,
+/// not laziness.)
+#[allow(dead_code)]
 fn all_cases() -> Vec<Case> {
     serde_json::from_str(include_str!("../fixtures/liana/cases.json")).expect("cases.json")
 }
 
+#[allow(dead_code)]
 fn case(name: &str) -> Case {
     all_cases()
         .into_iter()
@@ -86,6 +119,12 @@ fn case(name: &str) -> Case {
 
 /// The vendored vector names whose decoded tree is a root `tr` at kind 0.
 /// Stage 1a measured 23 of the 65 vectors as carrying `Body::Tr`.
+///
+/// `#[allow(dead_code)]`: not every spliced-in consumer calls this -- e.g.
+/// a root that only exercises named cases via `case`/`kind1_from_vector`
+/// never needs the full kind-0 `tr` population, so this function is dead
+/// code in that compilation unit specifically.
+#[allow(dead_code)]
 fn all_kind0_tr_vectors() -> Vec<String> {
     all_vendored_vector_names()
         .into_iter()
