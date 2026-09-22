@@ -2,6 +2,7 @@
 
 use crate::bitstream::{BitReader, BitWriter};
 use crate::error::Error;
+use crate::header::Header;
 use crate::tag::Tag;
 
 /// A node in the operator AST: a tag plus its body.
@@ -56,9 +57,15 @@ pub enum Body {
     },
     /// Tr's body: the taproot internal key plus an optional tap-script-tree root.
     /// Per SPEC v0.30 §7 the wire shape is
-    /// `Tag::Tr | is_nums(1) | [key_index(kiw) iff !is_nums] | has_tree(1) | [tree]`.
-    /// `InternalKey` replaces the former `is_nums`/`key_index` pair; stage 1a
-    /// changes no wire bytes.
+    /// `Tag::Tr | is_nums(1) | [kind(1) iff is_nums && version==8] | [key_index(kiw) iff !is_nums] | has_tree(1) | [tree]`.
+    /// At version 4 the `kind` bit never appears — the stream is
+    /// byte-identical to what shipped pre-refactor (stage 1a's
+    /// `every_vendored_wire_vector_re_encodes_to_the_same_bytes` gate proves
+    /// it over all 65 vendored vectors). At version 8 the `kind` bit
+    /// distinguishes `InternalKey::NumsPoint` (0) from
+    /// `InternalKey::LianaUnspendable` (1). `InternalKey` replaces the former
+    /// `is_nums`/`key_index` pair; stage 1a changed no wire bytes, stage 1b
+    /// task 3 added the version-8-only `kind` bit.
     Tr {
         /// The internal key. See [`InternalKey`].
         internal_key: InternalKey,
@@ -88,27 +95,25 @@ pub enum Body {
 /// the descriptor's path-decl head. Filled in across phases 7-11.
 ///
 /// `wire_version` is the wire version this write targets (see
-/// [`crate::encode::Descriptor::wire_version`]). Stage 1b task 2 threads it
-/// through every recursive call site; no encoding decision reads it yet.
+/// [`crate::encode::Descriptor::wire_version`]). Stage 1b task 2 threaded it
+/// through every recursive call site; stage 1b task 3 (this function's
+/// `Body::Tr` arm) is what reads it: the kind bit distinguishing
+/// `InternalKey::NumsPoint` from `InternalKey::LianaUnspendable` is written
+/// iff `wire_version == Header::WF_UNSPENDABLE_VERSION`.
 ///
-/// CORRECTION (fix round 1, I-1): an earlier version of this comment claimed
-/// "wire bytes are unchanged until the following task". That is true only
-/// for version-4 trees (proven by stage 1a's byte-equality gate over all 65
-/// vendored vectors). It is FALSE for a tree carrying
-/// `InternalKey::LianaUnspendable`: [`crate::encode::Descriptor::wire_version`]
-/// already returns 8 for that tree, but this function's `Body::Tr` arm below
-/// still writes the same v4 NUMS bit pattern for `LianaUnspendable` that it
-/// writes for `NumsPoint` — the kind bit doesn't exist until task 3. So such
-/// a tree currently encodes as header version 8 over a still-version-4 body,
-/// a transient intermediate state task 3 closes. See
-/// [`crate::encode::Descriptor::wire_version`]'s doc comment for the two
-/// measured consequences (a silent decode-side downgrade to `NumsPoint`, and
-/// a chunk-set-id mismatch on `split`/`reassemble`).
-///
-/// `#[allow(clippy::only_used_in_recursion)]`: true today, deliberately — the
-/// next task adds the first non-recursive read of `wire_version` in the
-/// `Body::Tr` arm.
-#[allow(clippy::only_used_in_recursion)]
+/// CORRECTION (fix round 1, I-1), CLOSED (stage 1b task 3): an earlier
+/// version of this comment claimed "wire bytes are unchanged until the
+/// following task", which was true only for version-4 trees and FALSE for a
+/// tree carrying `InternalKey::LianaUnspendable` — [`crate::encode::Descriptor::wire_version`]
+/// returned 8 for such a tree while this function's `Body::Tr` arm still
+/// wrote the same v4 NUMS bit pattern for both kinds, a transient
+/// header-version-8-over-a-version-4-body state. Task 3 closed it: the
+/// `Body::Tr` arm now writes a kind bit at version 8, so a
+/// `LianaUnspendable` tree's wire shape matches its own `wire_version()`.
+/// Version-4 trees are still byte-identical to what shipped (proven by
+/// stage 1a's byte-equality gate over all 65 vendored vectors, which cannot
+/// see version 8 since none of the vendored vectors carry
+/// `LianaUnspendable`).
 pub fn write_node(
     w: &mut BitWriter,
     node: &Node,
@@ -176,17 +181,23 @@ pub fn write_node(
             }
         }
         Body::Tr { internal_key, tree } => {
-            // SPEC v0.30 §7, UNCHANGED at wire version 4:
-            // is_nums(1) | [key_index(kiw) iff !is_nums] | has_tree(1) | [tree]
+            // SPEC v0.30 §7: is_nums(1) | [kind(1) iff is_nums && v==8] |
+            // [key_index(kiw) iff !is_nums] | has_tree(1) | [tree]. UNCHANGED
+            // at wire version 4; the kind bit exists ONLY at version 8.
             match internal_key {
                 InternalKey::Slot(i) => {
                     w.write_bits(0, 1);
                     w.write_bits(u64::from(*i), key_index_width as usize);
                 }
-                // Stage 1a: both non-slot kinds still write exactly the v4 NUMS
-                // encoding. STAGE 1B is what makes them differ, and only at v8.
                 InternalKey::NumsPoint | InternalKey::LianaUnspendable => {
                     w.write_bits(1, 1);
+                    // SPEC §3d: the kind bit exists ONLY at version 8. At
+                    // version 4 the stream stays byte-identical to what
+                    // shipped (stage 1a's byte-equality gate proves it over
+                    // all 65 vendored vectors).
+                    if wire_version == Header::WF_UNSPENDABLE_VERSION {
+                        w.write_bits(u64::from(*internal_key == InternalKey::LianaUnspendable), 1);
+                    }
                 }
             }
             w.write_bits(u64::from(tree.is_some()), 1);
@@ -227,16 +238,20 @@ pub const MAX_DECODE_DEPTH: u8 = 128;
 /// the descriptor's path-decl head. Filled in across phases 7-11.
 ///
 /// `wire_version` is the version `Header::read` (or `ChunkHeader::read`)
-/// returned for this payload. Stage 1b task 2 threads it through every
-/// recursive call site; no decoding decision reads it yet — bit 4 of `Tr`'s
-/// body still decodes to `InternalKey::NumsPoint` regardless of version, the
-/// same as before this task. The following task is what makes version 8
-/// decode bit 4 as `InternalKey::LianaUnspendable`.
+/// returned for this payload. Stage 1b task 2 threaded it through every
+/// recursive call site; stage 1b task 3 is what reads it in `Tag::Tr`'s arm
+/// below: at version 8, after `is_nums`, an extra kind bit is read and
+/// decoded to `InternalKey::LianaUnspendable` (1) or `InternalKey::NumsPoint`
+/// (0); at version 4 no such bit exists on the wire and `is_nums` alone still
+/// decodes to `InternalKey::NumsPoint`, unchanged from stage 1a.
 ///
-/// This is the decode-side half of the transient state documented on
-/// [`crate::encode::Descriptor::wire_version`]: today, a header-version-8
-/// payload always decodes its `Tr` internal key as `NumsPoint`, because
-/// nothing on the wire distinguishes it from a version-4 one yet.
+/// CLOSED (stage 1b task 3): this used to be the decode-side half of the
+/// transient state documented on [`crate::encode::Descriptor::wire_version`]
+/// — a header-version-8 payload decoded its `Tr` internal key as `NumsPoint`
+/// regardless of what it was encoded as, because nothing on the wire
+/// distinguished it from a version-4 one. Task 3's write-side kind bit (see
+/// `write_node`) and this function's matching read now agree, so a
+/// `LianaUnspendable` tree round-trips as `LianaUnspendable` at version 8.
 ///
 /// Top-level entry point. Internally threads a recursion-depth counter that
 /// errors out at [`MAX_DECODE_DEPTH`] before parsing the next node, so a
@@ -249,9 +264,10 @@ pub fn read_node(r: &mut BitReader, key_index_width: u8, wire_version: u8) -> Re
 /// Inner recursive form of `read_node` that threads `depth`. Public callers
 /// should use `read_node` instead, which starts at depth 0. Increments
 /// `depth` once per call and errors if it reaches [`MAX_DECODE_DEPTH`].
-/// `#[allow(clippy::only_used_in_recursion)]`: `wire_version` is true
-/// plumbing-only today, same as `write_node` above — see its doc comment.
-#[allow(clippy::only_used_in_recursion)]
+/// `wire_version` is read directly in the `Tag::Tr` arm below (stage 1b
+/// task 3), not only passed to recursive calls, so
+/// `#[allow(clippy::only_used_in_recursion)]` no longer applies — see
+/// `read_node`'s doc comment.
 fn read_node_with_depth(
     r: &mut BitReader,
     key_index_width: u8,
@@ -328,13 +344,23 @@ fn read_node_with_depth(
             Body::Variable { k, children }
         }
         Tag::Tr => {
-            // SPEC v0.30 §7: is_nums(1) | [key_index(kiw) iff !is_nums] |
-            // has_tree(1) | [tree iff has_tree]. Stage 1b task 2: `wire_version`
-            // is threaded but not yet read here — bit 4 still always decodes to
-            // `InternalKey::NumsPoint`, unchanged from stage 1a.
+            // SPEC v0.30 §7: is_nums(1) | [kind(1) iff is_nums && v==8] |
+            // [key_index(kiw) iff !is_nums] | has_tree(1) | [tree iff
+            // has_tree]. The kind bit mirrors write_node's write side exactly:
+            // present only when is_nums is set AND wire_version is the
+            // WF_UNSPENDABLE_VERSION (8); absent (and thus always
+            // `NumsPoint`) at version 4, unchanged from stage 1a.
             let is_nums = r.read_bits(1)? != 0;
             let internal_key = if is_nums {
-                InternalKey::NumsPoint
+                if wire_version == Header::WF_UNSPENDABLE_VERSION {
+                    if r.read_bits(1)? != 0 {
+                        InternalKey::LianaUnspendable
+                    } else {
+                        InternalKey::NumsPoint
+                    }
+                } else {
+                    InternalKey::NumsPoint
+                }
             } else {
                 InternalKey::Slot(r.read_bits(key_index_width as usize)? as u8)
             };

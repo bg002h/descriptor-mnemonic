@@ -6,16 +6,21 @@
 //! the dispatch-safety arithmetic, the accepted version set, the mismatch
 //! message naming both accepted versions, and that `wire_version()` reads
 //! the tree (kind 1 ⇒ 8, kind 0 ⇒ 4) rather than assuming `Slot(0)`/kind 0
-//! everywhere. It deliberately does NOT round-trip a `LianaUnspendable`
-//! descriptor through `encode_md1_string`/`split` — `wire_version()` already
-//! returns 8 for one, but `Body::Tr`'s wire encoding doesn't carry the kind
-//! bit until task 3, so such a round trip currently mis-decodes as
-//! `NumsPoint` (and a chunked one fails to reassemble). See
-//! `Descriptor::wire_version`'s doc comment for the measured detail; this
-//! task does not fix or pin that transient state, since task 3 removes it.
+//! everywhere.
+//!
+//! Task 2 itself deliberately did NOT round-trip a `LianaUnspendable`
+//! descriptor through `encode_payload`/`decode_payload` — `wire_version()`
+//! already returned 8 for one, but `Body::Tr`'s wire encoding didn't carry
+//! a kind bit yet, so such a round trip mis-decoded as `NumsPoint` (and a
+//! chunked one failed to reassemble). Stage 1b task 3 closed that: the two
+//! tests below, appended by task 3, DO round-trip a `LianaUnspendable`
+//! descriptor now that `write_node`/`read_node` carry the kind bit at
+//! version 8. See `Descriptor::wire_version`'s doc comment for the
+//! now-historical detail of the state task 3 closed.
 
 use md_codec::error::Error;
 use md_codec::header::Header;
+use md_codec::{decode_payload, encode_payload};
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -81,4 +86,23 @@ fn the_mismatch_message_names_the_accepted_set_not_a_single_version() {
         s.contains('4') && s.contains('8'),
         "must name {{4, 8}}: {s}"
     );
+}
+
+// Stage 1b task 3: the kind bit itself.
+
+#[test]
+fn kind_0_and_kind_1_over_the_same_tree_encode_to_different_bytes() {
+    let k0 = decode_vendored(&load_vendored_phrase("keyed_compose_tr_nums_three_leaves")).unwrap();
+    let k1 = kind1_from_vector("keyed_compose_tr_nums_three_leaves");
+    assert_ne!(
+        encode_payload(&k0).unwrap().0,
+        encode_payload(&k1).unwrap().0
+    );
+}
+
+#[test]
+fn a_kind_1_tree_round_trips_at_v8() {
+    let d = kind1_from_vector("keyed_compose_tr_nums_three_leaves");
+    let (bytes, bits) = encode_payload(&d).unwrap();
+    assert_eq!(decode_payload(&bytes, bits).unwrap(), d);
 }
