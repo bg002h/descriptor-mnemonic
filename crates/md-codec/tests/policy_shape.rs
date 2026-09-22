@@ -459,6 +459,43 @@ fn deep_taptree_reports_every_leaf_and_the_correct_max_depth() {
 }
 
 // ---------------------------------------------------------------------
+// Stage 1b task 5: wire kind 1 (LianaUnspendable) is a FOURTH
+// `KeyPathKind`, distinct from `Nums` even though the wire's `is_nums` flag
+// is `true` for both. G-1 gating site (`policy_shape.rs:251`): reverting
+// the split back to `NumsPoint | LianaUnspendable => KeyPathKind::Nums`
+// makes `liana_unspendable_taproot_is_its_own_key_path_kind` fail
+// immediately (`shape.key_path` would read `Nums`, not `LianaUnspendable`).
+// ---------------------------------------------------------------------
+
+#[test]
+fn liana_unspendable_taproot_is_its_own_key_path_kind() {
+    let shape = policy_shape(&common::tr_liana_unspendable_two_leaves());
+    assert!(shape.complete);
+    assert_eq!(shape.key_path, KeyPathKind::LianaUnspendable);
+    assert_ne!(
+        shape.key_path,
+        KeyPathKind::Nums,
+        "wire kind 1 must not collapse onto kind 0's classification"
+    );
+}
+
+/// A `LianaUnspendable` internal key is provably unspendable, like `Nums`
+/// (SPEC §2/§4b) — same invariant as a NUMS key path: no key-path `Branch`
+/// is pushed for it, only the tapscript leaves.
+#[test]
+fn liana_unspendable_taproot_pushes_no_key_path_branch() {
+    let shape = policy_shape(&common::tr_liana_unspendable_two_leaves());
+    assert!(shape.complete);
+    assert_eq!(
+        shape.branches.len(),
+        2,
+        "two tapscript leaves, no key-path branch (unspendable, like NUMS)"
+    );
+    assert_eq!(shape.branches[0].slots, vec![0]);
+    assert_eq!(shape.branches[1].slots, vec![1]);
+}
+
+// ---------------------------------------------------------------------
 // Fix round 1, I-2: the sh(wsh) unwrap and andor.
 // ---------------------------------------------------------------------
 

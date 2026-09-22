@@ -70,4 +70,5 @@ pub use tlv::TlvSection;
 #[cfg(feature = "derive")]
 pub use to_miniscript::{
     has_hardened_use_site, to_miniscript_descriptor, to_miniscript_descriptor_multipath,
+    to_miniscript_descriptor_multipath_with_network, to_miniscript_descriptor_with_network,
 };

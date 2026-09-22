@@ -319,12 +319,33 @@ pub enum JsonBody {
         k: u8,
         indices: Vec<u8>,
     },
-    /// `tr()` body. Per SPEC v0.30 §7: `is_nums = true` signals the
-    /// BIP-341 NUMS H-point as the implicit internal key (key_index unused);
+    /// `tr()` body. Per SPEC v0.30 §7: `is_nums = true` signals a taproot
+    /// internal key that is not a real key slot (key_index unused);
     /// `is_nums = false` references @{key_index} for `key_index < n`.
+    ///
+    /// `unspendable_kind` is stage 1b's (F-449) third state (G-1 gating
+    /// site, `json.rs:356`): `is_nums = true` alone no longer says WHICH of
+    /// two wire-distinct unspendable internal keys is present (SPEC §3d's
+    /// version-8 kind bit). `None` for both `Slot` (`is_nums = false`,
+    /// irrelevant) and `NumsPoint` (wire kind 0, the literal BIP-341 NUMS
+    /// H-point — today's ONLY `is_nums = true` case, so this field is ABSENT
+    /// from every JSON object this schema has ever emitted before this
+    /// stage). `Some("liana_unspendable")` for `LianaUnspendable` (wire kind
+    /// 1, SPEC §2's derived xpub — never absent when this value differs from
+    /// `NumsPoint`'s classification). Additive: `#[serde(skip_serializing_if)]`
+    /// keeps the field OFF the wire for every existing case, so no consumer
+    /// of the current `md-cli/1` schema sees a shape it does not already
+    /// handle. The formal documentation of this field in
+    /// `docs/json-schema-v1.md` (and any schema-version decision) is a later
+    /// task's job (SPEC §4a/§6: the input side, where wire kind 1 first
+    /// becomes reachable through a normal `md decompose`/`md encode` flow) —
+    /// this task only makes the OUTPUT representation stop conflating the
+    /// two kinds, which it did unconditionally before this change.
     Tr {
         is_nums: bool,
         key_index: u8,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        unspendable_kind: Option<&'static str>,
         tree: Option<Box<JsonNode>>,
     },
     Hash256Body(String), // hex
@@ -346,18 +367,20 @@ impl From<&Body> for JsonBody {
                 indices: indices.clone(),
             },
             Body::Tr { internal_key, tree } => {
-                // Stage 1a: the JSON schema is a published v1 surface and
-                // keeps emitting `is_nums`/`key_index` unchanged. Both
-                // NumsPoint and LianaUnspendable map to `is_nums: true,
-                // key_index: 0` -- LianaUnspendable is never constructed
-                // yet, and stage 1b is what versions this schema.
-                let (is_nums, key_index) = match internal_key {
-                    InternalKey::Slot(i) => (false, *i),
-                    InternalKey::NumsPoint | InternalKey::LianaUnspendable => (true, 0),
+                // G-1 gating site (`json.rs:356`, stage 1b task 5): the
+                // published `is_nums`/`key_index` pair is UNCHANGED (both
+                // wire kinds keep `is_nums: true, key_index: 0`) -- only
+                // `unspendable_kind` (see `JsonBody::Tr`'s own doc) tells the
+                // two apart, and only for kind 1.
+                let (is_nums, key_index, unspendable_kind) = match internal_key {
+                    InternalKey::Slot(i) => (false, *i, None),
+                    InternalKey::NumsPoint => (true, 0, None),
+                    InternalKey::LianaUnspendable => (true, 0, Some("liana_unspendable")),
                 };
                 JsonBody::Tr {
                     is_nums,
                     key_index,
+                    unspendable_kind,
                     tree: tree.as_ref().map(|n| Box::new(JsonNode::from(n.as_ref()))),
                 }
             }
@@ -484,5 +507,66 @@ mod descriptor_json_tests {
         let inner_tree = &j["body"]["data"]["tree"];
         assert_eq!(inner_tree["tag"], "TapTree");
         assert_eq!(inner_tree["body"]["kind"], "Children");
+    }
+
+    /// G-1 gating site (`json.rs:356`, stage 1b task 5): `NumsPoint` (wire
+    /// kind 0) and `LianaUnspendable` (wire kind 1) must produce DIFFERENT
+    /// JSON — both currently collapse onto `is_nums: true, key_index: 0`
+    /// unconditionally (`unspendable_kind` is stage 1b's new discriminant).
+    /// Reverting the split at `json.rs:356` back to the
+    /// `NumsPoint | LianaUnspendable => (true, 0)` or-pattern makes both
+    /// `Tr` bodies below serialize IDENTICALLY, and this test fails.
+    #[test]
+    fn liana_unspendable_gets_its_own_json_state_distinct_from_nums() {
+        use md_codec::tree::{Body, InternalKey, Node};
+        let tr = |ik: InternalKey| Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                internal_key: ik,
+                tree: None,
+            },
+        };
+        let nums = serde_json::to_value(JsonNode::from(&tr(InternalKey::NumsPoint))).unwrap();
+        let liana =
+            serde_json::to_value(JsonNode::from(&tr(InternalKey::LianaUnspendable))).unwrap();
+        assert_ne!(
+            nums, liana,
+            "kind 0 and kind 1 must not serialize identically"
+        );
+        assert_eq!(nums["body"]["data"]["is_nums"], true);
+        assert_eq!(liana["body"]["data"]["is_nums"], true);
+        assert_eq!(nums["body"]["data"]["key_index"], 0);
+        assert_eq!(liana["body"]["data"]["key_index"], 0);
+        // Additive per `JsonBody::Tr`'s own doc: `unspendable_kind` is
+        // ABSENT (not `null`) for kind 0, so an old consumer that only knows
+        // `is_nums`/`key_index` sees no new field for every case it already
+        // handles.
+        assert!(
+            nums["body"]["data"].get("unspendable_kind").is_none(),
+            "kind 0 must not gain the new field at all: {nums}"
+        );
+        assert_eq!(
+            liana["body"]["data"]["unspendable_kind"],
+            "liana_unspendable"
+        );
+    }
+
+    /// Positive control alongside the test above: an ordinary spendable
+    /// `Slot` internal key is untouched by this task -- `is_nums: false`,
+    /// the real `key_index`, and no `unspendable_kind` at all.
+    #[test]
+    fn a_real_key_slot_carries_no_unspendable_kind() {
+        use md_codec::tree::{Body, InternalKey, Node};
+        let tr = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                internal_key: InternalKey::Slot(3),
+                tree: None,
+            },
+        };
+        let j = serde_json::to_value(JsonNode::from(&tr)).unwrap();
+        assert_eq!(j["body"]["data"]["is_nums"], false);
+        assert_eq!(j["body"]["data"]["key_index"], 3);
+        assert!(j["body"]["data"].get("unspendable_kind").is_none());
     }
 }

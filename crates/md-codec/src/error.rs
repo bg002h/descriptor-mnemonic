@@ -477,6 +477,22 @@ pub enum Error {
         detail: String,
     },
 
+    /// [`crate::to_miniscript::to_miniscript_descriptor`] /
+    /// [`crate::to_miniscript::to_miniscript_descriptor_multipath`] (the
+    /// network-less entry points) were called on a descriptor whose
+    /// [`crate::encode::Descriptor::wire_version`] is
+    /// [`crate::header::Header::WF_UNSPENDABLE_VERSION`] — i.e. it carries a
+    /// wire-kind-1 (Liana unspendable) taproot internal key somewhere in its
+    /// tree. SPEC §2 step 5: the derived internal key's base58 prefix
+    /// (`xpub`/`tpub`) is network-dependent, and the network-less entry
+    /// points delegate to mainnet — silently rendering a mainnet xpub for a
+    /// testnet wallet is exactly the funds-safety defect this refusal
+    /// exists to prevent. Use the `_with_network` entry point instead.
+    #[error(
+        "a wire-kind-1 (Liana unspendable) internal key needs a network to render its derived xpub prefix; call the _with_network entry point instead of guessing mainnet"
+    )]
+    NetworkRequiredForUnspendable,
+
     /// Inside a `tr()` body, `is_nums = false` was paired with a `key_index`
     /// out of range (`key_index >= n`). Per SPEC v0.30 §7 + §11: the
     /// placeholder-index range is `0..n` strictly; the v0.x NUMS sentinel

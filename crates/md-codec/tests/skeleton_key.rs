@@ -46,6 +46,25 @@ fn a_nums_key_path_and_an_unspendable_xpub_do_not_share_a_key() {
     // for a test that does.
 }
 
+/// Stage 1b task 5 (the brief's own Step 1 item: "`skeleton_key` differing
+/// between the kinds"): wire kind 0 (`NumsPoint`) and wire kind 1
+/// (`LianaUnspendable`) over the SAME two-leaf shape must not share a
+/// `SkeletonKey`. Differs by `template` (the marker vs. the NUMS hex,
+/// `liana_render.rs` pins that half directly) AND by `key_path_kind`
+/// (`Nums` vs. `LianaUnspendable`, both now DISTINCT `KeyPathKind` values —
+/// see `key_path_kind_is_part_of_the_key_independent_of_template` below for
+/// the case that isolates the latter).
+#[test]
+fn a_nums_key_path_and_a_liana_unspendable_key_path_do_not_share_a_key() {
+    let nums = common::tr_nums_two_leaves();
+    let liana = common::tr_liana_unspendable_two_leaves();
+    assert_ne!(
+        skeleton_key(&skeleton(&nums).unwrap()),
+        skeleton_key(&skeleton(&liana).unwrap()),
+        "wire kind 0 and wire kind 1 must not collide in the SkeletonKey"
+    );
+}
+
 #[test]
 fn sh_wsh_and_bare_sh_do_not_share_a_key() {
     // sh(wsh) is NOT a ScriptKind value; it is root=Sh plus inner_wsh=true.
@@ -168,13 +187,18 @@ fn key_partition_is_part_of_the_key() {
 /// `a_nums_key_path_and_an_unspendable_xpub_do_not_share_a_key` above), so
 /// dropping the `key_path_kind` token reds 0 of the prescribed tests. This
 /// test instead exercises `skeleton_key` directly against its ACTUAL
-/// signature (`&Skeleton`, not `&Descriptor`): two hand-built `Skeleton`
+/// signature (`&Skeleton`, not `&Descriptor`): three hand-built `Skeleton`
 /// values, identical in every field except `shape.key_path` -- a
 /// combination `skeleton()` itself could never produce from a real
-/// `Descriptor` (`policy_shape` ties `key_path` to `is_nums`, which the
-/// renderer always reflects in `template`), but one `skeleton_key`'s own
-/// contract must still serialize correctly, since nothing in its signature
-/// restricts it to `skeleton()`-produced inputs.
+/// `Descriptor` (`policy_shape` ties `key_path` to `is_nums`/the kind bit,
+/// which the renderer always reflects in `template`), but one
+/// `skeleton_key`'s own contract must still serialize correctly, since
+/// nothing in its signature restricts it to `skeleton()`-produced inputs.
+///
+/// Stage 1b task 5 extends the original `nums`/`xpub` pair to a THIRD value,
+/// `LianaUnspendable` (`KeyPathKind` grew a fourth variant this task) — all
+/// three now pairwise distinct in the serialized key, independent of
+/// `template`.
 #[test]
 fn key_path_kind_is_part_of_the_key_independent_of_template() {
     use md_codec::policy_shape::{KeyPathKind, PolicyShape};
@@ -187,9 +211,15 @@ fn key_path_kind_is_part_of_the_key_independent_of_template() {
     };
     let mut xpub = nums.clone();
     xpub.shape.key_path = KeyPathKind::Xpub;
+    let mut liana = nums.clone();
+    liana.shape.key_path = KeyPathKind::LianaUnspendable;
     assert_eq!(
         nums.template, xpub.template,
         "fixture sanity: only shape.key_path differs"
+    );
+    assert_eq!(
+        nums.template, liana.template,
+        "fixture sanity, same as above"
     );
     assert_eq!(nums.fp_partition, xpub.fp_partition);
     assert_eq!(nums.key_partition, xpub.key_partition);
@@ -198,6 +228,16 @@ fn key_path_kind_is_part_of_the_key_independent_of_template() {
         skeleton_key(&xpub),
         "key_path_kind must be part of the serialized key even though no real \
          descriptor can exercise this independently of the template"
+    );
+    assert_ne!(
+        skeleton_key(&nums),
+        skeleton_key(&liana),
+        "Nums and LianaUnspendable must not collide either"
+    );
+    assert_ne!(
+        skeleton_key(&xpub),
+        skeleton_key(&liana),
+        "Xpub and LianaUnspendable must not collide"
     );
 }
 

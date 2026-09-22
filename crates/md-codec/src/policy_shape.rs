@@ -34,15 +34,18 @@
 //!    not just its size).
 //! 2. [`KeyPathKind`] renames the Go's third value from `Spendable` to
 //!    [`KeyPathKind::Xpub`]. This walk verifies nothing about spendability —
-//!    the wire's only internal-key discriminant is `Body::Tr::is_nums`
-//!    (`crate::tree::Body::Tr`), and an unspendable-xpub internal key (the
-//!    Nunchuk shape F-449 records) is, on the wire, an ordinary `key_index`
-//!    structurally identical to a spendable one. Telling the two apart needs
-//!    re-deriving a specific coordinator's `unspendable_internal_key`
-//!    function over the whole descriptor — Liana's does exactly that — which
-//!    makes it a coordinator RULE, not a codec-observable property. `Xpub`
-//!    says only "a real extended key, not NUMS"; a coordinator that needs
-//!    the finer distinction computes it itself, one layer above this type.
+//!    `Xpub` (`InternalKey::Slot`, `is_nums = false`) says only "a real
+//!    extended key, not NUMS", and a `Slot`-encoded key that some
+//!    coordinator treats as unspendable BY CONVENTION (the Nunchuk shape
+//!    F-449 records) is structurally identical to a genuinely spendable one
+//!    — telling those apart still needs re-deriving that coordinator's own
+//!    function over the whole descriptor; see `KeyPathKind::Xpub`'s own doc.
+//!    Stage 1b (F-449) adds a FOURTH value, [`KeyPathKind::LianaUnspendable`],
+//!    for exactly one such convention (Liana's) that the wire now gives its
+//!    own discriminant — a deliberate, documented reversal of the "not
+//!    codec-observable" ruling this list used to state as a blanket rule;
+//!    see [`KeyPathKind::LianaUnspendable`]'s own doc for why it applies
+//!    only there and not to `Xpub` generally.
 //! 3. A spendable (non-NUMS) taproot internal key is pushed as its own
 //!    [`Branch`], first in [`PolicyShape::branches`], in [`policy_shape`]'s
 //!    `Tag::Tr` arm. NOT ported from the Go: `policy_shape.go`'s
@@ -106,31 +109,56 @@ pub enum RootKind {
     ShWpkh,
 }
 
-/// A taproot internal key. Three-valued, matching the Go original
-/// (`KeyPathNone` / `KeyPathNUMS` / `KeyPathSpendable`,
-/// `md/policy_shape.go:32-40`) in cardinality but NOT in the third name —
-/// see [`KeyPathKind::Xpub`].
+/// A taproot internal key. FOUR-valued as of stage 1b (F-449) — the Go
+/// original (`KeyPathNone` / `KeyPathNUMS` / `KeyPathSpendable`,
+/// `md/policy_shape.go:32-40`) and this type's own pre-stage-1b cardinality
+/// were both three. [`KeyPathKind::LianaUnspendable`] is the new one; see its
+/// own doc for the design reversal that makes it codec-observable at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyPathKind {
     /// Not a taproot policy.
     NotTaproot,
     /// Provably unspendable internal key: script paths only (BIP-341 NUMS
-    /// H-point). The wire's only internal-key discriminant
-    /// (`crate::tree::Body::Tr::is_nums`) says exactly this and nothing
-    /// more.
+    /// H-point), wire kind 0 (`crate::tree::InternalKey::NumsPoint`). The
+    /// wire's `is_nums` flag says "not a real key slot"; at wire version 8 a
+    /// second kind bit distinguishes this (kind 0) from
+    /// [`KeyPathKind::LianaUnspendable`] (kind 1) — at version 4 (no kind
+    /// bit on the wire) `is_nums = true` can only mean this.
     Nums,
     /// A real extended key sits in the internal-key slot — `is_nums = false`
-    /// on the wire. Named `Xpub`, NOT the Go's `Spendable`: this walk
-    /// verifies nothing about whether the key can actually spend. An
-    /// internal key can be a real xpub and still be *treated* as
-    /// unspendable by convention (Nunchuk's key-path-disabled shape, F-449
-    /// records it) — recognising that needs re-deriving a specific
-    /// coordinator's `unspendable_internal_key`-style function over the
-    /// whole descriptor (Liana's does exactly this), which makes it a
-    /// coordinator RULE, not a codec-observable property. Do not "restore
-    /// fidelity" with the Go name here: a coordinator that needs the finer
-    /// distinction computes it itself, one layer above this type.
+    /// on the wire (`crate::tree::InternalKey::Slot`). Named `Xpub`, NOT the
+    /// Go's `Spendable`: this walk verifies nothing about whether the key
+    /// can actually spend. An internal key can be a real xpub and still be
+    /// *treated* as unspendable by convention (Nunchuk's key-path-disabled
+    /// shape, F-449 records it; also today's `md decompose` behaviour for a
+    /// Liana wallet the recognizer below has not been taught to match —
+    /// SPEC §4a's `Slot`-with-no-origin ruling) — recognising THAT still
+    /// needs re-deriving a specific coordinator's own
+    /// `unspendable_internal_key`-style function over the whole descriptor,
+    /// which makes it a coordinator RULE, not a codec-observable property,
+    /// for any convention the wire itself has no discriminant for. Do not
+    /// "restore fidelity" with the Go name here: a coordinator that needs a
+    /// finer distinction than the wire carries computes it itself, one layer
+    /// above this type.
     Xpub,
+    /// Wire kind 1 (`crate::tree::InternalKey::LianaUnspendable`, SPEC §3d):
+    /// a provably-unspendable xpub derived from the tap-tree's own leaf keys
+    /// per Liana's own recipe (SPEC §2), NOT the literal NUMS H-point.
+    ///
+    /// **This reverses an earlier ruling, on purpose (SPEC §4b).**
+    /// `KeyPathKind::Xpub`'s doc above — and, before this stage,
+    /// `DESIGN_coordinator_compatibility.md` in the sibling `mnemonic-engrave`
+    /// repo — said recognising Liana's unspendable-xpub convention "means
+    /// re-deriving a specific coordinator's own function," so the
+    /// distinction "lives in a rule, not in the key." Stage 1b gives it its
+    /// OWN wire discriminant instead (the version-8 kind bit,
+    /// `tree.rs`/`render.rs`/`to_miniscript.rs`), so for descriptors that
+    /// actually carry that discriminant, the distinction now DOES live in
+    /// the key, and this walk reports it directly rather than leaving a
+    /// caller to re-derive it. The `Xpub` case above is untouched by this
+    /// reversal: a `Slot`-encoded key the recognizer has not (yet, or ever)
+    /// matched to a specific convention is exactly as ambiguous as before.
+    LianaUnspendable,
 }
 
 /// One timelock, in wire units. Mirrors the fork's `LockKind`/`Lock`
@@ -246,9 +274,16 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
             else {
                 return incomplete();
             };
+            // G-1 gating site (task 5 of 5 named in the plan). Splitting
+            // this from the pre-stage-1b `NumsPoint | LianaUnspendable =>
+            // KeyPathKind::Nums` or-pattern is what makes wire kind 1
+            // codec-observable here at all — see `KeyPathKind::
+            // LianaUnspendable`'s own doc for the design reversal this is
+            // part of.
             s.key_path = match internal_key {
                 InternalKey::Slot(_) => KeyPathKind::Xpub,
-                InternalKey::NumsPoint | InternalKey::LianaUnspendable => KeyPathKind::Nums,
+                InternalKey::NumsPoint => KeyPathKind::Nums,
+                InternalKey::LianaUnspendable => KeyPathKind::LianaUnspendable,
             };
             // Fix round 1, I-5 (design §1A): "a 'path' for `tr` is a
             // taptree LEAF, plus the key path as path 0 when the internal
