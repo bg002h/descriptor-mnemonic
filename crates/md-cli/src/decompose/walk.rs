@@ -38,6 +38,7 @@
 //! internal key, so numbering from it would relabel every taproot wallet.
 
 use crate::error::CliError;
+use bitcoin::Network;
 use bitcoin::bip32::{DerivationPath, Fingerprint, Xpub};
 use miniscript::descriptor::{Descriptor, DescriptorPublicKey};
 use miniscript::{ForEachKey, Translator};
@@ -164,6 +165,80 @@ fn occurrence_of(key: &DescriptorPublicKey) -> Result<Occurrence, CliError> {
     })
 }
 
+/// SPEC §4a / §2 (`design/SPEC_liana_unspendable_internal_key.md`) — decompose's
+/// OWN recogniser for a real Liana-unspendable taproot internal key.
+///
+/// This is the one surface of the three (`md decompose` / the template
+/// grammar / `md encode`) that CAN recompute §2's recipe: it still holds the
+/// real leaf keys, unlike `md encode`'s template pipeline, whose leaves are
+/// already synthetic placeholders by the time an internal key is compared
+/// (`parse::template::substitute_synthetic`'s own doc explains why a match
+/// there can never succeed).
+///
+/// Deliberately walks `desc` directly — at the `Tr` node — rather than going
+/// through `for_each_key`/`collect_occurrences`, which flattens the internal
+/// key and every leaf key into one undifferentiated multiset with NO
+/// structural position (`Placeholders::pk`'s whole contract is per-key, not
+/// per-position). Recomputing the recipe needs exactly the distinction that
+/// flattening destroys: "internal key" vs. "leaf key, in tap-tree order".
+///
+/// Returns the internal key's own rendered text (`DescriptorPublicKey::
+/// to_string()`, byte-identical to what `occurrence_of` would compute as
+/// `Occurrence::display`) on a byte match, so the caller can drop that ONE
+/// occurrence out of the slot-numbered set before `collect_occurrences` ever
+/// runs, and substitute the marker in its place. `None` on ANY mismatch —
+/// including a non-`Tr` descriptor, a `Single` (non-extended) internal key,
+/// or a `Single` leaf key that cannot contribute a 33-byte compressed pubkey
+/// — which is deliberately indistinguishable from "recipe did not match":
+/// every such shape falls through to today's annotated-slot path unchanged
+/// (G-8), where the existing walker's own refusals (e.g. "RAW public key")
+/// name the real problem if there is one.
+pub fn liana_internal_key_match(
+    desc: &Descriptor<DescriptorPublicKey>,
+    network: Network,
+) -> Option<String> {
+    let Descriptor::Tr(tr) = desc else {
+        return None;
+    };
+    let internal = tr.internal_key();
+    let actual_xpub = match internal {
+        DescriptorPublicKey::XPub(x) => x.xkey,
+        DescriptorPublicKey::MultiXPub(x) => x.xkey,
+        DescriptorPublicKey::Single(_) => return None,
+    };
+
+    // SPEC §2 step 1: the ordered sequence of the tap-tree's leaf keys' own
+    // 33-byte compressed public keys, one per OCCURRENCE (not deduplicated),
+    // in tap-tree left-to-right order. `TapTree::leaves()` is rust-miniscript's
+    // own depth-first-preorder walk (the same order `walk_tap_tree`'s md1 AST
+    // reconstruction relies on being stable); each leaf's `iter_pk()` walks
+    // its OWN key expressions in the same left-first order.
+    let mut leaf_pubkeys: Vec<[u8; 33]> = Vec::new();
+    if let Some(tap_tree) = tr.tap_tree() {
+        for leaf in tap_tree.leaves() {
+            for pk in leaf.miniscript().iter_pk() {
+                let bytes = match &pk {
+                    DescriptorPublicKey::XPub(x) => x.xkey.public_key.serialize(),
+                    DescriptorPublicKey::MultiXPub(x) => x.xkey.public_key.serialize(),
+                    // A raw single pubkey leaf: no recipe input to extract.
+                    // Not this recogniser's refusal to make — fall through to
+                    // the normal walk, which names it plainly ("RAW public
+                    // key") when `collect_occurrences` reaches it.
+                    DescriptorPublicKey::Single(_) => return None,
+                };
+                leaf_pubkeys.push(bytes);
+            }
+        }
+    }
+
+    let recomputed = md_codec::nums::liana_unspendable_xpub(&leaf_pubkeys, network);
+    if actual_xpub == recomputed {
+        Some(internal.to_string())
+    } else {
+        None
+    }
+}
+
 /// Collect every KEY expression occurrence in TEXTUAL order.
 ///
 /// `for_each_key` supplies the multiset (repeats included — measured: a key at
@@ -225,16 +300,27 @@ impl Translator<DescriptorPublicKey> for Placeholders {
 }
 
 /// Build the keyless BIP-388 template: every key expression replaced by
-/// `@i` + its origin path + its use-site path.
+/// `@i` + its origin path + its use-site path — EXCEPT the recognised Liana
+/// internal key (SPEC §4a), which `liana_internal_key_match` has already
+/// excluded from `occurrences` (no slot) and which is substituted here by
+/// its own rendered text (from that same function) to the fixed marker
+/// instead of a numbered placeholder.
 pub fn build_template(
     desc: &Descriptor<DescriptorPublicKey>,
     occurrences: &[Occurrence],
+    liana_internal_key: Option<&str>,
 ) -> Result<String, CliError> {
     let mut map = BTreeMap::new();
     for (i, o) in occurrences.iter().enumerate() {
         map.insert(
             o.display.clone(),
             format!("@{i}{}{}", o.origin_path_text, o.use_site),
+        );
+    }
+    if let Some(key_display) = liana_internal_key {
+        map.insert(
+            key_display.to_string(),
+            md_codec::nums::LIANA_UNSPENDABLE_MARKER.to_string(),
         );
     }
     let mut t = Placeholders { map };
@@ -286,7 +372,7 @@ mod tests {
         let d = parse(s);
         let mut occ = collect_occurrences(&d).unwrap();
         order_by_appearance(&mut occ, &format!("{d:#}"));
-        let t = build_template(&d, &occ).unwrap();
+        let t = build_template(&d, &occ, None).unwrap();
         (occ, t)
     }
 

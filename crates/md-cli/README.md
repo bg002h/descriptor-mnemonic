@@ -82,7 +82,7 @@ md compile 'thresh(2,pk(@0),pk(@1),pk(@2))' --context segwitv0
 ```
 
 `encode`, `decode`, `inspect`, `bytecode`, `address`, and `compile` accept
-`--json` for structured output (schema versioned as `md-cli/1`). `verify`
+`--json` for structured output (schema versioned as `md-cli/2`). `verify`
 reports match/mismatch via exit code (0 = match, 1 = mismatch). Each
 subcommand's `--help` shows a worked example.
 

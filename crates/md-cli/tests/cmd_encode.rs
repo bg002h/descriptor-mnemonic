@@ -164,7 +164,7 @@ fn encode_json_has_schema_and_phrase() {
         .args(["encode", "wpkh(@0/<0;1>/*)", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicate::str::contains("\"schema\": \"md-cli/2\""))
         .stdout(predicate::str::contains("\"phrase\":"));
 }
 

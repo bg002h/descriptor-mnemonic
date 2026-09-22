@@ -20,7 +20,7 @@ fn compile_json() {
         .args(["compile", "pk(@0)", "--context", "segwitv0", "--json"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicates::str::contains("\"schema\": \"md-cli/2\""))
         .stdout(predicates::str::contains("\"template\":"));
 }
 

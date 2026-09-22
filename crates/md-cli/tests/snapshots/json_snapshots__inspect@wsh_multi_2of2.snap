@@ -54,7 +54,7 @@ expression: body
   "md1_encoding_id": {
     "hex": "95c5f8f35650c65b5559c430de33e801"
   },
-  "schema": "md-cli/1",
+  "schema": "md-cli/2",
   "wallet_descriptor_template_id": {
     "hex": "a235ee7574702e45f80089c07e73ed22"
   },

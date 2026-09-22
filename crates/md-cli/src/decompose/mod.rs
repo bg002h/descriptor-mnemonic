@@ -440,7 +440,17 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
     let input = resolve_input(raw)?;
     let desc = parse_descriptor(&input)?;
 
+    // SPEC §4a: decompose is the one surface that still holds the real leaf
+    // keys, so it alone can recompute §2's recipe and recognise a REAL Liana
+    // unspendable internal key. On a byte match, that ONE occurrence gets no
+    // slot at all — dropped from `occurrences` before it is ever collected,
+    // so it is never counted, never numbered and never flagged origin-less.
+    let liana_internal_key = walk::liana_internal_key_match(&desc, network);
+
     let mut occurrences = walk::collect_occurrences(&desc)?;
+    if let Some(marker_key) = &liana_internal_key {
+        occurrences.retain(|o| &o.display != marker_key);
+    }
     // Refuse repeats BEFORE numbering: `order_by_appearance` locates each key
     // expression by its rendering, which is unambiguous only once every
     // expression is unique.
@@ -452,7 +462,7 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
     check_network(&occurrences, network)?;
     check_depth_consistency(&occurrences)?;
 
-    let template = walk::build_template(&desc, &occurrences)?;
+    let template = walk::build_template(&desc, &occurrences, liana_internal_key.as_deref())?;
 
     let mut notes = Vec::new();
     let origin_less = occurrences

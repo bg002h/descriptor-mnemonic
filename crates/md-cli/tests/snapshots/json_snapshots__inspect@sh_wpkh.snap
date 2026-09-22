@@ -50,7 +50,7 @@ expression: body
   "md1_encoding_id": {
     "hex": "dc349aaae5d63be0014786fc472fdf30"
   },
-  "schema": "md-cli/1",
+  "schema": "md-cli/2",
   "wallet_descriptor_template_id": {
     "hex": "6a20808f307d122a21916d788ce233e0"
   },

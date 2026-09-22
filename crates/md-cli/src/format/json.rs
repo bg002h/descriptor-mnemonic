@@ -3,7 +3,20 @@ use md_codec::header::Header;
 use md_codec::identity::{Md1EncodingId, WalletDescriptorTemplateId, WalletPolicyId};
 use serde::Serialize;
 
-pub const SCHEMA: &str = "md-cli/1";
+/// v1 -> v2 (stage 1b task 6, SPEC §4a): a PUBLISHED v1 break, even though
+/// `unspendable_kind`'s addition (task 5) is additive at the wire-shape
+/// level — every old object still parses, since the field is `Option` with
+/// `skip_serializing_if`. What breaks is the v1 schema's own documented
+/// invariant: every `Tr` object this schema had EVER emitted, before this
+/// task, satisfied `is_nums == true` implies "the internal key is the
+/// BIP-341 NUMS H-point" (`docs/json-schema-v1.md`'s own wording). This task
+/// is what makes that stop being true through a normal `md decompose`/
+/// `md encode` flow — `is_nums == true` can now ALSO mean the Liana-derived
+/// key, distinguishable only via `unspendable_kind`. A consumer that (safely,
+/// until now) treated `is_nums` as synonymous with "the provably unspendable
+/// NUMS point" would silently misclassify a kind-1 wallet's internal key
+/// after this ships. See `docs/json-schema-v1.md` for the full record.
+pub const SCHEMA: &str = "md-cli/2";
 
 fn hex(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -91,7 +104,7 @@ mod tests {
 
     #[test]
     fn schema_constant() {
-        assert_eq!(SCHEMA, "md-cli/1");
+        assert_eq!(SCHEMA, "md-cli/2");
     }
 
     #[test]
@@ -332,15 +345,17 @@ pub enum JsonBody {
     /// from every JSON object this schema has ever emitted before this
     /// stage). `Some("liana_unspendable")` for `LianaUnspendable` (wire kind
     /// 1, SPEC §2's derived xpub — never absent when this value differs from
-    /// `NumsPoint`'s classification). Additive: `#[serde(skip_serializing_if)]`
-    /// keeps the field OFF the wire for every existing case, so no consumer
-    /// of the current `md-cli/1` schema sees a shape it does not already
-    /// handle. The formal documentation of this field in
-    /// `docs/json-schema-v1.md` (and any schema-version decision) is a later
-    /// task's job (SPEC §4a/§6: the input side, where wire kind 1 first
-    /// becomes reachable through a normal `md decompose`/`md encode` flow) —
-    /// this task only makes the OUTPUT representation stop conflating the
-    /// two kinds, which it did unconditionally before this change.
+    /// `NumsPoint`'s classification). Additive AT THE WIRE-SHAPE LEVEL:
+    /// `#[serde(skip_serializing_if)]` keeps the field OFF the wire for every
+    /// existing case, so no consumer of the schema sees a shape it does not
+    /// already handle. It is NOT additive at the SEMANTIC level, which is
+    /// why `SCHEMA` bumped to `md-cli/2` — see `SCHEMA`'s own doc comment and
+    /// `docs/json-schema-v1.md`. This field became reachable through a
+    /// normal `md decompose`/`md encode` flow in stage 1b task 6 (SPEC
+    /// §4a/§6, the input side); that task owns the version bump and the doc
+    /// entry, deliberately deferred from here (this task only stopped the
+    /// OUTPUT representation from conflating the two kinds, which it did
+    /// unconditionally before this change).
     Tr {
         is_nums: bool,
         key_index: u8,

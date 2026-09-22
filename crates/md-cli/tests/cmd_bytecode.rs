@@ -66,7 +66,7 @@ fn bytecode_json_has_payload_fields() {
         .args(["bytecode", &phrase, "--json"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicates::str::contains("\"schema\": \"md-cli/2\""))
         .stdout(predicates::str::contains("\"payload_bytes\":"));
 }
 
