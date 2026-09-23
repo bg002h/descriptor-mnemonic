@@ -455,3 +455,38 @@ fn md_encode_refuses_the_marker_outside_the_internal_key_position_cleanly() {
         );
     }
 }
+
+/// Whole-branch fix round 2 (Important). `validate_marker_position` sliced
+/// `&template[pos - 3..pos]` on a BYTE offset, so any multi-byte character
+/// ending within three bytes before the marker panicked the process:
+/// exit 101, an internal source path, and the user's own input echoed back,
+/// where the base binary gave a clean exit-1 parse error.
+///
+/// These are not exotic inputs. Every character below is an ordinary paste
+/// artefact from a document, a chat client or a PDF: a Euro sign, an em
+/// dash, a non-breaking space, a smart quote, an accented letter, an emoji.
+/// A descriptor is something operators PASTE, so this path sees them.
+///
+/// The all-ASCII tests added alongside the original fix stayed green
+/// throughout, which is exactly why this needed its own case: a suite can be
+/// 1499/1499 and still never have fed the function a non-ASCII byte.
+#[test]
+fn a_misplaced_marker_after_a_multibyte_char_refuses_cleanly_and_does_not_panic() {
+    for probe in [
+        "tr(x\u{20ac}yUNSPENDABLE(liana))", // €  — Euro sign
+        "tr(a\u{2014}bUNSPENDABLE(liana))", // —  — em dash
+        "tr(a\u{00a0}UNSPENDABLE(liana))",  // NBSP
+        "tr(a\u{201c}UNSPENDABLE(liana))",  // "  — smart quote
+        "tr(caf\u{e9}UNSPENDABLE(liana))",  // é
+        "tr(a\u{1f600}UNSPENDABLE(liana))", // 😀 — 4-byte
+    ] {
+        let (out, err, code) = md(&["encode", probe, "--path", "bip48"]);
+        assert_ne!(code, 101, "PANICKED on {probe:?}: {err}");
+        assert_eq!(code, 1, "must be a clean parse refusal on {probe:?}: {err}");
+        assert!(
+            !err.contains("panicked") && !err.contains("src/parse/template.rs"),
+            "leaked a panic or an internal source path on {probe:?}: {err}"
+        );
+        assert!(out.is_empty(), "refusal must emit nothing on stdout: {out}");
+    }
+}

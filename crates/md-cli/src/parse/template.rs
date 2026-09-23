@@ -1119,7 +1119,16 @@ fn liana_synthetic_internal_key_hex() -> &'static str {
 fn validate_marker_position(template: &str) -> Result<(), CliError> {
     let marker = md_codec::nums::LIANA_UNSPENDABLE_MARKER;
     for (pos, _) in template.match_indices(marker) {
-        let preceded_by_tr_open = pos >= 3 && &template[pos - 3..pos] == "tr(";
+        // `get`, not a bare index: `template[pos - 3..pos]` PANICS when
+        // `pos - 3` lands inside a multi-byte character, and a descriptor
+        // pasted from a document or chat routinely carries one (NBSP, an em
+        // dash, a smart quote, an accented letter, an emoji). That panic
+        // printed an internal source path and exited 101 where the base
+        // binary gave a clean exit-1 parse error. `get` returns None on a
+        // non-boundary slice, which is the right answer anyway: a marker
+        // preceded by part of a multi-byte character is definitionally not
+        // preceded by `tr(`, so it is misplaced and gets the clean refusal.
+        let preceded_by_tr_open = pos >= 3 && template.get(pos - 3..pos) == Some("tr(");
         if !preceded_by_tr_open {
             return Err(CliError::TemplateParse(format!(
                 "`{marker}` is meaningful only as a tr() descriptor's own internal key — the \
