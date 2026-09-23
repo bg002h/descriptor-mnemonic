@@ -159,5 +159,6 @@ pub mod gui_schema;
 pub mod inspect;
 pub mod partial;
 pub mod repair;
+pub mod shape_key;
 pub mod vectors;
 pub mod verify;

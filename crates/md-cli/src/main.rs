@@ -323,6 +323,18 @@ enum Command {
         #[arg(long, value_name = "KIND")]
         unspendable: Option<String>,
     },
+    /// Print a policy's shape key: the canonical, coordinator-independent
+    /// summary the coordinator verdict table is keyed by (U+001F-separated:
+    /// template, partitions, key-path kind).
+    #[command(group = clap::ArgGroup::new("shape_key_input").required(true).args(["phrases", "descriptor"]))]
+    ShapeKey {
+        /// One or more md1 strings of one card.
+        #[arg(num_args = 0.., conflicts_with = "descriptor")]
+        phrases: Vec<String>,
+        /// A multipath (`<0;1>`) BIP-380 descriptor instead of a card.
+        #[arg(long, value_name = "DESCRIPTOR")]
+        descriptor: Option<String>,
+    },
     /// Emit the CONCRETE output descriptor -- real keys, key origins and the
     /// BIP-380 checksum -- for pasting into a coordinator.
     ///
@@ -1071,6 +1083,10 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             json,
             unspendable.as_deref(),
         ),
+        Command::ShapeKey {
+            phrases,
+            descriptor,
+        } => cmd::shape_key::run(&phrases, descriptor.as_deref()),
         Command::Descriptor {
             phrases,
             template,
