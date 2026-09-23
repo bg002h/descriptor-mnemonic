@@ -272,6 +272,7 @@ fn key_path_kind_label(k: KeyPathKind) -> &'static str {
         KeyPathKind::NotTaproot => "NotTaproot",
         KeyPathKind::Nums => "Nums",
         KeyPathKind::Xpub => "Xpub",
+        KeyPathKind::LianaUnspendable => "LianaUnspendable",
     }
 }
 

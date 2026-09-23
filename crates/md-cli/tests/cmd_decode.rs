@@ -143,7 +143,7 @@ fn decode_json_emits_schema_and_descriptor() {
         .args(["decode", &phrase, "--json"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("\"schema\": \"md-cli/1\""))
+        .stdout(predicates::str::contains("\"schema\": \"md-cli/2\""))
         .stdout(predicates::str::contains("\"descriptor\":"));
 }
 

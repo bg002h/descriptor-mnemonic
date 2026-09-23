@@ -440,11 +440,32 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
     let input = resolve_input(raw)?;
     let desc = parse_descriptor(&input)?;
 
+    // SPEC §4a: decompose is the one surface that still holds the real leaf
+    // keys, so it alone can recompute §2's recipe and recognise a REAL Liana
+    // unspendable internal key. On a byte match, that ONE occurrence gets no
+    // slot at all — dropped from `occurrences` before it is ever collected,
+    // so it is never counted, never numbered and never flagged origin-less.
+    let liana_internal_key = walk::liana_internal_key_match(&desc, network);
+
     let mut occurrences = walk::collect_occurrences(&desc)?;
-    // Refuse repeats BEFORE numbering: `order_by_appearance` locates each key
-    // expression by its rendering, which is unambiguous only once every
-    // expression is unique.
+    // I-2 fix (review r1, Important): `check_no_repeated_key` MUST run on the
+    // FULL occurrence set — including the recognised internal key's own
+    // occurrence — before the retain below ever removes anything.
+    // `retain(|o| &o.display != marker_key)` matches by RENDERED TEXT, not by
+    // tree position, so if that same key ALSO appears as a tapleaf key (a
+    // constructible shape — SPEC §2's recipe always uses the fixed BIP-341
+    // NUMS point as its own public key, so placing that same xpub as a leaf
+    // contributes a known, position-independent value to the hash), running
+    // the retain first would drop BOTH occurrences before BIP-388's
+    // pairwise-distinctness/disjointness check ever saw either of them — the
+    // repeat refusal silently stops firing for exactly the shape it exists
+    // to catch. Refuse repeats BEFORE numbering too: `order_by_appearance`
+    // locates each key expression by its rendering, which is unambiguous
+    // only once every expression is unique.
     check_no_repeated_key(&occurrences)?;
+    if let Some(marker_key) = &liana_internal_key {
+        occurrences.retain(|o| &o.display != marker_key);
+    }
 
     let descriptor = desc.to_string();
     walk::order_by_appearance(&mut occurrences, &format!("{desc:#}"));
@@ -452,7 +473,7 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
     check_network(&occurrences, network)?;
     check_depth_consistency(&occurrences)?;
 
-    let template = walk::build_template(&desc, &occurrences)?;
+    let template = walk::build_template(&desc, &occurrences, liana_internal_key.as_deref())?;
 
     let mut notes = Vec::new();
     let origin_less = occurrences

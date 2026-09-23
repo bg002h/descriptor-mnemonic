@@ -1,6 +1,20 @@
 # md-cli JSON schema v1
 
-Every JSON output carries `"schema": "md-cli/1"`. Schema version bumps with breaking changes.
+Every JSON output carries `"schema"`. Schema version bumps with breaking changes.
+
+## Version history
+
+| Value | Since | What changed |
+| --- | --- | --- |
+| `md-cli/1` | md-cli v0.4.3 (md-codec v0.31.0) | Initial `--json` surface. |
+| `md-cli/2` | stage 1b task 6 (F-449, SPEC §4a) | `JsonBody::Tr` gained `unspendable_kind` (`Option<&'static str>`, `Some("liana_unspendable")` or absent). **Additive at the wire-shape level** — the field is `#[serde(skip_serializing_if = "Option::is_none")]`, so every object this schema ever emitted before still deserializes unchanged, and no field was removed or renamed. **NOT additive at the semantic level, which is why the version moved**: every `Tr` object `md-cli/1` had EVER emitted satisfied the invariant "`is_nums == true` implies the internal key is the BIP-341 NUMS H-point" (see the `JsonBody` entry below, pre-v2 wording). This task is what makes that invariant stop holding through a normal `md decompose`/`md encode` flow — a second, DIFFERENT unspendable taproot internal key (Liana's own derived key, SPEC §2) can now also set `is_nums == true`, distinguishable only by checking `unspendable_kind`. A consumer written against `md-cli/1` that (until now, safely) treated `is_nums` as synonymous with "the provably-unspendable, no-known-discrete-log NUMS point" would silently misclassify a kind-1 wallet's internal key. This filename stays `docs/json-schema-v1.md` — schema versions are documented in this one file rather than split across per-version files, since every past `--json` shape a caller might still be reading is still described on this page. |
+
+The wire-shape addition itself (making `JsonBody::Tr` carry the field at all)
+landed one task earlier than the version bump above, in the SAME `Body::Tr`
+match that produces `is_nums`/`key_index` — additive changes are recorded
+here even when they predate the version they are folded into, so the two
+entries in `format/json.rs`'s own history (the shape, then the version) do
+not have to be reverse-engineered from git blame.
 
 ## Hex encoding
 - `[u8; N]` and `Vec<u8>` → lowercase hex, no `0x` prefix.
@@ -83,7 +97,7 @@ Example:
 
 ```json
 {
-  "schema": "md-cli/1",
+  "schema": "md-cli/2",
   "network": "mainnet",
   "addresses": [
     { "chain": 0, "index": 0, "address": "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu" }
@@ -124,7 +138,8 @@ Mirrors `tree::Body` variants under the v0.30 wire format:
 - `{"kind": "Children", "data": [JsonNode, ...]}` — wrapper nodes (Wsh, Sh, Check, Verify, AndV, AndOr, TapTree branches, …)
 - `{"kind": "MultiKeys", "data": {"k": u8, "indices": [u8, ...]}}` — Multi / SortedMulti / MultiA / SortedMultiA (v0.30+ packs key indices at `kiw = ⌈log₂(n)⌉` bits)
 - `{"kind": "Variable", "data": {"k": u8, "children": [JsonNode, ...]}}` — Thresh (mixed key + sub-policy children)
-- `{"kind": "Tr", "data": {"is_nums": bool, "key_index": u8, "tree": JsonNode | null}}` — Taproot root. The `is_nums` flag (v0.30+) replaces the pre-v0.30 `key_index = n` sentinel. Field order matches struct declaration (serde-serializes `is_nums` first). The inner `tree`, when present, is a plain `JsonNode` whose tag is either a leaf miniscript tag or `TapTree` for a branch.
+- `{"kind": "Tr", "data": {"is_nums": bool, "key_index": u8, "unspendable_kind": "liana_unspendable" | ABSENT, "tree": JsonNode | null}}` — Taproot root. The `is_nums` flag (v0.30+) replaces the pre-v0.30 `key_index = n` sentinel. Field order matches struct declaration (serde-serializes `is_nums`, `key_index`, `unspendable_kind`, `tree`, in that order). The inner `tree`, when present, is a plain `JsonNode` whose tag is either a leaf miniscript tag or `TapTree` for a branch.
+  **`unspendable_kind` (since `md-cli/2`, stage 1b task 6, SPEC §4a):** ABSENT — not `null` — for `is_nums: false` (a real key slot) and for the literal BIP-341 NUMS H-point (`is_nums: true`, wire kind 0). `"liana_unspendable"` for Liana's derived unspendable internal key (`is_nums: true` ALSO, wire kind 1, SPEC §2) — the one case `is_nums` alone cannot distinguish. **A consumer that only ever checked `is_nums` before `md-cli/2` shipped was reading a schema where that check was sufficient; it is no longer sufficient** — check `unspendable_kind` whenever `is_nums` is `true` and the two internal-key kinds must be told apart (e.g. deriving an address: the NUMS point and Liana's derived xpub are different keys, and using the wrong one derives the wrong address). See the version-history table above.
 - `{"kind": "Hash256Body", "data": "<hex64>"}` — 32-byte hash literal
 - `{"kind": "Hash160Body", "data": "<hex40>"}` — 20-byte hash literal
 - `{"kind": "Timelock", "data": u32}` — After/Older

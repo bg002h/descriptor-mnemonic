@@ -11,5 +11,5 @@ expression: body
     }
   ],
   "network": "testnet",
-  "schema": "md-cli/1"
+  "schema": "md-cli/2"
 }

@@ -560,9 +560,11 @@ fn preset_params_json(p: &PresetParams) -> serde_json::Value {
 /// path 4.
 ///
 /// Additive rather than a type change: `experimental[]` keeps its exact prose,
-/// so nothing that reads it breaks and `"schema": "md-cli/1"` stays honest
-/// (docs/json-schema-v1.md: the version bumps on BREAKING changes). This is the
-/// field to join on.
+/// so nothing that reads it breaks and the top-level `"schema"` string stays
+/// honest at whatever value it currently is (docs/json-schema-v1.md: the
+/// version bumps on BREAKING changes — this addition, on its own, was not
+/// one; stage 1b task 6 later bumped it for an unrelated reason, SPEC §4a).
+/// This is the field to join on.
 fn experimental_json(e: &Experimental) -> serde_json::Value {
     let (kind, path) = match e {
         Experimental::KeylessPath(i) => ("keyless_path", *i),

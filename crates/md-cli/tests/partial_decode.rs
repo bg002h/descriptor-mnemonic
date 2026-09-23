@@ -167,7 +167,7 @@ fn decode_json_partial_has_reason_and_nonempty_indices_for_every_dead_shape() {
             v["descriptor"]["path_decl"]["data"], "m",
             "[{name}] raw path_decl must stay elided \"m\"; got {v}"
         );
-        assert_eq!(v["schema"], "md-cli/1");
+        assert_eq!(v["schema"], "md-cli/2");
     }
 }
 

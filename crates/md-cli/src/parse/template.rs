@@ -397,12 +397,33 @@ fn no_placeholders_message(template: &str) -> String {
          me sysw pack --as <descriptor|md1> --in <your export file>"
             .into()
     } else if key.is_match(template) {
-        "this is a concrete wallet descriptor (it carries a real extended key), not \
-         an md1 template — `md encode` takes a template whose keys are `@i` \
-         placeholders. md reads descriptors with `md decompose`:\n    \
-         md decompose <DESCRIPTOR> --emit commands   # the mint commands, ready to run\n    \
-         md decompose <DESCRIPTOR> --emit template   # or just the @i template for --template"
-            .into()
+        // SPEC §4a: for a `tr(...)` descriptor specifically, name the
+        // Liana-unspendable-internal-key spelling ALONGSIDE `md decompose` —
+        // `md encode` cannot recompute SPEC §2's recipe from a literal xpub
+        // (`substitute_synthetic` already turned every leaf `@i` into a
+        // synthetic placeholder by the time an internal key would be
+        // compared), so a caller pasting a Liana-shaped `tr()` descriptor
+        // here needs the OTHER working route named, not just "this is
+        // concrete, go decompose it". Not printed for non-`tr()` shapes,
+        // which have no internal-key position at all.
+        let liana_hint = if template.trim_start().starts_with("tr(") {
+            format!(
+                "\n\nIf this wallet's internal key is Liana's derived unspendable key (SPEC \
+                 §2), the md1 template spelling for it is `{marker}` — write that in place of \
+                 the literal xpub instead of decomposing.",
+                marker = md_codec::nums::LIANA_UNSPENDABLE_MARKER
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "this is a concrete wallet descriptor (it carries a real extended key), not \
+             an md1 template — `md encode` takes a template whose keys are `@i` \
+             placeholders. md reads descriptors with `md decompose`:\n    \
+             md decompose <DESCRIPTOR> --emit commands   # the mint commands, ready to run\n    \
+             md decompose <DESCRIPTOR> --emit template   # or just the @i template for --template\
+             {liana_hint}"
+        )
     } else {
         "template contains no @i placeholders".into()
     }
@@ -1042,6 +1063,85 @@ fn synthetic_xpub_for(i: u8, ctx: ScriptCtx) -> String {
     base58::encode_check(&bytes)
 }
 
+/// Reserved synthetic x-only hex standing in for `UNSPENDABLE(liana)` (SPEC
+/// §4a's taproot-internal-key marker) across `substitute_synthetic`'s
+/// `Descriptor::from_str` pass, which rejects the literal marker text as a
+/// key expression outright. `walk_tr` recognises the SAME hex right back,
+/// beside its existing `NUMS_H_POINT_X_ONLY_HEX` comparison, and turns it
+/// into `InternalKey::LianaUnspendable` — this string never reaches the wire,
+/// it exists only inside one `parse_template` call's parse<->walk boundary.
+///
+/// A REAL point (the parser checks curve membership), derived the same
+/// seed→scalar→point construction `synthetic_xpub_for` uses for leaf
+/// placeholders, but under its OWN domain tag so it cannot coincide with any
+/// leaf's synthetic xpub or with the BIP-341 NUMS H-point. Cached: the parse
+/// side and the walk side must see the identical value, and the value is
+/// pure/deterministic so caching changes nothing observable.
+fn liana_synthetic_internal_key_hex() -> &'static str {
+    static HEX: OnceLock<String> = OnceLock::new();
+    HEX.get_or_init(|| {
+        use bitcoin::hashes::{Hash, sha256};
+        use bitcoin::secp256k1::{Secp256k1, SecretKey};
+        let seed = sha256::Hash::hash(b"md-v0.15-liana-unspendable-internal-key-marker");
+        let mut seed_bytes = seed.to_byte_array();
+        let mut secret = SecretKey::from_slice(&seed_bytes).expect("hash is valid scalar");
+        let compressed = secret.public_key(&Secp256k1::new()).serialize(); // 33 bytes
+        secret.non_secure_erase();
+        seed_bytes.fill(0);
+        let mut hex = String::with_capacity(64);
+        for b in &compressed[1..] {
+            use std::fmt::Write as _;
+            write!(hex, "{b:02x}").unwrap();
+        }
+        hex
+    })
+    .as_str()
+}
+
+/// I-1 fix (whole-branch review, Important): `UNSPENDABLE(liana)` is
+/// meaningful ONLY as a `tr()` descriptor's own internal key — the FIRST
+/// argument, immediately after `tr(`. Refuses every occurrence that is not
+/// at that exact position, BEFORE `substitute_synthetic`'s text-replace ever
+/// runs (which has no notion of position and would otherwise rewrite a
+/// misplaced marker into the same synthetic hex as a genuine one, reaching
+/// `lookup_key` downstream and leaking the internal key-map-miss message).
+///
+/// **Why "immediately after a literal `tr(`" is a SOUND position check, not
+/// a heuristic.** `tr()` cannot nest — BIP-386 forbids a second taproot
+/// output inside another descriptor, and `Descriptor::from_str` itself
+/// refuses `wsh(tr(...))`/`sh(tr(...))`-shaped text as a parse error before
+/// this crate ever sees it (measured) — so any text that could go on to
+/// parse successfully contains the literal substring `"tr("` AT MOST ONCE,
+/// and that one occurrence is always the outermost wrapper's own opening
+/// paren, immediately followed by its internal key. A marker occurrence NOT
+/// immediately preceded by `"tr("` therefore cannot be at the internal-key
+/// position in any input this function will ever see succeed downstream.
+fn validate_marker_position(template: &str) -> Result<(), CliError> {
+    let marker = md_codec::nums::LIANA_UNSPENDABLE_MARKER;
+    for (pos, _) in template.match_indices(marker) {
+        // `get`, not a bare index: `template[pos - 3..pos]` PANICS when
+        // `pos - 3` lands inside a multi-byte character, and a descriptor
+        // pasted from a document or chat routinely carries one (NBSP, an em
+        // dash, a smart quote, an accented letter, an emoji). That panic
+        // printed an internal source path and exited 101 where the base
+        // binary gave a clean exit-1 parse error. `get` returns None on a
+        // non-boundary slice, which is the right answer anyway: a marker
+        // preceded by part of a multi-byte character is definitionally not
+        // preceded by `tr(`, so it is misplaced and gets the clean refusal.
+        let preceded_by_tr_open = pos >= 3 && template.get(pos - 3..pos) == Some("tr(");
+        if !preceded_by_tr_open {
+            return Err(CliError::TemplateParse(format!(
+                "`{marker}` is meaningful only as a tr() descriptor's own internal key — the \
+                 FIRST argument, immediately after `tr(` — but it appears somewhere else here \
+                 (a tapleaf, inside `multi_a(...)`/`multi(...)`, inside `wsh(...)`/`sh(...)`, \
+                 or anywhere not that exact position). Write `{marker}` only as \
+                 `tr({marker},...)`; use a real key, hash, or timelock fragment everywhere else."
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Substitute each `@i/...` with a synthetic xpub. Returns substituted template
 /// + map (synthetic-xpub-string → placeholder index).
 fn substitute_synthetic(
@@ -1052,7 +1152,27 @@ fn substitute_synthetic(
     // passes must see ONE syntax, or a `/**` template's use-site path and its
     // structural tree could disagree.
     let desugared = desugar_double_wildcard(template);
-    let template: &str = &desugared;
+    // I-1 fix (whole-branch review, Important): the production entry point
+    // (`parse_template_ext`) calls `validate_marker_position` BEFORE
+    // `lex_placeholders` even runs, so a template whose ONLY marker
+    // occurrence is misplaced (no `@i` anywhere at all — exactly the
+    // review's `wsh(pk(UNSPENDABLE(liana)))` shape) is already refused by
+    // the time this function is reached in production. Re-checked here too:
+    // `substitute_synthetic` is the function whose blind `str::replace`
+    // actually has no notion of "internal-key position", so a future direct
+    // caller that skips `parse_template_ext`'s gate (several exist in this
+    // file's own unit tests, calling this function directly) still gets the
+    // same refusal rather than the leaked key-map-miss message.
+    validate_marker_position(&desugared)?;
+    // SPEC §4a: rewrite the `UNSPENDABLE(liana)` marker to the reserved
+    // synthetic x-only hex above BEFORE the @i pass below — the two cannot
+    // collide (the @i regex only matches `@\d`) — so `Descriptor::from_str`
+    // accepts the internal-key position at all.
+    let marker_substituted = desugared.replace(
+        md_codec::nums::LIANA_UNSPENDABLE_MARKER,
+        liana_synthetic_internal_key_hex(),
+    );
+    let template: &str = &marker_substituted;
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
         // C1 fix (impl-review round-1): the multipath strip class is `[0-9;]`
@@ -1596,13 +1716,24 @@ fn walk_tr(
         Some(tt) => Some(Box::new(walk_tap_tree(tt, km)?)),
     };
     // SPEC v0.30 §7: emit Tag::Tr with `is_nums = true` iff the internal key
-    // is exactly the BIP-341 NUMS H-point. Otherwise the internal key MUST be
-    // a placeholder-derived synthetic xpub (i.e. an @N).
+    // is exactly the BIP-341 NUMS H-point. Stage 1b SPEC §4a adds a second
+    // recognised sentinel beside it: the reserved hex `substitute_synthetic`
+    // rewrote `UNSPENDABLE(liana)` to. Otherwise the internal key MUST be a
+    // placeholder-derived synthetic xpub (i.e. an @N).
     if key_str == NUMS_H_POINT_X_ONLY_HEX {
         return Ok(Node {
             tag: Tag::Tr,
             body: Body::Tr {
                 internal_key: InternalKey::NumsPoint,
+                tree,
+            },
+        });
+    }
+    if key_str == liana_synthetic_internal_key_hex() {
+        return Ok(Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                internal_key: InternalKey::LianaUnspendable,
                 tree,
             },
         });
@@ -1618,6 +1749,27 @@ fn walk_tr(
                  BIP-341 NUMS H-point. Use an @N placeholder (backed by an xpub via \
                  --keys) for the internal key, or the BIP-341 NUMS H-point \
                  ({NUMS_H_POINT_X_ONLY_HEX}) for the v0.30 NUMS-flag encoding."
+            ))
+        } else if matches!(
+            t.internal_key(),
+            DescriptorPublicKey::XPub(_) | DescriptorPublicKey::MultiXPub(_)
+        ) {
+            // SPEC §4a: `md encode` cannot recompute Liana's unspendable-key
+            // recipe (SPEC §2) from a literal xpub. `substitute_synthetic`
+            // has already replaced every leaf `@i` with a synthetic
+            // placeholder by the time this internal key is walked, so a byte
+            // match against the recipe can never succeed here — even when
+            // this literal xpub IS Liana's own derived key. Only `md
+            // decompose` still holds the real leaf keys a recipe match needs
+            // (`decompose/walk.rs`'s recogniser). Name both working
+            // spellings rather than leaking the key-map-miss message.
+            CliError::TemplateParse(format!(
+                "unsupported internal-key form: a literal extended key `{key_str}` in the \
+                 tr() internal-key position. md encode cannot derive Liana's unspendable \
+                 internal key (SPEC §2) from a literal xpub — write `{marker}` in the \
+                 template instead (md derives the key from the template's own leaves at \
+                 mint time), or run `md decompose` on the concrete descriptor directly.",
+                marker = md_codec::nums::LIANA_UNSPENDABLE_MARKER
             ))
         } else {
             orig_err
@@ -2636,6 +2788,15 @@ pub fn parse_template_ext(
     experimental: bool,
     reuse: crate::parse::reuse::Disposition,
 ) -> Result<Descriptor, CliError> {
+    // I-1 fix (whole-branch review, Important): checked FIRST, before
+    // `lex_placeholders` below — which refuses ANY template carrying no `@i`
+    // placeholder outright, so a template whose only `UNSPENDABLE(liana)`
+    // occurrence is misplaced AND carries no `@i` anywhere (e.g.
+    // `wsh(pk(UNSPENDABLE(liana)))`) would otherwise never reach
+    // `substitute_synthetic`'s own copy of this check at all, and would be
+    // refused with the unrelated, generic "no @i placeholders" message
+    // instead of one naming the marker.
+    validate_marker_position(template)?;
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
     reject_unreferenced_bindings(&occs, keys, fingerprints)?;

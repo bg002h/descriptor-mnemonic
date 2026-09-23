@@ -4,6 +4,85 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.18.0] — 2026-09-22
+
+### Added
+
+- **The CLI surface for wire version 8's second taproot internal-key kind
+  (F-449 stage 1b).** See `md-codec [0.46.0]` below for the wire format and
+  the derivation itself; this entry covers only what an operator types and
+  sees.
+
+  - `md decompose` **recognises** a real Liana unspendable internal key and
+    gives it no placeholder slot, the same treatment NUMS already gets. It
+    recognises by RECOMPUTING SPEC §2's recipe over the descriptor's own leaf
+    keys and comparing the whole xpub — not by pattern-matching the NUMS
+    pubkey — so a valid recipe output computed over a DIFFERENT leaf set
+    (another wallet's unspendable key) falls through to an ordinary annotated
+    slot instead of being relabelled as this wallet's own.
+  - `md encode` accepts `UNSPENDABLE(liana)` in a template's internal-key
+    position and derives the key, rather than requiring a literal xpub.
+  - `md decode` renders that internal key as the `UNSPENDABLE(liana)` marker
+    instead of the raw NUMS hex, and the rendered template re-encodes to a
+    byte-identical payload.
+  - `md decompose --emit json` reports the kind in its own JSON state,
+    distinct from the NUMS state.
+
+### Changed
+
+- **`md decompose` now REFUSES a descriptor that reuses its recognised
+  unspendable internal key at a tapleaf.** Previously such a descriptor
+  decomposed successfully and handed the operator a mintable placeholder slot
+  for a value md had itself just proved unspendable — asking them to engrave a
+  card for a key with no private key. Both spellings are refused: the leaf at
+  the same use-site as the internal key, and at a disjoint one.
+
+## md-codec [0.46.0] — 2026-09-22
+
+### Added
+
+- **A second taproot internal-key kind, at wire version 8 (F-449 stage 1b).**
+  Liana computes its "unspendable" internal key by deriving it from the
+  tap-tree's own leaf keys (its own recipe, not the literal BIP-341 NUMS
+  H-point), and until now recognising that convention meant re-deriving
+  Liana's own function over the whole descriptor — a coordinator
+  computation the codec could not see. A single new kind bit, legal only at
+  wire version 8 (version 4 payloads are unchanged and still mean "NUMS"
+  when the existing `is_nums` bit is set), gives the convention its own
+  wire discriminant: `InternalKey::LianaUnspendable`, distinct from
+  `InternalKey::NumsPoint`.
+
+  - `md decompose` recognises a real Liana unspendable internal key and
+    gives it no placeholder slot — the same treatment NUMS already gets.
+  - `md encode` accepts the `UNSPENDABLE(liana)` marker in a template's
+    internal-key position and derives the key per SPEC §2, rather than
+    taking it as a literal value.
+  - Four encode-side refusals stop a kind-1 card being minted in a shape
+    Liana itself cannot import, or that the wire cannot express minimally:
+    a `sortedmulti_a` tap leaf under a kind-1 key (§2's recipe hashes
+    leaves in unsorted wire order, so a `sortedmulti_a` leaf is exactly the
+    shape a sorting port error would silently diverge on), a non-canonical
+    `<0;1>/*` use-site (Liana pairs multipath alternatives positionally),
+    a kind-1 key found on a nested `tr()` rather than the descriptor's own
+    root, and a wire version requested higher than the tree actually needs.
+  - A kind-0 (NUMS) and a kind-1 (Liana unspendable) policy that are
+    otherwise identical now get **different wallet identities**: the kind
+    bit is inside what `compute_wallet_descriptor_template_id` hashes, so a
+    card minted for one never matches a card minted for the other.
+
+### Changed
+
+- **BREAKING, Rust API only — zero wire bytes changed (F-449 stage 1a).**
+  `Body::Tr`'s shape changed ahead of the feature above: the former
+  `is_nums: bool` + `key_index: u8` pair — whose invariant ("`is_nums =
+  true` implies `key_index = 0`") was enforced only by a `debug_assert` —
+  is replaced by a single `internal_key: InternalKey` field, where
+  `InternalKey` is a new public enum (`Slot(u8)`, `NumsPoint`, and the
+  `LianaUnspendable` this release makes reachable). Every wire-version-4
+  payload still encodes to byte-identical bytes; a golden captured from the
+  unmodified code proves it. Callers matching `Body::Tr { is_nums,
+  key_index, .. }` directly must switch to matching `internal_key` instead.
+
 ## md-codec [0.45.1] — 2026-09-20
 
 ### Added

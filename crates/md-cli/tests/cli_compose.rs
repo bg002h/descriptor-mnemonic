@@ -220,8 +220,10 @@ fn compose_json_names_slots_internal_key_and_experimental() {
 /// right about their own numbering; the object as a whole is not.
 ///
 /// The fix is ADDITIVE -- `experimental[]` keeps its exact prose so nothing
-/// that reads it breaks, and `"schema": "md-cli/1"` stays honest, since
-/// docs/json-schema-v1.md bumps the version only on BREAKING changes. This test
+/// that reads it breaks, and the top-level `"schema"` string stays honest,
+/// since docs/json-schema-v1.md bumps the version only on BREAKING changes --
+/// this addition, on its own, was not one (a later, unrelated stage 1b change
+/// did bump it; see `format/json.rs`'s `SCHEMA` doc comment). This test
 /// asserts the trap is still reproducible AND that the new field is free of it;
 /// if the prose is ever made 0-based, the first half fails and this test should
 /// be rewritten rather than deleted.

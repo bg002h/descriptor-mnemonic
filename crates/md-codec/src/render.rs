@@ -184,13 +184,26 @@ fn render_node(
             out.push_str("tr(");
             match &node.body {
                 Body::Tr { internal_key, tree } => {
-                    // SPEC v0.30 §7: NumsPoint (and, stage 1a, the
-                    // not-yet-constructed LianaUnspendable) encodes the
+                    // SPEC v0.30 §7 / stage 1b SPEC §4: NumsPoint encodes the
                     // BIP-341 NUMS H-point as the implicit internal key;
-                    // render as the literal x-only hex. A Slot renders @{i}.
+                    // render as the literal x-only hex. LianaUnspendable
+                    // (wire kind 1) is a DIFFERENT internal key -- an xpub
+                    // derived from the tap-tree's own leaf keys (SPEC §2) --
+                    // but that derivation needs the already-built leaf keys
+                    // AND a network to pick the base58 prefix, neither of
+                    // which a keyless template carries. §4's table (row 2 and
+                    // row 3): BOTH keyless render modes (this function serves
+                    // both `Mode::Literal` and `Mode::Abstract` -- neither
+                    // reads `ctx.mode` at this site) emit the fixed
+                    // `LIANA_UNSPENDABLE_MARKER` text instead; only the
+                    // *keyed* descriptor (`to_miniscript`, §4 row 1) embeds
+                    // the real derived xpub. A Slot renders @{i}.
                     match internal_key {
-                        InternalKey::NumsPoint | InternalKey::LianaUnspendable => {
+                        InternalKey::NumsPoint => {
                             out.push_str(NUMS_H_POINT_X_ONLY_HEX);
+                        }
+                        InternalKey::LianaUnspendable => {
+                            out.push_str(crate::nums::LIANA_UNSPENDABLE_MARKER);
                         }
                         InternalKey::Slot(i) => {
                             render_key(*i, default_usp, overrides, out)?;

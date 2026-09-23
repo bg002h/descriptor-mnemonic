@@ -196,9 +196,20 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         return Ok(verify_exit.unwrap_or(code));
     }
 
+    // G-1 caller (SPEC §4 / plan Step 4): `args.network` is already in
+    // scope for this command (`--network`), so this switches to the
+    // `_with_network` entry points rather than staying on the network-less
+    // ones that would otherwise REFUSE any kind-1 (Liana unspendable)
+    // wallet outright.
     let rendered = match args.chain {
-        Some(chain) => md_codec::to_miniscript_descriptor(&descriptor, chain)?.to_string(),
-        None => md_codec::to_miniscript_descriptor_multipath(&descriptor)?.to_string(),
+        Some(chain) => {
+            md_codec::to_miniscript_descriptor_with_network(&descriptor, chain, args.network)?
+                .to_string()
+        }
+        None => {
+            md_codec::to_miniscript_descriptor_multipath_with_network(&descriptor, args.network)?
+                .to_string()
+        }
     };
 
     // F-601: `--help` promises "the CONCRETE output descriptor -- real xpubs,

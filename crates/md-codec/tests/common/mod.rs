@@ -477,6 +477,36 @@ pub fn tr_unspendable_xpub_two_leaves() -> md_codec::encode::Descriptor {
     d
 }
 
+/// `tr(LianaUnspendable, {pk(@0),pk(@1)})` — stage 1b's wire kind 1
+/// (SPEC §3d), a THIRD internal-key shape distinct from both
+/// `tr_nums_two_leaves` (kind 0, the literal NUMS point) and
+/// `tr_unspendable_xpub_two_leaves` (a pre-stage-1b `Slot`-encoded
+/// unspendable-by-convention xpub — `KeyPathKind::Xpub`'s own doc comment).
+/// Template-only (no `Pubkeys` TLV): for tests that need only the AST shape
+/// (render.rs, policy_shape.rs), not real key material.
+pub fn tr_liana_unspendable_two_leaves() -> md_codec::encode::Descriptor {
+    let tree = Node {
+        tag: Tag::Tr,
+        body: Body::Tr {
+            internal_key: InternalKey::LianaUnspendable,
+            tree: Some(Box::new(taptree2(keyarg(Tag::PkK, 0), keyarg(Tag::PkK, 1)))),
+        },
+    };
+    let mut d = descriptor_of(tree, 2);
+    d.path_decl = shared_origin_48(2);
+    d
+}
+
+/// The same shape as [`tr_liana_unspendable_two_leaves`], with a real
+/// `Pubkeys` TLV (`test_xpubs()` slots 0 and 1) so `to_miniscript`'s
+/// derivation path (`expand_per_at_n`, then the leaf-pubkey walk feeding
+/// `nums::liana_unspendable_xpub`) has real key material to run over.
+pub fn tr_liana_unspendable_two_leaves_with_pubkeys() -> md_codec::encode::Descriptor {
+    let mut d = tr_liana_unspendable_two_leaves();
+    d.tlv.pubkeys = Some(vec![(0, test_xpubs()[0]), (1, test_xpubs()[1])]);
+    d
+}
+
 /// `sh(wsh(multi(2,@0,@1,@2)))` — root=Sh, inner_wsh=true. Canonical
 /// (`canonical_origin`'s BIP48-type-1 row), so `descriptor_of`'s default
 /// empty shared path resolves without an override.

@@ -41,5 +41,5 @@ expression: body
       "wildcard_hardened": false
     }
   },
-  "schema": "md-cli/1"
+  "schema": "md-cli/2"
 }

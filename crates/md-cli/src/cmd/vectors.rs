@@ -190,7 +190,16 @@ fn conformance_json(v: &Vector, d: &md_codec::encode::Descriptor) -> Result<Stri
     const ADDRS_PER_CHAIN: u32 = 3;
     let mut chains = Map::new();
     for chain in 0u32..2 {
-        let desc = match md_codec::to_miniscript::to_miniscript_descriptor(d, chain) {
+        // G-1 caller (SPEC §4 / plan Step 4): mainnet is already hardcoded
+        // right below for `derive_address`, so this switches to the same
+        // fixed network via the `_with_network` entry point rather than
+        // staying on the network-less one, which would REFUSE every kind-1
+        // vector outright.
+        let desc = match md_codec::to_miniscript::to_miniscript_descriptor_with_network(
+            d,
+            chain,
+            bitcoin::Network::Bitcoin,
+        ) {
             Ok(x) => x,
             Err(_) => continue, // single-path vectors have no chain 1
         };
