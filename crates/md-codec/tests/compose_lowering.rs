@@ -853,3 +853,44 @@ fn presets_refuse_parameters_the_grammar_refuses() {
         Err(ComposeError::PresetShape { .. })
     ));
 }
+
+/// F-449 stage 2 Task 2 Step 4 (SPEC §6 row 3): the codec SIGNALS a `liana`
+/// request it could not honour because a real internal key was extracted.
+/// Never set for the default, never set when Liana's key was composed.
+#[test]
+fn unspendable_request_unmet_is_set_exactly_when_liana_meets_a_real_key() {
+    use md_codec::tree::{Body, InternalKey};
+    let real = list(
+        Wrapper::Tr,
+        vec![keys(1, 1), with_lock(keys(1, 1), Lock::OlderBlocks(100))],
+    );
+    let unspendable = list(
+        Wrapper::Tr,
+        vec![keys(2, 3), with_lock(keys(1, 1), Lock::OlderBlocks(100))],
+    );
+    let c = compose(&real, UnspendableKind::Liana).unwrap();
+    assert!(
+        c.unspendable_request_unmet,
+        "liana over a real key must signal"
+    );
+    assert_eq!(c.internal_key_path, Some(0));
+    assert!(
+        !compose(&real, UnspendableKind::Nums)
+            .unwrap()
+            .unspendable_request_unmet
+    );
+    let c = compose(&unspendable, UnspendableKind::Liana).unwrap();
+    assert!(!c.unspendable_request_unmet, "liana was composed: {c:?}");
+    assert!(matches!(
+        c.descriptor.tree.body,
+        Body::Tr {
+            internal_key: InternalKey::LianaUnspendable,
+            ..
+        }
+    ));
+    assert!(
+        !compose(&unspendable, UnspendableKind::Nums)
+            .unwrap()
+            .unspendable_request_unmet
+    );
+}

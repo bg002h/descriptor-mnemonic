@@ -599,6 +599,74 @@ fn describe(e: &Experimental) -> String {
     }
 }
 
+/// F-449 stage 2 Task 2: what `--unspendable liana` does when it cannot yield
+/// an importable wallet. Called ONLY under that flag -- gate every new
+/// refusal on the FLAG, never on the shape, or the default compose of these
+/// same shapes (and the vendored vectors) goes red.
+///
+/// Split by AUTHORITY (R0 C-1/I-6):
+/// - **SPEC §6 is md's own rule → REFUSE**, through the same
+///   `validate_unspendable_shape` `md encode` runs, so its message is not
+///   re-worded here. Not a second implementation: one home, two callers --
+///   the F-600 read-back's argument in `run`. `md encode` refusing LATER is
+///   not enough, because `md descriptor` shares compose's parse path and
+///   would render the refused shape into a concrete, fundable descriptor.
+/// - **md-legal but outside Liana's policy model → WARN.** md does not own
+///   Liana's policy model (SPEC §0a); refusing a wallet md's rules admit
+///   would hard-code one coordinator into md's lowering. Keyed on the
+///   composed SHAPE, never the preset name (R1 I-f): a `--path`-built
+///   equivalent must warn too. Evidence for both halves: Liana v15.0
+///   refused `preset-hashlock-gated-tr` and `preset-decaying-multisig-tr`
+///   (md-codec `tests/fixtures/liana/cases.json`, `accepted: false`).
+/// - **SPEC §6 row 3 → WARN**: a real internal key was extracted, so there
+///   is no unspendable key to choose. The codec signals
+///   (`Composed::unspendable_request_unmet`); this prints.
+///
+/// The "no unlocked path" half requires NO real internal key (R2 M-i): a
+/// real key path IS an unlocked path, which makes this half exclusive with
+/// the row-3 warning, so the canonical unlocked-primary +
+/// timelocked-recovery shape prints one warning, not two. MEASURED, the
+/// `internal_key_path.is_none()` conjunct is REDUNDANT with the walk:
+/// `policy_shape` already pushes a real internal key as its own unlocked
+/// `Branch` first (`policy_shape.rs`, "the key path as path 0", fix round 1
+/// I-5) -- the plan's premise that `branches` holds tapscript leaves only is
+/// not true of this codec. The conjunct stays as the stated rule, so the
+/// exclusivity does not rest on a walk detail two layers away; deleting it
+/// is semantically inert today, and a mutation test cannot see it. The
+/// hashlock half does not require it (R3 M-5): Liana declines a hashlock
+/// leaf whatever the key path holds.
+fn liana_refuse_or_warn(composed: &md_codec::compose::Composed) -> Result<(), CliError> {
+    md_codec::validate::validate_unspendable_shape(&composed.descriptor)
+        .map_err(CliError::Codec)?;
+    let shape = md_codec::policy_shape::policy_shape(&composed.descriptor);
+    let mut reasons: Vec<&str> = Vec::new();
+    if shape.branches.iter().any(|b| !b.hashlocks.is_empty()) {
+        reasons.push("a path carries a hashlock, which Liana's spending policy has no place for");
+    }
+    if composed.internal_key_path.is_none() && shape.branches.iter().all(|b| !b.locks.is_empty()) {
+        reasons.push(
+            "every path is timelocked, and Liana needs one primary path that spends without a timelock",
+        );
+    }
+    if !reasons.is_empty() {
+        eprintln!(
+            "warning: --unspendable liana: Liana is not expected to import this wallet: {}. \
+             md composes it anyway -- it is a valid md wallet -- but it is not a Liana wallet.",
+            reasons.join("; and ")
+        );
+    }
+    if composed.unspendable_request_unmet {
+        let path = composed.internal_key_path.map_or(0, |i| i + 1);
+        eprintln!(
+            "warning: --unspendable liana has no effect: path {path} is a bare single key, so it \
+             became the taproot internal key -- a real, spendable key path -- and there is no \
+             unspendable internal key to choose. The wallet is exactly what omitting the flag \
+             composes."
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     wrapper: &str,
@@ -643,6 +711,9 @@ pub fn run(
     };
     let composed =
         compose(&list, unspendable_kind).map_err(|e| CliError::Compose(e.to_string()))?;
+    if unspendable_kind == UnspendableKind::Liana {
+        liana_refuse_or_warn(&composed)?;
+    }
     if !composed.experimental.is_empty() && !experimental {
         let mut msg = String::from("this policy needs --experimental:");
         for e in &composed.experimental {

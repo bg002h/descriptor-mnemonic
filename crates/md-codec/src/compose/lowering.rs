@@ -287,6 +287,8 @@ pub(super) fn finish(
         slots,
         internal_key_path,
         experimental,
+        // Set by `compose_with`, the one entry point that knows the request.
+        unspendable_request_unmet: false,
     })
 }
 

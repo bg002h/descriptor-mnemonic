@@ -268,3 +268,190 @@ fn compose_json_carries_the_third_state() {
         "a real internal key has no unspendable kind: {real}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 2: what compose does when `liana` cannot yield an importable wallet.
+//
+// | case                                   | authority          | action |
+// | §6 refuses the composed shape          | md's own rule      | REFUSE |
+// | md-legal, but Liana will not import it | Liana's policy     | WARN   |
+// | a real internal key was extracted      | SPEC §6 row 3      | WARN   |
+// ---------------------------------------------------------------------------
+
+const H: &str = "a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8";
+/// Stable prefixes of the two warnings, so each test can count them.
+const WARN_POLICY: &str =
+    "warning: --unspendable liana: Liana is not expected to import this wallet";
+const WARN_NO_EFFECT: &str = "warning: --unspendable liana has no effect";
+/// SPEC §6 row 1's message as md-codec ships it (`Error::UnspendableWithSortedMultiA`)
+/// -- asserted by substring so a re-worded copy in md-cli fails here.
+const SORTEDMULTI_A_REFUSAL: &str =
+    "wire kind 1 (Liana unspendable internal key) with a sortedmulti_a leaf is refused";
+
+fn compose_tr(extra: &[&str]) -> (String, String, i32) {
+    let mut args = vec!["compose", "--wrapper", "tr"];
+    args.extend_from_slice(extra);
+    md(&args)
+}
+
+/// §6 row 1 is md's own rule, so compose REFUSES -- through the same
+/// `validate_unspendable_shape` md encode uses, with its message unchanged.
+/// The DEFAULT control is non-vacuous only through Task 2 Step 6's mutation
+/// (hoist the validator out of the `--unspendable liana` gate).
+#[test]
+fn liana_refuses_a_sortedmulti_a_leaf_and_the_default_still_composes() {
+    for spelling in [
+        &["--preset", "plain-multisig,2of3"][..],
+        &["--path", "2of3"][..],
+    ] {
+        let mut args = spelling.to_vec();
+        args.extend_from_slice(&["--unspendable", "liana"]);
+        let (out, err, code) = compose_tr(&args);
+        assert_eq!(
+            code, 1,
+            "{spelling:?} --unspendable liana must be refused: {out}"
+        );
+        assert!(out.is_empty(), "a refusal printed a template: {out}");
+        assert!(
+            err.contains(SORTEDMULTI_A_REFUSAL),
+            "§6's own message: {err}"
+        );
+
+        // The control: the SAME shape without the flag still composes.
+        let (out, err, code) = compose_tr(spelling);
+        assert_eq!(code, 0, "{spelling:?} default must still compose: {err}");
+        assert!(out.contains("sortedmulti_a("), "{out}");
+    }
+}
+
+/// Count occurrences of each warning in `err`.
+fn warns(err: &str) -> (usize, usize) {
+    (
+        err.matches(WARN_POLICY).count(),
+        err.matches(WARN_NO_EFFECT).count(),
+    )
+}
+
+/// md-legal, but outside Liana's policy model: WARN (not refuse), keyed on
+/// the composed SHAPE so a `--path`-built equivalent warns too (R1 I-f).
+#[test]
+fn liana_warns_on_shapes_outside_liana_policy_by_shape_not_name() {
+    let hash_path = format!("1of1,sha256={H},older=100");
+    let hashlock_preset = format!("hashlock-gated,sha256={H},older=26280");
+    let cases: [(&str, Vec<&str>); 4] = [
+        ("hashlock preset", vec!["--preset", &hashlock_preset]),
+        (
+            "hashlock --path",
+            vec!["--path", "2of3", "--path", &hash_path],
+        ),
+        (
+            "no-unlocked preset",
+            vec![
+                "--preset",
+                "decaying-multisig,2of2,1of1,older1=13140,older2=26280,after=1000000",
+            ],
+        ),
+        (
+            "no-unlocked --path",
+            vec!["--path", "2of2,older=100", "--path", "1of1,older=200"],
+        ),
+    ];
+    for (what, spelling) in &cases {
+        let mut args = spelling.clone();
+        args.extend_from_slice(&["--unspendable", "liana"]);
+        let (out, err, code) = compose_tr(&args);
+        assert_eq!(
+            code, 0,
+            "{what}: a Liana-policy case warns, never refuses: {err}"
+        );
+        assert!(out.contains("UNSPENDABLE(liana)"), "{what}: {out}");
+        assert_eq!(
+            warns(&err),
+            (1, 0),
+            "{what}: exactly the policy warning: {err}"
+        );
+
+        // Gated on the FLAG: the default composes the same shape silently.
+        let (_, err, code) = compose_tr(spelling);
+        assert_eq!(code, 0, "{what} default: {err}");
+        assert_eq!(warns(&err), (0, 0), "{what}: default must not warn: {err}");
+    }
+    // The canonical Liana shape warns about nothing.
+    let (_, err, code) = compose_tr(&[
+        "--preset",
+        "kofn-recovery,2of3,older=26280",
+        "--unspendable",
+        "liana",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        warns(&err),
+        (0, 0),
+        "kofn-recovery is Liana's own shape: {err}"
+    );
+}
+
+/// SPEC §6 row 3: a bare single-key path became a REAL internal key, so
+/// `liana` has nothing to choose -- it WARNS, never silently no-ops.
+/// Steps 3 and 4 are exclusive by construction on the "no unlocked path"
+/// half (the key path IS an unlocked path), so the canonical
+/// unlocked-primary + timelocked-recovery shape prints exactly one warning.
+/// The hashlock half is not exclusive (R3 M-5): both fire there.
+#[test]
+fn liana_over_a_real_internal_key_warns_no_effect() {
+    let (out, err, code) = compose_tr(&[
+        "--preset",
+        "simple-timelocked-inheritance,older=26280",
+        "--unspendable",
+        "liana",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert!(!out.contains("UNSPENDABLE"), "a real key path: {out}");
+    assert_eq!(warns(&err), (0, 1), "exactly the no-effect warning: {err}");
+    assert!(err.contains("path 1"), "names the extracted path: {err}");
+
+    let hash_path = format!("1of1,sha256={H},older=100");
+    let (_, err, code) = compose_tr(&[
+        "--path",
+        "1of1",
+        "--path",
+        &hash_path,
+        "--unspendable",
+        "liana",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        warns(&err),
+        (1, 1),
+        "both warnings on the hashlock example: {err}"
+    );
+
+    // Default: no warning.
+    let (_, err, code) = compose_tr(&["--preset", "simple-timelocked-inheritance,older=26280"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(warns(&err), (0, 0), "{err}");
+}
+
+/// Step 5: `--json` keeps stdout pure JSON while every warning goes to stderr.
+#[test]
+fn liana_warnings_go_to_stderr_under_json() {
+    let hash_path = format!("1of1,sha256={H},older=100");
+    let (out, err, code) = compose_tr(&[
+        "--path",
+        "1of1",
+        "--path",
+        &hash_path,
+        "--unspendable",
+        "liana",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    let v: serde_json::Value =
+        serde_json::from_str(&out).unwrap_or_else(|e| panic!("stdout not JSON ({e}): {out}"));
+    assert_eq!(v["internal_key_path"], 0);
+    assert!(
+        !out.contains("warning"),
+        "a warning leaked to stdout: {out}"
+    );
+    assert_eq!(warns(&err), (1, 1), "{err}");
+}

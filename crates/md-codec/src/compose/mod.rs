@@ -366,6 +366,13 @@ pub struct Composed {
     pub internal_key_path: Option<usize>,
     /// Every EXPERIMENTAL condition the list triggered.
     pub experimental: Vec<Experimental>,
+    /// `true` iff [`UnspendableKind::Liana`] was requested and the composed
+    /// descriptor does NOT carry Liana's unspendable key -- under `tr`, when
+    /// the first bare single-key path was extracted as a REAL internal key
+    /// (SPEC §6 row 3), so there was no unspendable key to choose. The codec
+    /// signals; the caller decides how to tell the operator (`md compose`
+    /// warns). Never `true` for the default [`UnspendableKind::Nums`].
+    pub unspendable_request_unmet: bool,
 }
 
 /// Why a list cannot be lowered (spec §4e, §4c, §4f).
@@ -644,7 +651,18 @@ pub fn compose_with(
             want: n,
         });
     }
-    lowering::lower(list, declared, unspendable)
+    let mut c = lowering::lower(list, declared, unspendable)?;
+    // SPEC §6 row 3's signal, decided from what was BUILT rather than from
+    // the path list, so it cannot drift from `lower_tr`'s own selection.
+    c.unspendable_request_unmet = unspendable == UnspendableKind::Liana
+        && !matches!(
+            c.descriptor.tree.body,
+            crate::tree::Body::Tr {
+                internal_key: crate::tree::InternalKey::LianaUnspendable,
+                ..
+            }
+        );
+    Ok(c)
 }
 
 /// The rendered template with each slot's origin written inline
