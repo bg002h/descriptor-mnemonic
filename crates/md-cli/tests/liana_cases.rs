@@ -174,3 +174,29 @@ pub fn self_referential_liana_key_descriptor_at_leaf_use_site(leaf_use_site: &st
         "tr({x_str}/<0;1>/*,{{pk({x_str}/{leaf_use_site}/*),pk({other_leaf_display}/<0;1>/*)}})"
     )
 }
+
+/// C-1 fix round (whole-branch review, Critical) fixture:
+/// `preset-kofn-recovery-tr`'s own genuine descriptor with ONLY its internal
+/// key's key-expression text replaced by `internal_key_expr` — the real
+/// script tree (the `multi_a` + `and_v` leaves, all real vendored keys) is
+/// untouched. Used to construct every use-site/origin variant the review's
+/// C-1 finding named as swallowed: a non-canonical multipath order/arity, a
+/// fixed trailing step, a hardened wildcard, no wildcard at all, and a
+/// prefixed origin. No checksum suffix: the substitution invalidates the
+/// original one, and `md decompose` accepts checksum-less input.
+pub fn kofn_with_internal_key(internal_key_expr: &str) -> String {
+    let kofn = case("preset-kofn-recovery-tr");
+    let bare = kofn
+        .descriptor_with_checksum
+        .rsplit_once('#')
+        .map(|(body, _)| body)
+        .unwrap_or(kofn.descriptor_with_checksum.as_str());
+    let genuine_internal_key = format!("{}/<0;1>/*", kofn.expected_xpub);
+    let swapped = bare.replacen(&genuine_internal_key, internal_key_expr, 1);
+    assert_ne!(
+        swapped, bare,
+        "the genuine internal key expression `{genuine_internal_key}` must appear exactly \
+         once, as the internal key, for this substitution to do anything"
+    );
+    swapped
+}

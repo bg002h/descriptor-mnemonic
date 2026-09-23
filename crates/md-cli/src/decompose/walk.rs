@@ -39,8 +39,8 @@
 
 use crate::error::CliError;
 use bitcoin::Network;
-use bitcoin::bip32::{DerivationPath, Fingerprint, Xpub};
-use miniscript::descriptor::{Descriptor, DescriptorPublicKey};
+use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint, Xpub};
+use miniscript::descriptor::{Descriptor, DescriptorPublicKey, Wildcard};
 use miniscript::{ForEachKey, Translator};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -193,6 +193,34 @@ fn occurrence_of(key: &DescriptorPublicKey) -> Result<Occurrence, CliError> {
 /// every such shape falls through to today's annotated-slot path unchanged
 /// (G-8), where the existing walker's own refusals (e.g. "RAW public key")
 /// name the real problem if there is one.
+///
+/// **C-1 fix (whole-branch review, Critical).** `UNSPENDABLE(liana)` DENOTES
+/// the whole key expression `<derived xpub>/<0;1>/*`, with NO origin — not
+/// just the xpub bytes. Liana derives the internal key at exactly `0/i` and
+/// `1/i` in every port (SPEC §2 step 6, "in every port, independent of the
+/// wallet's use-site path"), so `UNSPENDABLE(liana)` on a template can only
+/// ever mean that one BIP-389 spelling. Comparing only `actual_xpub ==
+/// recomputed` (the pre-fix code) accepted ANY use-site on a byte-matching
+/// xpub — a different multipath order, a fixed step, a hardened wildcard, a
+/// prefixed origin — and replaced it with the marker regardless, silently
+/// turning a real wallet whose internal key derives at, say, `2/i` into a
+/// card that reads `0/i`. Below, every property BIP-389's `<0;1>` multipath
+/// spelling carries is checked explicitly:
+/// - `origin` is `None` (no `[fingerprint/path]` prefix) — REPRODUCED base
+///   `37367c1f`'s own refusal of a prefixed origin here.
+/// - the key is `MultiXPub`, not `XPub` — a SINGLE fixed path (`/0/*`, `/0`)
+///   or no wildcard step at all (`/*h` with no `<;>`) can never spell
+///   `<0;1>`, since that spelling requires BIP-389 multipath syntax in the
+///   first place; this one variant check rules out `/0/*`, `/0` and `/*h`
+///   together, with no separate per-case logic.
+/// - `wildcard` is exactly `Unhardened` (`*`, never `*h`).
+/// - `derivation_paths` is exactly `[[0], [1]]`, IN THAT ORDER: rejects
+///   `<1;0>` (order), `<0;1;2>` (arity — three alternatives, not two), and
+///   `<0;1>/5/*` (a trailing fixed step folds into EACH alternative's own
+///   path — rust-miniscript reconstructs `/<0;1>/5/*` as
+///   `derivation_paths == [[0,5], [1,5]]`, two components per path, not
+///   one — measured directly against the pinned miniscript checkout before
+///   writing this comment, not assumed from the grammar).
 pub fn liana_internal_key_match(
     desc: &Descriptor<DescriptorPublicKey>,
     network: Network,
@@ -201,11 +229,26 @@ pub fn liana_internal_key_match(
         return None;
     };
     let internal = tr.internal_key();
-    let actual_xpub = match internal {
-        DescriptorPublicKey::XPub(x) => x.xkey,
-        DescriptorPublicKey::MultiXPub(x) => x.xkey,
-        DescriptorPublicKey::Single(_) => return None,
+    let m = match internal {
+        DescriptorPublicKey::MultiXPub(m) => m,
+        // A single-path xkey (`XPub`) or a raw key (`Single`) can never BE
+        // `<0;1>/*` — that spelling requires BIP-389 multipath syntax, which
+        // only `MultiXPub` represents. Covers `/0/*`, `/0` and `/*h` (none
+        // carry a `<;>` marker at all) without a separate check for each.
+        DescriptorPublicKey::XPub(_) | DescriptorPublicKey::Single(_) => return None,
     };
+    if m.origin.is_some() {
+        return None;
+    }
+    if m.wildcard != Wildcard::Unhardened {
+        return None;
+    }
+    let paths = m.derivation_paths.paths();
+    let standard = |i: u32| DerivationPath::from(vec![ChildNumber::Normal { index: i }]);
+    if paths.len() != 2 || paths[0] != standard(0) || paths[1] != standard(1) {
+        return None;
+    }
+    let actual_xpub = m.xkey;
 
     // SPEC §2 step 1: the ordered sequence of the tap-tree's leaf keys' own
     // 33-byte compressed public keys, one per OCCURRENCE (not deduplicated),

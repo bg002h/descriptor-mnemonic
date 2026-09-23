@@ -20,8 +20,9 @@
 #[path = "liana_cases.rs"]
 mod liana_cases;
 use liana_cases::{
-    ORIGINLESS_SPENDABLE_TR, case, near_miss_liana_recipe_over_different_leaves,
-    self_referential_liana_key_descriptor, self_referential_liana_key_descriptor_at_leaf_use_site,
+    ORIGINLESS_SPENDABLE_TR, case, kofn_with_internal_key,
+    near_miss_liana_recipe_over_different_leaves, self_referential_liana_key_descriptor,
+    self_referential_liana_key_descriptor_at_leaf_use_site,
 };
 
 use std::process::Command as StdCommand;
@@ -291,4 +292,166 @@ fn a_tr_with_no_leaf_keys_cannot_be_constructed() {
         "kind 0 (the raw NUMS hex) must also be refused for having no leaf \
          keys, not some other reason: {err}"
     );
+}
+
+/// C-1 (whole-branch review, CRITICAL). `liana_internal_key_match` compared
+/// only the extended KEY, ignoring the internal key's own origin,
+/// derivation path and wildcard — so ANY use-site on a byte-matching xpub
+/// was silently replaced by the marker. `UNSPENDABLE(liana)` DENOTES
+/// `/<0;1>/*` with NO origin (SPEC §2 step 6: Liana derives the internal
+/// key at exactly `0/i` and `1/i` in every port); anything else is a
+/// GENUINELY DIFFERENT derivation, and recognising it anyway erases the
+/// divergence between what the operator pasted and what the card says.
+///
+/// Every non-origin shape the review named as swallowed, built from
+/// `preset-kofn-recovery-tr`'s own real key material (the recipe xpub is
+/// genuine and byte-matches the leaves actually present — ONLY the internal
+/// key's own use-site differs from `/<0;1>/*`): a different multipath
+/// order, a different arity, a fixed single path, a hardened wildcard, no
+/// wildcard at all, and a trailing fixed step after the multipath group.
+/// Each must fall through to the ordinary annotated-slot path, unchanged
+/// from base — decompose still succeeds (this is real, parseable,
+/// mintable-shaped input, just not Liana's own recipe use-site), but the
+/// output must never claim `UNSPENDABLE(liana)`.
+#[test]
+fn decompose_does_not_recognise_a_non_canonical_internal_key_use_site() {
+    let xpub = case("preset-kofn-recovery-tr").expected_xpub;
+    let cases: &[(&str, String)] = &[
+        (
+            "<2;3> -- different multipath alternatives",
+            format!("{xpub}/<2;3>/*"),
+        ),
+        ("<1;0> -- reversed order", format!("{xpub}/<1;0>/*")),
+        ("<0;1;2> -- extra alternative", format!("{xpub}/<0;1;2>/*")),
+        ("/0/* -- fixed single path", format!("{xpub}/0/*")),
+        (
+            "/*h -- hardened wildcard, no multipath",
+            format!("{xpub}/*h"),
+        ),
+        ("/0 -- no wildcard at all", format!("{xpub}/0")),
+        (
+            "/<0;1>/5/* -- trailing fixed step",
+            format!("{xpub}/<0;1>/5/*"),
+        ),
+    ];
+    for (label, internal_key_expr) in cases {
+        let d = kofn_with_internal_key(internal_key_expr);
+        let (out, err, code) = md(&["decompose", &d, "--emit", "template"]);
+        assert_eq!(code, 0, "[{label}] decompose failed: {err}");
+        assert!(
+            !out.contains("UNSPENDABLE(liana)"),
+            "[{label}] must NOT be recognised as Liana's own internal key: {out}"
+        );
+        assert!(
+            out.contains("tr(@0/"),
+            "[{label}] must fall through to an ordinary slot: {out}"
+        );
+    }
+}
+
+/// C-1's eighth named case: a PREFIXED ORIGIN on the internal key. Base
+/// (`37367c1f`, before the Liana feature existed at all) already refused
+/// this shape outright — `preset-kofn-recovery-tr`'s recipe xpub has
+/// `depth == 0`, and attaching a 4-component origin path to a depth-0 xpub
+/// trips the PRE-EXISTING, generic `check_depth_consistency` refusal, which
+/// has nothing Liana-specific about it. Named as its own test because the
+/// assertion shape differs from the seven above (a real refusal, not a
+/// clean fall-through) and because `liana_internal_key_match`'s own
+/// `origin.is_some()` check is what keeps this shape from EVER reaching
+/// `UNSPENDABLE(liana)` in the first place, ahead of that depth check.
+#[test]
+fn decompose_refuses_an_internal_key_with_a_prefixed_origin_same_as_base() {
+    let xpub = case("preset-kofn-recovery-tr").expected_xpub;
+    let internal_key_expr = format!("[73c5da0a/48'/0'/0'/3']{xpub}/<0;1>/*");
+    let d = kofn_with_internal_key(&internal_key_expr);
+    let (out, err, code) = md(&["decompose", &d, "--emit", "template"]);
+    assert_ne!(code, 0, "must be refused, same as base: stdout was {out}");
+    assert!(
+        !err.contains("internal:"),
+        "internal invariant leaked, not a real refusal: {err}"
+    );
+    assert!(
+        !out.contains("UNSPENDABLE(liana)"),
+        "must never be labelled as Liana's own key on the way to refusing: {out}"
+    );
+}
+
+/// C-1's own funds-relevant reproduction, verbatim: the SAME descriptor's
+/// truth (`--emit descriptor`) and its template (`--emit template`) must
+/// keep describing the SAME wallet. Before the fix, a `/<2;3>/*` internal
+/// key produced a template BYTE-IDENTICAL to the genuine `/<0;1>/*`
+/// descriptor's — the divergence erased, two different wallets collapsed
+/// into one card. After the fix, the two templates must DIFFER.
+#[test]
+fn a_non_canonical_use_site_produces_a_different_template_than_the_genuine_one() {
+    // The genuine descriptor, straight from the fixture (not round-tripped
+    // through `kofn_with_internal_key`, which asserts its substitution
+    // actually changed something -- substituting the genuine text for
+    // itself would trip that assertion for being a no-op, correctly).
+    let genuine = case("preset-kofn-recovery-tr").descriptor_with_checksum;
+    let xpub = case("preset-kofn-recovery-tr").expected_xpub;
+    let divergent = kofn_with_internal_key(&format!("{xpub}/<2;3>/*"));
+    assert_ne!(
+        genuine, divergent,
+        "test construction error: the two inputs must actually differ"
+    );
+
+    let (genuine_template, genuine_err, genuine_code) =
+        md(&["decompose", &genuine, "--emit", "template"]);
+    assert_eq!(genuine_code, 0, "genuine descriptor failed: {genuine_err}");
+    let (divergent_template, divergent_err, divergent_code) =
+        md(&["decompose", &divergent, "--emit", "template"]);
+    assert_eq!(
+        divergent_code, 0,
+        "divergent descriptor failed: {divergent_err}"
+    );
+
+    assert_ne!(
+        genuine_template, divergent_template,
+        "a wallet whose internal key derives at 2/i must not emit the SAME template as one \
+         that derives at 0/i -- that is the divergence being erased"
+    );
+}
+
+/// I-1 (whole-branch review, Important). `UNSPENDABLE(liana)` is meaningful
+/// ONLY as a `tr()` descriptor's own internal key. Before the fix, placing
+/// it anywhere else was silently rewritten to the same synthetic hex as a
+/// genuine internal-key marker by `substitute_synthetic`'s blind
+/// `str::replace` (which has no notion of position), and then leaked
+/// `"internal: synthetic key … not found in key map"` when `lookup_key`
+/// failed to find that hex in the `@i` placeholder map — an internal
+/// invariant string SPEC §4a requires never reach a user. Three placements
+/// the review named: a tapleaf, inside `multi_a(...)`, and inside a
+/// `wsh(...)` that carries no `tr()` at all.
+#[test]
+fn md_encode_refuses_the_marker_outside_the_internal_key_position_cleanly() {
+    let cases: &[(&str, &str)] = &[
+        (
+            "at a tapleaf",
+            "tr(UNSPENDABLE(liana),{pk(UNSPENDABLE(liana))})",
+        ),
+        (
+            "inside multi_a",
+            "tr(UNSPENDABLE(liana),{multi_a(1,UNSPENDABLE(liana))})",
+        ),
+        (
+            "inside a wsh (no tr() at all)",
+            "wsh(pk(UNSPENDABLE(liana)))",
+        ),
+    ];
+    for (label, template) in cases {
+        let err = md_err(&["encode", template, "--path", "bip48"]);
+        assert!(
+            !err.contains("internal:"),
+            "[{label}] internal invariant leaked: {err}"
+        );
+        assert!(
+            err.contains("UNSPENDABLE(liana)"),
+            "[{label}] must name the marker: {err}"
+        );
+        assert!(
+            err.contains("tr("),
+            "[{label}] must name where it IS allowed: {err}"
+        );
+    }
 }

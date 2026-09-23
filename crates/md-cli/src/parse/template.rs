@@ -1098,6 +1098,41 @@ fn liana_synthetic_internal_key_hex() -> &'static str {
     .as_str()
 }
 
+/// I-1 fix (whole-branch review, Important): `UNSPENDABLE(liana)` is
+/// meaningful ONLY as a `tr()` descriptor's own internal key — the FIRST
+/// argument, immediately after `tr(`. Refuses every occurrence that is not
+/// at that exact position, BEFORE `substitute_synthetic`'s text-replace ever
+/// runs (which has no notion of position and would otherwise rewrite a
+/// misplaced marker into the same synthetic hex as a genuine one, reaching
+/// `lookup_key` downstream and leaking the internal key-map-miss message).
+///
+/// **Why "immediately after a literal `tr(`" is a SOUND position check, not
+/// a heuristic.** `tr()` cannot nest — BIP-386 forbids a second taproot
+/// output inside another descriptor, and `Descriptor::from_str` itself
+/// refuses `wsh(tr(...))`/`sh(tr(...))`-shaped text as a parse error before
+/// this crate ever sees it (measured) — so any text that could go on to
+/// parse successfully contains the literal substring `"tr("` AT MOST ONCE,
+/// and that one occurrence is always the outermost wrapper's own opening
+/// paren, immediately followed by its internal key. A marker occurrence NOT
+/// immediately preceded by `"tr("` therefore cannot be at the internal-key
+/// position in any input this function will ever see succeed downstream.
+fn validate_marker_position(template: &str) -> Result<(), CliError> {
+    let marker = md_codec::nums::LIANA_UNSPENDABLE_MARKER;
+    for (pos, _) in template.match_indices(marker) {
+        let preceded_by_tr_open = pos >= 3 && &template[pos - 3..pos] == "tr(";
+        if !preceded_by_tr_open {
+            return Err(CliError::TemplateParse(format!(
+                "`{marker}` is meaningful only as a tr() descriptor's own internal key — the \
+                 FIRST argument, immediately after `tr(` — but it appears somewhere else here \
+                 (a tapleaf, inside `multi_a(...)`/`multi(...)`, inside `wsh(...)`/`sh(...)`, \
+                 or anywhere not that exact position). Write `{marker}` only as \
+                 `tr({marker},...)`; use a real key, hash, or timelock fragment everywhere else."
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Substitute each `@i/...` with a synthetic xpub. Returns substituted template
 /// + map (synthetic-xpub-string → placeholder index).
 fn substitute_synthetic(
@@ -1108,6 +1143,18 @@ fn substitute_synthetic(
     // passes must see ONE syntax, or a `/**` template's use-site path and its
     // structural tree could disagree.
     let desugared = desugar_double_wildcard(template);
+    // I-1 fix (whole-branch review, Important): the production entry point
+    // (`parse_template_ext`) calls `validate_marker_position` BEFORE
+    // `lex_placeholders` even runs, so a template whose ONLY marker
+    // occurrence is misplaced (no `@i` anywhere at all — exactly the
+    // review's `wsh(pk(UNSPENDABLE(liana)))` shape) is already refused by
+    // the time this function is reached in production. Re-checked here too:
+    // `substitute_synthetic` is the function whose blind `str::replace`
+    // actually has no notion of "internal-key position", so a future direct
+    // caller that skips `parse_template_ext`'s gate (several exist in this
+    // file's own unit tests, calling this function directly) still gets the
+    // same refusal rather than the leaked key-map-miss message.
+    validate_marker_position(&desugared)?;
     // SPEC §4a: rewrite the `UNSPENDABLE(liana)` marker to the reserved
     // synthetic x-only hex above BEFORE the @i pass below — the two cannot
     // collide (the @i regex only matches `@\d`) — so `Descriptor::from_str`
@@ -2732,6 +2779,15 @@ pub fn parse_template_ext(
     experimental: bool,
     reuse: crate::parse::reuse::Disposition,
 ) -> Result<Descriptor, CliError> {
+    // I-1 fix (whole-branch review, Important): checked FIRST, before
+    // `lex_placeholders` below — which refuses ANY template carrying no `@i`
+    // placeholder outright, so a template whose only `UNSPENDABLE(liana)`
+    // occurrence is misplaced AND carries no `@i` anywhere (e.g.
+    // `wsh(pk(UNSPENDABLE(liana)))`) would otherwise never reach
+    // `substitute_synthetic`'s own copy of this check at all, and would be
+    // refused with the unrelated, generic "no @i placeholders" message
+    // instead of one naming the marker.
+    validate_marker_position(template)?;
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
     reject_unreferenced_bindings(&occs, keys, fingerprints)?;
