@@ -103,3 +103,127 @@ fn shape_key_refuses_a_single_chain_descriptor() {
     assert_ne!(code, 0, "{out}");
     assert!(err.contains("multipath"), "{err}");
 }
+
+// ---------------------------------------------------------------------------
+// The verdict on `md compose` and `md descriptor` (Task 8).
+// ---------------------------------------------------------------------------
+
+const H: &str = "a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8";
+
+/// F-644's md-cli half, re-owned by plan 1b: each shape it names now carries
+/// Liana's refusal, keyed on the composed shape, with or without the flag.
+/// Mutation: remove the `verdict::notice` call from `compose::run` -> red.
+#[test]
+fn compose_names_liana_refusal_for_every_f644_shape() {
+    for spelling in [
+        &["--path", "2of3,unsorted", "--path", "2of2"][..],
+        &["--path", "2of2", "--path", "1of1,after=800000"][..],
+        &[
+            "--path",
+            "2of2",
+            "--path",
+            "1of1,older=100",
+            "--path",
+            "1of1,older=100",
+        ][..],
+        &["--path", "2of3,unsorted", "--experimental"][..],
+    ] {
+        for flag in [&["--unspendable", "liana"][..], &[][..]] {
+            let mut args = vec!["compose", "--wrapper", "tr"];
+            args.extend_from_slice(spelling);
+            args.extend_from_slice(flag);
+            let (out, err, code) = md(&args);
+            assert_eq!(code, 0, "{args:?}: {err}");
+            assert!(!out.is_empty(), "{args:?}");
+            assert!(err.contains("Liana 8.0-15.0: refuses ("), "{args:?}: {err}");
+        }
+    }
+}
+
+/// A template never claims an import (design §1 (a2)); Core's structural
+/// refusal before 26.0 still prints. Mutation: drop the `KeysAbsent` return
+/// in `md_codec::coordinator::at_version` -> the lines change and this reds.
+#[test]
+fn compose_prints_refusals_and_silences_never_imports() {
+    let (_, err, code) = md(&[
+        "compose",
+        "--wrapper",
+        "tr",
+        "--preset",
+        "kofn-recovery,2of3,older=26280",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains("Bitcoin Core 24.2-25.2: refuses (miniscript under tr)"),
+        "{err}"
+    );
+    assert!(
+        err.contains("Bitcoin Core 26.0-31.1: unproven (a template has no keys"),
+        "{err}"
+    );
+    assert!(!err.contains(": imports"), "{err}");
+}
+
+/// Ruling 2 and design §4: compose refuses the none case, exits non-zero,
+/// names `--md-only`, and emits nothing; `--md-only` proceeds. Mutation:
+/// drop `&& !md_only` from the refusal -> the second half reds.
+#[test]
+fn compose_refuses_the_none_case_and_md_only_proceeds() {
+    let keyless = format!("keyless,sha256={H}");
+    let base = [
+        "compose",
+        "--wrapper",
+        "wsh",
+        "--path",
+        "2of3",
+        "--path",
+        &keyless,
+        "--experimental",
+    ];
+    let (out, err, code) = md(&base);
+    assert_eq!(code, 1, "{err}");
+    assert!(out.is_empty(), "a refusal printed a template: {out}");
+    assert!(err.contains("--md-only"), "{err}");
+
+    let mut args = base.to_vec();
+    args.push("--md-only");
+    let (out, err, code) = md(&args);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.starts_with("wsh("), "{out}");
+}
+
+/// `md descriptor` READS a card, so it never refuses on a verdict -- not
+/// even the none case -- and it names the spelling it printed. Mutation:
+/// route `md descriptor` through compose's none-case refusal -> the keyless
+/// card exits 1 and this reds.
+#[test]
+fn descriptor_names_the_form_and_never_refuses() {
+    let card = card_of(&descriptor_named("CONTROL-accept-kofn-recovery-flat"));
+    let mut args = vec!["descriptor"];
+    args.extend(card.iter().map(String::as_str));
+    let (_, err, code) = md(&args);
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("multipath form"), "{err}");
+    assert!(
+        err.contains("Bitcoin Core 24.2-28.4: refuses (the <0;1> multipath spelling"),
+        "{err}"
+    );
+    args.extend(["--chain", "0"]);
+    let (_, err, code) = md(&args);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains("Bitcoin Core 26.0-31.1: imports the chain0 form"),
+        "{err}"
+    );
+
+    let card = card_of(&descriptor_named("keyless-hash-path-wsh"));
+    let mut args = vec!["descriptor", "--experimental"];
+    args.extend(card.iter().map(String::as_str));
+    let (out, err, code) = md(&args);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.starts_with("wsh("), "{out}");
+    assert!(
+        err.contains("Liana 8.0-15.0: refuses (a path with no key)"),
+        "{err}"
+    );
+}

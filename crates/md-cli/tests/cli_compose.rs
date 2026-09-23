@@ -105,6 +105,9 @@ fn compose_refuses_a_keyless_path_without_experimental_and_admits_it_with() {
         "--wrapper",
         "wsh",
         "--experimental",
+        // Plan 1b: every coordinator refuses a keyless path, so compose's
+        // none-case stop needs the operator's explicit `--md-only`.
+        "--md-only",
         "--path",
         "2of3",
         "--path",
@@ -239,6 +242,7 @@ fn compose_json_experimental_paths_join_the_slot_map() {
             "wsh",
             "--json",
             "--experimental",
+            "--md-only",
             "--path",
             "2of3",
             "--path",

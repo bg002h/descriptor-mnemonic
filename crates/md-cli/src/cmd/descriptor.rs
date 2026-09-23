@@ -233,6 +233,22 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         );
     }
 
+    // Coordinator-compat plan 1b: the verdict for the spelling about to be
+    // printed. `md descriptor` READS an existing card, usually one already
+    // engraved, so it never refuses on a verdict (design §4, r2 C-4): the
+    // notice is stderr only and the exit code is untouched.
+    let form = match args.chain {
+        None => Some(md_codec::coordinator::Form::Multipath),
+        Some(0) => Some(md_codec::coordinator::Form::Chain0),
+        Some(1) => Some(md_codec::coordinator::Form::Chain1),
+        Some(_) => None,
+    };
+    let what = match form {
+        Some(f) => format!("this descriptor, {} form", f.as_str()),
+        None => "this descriptor".to_string(),
+    };
+    let _ = crate::cmd::verdict::notice(&descriptor, form, &what);
+
     #[cfg(feature = "json")]
     if args.json {
         use crate::format::json::SCHEMA;

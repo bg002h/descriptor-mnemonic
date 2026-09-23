@@ -43,6 +43,8 @@ fn template_for(kind: &str) -> String {
             "--path",
             &format!("keyless,{kind}={h}"),
             "--experimental",
+            // Plan 1b: no coordinator imports a keyless path.
+            "--md-only",
         ])
         .assert()
         .success();
@@ -234,6 +236,7 @@ fn the_keyless_signature_rule_is_what_decompose_keys_on() {
             "--path",
             "keyless,ripemd160=09e7bb5051d89788fb4e4b374126721dbcc2946b",
             "--experimental",
+            "--md-only",
         ])
         .assert()
         .success();

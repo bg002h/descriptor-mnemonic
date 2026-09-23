@@ -322,6 +322,11 @@ enum Command {
         // call site.
         #[arg(long, value_name = "KIND")]
         unspendable: Option<String>,
+        /// Compose even when every wallet coordinator md knows refuses the
+        /// policy at every verified version. md can still rebuild such a
+        /// wallet from the card; md cannot sign.
+        #[arg(long)]
+        md_only: bool,
     },
     /// Print a policy's shape key: the canonical, coordinator-independent
     /// summary the coordinator verdict table is keyed by (U+001F-separated:
@@ -1075,6 +1080,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             experimental,
             json,
             unspendable,
+            md_only,
         } => cmd::compose::run(
             &wrapper,
             &paths,
@@ -1082,6 +1088,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             experimental,
             json,
             unspendable.as_deref(),
+            md_only,
         ),
         Command::ShapeKey {
             phrases,
