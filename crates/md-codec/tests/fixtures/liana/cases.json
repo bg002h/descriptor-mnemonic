@@ -26,7 +26,7 @@
       "bc1prc820f7ctrq6ad6wtfwq62dfw7jssx9cc0gy3swysw30r9077weqp2h7nq",
       "bc1pvglxdkwzrkdha7n9f775y7v3gelan3lec3sdgt95cpxyg33tgnzsd65e2s"
     ],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   },
   {
     "name": "preset-tiered-recovery-tr",
@@ -55,7 +55,7 @@
       "bc1pymms3pxp5sm7lau2ch48sfq5qk4kspwphm7w6vwhh0hdrh79sfvqxtvyp7",
       "bc1p0p3h9w3zc8fjz45tq0pylqjf2cnmyuk2pgagml2vhfljgzxkun4sj4a5uc"
     ],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   },
   {
     "name": "preset-hashlock-gated-tr",
@@ -72,7 +72,7 @@
     "descriptor_with_checksum": "tr(xpub661MyMwAqRbcFoQpQsj8bBVRkfHP4VWzsPVdGnRGjbP53wxy1JcAuKNuuUYSqyNsYDnLKyhco3nxw5cccLachdgUQBv7FCBNYawHUjCbkEB/<0;1>/*,{and_v(v:pk([73c5da0a/48'/0'/0'/3']xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i/<0;1>/*),sha256(a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8)),and_v(v:pk([3f635a63/48'/0'/0'/3']xpub6DXuQW1Q2Jpa1hNtFUcghdx7Q8kTDsqo7b54YAqZBNCH8EuSvmNSAKbAvkZ4HspgftJ1aqSMeFiZ4sr2QNEGm9geaEre3zDwiJD7C5gx5VH/<0;1>/*),older(26280))})#60tfax85",
     "liana_receive": [],
     "liana_change": [],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   },
   {
     "name": "preset-decaying-multisig-tr",
@@ -93,7 +93,7 @@
     "descriptor_with_checksum": "tr(xpub661MyMwAqRbcFswVugWFBxmD7r3bQLsmHovc3p3wTFfgk3EWb36m3QfsezgaR6h5cXXgPG3R2XmctBn55sAt35wzLnrYy82sLKYF8CRsak7/<0;1>/*,{and_v(v:multi_a(2,[73c5da0a/48'/0'/0'/3']xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i/<0;1>/*,[3f635a63/48'/0'/0'/3']xpub6DXuQW1Q2Jpa1hNtFUcghdx7Q8kTDsqo7b54YAqZBNCH8EuSvmNSAKbAvkZ4HspgftJ1aqSMeFiZ4sr2QNEGm9geaEre3zDwiJD7C5gx5VH/<0;1>/*),older(13140)),{and_v(v:pk([66d455ea/48'/0'/0'/3']xpub6DXuQW1Q2JpZyteDRGW1pD34uhumfnZJfTsmjDkgd4xcq3L5XX2KUE1n4rmvcDT3RmdchfhbD9DkvSyVhUMBjUYi691iFszgKtf4Bfqe2nL/<0;1>/*),older(26280)),and_v(v:pk([73c5da0a/48'/0'/1'/3']xpub6DXuQW1Q2JpZzLV9igdwdnmCSoaPVd4ZNZnvfgUsGvQ8AbNAhEmfBEMCMHctwZBuxWK8HkjqUW5F72MCSJCFfisVwRY62Kb1FuDZ66nNQe1/<0;1>/*),after(1000000))}})#exkx6clh",
     "liana_receive": [],
     "liana_change": [],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   },
   {
     "name": "hashlock-gated-tr-hash160",
@@ -110,7 +110,7 @@
     "descriptor_with_checksum": "tr(xpub661MyMwAqRbcFoQpQsj8bBVRkfHP4VWzsPVdGnRGjbP53wxy1JcAuKNuuUYSqyNsYDnLKyhco3nxw5cccLachdgUQBv7FCBNYawHUjCbkEB/<0;1>/*,{and_v(v:pk([73c5da0a/48'/0'/0'/3']xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i/<0;1>/*),hash160(b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1)),and_v(v:pk([3f635a63/48'/0'/0'/3']xpub6DXuQW1Q2Jpa1hNtFUcghdx7Q8kTDsqo7b54YAqZBNCH8EuSvmNSAKbAvkZ4HspgftJ1aqSMeFiZ4sr2QNEGm9geaEre3zDwiJD7C5gx5VH/<0;1>/*),older(26280))})#6v23k880",
     "liana_receive": [],
     "liana_change": [],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   },
   {
     "name": "same-seed-two-paths-tr",
@@ -139,7 +139,7 @@
       "bc1pg7258u0kh4pz6g3gml43snme4aa0sqsw7r5ap32y675vydf4qquqhjukz2",
       "bc1p3weuxvh9373zvx35pnhjnynyxdjpuyym7k06dv3cj53cnn3n2c8qa8kznz"
     ],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   },
   {
     "name": "X19-tr-kofn-nums-older5",
@@ -168,7 +168,7 @@
       "bc1pm5z94qe45cpk5e0vaseypzyc86vxygamqu3vacm96efwne6tks3q6ems7j",
       "bc1pn29nmvwkw2xdyntyfvll6at9exkef78dxrf23r4hnuqkn72tkx4qk54kvf"
     ],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   },
   {
     "name": "X20-tr-hashlock-known",
@@ -185,6 +185,35 @@
     "descriptor_with_checksum": "tr(xpub661MyMwAqRbcF9XhWFt9pyRRbPP6LKhrAVZ4oG1BTtw8UKWz9BTmaDucmYCCDTBi9B6vGhM7hy6yq5rute1BSbrS9FvMjhMtdTNFNNZt5L7/<0;1>/*,{and_v(v:pk([73c5da0a/48'/0'/0'/3']xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i/<0;1>/*),sha256(fc8b64001c5fdd0f2f40fb67dae4a865a2c5bd17836676d6d5b58b7917e33717)),and_v(v:pk([3f635a63/48'/0'/1'/3']xpub6DXuQW1Q2Jpa1UavR7Se7NgKcQRQXyxqRjsqLybQB5JiYZcfLV93enNpsEdDHHWMjqiRqht5LHedAHPGsT3qLegcbtdn5f7nWaXPPMS4ERE/<0;1>/*),older(5))})#rmz24kk9",
     "liana_receive": [],
     "liana_change": [],
-    "source_commit": "b1eaaee9e336e339b87cae86d79afe8b989406f6"
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
+  },
+  {
+    "name": "nested-2of2-two-recoveries-tr",
+    "accepted": true,
+    "leaf_tlv_hex": [
+      "27b615ed8af0de5eb93f3be49dbcbdd534f54ca288f256be62bc205fc3c331f80396315337b6b29f1de58cc11b8a0c549ff3186e202feb29bc5261091be4f99b21",
+      "d7e09b4d622a103c308004482452a2d4adbbced1095e68dab0ca1a8db77ce35b02e02ca483d4320aeb5d6837773e8ddc338bf1b99649ecebb5ad92041a6977b1b8",
+      "2280494da0a6f4786aa7fb2fbc6a8c518ec40df31d358797437ac7f65a6987e202399fccf89c4553b6f1c414e4ac612cb30b41a207809d5ceb0383fda65643545a",
+      "4f418ca36692311a08a91d6857dcec82561a6d866f47a660ef400f497465264802e8e5423d975fc9e43ce1ab40b4a35f876724b63e35a42ba465cda7eae49b85c5"
+    ],
+    "leaf_pubkeys_hex": [
+      "0396315337b6b29f1de58cc11b8a0c549ff3186e202feb29bc5261091be4f99b21",
+      "02e02ca483d4320aeb5d6837773e8ddc338bf1b99649ecebb5ad92041a6977b1b8",
+      "02399fccf89c4553b6f1c414e4ac612cb30b41a207809d5ceb0383fda65643545a",
+      "02e8e5423d975fc9e43ce1ab40b4a35f876724b63e35a42ba465cda7eae49b85c5"
+    ],
+    "expected_xpub": "xpub661MyMwAqRbcFswVugWFBxmD7r3bQLsmHovc3p3wTFfgk3EWb36m3QfsezgaR6h5cXXgPG3R2XmctBn55sAt35wzLnrYy82sLKYF8CRsak7",
+    "descriptor_with_checksum": "tr(xpub661MyMwAqRbcFswVugWFBxmD7r3bQLsmHovc3p3wTFfgk3EWb36m3QfsezgaR6h5cXXgPG3R2XmctBn55sAt35wzLnrYy82sLKYF8CRsak7/<0;1>/*,{multi_a(2,[73c5da0a/48'/0'/0'/3']xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i/<0;1>/*,[3f635a63/48'/0'/1'/3']xpub6DXuQW1Q2Jpa1hNtFUcghdx7Q8kTDsqo7b54YAqZBNCH8EuSvmNSAKbAvkZ4HspgftJ1aqSMeFiZ4sr2QNEGm9geaEre3zDwiJD7C5gx5VH/<0;1>/*),{and_v(v:pk([66d455ea/48'/0'/2'/3']xpub6DXuQW1Q2JpZyteDRGW1pD34uhumfnZJfTsmjDkgd4xcq3L5XX2KUE1n4rmvcDT3RmdchfhbD9DkvSyVhUMBjUYi691iFszgKtf4Bfqe2nL/<0;1>/*),older(26280)),and_v(v:pk([73c5da0a/48'/0'/3'/3']xpub6DXuQW1Q2JpZzLV9igdwdnmCSoaPVd4ZNZnvfgUsGvQ8AbNAhEmfBEMCMHctwZBuxWK8HkjqUW5F72MCSJCFfisVwRY62Kb1FuDZ66nNQe1/<0;1>/*),older(52560))}})#t7n8w9qv",
+    "liana_receive": [
+      "bc1pxsqjjzze0aguwh4ldu5qgsh6x0yhdv2qlyhyg4uv8jd5r6t058lqg359pq",
+      "bc1pdlg4y5593l9t6ce9per9xtnxsuwsx89jk7a7cdwadf7g4kjnzv7sh4v6g6",
+      "bc1paswns70qxaanpjh9nv6rv6ya2flfespyh6s409qry9hrw64v7zmq86af4e"
+    ],
+    "liana_change": [
+      "bc1pqnd0rlrdkvthd73fk9fa2q27yf0xxl6ettcrzdg47v8jpw650s8q4eft88",
+      "bc1pdflgx6glawax4ugdurztks0sx5effjevsxaldca8v3xeuxxluz6qf54rat",
+      "bc1pm2e86t0c8tdrrdw83nkgaxqg9wkf7x46znypgsklpg79sstnkt3s9epch3"
+    ],
+    "source_commit": "0c51d3cc93c56d302dc69b56ceab26fa2329a507"
   }
 ]

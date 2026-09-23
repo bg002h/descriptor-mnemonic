@@ -11,15 +11,22 @@
 #   design/evidence/composer-fable-r0/fable-liana-parse-in.jsonl
 #   design/evidence/composer-fable-r0/fable-liana-parse-out-v15.jsonl
 #
-# and extracts the eight `variant == "liana-unspendable-xpub"` records --
+# and extracts the nine `variant == "liana-unspendable-xpub"` records --
 # design/SPEC_liana_unspendable_internal_key.md section 1's four ACCEPTed
 # shapes (preset-kofn-recovery-tr, preset-tiered-recovery-tr,
 # same-seed-two-paths-tr, X19-tr-kofn-nums-older5) plus the four Liana
 # refused on policy shape (preset-hashlock-gated-tr,
 # preset-decaying-multisig-tr, hashlock-gated-tr-hash160,
-# X20-tr-hashlock-known). Section 2's derivation recipe is correct for the
-# refused four too, and preset-decaying-multisig-tr is the only nested
-# taptree anywhere in the evidence.
+# X20-tr-hashlock-known), plus F-449 stage 2's nested ACCEPT
+# (nested-2of2-two-recoveries-tr, F-640). Section 2's derivation recipe is
+# correct for the refused four too; preset-decaying-multisig-tr (refused)
+# and nested-2of2-two-recoveries-tr (accepted) are the two nested taptrees.
+#
+# ADDING A CASE IS FOUR EDITS, NOT ONE (F-449 stage 2 plan, Task 5 Step 2):
+# NAMES and ACCEPTED_NAMES below, plus one record in EACH of the two JSONLs
+# above, committed in mnemonic-engrave BEFORE this script runs -- every case
+# is stamped with that repo's HEAD as `source_commit`. This script rebuilds
+# cases.json wholesale, so a case added by hand is deleted by the next run.
 #
 # For each, writes one JSON object with exactly the fields
 # `crates/md-codec/tests/common/liana.rs`'s `Case` struct expects:
@@ -100,12 +107,17 @@ NAMES = [
     "same-seed-two-paths-tr",
     "X19-tr-kofn-nums-older5",
     "X20-tr-hashlock-known",
+    # F-449 stage 2 (F-640): the nested taptree Liana v15.0 ACCEPTS --
+    # the only nested ACCEPT in the corpus. Appended last so the eight
+    # existing cases keep their positions.
+    "nested-2of2-two-recoveries-tr",
 ]
 ACCEPTED_NAMES = {
     "preset-kofn-recovery-tr",
     "preset-tiered-recovery-tr",
     "same-seed-two-paths-tr",
     "X19-tr-kofn-nums-older5",
+    "nested-2of2-two-recoveries-tr",
 }
 
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
