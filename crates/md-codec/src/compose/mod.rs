@@ -334,7 +334,8 @@ pub enum Experimental {
 
 /// Which unspendable taproot internal key a `tr` composition should use when
 /// no path supplies a real one. `Nums` is the default and the only kind any
-/// released md produced before 0.46.0.
+/// released md composed before 0.47.0 (0.46.0 could already ENCODE kind 1
+/// from a template, but `compose` always chose NUMS).
 ///
 /// A REQUEST, not a wire concept: [`crate::tree::InternalKey`] is what lands
 /// on the wire. Do not merge the two (F-449 stage 2 plan, Type consistency).
