@@ -332,6 +332,27 @@ pub enum Experimental {
     UnsortedKeys(usize),
 }
 
+/// Which unspendable taproot internal key a `tr` composition should use when
+/// no path supplies a real one. `Nums` is the default and the only kind any
+/// released md produced before 0.46.0.
+///
+/// A REQUEST, not a wire concept: [`crate::tree::InternalKey`] is what lands
+/// on the wire. Do not merge the two (F-449 stage 2 plan, Type consistency).
+/// Under `wsh`/`sh`/`sh-wsh`, and under a `tr` whose first bare single-key
+/// path is extracted as a real internal key, the request has nothing to
+/// select and is ignored by the lowering; `md compose` refuses or warns on
+/// those cases (stage 2 Tasks 1b and 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UnspendableKind {
+    /// The BIP-341 NUMS H-point. The default, and the only kind any md
+    /// released before 0.47.0 could compose.
+    #[default]
+    Nums,
+    /// Liana's own unspendable key, derived over the composed leaf set
+    /// (SPEC §2). Required for Liana to import the wallet.
+    Liana,
+}
+
 /// A lowered policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Composed {
@@ -601,11 +622,12 @@ pub fn default_origin(wrapper: Wrapper, account: u32) -> OriginPath {
 
 /// Lower a list with every slot UNSEATED: each slot takes the §4f default
 /// origin at the lowest account not yet declared (so slot `i` gets account
-/// `i`), and no fingerprint.
-pub fn compose(list: &PathList) -> Result<Composed, ComposeError> {
+/// `i`), and no fingerprint. `unspendable` selects the `tr` internal key when
+/// no path supplies a real one ([`UnspendableKind`]).
+pub fn compose(list: &PathList, unspendable: UnspendableKind) -> Result<Composed, ComposeError> {
     let n = validate(list)?;
     let none: Vec<Option<SlotOrigin>> = vec![None; n];
-    compose_with(list, &none)
+    compose_with(list, &none, unspendable)
 }
 
 /// Lower a list with per-slot declarations, indexed by EMITTED slot index
@@ -613,6 +635,7 @@ pub fn compose(list: &PathList) -> Result<Composed, ComposeError> {
 pub fn compose_with(
     list: &PathList,
     declared: &[Option<SlotOrigin>],
+    unspendable: UnspendableKind,
 ) -> Result<Composed, ComposeError> {
     let n = validate(list)?;
     if declared.len() != n {
@@ -621,7 +644,7 @@ pub fn compose_with(
             want: n,
         });
     }
-    lowering::lower(list, declared)
+    lowering::lower(list, declared, unspendable)
 }
 
 /// The rendered template with each slot's origin written inline

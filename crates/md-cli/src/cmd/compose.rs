@@ -7,8 +7,8 @@
 
 use crate::error::CliError;
 use md_codec::compose::{
-    Experimental, HashKind, HashLock, KeySet, Lock, PathList, SpendPath, Wrapper, compose, presets,
-    template_with_origins,
+    Experimental, HashKind, HashLock, KeySet, Lock, PathList, SpendPath, UnspendableKind, Wrapper,
+    compose, presets, template_with_origins,
 };
 use md_codec::render::descriptor_to_template;
 
@@ -20,6 +20,19 @@ pub fn parse_wrapper(s: &str) -> Result<Wrapper, CliError> {
         "sh" => Ok(Wrapper::Sh),
         other => Err(CliError::Compose(format!(
             "--wrapper {other}: expected tr, wsh, sh-wsh or sh"
+        ))),
+    }
+}
+
+/// `--unspendable`'s value. Exact spellings only: a prefix or a case variant
+/// is refused rather than guessed, because the two kinds are two DIFFERENT
+/// wallets (SPEC §0b) and a silent guess picks one of them for the operator.
+pub fn parse_unspendable(s: &str) -> Result<UnspendableKind, CliError> {
+    match s {
+        "nums" => Ok(UnspendableKind::Nums),
+        "liana" => Ok(UnspendableKind::Liana),
+        other => Err(CliError::Compose(format!(
+            "--unspendable {other}: expected nums or liana"
         ))),
     }
 }
@@ -593,8 +606,14 @@ pub fn run(
     preset: Option<&str>,
     experimental: bool,
     json: bool,
+    unspendable: Option<&str>,
 ) -> Result<u8, CliError> {
     let wrapper = parse_wrapper(wrapper)?;
+    // OMITTED means NUMS, decided HERE and not by a clap default (R2 NEW-I-1).
+    let unspendable_kind = match unspendable {
+        None => UnspendableKind::Nums,
+        Some(s) => parse_unspendable(s)?,
+    };
     let (list, preset_params): (PathList, Option<PresetParams>) = match preset {
         Some(spec) => {
             let (params, list) = parse_preset(wrapper, spec)?;
@@ -608,7 +627,8 @@ pub fn run(
             (PathList { wrapper, paths }, None)
         }
     };
-    let composed = compose(&list).map_err(|e| CliError::Compose(e.to_string()))?;
+    let composed =
+        compose(&list, unspendable_kind).map_err(|e| CliError::Compose(e.to_string()))?;
     if !composed.experimental.is_empty() && !experimental {
         let mut msg = String::from("this policy needs --experimental:");
         for e in &composed.experimental {
