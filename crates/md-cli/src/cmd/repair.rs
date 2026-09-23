@@ -18,6 +18,12 @@
 //!   - 2 — atomic-fail: BCH-uncorrectable / HRP-mismatch / parse-reject;
 //!     caller's named-chunk error surfaces on stderr
 //!
+//! DIVERGENCE, not parity (F-449 stage 2 Task 2c, SPEC §8.9): `md repair`
+//! exits 5 on a corrected card whose wire version this build does not
+//! support, while `mnemonic repair` exits 2 on it until the toolkit adopts
+//! `md_codec::correct_chunks` (filed as a follow-up owned by the toolkit's
+//! post-stage-2 pin bump). The code -> meaning mapping is unchanged.
+//!
 //! Text output mirrors `mnemonic repair`'s text-form report shape (see
 //! `mnemonic-toolkit/src/cmd/repair.rs::emit_repair_text`). JSON output
 //! byte-matches the toolkit's standalone `RepairJson` schema (D27 — fields
@@ -87,6 +93,9 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
     let str_refs: Vec<&str> = strings.iter().map(String::as_str).collect();
     let (descriptor, details) = match md_codec::decode_with_correction(&str_refs) {
         Ok(t) => t,
+        Err(md_codec::Error::WireVersionMismatch { got }) => {
+            return corrected_but_unsupported(&strings, &str_refs, got, args.json);
+        }
         Err(e) => {
             // Surface the codec error on stderr (with the chunk_index
             // named when present). NO stdout output per D28.
@@ -95,25 +104,7 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
         }
     };
 
-    // Reconstruct per-chunk corrected output + the (was, now) char view.
-    // `details` is aggregated across all chunks; group by chunk_index.
-    let mut reports: Vec<RepairDetail> = Vec::with_capacity(strings.len());
-    for (idx, original) in strings.iter().enumerate() {
-        let mut positions: Vec<(usize, char, char)> = details
-            .iter()
-            .filter(|d| d.chunk_index == idx)
-            .map(|d| (d.position, d.was, d.now))
-            .collect();
-        positions.sort_by_key(|(p, _, _)| *p);
-        let corrected = apply_corrections(original, &positions);
-        reports.push(RepairDetail {
-            chunk_index: idx,
-            original_chunk: original.clone(),
-            corrected_chunk: corrected,
-            corrected_positions: positions,
-        });
-    }
-
+    let reports = build_reports(&strings, &details);
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
     let corrected_chunks: Vec<String> = reports.iter().map(|r| r.corrected_chunk.clone()).collect();
 
@@ -134,6 +125,90 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
     };
     crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
     Ok(if any_correction { 5 } else { 0 })
+}
+
+/// Reconstruct per-chunk corrected output + the (was, now) char view.
+/// `details` is aggregated across all chunks; group by chunk_index.
+fn build_reports(strings: &[String], details: &[md_codec::CorrectionDetail]) -> Vec<RepairDetail> {
+    let mut reports: Vec<RepairDetail> = Vec::with_capacity(strings.len());
+    for (idx, original) in strings.iter().enumerate() {
+        let mut positions: Vec<(usize, char, char)> = details
+            .iter()
+            .filter(|d| d.chunk_index == idx)
+            .map(|d| (d.position, d.was, d.now))
+            .collect();
+        positions.sort_by_key(|(p, _, _)| *p);
+        let corrected = apply_corrections(original, &positions);
+        reports.push(RepairDetail {
+            chunk_index: idx,
+            original_chunk: original.clone(),
+            corrected_chunk: corrected,
+            corrected_positions: positions,
+        });
+    }
+    reports
+}
+
+/// F-449 stage 2 Task 2c (SPEC §8.9's stage-2 row): the decode refused the
+/// card's WIRE VERSION, but BCH correction is version-agnostic and may have
+/// repaired it. Keep that correction rather than discard it.
+///
+/// - Corrections found → emit the ordinary text/JSON report (D27 shape; it
+///   needs no descriptor) and exit **5**: a correction WAS applied, 5 is
+///   already distinct from 2, and no code is minted. D28 holds: this is not
+///   the atomic-fail case, and stdout carries complete, BCH-valid strings.
+///   **No output-class advisory** -- there is no `Descriptor` to classify,
+///   and guessing is the L4 mislabel.
+/// - No corrections, or correction itself fails → today's behaviour exactly:
+///   the codec error on stderr, empty stdout, exit **2**. Never the success
+///   path's `any_correction ? 5 : 0` (R3 M-6): a CLEAN card at an
+///   unsupported version is not "already valid".
+fn corrected_but_unsupported(
+    strings: &[String],
+    str_refs: &[&str],
+    got: u8,
+    json: bool,
+) -> Result<u8, CliError> {
+    let details = match md_codec::correct_chunks(str_refs) {
+        Ok((_, details)) if !details.is_empty() => details,
+        _ => {
+            eprintln!(
+                "md: repair: {}",
+                md_codec::Error::WireVersionMismatch { got }
+            );
+            return Ok(2);
+        }
+    };
+    let reports = build_reports(strings, &details);
+    let corrected_chunks: Vec<String> = reports.iter().map(|r| r.corrected_chunk.clone()).collect();
+    if json {
+        emit_json(&corrected_chunks, &reports)?;
+    } else {
+        emit_text(&corrected_chunks, &reports);
+    }
+    let accepted: Vec<String> = (0..=u8::MAX)
+        .filter(|v| md_codec::header::Header::is_supported_version(*v))
+        .map(|v| v.to_string())
+        .collect();
+    eprintln!(
+        "md: repair: corrected, but this build cannot read wire version {got} (accepted: {})",
+        accepted.join(", ")
+    );
+    // Worded on `got` (R4 M-1): pre-v0.30 cards share the HRP and
+    // `MD_REGULAR_CONST`, so they pass BCH and land here too, and no newer md
+    // reads version 0 or 2. Wire versions have been even since v0.30.
+    let newest = md_codec::header::Header::WF_UNSPENDABLE_VERSION;
+    if got % 2 == 0 && got > newest {
+        eprintln!(
+            "md: repair: take the corrected card to a newer md, which may read wire version {got}"
+        );
+    } else {
+        eprintln!(
+            "md: repair: this looks like a pre-v0.30 or misread card; no md release reads wire \
+             version {got}"
+        );
+    }
+    Ok(5)
 }
 
 /// Apply the (position, was, now) corrections to an md1 chunk string,

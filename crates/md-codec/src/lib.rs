@@ -48,8 +48,8 @@ pub mod varint;
 
 pub use canonicalize::canonicalize_placeholder_indices;
 pub use chunk::{
-    ChunkHeader, CorrectionDetail, decode_with_correction, derive_chunk_set_id, reassemble,
-    reassemble_with_opts, split,
+    ChunkHeader, CorrectionDetail, correct_chunks, decode_with_correction, derive_chunk_set_id,
+    reassemble, reassemble_with_opts, split,
 };
 pub use decode::{
     DecodeOpts, decode_md1_string, decode_md1_string_with_opts, decode_payload,
