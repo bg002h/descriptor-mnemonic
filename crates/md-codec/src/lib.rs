@@ -21,6 +21,7 @@ pub mod canonicalize;
 pub mod chunk;
 pub mod codex32;
 pub mod compose;
+pub mod coordinator;
 pub mod decode;
 pub mod derive;
 #[cfg(feature = "derive")]
