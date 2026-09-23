@@ -269,7 +269,21 @@ fn parse_descriptor(s: &str) -> Result<Descriptor<DescriptorPublicKey>, CliError
 /// NOT cover the pairwise-distinctness rule here: measured 2026-08-30, the same xpub under two
 /// different origins returns `Ok(())` because the two `DescriptorPublicKey`
 /// values differ. The check is md's own.
-fn check_no_repeated_key(occ: &[Occurrence]) -> Result<(), CliError> {
+///
+/// **F-636: the recognised Liana internal key, repeated.** When the repeated
+/// key is the one `walk::liana_internal_key_match` just recognised
+/// (`liana_internal_key`, compared by rendered text exactly as the caller's
+/// `retain` does), the generic messages name the wrong thing -- the disjoint
+/// one blames md's own template limit, which invites reproducing the wallet
+/// in another tool. The real problem is that a provably-unspendable key sits
+/// at a SPENDING leaf, which no implementation can ever satisfy. That group
+/// gets its own message; every other repeated-key shape keeps its message.
+/// The refusal SET is unchanged: every such group was already refused by one
+/// of the branches below.
+fn check_no_repeated_key(
+    occ: &[Occurrence],
+    liana_internal_key: Option<&str>,
+) -> Result<(), CliError> {
     let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (n, o) in occ.iter().enumerate() {
         groups.entry(o.xpub.to_string()).or_default().push(n);
@@ -279,6 +293,36 @@ fn check_no_repeated_key(occ: &[Occurrence]) -> Result<(), CliError> {
             continue;
         }
         let short = format!("{}…{}", &xpub[..12], &xpub[xpub.len() - 8..]);
+
+        if let Some(ik) = liana_internal_key {
+            if idxs.iter().any(|i| occ[*i].display == ik) {
+                let leaves: Vec<&str> = idxs
+                    .iter()
+                    .filter(|i| occ[**i].display != ik)
+                    .map(|i| occ[*i].use_site.as_str())
+                    .collect();
+                let overlaps = idxs.iter().enumerate().any(|(a, i)| {
+                    idxs.iter()
+                        .skip(a + 1)
+                        .any(|j| !occ[*i].paths.is_disjoint(&occ[*j].paths))
+                });
+                let bip = if overlaps {
+                    " It also repeats one key expression at the same derivation paths, which BIP \
+                     388 forbids outright."
+                } else {
+                    ""
+                };
+                return Err(CliError::Decompose(format!(
+                    "this descriptor's taproot internal key {short} is Liana's provably \
+                     unspendable internal key for this wallet (SPEC §2: the BIP-341 NUMS point, \
+                     with a chain code derived from the leaf keys), and it is ALSO used as a key \
+                     in a spending leaf (at {}). Nobody holds its private key, so that leaf can \
+                     never be satisfied -- by md or by any other wallet.{bip} Refused: remove \
+                     that leaf, or put a real cosigner's key in it.",
+                    leaves.join(", ")
+                )));
+            }
+        }
         let records: Vec<&str> = idxs.iter().map(|i| occ[*i].record.as_str()).collect();
         let distinct: std::collections::BTreeSet<&str> = records.iter().copied().collect();
 
@@ -462,7 +506,7 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
     // to catch. Refuse repeats BEFORE numbering too: `order_by_appearance`
     // locates each key expression by its rendering, which is unambiguous
     // only once every expression is unique.
-    check_no_repeated_key(&occurrences)?;
+    check_no_repeated_key(&occurrences, liana_internal_key.as_deref())?;
     if let Some(marker_key) = &liana_internal_key {
         occurrences.retain(|o| &o.display != marker_key);
     }

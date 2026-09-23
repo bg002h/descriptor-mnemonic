@@ -1100,36 +1100,65 @@ fn liana_synthetic_internal_key_hex() -> &'static str {
 
 /// I-1 fix (whole-branch review, Important): `UNSPENDABLE(liana)` is
 /// meaningful ONLY as a `tr()` descriptor's own internal key — the FIRST
-/// argument, immediately after `tr(`. Refuses every occurrence that is not
-/// at that exact position, BEFORE `substitute_synthetic`'s text-replace ever
-/// runs (which has no notion of position and would otherwise rewrite a
-/// misplaced marker into the same synthetic hex as a genuine one, reaching
+/// argument of the root `tr(`. Refuses every occurrence that is not at that
+/// exact position, BEFORE `substitute_synthetic`'s text-replace ever runs
+/// (which has no notion of position and would otherwise rewrite a misplaced
+/// marker into the same synthetic hex as a genuine one, reaching
 /// `lookup_key` downstream and leaking the internal key-map-miss message).
 ///
-/// **Why "immediately after a literal `tr(`" is a SOUND position check, not
-/// a heuristic.** `tr()` cannot nest — BIP-386 forbids a second taproot
-/// output inside another descriptor, and `Descriptor::from_str` itself
-/// refuses `wsh(tr(...))`/`sh(tr(...))`-shaped text as a parse error before
-/// this crate ever sees it (measured) — so any text that could go on to
-/// parse successfully contains the literal substring `"tr("` AT MOST ONCE,
-/// and that one occurrence is always the outermost wrapper's own opening
-/// paren, immediately followed by its internal key. A marker occurrence NOT
-/// immediately preceded by `"tr("` therefore cannot be at the internal-key
-/// position in any input this function will ever see succeed downstream.
+/// **STRUCTURAL, not textual (F-641, F-449 stage 2).** The first version
+/// asked whether the three bytes before the marker were `tr(`, and that is a
+/// question about text: `wsh(tr(MARKER,…))` (a NESTED `tr`) and
+/// `xtr(MARKER,…)` (any identifier ENDING in `tr`) both answered yes, and
+/// then failed downstream naming the 64-hex synthetic key the operator never
+/// wrote. The structure consulted now is rust-miniscript's own expression
+/// tree (`miniscript::expression::Tree`, the parser `Descriptor::from_str`
+/// itself builds on, already used by the `--experimental` path below): every
+/// occurrence of the marker text must be a WHOLE marker node, that node must
+/// BE the root node's first child, and the root node's name must be exactly
+/// `tr`. Nodes are identified by their byte position in the parsed text, so
+/// a second marker elsewhere cannot borrow the first one's legitimacy, and a
+/// marker embedded in a longer token is not a node at all.
+///
+/// If the text does not parse as an expression tree at all, that parse
+/// error is the refusal -- it names the operator's own text, and the
+/// downstream `Descriptor::from_str` runs the same parser over the same
+/// structure (substitution changes no parenthesis, brace or comma), so no
+/// input that could have succeeded is refused here.
 fn validate_marker_position(template: &str) -> Result<(), CliError> {
     let marker = md_codec::nums::LIANA_UNSPENDABLE_MARKER;
+    if !template.contains(marker) {
+        return Ok(());
+    }
+    let tree = miniscript::expression::Tree::from_str(template)
+        .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+    let root = tree.root();
+    let (marker_name, marker_arg) = marker
+        .strip_suffix(')')
+        .and_then(|m| m.split_once('('))
+        .expect("LIANA_UNSPENDABLE_MARKER is `NAME(arg)`");
+    // Byte positions (`name_pos` is a byte offset into `template`) of every
+    // node that IS the marker: named `UNSPENDABLE` with the one child `liana`.
+    let marker_nodes: std::collections::BTreeSet<usize> = root
+        .pre_order_iter()
+        .filter(|n| {
+            n.name() == marker_name
+                && n.n_children() == 1
+                && n.first_child().map(|c| c.name()) == Some(marker_arg)
+        })
+        .map(|n| n.name_pos())
+        .collect();
+    // The one legitimate position: the root node's first child, when the
+    // root node is named exactly `tr`.
+    let allowed = (root.name() == "tr")
+        .then(|| root.first_child().map(|c| c.name_pos()))
+        .flatten();
+    // Every TEXTUAL occurrence must be a whole marker node AT that position.
+    // Checking nodes alone would miss a marker embedded in a larger token
+    // (`pk(xUNSPENDABLE(liana))` parses as a node named `xUNSPENDABLE`),
+    // which `substitute_synthetic`'s `str::replace` would still rewrite.
     for (pos, _) in template.match_indices(marker) {
-        // `get`, not a bare index: `template[pos - 3..pos]` PANICS when
-        // `pos - 3` lands inside a multi-byte character, and a descriptor
-        // pasted from a document or chat routinely carries one (NBSP, an em
-        // dash, a smart quote, an accented letter, an emoji). That panic
-        // printed an internal source path and exited 101 where the base
-        // binary gave a clean exit-1 parse error. `get` returns None on a
-        // non-boundary slice, which is the right answer anyway: a marker
-        // preceded by part of a multi-byte character is definitionally not
-        // preceded by `tr(`, so it is misplaced and gets the clean refusal.
-        let preceded_by_tr_open = pos >= 3 && template.get(pos - 3..pos) == Some("tr(");
-        if !preceded_by_tr_open {
+        if !marker_nodes.contains(&pos) || Some(pos) != allowed {
             return Err(CliError::TemplateParse(format!(
                 "`{marker}` is meaningful only as a tr() descriptor's own internal key — the \
                  FIRST argument, immediately after `tr(` — but it appears somewhere else here \
@@ -1168,10 +1197,23 @@ fn substitute_synthetic(
     // synthetic x-only hex above BEFORE the @i pass below — the two cannot
     // collide (the @i regex only matches `@\d`) — so `Descriptor::from_str`
     // accepts the internal-key position at all.
-    let marker_substituted = desugared.replace(
+    let has_marker = desugared.contains(md_codec::nums::LIANA_UNSPENDABLE_MARKER);
+    let mut marker_substituted = desugared.replace(
         md_codec::nums::LIANA_UNSPENDABLE_MARKER,
         liana_synthetic_internal_key_hex(),
     );
+    // Whole-branch review M-5 (controller ruling): a checksum on a MARKER
+    // template is verified over the text the operator WROTE -- that already
+    // happened, in `validate_marker_position`'s expression-tree parse just
+    // above. After the substitution the checksum describes text that no
+    // longer exists, so it is dropped here rather than re-checked by
+    // `Descriptor::from_str` against the synthetic hex, whose "expected"
+    // value would name text the operator never wrote (F-641's class).
+    if has_marker {
+        if let Some((body, _checksum)) = marker_substituted.rsplit_once('#') {
+            marker_substituted = body.to_string();
+        }
+    }
     let template: &str = &marker_substituted;
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {

@@ -42,12 +42,20 @@ pub struct Case {
 }
 
 pub fn case(name: &str) -> Case {
-    let raw = include_str!("../../md-codec/tests/fixtures/liana/cases.json");
-    serde_json::from_str::<Vec<Case>>(raw)
-        .expect("cases.json")
+    all_cases()
         .into_iter()
         .find(|c| c.name == name)
         .unwrap_or_else(|| panic!("no vendored case {name}"))
+}
+
+/// Every vendored case, in file order. F-449 stage 2 Task 4 derives its
+/// counts from this rather than writing "four" or "24" down (R1 I-e): the
+/// corpus grows (Task 5 adds a nested ACCEPT) and a hardcoded count is what
+/// breaks, or worse, keeps passing over a shrunken corpus.
+#[allow(dead_code)]
+pub fn all_cases() -> Vec<Case> {
+    let raw = include_str!("../../md-codec/tests/fixtures/liana/cases.json");
+    serde_json::from_str::<Vec<Case>>(raw).expect("cases.json")
 }
 
 /// A real `tr` whose internal key is a SPENDABLE xpub with NO recorded

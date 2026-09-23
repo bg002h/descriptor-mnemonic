@@ -7,8 +7,8 @@
 
 use crate::error::CliError;
 use md_codec::compose::{
-    Experimental, HashKind, HashLock, KeySet, Lock, PathList, SpendPath, Wrapper, compose, presets,
-    template_with_origins,
+    Experimental, HashKind, HashLock, KeySet, Lock, PathList, SpendPath, UnspendableKind, Wrapper,
+    compose, presets, template_with_origins,
 };
 use md_codec::render::descriptor_to_template;
 
@@ -20,6 +20,19 @@ pub fn parse_wrapper(s: &str) -> Result<Wrapper, CliError> {
         "sh" => Ok(Wrapper::Sh),
         other => Err(CliError::Compose(format!(
             "--wrapper {other}: expected tr, wsh, sh-wsh or sh"
+        ))),
+    }
+}
+
+/// `--unspendable`'s value. Exact spellings only: a prefix or a case variant
+/// is refused rather than guessed, because the two kinds are two DIFFERENT
+/// wallets (SPEC §0b) and a silent guess picks one of them for the operator.
+pub fn parse_unspendable(s: &str) -> Result<UnspendableKind, CliError> {
+    match s {
+        "nums" => Ok(UnspendableKind::Nums),
+        "liana" => Ok(UnspendableKind::Liana),
+        other => Err(CliError::Compose(format!(
+            "--unspendable {other}: expected nums or liana"
         ))),
     }
 }
@@ -586,6 +599,74 @@ fn describe(e: &Experimental) -> String {
     }
 }
 
+/// F-449 stage 2 Task 2: what `--unspendable liana` does when it cannot yield
+/// an importable wallet. Called ONLY under that flag -- gate every new
+/// refusal on the FLAG, never on the shape, or the default compose of these
+/// same shapes (and the vendored vectors) goes red.
+///
+/// Split by AUTHORITY (R0 C-1/I-6):
+/// - **SPEC §6 is md's own rule → REFUSE**, through the same
+///   `validate_unspendable_shape` `md encode` runs, so its message is not
+///   re-worded here. Not a second implementation: one home, two callers --
+///   the F-600 read-back's argument in `run`. `md encode` refusing LATER is
+///   not enough, because `md descriptor` shares compose's parse path and
+///   would render the refused shape into a concrete, fundable descriptor.
+/// - **md-legal but outside Liana's policy model → WARN.** md does not own
+///   Liana's policy model (SPEC §0a); refusing a wallet md's rules admit
+///   would hard-code one coordinator into md's lowering. Keyed on the
+///   composed SHAPE, never the preset name (R1 I-f): a `--path`-built
+///   equivalent must warn too. Evidence for both halves: Liana v15.0
+///   refused `preset-hashlock-gated-tr` and `preset-decaying-multisig-tr`
+///   (md-codec `tests/fixtures/liana/cases.json`, `accepted: false`).
+/// - **SPEC §6 row 3 → WARN**: a real internal key was extracted, so there
+///   is no unspendable key to choose. The codec signals
+///   (`Composed::unspendable_request_unmet`); this prints.
+///
+/// The "no unlocked path" half requires NO real internal key (R2 M-i): a
+/// real key path IS an unlocked path, which makes this half exclusive with
+/// the row-3 warning, so the canonical unlocked-primary +
+/// timelocked-recovery shape prints one warning, not two. MEASURED, the
+/// `internal_key_path.is_none()` conjunct is REDUNDANT with the walk:
+/// `policy_shape` already pushes a real internal key as its own unlocked
+/// `Branch` first (`policy_shape.rs`, "the key path as path 0", fix round 1
+/// I-5) -- the plan's premise that `branches` holds tapscript leaves only is
+/// not true of this codec. The conjunct stays as the stated rule, so the
+/// exclusivity does not rest on a walk detail two layers away; deleting it
+/// is semantically inert today, and a mutation test cannot see it. The
+/// hashlock half does not require it (R3 M-5): Liana declines a hashlock
+/// leaf whatever the key path holds.
+fn liana_refuse_or_warn(composed: &md_codec::compose::Composed) -> Result<(), CliError> {
+    md_codec::validate::validate_unspendable_shape(&composed.descriptor)
+        .map_err(CliError::Codec)?;
+    let shape = md_codec::policy_shape::policy_shape(&composed.descriptor);
+    let mut reasons: Vec<&str> = Vec::new();
+    if shape.branches.iter().any(|b| !b.hashlocks.is_empty()) {
+        reasons.push("a path carries a hashlock, which Liana's spending policy has no place for");
+    }
+    if composed.internal_key_path.is_none() && shape.branches.iter().all(|b| !b.locks.is_empty()) {
+        reasons.push(
+            "every path is timelocked, and Liana needs one primary path that spends without a timelock",
+        );
+    }
+    if !reasons.is_empty() {
+        eprintln!(
+            "warning: --unspendable liana: Liana is not expected to import this wallet: {}. \
+             md composes it anyway -- it is a valid md wallet -- but it is not a Liana wallet.",
+            reasons.join("; and ")
+        );
+    }
+    if composed.unspendable_request_unmet {
+        let path = composed.internal_key_path.map_or(0, |i| i + 1);
+        eprintln!(
+            "warning: --unspendable liana has no effect: path {path} is a bare single key, so it \
+             became the taproot internal key -- a real, spendable key path -- and there is no \
+             unspendable internal key to choose. The wallet is exactly what omitting the flag \
+             composes."
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     wrapper: &str,
@@ -593,8 +674,28 @@ pub fn run(
     preset: Option<&str>,
     experimental: bool,
     json: bool,
+    unspendable: Option<&str>,
 ) -> Result<u8, CliError> {
     let wrapper = parse_wrapper(wrapper)?;
+    // F-449 stage 2 Task 1b, RULING (R2 NEW-I-1): the refusal is on the FLAG,
+    // not on its value. Only `tr` has an internal key, so under any other
+    // wrapper `--unspendable` -- `nums` included -- cannot affect the output,
+    // and a flag that cannot affect the output is refused, not quietly
+    // honoured. Omitting the flag is what stays exit 0 everywhere (`run`'s
+    // parameter is `Option`, never a clap default, for exactly this reason).
+    if unspendable.is_some() && wrapper != Wrapper::Tr {
+        return Err(CliError::Compose(format!(
+            "--unspendable: --wrapper {} has no taproot internal key to choose; an \
+             unspendable internal key is a taproot concept. Use --wrapper tr, or omit \
+             --unspendable.",
+            wrapper_name(wrapper)
+        )));
+    }
+    // OMITTED means NUMS, decided HERE and not by a clap default (R2 NEW-I-1).
+    let unspendable_kind = match unspendable {
+        None => UnspendableKind::Nums,
+        Some(s) => parse_unspendable(s)?,
+    };
     let (list, preset_params): (PathList, Option<PresetParams>) = match preset {
         Some(spec) => {
             let (params, list) = parse_preset(wrapper, spec)?;
@@ -608,7 +709,11 @@ pub fn run(
             (PathList { wrapper, paths }, None)
         }
     };
-    let composed = compose(&list).map_err(|e| CliError::Compose(e.to_string()))?;
+    let composed =
+        compose(&list, unspendable_kind).map_err(|e| CliError::Compose(e.to_string()))?;
+    if unspendable_kind == UnspendableKind::Liana {
+        liana_refuse_or_warn(&composed)?;
+    }
     if !composed.experimental.is_empty() && !experimental {
         let mut msg = String::from("this policy needs --experimental:");
         for e in &composed.experimental {
@@ -730,7 +835,7 @@ pub fn run(
             .map(experimental_json)
             .collect();
         let preset_json = preset_params.as_ref().map(preset_params_json);
-        let v = serde_json::json!({
+        let mut v = serde_json::json!({
             "schema": SCHEMA,
             "template": template,
             "template_with_origins": with_origins,
@@ -741,6 +846,20 @@ pub fn run(
             "experimental_paths": exp_paths,
             "preset": preset_json,
         });
+        // §4a's compose half (F-449 stage 2 Task 1b): `internal_key_path:
+        // null` alone cannot tell NUMS from Liana's key. Decode's own
+        // vocabulary and presence rule (`format/json.rs`, `JsonBody::Tr`):
+        // "liana_unspendable" for wire kind 1, ABSENT for NUMS and for a real
+        // key. Read from the COMPOSED tree, not from the request, so it says
+        // what was built -- `--unspendable liana` over an extracted real key
+        // leaves it absent.
+        if let md_codec::tree::Body::Tr {
+            internal_key: md_codec::tree::InternalKey::LianaUnspendable,
+            ..
+        } = &composed.descriptor.tree.body
+        {
+            v["unspendable_kind"] = serde_json::json!("liana_unspendable");
+        }
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
         crate::output_advisory::emit_output_class_advisory(
             crate::output_advisory::OutputClass::Template,

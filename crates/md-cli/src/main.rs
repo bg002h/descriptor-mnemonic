@@ -309,6 +309,19 @@ enum Command {
         /// (with --preset) the resolved preset name and parameters.
         #[arg(long)]
         json: bool,
+        /// Which unspendable taproot internal key to use when no spend path supplies
+        /// a real one: `nums` (the BIP-341 H-point — what every release before
+        /// md-codec 0.47.0 produced, and what OMITTING this flag still produces) or
+        /// `liana` (Liana's own derived key, SPEC §2 — required for Liana to import
+        /// the wallet). Refused under `wsh`/`sh`/`sh-wsh`, where there is no taproot
+        /// internal key to choose.
+        // `Option<String>`, NOT a clap `default_value` (F-449 stage 2 plan, R2
+        // NEW-I-1): the non-`tr` refusal must tell a flag the operator typed
+        // from an omitted one, and this binary holds no `ArgMatches` to ask
+        // clap which it was. `None` maps to `UnspendableKind::Nums` at the
+        // call site.
+        #[arg(long, value_name = "KIND")]
+        unspendable: Option<String>,
     },
     /// Emit the CONCRETE output descriptor -- real keys, key origins and the
     /// BIP-380 checksum -- for pasting into a coordinator.
@@ -818,7 +831,11 @@ enum Command {
     /// Exit codes (D26 cross-CLI parity with `ms repair` / `mk repair` /
     /// `mnemonic repair`):
     ///   0 — every input was already valid (no corrections applied)
-    ///   5 — at least one chunk had corrections applied (REPAIR_APPLIED)
+    ///   5 — at least one chunk had corrections applied (REPAIR_APPLIED);
+    ///       since md-cli 0.19.0 also when a SINGLE corrected card carries a
+    ///       wire version this build cannot read — stdout is the corrected
+    ///       card, stderr names the version (`mnemonic repair` exits 2 there,
+    ///       F-642); several strings at such a version still exit 2
     ///   2 — atomic-fail per plan §1 D28: ANY chunk failing BCH capacity
     ///       fails the whole call; the failing chunk's index is named in
     ///       the stderr message and NO partial corrected output is emitted
@@ -1045,7 +1062,15 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             preset,
             experimental,
             json,
-        } => cmd::compose::run(&wrapper, &paths, preset.as_deref(), experimental, json),
+            unspendable,
+        } => cmd::compose::run(
+            &wrapper,
+            &paths,
+            preset.as_deref(),
+            experimental,
+            json,
+            unspendable.as_deref(),
+        ),
         Command::Descriptor {
             phrases,
             template,

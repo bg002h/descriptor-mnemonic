@@ -71,9 +71,25 @@ not have to be reverse-engineered from git blame.
 | `wrapper` | string — `"tr"`/`"wsh"`/`"sh-wsh"`/`"sh"` |
 | `slots` | array of `{ "index": u32, "path": usize, "ordinal": u32 }` — `path` is **0-based** |
 | `internal_key_path` | usize or `null` — taproot only |
+| `unspendable_kind` | `"liana_unspendable"` or ABSENT (not `null`) — since md-cli 0.19.0 (F-449 stage 2) |
 | `experimental` | array of string — **PROSE for humans**, byte-identical to the `warning: EXPERIMENTAL:` lines on stderr. Its path numbers count from **1**. |
 | `experimental_paths` | array of `{ "kind": "keyless_path"\|"unsorted_keys", "path": usize }` — `path` is **0-based** and joins `slots[].path` |
 | `preset` | `{ "name": string, "params": object }` or `null` — present with `--preset` |
+
+**`unspendable_kind` is compose's half of SPEC §4a's third state**, with
+decode's vocabulary and presence rule (`JsonBody::Tr` below): ABSENT for a
+real internal key (`internal_key_path` is a number) and for the BIP-341 NUMS
+H-point; `"liana_unspendable"` for Liana's derived key (`md compose
+--unspendable liana`). It is read from the composed tree, so it reports what
+was built: `--unspendable liana` on a path list whose first bare single-key
+path became the internal key leaves it absent. **`internal_key_path: null`
+alone no longer means NUMS** once `--unspendable liana` is passed. The schema
+string stays `md-cli/2`: that version was minted for SPEC §4a's third state,
+which the spec states for decode and compose together, and nothing an earlier
+compose emitted is reinterpreted — before md-cli 0.19.0 compose could not
+produce kind 1 at all, the field is absent on every object it could emit, and
+omitting the flag still produces byte-identical output. No field was removed
+or renamed.
 
 **Join on `experimental_paths[].path`, never on the numbers inside
 `experimental[]` (F-603).** The two count differently on purpose: the prose is

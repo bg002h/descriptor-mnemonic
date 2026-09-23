@@ -595,12 +595,13 @@ pub fn validate_unspendable_shape(d: &Descriptor) -> Result<(), Error> {
             }
         }
         if d.use_site_path != UseSitePath::standard_multipath() {
-            return Err(Error::UnspendableUseSiteNotCanonical);
+            return Err(Error::UnspendableUseSiteNotCanonical { idx: None });
         }
         if let Some(overrides) = &d.tlv.use_site_path_overrides {
-            for (_, usp) in overrides {
+            for (idx, usp) in overrides {
                 if *usp != UseSitePath::standard_multipath() {
-                    return Err(Error::UnspendableUseSiteNotCanonical);
+                    // F-638: name the key -- the shared field is fine here.
+                    return Err(Error::UnspendableUseSiteNotCanonical { idx: Some(*idx) });
                 }
             }
         }

@@ -653,12 +653,25 @@ pub enum Error {
     /// deriving from `0/i` while a use-site-following device derives from
     /// `2/i` — two different wallets sharing one plate. Refusing is
     /// narrower than reconciling the two conventions.
+    ///
+    /// F-638 (F-449 stage 2): `idx` names the placeholder when the divergence
+    /// is a per-key use-site OVERRIDE (`@idx` has its own path while the
+    /// shared use-site is canonical) -- otherwise the message would point
+    /// the operator at a shared field they can see is correct, with no
+    /// locator for the key that is wrong. `None` when the SHARED use-site
+    /// itself diverged. Message-only: the set of refused inputs is
+    /// unchanged.
     #[error(
         "wire kind 1 (Liana unspendable internal key) requires the canonical <0;1>/* use-site \
-         path; Liana pairs multipath alternatives positionally, so any other use-site derives a \
-         different wallet than the one this card's addresses would show"
+         path{}; Liana pairs multipath alternatives positionally, so any other use-site derives a \
+         different wallet than the one this card's addresses would show",
+        use_site_locator(*.idx)
     )]
-    UnspendableUseSiteNotCanonical,
+    UnspendableUseSiteNotCanonical {
+        /// The placeholder whose per-key override diverged, or `None` when
+        /// the shared use-site path did.
+        idx: Option<u8>,
+    },
 
     /// SPEC §6 row 4: a wire-kind-1 internal key found on a `tr()` node that
     /// is not the descriptor's own root (e.g. `wsh(tr(...))`). The internal
@@ -694,6 +707,18 @@ pub enum Error {
         /// The minimal version `Descriptor::wire_version()` computes for the tree.
         minimal: u8,
     },
+}
+
+/// `Error::UnspendableUseSiteNotCanonical`'s locator (F-638): empty for the
+/// shared use-site, a named placeholder for a per-key override.
+fn use_site_locator(idx: Option<u8>) -> String {
+    match idx {
+        None => String::new(),
+        Some(i) => format!(
+            " at every key, and @{i} carries its own different use-site path (the shared \
+             use-site is canonical; @{i}'s override is what diverged)"
+        ),
+    }
 }
 
 #[cfg(test)]

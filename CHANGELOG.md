@@ -4,6 +4,106 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.19.0] — 2026-09-23
+
+### Added
+
+- **`md compose --unspendable liana|nums` (F-449 stage 2).** Selects the
+  taproot internal key when no spend path supplies a real one: `nums` (the
+  BIP-341 H-point) or `liana` (Liana's own key, derived from the composed
+  leaf keys — required for Liana to import the wallet). **Omitting the flag
+  is byte-identical to md-cli 0.18.0** for every preset x wrapper cell that
+  composes (a committed golden generated from 0.18.0 asserts it). Values are
+  matched exactly; `Liana`, `lia` and the like are refused.
+- **`md compose --json` carries `unspendable_kind`**, compose's half of SPEC
+  §4a's third state: `"liana_unspendable"` for Liana's key, ABSENT for NUMS
+  and for a real internal key — decode's vocabulary and presence rule, read
+  from the composed tree. The schema string stays `md-cli/2`
+  (`docs/json-schema-v1.md` says why).
+
+### Changed
+
+- **`--unspendable` is refused under `wsh`, `sh` and `sh-wsh`**, for both
+  values: there is no taproot internal key to choose, and a flag that cannot
+  affect the output is refused rather than quietly honoured.
+- **`--unspendable liana` refuses a shape SPEC §6 refuses** — e.g.
+  `plain-multisig`'s `sortedmulti_a` leaf — with §6's own message, through
+  the same validator `md encode` runs. The same shape without the flag still
+  composes.
+- **`--unspendable liana` warns** (stderr, exit 0; `--json` stdout stays
+  pure JSON) when Liana is not expected to import the wallet — a hashlock
+  leaf, or no path that spends without a timelock, judged on the composed
+  shape so `--path` spellings warn too — and when a bare single-key path
+  became the real internal key, so the flag has no effect (SPEC §6 row 3).
+- **`md repair` keeps a correction on a SINGLE card (one string) whose wire
+  version this build does not support** (SPEC §8.9): it prints the
+  corrected card, names the version and the accepted set on stderr, and
+  exits **5** (REPAIR_APPLIED) instead of discarding the correction at exit
+  2. A clean card at such a version still exits 2. **Limitation: a
+  multi-string call that fails on the wire version still exits 2 with empty
+  stdout, as in 0.18.0**, even for a genuine multi-chunk set: a build cannot
+  read the chunk-header layout of a version it does not support, so it
+  cannot tell one card's chunks from mixed or unrelated strings (which
+  would otherwise be reported as a "version" no card has). **This diverges from `mnemonic repair`**, which
+  exits 2 on the same card until the toolkit adopts `md_codec::correct_chunks`;
+  the exit-code meanings shared by the four repair CLIs are unchanged.
+- **`md verify` no longer applies mint-time admission policy** (F-639). It
+  compares a card's serialisation against a template's and mints nothing, so
+  a card that decodes but that `md encode` would refuse today (an F-217
+  origin/key contradiction, an F-218 duplicate slot, a SPEC §6 kind-1 shape)
+  is now CHECKED -- match or mismatch -- instead of refused with a mint error.
+  Structural errors still surface.
+- **A checksum on a template with `UNSPENDABLE(liana)` is checked over the
+  text the operator wrote** (`tr(UNSPENDABLE(liana),pk(@0/<0;1>/*))#vexl6448`
+  encodes). 0.18.0 checked it only over the substituted synthetic key's text,
+  which no operator writes and no md output ever emitted; that checksum is
+  now refused, with the error naming the checksum of the marker text.
+
+- **Three refusals now name the right thing** (F-636, F-638, F-641; each
+  refuses exactly what it refused before): `md decompose` says a reused
+  Liana internal key sits at a spending leaf that can never be satisfied,
+  instead of blaming md's template limit; the non-canonical use-site refusal
+  names the `@N` whose override diverged; and a misplaced
+  `UNSPENDABLE(liana)` under a nested or look-alike `tr` gets the marker
+  refusal instead of an error naming a synthetic key.
+
+### Fixed
+
+- **`md repair` corrects an all-uppercase card in uppercase.** It wrote the
+  corrected character in lowercase, producing a mixed-case string md refuses
+  to read (BIP-173) -- on the QR alphanumeric form of a card. Pre-existing
+  in 0.18.0.
+
+## md-codec [0.47.0] — 2026-09-23
+
+### Added
+
+- **`compose::UnspendableKind { Nums (default), Liana }`**, the request that
+  selects the unspendable internal key at the one decision site in `tr`
+  lowering. `compose::compose` and `compose::compose_with` take it as a new
+  final parameter (**breaking**; pass `UnspendableKind::Nums` for the
+  previous behaviour, byte-identical).
+- **`Composed::unspendable_request_unmet`**: `true` when `Liana` was
+  requested and a real internal key was extracted instead (SPEC §6 row 3).
+- **`correct_chunks(&[&str]) -> Result<(Vec<String>, Vec<CorrectionDetail>),
+  Error>`**, the BCH-correction half of `decode_with_correction`, which now
+  calls it; `decode_with_correction`'s signature, errors and order are
+  unchanged. Lets a caller keep a correction on a card whose wire version it
+  cannot decode.
+- **`encode_payload_unadmitted(&Descriptor)`**: the same bytes as
+  `encode_payload`, with no mint-time admission policy applied -- for
+  COMPARISON and HASHING of existing cards, never for minting. `md verify`
+  uses it (F-639). `encode_payload` and `Error` are unchanged by it.
+- **The nested taptree Liana v15.0 accepts** is vectored in
+  `tests/fixtures/liana/cases.json` (`nested-2of2-two-recoveries-tr`, F-640).
+
+### Changed
+
+- **`Error::UnspendableUseSiteNotCanonical` gains `idx: Option<u8>`**
+  (**breaking** for exhaustive matches): the placeholder whose per-key
+  use-site override diverged, `None` when the shared use-site did. The
+  refused inputs are unchanged.
+
 ## md-cli [0.18.0] — 2026-09-22
 
 ### Added

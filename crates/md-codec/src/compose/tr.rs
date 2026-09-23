@@ -1,8 +1,9 @@
 //! Taproot lowering (spec §5, tr rows; C17, C18, M1): internal-key extraction,
-//! the right spine in listed order, NUMS when no key is extracted.
+//! the right spine in listed order, and an unspendable internal key (NUMS or
+//! Liana's, per [`UnspendableKind`]) when no key is extracted.
 
 use super::lowering::{Numbered, experimental, finish, number, path_body};
-use super::{ComposeError, Composed, PathList, SlotOrigin, SpendPath};
+use super::{ComposeError, Composed, PathList, SlotOrigin, SpendPath, UnspendableKind};
 use crate::tag::Tag;
 use crate::tree::{Body, InternalKey, Node};
 
@@ -27,6 +28,7 @@ fn spine(mut leaves: Vec<Node>) -> Option<Box<Node>> {
 pub(super) fn lower_tr(
     list: &PathList,
     declared: &[Option<SlotOrigin>],
+    unspendable: UnspendableKind,
 ) -> Result<Composed, ComposeError> {
     let ik = internal_key_path(list);
     let (numbered, slots) = number(list, ik);
@@ -44,7 +46,12 @@ pub(super) fn lower_tr(
         body: Body::Tr {
             internal_key: match ik {
                 Some(_) => InternalKey::Slot(0), // numbering assigns @0; see number()
-                None => InternalKey::NumsPoint,
+                // THE ONE DECISION SITE (F-449 stage 2): no path supplies a
+                // real key, so the request selects which unspendable key.
+                None => match unspendable {
+                    UnspendableKind::Nums => InternalKey::NumsPoint,
+                    UnspendableKind::Liana => InternalKey::LianaUnspendable,
+                },
             },
             tree: spine(leaves),
         },

@@ -4,7 +4,7 @@ use crate::parse::path::apply_path_override;
 use crate::parse::template::{ctx_for_template, parse_template_ext};
 use md_codec::chunk::reassemble;
 use md_codec::decode::decode_md1_string;
-use md_codec::encode::encode_payload;
+use md_codec::encode::encode_payload_unadmitted;
 
 pub struct VerifyArgs<'a> {
     pub strings: &'a [String],
@@ -59,8 +59,14 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
     // Mirrors `md encode --path`; see cmd/address.rs for why a verify without it
     // cannot reach a non-canonical wrapper at all.
     apply_path_override(&mut expected, args.path)?;
-    let (decoded_bytes, decoded_bits) = encode_payload(&decoded)?;
-    let (expected_bytes, expected_bits) = encode_payload(&expected)?;
+    // F-639 (F-449 stage 2): verify COMPARES two serialisations and mints
+    // nothing, so neither side goes through mint-time admission policy --
+    // the comment above says the same of the parse. A mint rule must never
+    // decide whether an engraved card can be checked (the 2026-09-19 class,
+    // `md_codec::encode::encode_payload_for_identity`). Structural errors
+    // still surface: they come from the writers, not the policy.
+    let (decoded_bytes, decoded_bits) = encode_payload_unadmitted(&decoded)?;
+    let (expected_bytes, expected_bits) = encode_payload_unadmitted(&expected)?;
     if decoded_bytes != expected_bytes || decoded_bits != expected_bits {
         // F-582: the message named two numbers and no cause, and the most
         // common cause is a flag the operator simply did not repeat.
