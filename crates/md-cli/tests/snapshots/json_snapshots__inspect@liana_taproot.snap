@@ -1,0 +1,69 @@
+---
+source: crates/md-cli/tests/json_snapshots.rs
+expression: body
+---
+{
+  "descriptor": {
+    "n": 3,
+    "path_decl": {
+      "data": "m/48'/0'/0'/2'",
+      "tag": "Shared"
+    },
+    "tlv": {
+      "fingerprints": null,
+      "origin_path_overrides": null,
+      "pubkeys": null,
+      "unknown": [],
+      "use_site_path_overrides": null
+    },
+    "tree": {
+      "body": {
+        "data": {
+          "is_nums": true,
+          "key_index": 0,
+          "tree": {
+            "body": {
+              "data": {
+                "indices": [
+                  0,
+                  1,
+                  2
+                ],
+                "k": 2
+              },
+              "kind": "MultiKeys"
+            },
+            "tag": "MultiA"
+          },
+          "unspendable_kind": "liana_unspendable"
+        },
+        "kind": "Tr"
+      },
+      "tag": "Tr"
+    },
+    "use_site_path": {
+      "multipath": [
+        {
+          "hardened": false,
+          "value": 0
+        },
+        {
+          "hardened": false,
+          "value": 1
+        }
+      ],
+      "wildcard_hardened": false
+    }
+  },
+  "md1_encoding_id": {
+    "hex": "09237a05997aaa16e1cb57a361d0ff61"
+  },
+  "schema": "md-cli/2",
+  "wallet_descriptor_template_id": {
+    "hex": "f56e7914bc65640d5cd1d9c80f31cb93"
+  },
+  "wallet_policy_id": {
+    "fingerprint": "0xa2d6a0f6",
+    "hex": "a2d6a0f6a82ac162594c39db8a21566d"
+  }
+}
