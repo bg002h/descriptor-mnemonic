@@ -609,6 +609,20 @@ pub fn run(
     unspendable: Option<&str>,
 ) -> Result<u8, CliError> {
     let wrapper = parse_wrapper(wrapper)?;
+    // F-449 stage 2 Task 1b, RULING (R2 NEW-I-1): the refusal is on the FLAG,
+    // not on its value. Only `tr` has an internal key, so under any other
+    // wrapper `--unspendable` -- `nums` included -- cannot affect the output,
+    // and a flag that cannot affect the output is refused, not quietly
+    // honoured. Omitting the flag is what stays exit 0 everywhere (`run`'s
+    // parameter is `Option`, never a clap default, for exactly this reason).
+    if unspendable.is_some() && wrapper != Wrapper::Tr {
+        return Err(CliError::Compose(format!(
+            "--unspendable: --wrapper {} has no taproot internal key to choose; an \
+             unspendable internal key is a taproot concept. Use --wrapper tr, or omit \
+             --unspendable.",
+            wrapper_name(wrapper)
+        )));
+    }
     // OMITTED means NUMS, decided HERE and not by a clap default (R2 NEW-I-1).
     let unspendable_kind = match unspendable {
         None => UnspendableKind::Nums,
@@ -750,7 +764,7 @@ pub fn run(
             .map(experimental_json)
             .collect();
         let preset_json = preset_params.as_ref().map(preset_params_json);
-        let v = serde_json::json!({
+        let mut v = serde_json::json!({
             "schema": SCHEMA,
             "template": template,
             "template_with_origins": with_origins,
@@ -761,6 +775,20 @@ pub fn run(
             "experimental_paths": exp_paths,
             "preset": preset_json,
         });
+        // §4a's compose half (F-449 stage 2 Task 1b): `internal_key_path:
+        // null` alone cannot tell NUMS from Liana's key. Decode's own
+        // vocabulary and presence rule (`format/json.rs`, `JsonBody::Tr`):
+        // "liana_unspendable" for wire kind 1, ABSENT for NUMS and for a real
+        // key. Read from the COMPOSED tree, not from the request, so it says
+        // what was built -- `--unspendable liana` over an extracted real key
+        // leaves it absent.
+        if let md_codec::tree::Body::Tr {
+            internal_key: md_codec::tree::InternalKey::LianaUnspendable,
+            ..
+        } = &composed.descriptor.tree.body
+        {
+            v["unspendable_kind"] = serde_json::json!("liana_unspendable");
+        }
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
         crate::output_advisory::emit_output_class_advisory(
             crate::output_advisory::OutputClass::Template,

@@ -154,3 +154,117 @@ fn liana_changes_the_internal_key_and_nothing_else() {
         "the flag changed more than the internal key"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 1b: the flag must not be a silent no-op anywhere it cannot apply.
+// ---------------------------------------------------------------------------
+
+/// The one preset per wrapper that composes there at exit 0 (R3 N-2: under
+/// `sh`/`sh-wsh` only `plain-multisig` does). `tr` uses `kofn-recovery`,
+/// which `liana` can actually apply to (Task 2 refuses `plain-multisig`'s
+/// `sortedmulti_a` leaf under kind 1).
+const WRAPPER_PRESETS: [(&str, &str); 4] = [
+    ("tr", "kofn-recovery,2of3,older=26280"),
+    ("wsh", "plain-multisig,2of3"),
+    ("sh-wsh", "plain-multisig,2of3"),
+    ("sh", "plain-multisig,2of3"),
+];
+
+/// RULING (R2 NEW-I-1): the refusal is on the FLAG, not on its value.
+/// `--unspendable nums --wrapper wsh` is refused too -- a flag that cannot
+/// affect the output is refused, not quietly honoured -- and the FLAGLESS
+/// invocation must still exit 0 under every wrapper, which is what catches
+/// a refusal gated on the wrong thing.
+#[test]
+fn unspendable_is_refused_under_every_non_tr_wrapper_and_only_there() {
+    for (wrapper, preset) in WRAPPER_PRESETS {
+        let base = ["compose", "--wrapper", wrapper, "--preset", preset];
+        let (out, err, code) = md(&base);
+        assert_eq!(code, 0, "flagless --wrapper {wrapper}: {err}");
+        assert!(
+            !out.is_empty(),
+            "flagless --wrapper {wrapper} printed nothing"
+        );
+        for value in ["nums", "liana"] {
+            let mut args = base.to_vec();
+            args.extend_from_slice(&["--unspendable", value]);
+            let (out, err, code) = md(&args);
+            if wrapper == "tr" {
+                assert_eq!(code, 0, "--wrapper tr --unspendable {value}: {err}");
+                continue;
+            }
+            assert_eq!(
+                code, 1,
+                "--wrapper {wrapper} --unspendable {value} must be refused"
+            );
+            assert!(out.is_empty(), "a refusal printed a template: {out}");
+            assert!(
+                err.contains(&format!("--wrapper {wrapper}")) && err.contains("taproot"),
+                "the refusal must name the wrapper and say why: {err}"
+            );
+        }
+    }
+}
+
+/// `--unspendable`'s value is matched exactly. A case variant or prefix is a
+/// DIFFERENT wallet guessed for the operator, so it is refused naming both.
+#[test]
+fn unspendable_value_is_matched_exactly() {
+    for bad in ["Liana", "NUMS", "lia", "", "liana "] {
+        let (out, err, code) = md(&[
+            "compose",
+            "--wrapper",
+            "tr",
+            "--preset",
+            "kofn-recovery,2of3,older=26280",
+            "--unspendable",
+            bad,
+        ]);
+        assert_eq!(code, 1, "--unspendable {bad:?} must be refused: {out}");
+        assert!(out.is_empty(), "refusal printed: {out}");
+        assert!(
+            err.contains("expected nums or liana"),
+            "--unspendable {bad:?}: {err}"
+        );
+    }
+}
+
+/// §4a's compose half (R0 I-4): `internal_key_path: null` alone cannot tell a
+/// NUMS composition from a Liana one. `unspendable_kind` uses decode's own
+/// vocabulary (`format/json.rs`, `JsonBody::Tr`): `"liana_unspendable"` for
+/// wire kind 1, ABSENT for NUMS and for a real key -- read from the COMPOSED
+/// descriptor, so it reports what was built, not what was asked for.
+#[test]
+fn compose_json_carries_the_third_state() {
+    let json = |preset: &str, kind: &str| -> serde_json::Value {
+        let (out, err, code) = md(&[
+            "compose",
+            "--wrapper",
+            "tr",
+            "--preset",
+            preset,
+            "--json",
+            "--unspendable",
+            kind,
+        ]);
+        assert_eq!(code, 0, "{preset} --unspendable {kind}: {err}");
+        serde_json::from_str(&out).unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {out}"))
+    };
+    let kofn = "kofn-recovery,2of3,older=26280";
+    let liana = json(kofn, "liana");
+    assert_eq!(liana["internal_key_path"], serde_json::Value::Null);
+    assert_eq!(liana["unspendable_kind"], "liana_unspendable", "{liana}");
+    let nums = json(kofn, "nums");
+    assert_eq!(nums["internal_key_path"], serde_json::Value::Null);
+    assert!(
+        nums.get("unspendable_kind").is_none(),
+        "NUMS must leave the field ABSENT, as decode does: {nums}"
+    );
+    // A real key was extracted: liana was asked for and could not apply.
+    let real = json("simple-timelocked-inheritance,older=26280", "liana");
+    assert_eq!(real["internal_key_path"], 0);
+    assert!(
+        real.get("unspendable_kind").is_none(),
+        "a real internal key has no unspendable kind: {real}"
+    );
+}
