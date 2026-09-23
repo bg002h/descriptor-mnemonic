@@ -17,6 +17,8 @@
 //! (a2)): every clause that reads key identity is skipped and the verdict is
 //! `Unproven { KeysAbsent }`.
 
+#[cfg(feature = "derive")]
+pub mod build;
 mod registry;
 #[rustfmt::skip]
 mod table;

@@ -17,3 +17,8 @@ codegen-units = 1
 # Reduces binary size and removes a source of build-environment leakage
 # (debug info embeds local paths and toolchain build IDs).
 strip = "symbols"
+
+[alias]
+# `cargo xtask verdicts [--check]` -- builds md-codec's coordinator verdict
+# table from the vendored evidence (coordinator-compat plan 1b).
+xtask = "run --locked --package xtask --"
