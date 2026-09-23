@@ -237,3 +237,48 @@ fn a_same_size_mismatch_names_the_first_differing_byte() {
         .assert()
         .success();
 }
+
+/// F-639 (F-449 stage 2): `md verify` compares two serialisations and mints
+/// nothing, so mint-time admission policy must not decide whether an engraved
+/// card can be CHECKED. MEASURED at 25acb33c: this card decodes (exit 0) but
+/// `md verify` against its OWN template refused with the §6 mint error
+/// ("wire kind 1 ... with a sortedmulti_a leaf is refused", exit 1).
+///
+/// The card is a kind-1 `tr()` with a `sortedmulti_a` leaf -- SPEC §6 row 1,
+/// refused at mint -- serialised by `md_codec::encode_payload_unadmitted`
+/// (re-derive it with md-codec's ignored test `print_the_kind_1_card` in
+/// `tests/mint_policy_does_not_reach_decode.rs`). A card like this exists
+/// wherever a writer did not apply the rule: another implementation, a Go
+/// port, a hand-crafted plate.
+const KIND1_SORTEDMULTI_A_CARD: &str = "md1gzfdsssjuqqcreyygvauszq6hnnx9up";
+
+#[test]
+fn verify_checks_a_mint_refused_card_instead_of_refusing_it() {
+    let tpl = |k: u8| {
+        format!(
+            "tr(UNSPENDABLE(liana),sortedmulti_a({k},@0/48'/0'/0'/3'/<0;1>/*,\
+             @1/48'/0'/0'/3'/<0;1>/*,@2/48'/0'/0'/3'/<0;1>/*))"
+        )
+    };
+    let run = |t: &str| {
+        let out = StdCommand::new(assert_cmd::cargo::cargo_bin("md"))
+            .args(["verify", KIND1_SORTEDMULTI_A_CARD, "--template", t])
+            .output()
+            .unwrap();
+        (
+            out.status.code().unwrap(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    // Its own template: a MATCH, not a mint refusal.
+    let (code, err) = run(&tpl(2));
+    assert_eq!(code, 0, "verify must compare, not apply mint policy: {err}");
+    assert!(!err.contains("is refused"), "{err}");
+    // A different template: still a MISMATCH -- verify still verifies.
+    let (code, err) = run(&tpl(1));
+    assert_ne!(code, 0, "a different template must not verify: {err}");
+    assert!(
+        !err.contains("is refused"),
+        "a mismatch, not a mint refusal: {err}"
+    );
+}

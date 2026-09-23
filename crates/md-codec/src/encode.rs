@@ -178,6 +178,27 @@ pub(crate) fn encode_payload_for_identity(d: &Descriptor) -> Result<(Vec<u8>, us
     encode_payload_inner(d, Admission::SkipPolicy, None)
 }
 
+/// Serialise a card applying NO admission policy -- for COMPARISON and
+/// HASHING of cards that already exist, **never for minting**.
+///
+/// Same bytes as [`encode_payload`] for every descriptor that function
+/// accepts; the only difference is that the mint-time rules (F-217 origin/key
+/// consistency, F-218 duplicate key slots, SPEC §6's kind-1 shape rules and
+/// the minimum-version rule) are not consulted. Structural errors still
+/// surface, because those come from the writers themselves.
+///
+/// Why it is public (F-639, F-449 stage 2): `md verify` compares a decoded
+/// card's serialisation against a template's, and mints nothing. Routing that
+/// comparison through [`encode_payload`] let a mint policy decide whether an
+/// engraved card could be CHECKED -- the same class as the 2026-09-19
+/// regression `encode_payload_for_identity` (crate-private) documents, one layer out. A
+/// caller that is about to write a card must use [`encode_payload`] (or
+/// [`encode_md1_string`]); a caller that only asks "are these the same
+/// bytes?" uses this.
+pub fn encode_payload_unadmitted(d: &Descriptor) -> Result<(Vec<u8>, usize), Error> {
+    encode_payload_inner(d, Admission::SkipPolicy, None)
+}
+
 /// `forced_version`, when `Some`, overrides the wire version this call
 /// writes (both the header field and the version threaded into
 /// `write_node`) instead of deriving it from `d.wire_version()`. `None` —

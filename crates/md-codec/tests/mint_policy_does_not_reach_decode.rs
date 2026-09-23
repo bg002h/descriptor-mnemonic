@@ -201,3 +201,40 @@ fn hashing_a_refused_kind_1_card_through_compute_md1_encoding_id_still_reads() {
          a backup that cannot be read is worse than one that should not have been written",
     );
 }
+
+/// F-639 (F-449 stage 2): `encode_payload_unadmitted` is the public
+/// comparison/hashing serialiser `md verify` uses. It must serialise every
+/// mint-refused shape this file pins -- the F-217 contradiction and the §6
+/// kind-1 `sortedmulti_a` card -- and its bytes must decode back to the same
+/// card, so a comparison over them compares the card, not an error.
+#[test]
+fn the_unadmitted_serialiser_reads_every_mint_refused_shape() {
+    for (label, card) in [
+        ("F-217 origin/key contradiction", contradictory_card()),
+        (
+            "SPEC §6 kind-1 sortedmulti_a",
+            kind_1_card_with_a_sortedmulti_a_leaf(),
+        ),
+    ] {
+        assert!(
+            md_codec::encode::encode_payload(&card).is_err(),
+            "{label}: the control -- minting must still refuse"
+        );
+        let (bytes, bits) = md_codec::encode_payload_unadmitted(&card)
+            .unwrap_or_else(|e| panic!("{label}: comparison must not apply mint policy: {e:?}"));
+        let back = md_codec::decode::decode_payload(&bytes, bits)
+            .unwrap_or_else(|e| panic!("{label}: its bytes must decode: {e:?}"));
+        assert_eq!(back, card, "{label}: round trip");
+    }
+}
+
+/// Emits the kind-1 card as an md1 string for md-cli's F-639 verify test,
+/// so the fixture there is re-derivable: `cargo test ... -- --ignored
+/// --nocapture print_the_kind_1_card`.
+#[test]
+#[ignore]
+fn print_the_kind_1_card() {
+    let (bytes, bits) =
+        md_codec::encode_payload_unadmitted(&kind_1_card_with_a_sortedmulti_a_leaf()).unwrap();
+    println!("{}", md_codec::codex32::wrap_payload(&bytes, bits).unwrap());
+}

@@ -42,6 +42,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   version still exits 2. **This diverges from `mnemonic repair`**, which
   exits 2 on the same card until the toolkit adopts `md_codec::correct_chunks`;
   the exit-code meanings shared by the four repair CLIs are unchanged.
+- **`md verify` no longer applies mint-time admission policy** (F-639). It
+  compares a card's serialisation against a template's and mints nothing, so
+  a card that decodes but that `md encode` would refuse today (an F-217
+  origin/key contradiction, an F-218 duplicate slot, a SPEC §6 kind-1 shape)
+  is now CHECKED -- match or mismatch -- instead of refused with a mint error.
+  Structural errors still surface.
 - **Three refusals now name the right thing** (F-636, F-638, F-641; each
   refuses exactly what it refused before): `md decompose` says a reused
   Liana internal key sits at a spending leaf that can never be satisfied,
@@ -66,6 +72,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   calls it; `decode_with_correction`'s signature, errors and order are
   unchanged. Lets a caller keep a correction on a card whose wire version it
   cannot decode.
+- **`encode_payload_unadmitted(&Descriptor)`**: the same bytes as
+  `encode_payload`, with no mint-time admission policy applied -- for
+  COMPARISON and HASHING of existing cards, never for minting. `md verify`
+  uses it (F-639). `encode_payload` and `Error` are unchanged by it.
 - **The nested taptree Liana v15.0 accepts** is vectored in
   `tests/fixtures/liana/cases.json` (`nested-2of2-two-recoveries-tr`, F-640).
 

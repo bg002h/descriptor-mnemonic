@@ -55,7 +55,7 @@ pub use decode::{
     DecodeOpts, decode_md1_string, decode_md1_string_with_opts, decode_payload,
     decode_payload_with_opts,
 };
-pub use encode::{Descriptor, encode_md1_string, encode_payload};
+pub use encode::{Descriptor, encode_md1_string, encode_payload, encode_payload_unadmitted};
 pub use error::Error;
 pub use header::Header;
 pub use identity::{
