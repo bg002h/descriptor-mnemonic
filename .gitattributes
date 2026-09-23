@@ -23,3 +23,9 @@ vendor/** -text
 # assertion while Linux, macOS, musl and FreeBSD stayed green.
 # MUST sort after any `* text=auto` (last-match-wins per attribute).
 design/display-grouping-vectors.tsv text eol=lf
+
+# Coordinator-compat plan 1b: the xtask's `table_is_fresh` test compares the
+# generated table byte-for-byte with what the evidence builds, so a Windows
+# checkout must not CRLF-convert either side.
+crates/md-codec/src/coordinator/table.rs text eol=lf
+crates/md-codec/tests/fixtures/coordinator/* text eol=lf
