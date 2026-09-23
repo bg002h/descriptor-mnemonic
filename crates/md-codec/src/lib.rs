@@ -23,6 +23,8 @@ pub mod codex32;
 pub mod compose;
 pub mod decode;
 pub mod derive;
+#[cfg(feature = "derive")]
+pub mod descriptor_route;
 pub mod encode;
 pub mod error;
 pub mod header;
