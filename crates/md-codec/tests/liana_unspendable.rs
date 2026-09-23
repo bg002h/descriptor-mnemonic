@@ -637,9 +637,10 @@ fn kind_1_with_a_sortedmulti_a_leaf_is_refused_at_mint() {
 
 #[test]
 fn kind_1_off_the_canonical_use_site_is_refused() {
+    // F-638: the SHARED use-site diverged, so there is no one key to name.
     assert!(matches!(
         encode_payload(&tr_liana_at_use_site(2, 3)),
-        Err(Error::UnspendableUseSiteNotCanonical)
+        Err(Error::UnspendableUseSiteNotCanonical { idx: None })
     ));
 }
 
@@ -659,8 +660,31 @@ fn kind_1_nested_under_wsh_is_refused() {
 /// verification in the task 7 report).
 #[test]
 fn kind_1_with_a_noncanonical_per_key_override_is_refused() {
+    // F-638: the override half carries the placeholder that diverged.
     assert!(matches!(
         encode_payload(&tr_liana_with_noncanonical_override(1, 2, 3)),
-        Err(Error::UnspendableUseSiteNotCanonical)
+        Err(Error::UnspendableUseSiteNotCanonical { idx: Some(1) })
     ));
+}
+
+/// F-638 (F-449 stage 2 Task 6): from the override half the message used to
+/// describe the SHARED use-site -- a field the operator could see was
+/// correct -- and named no key. It now names the placeholder, and says the
+/// shared use-site is not the problem. The shared-half wording is unchanged.
+#[test]
+fn the_use_site_refusal_names_the_placeholder_that_diverged() {
+    let shared = Error::UnspendableUseSiteNotCanonical { idx: None }.to_string();
+    let over = Error::UnspendableUseSiteNotCanonical { idx: Some(1) }.to_string();
+    for m in [&shared, &over] {
+        assert!(
+            m.contains("requires the canonical <0;1>/* use-site path"),
+            "{m}"
+        );
+    }
+    assert!(
+        !shared.contains('@'),
+        "the shared half has no one key to name: {shared}"
+    );
+    assert!(over.contains("@1"), "must name the placeholder: {over}");
+    assert!(over.contains("shared use-site is canonical"), "{over}");
 }

@@ -215,6 +215,13 @@ fn decompose_still_refuses_a_repeat_when_the_repeat_is_the_recognised_internal_k
         err.contains("BIP 388"),
         "must be the BIP-388 repeat refusal, not something else: {err}"
     );
+    // F-636: the same-use-site repeat of the recognised key names the dead
+    // leaf too, and KEEPS the BIP-388 citation because here the paths also
+    // overlap.
+    assert!(
+        err.contains("can never be satisfied"),
+        "must name the dead leaf (F-636): {err}"
+    );
 }
 
 /// Fix round 1 re-review Minor, folded rather than deferred. The SAME
@@ -229,11 +236,14 @@ fn decompose_still_refuses_a_repeat_when_the_repeat_is_the_recognised_internal_k
 /// would have asked them to mint a card for a key with no private key. That
 /// is the same defect class as I-2, hiding one use-site away from it.
 ///
-/// Refusal comes from the pre-existing disjoint-multipath branch, which is
-/// md's own one-path-per-slot limit (F-417) rather than a BIP violation — so
-/// this test pins the OUTCOME (refused, cleanly) and deliberately does not
-/// pin the wording; see the follow-up on making the message name the real
-/// problem.
+/// F-636 (F-449 stage 2 Task 6): the refusal used to come from the generic
+/// disjoint-multipath branch, whose message blamed md's one-path-per-slot
+/// limit ("BIP 388 permits that shape ... UNSUPPORTED") -- inviting the
+/// operator to reproduce a DEAD leaf in another tool. It now names the real
+/// problem: the wallet's own provably-unspendable internal key sits at a
+/// spending leaf, which no implementation can ever satisfy. The old
+/// `UNSUPPORTED` assertion is RETIRED deliberately: that word is the
+/// md-capability framing this follow-up removed.
 #[test]
 fn decompose_refuses_the_recognised_internal_key_reused_at_a_disjoint_use_site() {
     let err = md_err(&[
@@ -247,8 +257,12 @@ fn decompose_refuses_the_recognised_internal_key_reused_at_a_disjoint_use_site()
         "internal invariant leaked, not a real refusal: {err}"
     );
     assert!(
-        err.contains("UNSUPPORTED"),
-        "must be a clean md-unsupported refusal: {err}"
+        err.contains("unspendable internal key") && err.contains("can never be satisfied"),
+        "must name the dead leaf, not md's limit (F-636): {err}"
+    );
+    assert!(
+        !err.contains("md's template surface is narrower") && !err.contains("UNSUPPORTED"),
+        "the md-capability framing is exactly what F-636 removed: {err}"
     );
 }
 
@@ -489,4 +503,55 @@ fn a_misplaced_marker_after_a_multibyte_char_refuses_cleanly_and_does_not_panic(
         );
         assert!(out.is_empty(), "refusal must emit nothing on stdout: {out}");
     }
+}
+
+/// F-638 through the operator CLI: a per-key override off `<0;1>` on an
+/// otherwise-canonical kind-1 template names that key.
+#[test]
+fn encode_names_the_key_whose_use_site_diverged() {
+    let err = md_err(&[
+        "encode",
+        "tr(UNSPENDABLE(liana),{pk(@0/<0;1>/*),pk(@1/<2;3>/*)})",
+    ]);
+    assert!(err.contains("@1"), "names the placeholder (F-638): {err}");
+    assert!(
+        !err.contains("@0"),
+        "names only the one that diverged: {err}"
+    );
+}
+
+/// F-641 (F-449 stage 2 Task 6). The position check used to ask whether the
+/// marker was preceded by the three bytes `tr(`, so a NESTED `tr` and any
+/// identifier ENDING in `tr` passed it -- and then failed downstream naming
+/// the 64-hex synthetic key substituted for the marker, which the operator
+/// never wrote. The check is now structural (the marker must be the first
+/// argument of the OUTERMOST node, and that node must be `tr`), so both get
+/// the same marker refusal as every other misplacement.
+#[test]
+fn a_marker_under_a_nested_or_lookalike_tr_names_the_marker_not_a_synthetic_key() {
+    // `liana_synthetic_internal_key_hex()`'s value, as the old message leaked it.
+    const SYNTHETIC: &str = "fa1446b119da8e010be1a88d3340f68fe4f21c439270c652c5434d04d3e92c98";
+    for template in [
+        "wsh(tr(UNSPENDABLE(liana),pk(@0/<0;1>/*)))",
+        "xtr(UNSPENDABLE(liana),pk(@0/<0;1>/*))",
+        "sh(tr(UNSPENDABLE(liana),pk(@0/<0;1>/*)))",
+        // Embedded in a longer token: not a marker NODE, but the text
+        // substitution would still rewrite it.
+        "tr(UNSPENDABLE(liana),{pk(@0/<0;1>/*),pk(xUNSPENDABLE(liana))})",
+        "tr(xUNSPENDABLE(liana),pk(@0/<0;1>/*))",
+    ] {
+        let err = md_err(&["encode", template]);
+        assert!(
+            !err.contains(SYNTHETIC),
+            "leaked the synthetic key for {template}: {err}"
+        );
+        assert!(
+            err.contains("meaningful only as a tr() descriptor's own internal key"),
+            "the existing marker refusal, reused verbatim, for {template}: {err}"
+        );
+    }
+    // The genuine position still encodes.
+    let (out, err, code) = md(&["encode", "tr(UNSPENDABLE(liana),pk(@0/<0;1>/*))"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.starts_with("md1"), "{out}");
 }
