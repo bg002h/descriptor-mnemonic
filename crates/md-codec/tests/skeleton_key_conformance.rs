@@ -235,6 +235,39 @@ impl KeyRegistry {
     }
 }
 
+/// True iff `pk` is an origin-less xpub equal to SPEC §2's recipe over the
+/// tap tree's own leaf keys, in left-to-right leaf / key-occurrence order.
+fn is_liana_unspendable_key(
+    pk: &DescriptorPublicKey,
+    tree: Option<&miniscript::descriptor::TapTree<DescriptorPublicKey>>,
+) -> bool {
+    let xkey = match pk {
+        DescriptorPublicKey::XPub(x) if x.origin.is_none() => x.xkey,
+        DescriptorPublicKey::MultiXPub(x) if x.origin.is_none() => x.xkey,
+        _ => return false,
+    };
+    let Some(t) = tree else { return false };
+    let mut leaf_pubkeys: Vec<[u8; 33]> = Vec::new();
+    for item in t.leaves() {
+        for leaf_pk in item.miniscript().iter_pk() {
+            match leaf_pk {
+                DescriptorPublicKey::XPub(k) => leaf_pubkeys.push(k.xkey.public_key.serialize()),
+                DescriptorPublicKey::MultiXPub(k) => {
+                    leaf_pubkeys.push(k.xkey.public_key.serialize())
+                }
+                DescriptorPublicKey::Single(_) => return false,
+            }
+        }
+    }
+    let network = if xkey.network == bitcoin::NetworkKind::Main {
+        bitcoin::Network::Bitcoin
+    } else {
+        bitcoin::Network::Testnet
+    };
+    let want = md_codec::nums::liana_unspendable_xpub(&leaf_pubkeys, network);
+    want == xkey
+}
+
 fn is_nums_key(pk: &DescriptorPublicKey) -> bool {
     match pk {
         DescriptorPublicKey::Single(single) if single.origin.is_none() => {
@@ -515,6 +548,11 @@ fn ms_descriptor_to_node(desc: &MsDescriptor<DescriptorPublicKey>, reg: &mut Key
         MsDescriptor::Tr(tr) => {
             let internal_key = if is_nums_key(tr.internal_key()) {
                 InternalKey::NumsPoint
+            } else if is_liana_unspendable_key(tr.internal_key(), tr.tap_tree()) {
+                // SPEC §4a: the recogniser `md decompose` ships, by FULL
+                // byte equality with the recipe over THESE leaves -- never
+                // a structural match (SPEC §8.10's weakening mutation).
+                InternalKey::LianaUnspendable
             } else {
                 InternalKey::Slot(reg.register(tr.internal_key()))
             };
@@ -608,9 +646,13 @@ fn parse_descriptor(desc0_str: &str, desc1_str: &str, name: &str) -> MdDescripto
     // demanding a byte-identical re-render of BOTH chains, checksum
     // included. This is what makes the hardcoded use-site above safe: a
     // wrong guess collapses this assertion, not the conformance test below.
-    let re0 = to_miniscript_descriptor(&d, 0)
-        .unwrap_or_else(|e| panic!("{name}: re-render chain 0: {e}"))
-        .to_string();
+    let re0 = md_codec::to_miniscript::to_miniscript_descriptor_with_network(
+        &d,
+        0,
+        bitcoin::Network::Bitcoin,
+    )
+    .unwrap_or_else(|e| panic!("{name}: re-render chain 0: {e}"))
+    .to_string();
     assert_eq!(
         re0, desc0_str,
         "{name}: the descriptor-route reconstruction does not round-trip chain 0 \
@@ -618,9 +660,13 @@ fn parse_descriptor(desc0_str: &str, desc1_str: &str, name: &str) -> MdDescripto
          a wrong VALUE trips here first; chain 1 only catches a use-site that is \
          right for chain 0 and wrong for chain 1)"
     );
-    let re1 = to_miniscript_descriptor(&d, 1)
-        .unwrap_or_else(|e| panic!("{name}: re-render chain 1: {e}"))
-        .to_string();
+    let re1 = md_codec::to_miniscript::to_miniscript_descriptor_with_network(
+        &d,
+        1,
+        bitcoin::Network::Bitcoin,
+    )
+    .unwrap_or_else(|e| panic!("{name}: re-render chain 1: {e}"))
+    .to_string();
     assert_eq!(
         re1, desc1_str,
         "{name}: the descriptor-route reconstruction does not round-trip chain 1 \
