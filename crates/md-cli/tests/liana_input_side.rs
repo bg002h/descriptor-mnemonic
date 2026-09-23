@@ -262,14 +262,33 @@ fn decompose_refuses_the_recognised_internal_key_reused_at_a_disjoint_use_site()
 /// `liana_unspendable_xpub` would derive `sha256("")` for every such wallet
 /// and they would all share one internal key -- a funds-relevant collision,
 /// not a cosmetic one.
+///
+/// Review round 1, M4: the first draft pinned only the KIND-0 spelling
+/// (the raw NUMS hex). That form can never reach the hazard at all --
+/// `liana_unspendable_xpub` is kind 1's recipe, and a kind-0 `tr` never
+/// calls it, so a test built only from the NUMS-hex spelling proves the
+/// guard through a door the danger cannot use. The MARKER form,
+/// `tr(UNSPENDABLE(liana))`, is kind 1 -- the one shape that could actually
+/// reach `liana_unspendable_xpub(&[])` if this refusal regressed -- so it is
+/// the primary pin now. The kind-0 case stays too (harmless, and it is a
+/// real refusal in its own right), but the marker case is the one that
+/// matters.
 #[test]
 fn a_tr_with_no_leaf_keys_cannot_be_constructed() {
+    let err = md_err(&["encode", "tr(UNSPENDABLE(liana))"]);
+    assert!(
+        err.contains("no @i placeholders"),
+        "kind 1 (the marker spelling) must be refused for having no leaf \
+         keys, not some other reason: {err}"
+    );
+
     let err = md_err(&[
         "encode",
         "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0)",
     ]);
     assert!(
         err.contains("no @i placeholders"),
-        "must be refused for having no leaf keys, not some other reason: {err}"
+        "kind 0 (the raw NUMS hex) must also be refused for having no leaf \
+         keys, not some other reason: {err}"
     );
 }

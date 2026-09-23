@@ -224,7 +224,29 @@ fn every_nums_rooted_tr_vector_round_trips_at_kind_1_and_reports_version_8() {
     );
 }
 
+/// The mk1 `policy_id_stub` truncation, reproduced here bit-for-bit from
+/// `crates/md-cli/src/seat/disposition.rs:73-74`'s private `top4` (a
+/// different crate, and not `pub`, so it cannot be imported): the first 4
+/// bytes of a 16-byte [`md_codec::identity::WalletPolicyId`] or
+/// [`md_codec::identity::WalletDescriptorTemplateId`].
+fn top4(bytes: &[u8; 16]) -> [u8; 4] {
+    [bytes[0], bytes[1], bytes[2], bytes[3]]
+}
+
 /// Step 2: identity distinctness AND stability.
+///
+/// Review round 1, I1: SPEC §8.5 requires FOUR distinctness properties for
+/// kind 0 vs kind 1, and the first draft of this test asserted three
+/// (policy id, template id, phrase). The fourth -- a different mk1
+/// `policy_id_stub` -- does NOT follow from the other three: distinct
+/// 16-byte ids do not imply distinct 4-byte truncations of them (a
+/// birthday-adjacent collision at `top4` is a real, independent risk even
+/// when the full ids differ), and SPEC §3e names the consequence directly
+/// -- an mk1 KEY card false-matching the OTHER kind's plates via
+/// `dispositions`'s `policy_id_stubs.contains(&wallet_or_shape)` check.
+/// Both stub FLAVOURS get their own assertion: the wallet stub (from
+/// `WalletPolicyId`) and the shape stub (from `WalletDescriptorTemplateId`)
+/// are independent truncations and neither implies the other.
 #[test]
 fn kind_0_and_kind_1_get_different_ids_and_a_different_phrase() {
     let k0 = decode_vendored(&load_vendored_phrase("keyed_compose_tr_nums_three_leaves")).unwrap();
@@ -248,6 +270,25 @@ fn kind_0_and_kind_1_get_different_ids_and_a_different_phrase() {
             .to_phrase()
             .unwrap()
             .to_string()
+    );
+    // The fourth property (I1): the mk1 policy_id_stub, both flavours.
+    assert_ne!(
+        top4(compute_wallet_policy_id(&k0).unwrap().as_bytes()),
+        top4(compute_wallet_policy_id(&k1).unwrap().as_bytes()),
+        "kind 0 and kind 1 must not share a wallet-confirmed policy_id_stub"
+    );
+    assert_ne!(
+        top4(
+            compute_wallet_descriptor_template_id(&k0)
+                .unwrap()
+                .as_bytes()
+        ),
+        top4(
+            compute_wallet_descriptor_template_id(&k1)
+                .unwrap()
+                .as_bytes()
+        ),
+        "kind 0 and kind 1 must not share a shape-confirmed policy_id_stub"
     );
 }
 
@@ -335,8 +376,18 @@ fn every_nums_rooted_tr_vector_round_trips_through_the_dispatch_at_kind_1() {
     let mut chunked_tested = 0usize;
     for name in &vectors {
         let d = kind1_from_vector(name);
-        if encode_payload(&d).is_err() {
-            continue; // same tolerated §6 row-1 skip as step 1, above
+        // Review round 1, M2: this used to blanket-skip on ANY encode error
+        // while claiming step 1's explicit tolerated set in its comment --
+        // the comment was aspirational, not what the code did. Matched now:
+        // tolerate ONLY §6 row 1, panic on anything else, same as step 1.
+        match encode_payload(&d) {
+            Ok(_) => {}
+            Err(Error::UnspendableWithSortedMultiA) => continue,
+            Err(e) => panic!(
+                "{name}: unexpected refusal {e:?} -- if this is a legitimate \
+                 new §6 refusal reachable from the vendored corpus, add it \
+                 to the tolerated set explicitly"
+            ),
         }
 
         // Single-string leg -- only when the payload actually fits.
@@ -402,8 +453,16 @@ fn item_2_descriptor_equality_at_the_corpus_level() {
     let mut rendered = 0usize;
     for name in &vectors {
         let mut d = kind1_from_vector(name);
-        if encode_payload(&d).is_err() {
-            continue; // same tolerated §6 row-1 skip as step 1, above
+        // Review round 1, M2: same fix as the dispatch test above -- tolerate
+        // ONLY §6 row 1, panic on anything else, not a blanket `.is_err()`.
+        match encode_payload(&d) {
+            Ok(_) => {}
+            Err(Error::UnspendableWithSortedMultiA) => continue,
+            Err(e) => panic!(
+                "{name}: unexpected refusal {e:?} -- if this is a legitimate \
+                 new §6 refusal reachable from the vendored corpus, add it \
+                 to the tolerated set explicitly"
+            ),
         }
         d.tlv.pubkeys = Some(
             (0..d.n)

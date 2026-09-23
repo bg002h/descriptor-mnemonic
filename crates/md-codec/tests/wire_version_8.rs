@@ -66,9 +66,15 @@ fn wire_version_is_derived_from_the_tree_not_assumed() {
         kind1_from_vector("keyed_compose_tr_nums_three_leaves").wire_version(),
         8
     );
-    for name in all_root_tr_vectors() {
+    // Review round 1, M1: this pre-existing loop had no non-zero-count
+    // guard, unlike task 8's new loops over the same corpus -- if
+    // `all_root_tr_vectors()`'s filter ever started matching nothing, this
+    // test would report `ok` having proven nothing about the corpus at all.
+    let vectors = all_root_tr_vectors();
+    assert!(!vectors.is_empty(), "no root tr vectors in the corpus");
+    for name in &vectors {
         assert_eq!(
-            decode_vendored(&load_vendored_phrase(&name))
+            decode_vendored(&load_vendored_phrase(name))
                 .unwrap()
                 .wire_version(),
             4,
