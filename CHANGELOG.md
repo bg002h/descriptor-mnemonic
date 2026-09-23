@@ -35,14 +35,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   leaf, or no path that spends without a timelock, judged on the composed
   shape so `--path` spellings warn too — and when a bare single-key path
   became the real internal key, so the flag has no effect (SPEC §6 row 3).
-- **`md repair` keeps a correction on a card whose wire version this build
-  does not support** (SPEC §8.9): it prints the corrected card, names the
-  version and the accepted set on stderr, and exits **5** (REPAIR_APPLIED)
-  instead of discarding the correction at exit 2. A clean card at such a
-  version still exits 2, and so does a multi-string set containing a
-  single-string card: read as a chunk header, such a card reports a
-  bit-shifted "version" that no card has, so the branch applies only when
-  every string of the set is chunked. **This diverges from `mnemonic repair`**, which
+- **`md repair` keeps a correction on a SINGLE card (one string) whose wire
+  version this build does not support** (SPEC §8.9): it prints the
+  corrected card, names the version and the accepted set on stderr, and
+  exits **5** (REPAIR_APPLIED) instead of discarding the correction at exit
+  2. A clean card at such a version still exits 2. **Limitation: a
+  multi-string call that fails on the wire version still exits 2 with empty
+  stdout, as in 0.18.0**, even for a genuine multi-chunk set: a build cannot
+  read the chunk-header layout of a version it does not support, so it
+  cannot tell one card's chunks from mixed or unrelated strings (which
+  would otherwise be reported as a "version" no card has). **This diverges from `mnemonic repair`**, which
   exits 2 on the same card until the toolkit adopts `md_codec::correct_chunks`;
   the exit-code meanings shared by the four repair CLIs are unchanged.
 - **`md verify` no longer applies mint-time admission policy** (F-639). It

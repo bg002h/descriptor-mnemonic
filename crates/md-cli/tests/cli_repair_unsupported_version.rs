@@ -143,8 +143,7 @@ fn a_clean_legacy_card_exits_2_with_empty_stdout() {
 /// a card this build reads perfectly well reports a bit-shifted "version"
 /// (10 here). Before the guard, 0.19.0 exited 5 and advised "take the
 /// corrected card to a newer md ... wire version 10"; 0.18.0 exited 2. The
-/// exit-5 branch applies only when the mismatched version is the card's own,
-/// i.e. every corrected string of a multi-string set is chunked.
+/// exit-5 branch applies to single-string input only (ruling 7).
 #[test]
 fn a_mixed_set_of_single_string_cards_is_not_an_unsupported_version() {
     // Ae: `md encode "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))"`
@@ -165,9 +164,8 @@ fn a_mixed_set_of_single_string_cards_is_not_an_unsupported_version() {
         "no card here has version 10: {err}"
     );
 
-    // One chunked string is not enough: EVERY string of the set must be
-    // chunked (the chunked v9 card from md-codec's `correct_chunks.rs`,
-    // followed by single-string B).
+    // A chunked string first does not change that (the chunked v9 card from
+    // md-codec's `correct_chunks.rs`, followed by single-string B).
     let (out, err, code) = md(&[
         "repair",
         "md1q4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5",
@@ -177,18 +175,21 @@ fn a_mixed_set_of_single_string_cards_is_not_an_unsupported_version() {
     assert!(out.is_empty(), "{out}");
 }
 
-/// The control for I-1's guard: a genuine multi-chunk set at an unsupported
-/// version (all three chunk headers rewritten to 12, BCH re-wrapped; one
-/// correctable error in chunk 1) still keeps its correction at exit 5.
+/// RULING 7 (re-review NEW-1): the corrected-but-unsupported branch is
+/// SINGLE-STRING only. A genuine multi-chunk set at an unsupported version
+/// (all three chunk headers rewritten to 12, BCH re-wrapped; one correctable
+/// error in chunk 1) exits 2 with empty stdout, as in 0.18.0: a build cannot
+/// read the chunk-header layout of a version it does not support, so it
+/// cannot tell this set from unrelated chunks. The stated limitation.
 #[test]
-fn a_real_multi_chunk_set_at_an_unsupported_version_still_exits_5() {
+fn a_multi_chunk_set_at_an_unsupported_version_exits_2() {
     // `md encode` of an 8-key wsh multi with 8 fingerprints: three v4 chunks.
     let v4 = [
         "md1fsyk8pq9p6tvyyy5jmpprjjtvyy49ykcgfw2fdssnj2fdssnk2gh20njr9zxysyn",
         "md1fsyk8pq2mpp855jmpp8u4qqxppsfc989mse3sq3zyg3zfzyg3zywcpgwuu5knxhy",
         "md1fsyk8pq3rxvenxd5g3zygj924242kkvenxvm8wamhwlc3zyg3qqlprv3746tu2us",
     ];
-    let v12: Vec<String> = v4
+    let mut damaged: Vec<String> = v4
         .iter()
         .map(|c| {
             let (mut bytes, bits) = md_codec::codex32::unwrap_string(c).unwrap();
@@ -196,21 +197,34 @@ fn a_real_multi_chunk_set_at_an_unsupported_version_still_exits_5() {
             md_codec::codex32::wrap_payload(&bytes, bits).unwrap()
         })
         .collect();
-    let mut damaged = v12.clone();
     let mut chars: Vec<char> = damaged[1].chars().collect();
     chars[10] = if chars[10] == 'q' { 'p' } else { 'q' };
     damaged[1] = chars.into_iter().collect();
     let mut args = vec!["repair"];
     args.extend(damaged.iter().map(String::as_str));
     let (out, err, code) = md(&args);
-    assert_eq!(code, 5, "{err}");
-    for c in &v12 {
-        assert!(
-            out.lines().any(|l| l == c),
-            "corrected chunk {c} missing: {out}"
-        );
-    }
-    assert!(err.contains("wire version 12"), "{err}");
+    assert_eq!(code, 2, "{err}");
+    assert!(out.is_empty(), "{out}");
+    assert!(!err.contains("newer md"), "{err}");
+}
+
+/// Re-review NEW-1: two GENUINE chunk-of-1 cards from UNRELATED wallets
+/// (`md encode --force-chunked "wsh(pk(@0/48'/0'/0'/2'/<0;1>/*))"`, its
+/// header version rewritten to 12 and one error added; and `md encode
+/// --force-chunked "wsh(pk(@0/48'/1'/9'/2'/<0;1>/*))"`, a different chunk
+/// set at v4). Every string is individually chunked, so the first guard let
+/// it through to exit 5 and "take the corrected card to a newer md". No md
+/// will ever reassemble these two strings.
+#[test]
+fn two_unrelated_chunks_are_not_an_unsupported_version() {
+    let (out, err, code) = md(&[
+        "repair",
+        "md1ep5e0pqpqztvyyy4qqxpzs7j5uasr0kygh6",
+        "md1f8v7jqqpqztvywjv4qqxpzsqa49qwd4lpae92",
+    ]);
+    assert_eq!(code, 2, "{err}");
+    assert!(out.is_empty(), "D28: nothing on stdout: {out}");
+    assert!(!err.contains("newer md"), "{err}");
 }
 
 /// M-1: the PARITY half of the advice. A chunked card whose header version

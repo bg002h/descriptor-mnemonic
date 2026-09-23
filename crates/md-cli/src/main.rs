@@ -832,9 +832,10 @@ enum Command {
     /// `mnemonic repair`):
     ///   0 — every input was already valid (no corrections applied)
     ///   5 — at least one chunk had corrections applied (REPAIR_APPLIED);
-    ///       since md-cli 0.19.0 also when the corrected card carries a wire
-    ///       version this build cannot read — stdout is the corrected card,
-    ///       stderr names the version (`mnemonic repair` exits 2 there, F-642)
+    ///       since md-cli 0.19.0 also when a SINGLE corrected card carries a
+    ///       wire version this build cannot read — stdout is the corrected
+    ///       card, stderr names the version (`mnemonic repair` exits 2 there,
+    ///       F-642); several strings at such a version still exit 2
     ///   2 — atomic-fail per plan §1 D28: ANY chunk failing BCH capacity
     ///       fails the whole call; the failing chunk's index is named in
     ///       the stderr message and NO partial corrected output is emitted
