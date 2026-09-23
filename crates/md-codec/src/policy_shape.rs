@@ -451,10 +451,19 @@ fn branch_of(n: &Node, depth: u8) -> Option<Branch> {
 
     // A bare threshold-over-keys, possibly wrapped: report k-of-n and
     // whether it was the sorted spelling.
+    //
+    // `plain_multi` takes the SAME `nkeys == slots.len()` guard as
+    // `sole_multi` below (1a final review M-1): `slots` is deduplicated, so a
+    // duplicate-index multi such as `multi(2,@0,@0,@1)` has 3 indices and 2
+    // distinct keys, and "2-of-3" would claim a third signer that does not
+    // exist. Unguarded, one multi answered two ways depending on whether a
+    // wrapper or a lock sat around it.
     if let Some((k, nkeys, sorted)) = plain_multi(n) {
-        br.k = k;
-        br.n = nkeys;
-        br.sorted = sorted;
+        if nkeys as usize == br.slots.len() {
+            br.k = k;
+            br.n = nkeys;
+            br.sorted = sorted;
+        }
     } else if let Some((k, nkeys, sorted)) = sole_multi(n) {
         // A THRESHOLD BEHIND A LOCK OR A HASH IS STILL A THRESHOLD. Two
         // conditions: the branch must contain EXACTLY ONE multi node (two
