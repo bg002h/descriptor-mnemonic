@@ -66,7 +66,7 @@ fn wire_version_is_derived_from_the_tree_not_assumed() {
         kind1_from_vector("keyed_compose_tr_nums_three_leaves").wire_version(),
         8
     );
-    for name in all_kind0_tr_vectors() {
+    for name in all_root_tr_vectors() {
         assert_eq!(
             decode_vendored(&load_vendored_phrase(&name))
                 .unwrap()

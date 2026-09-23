@@ -250,3 +250,26 @@ fn decompose_refuses_the_recognised_internal_key_reused_at_a_disjoint_use_site()
         "must be a clean md-unsupported refusal: {err}"
     );
 }
+
+/// Task 8 step 5 (§6's pinned invariant, I6). SPEC §6 carries an invariant,
+/// not a refusal: a `tr` with no leaf keys cannot be constructed, so
+/// `sha256("")` can never become a shared chain code. This lives here
+/// (md-cli, not md-codec) because the guard is the TEMPLATE PARSER's --
+/// `md_codec::tree` has no opinion on whether a `tr` needs a leaf, only
+/// `parse/template.rs`'s `@i`-placeholder scan does.
+///
+/// If this test ever starts asserting `code == 0` instead of a refusal,
+/// `liana_unspendable_xpub` would derive `sha256("")` for every such wallet
+/// and they would all share one internal key -- a funds-relevant collision,
+/// not a cosmetic one.
+#[test]
+fn a_tr_with_no_leaf_keys_cannot_be_constructed() {
+    let err = md_err(&[
+        "encode",
+        "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0)",
+    ]);
+    assert!(
+        err.contains("no @i placeholders"),
+        "must be refused for having no leaf keys, not some other reason: {err}"
+    );
+}

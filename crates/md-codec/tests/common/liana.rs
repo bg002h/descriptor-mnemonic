@@ -117,21 +117,68 @@ fn case(name: &str) -> Case {
         .unwrap_or_else(|| panic!("no vendored case {name}"))
 }
 
-/// The vendored vector names whose decoded tree is a root `tr` at kind 0.
-/// Stage 1a measured 23 of the 65 vectors as carrying `Body::Tr`.
+/// The vendored vector names whose decoded tree is a root `tr`, at EITHER
+/// internal-key shape -- a NUMS-point root, or a real spendable `Slot` root
+/// (the multisig "extracted to the internal key" shape). Measured today: 23
+/// of the 65 vectors carry `Body::Tr`.
+///
+/// Renamed from `all_kind0_tr_vectors` (task 8's dispatch brief, stage 1b):
+/// that name was FALSE for the `Slot`-rooted vectors -- a `Slot` internal
+/// key has no "kind" at all (the wire kind bit is only ever written for the
+/// `is_nums=1` arm, i.e. `NumsPoint`/`LianaUnspendable`; see `tree.rs`'s
+/// `write_node`), so calling a keyed-root vector "kind 0" claimed something
+/// untrue of it. Measured directly against this function: 10 of the 23 are
+/// `NumsPoint`-rooted, 13 are `Slot`-rooted (a throwaway probe test, run
+/// then deleted -- see task 8's report for the transcript).
+///
+/// `wire_version_8.rs`'s `wire_version_is_derived_from_the_tree_not_assumed`
+/// is this function's one caller, and it asserts `wire_version() == 4`,
+/// which is true for BOTH internal-key shapes -- so it keeps iterating this
+/// full population under its new name, unchanged. `nums_rooted_tr_vectors`
+/// below is the DIFFERENT, narrower population task 8 needs: only the
+/// vectors `kind1_from_vector` can legally swap to kind 1.
 ///
 /// `#[allow(dead_code)]`: not every spliced-in consumer calls this -- e.g.
 /// a root that only exercises named cases via `case`/`kind1_from_vector`
-/// never needs the full kind-0 `tr` population, so this function is dead
-/// code in that compilation unit specifically.
+/// never needs the full root-tr population, so this function is dead code
+/// in that compilation unit specifically.
 #[allow(dead_code)]
-fn all_kind0_tr_vectors() -> Vec<String> {
+fn all_root_tr_vectors() -> Vec<String> {
     all_vendored_vector_names()
         .into_iter()
         .filter(|n| {
             matches!(
                 decode_vendored(&load_vendored_phrase(n)).map(|d| d.tree.body),
                 Ok(Body::Tr { .. })
+            )
+        })
+        .collect()
+}
+
+/// The vendored vector names whose decoded tree is a root `tr` with a
+/// `NumsPoint` internal key -- the population `kind1_from_vector` can
+/// legally swap to `LianaUnspendable` (its `assert_eq!(internal_key,
+/// NumsPoint)` panics on anything else, including a `Slot`-rooted vector
+/// from `all_root_tr_vectors` above). Task 8's dispatch brief measured "8"
+/// against a DIFFERENT, smaller population (the `ik:nums`-tagged subset of
+/// `compose_support.rs`'s 13-entry `w:tr`-tagged family table) -- this
+/// function filters the FULL vendored corpus instead, which is what
+/// `all_root_tr_vectors` (and the old, misnamed `all_kind0_tr_vectors`)
+/// actually iterates, and measures 10, not 8. Callers derive their expected
+/// count from THIS function's live output, never a hardcoded number, so a
+/// filter regression that starts matching nothing fails loudly instead of
+/// reading as `ok`.
+#[allow(dead_code)]
+fn nums_rooted_tr_vectors() -> Vec<String> {
+    all_root_tr_vectors()
+        .into_iter()
+        .filter(|n| {
+            matches!(
+                decode_vendored(&load_vendored_phrase(n)).map(|d| d.tree.body),
+                Ok(Body::Tr {
+                    internal_key: InternalKey::NumsPoint,
+                    ..
+                })
             )
         })
         .collect()
