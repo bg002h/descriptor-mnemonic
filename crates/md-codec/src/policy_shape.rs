@@ -136,10 +136,11 @@ pub enum KeyPathKind {
     /// needs re-deriving a specific coordinator's own
     /// `unspendable_internal_key`-style function over the whole descriptor,
     /// which makes it a coordinator RULE, not a codec-observable property,
-    /// for any convention the wire itself has no discriminant for. Do not
-    /// "restore fidelity" with the Go name here: a coordinator that needs a
-    /// finer distinction than the wire carries computes it itself, one layer
-    /// above this type.
+    /// for any convention the wire itself has no discriminant for. A
+    /// coordinator that needs a finer distinction than the wire carries
+    /// computes it itself, one layer above this type — unless the wire HAS
+    /// been taught the distinction, as it has for Liana's convention; see
+    /// [`KeyPathKind::LianaUnspendable`] below.
     Xpub,
     /// Wire kind 1 (`crate::tree::InternalKey::LianaUnspendable`, SPEC §3d):
     /// a provably-unspendable xpub derived from the tap-tree's own leaf keys
