@@ -134,3 +134,116 @@ fn a_clean_legacy_card_exits_2_with_empty_stdout() {
     assert_eq!(code, 2, "{err}");
     assert!(out.is_empty(), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// Whole-branch review fix wave (F-449 stage 2).
+// ---------------------------------------------------------------------------
+
+/// I-1: a SET mixing single-string cards reads each one as a chunk header, so
+/// a card this build reads perfectly well reports a bit-shifted "version"
+/// (10 here). Before the guard, 0.19.0 exited 5 and advised "take the
+/// corrected card to a newer md ... wire version 10"; 0.18.0 exited 2. The
+/// exit-5 branch applies only when the mismatched version is the card's own,
+/// i.e. every corrected string of a multi-string set is chunked.
+#[test]
+fn a_mixed_set_of_single_string_cards_is_not_an_unsupported_version() {
+    // Ae: `md encode "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))"`
+    // with one substitution at data position 9. B: `md encode
+    // "tr(UNSPENDABLE(liana),{pk(@0/<0;1>/*),pk(@1/<0;1>/*)})"`. Both decode alone.
+    let (out, err, code) = md(&[
+        "repair",
+        "md15pfdsssjjvvyyw2sqrqscy9zsn0mkdw0fzr7",
+        "md1gppqqxq799p20d5hxuzu2c9la",
+    ]);
+    assert_eq!(
+        code, 2,
+        "the old atomic-fail exit, not REPAIR_APPLIED: {err}"
+    );
+    assert!(out.is_empty(), "D28: nothing on stdout: {out}");
+    assert!(
+        !err.contains("newer md"),
+        "no card here has version 10: {err}"
+    );
+
+    // One chunked string is not enough: EVERY string of the set must be
+    // chunked (the chunked v9 card from md-codec's `correct_chunks.rs`,
+    // followed by single-string B).
+    let (out, err, code) = md(&[
+        "repair",
+        "md1q4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5",
+        "md1gppqqxq799p20d5hxuzu2c9la",
+    ]);
+    assert_eq!(code, 2, "a set with a single-string card in it: {err}");
+    assert!(out.is_empty(), "{out}");
+}
+
+/// The control for I-1's guard: a genuine multi-chunk set at an unsupported
+/// version (all three chunk headers rewritten to 12, BCH re-wrapped; one
+/// correctable error in chunk 1) still keeps its correction at exit 5.
+#[test]
+fn a_real_multi_chunk_set_at_an_unsupported_version_still_exits_5() {
+    // `md encode` of an 8-key wsh multi with 8 fingerprints: three v4 chunks.
+    let v4 = [
+        "md1fsyk8pq9p6tvyyy5jmpprjjtvyy49ykcgfw2fdssnj2fdssnk2gh20njr9zxysyn",
+        "md1fsyk8pq2mpp855jmpp8u4qqxppsfc989mse3sq3zyg3zfzyg3zywcpgwuu5knxhy",
+        "md1fsyk8pq3rxvenxd5g3zygj924242kkvenxvm8wamhwlc3zyg3qqlprv3746tu2us",
+    ];
+    let v12: Vec<String> = v4
+        .iter()
+        .map(|c| {
+            let (mut bytes, bits) = md_codec::codex32::unwrap_string(c).unwrap();
+            bytes[0] = (12 << 4) | (bytes[0] & 0x0f);
+            md_codec::codex32::wrap_payload(&bytes, bits).unwrap()
+        })
+        .collect();
+    let mut damaged = v12.clone();
+    let mut chars: Vec<char> = damaged[1].chars().collect();
+    chars[10] = if chars[10] == 'q' { 'p' } else { 'q' };
+    damaged[1] = chars.into_iter().collect();
+    let mut args = vec!["repair"];
+    args.extend(damaged.iter().map(String::as_str));
+    let (out, err, code) = md(&args);
+    assert_eq!(code, 5, "{err}");
+    for c in &v12 {
+        assert!(
+            out.lines().any(|l| l == c),
+            "corrected chunk {c} missing: {out}"
+        );
+    }
+    assert!(err.contains("wire version 12"), "{err}");
+}
+
+/// M-1: the PARITY half of the advice. A chunked card whose header version
+/// reads 9 (odd, above 8) must NOT be sent to "a newer md": no release uses
+/// an odd version. Fixtures from md-codec's `tests/correct_chunks.rs`.
+#[test]
+fn an_odd_version_above_8_is_not_sent_to_a_newer_md() {
+    let (out, err, code) = md(&["repair", "md1q4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5"]);
+    assert_eq!(code, 5, "{err}");
+    assert!(
+        out.lines()
+            .any(|l| l == "md1n4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5"),
+        "{out}"
+    );
+    assert!(err.contains("wire version 9"), "{err}");
+    assert!(!err.contains("newer md"), "9 is odd: {err}");
+    assert!(err.contains("pre-v0.30 or misread"), "{err}");
+}
+
+/// M-9: an all-uppercase card (QR alphanumeric form) is corrected in its own
+/// case. Before, the lowercase corrected char made the output MIXED case,
+/// which md refuses to read (BIP-173). Covers the success path, and the
+/// exit-5 path shares `apply_corrections`.
+#[test]
+fn an_uppercase_card_is_corrected_in_uppercase_and_still_reads() {
+    let (out, err, code) = md(&["repair", "MD15PFDSSSJJVVYYW2SQRQSCY9ZSN0MKDW0FZR7"]);
+    assert_eq!(code, 5, "{err}");
+    let fixed = out.lines().last().expect("corrected card");
+    assert_eq!(fixed, "MD15PFDSSSJJTVYYW2SQRQSCY9ZSN0MKDW0FZR7");
+    let (_, err, code) = md(&["decode", fixed]);
+    assert_eq!(code, 0, "the corrected card must decode: {err}");
+
+    let (out, err, code) = md(&["repair", &V12_ONE_ERROR.to_uppercase()]);
+    assert_eq!(code, 5, "{err}");
+    assert!(out.lines().any(|l| l == V12_CLEAN.to_uppercase()), "{out}");
+}

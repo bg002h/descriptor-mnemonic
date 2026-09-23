@@ -39,7 +39,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   does not support** (SPEC §8.9): it prints the corrected card, names the
   version and the accepted set on stderr, and exits **5** (REPAIR_APPLIED)
   instead of discarding the correction at exit 2. A clean card at such a
-  version still exits 2. **This diverges from `mnemonic repair`**, which
+  version still exits 2, and so does a multi-string set containing a
+  single-string card: read as a chunk header, such a card reports a
+  bit-shifted "version" that no card has, so the branch applies only when
+  every string of the set is chunked. **This diverges from `mnemonic repair`**, which
   exits 2 on the same card until the toolkit adopts `md_codec::correct_chunks`;
   the exit-code meanings shared by the four repair CLIs are unchanged.
 - **`md verify` no longer applies mint-time admission policy** (F-639). It
@@ -48,6 +51,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   origin/key contradiction, an F-218 duplicate slot, a SPEC §6 kind-1 shape)
   is now CHECKED -- match or mismatch -- instead of refused with a mint error.
   Structural errors still surface.
+- **A checksum on a template with `UNSPENDABLE(liana)` is checked over the
+  text the operator wrote** (`tr(UNSPENDABLE(liana),pk(@0/<0;1>/*))#vexl6448`
+  encodes). 0.18.0 checked it only over the substituted synthetic key's text,
+  which no operator writes and no md output ever emitted; that checksum is
+  now refused, with the error naming the checksum of the marker text.
+
 - **Three refusals now name the right thing** (F-636, F-638, F-641; each
   refuses exactly what it refused before): `md decompose` says a reused
   Liana internal key sits at a spending leaf that can never be satisfied,
@@ -55,6 +64,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   names the `@N` whose override diverged; and a misplaced
   `UNSPENDABLE(liana)` under a nested or look-alike `tr` gets the marker
   refusal instead of an error naming a synthetic key.
+
+### Fixed
+
+- **`md repair` corrects an all-uppercase card in uppercase.** It wrote the
+  corrected character in lowercase, producing a mixed-case string md refuses
+  to read (BIP-173) -- on the QR alphanumeric form of a card. Pre-existing
+  in 0.18.0.
 
 ## md-codec [0.47.0] — 2026-09-23
 

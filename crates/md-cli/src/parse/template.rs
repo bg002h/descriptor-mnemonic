@@ -1197,10 +1197,23 @@ fn substitute_synthetic(
     // synthetic x-only hex above BEFORE the @i pass below — the two cannot
     // collide (the @i regex only matches `@\d`) — so `Descriptor::from_str`
     // accepts the internal-key position at all.
-    let marker_substituted = desugared.replace(
+    let has_marker = desugared.contains(md_codec::nums::LIANA_UNSPENDABLE_MARKER);
+    let mut marker_substituted = desugared.replace(
         md_codec::nums::LIANA_UNSPENDABLE_MARKER,
         liana_synthetic_internal_key_hex(),
     );
+    // Whole-branch review M-5 (controller ruling): a checksum on a MARKER
+    // template is verified over the text the operator WROTE -- that already
+    // happened, in `validate_marker_position`'s expression-tree parse just
+    // above. After the substitution the checksum describes text that no
+    // longer exists, so it is dropped here rather than re-checked by
+    // `Descriptor::from_str` against the synthetic hex, whose "expected"
+    // value would name text the operator never wrote (F-641's class).
+    if has_marker {
+        if let Some((body, _checksum)) = marker_substituted.rsplit_once('#') {
+            marker_substituted = body.to_string();
+        }
+    }
     let template: &str = &marker_substituted;
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {

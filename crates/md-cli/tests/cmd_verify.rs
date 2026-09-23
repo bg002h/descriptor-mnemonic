@@ -275,8 +275,14 @@ fn verify_checks_a_mint_refused_card_instead_of_refusing_it() {
     assert_eq!(code, 0, "verify must compare, not apply mint policy: {err}");
     assert!(!err.contains("is refused"), "{err}");
     // A different template: still a MISMATCH -- verify still verifies.
+    // Whole-branch review M-4: the SPECIFIC mismatch verdict, not "non-zero"
+    // -- any unrelated refusal (a template parse error, say) is also non-zero.
     let (code, err) = run(&tpl(1));
-    assert_ne!(code, 0, "a different template must not verify: {err}");
+    assert_eq!(code, 1, "a different template must not verify: {err}");
+    assert!(
+        err.contains("MISMATCH"),
+        "a mismatch, not some other error: {err}"
+    );
     assert!(
         !err.contains("is refused"),
         "a mismatch, not a mint refusal: {err}"

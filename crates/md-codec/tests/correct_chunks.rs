@@ -87,3 +87,55 @@ fn correct_chunks_is_atomic_on_an_uncorrectable_chunk() {
         Err(Error::TooManyErrors { chunk_index: 0, .. })
     ));
 }
+
+/// A CHUNKED card whose 4-bit chunk-header version field reads 9 -- odd and
+/// above 8 -- with one correctable error at data position 0 (whole-branch
+/// review M-1: pins the PARITY half of `md repair`'s advice).
+///
+/// Why chunked: a single-string card cannot carry an odd version at all. Its
+/// first symbol is `[divergent][v3][v2][v1][v0]` and bit 0 doubles as the
+/// chunked flag, so an odd single-string version reads as a chunk header
+/// (measured: a single-string "v9" reports version 12). A chunk header's
+/// first symbol is `[v3][v2][v1][v0][chunked=1]`, so 9 is representable.
+/// Built from `md encode --force-chunked
+/// "wsh(multi(2,@0/48'/0'/0'/2'/<0;1>/*,@1/48'/0'/1'/2'/<0;1>/*))"`, a
+/// chunked-of-1 v4 card, by `with_chunk_version` below.
+pub const CHUNKED_V4_CLEAN: &str = "md1f4frpqq9q2tvyyy5jmpprj5qqcyxppgqaudyc7r5fys4a";
+
+/// `CHUNKED_V4_CLEAN` at chunk-header version 9, BCH-valid.
+pub const CHUNKED_V9_CLEAN: &str = "md1n4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5";
+/// `CHUNKED_V9_CLEAN` with one substitution at data position 0 (`n` -> `q`).
+pub const CHUNKED_V9_ONE_ERROR: &str = "md1q4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5";
+
+/// The fixture recipe for the chunked card: rewrite the top four bits of the
+/// first symbol (the chunk-header version) and re-wrap.
+fn with_chunk_version(clean: &str, version: u8) -> String {
+    let (mut bytes, bits) = md_codec::codex32::unwrap_string(clean).expect("chunked card");
+    bytes[0] = ((version & 0x0f) << 4) | (bytes[0] & 0x0f);
+    md_codec::codex32::wrap_payload(&bytes, bits).expect("re-wrap")
+}
+
+/// The fixture recipe, executable: unwrap the clean v4 card, rewrite the
+/// version in the first 5-bit symbol (`[divergent][v3][v2][v1][v0]`), and
+/// re-wrap so the BCH checksum is valid.
+fn with_version(clean_v4: &str, version: u8) -> String {
+    let (mut bytes, bits) = md_codec::codex32::unwrap_string(clean_v4).expect("v4 card");
+    let divergent = bytes[0] & 0x80;
+    bytes[0] = divergent | ((version & 0x0f) << 3) | (bytes[0] & 0x07);
+    md_codec::codex32::wrap_payload(&bytes, bits).expect("re-wrap")
+}
+
+#[test]
+fn the_version_fixtures_follow_the_recipe() {
+    let clean_v4 = correct_chunks(&[V4_ONE_ERROR]).unwrap().0.remove(0);
+    assert_eq!(with_version(&clean_v4, 12), V12_CLEAN);
+    assert_eq!(with_chunk_version(CHUNKED_V4_CLEAN, 9), CHUNKED_V9_CLEAN);
+    assert!(matches!(
+        decode_with_correction(&[CHUNKED_V9_CLEAN]),
+        Err(Error::WireVersionMismatch { got: 9 })
+    ));
+    let (strings, details) = correct_chunks(&[CHUNKED_V9_ONE_ERROR]).unwrap();
+    assert_eq!((strings[0].as_str(), details.len()), (CHUNKED_V9_CLEAN, 1));
+    // The recipe is the identity at the card's own version.
+    assert_eq!(with_chunk_version(CHUNKED_V4_CLEAN, 4), CHUNKED_V4_CLEAN);
+}

@@ -133,3 +133,68 @@ fn every_accept_case_derives_lianas_addresses() {
         }
     }
 }
+
+/// Whole-branch review M-3: the stage's end-to-end claim as a committed test.
+/// `md compose --unspendable liana` over descriptor B's `--path` list, seated
+/// with the corpus case's own keys and fingerprints through `md descriptor
+/// --template`, reproduces the descriptor LIANA recorded as accepted --
+/// byte-exact, checksum included. Before this the claim rested on a
+/// transcript plus a chain of tests that never ran `compose` against Liana's
+/// record.
+#[test]
+fn compose_unspendable_liana_reproduces_the_nested_accept_byte_exact() {
+    let c = all_cases()
+        .into_iter()
+        .find(|c| c.name == "nested-2of2-two-recoveries-tr")
+        .expect("the nested ACCEPT is vectored (F-640)");
+    assert!(c.accepted);
+    let (template, err, code) = md(&[
+        "compose",
+        "--wrapper",
+        "tr",
+        "--path",
+        "2of2",
+        "--path",
+        "1of1,older=26280",
+        "--path",
+        "1of1,older=52560",
+        "--unspendable",
+        "liana",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    let template = template.trim_end();
+    let (decomposed, err, code) = md(&[
+        "decompose",
+        &c.descriptor_with_checksum,
+        "--emit",
+        "template",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(template, decomposed.trim_end(), "compose vs Liana's shape");
+
+    let (keys, _, _) = md(&["decompose", &c.descriptor_with_checksum, "--emit", "keys"]);
+    let (fps, _, _) = md(&[
+        "decompose",
+        &c.descriptor_with_checksum,
+        "--emit",
+        "fingerprints",
+    ]);
+    let mut args: Vec<String> = vec!["descriptor".into(), "--template".into(), template.into()];
+    for (i, line) in keys.lines().enumerate() {
+        let xpub = line.split_once(']').expect("[fp/path]xpub").1;
+        args.push("--key".into());
+        args.push(format!("@{i}={xpub}"));
+    }
+    for f in fps.lines() {
+        args.push("--fingerprint".into());
+        args.push(f.strip_prefix("--fingerprint ").expect("flag").into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (out, err, code) = md(&refs);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        out.trim_end(),
+        c.descriptor_with_checksum,
+        "not Liana's descriptor"
+    );
+}

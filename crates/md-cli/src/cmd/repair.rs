@@ -21,8 +21,8 @@
 //! DIVERGENCE, not parity (F-449 stage 2 Task 2c, SPEC §8.9): `md repair`
 //! exits 5 on a corrected card whose wire version this build does not
 //! support, while `mnemonic repair` exits 2 on it until the toolkit adopts
-//! `md_codec::correct_chunks` (filed as a follow-up owned by the toolkit's
-//! post-stage-2 pin bump). The code -> meaning mapping is unchanged.
+//! `md_codec::correct_chunks` (F-642, owned by the toolkit's post-stage-2
+//! pin bump). The code -> meaning mapping is unchanged.
 //!
 //! Text output mirrors `mnemonic repair`'s text-form report shape (see
 //! `mnemonic-toolkit/src/cmd/repair.rs::emit_repair_text`). JSON output
@@ -169,8 +169,20 @@ fn corrected_but_unsupported(
     got: u8,
     json: bool,
 ) -> Result<u8, CliError> {
+    // Whole-branch review I-1: only when the mismatched version is the
+    // CARD'S OWN. With two or more strings `decode_with_correction` reads
+    // every string as a chunk header, so a single-string card in the set
+    // yields a bit-shifted "version" (a readable v4 card reports 10) -- a
+    // misread, not a property of any card. Require every corrected string of
+    // a multi-string set to be chunked (bit 0 of its first data symbol, as
+    // the decoder reads it); otherwise keep the atomic-fail exit 2.
     let details = match md_codec::correct_chunks(str_refs) {
-        Ok((_, details)) if !details.is_empty() => details,
+        Ok((corrected, details))
+            if !details.is_empty()
+                && (corrected.len() == 1 || corrected.iter().all(|c| is_chunked(c))) =>
+        {
+            details
+        }
         _ => {
             eprintln!(
                 "md: repair: {}",
@@ -211,6 +223,20 @@ fn corrected_but_unsupported(
     Ok(5)
 }
 
+/// Bit 0 of an md1 string's first data symbol -- the chunked flag
+/// `decode_with_correction`'s dispatch reads. `false` for anything that is
+/// not a readable md1 data part (the caller then keeps exit 2).
+fn is_chunked(md1: &str) -> bool {
+    md1.get(3..4)
+        .and_then(|c| c.chars().next())
+        .and_then(|c| {
+            CODEX32_ALPHABET
+                .iter()
+                .position(|&a| a == c.to_ascii_lowercase() as u8)
+        })
+        .is_some_and(|v| v & 1 == 1)
+}
+
 /// Apply the (position, was, now) corrections to an md1 chunk string,
 /// returning the corrected string. Position is 0-indexed into the
 /// data-part (post-`md1` HRP). Out-of-range positions (defensive only —
@@ -222,7 +248,15 @@ fn apply_corrections(original: &str, positions: &[(usize, char, char)]) -> Strin
     for &(pos, _was, now) in positions {
         let abs_idx = hrp_len + pos;
         if abs_idx < chars.len() {
-            chars[abs_idx] = now;
+            // Whole-branch review M-9: write the correction in the INPUT's
+            // case. md1 is single-case (BIP-173); an all-uppercase card (the
+            // QR alphanumeric form) given a lowercase char becomes a
+            // mixed-case string md refuses to read.
+            chars[abs_idx] = if chars[abs_idx].is_ascii_uppercase() {
+                now.to_ascii_uppercase()
+            } else {
+                now
+            };
         }
     }
     chars.iter().collect()

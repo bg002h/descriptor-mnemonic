@@ -555,3 +555,28 @@ fn a_marker_under_a_nested_or_lookalike_tr_names_the_marker_not_a_synthetic_key(
     assert_eq!(code, 0, "{err}");
     assert!(out.starts_with("md1"), "{out}");
 }
+
+/// Whole-branch review M-5, controller ruling: a checksum on a MARKER
+/// template is verified over the text the operator WROTE. `#vexl6448` is the
+/// BIP-380 checksum of `tr(UNSPENDABLE(liana),pk(@0/<0;1>/*))` and is
+/// accepted; `#6vcyxrvp`, the checksum over the substituted synthetic hex
+/// (which 0.18.0 accepted by accident, and no md output ever emitted), is
+/// refused with a message about the marker text, never the synthetic key.
+#[test]
+fn a_marker_template_checksum_is_checked_over_the_text_the_operator_wrote() {
+    const SYNTHETIC: &str = "fa1446b119da8e010be1a88d3340f68fe4f21c439270c652c5434d04d3e92c98";
+    let body = "tr(UNSPENDABLE(liana),pk(@0/<0;1>/*))";
+    let (out, err, code) = md(&["encode", &format!("{body}#vexl6448")]);
+    assert_eq!(
+        code, 0,
+        "the checksum over the marker text must pass: {err}"
+    );
+    assert!(out.starts_with("md1"), "{out}");
+
+    let err = md_err(&["encode", &format!("{body}#6vcyxrvp")]);
+    assert!(
+        err.contains("expected vexl6448"),
+        "names the checksum of what the operator wrote: {err}"
+    );
+    assert!(!err.contains(SYNTHETIC), "leaked the synthetic key: {err}");
+}
