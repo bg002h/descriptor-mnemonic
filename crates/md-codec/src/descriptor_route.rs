@@ -9,7 +9,10 @@
 //! through that forward converter and demanding a byte-identical re-render
 //! of BOTH chains, checksum included. A wrong fingerprint, a dropped origin
 //! component, a mis-numbered placeholder or a wrong use-site guess is an
-//! `Err`, never a wrong key.
+//! `Err`, never a wrong key. The one field exempted is each origin-bearing
+//! xpub's BIP-32 parent fingerprint, which no card can carry (F-611): it is
+//! zeroed on the input side before the comparison, so a wallet's own export
+//! round-trips (F-677). Depth and child number are still compared.
 //!
 //! The use site is always `/<0;1>/*` (`UseSitePath::standard_multipath()`),
 //! and the self-check is what makes that assumption safe: a descriptor with
@@ -28,7 +31,9 @@ use bitcoin::hashes::Hash as _;
 use miniscript::descriptor::{
     Descriptor as MsDescriptor, DescriptorPublicKey, ShInner, SinglePubKey, TapTree, Wsh,
 };
-use miniscript::{Legacy, Miniscript, ScriptContext, Segwitv0, Tap, Terminal, Threshold};
+use miniscript::{
+    ForEachKey, Legacy, Miniscript, ScriptContext, Segwitv0, Tap, Terminal, Threshold,
+};
 
 use crate::canonicalize::canonicalize_placeholder_indices;
 use crate::encode::Descriptor;
@@ -193,7 +198,7 @@ pub fn descriptor_from_chains(chain0: &str, chain1: &str) -> Result<Descriptor, 
         let got = crate::to_miniscript::to_miniscript_descriptor_with_network(&d, chain, network)
             .map_err(|e| RouteError::Unsupported(e.to_string()))?
             .to_string();
-        if got != want {
+        if got != without_parent_fingerprints(want) {
             return Err(RouteError::RoundTrip {
                 chain,
                 got,
@@ -205,6 +210,55 @@ pub fn descriptor_from_chains(chain0: &str, chain1: &str) -> Result<Descriptor, 
     canonicalize_placeholder_indices(&mut d)
         .map_err(|e| RouteError::Canonicalize(e.to_string()))?;
     Ok(d)
+}
+
+/// `text` with the BIP-32 parent fingerprint of every ORIGIN-BEARING xpub
+/// zeroed, and its checksum (if it had one) recomputed over the result -- the
+/// form the self-check in [`descriptor_from_chains`] compares against.
+///
+/// F-677: a card stores a key as chain code + point, and the parent
+/// fingerprint is hash160 of the PARENT point, which is not on the wire
+/// (F-611), so every re-render carries `00000000` there. A wallet's own
+/// export carries the real one, and demanding it byte-for-byte refused every
+/// wallet-exported descriptor. The field takes no part in CKDpub, the script
+/// or the key. Nothing else is relaxed: depth and child number are recovered
+/// from the origin and still compared, and an origin-less xpub (Liana's
+/// unspendable internal key, recognised by full byte equality) is untouched.
+///
+/// Best effort by construction: text that does not parse, or whose checksum
+/// does not verify, comes back unchanged, so it fails the comparison exactly
+/// as it did before.
+fn without_parent_fingerprints(text: &str) -> String {
+    let Ok(parsed) = MsDescriptor::<DescriptorPublicKey>::from_str(text) else {
+        return text.to_string();
+    };
+    let mut out = text.to_string();
+    parsed.for_each_key(|pk| {
+        if let DescriptorPublicKey::XPub(x) = pk {
+            if x.origin.is_some() && x.xkey.parent_fingerprint != Default::default() {
+                let zeroed = bitcoin::bip32::Xpub {
+                    parent_fingerprint: Default::default(),
+                    ..x.xkey
+                };
+                out = out.replace(&x.xkey.to_string(), &zeroed.to_string());
+            }
+        }
+        true
+    });
+    if out == text {
+        return out;
+    }
+    match out.rsplit_once('#') {
+        // `from_str` above already verified the input's checksum.
+        Some((body, _)) => {
+            let mut eng = miniscript::descriptor::checksum::Engine::new();
+            if eng.input(body).is_err() {
+                return text.to_string();
+            }
+            format!("{body}#{}", eng.checksum())
+        }
+        None => out,
+    }
 }
 
 /// Placeholder indices are assigned in walk order;
@@ -518,6 +572,39 @@ fn derivation_path_to_origin_path(p: &DerivationPath) -> OriginPath {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// F-677: the self-check now recomputes a wallet export's checksum after
+    /// zeroing its parent fingerprints, so it must not launder a checksum
+    /// that was wrong to begin with. Chain 1 is never parsed on its own
+    /// before the comparison, which makes it the chain where that could
+    /// hide. Mutation: parse `text`'s body with the checksum stripped in
+    /// `without_parent_fingerprints` -> the tampered chain 1 is accepted and
+    /// this reds.
+    #[test]
+    fn a_wallet_export_with_a_bad_chain1_checksum_is_still_refused() {
+        let chain = |c: u32| {
+            format!(
+                "wsh(or_i(pkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf/{c}/*),and_v(v:pkh([3f635a63/48'/0'/0'/2']xpub6FHZCoNb3tg3o1GAJQxSwgFNF8mLRtTk2GgkF7n5rwzoxBhUEdFWa8cyZRHqytAzKZWsKz8627cQEMCCfR5GDSv6yXegqirpgDUX41Pxybr/{c}/*),older(26280))))"
+            )
+        };
+        let with_sum = |body: String| {
+            let mut eng = miniscript::descriptor::checksum::Engine::new();
+            eng.input(&body).unwrap();
+            format!("{body}#{}", eng.checksum())
+        };
+        let (c0, c1) = (with_sum(chain(0)), with_sum(chain(1)));
+        assert!(descriptor_from_chains(&c0, &c1).is_ok());
+        let last = c1.chars().last().unwrap();
+        let bad = format!(
+            "{}{}",
+            &c1[..c1.len() - 1],
+            if last == 'q' { 'p' } else { 'q' }
+        );
+        assert!(matches!(
+            descriptor_from_chains(&c0, &bad),
+            Err(RouteError::RoundTrip { chain: 1, .. })
+        ));
+    }
 
     /// F-655: the recogniser's NEAR MISS. Liana's recipe over the SAME leaves
     /// in a DIFFERENT order is a different chain code, so it must not be
