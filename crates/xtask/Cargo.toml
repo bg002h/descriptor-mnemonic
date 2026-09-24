@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Repository automation: `cargo xtask verdicts` builds md-codec's coordinator verdict table."
+
+[lints]
+workspace = true
+
+[dependencies]
+md-codec = { path = "../md-codec" }
+serde_json = "1"

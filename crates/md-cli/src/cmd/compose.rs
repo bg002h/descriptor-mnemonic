@@ -599,62 +599,27 @@ fn describe(e: &Experimental) -> String {
     }
 }
 
-/// F-449 stage 2 Task 2: what `--unspendable liana` does when it cannot yield
-/// an importable wallet. Called ONLY under that flag -- gate every new
-/// refusal on the FLAG, never on the shape, or the default compose of these
-/// same shapes (and the vendored vectors) goes red.
+/// F-449 stage 2 Task 2, as narrowed by coordinator-compat plan 1b: what
+/// `--unspendable liana` does that is md's OWN business. Called ONLY under
+/// that flag -- gate every refusal on the FLAG, never on the shape, or the
+/// default compose of these same shapes goes red.
 ///
-/// Split by AUTHORITY (R0 C-1/I-6):
-/// - **SPEC §6 is md's own rule → REFUSE**, through the same
+/// - **SPEC §6 is md's own rule -> REFUSE**, through the same
 ///   `validate_unspendable_shape` `md encode` runs, so its message is not
-///   re-worded here. Not a second implementation: one home, two callers --
-///   the F-600 read-back's argument in `run`. `md encode` refusing LATER is
-///   not enough, because `md descriptor` shares compose's parse path and
-///   would render the refused shape into a concrete, fundable descriptor.
-/// - **md-legal but outside Liana's policy model → WARN.** md does not own
-///   Liana's policy model (SPEC §0a); refusing a wallet md's rules admit
-///   would hard-code one coordinator into md's lowering. Keyed on the
-///   composed SHAPE, never the preset name (R1 I-f): a `--path`-built
-///   equivalent must warn too. Evidence for both halves: Liana v15.0
-///   refused `preset-hashlock-gated-tr` and `preset-decaying-multisig-tr`
-///   (md-codec `tests/fixtures/liana/cases.json`, `accepted: false`).
-/// - **SPEC §6 row 3 → WARN**: a real internal key was extracted, so there
+///   re-worded here (one home, two callers).
+/// - **SPEC §6 row 3 -> WARN**: a real internal key was extracted, so there
 ///   is no unspendable key to choose. The codec signals
 ///   (`Composed::unspendable_request_unmet`); this prints.
 ///
-/// The "no unlocked path" half requires NO real internal key (R2 M-i): a
-/// real key path IS an unlocked path, which makes this half exclusive with
-/// the row-3 warning, so the canonical unlocked-primary +
-/// timelocked-recovery shape prints one warning, not two. MEASURED, the
-/// `internal_key_path.is_none()` conjunct is REDUNDANT with the walk:
-/// `policy_shape` already pushes a real internal key as its own unlocked
-/// `Branch` first (`policy_shape.rs`, "the key path as path 0", fix round 1
-/// I-5) -- the plan's premise that `branches` holds tapscript leaves only is
-/// not true of this codec. The conjunct stays as the stated rule, so the
-/// exclusivity does not rest on a walk detail two layers away; deleting it
-/// is semantically inert today, and a mutation test cannot see it. The
-/// hashlock half does not require it (R3 M-5): Liana declines a hashlock
-/// leaf whatever the key path holds.
-fn liana_refuse_or_warn(composed: &md_codec::compose::Composed) -> Result<(), CliError> {
+/// What this function USED to do as well -- warn when a shape sat outside
+/// Liana's policy model (a hashlock; every path timelocked) -- was a second
+/// hand-written Liana classifier beside the fork's, and F-644 measured the
+/// shapes it missed. Plan 1b REPLACED it with the coordinator verdict every
+/// compose now prints (`crate::cmd::verdict`), which reads md-codec's
+/// registry: one rule set, for every shape, with or without the flag.
+fn unspendable_liana_checks(composed: &md_codec::compose::Composed) -> Result<(), CliError> {
     md_codec::validate::validate_unspendable_shape(&composed.descriptor)
         .map_err(CliError::Codec)?;
-    let shape = md_codec::policy_shape::policy_shape(&composed.descriptor);
-    let mut reasons: Vec<&str> = Vec::new();
-    if shape.branches.iter().any(|b| !b.hashlocks.is_empty()) {
-        reasons.push("a path carries a hashlock, which Liana's spending policy has no place for");
-    }
-    if composed.internal_key_path.is_none() && shape.branches.iter().all(|b| !b.locks.is_empty()) {
-        reasons.push(
-            "every path is timelocked, and Liana needs one primary path that spends without a timelock",
-        );
-    }
-    if !reasons.is_empty() {
-        eprintln!(
-            "warning: --unspendable liana: Liana is not expected to import this wallet: {}. \
-             md composes it anyway -- it is a valid md wallet -- but it is not a Liana wallet.",
-            reasons.join("; and ")
-        );
-    }
     if composed.unspendable_request_unmet {
         let path = composed.internal_key_path.map_or(0, |i| i + 1);
         eprintln!(
@@ -675,6 +640,7 @@ pub fn run(
     experimental: bool,
     json: bool,
     unspendable: Option<&str>,
+    md_only: bool,
 ) -> Result<u8, CliError> {
     let wrapper = parse_wrapper(wrapper)?;
     // F-449 stage 2 Task 1b, RULING (R2 NEW-I-1): the refusal is on the FLAG,
@@ -712,7 +678,7 @@ pub fn run(
     let composed =
         compose(&list, unspendable_kind).map_err(|e| CliError::Compose(e.to_string()))?;
     if unspendable_kind == UnspendableKind::Liana {
-        liana_refuse_or_warn(&composed)?;
+        unspendable_liana_checks(&composed)?;
     }
     if !composed.experimental.is_empty() && !experimental {
         let mut msg = String::from("this policy needs --experimental:");
@@ -818,6 +784,28 @@ pub fn run(
              This is a defect in the path list, not in the keys or the hashes: the reason \
              above is the rule that was broken. Change the path the reason names."
         )));
+    }
+
+    // Coordinator-compat plan 1b: the verdict, on stderr, for every compose.
+    // compose MINTS a policy, so ruling 2's loud stop belongs here (design
+    // §4): when every coordinator refuses at every verified version, nothing
+    // is emitted unless the operator says `--md-only`. A template has no
+    // keys, so no coordinator can be claimed to import it (design §1 (a2)) --
+    // "none" is therefore only ever a set of REFUSALS, never of silences.
+    let none = crate::cmd::verdict::notice(&composed.descriptor, None, "this template")
+        .is_some_and(|vs| md_codec::coordinator::none_imports(&vs));
+    if none && !md_only {
+        return Err(CliError::Compose(
+            "no wallet coordinator md knows imports this policy: every one refuses it at every \
+             verified version (above). md can still rebuild it from the card -- but md cannot \
+             sign. Pass --md-only to compose it anyway."
+                .into(),
+        ));
+    }
+    if md_only && !none {
+        eprintln!(
+            "note: --md-only has no effect: at least one coordinator is not known to refuse this policy"
+        );
     }
 
     #[cfg(feature = "json")]

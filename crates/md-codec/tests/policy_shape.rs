@@ -579,3 +579,30 @@ fn andor_splits_into_x_and_y_or_z() {
     assert_eq!(shape.branches[0].slots, vec![0, 1]);
     assert_eq!(shape.branches[1].slots, vec![2]);
 }
+
+/// 1a final review M-1, owned "before plan 1b reads k/n" (plan 1b's
+/// `liana_reads_as_built` and `nunchuk_reads_as_built` read them). A
+/// duplicate-index multi has three indices and two distinct keys: no k-of-n
+/// describes it, and the bare spelling must answer as the wrapped one does.
+/// Mutation: delete `plain_multi`'s `nkeys == slots.len()` guard in
+/// `branch_of` -> the bare spelling reports 2-of-3 and this reds.
+#[test]
+fn a_duplicate_index_multi_reports_no_threshold_in_either_spelling() {
+    let bare = common::descriptor_of(wrap(Tag::Wsh, multikeys(Tag::Multi, 2, vec![0, 0, 1])), 2);
+    let locked = common::descriptor_of(
+        wrap(
+            Tag::Wsh,
+            node2(
+                Tag::AndV,
+                wrap(Tag::Verify, timelock(Tag::Older, 9)),
+                multikeys(Tag::Multi, 2, vec![0, 0, 1]),
+            ),
+        ),
+        2,
+    );
+    for d in [bare, locked] {
+        let b = &policy_shape(&d).branches[0];
+        assert_eq!(b.slots, vec![0, 1]);
+        assert_eq!((b.k, b.n), (0, 0), "no k-of-n for a duplicate-index multi");
+    }
+}

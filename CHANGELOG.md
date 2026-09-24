@@ -4,6 +4,65 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.20.0] — 2026-09-23
+
+### Added
+
+- **`md shape-key`** prints a policy's shape key -- the canonical,
+  coordinator-independent summary the coordinator verdict table is keyed by
+  (U+001F-separated: template, partitions, key-path kind) -- from an md1 card
+  or, with `--descriptor`, from a multipath (`<0;1>`) descriptor. A thin CLI
+  over md-codec; a test asserts it agrees with the library on every vendored
+  evidence descriptor.
+- **Every `md compose` and `md descriptor` prints a coordinator verdict on
+  stderr** (Liana, Nunchuk, Bitcoin Core), one line per run of VERIFIED
+  versions, e.g. `Bitcoin Core 26.0-31.1: imports the chain0 form (measured
+  2026-09-23)`. Refusals come from source-derived rules; a positive is printed
+  only where a measurement backs it, and a keyless template never claims one.
+  `md descriptor` names the spelling it printed (multipath, chain0, chain1).
+  stdout and `--json` are unchanged.
+- **`md compose --md-only`.** When every coordinator refuses the policy at
+  every verified version, `md compose` now REFUSES (exit 1, nothing on stdout)
+  and names this flag; with it, compose proceeds. `md descriptor` never
+  refuses on a verdict.
+
+### Changed
+
+- **`--unspendable liana`'s Liana warnings are replaced by the verdict**
+  (F-644's md-cli half). The hand-written "Liana is not expected to import
+  this wallet" warning covered two shapes; the registry names Liana's refusal
+  class for every shape, with or without the flag. SPEC §6's refusal and the
+  "has no effect" warning are md's own rules and are unchanged.
+- **A keyless path composed with `--experimental` now also needs
+  `--md-only`**: no coordinator imports it (Liana, Nunchuk and Core all
+  refuse a spend path without a signature).
+
+## md-codec [0.48.0] — 2026-09-23
+
+### Added
+
+- **`coordinator`**: which wallet coordinators import a policy. Four verdict
+  kinds (`Refuses`, `ImportsAltered`, `Imports`, `Unproven`), a registry of
+  Liana, Nunchuk and Bitcoin Core with their verified versions, source-derived
+  refusal rules, and a GENERATED table of measured cells
+  (`coordinator/table.rs`, from `tests/fixtures/coordinator/evidence.jsonl`
+  by `cargo xtask verdicts`). The build fails on any rule/evidence
+  disagreement (D1-D5). The Bitcoin Core boundary is measured on release
+  binaries: tapscript miniscript from 26.0, the `<0;1>` spelling after 28.4.
+- **`descriptor_route`** (feature `derive`): a public route from multipath
+  descriptor TEXT to a decoded `Descriptor` and its `SkeletonKey`. Promoted
+  from the conformance test's private walker; every reconstruction is
+  self-checked by a byte-identical re-render of both chains.
+- **`Skeleton::leaf_keys_ascending`**: whether a `tr` policy's tap-leaf keys
+  are in strictly ascending order -- the one fact Nunchuk's handling of
+  Liana's unspendable key turns on. Not part of the `SkeletonKey`.
+
+### Fixed
+
+- **`policy_shape`: a duplicate-index `multi` reports no `k`-of-`n`** in its
+  bare spelling as it already did behind a wrapper (`wsh(multi(2,@0,@0,@1))`
+  was 2-of-3 over two keys).
+
 ## md-cli [0.19.0] — 2026-09-23
 
 ### Added
