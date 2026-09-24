@@ -16,7 +16,7 @@
 //!   module's doc for what the round trip does and does not certify.
 //!
 //! Both routes feed the ONE [`skeleton`]/[`skeleton_key`] implementation.
-//! `tests/coordinator_evidence.rs` runs the same gate over every vendored
+//! `tests/coordinator.rs` runs the same gate over every vendored
 //! EVIDENCE row, which this corpus does not contain (recon: 0 of 11 Liana
 //! live-gate rows, 1 of 56 matrix shapes).
 

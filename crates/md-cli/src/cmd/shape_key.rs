@@ -5,8 +5,8 @@
 //! `skeleton`, and `--descriptor` goes through
 //! `md_codec::descriptor_route::skeleton_key_of_text` -- the same function
 //! `cargo xtask verdicts` keys the evidence with. Nothing here computes a key.
-//! `tests/cli_shape_key.rs` asserts the CLI and the library agree on every
-//! vendored evidence row.
+//! `tests/cli_coordinator_verdict.rs` asserts the CLI and the library agree
+//! on every vendored evidence row.
 
 use crate::error::CliError;
 use md_codec::chunk::reassemble;
