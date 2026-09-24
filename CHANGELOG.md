@@ -4,6 +4,33 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.20.3] — 2026-09-24
+
+### Fixed
+
+- **`md shape-key --descriptor` keys a wallet's own export** (F-677). It
+  refused every descriptor a wallet exports with `the reconstruction does not
+  round-trip chain 0`, and keyed only `md descriptor`'s rendering of the same
+  wallet. `md descriptor` writes each xpub's parent fingerprint as `00000000`
+  because a card cannot carry it (F-611), and the check demanded the input's
+  xpub text byte for byte. Keys that already printed are unchanged. The
+  `--descriptor` help now says the parent fingerprint is not compared.
+
+## md-codec [0.48.3] — 2026-09-24
+
+### Fixed
+
+- **`descriptor_route` no longer compares xpub parent fingerprints** (F-677).
+  `descriptor_from_chains` (and so `descriptor_from_text` and
+  `skeleton_key_of_text`) zeroes the BIP-32 parent fingerprint of each
+  origin-bearing input xpub before its round-trip self-check, recomputing a
+  checksum the input already carried and verified. The field is not on the
+  wire and takes no part in CKDpub, the script or the `SkeletonKey`. Depth
+  and child number are still compared, origin-less xpubs are untouched, and
+  unparseable text is compared unchanged. Over 414 corpus descriptors, all
+  274 that keyed before give byte-identical keys, and 99 wallet-exported
+  texts key where they were refused.
+
 ## md-cli [0.20.2] — 2026-09-23
 
 ### Fixed
