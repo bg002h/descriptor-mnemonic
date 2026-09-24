@@ -45,6 +45,20 @@ pub struct ParsedKey {
     pub payload: [u8; 65],
 }
 
+/// `network` as `--network` spells it (`mainnet`, not `bitcoin::Network`'s
+/// Display `bitcoin`). Messages name the network the user PASSED with this:
+/// testnet, signet and regtest share one xpub version and one `NetworkKind`,
+/// so naming either of those says "testnet" to a regtest user (F-674 item 4).
+pub(crate) fn network_name(network: bitcoin::Network) -> &'static str {
+    match network {
+        bitcoin::Network::Bitcoin => "mainnet",
+        bitcoin::Network::Testnet => "testnet",
+        bitcoin::Network::Testnet4 => "testnet4",
+        bitcoin::Network::Signet => "signet",
+        bitcoin::Network::Regtest => "regtest",
+    }
+}
+
 pub fn parse_key(
     arg: &str,
     ctx: ScriptCtx,
@@ -64,14 +78,16 @@ pub fn parse_key(
             why: format!("expected 78 bytes, got {}", bytes.len()),
         });
     }
-    let (expected_version, network_label) = match network {
-        bitcoin::Network::Bitcoin => (MAINNET_XPUB_VERSION, "mainnet"),
+    let expected_version = match network {
+        bitcoin::Network::Bitcoin => MAINNET_XPUB_VERSION,
         // BIP 32 testnet bytes (0x043587CF) cover all testnet flavors.
         bitcoin::Network::Testnet
         | bitcoin::Network::Testnet4
         | bitcoin::Network::Signet
-        | bitcoin::Network::Regtest => (TESTNET_XPUB_VERSION, "testnet"),
+        | bitcoin::Network::Regtest => TESTNET_XPUB_VERSION,
     };
+    // The network the user passed, not the version family (F-674 item 4).
+    let network_label = network_name(network);
     if bytes[0..4] != expected_version {
         return Err(CliError::BadXpub {
             i,
@@ -393,6 +409,31 @@ mod tests {
         .unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("expected testnet"), "got: {msg}");
+    }
+
+    /// F-674 item 4: the version error names the network the user passed.
+    /// Under regtest and signet it said "expected testnet xpub version".
+    /// Mutation: label every test network "testnet" again -> red.
+    #[test]
+    fn rejects_xpub_naming_the_network_passed() {
+        for (network, name) in [
+            (bitcoin::Network::Signet, "signet"),
+            (bitcoin::Network::Regtest, "regtest"),
+        ] {
+            let err = parse_key(
+                format!("@0={XPUB_DEPTH4}").as_str(),
+                ScriptCtx::MultiSig,
+                network,
+            )
+            .unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains(&format!(
+                    "expected {name} xpub version 043587CF, got 0488B21E"
+                )),
+                "got: {msg}"
+            );
+        }
     }
 
     #[test]

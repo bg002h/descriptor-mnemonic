@@ -458,18 +458,23 @@ fn check_network(occ: &[Occurrence], network: Network) -> Result<(), CliError> {
     let want = bitcoin::NetworkKind::from(network);
     for (i, o) in occ.iter().enumerate() {
         if o.xpub.network != want {
+            // A tpub's version bytes are shared by testnet, signet and
+            // regtest, so the key cannot say which one: offer all three.
             let (have, flag) = match o.xpub.network {
-                bitcoin::NetworkKind::Main => ("mainnet", "--network mainnet"),
-                bitcoin::NetworkKind::Test => ("testnet", "--network testnet"),
+                bitcoin::NetworkKind::Main => ("mainnet", "`--network mainnet`"),
+                bitcoin::NetworkKind::Test => (
+                    "testnet",
+                    "`--network testnet`, `--network signet` or `--network regtest`, \
+                     whichever the key is for",
+                ),
             };
+            // Name the network the user PASSED, not `want`: NetworkKind::Test
+            // is testnet, signet and regtest alike (F-674 item 4).
             return Err(CliError::Decompose(format!(
                 "key @{i} is a {have} extended key, but --network says {}. The emitted \
                  `md encode --key` commands would be refused by md's own version-byte check, \
-                 so decompose stops here instead. Re-run with `{flag}`.",
-                match want {
-                    bitcoin::NetworkKind::Main => "mainnet",
-                    bitcoin::NetworkKind::Test => "testnet",
-                }
+                 so decompose stops here instead. Re-run with {flag}.",
+                crate::parse::keys::network_name(network)
             )));
         }
     }
@@ -595,6 +600,38 @@ mod tests {
         let err = decompose(&[d], Network::Bitcoin).unwrap_err().to_string();
         assert!(err.contains("testnet"), "{err}");
         assert!(err.contains("--network testnet"), "{err}");
+    }
+
+    /// F-674 item 4: the refusal names the network the user PASSED. It said
+    /// "--network says testnet" under regtest and signet, because it printed
+    /// the key's `NetworkKind`, which has one value for all three.
+    /// Mutation: name `NetworkKind::from(network)` again -> regtest and
+    /// signet red.
+    #[test]
+    fn network_mismatch_names_the_network_the_user_passed() {
+        for (network, name) in [
+            (Network::Testnet, "testnet"),
+            (Network::Signet, "signet"),
+            (Network::Regtest, "regtest"),
+        ] {
+            let err = decompose(&[d2()], network).unwrap_err().to_string();
+            assert!(err.contains(&format!("--network says {name}.")), "{err}");
+            assert!(err.contains("Re-run with `--network mainnet`"), "{err}");
+        }
+    }
+
+    /// The other direction: a tpub cannot say which test network it is for
+    /// (testnet, signet and regtest share its version bytes), so the recipe
+    /// offers all three rather than guessing testnet.
+    /// Mutation: restore the single `--network testnet` recipe -> red.
+    #[test]
+    fn a_tpub_under_mainnet_offers_every_test_network() {
+        let d = format!("wpkh([73c5da0a/84'/1'/0']{TPUB}/<0;1>/*)");
+        let err = decompose(&[d], Network::Bitcoin).unwrap_err().to_string();
+        assert!(err.contains("--network says mainnet."), "{err}");
+        for flag in ["--network testnet", "--network signet", "--network regtest"] {
+            assert!(err.contains(flag), "{flag}: {err}");
+        }
     }
 
     #[test]
