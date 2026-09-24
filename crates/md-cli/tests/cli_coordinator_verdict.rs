@@ -227,3 +227,24 @@ fn descriptor_names_the_form_and_never_refuses() {
         "{err}"
     );
 }
+
+/// F-674 item 3, as the user sees it: `md descriptor` on one of the composer
+/// tr wallets the Core e2e run imported (agent-reports/e2e-live-site-wallets.md,
+/// "Date 2026-09-23", mainnet) dates the Core import 2026-09-23, the day it
+/// was measured in local time. It printed 2026-09-24, the UTC date of the
+/// engrave commit that recorded it.
+/// Mutation: vendor with the old git-blame rule -> this reds.
+#[test]
+fn descriptor_dates_the_core_import_the_day_it_was_measured() {
+    let card = card_of(&descriptor_named("kofn-nums"));
+    let mut args = vec!["descriptor"];
+    args.extend(card.iter().map(String::as_str));
+    let (_, err, code) = md(&args);
+    assert_eq!(code, 0, "{err}");
+    let core = err
+        .lines()
+        .find(|l| l.contains("Bitcoin Core") && l.contains("imports the multipath form"))
+        .unwrap_or_else(|| panic!("no Core multipath import line: {err}"));
+    assert!(core.ends_with("(measured 2026-09-23)"), "{core}");
+    assert!(!err.contains("2026-09-24"), "{err}");
+}

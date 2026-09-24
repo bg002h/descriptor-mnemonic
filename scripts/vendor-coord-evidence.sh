@@ -33,8 +33,13 @@
 #   Core        coord-compat-e2e/core-composer-tr.{tsv,out} (F-673): the MULTIPATH
 #               form, imported with importdescriptors and the wallet's own
 #               addresses compared to the device's, per "<v> <name>" line
-# measured_at is the committer date of the commit that recorded the row's line
-# (git blame), so it is mechanical, not typed.
+# measured_at is the date the measurement was TAKEN, read from engrave's
+# design/evidence/measured-at.json: one date per input file, plus a date per
+# record for a record measured later than the rest of its file. An input with
+# no entry, or an entry no row used, stops the run. The file is hashed into
+# evidence.meta.json like every other input, so --check sees a date change.
+# (F-674 item 3: the rule used to be the engrave commit's date in UTC, via git
+# blame, which dated a 20:09 -0700 measurement the next day.)
 set -euo pipefail
 
 check=0
@@ -69,23 +74,23 @@ def read_lines(rel):
     inputs[rel] = hashlib.sha256(data).hexdigest()
     return data.decode().split("\n")
 
-def dates(rel):
-    """Committer date (YYYY-MM-DD) of the commit that recorded each line."""
-    out = subprocess.run(["git", "-C", engrave, "blame", "--line-porcelain", "--", f"{EV}/{rel}"],
-                         check=True, capture_output=True, text=True).stdout
-    per_line, t = [], None
-    for l in out.split("\n"):
-        if l.startswith("committer-time "):
-            t = int(l.split()[1])
-        elif l.startswith("\t"):
-            per_line.append(subprocess.run(["date", "-u", "-d", f"@{t}", "+%Y-%m-%d"],
-                                           check=True, capture_output=True, text=True).stdout.strip())
-    return per_line
+MEASURED = json.loads("\n".join(read_lines("measured-at.json")))["files"]
+used = set()
+def at(rel, name=None):
+    """The date the measurement in `rel` (record `name`) was taken, as stated."""
+    e = MEASURED.get(rel)
+    if e is None:
+        sys.exit(f"vendor-coord-evidence: {EV}/measured-at.json states no date for {rel}")
+    used.add(rel)
+    r = e.get("records", {}).get(name)
+    if r is not None:
+        used.add((rel, name))
+        return r["measured_at"]
+    return e["measured_at"]
 
 def jsonl(rel):
     lines = read_lines(rel)
-    d = dates(rel)
-    return [(json.loads(l), f"{rel}:{i+1}", d[i]) for i, l in enumerate(lines) if l.strip()]
+    return [(json.loads(l), f"{rel}:{i+1}") for i, l in enumerate(lines) if l.strip()]
 
 rows = []
 def row(id_, name, coord, version, lib, tool, tver, form, at, desc, outcome, unkeyable=None):
@@ -114,42 +119,43 @@ LIANA_UNKEYABLE = {"CONTROL-stale-key-nested-B-tree-with-A-internal-key":
 
 # -- Liana, fable r0 (8.0 and 15.0) ----------------------------------------
 shapes = {s["name"]: s for s in json.loads("\n".join(read_lines("composer-fable-r0/fable-liana-shapes.json")))}
-fin = {(r["name"], r["variant"]): r["desc"] for r, _, _ in jsonl("composer-fable-r0/fable-liana-parse-in.jsonl")}
+fin = {(r["name"], r["variant"]): r["desc"] for r, _ in jsonl("composer-fable-r0/fable-liana-parse-in.jsonl")}
 # Liana v8.0 at 9d2fb742 and md 0.17.0: agent-reports/composer-fable-r0-liana-core.md:17
 for rel, ver, lib, variants in [
     ("composer-fable-r0/fable-liana-parse-out.jsonl", "8.0", "9d2fb742", {"md"}),
     ("composer-fable-r0/fable-liana-parse-out-v15.jsonl", "15.0", "4684d5cb", {"md", "liana-unspendable-xpub"}),
 ]:
-    for rec, id_, at in jsonl(rel):
+    for rec, id_ in jsonl(rel):
         if rec["variant"] not in variants:
             continue
         tool, tver = ("md", "0.17.0") if rec["variant"] == "md" else ("harnesses/liana unspendable", "v15.0")
-        row(id_, rec["name"], "liana", ver, lib, tool, tver, "multipath", at,
+        row(id_, rec["name"], "liana", ver, lib, tool, tver, "multipath", at(rel, rec["name"]),
             fin[(rec["name"], rec["variant"])], liana_outcome(rec))
 
 # -- Liana, F-449 live gate and stage-4 probes (15.0 at 4684d5cb) -----------
 for in_rel, out_rel in [("f449-stage2/liana-live-gate-in.jsonl", "f449-stage2/liana-live-gate-expected.jsonl"),
                         ("f449-stage4/liana-probes-parse-in.jsonl", "f449-stage4/liana-probes-out.jsonl")]:
-    din = {r["name"]: r["desc"] for r, _, _ in jsonl(in_rel)}
-    for rec, id_, at in jsonl(out_rel):
+    din = {r["name"]: r["desc"] for r, _ in jsonl(in_rel)}
+    for rec, id_ in jsonl(out_rel):
         if "name" not in rec:
             assert rec.get("liana_tag") == "v15.0", rec  # the header pins the tag
             continue
         row(id_, rec["name"], "liana", "15.0", "4684d5cb", "harnesses/liana unspendable", "v15.0", "multipath",
-            at, din[rec["name"]], liana_outcome(rec), LIANA_UNKEYABLE.get(rec["name"]))
+            at(out_rel, rec["name"]), din[rec["name"]], liana_outcome(rec), LIANA_UNKEYABLE.get(rec["name"]))
 
 # -- Liana 15.0, the plan 1b R0 review's probes (harness at fable-liana-src-v15,
 # `git describe` v15.0, 4684d5cb; agent-reports/coord-compat-1b-plan-r0.md).
 # Hand-built descriptors over the X24 keys: the 1-of-n fold (I-1) and older(70000) (M-1).
-din = {r["name"]: r["desc"] for r, _, _ in jsonl("coord-compat-1b/liana-r0-probes-in.jsonl")}
-for rec, id_, at in jsonl("coord-compat-1b/liana-r0-probes-out.jsonl"):
+din = {r["name"]: r["desc"] for r, _ in jsonl("coord-compat-1b/liana-r0-probes-in.jsonl")}
+rel = "coord-compat-1b/liana-r0-probes-out.jsonl"
+for rec, id_ in jsonl(rel):
     row(id_, rec["name"], "liana", "15.0", "4684d5cb", "plan 1b r0 probe (hand-built)", "2026-09-23",
-        "multipath", at, din[rec["name"]], liana_outcome(rec))
+        "multipath", at(rel, rec["name"]), din[rec["name"]], liana_outcome(rec))
 
 # -- Nunchuk 2.1.1 (libnunchuk a7cfb49), fable r0, md 0.16.2 ----------------
 # agent-reports/composer-fable-r0-nunchuk.md:6 (md 0.16.2), recon §3c (a7cfb49 = 2.1.1's pin)
 rel = "composer-fable-r0/fable-nunchuk-harness-out.txt"
-lines, d = read_lines(rel), dates(rel)
+lines = read_lines(rel)
 i = 0
 while i < len(lines):
     m = re.match(r"^### (.+)\.multipath$", lines[i])
@@ -171,7 +177,7 @@ while i < len(lines):
         line = next(l.strip() for l in body if l.strip().startswith("ParseWalletDescriptor="))
         outcome = {"refused": line}
     row(f"{rel}:{start+1}", name, "nunchuk", "2.1.1", "a7cfb49", "md", "0.16.2", "multipath",
-        d[start], shapes[name]["desc_md"], outcome)
+        at(rel, name), shapes[name]["desc_md"], outcome)
 
 # -- Nunchuk 2.1.1, the recon's kind-1 probe (ruling R-1's evidence) --------
 rel_tsv, rel_out = "coord-compat-1b/nunchuk-kind1-probe.tsv", "coord-compat-1b/nunchuk-kind1-probe.out"
@@ -180,7 +186,7 @@ for l in read_lines(rel_tsv):
     if l.strip():
         n, desc = l.split("\t")[:2]
         descs[n] = desc
-lines, d = read_lines(rel_out), dates(rel_out)
+lines = read_lines(rel_out)
 PR1746 = "PR-1746 form: an origin-less real internal key, which md1 cannot encode (recon §4)"
 for i, l in enumerate(lines):
     m = re.match(r"^### (\S+)$", l)
@@ -194,15 +200,15 @@ for i, l in enumerate(lines):
     else:
         outcome = {"refused": re.search(r"ParseWalletDescriptor=REFUSE[^\n]*", block).group(0)}
     row(f"{rel_out}:{i+1}", name, "nunchuk", "2.1.1", "a7cfb49", "recon-1b-nunchuk-probe.py", "2026-09-23",
-        "multipath", d[i], descs[name], outcome, PR1746 if name.startswith("pr1746") else None)
+        "multipath", at(rel_out, name), descs[name], outcome, PR1746 if name.startswith("pr1746") else None)
 
 # -- Bitcoin Core, official release binaries --------------------------------
-live = {r["name"]: r for r, _, _ in jsonl("f449-stage2/liana-live-gate-expected.jsonl") if "name" in r}
+live = {r["name"]: r for r, _ in jsonl("f449-stage2/liana-live-gate-expected.jsonl") if "name" in r}
 k1_desc = live["CONTROL-accept-kofn-recovery-flat"]["liana_desc"]
 for v in ["24.2", "25.0", "25.2", "26.0", "26.2", "27.2", "28.4", "29.4", "30.3", "31.1"]:
     rel = f"coord-compat-core-boundary/core-{v}.json"
     rec = json.loads("\n".join(read_lines(rel)))
-    at = dates(rel)[0]
+    when = at(rel)
     got = re.fullmatch(r"/Satoshi:(\d+)\.(\d+)\.\d+/", rec["version"])
     assert got and f"{got.group(1)}.{got.group(2)}" == v, (v, rec["version"])  # self-reported
     lib = rec["version"]
@@ -212,20 +218,20 @@ for v in ["24.2", "25.0", "25.2", "26.0", "26.2", "27.2", "28.4", "29.4", "30.3"
         return {"refused": text.split("error message:")[-1].strip()}
     for name, verdict in rec["ALL15"].items():
         for form in ("chain0", "chain1"):
-            row(f"{rel}:ALL15.{name}", name, "core", v, lib, "md", "0.17.0", form, at,
+            row(f"{rel}:ALL15.{name}", name, "core", v, lib, "md", "0.17.0", form, when,
                 shapes[name]["desc_md"], core_outcome(verdict))
     k1 = rec["K1"]
     k1_text = ("ACCEPT addr==md" if k1["addr_match"] is True else "ACCEPT")\
         if k1["verdict_import"] == "ACCEPT" else k1["getdescriptorinfo_c0"]
     for form in ("chain0", "chain1"):
-        row(f"{rel}:K1", "CONTROL-accept-kofn-recovery-flat", "core", v, lib, "harnesses/liana unspendable", "v15.0", form, at,
+        row(f"{rel}:K1", "CONTROL-accept-kofn-recovery-flat", "core", v, lib, "harnesses/liana unspendable", "v15.0", form, when,
             k1_desc, core_outcome(k1_text))
     for tag, name, desc, tool, tver in [
             ("REP", "preset-kofn-recovery-tr", shapes["preset-kofn-recovery-tr"]["desc_md"], "md", "0.17.0"),
             ("K1", "CONTROL-accept-kofn-recovery-flat", k1_desc, "harnesses/liana unspendable", "v15.0")]:
         mp = rec[tag]["getdescriptorinfo_multipath"]
         if mp != "ok":  # an ok here is a parse, not an import: no positive row
-            row(f"{rel}:{tag}.multipath", name, "core", v, lib, tool, tver, "multipath", at,
+            row(f"{rel}:{tag}.multipath", name, "core", v, lib, tool, tver, "multipath", when,
                 desc, {"refused": mp.split("error message:")[-1].strip()})
 
 # -- Bitcoin Core 29.4 and 31.1, the e2e live-site run (F-673) --------------
@@ -240,7 +246,7 @@ for l in read_lines(rel_tsv):
     if l.strip():
         n, desc = l.split("\t")
         descs[n] = desc
-lines, d = read_lines(rel_out), dates(rel_out)
+lines = read_lines(rel_out)
 reported, seen = None, set()
 for i, l in enumerate(lines):
     h = re.match(r"^== Core Bitcoin Core RPC client version (v(\d+)\.(\d+)\.\d+) ", l)
@@ -256,10 +262,14 @@ for i, l in enumerate(lines):
         outcome = {"imported": None if addrs == "MATCH" else {"wallet_kind": "ADDRESSES_DIFFER", "threshold": None}}
     else:
         outcome = {"refused": errs}
-    row(f"{rel_out}:{i+1}", name, "core", v, reported[0], "md", "0.20.0", "multipath", d[i],
+    row(f"{rel_out}:{i+1}", name, "core", v, reported[0], "md", "0.20.0", "multipath", at(rel_out, name),
         descs[name], outcome)
     seen.add((v, name))
 assert len(seen) == 2 * len(descs) == 16, (len(seen), len(descs))  # 8 wallets x 29.4, 31.1
+
+stated = set(MEASURED) | {(f, n) for f, e in MEASURED.items() for n in e.get("records", {})}
+if stated != used:  # a date for nothing is a stale or mistyped entry
+    sys.exit(f"vendor-coord-evidence: measured-at.json dates no row: {sorted(map(str, stated - used))}")
 
 with open(os.path.join(work, "evidence.jsonl"), "w") as f:
     for r in rows:

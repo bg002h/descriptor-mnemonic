@@ -326,12 +326,21 @@ fn imports_altered_is_derived_from_the_coordinators_own_reading() {
         "X24-wsh-2of3-1of1-unlocked-plus-rec",
     ));
     let v = verdicts(&x24, Some(Form::Multipath));
-    assert!(
-        matches!(of(&v, "liana")[..], [Verdict::ImportsAltered { as_read, .. }] if as_read.threshold == Some((2, 4))),
-        "{:?}",
-        of(&v, "liana")
-    );
-    assert_eq!(span_of(of(&v, "liana")[0]), "8.0-15.0");
+    // Two runs, not one "8.0-15.0": a run carries ONE measurement date, and
+    // Liana 8.0 was measured 2026-09-19, 15.0 on 2026-09-20 (F-674 item 3).
+    let liana = of(&v, "liana");
+    assert_eq!(liana.len(), 2, "{liana:?}");
+    for (w, (span, date)) in liana
+        .iter()
+        .zip([("8.0", "2026-09-19"), ("15.0", "2026-09-20")])
+    {
+        assert!(
+            matches!(w, Verdict::ImportsAltered { as_read, measured_at, .. }
+                if as_read.threshold == Some((2, 4)) && measured_at.0 == date),
+            "{w:?}"
+        );
+        assert_eq!(span_of(w), span);
+    }
 
     let (_, unsorted) = keyed(&descriptor_named("nunchuk", "plain-2of3-wsh-UNSORTED"));
     let v = verdicts(&unsorted, Some(Form::Multipath));
@@ -479,4 +488,59 @@ fn the_build_names_every_disagreement_class() {
     k.unkeyable = Some("claimed".into());
     let got = build(&[k]).err().unwrap_or_default();
     assert!(matches!(got[..], [Disagreement::Keying { .. }]), "{got:?}");
+}
+
+/// F-674 item 3: every row's `measured_at` is the local date its measurement
+/// was TAKEN, as each source's own report states it -- not the date of the
+/// engrave commit that recorded the line, in UTC. The Core e2e run
+/// (agent-reports/e2e-live-site-wallets.md:3, "Date 2026-09-23") was
+/// committed at 20:09 -0700 and printed "measured 2026-09-24"; the Liana 8.0
+/// and Nunchuk runs of 2026-09-19 were copied in after midnight and printed
+/// 2026-09-20. The dates come from engrave's design/evidence/measured-at.json.
+/// Mutation: vendor with the old git-blame rule -> the e2e, Liana 8.0 and
+/// Nunchuk rows red.
+#[test]
+fn measured_at_is_the_date_each_source_states() {
+    let stated: &[(&str, &str)] = &[
+        (
+            "composer-fable-r0/fable-liana-parse-out.jsonl:",
+            "2026-09-19",
+        ),
+        (
+            "composer-fable-r0/fable-nunchuk-harness-out.txt:",
+            "2026-09-19",
+        ),
+        (
+            "composer-fable-r0/fable-liana-parse-out-v15.jsonl:",
+            "2026-09-20",
+        ),
+        ("coord-compat-1b/", "2026-09-23"),
+        ("coord-compat-core-boundary/", "2026-09-23"),
+        ("coord-compat-e2e/core-composer-tr.out:", "2026-09-23"),
+        ("f449-stage2/", "2026-09-23"),
+        ("f449-stage4/", "2026-09-23"),
+    ];
+    let rows = evidence();
+    assert!(!rows.is_empty());
+    let mut per_source = std::collections::BTreeMap::<&str, usize>::new();
+    for r in &rows {
+        let id = r["id"].as_str().unwrap();
+        let at = r["measured_at"].as_str().unwrap();
+        // F-640's record was appended to the v15.0 file three days later.
+        let want = if r["name"] == "nested-2of2-two-recoveries-tr"
+            && id.starts_with("composer-fable-r0/fable-liana-parse-out-v15.jsonl:")
+        {
+            "2026-09-23"
+        } else {
+            let (p, d) = stated
+                .iter()
+                .find(|(p, _)| id.starts_with(p))
+                .unwrap_or_else(|| panic!("row {id}: no stated date for its source"));
+            *per_source.entry(p).or_default() += 1;
+            d
+        };
+        assert_eq!(at, want, "row {id}");
+    }
+    // Every source above is present, so no expectation is vacuous.
+    assert_eq!(per_source.len(), stated.len(), "{per_source:?}");
 }

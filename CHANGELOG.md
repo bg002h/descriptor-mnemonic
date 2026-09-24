@@ -4,6 +4,37 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.20.2] — 2026-09-23
+
+### Fixed
+
+- **The coordinator verdict dates each measurement the day it was taken**
+  (F-674 item 3). `md descriptor` printed `Bitcoin Core 29.4: imports the
+  multipath form (measured 2026-09-24)` for a run taken on 2026-09-23: the
+  date was the UTC date of the commit that recorded the evidence. Liana 8.0
+  and Nunchuk results, measured 2026-09-19, likewise said 2026-09-20. Where
+  Liana 8.0 and 15.0 agree on a measured outcome, the verdict is now two
+  lines, one per measurement date, instead of one `8.0-15.0` line that
+  misdated 8.0.
+- **Network messages name the network you passed** (F-674 item 4). `md
+  decompose --network regtest` (or `signet`) over a mainnet descriptor said
+  `--network says testnet`; it now says `regtest`. The same holds for the key
+  version error (`expected regtest xpub version 043587CF, …`). A `tpub` under
+  mainnet now offers `--network testnet`, `signet` or `regtest`, since the key
+  cannot say which one it is for.
+
+## md-codec [0.48.2] — 2026-09-23
+
+### Fixed
+
+- **Coordinator table: every `measured_at` is the local date the measurement
+  was taken** (F-674 item 3), as mnemonic-engrave's
+  `design/evidence/measured-at.json` states it. Before, it was the UTC date of
+  the evidence commit. 54 cells change date: 16 Core e2e cells move from
+  2026-09-24 to 09-23, and 38 Liana 8.0 and Nunchuk cells from 2026-09-20 to
+  09-19. Nothing else in the table changes. `scripts/vendor-coord-evidence.sh`
+  reads the dates from that file and refuses an input it does not date.
+
 ## md-cli [0.20.1] — 2026-09-23
 
 ### Fixed
