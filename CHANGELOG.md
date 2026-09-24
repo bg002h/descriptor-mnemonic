@@ -25,6 +25,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Core 29.4: imports the multipath form` and the same for 31.1; 30.3, not
   measured on these shapes, stays `unproven`. A keyless template (`md
   compose`) still claims no import.
+- **`md shape-key --descriptor` accepts an all-`tpub` descriptor**, which
+  0.20.0 refused. This came with F-672's route fix; the key is unchanged.
 
 ## md-codec [0.48.1] — 2026-09-23
 
