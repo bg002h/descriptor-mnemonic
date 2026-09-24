@@ -1,5 +1,5 @@
 {
- "engrave_commit": "4db2f17d8f4c8adc6533e28968e08618b3ac323e",
+ "engrave_commit": "b729bdb1300ebed9ff15e1c4c638b2e5e98cb240",
  "inputs": {
   "composer-fable-r0/fable-liana-parse-in.jsonl": "2ac541b3ce2b1f373e491c3748e12083cad86fb338112bf2562b06b2a98ec643",
   "composer-fable-r0/fable-liana-parse-out-v15.jsonl": "b74f3bf592cc2403d301a8424beef1a2e7e9d9fe7a432af1654bfa7698590a50",
@@ -25,6 +25,7 @@
   "f449-stage2/liana-live-gate-expected.jsonl": "171645bc92b532f609acfdafc0228f2c81e70de2eb7db4802ca30cc7d2cab4da",
   "f449-stage2/liana-live-gate-in.jsonl": "d75a9f0a0de971870ca9bd4253367b4420ea9ce37228d0bb7272ec0a58c81e1c",
   "f449-stage4/liana-probes-out.jsonl": "5ac95ab2571c23e7494fd99ba1d08869fc3cbe5603c85275097184a38503ff63",
-  "f449-stage4/liana-probes-parse-in.jsonl": "eb3782241fab7baaef2408997c21c773fb517ada8832850589750b19a521afaf"
+  "f449-stage4/liana-probes-parse-in.jsonl": "eb3782241fab7baaef2408997c21c773fb517ada8832850589750b19a521afaf",
+  "measured-at.json": "59ef1fda61859a92fd600c2557e1109761152ce5bbf7c12d02a1a8f9493bfec7"
  }
 }
