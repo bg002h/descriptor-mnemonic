@@ -164,9 +164,12 @@ fn r1_leaf_order_splits_one_key_into_two_nunchuk_verdicts() {
 
 /// The Core boundary, MEASURED, prints as closed runs of verified versions.
 /// Per-chain spelling: refused through 25.2, imported 26.0-31.1. Multipath:
-/// refused through 28.4 for the spelling, silent after (only parsed, never
-/// imported, there). Mutation: drop `CORE_MULTIPATH` from the 26.0-28.4 rule
-/// set -> the multipath runs change and this reds.
+/// refused through 28.4 for the spelling. After that the boundary probe only
+/// PARSED it, but this control shares its SkeletonKey with the e2e run's
+/// `kofn-liana-distinct` wallet (F-673), which Core 29.4 and 31.1 IMPORTED in
+/// the multipath form -- so those two read `Imports` and 30.3, never
+/// measured, stays silent. Mutation: drop `CORE_MULTIPATH` from the 26.0-28.4
+/// rule set -> the multipath runs change and this reds.
 #[test]
 fn core_verdicts_follow_the_measured_boundary() {
     let (_, s) = keyed(&descriptor_named(
@@ -185,17 +188,79 @@ fn core_verdicts_follow_the_measured_boundary() {
 
     let mp = verdicts(&s, Some(Form::Multipath));
     let core: Vec<_> = of(&mp, "core");
-    assert_eq!(core.len(), 2, "{core:?}");
+    let spans: Vec<String> = core.iter().map(|v| span_of(v)).collect();
+    assert_eq!(spans, ["24.2-28.4", "29.4", "30.3", "31.1"], "{core:?}");
     assert!(matches!(core[0], Verdict::Refuses { reason, .. } if reason.class.contains("<0;1>")));
-    assert_eq!(span_of(core[0]), "24.2-28.4");
+    assert!(matches!(core[1], Verdict::Imports { .. }));
     assert!(matches!(
-        core[1],
+        core[2],
         Verdict::Unproven {
             reason: UnprovenReason::NoEvidence,
             ..
         }
     ));
-    assert_eq!(span_of(core[1]), "29.4-31.1");
+    assert!(matches!(core[3], Verdict::Imports { .. }));
+}
+
+/// F-673: the e2e live-site run (engrave `coord-compat-e2e/`) imported all 8
+/// composer `tr` wallets -- kofn- and tiered-recovery, NUMS and Liana key,
+/// demo and distinct seating -- on Core 29.4 and 31.1 in the MULTIPATH form,
+/// with wallet addresses equal to the device's. Each now reads `Imports` at
+/// exactly those two releases. 30.3 sits between them and was never measured
+/// on these shapes, so it stays `Unproven`: a run never spans a version that
+/// was not measured. The template of each is still `KeysAbsent` (a2).
+/// Mutation: drop the vendoring script's `coord-compat-e2e` block and
+/// re-vendor -> the 29.4 and 31.1 cells vanish and this reds.
+#[test]
+fn core_imports_the_composer_tr_wallets_only_where_measured() {
+    for name in [
+        "kofn-nums",
+        "kofn-liana",
+        "tiered-nums",
+        "tiered-liana",
+        "kofn-nums-distinct",
+        "kofn-liana-distinct",
+        "tiered-nums-distinct",
+        "tiered-liana-distinct",
+    ] {
+        let (d, s) = keyed(&descriptor_named("core", name));
+        let mp = verdicts(&s, Some(Form::Multipath));
+        let core: Vec<_> = of(&mp, "core");
+        let spans: Vec<String> = core.iter().map(|v| span_of(v)).collect();
+        assert_eq!(spans, ["24.2-28.4", "29.4", "30.3", "31.1"], "{name}");
+        assert!(
+            matches!(core[0], Verdict::Refuses { reason, .. } if reason.class.contains("<0;1>")),
+            "{name}: {:?}",
+            core[0]
+        );
+        for i in [1, 3] {
+            assert!(
+                matches!(core[i], Verdict::Imports { renderer, .. }
+                    if renderer.tool == "md" && renderer.version == "0.20.0"
+                        && renderer.form == Form::Multipath),
+                "{name}: {:?}",
+                core[i]
+            );
+        }
+        assert!(
+            matches!(
+                core[2],
+                Verdict::Unproven {
+                    reason: UnprovenReason::NoEvidence,
+                    ..
+                }
+            ),
+            "{name}: {:?}",
+            core[2]
+        );
+        let t = verdicts(&template_of(&d), None);
+        assert!(
+            of(&t, "core")
+                .iter()
+                .all(|v| !matches!(v, Verdict::Imports { .. } | Verdict::ImportsAltered { .. })),
+            "{name}: a template claimed an import"
+        );
+    }
 }
 
 /// Design §1 (a2): a template can be refused, never claimed to import.

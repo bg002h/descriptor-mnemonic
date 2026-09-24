@@ -75,7 +75,7 @@ pub fn run(a: DecomposeArgs<'_>) -> Result<u8, CliError> {
             }
         }
         Emit::Commands => {
-            for line in commands(&d)? {
+            for line in commands(&d, a.network)? {
                 println!("{line}");
             }
         }
@@ -121,7 +121,7 @@ fn sh_quote(s: &str) -> String {
 /// lacks an origin, naming the keys and the reason. The template, keys and
 /// descriptor emissions still work — only the MINT instructions are withheld,
 /// because they are the ones that would not run.
-fn commands(d: &Decomposition) -> Result<Vec<String>, CliError> {
+fn commands(d: &Decomposition, network: bitcoin::Network) -> Result<Vec<String>, CliError> {
     let missing = d.origin_less();
     if !missing.is_empty() {
         let named = missing
@@ -182,12 +182,28 @@ fn commands(d: &Decomposition) -> Result<Vec<String>, CliError> {
     } else {
         ""
     };
+    // F-672: route 1 carries the KEYS, and `md encode` checks their version
+    // bytes against its own `--network` (default mainnet). Decompose has
+    // already required every key to match `network` (`check_network`), so a
+    // test-network recipe must say so or md refuses it ("expected mainnet
+    // xpub version 0488B21E, got 043587CF"). Mainnet stays flag-free, byte
+    // for byte what it printed before. Route 2 carries no keys, so no flag.
+    let nflag = match network {
+        bitcoin::Network::Bitcoin => "",
+        bitcoin::Network::Testnet => " \\\n  --network testnet",
+        bitcoin::Network::Signet => " \\\n  --network signet",
+        bitcoin::Network::Regtest => " \\\n  --network regtest",
+        // `bitcoin::Network` is non-exhaustive; md's `--network` offers only
+        // the four above (`CliNetwork`), so nothing else reaches here.
+        _ => "",
+    };
     out.push(format!(
-        "md encode {} \\\n  {} \\\n  {}{}",
+        "md encode {} \\\n  {} \\\n  {}{}{}",
         sh_quote(&d.template),
         keys.join(" \\\n  "),
         fps.join(" \\\n  "),
-        xflag
+        xflag,
+        nflag
     ));
     out.push(String::new());
     out.push(

@@ -30,6 +30,9 @@
 #   Nunchuk     coord-compat-1b/nunchuk-kind1-probe.{tsv,out} (the recon's probe)
 #   Core        coord-compat-core-boundary/core-<v>.json: ALL15 (chain0 AND chain1,
 #               both were imported), K1 (same), and the multipath refusals
+#   Core        coord-compat-e2e/core-composer-tr.{tsv,out} (F-673): the MULTIPATH
+#               form, imported with importdescriptors and the wallet's own
+#               addresses compared to the device's, per "<v> <name>" line
 # measured_at is the committer date of the commit that recorded the row's line
 # (git blame), so it is mechanical, not typed.
 set -euo pipefail
@@ -224,6 +227,39 @@ for v in ["24.2", "25.0", "25.2", "26.0", "26.2", "27.2", "28.4", "29.4", "30.3"
         if mp != "ok":  # an ok here is a parse, not an import: no positive row
             row(f"{rel}:{tag}.multipath", name, "core", v, lib, tool, tver, "multipath", at,
                 desc, {"refused": mp.split("error message:")[-1].strip()})
+
+# -- Bitcoin Core 29.4 and 31.1, the e2e live-site run (F-673) --------------
+# agent-reports/e2e-live-site-wallets.md (D-3): release binaries (tarballs
+# checked against SHA256SUMS), mainnet, offline; `importdescriptors` of the
+# multipath descriptor md 0.20.0 printed, then getnewaddress/getrawchangeaddress
+# x2 compared to the device's. Unlike the boundary probe's multipath
+# `getdescriptorinfo` (a parse), this is an IMPORT, so it is a positive row.
+rel_tsv, rel_out = "coord-compat-e2e/core-composer-tr.tsv", "coord-compat-e2e/core-composer-tr.out"
+descs = {}
+for l in read_lines(rel_tsv):
+    if l.strip():
+        n, desc = l.split("\t")
+        descs[n] = desc
+lines, d = read_lines(rel_out), dates(rel_out)
+reported, seen = None, set()
+for i, l in enumerate(lines):
+    h = re.match(r"^== Core Bitcoin Core RPC client version (v(\d+)\.(\d+)\.\d+) ", l)
+    if h:
+        reported = (h.group(1), f"{h.group(2)}.{h.group(3)}")
+        continue
+    m = re.match(r"^(\d+\.\d+) (\S+) import_ok=(True|False) (.*) wallet_addrs=(MATCH|MISMATCH)$", l)
+    if not m:
+        continue
+    v, name, ok, errs, addrs = m.groups()
+    assert reported and reported[1] == v, (rel_out, i + 1, v, reported)  # self-reported
+    if ok == "True":
+        outcome = {"imported": None if addrs == "MATCH" else {"wallet_kind": "ADDRESSES_DIFFER", "threshold": None}}
+    else:
+        outcome = {"refused": errs}
+    row(f"{rel_out}:{i+1}", name, "core", v, reported[0], "md", "0.20.0", "multipath", d[i],
+        descs[name], outcome)
+    seen.add((v, name))
+assert len(seen) == 2 * len(descs) == 16, (len(seen), len(descs))  # 8 wallets x 29.4, 31.1
 
 with open(os.path.join(work, "evidence.jsonl"), "w") as f:
     for r in rows:

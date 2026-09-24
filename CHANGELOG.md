@@ -4,6 +4,43 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.20.1] — 2026-09-23
+
+### Fixed
+
+- **`md descriptor --network testnet|signet|regtest` renders EVERY key as
+  `tpub`** (F-672). Only a Liana internal key followed the flag; every other
+  key came out as mainnet `xpub`, so the descriptor mixed networks and Bitcoin
+  Core refused it (`Multi: key 'xpub…' is not valid`). Keys, chain codes and
+  addresses are unchanged. Mainnet output is byte-identical (a release-build
+  diff over the whole vector corpus, 816 outputs).
+- **`md decompose --network <test network> --emit commands` prints a runnable
+  `md encode` line.** Route 1 carries the keys, so it now carries
+  `--network <net>`; without it md refused its own recipe (`expected mainnet
+  xpub version 0488B21E, got 043587CF`). Mainnet output is unchanged.
+- **The coordinator verdict: Bitcoin Core 29.4 and 31.1 import the
+  composer's `tr` wallets** (F-673), measured on release binaries for
+  kofn-recovery and tiered-recovery, NUMS and Liana key, with the wallet's
+  addresses equal to the SeedHammer II's. `md descriptor` now prints `Bitcoin
+  Core 29.4: imports the multipath form` and the same for 31.1; 30.3, not
+  measured on these shapes, stays `unproven`. A keyless template (`md
+  compose`) still claims no import.
+- **`md shape-key --descriptor` accepts an all-`tpub` descriptor**, which
+  0.20.0 refused. This came with F-672's route fix; the key is unchanged.
+
+## md-codec [0.48.1] — 2026-09-23
+
+### Fixed
+
+- **`to_miniscript_descriptor_with_network` and
+  `to_miniscript_descriptor_multipath_with_network` render every extended key
+  under `network`'s version bytes** (F-672), not only a wire-kind-1 internal
+  key. The network-less entry points still render mainnet, byte-identical.
+- **Coordinator table: 16 Bitcoin Core cells** (F-673), vendored from
+  mnemonic-engrave's `coord-compat-e2e` evidence: the multipath form of the
+  composer's `tr` kofn-recovery and tiered-recovery shapes imports on Core
+  29.4 and 31.1.
+
 ## md-cli [0.20.0] — 2026-09-23
 
 ### Added

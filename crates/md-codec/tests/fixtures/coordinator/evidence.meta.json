@@ -1,5 +1,5 @@
 {
- "engrave_commit": "7ca9d2f801264c650a5fd23480b3ab250337a2b0",
+ "engrave_commit": "4db2f17d8f4c8adc6533e28968e08618b3ac323e",
  "inputs": {
   "composer-fable-r0/fable-liana-parse-in.jsonl": "2ac541b3ce2b1f373e491c3748e12083cad86fb338112bf2562b06b2a98ec643",
   "composer-fable-r0/fable-liana-parse-out-v15.jsonl": "b74f3bf592cc2403d301a8424beef1a2e7e9d9fe7a432af1654bfa7698590a50",
@@ -20,6 +20,8 @@
   "coord-compat-core-boundary/core-29.4.json": "6795d2ec37ab603238a6eb1ed9fcccd436a269b993c3686ba2026c8caabcd6c7",
   "coord-compat-core-boundary/core-30.3.json": "3cc4865078ee4af84d93620a634c25a0b2971f0b9d78ab9ecca10e44be0087ec",
   "coord-compat-core-boundary/core-31.1.json": "e73ff27049cd113b07f072313081d3dd13dd7d178d818f3fb317658b3e6de221",
+  "coord-compat-e2e/core-composer-tr.out": "ac07541372336edc87ea9e0ac05aa355e107885d1c4c2b584540cb9db7073961",
+  "coord-compat-e2e/core-composer-tr.tsv": "382ad2599ed43e09ef0b954a1b1f504f0f297207a8042d687c6b270597a93be7",
   "f449-stage2/liana-live-gate-expected.jsonl": "171645bc92b532f609acfdafc0228f2c81e70de2eb7db4802ca30cc7d2cab4da",
   "f449-stage2/liana-live-gate-in.jsonl": "d75a9f0a0de971870ca9bd4253367b4420ea9ce37228d0bb7272ec0a58c81e1c",
   "f449-stage4/liana-probes-out.jsonl": "5ac95ab2571c23e7494fd99ba1d08869fc3cbe5603c85275097184a38503ff63",
