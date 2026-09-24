@@ -72,12 +72,15 @@ pub fn to_miniscript_descriptor(
     to_miniscript_descriptor_with_network(d, chain, Network::Bitcoin)
 }
 
-/// Same as [`to_miniscript_descriptor`], but threads `network` through to a
-/// wire-kind-1 (Liana unspendable) internal key's derived xpub (SPEC §2 step
-/// 5: mainnet → `xpub`, anything else → `tpub`). `network` is otherwise
-/// unused -- every other key on the wire carries its own version-independent
-/// bytes (`crate::derive::xpub_from_tlv_bytes` fills a placeholder network
-/// that `Xpub::derive_pub`/address rendering never reads).
+/// Same as [`to_miniscript_descriptor`], but renders EVERY extended key under
+/// `network`'s BIP-32 version bytes (mainnet → `xpub`, anything else →
+/// `tpub`): each `@N` key, and a wire-kind-1 (Liana unspendable) internal
+/// key's derived xpub (SPEC §2 step 5). md1 carries no version bytes (a key
+/// is 65 bytes, `chain_code‖pubkey`), so the network is the caller's to
+/// supply. Before F-672 only the Liana internal key followed it, and a
+/// `--network regtest` descriptor mixed `tpub` and `xpub`, which Bitcoin Core
+/// refuses. Addresses never depended on it (CKDpub reads only the chain code
+/// and the public key).
 ///
 /// # Errors
 ///
@@ -96,7 +99,12 @@ pub fn to_miniscript_descriptor_with_network(
         // OWN already-resolved use-site path (`e.use_site_path`), NOT the
         // shared descriptor baseline. Passing `&d.use_site_path` here was
         // the silent-wrong-address bug for per-cosigner override cards.
-        keys.push(build_descriptor_public_key(e, &e.use_site_path, chain)?);
+        keys.push(build_descriptor_public_key(
+            e,
+            &e.use_site_path,
+            chain,
+            network,
+        )?);
     }
     node_to_descriptor(&d.tree, &keys, network, Some(chain))
 }
@@ -152,6 +160,7 @@ type DescriptorOrigin = Option<(Fingerprint, DerivationPath)>;
 /// [`build_descriptor_multi_public_key`] (multipath) for one expanded `@N`.
 fn assemble_origin_and_xkey(
     e: &ExpandedKey,
+    network: Network,
 ) -> Result<(DescriptorOrigin, bitcoin::bip32::Xpub), Error> {
     let xpub_bytes = e.xpub.ok_or(Error::MissingPubkey { idx: e.idx })?;
     // ONE derivation path feeds BOTH halves. They used to be computed
@@ -165,6 +174,9 @@ fn assemble_origin_and_xkey(
     // rendered descriptor could not round-trip back into a key card.
     let path = origin_path_to_derivation(&e.origin_path);
     let mut xkey = xpub_from_tlv_bytes(e.idx, &xpub_bytes)?;
+    // The version bytes are the caller's network (F-672): md1 does not carry
+    // them, and a descriptor must not mix `xpub` and `tpub`.
+    xkey.network = bitcoin::NetworkKind::from(network);
     // `depth` and `child_number` ARE recoverable -- they are the component
     // count and the terminal component of the origin the card carries.
     // Encoding caps a path at `MAX_PATH_COMPONENTS` (4-bit depth field), so
@@ -204,8 +216,9 @@ fn build_descriptor_public_key(
     e: &ExpandedKey,
     use_site: &UseSitePath,
     chain: u32,
+    network: Network,
 ) -> Result<DescriptorPublicKey, Error> {
-    let (origin, xkey) = assemble_origin_and_xkey(e)?;
+    let (origin, xkey) = assemble_origin_and_xkey(e, network)?;
 
     // Derivation path is the use-site multipath alt (without the trailing
     // wildcard, which is handled via the `wildcard` field below).
@@ -231,8 +244,11 @@ fn build_descriptor_public_key(
 /// rust-miniscript's `into_single_descriptors` selects each key's own alt
 /// at derivation time, so per-`@N` groups stay faithful end-to-end (and
 /// `sortedmulti` sorts the per-index-derived keys correctly).
-fn build_descriptor_multi_public_key(e: &ExpandedKey) -> Result<DescriptorPublicKey, Error> {
-    let (origin, xkey) = assemble_origin_and_xkey(e)?;
+fn build_descriptor_multi_public_key(
+    e: &ExpandedKey,
+    network: Network,
+) -> Result<DescriptorPublicKey, Error> {
+    let (origin, xkey) = assemble_origin_and_xkey(e, network)?;
     let use_site = &e.use_site_path;
     let wildcard = wildcard_for(use_site);
 
@@ -324,7 +340,7 @@ pub fn to_miniscript_descriptor_multipath_with_network(
     let expanded = expand_per_at_n(d)?;
     let mut keys: Vec<DescriptorPublicKey> = Vec::with_capacity(expanded.len());
     for e in &expanded {
-        keys.push(build_descriptor_multi_public_key(e)?);
+        keys.push(build_descriptor_multi_public_key(e, network)?);
     }
     node_to_descriptor(&d.tree, &keys, network, None)
 }
