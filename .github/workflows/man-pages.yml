@@ -125,18 +125,22 @@ jobs:
   # from Cargo.lock by `resolve-miniscript-rev` above rather than hardcoded
   # here, so this can't go stale again the way the empty-string default did.
   #
-  # run_aarch64: false — the x86_64 gate runs inline; the slow (~30-60min QEMU)
-  # aarch64 byte-gate is exercised on demand via the toolkit reusable workflow's
-  # own `workflow_dispatch` (run_aarch64 default true). md's PUBLISHED aarch64
-  # artifact is STILL reproducible — the `musl-binaries` cross leg below is
-  # re-homed onto the digest-pinned Cross.toml recipe.
+  # run_aarch64: true (F-680, operator ruling 2026-09-24) — BOTH byte-gates run
+  # inline: x86_64 AND the slow (~4-10min QEMU) aarch64 `repro-aarch64-musl`.
+  # `musl-binaries needs: repro` waits on the WHOLE reusable workflow, so a
+  # release publish now waits for the aarch64 gate too — deliberately: md's
+  # PUBLISHED aarch64 artifact (the `musl-binaries` cross leg below, re-homed
+  # onto the digest-pinned Cross.toml recipe) is byte-gated before it ships.
+  # The pin below contains toolkit 327f9a16 (F-675), which fixed the aarch64
+  # remap-off residue check's pipefail/SIGPIPE race and cc-validate's
+  # zero-residue false GREEN; an older pin would run the unfixed checks.
   #
-  # toolkit_ref is a CONCRETE SHA (P3a's enabling commit). It MUST be concrete:
+  # toolkit_ref is a CONCRETE SHA (the F-675 fix, see below). It MUST be concrete:
   # the empty default falls back to the CALLER's SHA, which does not exist in the
   # toolkit repo (the recipe checkout would 404).
   repro:
     needs: resolve-miniscript-rev
-    uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@6e37b18e50f9f857e439db1ebe2748fc91a54612
+    uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@4120af853ec68dc515cb4ac0eb7245a018a50c78
     permissions:
       contents: read
       packages: write
@@ -146,11 +150,12 @@ jobs:
       bin: md
       target: x86_64-unknown-linux-musl
       arch: x86_64
-      run_aarch64: false
+      run_aarch64: true
       # Derived from Cargo.lock by resolve-miniscript-rev, not hand-typed.
       miniscript_rev: ${{ needs.resolve-miniscript-rev.outputs.rev }}
-      # Source the centralized recipe from the toolkit at the P3a enabling commit.
-      toolkit_ref: 6e37b18e50f9f857e439db1ebe2748fc91a54612
+      # Source the centralized recipe from the toolkit at the F-675 fix (4120af85,
+      # toolkit master; contains 327f9a16). MUST match the `uses:` pin above.
+      toolkit_ref: 4120af853ec68dc515cb4ac0eb7245a018a50c78
 
   # Static, dependency-free `md` binaries for air-gapped / Alpine / musl boxes.
   # Builds both musl targets and attaches a static tarball per arch + a per-arch
