@@ -130,13 +130,13 @@ jobs:
         if: matrix.use_cross
         env:
           RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
-        run: cross build --release --locked --target ${{ matrix.target }} -p md-cli
+        run: cross build --release --locked --target ${{ matrix.target }} -p md-cli --features cli-compiler
 
       - name: Build (cargo)
         if: ${{ !matrix.use_cross }}
         env:
           RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
-        run: cargo build --release --locked --target ${{ matrix.target }} -p md-cli
+        run: cargo build --release --locked --target ${{ matrix.target }} -p md-cli --features cli-compiler
 
       - name: Smoke-test the binary
         # Only where the runner can execute what it just built. A cross build for
@@ -159,6 +159,11 @@ jobs:
           # compose -> the zen-hodl policy the demo builds on the device
           ZEN="$("$BIN" compose --wrapper tr --path '1of1,older=32768' 2>/dev/null)"
           case "$ZEN" in *'older(32768)'*) ;; *) echo "::error::compose failed: $ZEN"; exit 1 ;; esac
+
+          # --from-policy needs the cli-compiler feature; the manual documents it,
+          # so a release binary without it is a regression (F-676).
+          POL="$("$BIN" encode --from-policy 'or(pk(@0),and(pk(@1),older(144)))' --context segwitv0 --group-size 0 | grep '^md1' | head -1)"
+          [ "$POL" = "md1ypqqnq5fnf2uqqqqpyq8y3frmejdncm8" ] || { echo "::error::--from-policy failed: $POL"; exit 1; }
 
           # BCH repair: four damaged characters, named and corrected
           BADMD1=md1yqfdsqsjuqqpr5e55uzqqgqqqrqqvf4d7h59r2

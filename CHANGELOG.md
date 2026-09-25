@@ -15,6 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   because a card cannot carry it (F-611), and the check demanded the input's
   xpub text byte for byte. Keys that already printed are unchanged. The
   `--descriptor` help now says the parent fingerprint is not compared.
+- **Release binaries include `--from-policy`** (F-676). They were built
+  without the `cli-compiler` feature, so `md encode --from-policy` refused with
+  `requires the cli-compiler feature` on every downloaded binary, although the
+  manual documents it. `release.yml` now builds with `--features cli-compiler`
+  and its smoke test compiles a policy on every native target.
 
 ## md-codec [0.48.3] — 2026-09-24
 
