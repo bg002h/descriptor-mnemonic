@@ -14,7 +14,8 @@ name: man-pages
 # reproducibility gate) against the current branch so md's offline two-block
 # reproducibility can be CI-verified BEFORE any release tag relies on it. On a
 # `workflow_dispatch` event the man-pages build + the release-upload steps are
-# `if:`-guarded OFF (there is no release to attach to); only the repro gate runs.
+# `if:`-guarded OFF (there is no release to attach to); the repro gate AND both
+# musl-binary legs (build, package, vendored-miniscript check) run (F-678).
 
 on:
   push:
@@ -165,7 +166,7 @@ jobs:
   # container (needs.repro.outputs.image, a ghcr.io/<owner>/repro-musl@sha256:…)
   # at the fixed /build/src with CARGO_HOME=/cargo and the full reproducibility
   # ENV (--remap-path-prefix, SOURCE_DATE_EPOCH off the COMMIT SHA, CFLAGS, the
-  # TWO-block job-scoped [source] activation, gzip -n -9). So the published
+  # THREE-block job-scoped [source] activation, gzip -n -9). So the published
   # SHA256 IS the hash the gate measured. The split-brain host `musl-tools` +
   # `CC_x86_64_unknown_linux_musl` are REMOVED — the container's musl-gcc
   # (pinned by the BUILT digest) is the only musl toolchain on this leg.
@@ -187,12 +188,34 @@ jobs:
   # Per-arch `SHA256SUMS.<arch>` + `PROVENANCE.<arch>.txt` (each matrix job is
   # independent + `--clobber`-based, so a per-arch file avoids a clobber race).
   #
+  # ── F-678: THREE-block [source] activation, and the legs run on dispatch ──
+  # md has carried the miniscript `[patch.crates-io]` git fork since 5b4d20ad
+  # (2026-08-20). 0ce18660 gave the `repro` gate the third [source] block, but
+  # these legs kept the TWO-block form, so under --offline they had nothing to
+  # redirect the git source to:
+  #   * x86_64: `--network=none` + a fresh CARGO_HOME → `failed to load source
+  #     for dependency miniscript`. No x86_64 musl asset shipped after 0.12.0.
+  #   * aarch64: GREEN, but not from vendor/. cross v0.2.5 first runs a host-side
+  #     `cargo metadata` (no --offline, no --config; src/cargo.rs
+  #     cargo_metadata_with_args) that FETCHES the git dep into the host
+  #     CARGO_HOME, which cross mounts into its container — so the "offline"
+  #     build compiled miniscript from that network fetch.
+  # The `prep` step derives the three-block config from Cargo.lock (fails closed
+  # on any git source it does not redirect), and the `vendored-miniscript`
+  # step proves from dep-info that miniscript compiled out of vendor/.
+  #
+  # These legs also used to be tag-only, so the workflow_dispatch
+  # reproducibility gate never built them — which is why the defect first
+  # surfaced at a release. They now build on dispatch too; only
+  # ensure-release/upload stay tag-only (a dispatch has no release to attach
+  # to), and VER becomes `dispatch-<sha12>`.
+  #
   # Security note: this job uses only GitHub-provided trusted context. No
   # interpolation of untrusted user input.
   musl-binaries:
     name: musl-binary (${{ matrix.target }})
-    if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
-    needs: repro
+    if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v') || github.event_name == 'workflow_dispatch'
+    needs: [resolve-miniscript-rev, repro]
     runs-on: ubuntu-latest
     # `contents: write` to upload release assets; `packages: read` so the
     # x86_64 (musl_native) leg can authenticate to GHCR and `docker pull` the
@@ -203,6 +226,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPRO_IMAGE: ${{ needs.repro.outputs.image }}
+      MINISCRIPT_REV: ${{ needs.resolve-miniscript-rev.outputs.rev }}
     strategy:
       fail-fast: false
       matrix:
@@ -216,6 +240,43 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # ONE copy of the [source] activation, read by both legs: one argument
+      # per line in $RUNNER_TEMP/src-config.args. Also sets VER.
+      - name: prep (three-block [source] config from Cargo.lock; VER)
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MINISCRIPT_REV" ]; then
+            echo "::error::MINISCRIPT_REV is empty (resolve-miniscript-rev output)" >&2
+            exit 1
+          fi
+          GIT_SRC="git+https://github.com/rust-bitcoin/rust-miniscript?rev=${MINISCRIPT_REV}"
+          # Fail CLOSED on any git source this config does not redirect: under
+          # --offline it would either fail (x86_64) or be silently satisfied
+          # from a host fetch (aarch64/cross) — the F-678 class, one dep along.
+          UNCOVERED="$(grep -oE '^source = "git\+[^"]+"' Cargo.lock \
+            | grep -vF "source = \"${GIT_SRC}#${MINISCRIPT_REV}\"" || true)"
+          if [ -n "$UNCOVERED" ]; then
+            echo "::error::Cargo.lock has a git source the [source] config does not redirect:" >&2
+            printf '%s\n' "$UNCOVERED" >&2
+            exit 1
+          fi
+          {
+            echo '--config'; echo 'source.crates-io.replace-with="vendored-sources"'
+            echo '--config'; echo "source.\"${GIT_SRC}\".git=\"https://github.com/rust-bitcoin/rust-miniscript\""
+            echo '--config'; echo "source.\"${GIT_SRC}\".rev=\"${MINISCRIPT_REV}\""
+            echo '--config'; echo "source.\"${GIT_SRC}\".replace-with=\"vendored-sources\""
+            echo '--config'; echo 'source.vendored-sources.directory="vendor"'
+          } > "$RUNNER_TEMP/src-config.args"
+          cat "$RUNNER_TEMP/src-config.args"
+          if [[ "$GITHUB_REF" == refs/tags/descriptor-mnemonic-md-cli-v* ]]; then
+            VER="${REF_NAME##*-v}"
+          else
+            VER="dispatch-$(git rev-parse --short=12 HEAD)"
+          fi
+          echo "VER=$VER" | tee -a "$GITHUB_ENV"
+
       # ── aarch64 (cross) leg — RE-HOMED reproducible ────────────────────────
       # The aarch64 musl binary has no native runner, so it is built via `cross`
       # under QEMU. The PUBLISHED aarch64 artifact is the REPRODUCIBLE one:
@@ -227,8 +288,9 @@ jobs:
       #     (--remap-path-prefix), LC_ALL/TZ;
       #   * the remap FROM-side is cross's FIXED internal mount /project (cross
       #     v0.2.5 bind-mounts the workspace to /project), NOT the host path;
-      #   * --locked --offline + the TWO-block job-scoped [source] activation
-      #     against committed vendor/ (md is fork-free → NO git-fork block);
+      #   * --locked --offline + the THREE-block job-scoped [source] activation
+      #     (crates-io + the miniscript git fork + vendored-sources, from the
+      #     prep step) against committed vendor/;
       #   * gzip-pinned tar + a published PROVENANCE.aarch64.txt tuple.
       - if: ${{ matrix.cross }}
         uses: dtolnay/rust-toolchain@1.85.0
@@ -245,7 +307,7 @@ jobs:
         run: |
           set -euxo pipefail
           git config --global --add safe.directory "$PWD"
-          VER="${REF_NAME##*-v}"
+          mapfile -t SRC_CONFIG < "$RUNNER_TEMP/src-config.args"
           EPOCH="$(git show -s --format=%ct HEAD)"
           # The determinism-bearing env is EXPORTED so `cross` forwards it into
           # the QEMU container via Cross.toml [build.env] passthrough. The remap
@@ -261,8 +323,7 @@ jobs:
             CFLAGS_aarch64_unknown_linux_musl="$CFMAP" \
             cross build --locked --offline --release \
               --target "$TARGET" -p md-cli --bin md \
-              --config 'source.crates-io.replace-with="vendored-sources"' \
-              --config 'source.vendored-sources.directory="vendor"'
+              "${SRC_CONFIG[@]}"
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" \
             -cf - -C "target/${TARGET}/release" md \
             | gzip -n -9 > "md-${VER}-${ARCH}-linux-musl.tar.gz"
@@ -291,8 +352,8 @@ jobs:
 
       # ── x86_64 (native) leg — RE-HOMED inside the digest-pinned container ───
       # docker run --network=none mounts the host workspace at /build/src,
-      # builds with the full reproducibility env + the TWO-block job-scoped
-      # [source] activation, packages with the gzip-pinned tar, and writes
+      # builds with the full reproducibility env + the THREE-block job-scoped
+      # [source] activation (passed in as positional args from the prep step), packages with the gzip-pinned tar, and writes
       # target/ + the .tar.gz + SHA256SUMS back to the host via the bind mount.
       # SOURCE_DATE_EPOCH is keyed off the COMMIT SHA.
       - name: build+package (re-homed, --network=none, in @${{ needs.repro.outputs.image }})
@@ -304,7 +365,7 @@ jobs:
         run: |
           set -euxo pipefail
           git config --global --add safe.directory "$PWD"
-          VER="${REF_NAME##*-v}"
+          mapfile -t SRC_CONFIG < "$RUNNER_TEMP/src-config.args"
           EPOCH="$(git show -s --format=%ct HEAD)"
           docker pull "$REPRO_IMAGE"
           docker run --rm --network=none \
@@ -321,14 +382,12 @@ jobs:
             bash -euxo pipefail -c '
               umask 022
               cargo build --locked --offline --release \
-                --target "$TARGET" -p md-cli --bin md \
-                --config '"'"'source.crates-io.replace-with="vendored-sources"'"'"' \
-                --config '"'"'source.vendored-sources.directory="vendor"'"'"'
+                --target "$TARGET" -p md-cli --bin md "$@"
               tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
                 -cf - -C "target/$TARGET/release" md \
                 | gzip -n -9 > "md-${VER}-${ARCH}-linux-musl.tar.gz"
               sha256sum "md-${VER}-${ARCH}-linux-musl.tar.gz" > "SHA256SUMS.${ARCH}"
-            '
+            ' bash "${SRC_CONFIG[@]}"
           # Publish the provenance tuple alongside the artifacts.
           {
             echo "artifact: md-${VER}-${ARCH}-linux-musl.tar.gz"
@@ -339,11 +398,38 @@ jobs:
           } > "PROVENANCE.${ARCH}.txt"
           cat "PROVENANCE.${ARCH}.txt"
 
+      # F-678: prove miniscript compiled out of vendor/, not a git checkout.
+      # rustc dep-info lists every source file it read; the path prefix is
+      # /project (cross) or /build/src (x86_64 container), so match the suffix.
+      - name: vendored-miniscript (dep-info shows vendor/, never a git checkout)
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          D=( target/"$TARGET"/release/deps/miniscript-*.d )
+          if [ "${#D[@]}" -eq 0 ]; then
+            echo "::error::no miniscript dep-info under target/$TARGET/release/deps" >&2
+            exit 1
+          fi
+          for f in "${D[@]}"; do
+            echo "$f: $(head -c 200 "$f")"
+            grep -q '/vendor/miniscript/src/lib\.rs' "$f" \
+              || { echo "::error::$f does not read vendor/miniscript" >&2; exit 1; }
+          done
+          if grep -l '/git/checkouts/' target/"$TARGET"/release/deps/*.d; then
+            echo "::error::a crate compiled from a cargo git checkout, not vendor/" >&2
+            exit 1
+          fi
+          echo "OK: miniscript compiled from vendor/ (${#D[@]} dep-info file(s))"
+
       - name: ensure-release
+        if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
         env:
           REF_NAME: ${{ github.ref_name }}
         run: gh release view "$REF_NAME" >/dev/null 2>&1 || gh release create "$REF_NAME" --title "$REF_NAME" --generate-notes || true
       - name: upload
+        if: startsWith(github.ref, 'refs/tags/descriptor-mnemonic-md-cli-v')
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
