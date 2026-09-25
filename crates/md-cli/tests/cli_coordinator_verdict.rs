@@ -248,3 +248,95 @@ fn descriptor_dates_the_core_import_the_day_it_was_measured() {
     assert!(core.ends_with("(measured 2026-09-23)"), "{core}");
     assert!(!err.contains("2026-09-24"), "{err}");
 }
+
+// ---------------------------------------------------------------------------
+// F-677: `md shape-key --descriptor` on a WALLET's export.
+// ---------------------------------------------------------------------------
+
+/// Liana's own re-render of the composer's `preset-simple-timelocked-
+/// inheritance-wsh` wallet (mnemonic-engrave
+/// design/evidence/composer-fable-r0/fable-liana-parse-out.jsonl, `liana_desc`
+/// of the `ok` rows), in the two variants the harness fed it: `md` (the xpubs
+/// `md descriptor` prints, parent fingerprint `00000000`) and `real-xpub` (the
+/// same keys as a wallet exports them, real parent fingerprints `0x1cf29716`
+/// and `0xee71f8c5`). Same chain codes, same points: one wallet.
+const LIANA_WSH_MD: &str = "wsh(or_i(pkh([73c5da0a/48'/0'/0'/2']xpub6DXuQW1Q2JpZxsEnFKrPvDuiRMmQgU4fzHU1wsvM5EqgGAWRJ3cmwbtS8u1HQjrEHg3YFb7XGnFovPydJ8qpaGNNd2hSEPoheWd27EABdGH/<0;1>/*),and_v(v:pkh([3f635a63/48'/0'/0'/2']xpub6DXuQW1Q2JpZwZhyeFyRwoVcxxRQUvWjfWf5X5tre7aRCMTYwNR1DnwZAehowmtGsB2oEka2aWofzRgVnexutt2KVBZfRcPtuxS6JYwywD5/<0;1>/*),older(26280))))#mxj7j54n";
+const LIANA_WSH_WALLET: &str = "wsh(or_i(pkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf/<0;1>/*),and_v(v:pkh([3f635a63/48'/0'/0'/2']xpub6FHZCoNb3tg3o1GAJQxSwgFNF8mLRtTk2GgkF7n5rwzoxBhUEdFWa8cyZRHqytAzKZWsKz8627cQEMCCfR5GDSv6yXegqirpgDUX41Pxybr/<0;1>/*),older(26280))))#0gya4r2c";
+/// The same pair for `X09-tr-1of1-2of3older` (tr, a multi_a leaf).
+const LIANA_TR_MD: &str = "tr([73c5da0a/48'/0'/0'/3']xpub6DXuQW1Q2JpZyweiMewTZuMPvjG8hKhV2qoF6wL9VFxsMBExtbfqAAoR4oMG4GyxFzVdfas1v2eAdfLxyjc4Ceo5B6w6zTpf7F2BuXCJ52i/<0;1>/*,and_v(v:multi_a(2,[3f635a63/48'/0'/1'/3']xpub6DXuQW1Q2Jpa1UavR7Se7NgKcQRQXyxqRjsqLybQB5JiYZcfLV93enNpsEdDHHWMjqiRqht5LHedAHPGsT3qLegcbtdn5f7nWaXPPMS4ERE/<0;1>/*,[66d455ea/48'/0'/2'/3']xpub6DXuQW1Q2JpZzLpJ3h1hHgFWxTCpQ6suGvKzYrSZgvhnsh1TyH4xKA3Mf3pXEmh8Wb94GJMj7CHvAcTpJLjG8MpsVfojpdjumU6FcKW5gFK/<0;1>/*,[73c5da0a/48'/0'/3'/3']xpub6DXuQW1Q2Jpa17KCHfNUuv5BiEM3eYamrmGaFCycMLvntLaosd1Jkd9XWgw7WFnhYc31z3G4aPnGT6W7tzcXfvzLKt8UWsTLq3X2XFBGeeF/<0;1>/*),older(26280)))#udsskqh4";
+const LIANA_TR_WALLET: &str = "tr([73c5da0a/48'/0'/0'/3']xpub6DkFAXWQ2dHxr7LX1ByDVebj6u3C5KSKTVXWkiVKb3tdYfh9t7FhXzvUVSxNSikoVTRb2bGjvYoW8PqYBReMeswi3megtqDwRCeVs3vxMeH/<0;1>/*,and_v(v:multi_a(2,[3f635a63/48'/0'/1'/3']xpub6EM8uMGUZMyVTMTbYY2XpJCM56KMvje5p5UC8U5qhRZvXWrAmRoHFwJJHpGtJbiFMhMPxMTiMfMF35TDvCkHYMpgXhnY9cdk1G4SWFqQT1g/<0;1>/*,[66d455ea/48'/0'/2'/3']xpub6DcNBiPgXULnCqCYT2PVqc9PPpkomu8w2goEGoP4hMgeScHnognE9twZH9zGAQbEajtDxSkQu8LyehuZXX9sTh6Ze5mSrDSBaLETy38DwA1/<0;1>/*,[73c5da0a/48'/0'/3'/3']xpub6E6Z3Ss5TXJYQKLeD76XTFYJXyVQzT5FBKY3a7evG61SuqJKBVF2EqzMWydzSEbhyj4ESvnBLpdL8Pde5sSUNL9Y9d6mY214mwuvbspUMK5/<0;1>/*),older(26280)))#fhc8ztmz";
+
+fn shape_key_of_card(card: &[String]) -> String {
+    let mut args = vec!["shape-key"];
+    args.extend(card.iter().map(String::as_str));
+    let (out, err, code) = md(&args);
+    assert_eq!(code, 0, "{err}");
+    out
+}
+
+/// F-677: a wallet's export keys exactly like `md descriptor`'s rendering of
+/// the same wallet, and like the card minted from it. It was refused:
+/// "the reconstruction does not round-trip chain 0", because the self-check
+/// demanded the xpub's parent fingerprint byte-for-byte and a card cannot
+/// carry one (F-611). Mutation: compare `got != want` again in
+/// `descriptor_from_chains` -> the wallet exports exit 1 and this reds.
+#[test]
+fn shape_key_keys_a_wallet_export_like_its_card() {
+    for (md_form, wallet) in [
+        (LIANA_WSH_MD, LIANA_WSH_WALLET),
+        (LIANA_TR_MD, LIANA_TR_WALLET),
+    ] {
+        let (from_md, err, code) = md(&["shape-key", "--descriptor", md_form]);
+        assert_eq!(code, 0, "{err}");
+        let (from_wallet, err, code) = md(&["shape-key", "--descriptor", wallet]);
+        assert_eq!(code, 0, "{wallet}: {err}");
+        assert_eq!(from_wallet, from_md, "{wallet}");
+        assert_eq!(shape_key_of_card(&card_of(wallet)), from_wallet, "{wallet}");
+    }
+}
+
+/// F-677's round trip: card -> `md descriptor` -> `md shape-key --descriptor`
+/// is the key `md shape-key` prints for the card itself, over every keyable
+/// evidence descriptor and both wallet exports above. Mutation: compare
+/// `got != want` again in `descriptor_from_chains` -> `card_of` panics on the
+/// wallet exports and this reds.
+#[test]
+fn md_descriptor_round_trips_through_shape_key() {
+    let mut descriptors: BTreeSet<String> = evidence()
+        .into_iter()
+        .filter(|r| r.get("unkeyable").is_none())
+        .map(|r| r["descriptor"].as_str().unwrap().to_string())
+        .collect();
+    descriptors.extend([LIANA_WSH_WALLET, LIANA_TR_WALLET].map(String::from));
+    for d in &descriptors {
+        let card = card_of(d);
+        let from_card = shape_key_of_card(&card);
+        let mut args = vec!["descriptor"];
+        args.extend(card.iter().map(String::as_str));
+        let (text, err, code) = md(&args);
+        assert_eq!(code, 0, "{d}: {err}");
+        let (from_text, err, code) = md(&["shape-key", "--descriptor", text.trim_end()]);
+        assert_eq!(code, 0, "{d}: {err}");
+        assert_eq!(from_text, from_card, "{d}");
+    }
+}
+
+/// The relaxation is the parent fingerprint and nothing else: the SAME
+/// wallet export with one xpub's DEPTH changed (a field the origin
+/// determines, and which is still compared) is refused. Mutation: normalize
+/// the whole xpub metadata (depth and child number too) -> exit 0, red.
+#[test]
+fn shape_key_still_refuses_an_xpub_whose_depth_disagrees_with_its_origin() {
+    use std::str::FromStr as _;
+    let real = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
+    let mut x = bitcoin::bip32::Xpub::from_str(real).unwrap();
+    x.depth = 3;
+    let body = LIANA_WSH_WALLET
+        .split('#')
+        .next()
+        .unwrap()
+        .replace(real, &x.to_string());
+    let (out, err, code) = md(&["shape-key", "--descriptor", &body]);
+    assert_ne!(code, 0, "{out}");
+    assert!(err.contains("does not round-trip"), "{err}");
+}

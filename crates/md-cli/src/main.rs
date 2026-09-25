@@ -336,7 +336,9 @@ enum Command {
         /// One or more md1 strings of one card.
         #[arg(num_args = 0.., conflicts_with = "descriptor")]
         phrases: Vec<String>,
-        /// A multipath (`<0;1>`) BIP-380 descriptor instead of a card.
+        /// A multipath (`<0;1>`) BIP-380 descriptor instead of a card: a
+        /// wallet's own export or `md descriptor`'s output. Xpub parent
+        /// fingerprints are not compared (a card cannot carry one, F-611).
         #[arg(long, value_name = "DESCRIPTOR")]
         descriptor: Option<String>,
     },
