@@ -42,9 +42,12 @@ image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl@sha256:702154f52b2d8091671a
 #
 # NOTE: `cross` itself sets CARGO_HOME inside its container; CARGO_HOME is
 # therefore NOT in this list. `cross` forwards the build command's `--config`
-# flags to the inner cargo (the chosen [source]-activation mechanism — the md
-# graph is a clean crates.io graph, so the TWO-block form crates-io +
-# vendored-sources suffices; NO git-fork stanza, unlike the toolkit).
+# flags to the inner cargo (the chosen [source]-activation mechanism). md
+# carries the miniscript git fork, so man-pages.yml passes the THREE-block form
+# (crates-io + the git fork + vendored-sources). Caveat (F-678): cross first
+# runs a HOST-side `cargo metadata` without --offline or --config, which fetches
+# the git dep into the host CARGO_HOME that it then mounts here; without the
+# third block the "offline" build silently used that fetch instead of vendor/.
 #
 # PRECISION NOTE: `CARGO_BUILD_RUSTFLAGS` is listed below but is in fact
 # REDUNDANT — `cross` auto-forwards every `CARGO_`-prefixed var, so the remap
