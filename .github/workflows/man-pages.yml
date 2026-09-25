@@ -11,7 +11,7 @@ name: man-pages
 #
 # ── workflow_dispatch = the REPRODUCIBILITY GATE, runnable WITHOUT a tag ─────
 # A bare "Run workflow" click drives the `repro` caller job (the toolkit-homed
-# reproducibility gate) against the current branch so md's offline two-block
+# reproducibility gate) against the current branch so md's offline three-block
 # reproducibility can be CI-verified BEFORE any release tag relies on it. On a
 # `workflow_dispatch` event the man-pages build + the release-upload steps are
 # `if:`-guarded OFF (there is no release to attach to); the repro gate AND both
