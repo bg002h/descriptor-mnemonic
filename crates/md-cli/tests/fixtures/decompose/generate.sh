@@ -66,7 +66,7 @@ done
 # the operator who overrides MK: it fails HERE, by name, instead of failing
 # 60 lines later inside an eval'd command.
 if ! "$MK" encode --keys /dev/null --help >/dev/null 2>&1 \
-   && ! "$MK" encode --help 2>/dev/null | grep -q -- '--keys'; then
+   && ! grep -q -- '--keys' <<<"$("$MK" encode --help 2>/dev/null)"; then
   echo "MK=$MK does not support 'mk encode --keys' — it is too old." >&2
   echo "Version strings do not discriminate (both spellings print mk 0.13.0);" >&2
   echo "build the sibling repo and point MK at its target/debug/mk." >&2

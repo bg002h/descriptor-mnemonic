@@ -31,7 +31,9 @@ cd "$(dirname "$0")/.."
 MD="${MD:-${CARGO_TARGET_DIR:-target}/debug/md}"
 [ -x "$MD" ] || { echo "gen-compose-golden: no md binary at $MD (set MD=)" >&2; exit 2; }
 
-if "$MD" compose --help 2>&1 | grep -q -- '--unspendable'; then
+# Capture, then grep (F-695): under pipefail `grep -q` exits at the first match,
+# the still-writing --help can die of SIGPIPE, and this refusal would not refuse.
+if compose_help="$("$MD" compose --help 2>&1)" && grep -q -- '--unspendable' <<<"$compose_help"; then
   echo "gen-compose-golden: REFUSED -- $MD already knows --unspendable." >&2
   echo "  This golden is Task 1 Step 0's pre-flag floor and must come from a" >&2
   echo "  PRE-flag md (md-cli 0.18.0). Regenerating it from a flag-aware binary" >&2
