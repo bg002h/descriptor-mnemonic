@@ -126,7 +126,7 @@ jobs:
   # here, so this can't go stale again the way the empty-string default did.
   #
   # run_aarch64: true (F-680, operator ruling 2026-09-24) — BOTH byte-gates run
-  # inline: x86_64 AND the slow (~30-60min QEMU) aarch64 `repro-aarch64-musl`.
+  # inline: x86_64 AND the slow (~4-10min QEMU) aarch64 `repro-aarch64-musl`.
   # `musl-binaries needs: repro` waits on the WHOLE reusable workflow, so a
   # release publish now waits for the aarch64 gate too — deliberately: md's
   # PUBLISHED aarch64 artifact (the `musl-binaries` cross leg below, re-homed
