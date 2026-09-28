@@ -3114,3 +3114,23 @@ compose cleanly. It stays as the guard for resource limits, repeated keys and
 timelock mixing should the lowering ever change, but no CLI input exercises it.
 If every gate must have a live test, manufacture one (a synthetic lowering that
 exceeds a resource limit) or record that this one is intentionally latent.
+
+### `refugium-q17-unadmitted-split` — md-codec has no chunked form of re-emitting a card that mint policy now refuses (repo: **descriptor-mnemonic**; owning phase: md-codec 0.48.4, mr plan P0)
+
+- **Surfaced:** 2026-09-28, Refugium SPEC §9 Q17 (closed by the owner 2026-09-28): an `mr1` card that already exists must always be readable and printable, including the (0,0) md1 card it carries, even when md's mint policy would refuse that md1. Plan: `design/IMPLEMENTATION_PLAN_split_unadmitted.md` (phase P0 of `bg002h/mnemonic-refugium` `design/IMPLEMENTATION_PLAN_mr_v0_1.md`).
+- **Where:** `crates/md-codec/src/chunk.rs` (`split`, `split_unadmitted`, `split_with`); `crates/md-codec/src/encode.rs` (`encode_payload_unadmitted` doc).
+- **What:** the single-string unadmitted form already existed (`codex32::wrap_payload(encode_payload_unadmitted(d))`), but `chunk::split` calls the admitting `encode_payload`, so a multi-chunk md1 of a refused shape (F-217, F-218, SPEC §6) could not be re-emitted. md-codec 0.48.4 adds `chunk::split_unadmitted` (re-exported at the root), byte-identical to `split` on every descriptor `split` accepts. Both doc comments now state the rule: re-emitting a card that already exists is not minting, and the mint gate is the caller's job (`mr create` mints through `split`; only its re-emit paths use `split_unadmitted`). Extends the policy of `encode-time-policy-reaches-decode-via-the-encoding-id`. Tests: `crates/md-codec/tests/split_unadmitted.rs`.
+- **Why deferred:** not deferred; filed as the md1-side companion of a cross-repo item.
+- **Status:** `resolved (md-codec 0.48.4)`
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-refugium` `design/FOLLOWUPS.md` entry `mr-md-codec-unadmitted-split` (the primary; the mr work adds it in its M1, with a `Companion:` line back to this entry).
+
+### `refugium-liana-key-per-member` — md-codec's Liana unspendable internal key stays `<0;1>`; the `mr` tool derives per-member keys itself (repo: **descriptor-mnemonic**; note, no md-codec change)
+
+- **Surfaced:** 2026-09-28, Refugium "Build process" thread, while planning md-codec 0.48.4 (`design/IMPLEMENTATION_PLAN_split_unadmitted.md` Change §4).
+- **Where:** `crates/md-codec/src/to_miniscript.rs:521-528` (`build_liana_internal_key` doc: "ALWAYS the `<0;1>` derivation, regardless of the wallet's own use-site path", per SPEC §2 step 6).
+- **What:** md-codec's kind-1 (Liana unspendable) internal key always derives at `<0;1>`, by md-codec's own spec, independent of any use-site path. The `mr` tool's per-member key derivation is therefore done in `mr` itself, not by changing md-codec.
+- **Why deferred:** nothing to change in md-codec; recorded so a later reader does not "fix" `<0;1>` to serve `mr`.
+- **Status:** `wont-fix — md-codec's <0;1> is by spec; mr derives per-member keys itself`
+- **Tier:** `cross-repo`
+- **Companion:** none (a note, not an action item); the mr side is recorded as decision D11 in `bg002h/mnemonic-refugium` `design/IMPLEMENTATION_PLAN_mr_v0_1.md`.

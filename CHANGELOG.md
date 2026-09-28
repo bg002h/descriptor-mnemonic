@@ -4,6 +4,26 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-codec [0.48.4] — 2026-09-28
+
+### Added
+
+- **`chunk::split_unadmitted`** (re-exported at the crate root). It splits a
+  card into md1 chunk strings without applying mint-time admission policy, so
+  a card that already exists can be printed again even when `split` would
+  refuse to mint it. The motivating case is Refugium SPEC §9 Q17: the md1
+  card carried inside an existing `mr1` card must always print. On every
+  descriptor `split` accepts, the output is byte-identical to `split`'s,
+  which is checked over all 68 vendored vectors. `split` itself is
+  unchanged. Structural errors and the 64-chunk cap still surface. A
+  descriptor that fails both an admission rule and the cap gets the admission
+  error from `split` and the cap error from `split_unadmitted`.
+
+  The doc comments of `split_unadmitted` and `encode_payload_unadmitted` now
+  state the rule: re-emitting a card that already exists is not minting, and
+  the mint gate is the caller's job. A tool that creates a new card must use
+  `split` or `encode_md1_string`. md-cli is not released; only its pin moves.
+
 ## md-cli [0.20.3] — 2026-09-24
 
 ### Fixed
