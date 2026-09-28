@@ -1,6 +1,6 @@
 # IMPLEMENTATION PLAN — md-codec 0.48.4: `chunk::split_unadmitted`
 
-> **Status: DRAFT for R0 r2** (r1: 0C/3I/5M/4N, folded; `agent-reports/R0-split-unadmitted-plan-r1.md`). Author: the Refugium "Build process"
+> **Status: R0 GREEN at r2** (r2: 0C/0I/1M/3N, folded; r1: 0C/3I/5M/4N, folded; `agent-reports/R0-split-unadmitted-plan-r1.md`). Author: the Refugium "Build process"
 > thread, 2026-09-28. This is phase **P0** of the mr plan
 > (`bg002h/mnemonic-refugium` `design/IMPLEMENTATION_PLAN_mr_v0_1.md`,
 > PR #3).
@@ -58,8 +58,9 @@
    version; md-codec is a path dependency, so vendor-freshness is
    unaffected).
 4. `design/FOLLOWUPS.md`, in the file's entry template: a companion
-   entry `refugium-q17-unadmitted-split` (tier `cross-repo`, resolved by
-   this change) with a `Companion:` line naming the primary entry, which
+   entry `refugium-q17-unadmitted-split` (tier `cross-repo`, `resolved (md-codec 0.48.4)`)
+   with a `Companion:` line naming the primary entry by its id
+   `mr-md-codec-unadmitted-split` in `bg002h/mnemonic-refugium`, which
    the mr work adds to `mnemonic-refugium`'s tracker (created in its M1)
    with a `Companion:` line back; and a note entry
    `refugium-liana-key-per-member` recording that md-codec's Liana key
@@ -77,9 +78,14 @@
 | `split_unadmitted_accepts_sortedmulti_a_unspendable` | the SPEC §6 kind-1 `sortedmulti_a` card: `split` errs with `UnspendableWithSortedMultiA`, `split_unadmitted` succeeds and round-trips |
 | `split_unadmitted_chunk_set_id_of_refused_shape` | on the F-217 card, every header's chunk-set id equals `derive_chunk_set_id(&compute_md1_encoding_id(d)?)` |
 
-Rows 1, 3 and 5 are RED only by not compiling before the change; rows 2
-and 4 are behavioural REDs. The file carries a `//!` doc so
-`missing_docs` stays quiet.
+Fixtures: copy `contradictory_card()` and `kind_1_card_with_a_sortedmulti_a_leaf()`
+(`tests/mint_policy_does_not_reach_decode.rs:130`) with their imports
+**except** `use md_codec::encode::Descriptor;`, which clashes with the
+`use md_codec::Descriptor;` inside the `include!`d `vendored.rs` (E0252).
+Row 5 uses `.expect`, not `?`. The whole file fails to compile before the
+change; confirm rows 2 and 4 are behavioural REDs by first landing a stub
+`split_unadmitted` that just calls `split` and watching them fail. The
+file carries a `//!` doc so `missing_docs` stays quiet.
 
 Build gate: `cargo nextest run --locked --workspace` (or `cargo test
 --locked --workspace` where nextest is not installed), `cargo test
