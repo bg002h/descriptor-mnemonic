@@ -174,7 +174,11 @@ fn split_unadmitted_roundtrip_f217() {
     let chunks = md_codec::split_unadmitted(&card).expect("split_unadmitted");
     // The Refugium re-emit this exists for is a chunked card: pin that the
     // refused shape takes more than one chunk and still round-trips.
-    assert!(chunks.len() > 1, "expected a multi-chunk set, got {}", chunks.len());
+    assert!(
+        chunks.len() > 1,
+        "expected a multi-chunk set, got {}",
+        chunks.len()
+    );
     assert_eq!(reassemble_strings(&chunks), card);
 }
 
