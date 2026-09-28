@@ -172,6 +172,9 @@ fn split_unadmitted_accepts_f217_shape() {
 fn split_unadmitted_roundtrip_f217() {
     let card = contradictory_card();
     let chunks = md_codec::split_unadmitted(&card).expect("split_unadmitted");
+    // The Refugium re-emit this exists for is a chunked card: pin that the
+    // refused shape takes more than one chunk and still round-trips.
+    assert!(chunks.len() > 1, "expected a multi-chunk set, got {}", chunks.len());
     assert_eq!(reassemble_strings(&chunks), card);
 }
 
@@ -200,6 +203,7 @@ fn split_unadmitted_chunk_set_id_of_refused_shape() {
         &md_codec::compute_md1_encoding_id(&card).expect("encoding id of an existing card"),
     );
     let chunks = md_codec::split_unadmitted(&card).expect("split_unadmitted");
+    assert!(!chunks.is_empty(), "no chunks to check");
     for (i, s) in chunks.iter().enumerate() {
         let (bytes, _bits) = md_codec::codex32::unwrap_string(s).expect("unwrap chunk");
         let mut r = md_codec::bitstream::BitReader::new(&bytes);

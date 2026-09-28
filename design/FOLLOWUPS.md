@@ -3133,3 +3133,4 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **Why deferred:** nothing to change in md-codec; recorded so a later reader does not "fix" `<0;1>` to serve `mr`.
 - **Status:** `wont-fix — md-codec's <0;1> is by spec; mr derives per-member keys itself`
 - **Tier:** `cross-repo`
+- **Companion:** none (a note, not an action item); the mr side is recorded as decision D11 in `bg002h/mnemonic-refugium` `design/IMPLEMENTATION_PLAN_mr_v0_1.md`.
