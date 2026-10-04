@@ -1,5 +1,6 @@
 # Claude / agent metadata
-.claude/
+.claude/*
+!.claude/settings.json
 
 # Git worktrees (project-local)
 .worktrees/
