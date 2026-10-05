@@ -86,6 +86,16 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `render-bare-constant-sugar` — `descriptor_to_template` prints bare `0`/`1`; Coldcard EDGE's parser refuses them (companion)
+
+- **Surfaced:** 2026-10-05, Refugium M15 signer rehearsal: a Coldcard EDGE 6.6.1X refused to import an added-wait member written `andor(pk(K),and_v(v:older(3),1),…)`. Coldcard's parser (tag `2026-08-31T1606-v6.6.1X`, `shared/miniscript.py` L174-183, L875-900, L1171) refuses only a bare `0` or `1` token; it accepts the `t:`, `l:`, `u:` and `and_n` spellings. The same member written `tv:older(3)` imported and showed the same address.
+- **Where:** `crates/md-codec/src/render.rs` — the `Tag::True` / `Tag::False` arms push `'1'` / `'0'`; the `Tag::AndV`, `Tag::OrI` and `Tag::AndOr` arms print their constant children verbatim.
+- **What:** render md1's constant nodes the way rust-miniscript's `Display` does: `and_v(X,1)` as `t:X`, `or_i(0,X)` as `l:X`, `or_i(X,0)` as `u:X`, `andor(X,Y,0)` as `and_n(X,Y)`, with wrapper letters joined into one prefix and one colon (`tv:older(3)`, never `t:v:older(3)`, which both parsers refuse). A constant anywhere else (e.g. `andor(X,0,Z)`) has no sugar and stays bare. Script bytes, addresses, the md1 wire form and `WalletPolicyId` are unchanged; only text changes. `md` CLI output that goes through the renderer (and the toolkit's, via the pin) follows.
+- **Why deferred:** the Refugium `mr` tool works around it on its own side (its spec §5a "no bare 0 or 1 in any text `mr` writes", mnemonic-refugium PR 39, b86c4cc), so nothing is blocked; md-codec should match so other consumers' exported text imports on Coldcard too.
+- **Companion:** mnemonic-refugium `design/SPEC_refugium_mr1.md` §9 Q46 (private repo).
+- **Status:** open.
+- **Tier:** `v0.2`.
+
 ### `bsd-process-hardening-parity-procctl-rlimit-core` — `md`'s `set_non_dumpable()` was a silent no-op on the BSDs (companion)
 
 - **Surfaced:** 2026-06-23, the constellation-wide musl/BSD secret-hygiene recon (toolkit `design/SPEC_bsd_hygiene_and_freebsd_gate.md`, Cycle A). `md`'s `set_non_dumpable()` in `crates/md-cli/src/process_hardening.rs` was fenced `#[cfg(target_os = "linux")]` and a silent no-op on FreeBSD/OpenBSD/NetBSD — the anti-core-dump + anti-ptrace-introspection protection did not run, so a `md` process on a BSD could be ptrace/ktrace-introspected and could drop a core file a secret (passed inline on argv/heap) spills into.
