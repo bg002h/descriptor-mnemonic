@@ -9,13 +9,16 @@
 //!
 //! Oracles:
 //! 1. Never-panic / clean-error (implicit).
-//! 2. Decode → re-encode fixed-point: on `Ok(d)`, `split(&d)` then
-//!    `reassemble` the parts and assert the Descriptor is equal. A `split`
-//!    `Err` on a reassemble-accepted value is a REAL FINDING (R0 [I6]).
+//! 2. Decode → re-encode fixed-point: on `Ok(d)`, `split_unadmitted(&d)`
+//!    then `reassemble` the parts and assert the Descriptor is equal. A
+//!    split `Err` on a reassemble-accepted value is a REAL FINDING (R0 [I6]).
+//!    Mint policy is not consulted: decode skips it by design, so a card
+//!    mint would refuse is not a finding (see `md1_decode_payload.rs`).
+//!    Where `split` does admit, it must produce the same chunks.
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use md_codec::chunk::{reassemble, split};
+use md_codec::chunk::{reassemble, split, split_unadmitted};
 
 /// Maximum chunk count accepted by the splitter; extra parts are dropped.
 const MAX_PARTS: usize = 8;
@@ -31,7 +34,14 @@ fuzz_target!(|data: &[u8]| {
 
     if let Ok(d) = reassemble(&refs) {
         // Re-split the accepted descriptor; Err here = finding.
-        let chunks = split(&d).expect("FINDING: reassemble-accepted descriptor failed to split");
+        let chunks =
+            split_unadmitted(&d).expect("FINDING: reassemble-accepted descriptor failed to split");
+        if let Ok(minted) = split(&d) {
+            assert_eq!(
+                minted, chunks,
+                "FINDING: admitted and unadmitted splits differ"
+            );
+        }
         let chunk_refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
         let d2 = reassemble(&chunk_refs).expect("FINDING: re-split chunks failed to reassemble");
         assert_eq!(

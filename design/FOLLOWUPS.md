@@ -3144,3 +3144,11 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **Status:** `wont-fix — md-codec's <0;1> is by spec; mr derives per-member keys itself`
 - **Tier:** `cross-repo`
 - **Companion:** none (a note, not an action item); the mr side is recorded as decision D11 in `bg002h/mnemonic-refugium` `design/IMPLEMENTATION_PLAN_mr_v0_1.md`.
+
+### `fuzz-oracle-unadmitted-nits` — two Nits from the fuzz re-encode oracle review (repo: **descriptor-mnemonic**; owning phase: none, ownerless residue)
+
+- **Surfaced:** 2026-10-11, review of `bb1d63c1` (`design/agent-reports/fuzz-oracle-unadmitted-review.md`), 0C/0I/0M/2N.
+- **Where:** `fuzz/fuzz_targets/md1_decode_payload.rs:49-55` and twins in `md1_decode_string.rs` / `md1_reassemble.rs`.
+- **What:** (1) the "admitted == unadmitted" assertions can only fire after a future codec change — intended, they guard the documented "same bytes" claim; (2) `(bytes2.clone(), tb2)` allocates on every admitted input; compare by reference instead.
+- **Status:** `deferred-minor`
+- **Tier:** `nit`
