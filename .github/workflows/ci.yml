@@ -27,10 +27,18 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+# Cancel a pull request's superseded run when a newer commit is pushed to it.
+# Every other event gets a group of its own (the run id), so pushes, tags,
+# schedules and dispatches are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: cargo test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -61,6 +69,7 @@ jobs:
   clippy:
     name: cargo clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Clone patched miniscript fork (md-codec-local-stack)
@@ -77,6 +86,7 @@ jobs:
   fmt:
     name: cargo fmt
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: conformance-vector checksum pin
@@ -89,6 +99,7 @@ jobs:
   doc:
     name: cargo doc
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       RUSTDOCFLAGS: "-D warnings"
     steps:
@@ -125,6 +136,7 @@ jobs:
     # `src/lib.rs`.)
     name: freebsd compile-gate (whole-crate)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.85.0
@@ -166,6 +178,7 @@ jobs:
     # Toolchain pinned `@1.85.0` (matches `rust-toolchain.toml`).
     name: musl compile/test (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
