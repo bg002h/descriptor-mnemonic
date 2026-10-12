@@ -29,3 +29,7 @@ design/display-grouping-vectors.tsv text eol=lf
 # checkout must not CRLF-convert either side.
 crates/md-codec/src/coordinator/table.rs text eol=lf
 crates/md-codec/tests/fixtures/coordinator/* text eol=lf
+# ci/docs-only*: LF on every OS (Git Bash cannot run a CRLF script).
+ci/docs-only.sh text eol=lf
+ci/docs-only.test.sh text eol=lf
+ci/docs-only-paths.txt text eol=lf
