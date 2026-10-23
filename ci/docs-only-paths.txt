@@ -12,3 +12,5 @@
 + ^[^/]+\.md$
 # read by crates/md-codec/tests/display_grouping_conformance.rs; its .sha256 by ci.yml fmt
 - ^design/display-grouping-vectors\.tsv
+# Named in ci/repro/vendor-freshness.sh (ci/code-docs-check.sh).
+- ^docs/verify-reproducibility\.md$
