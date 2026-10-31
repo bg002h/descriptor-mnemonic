@@ -28,8 +28,11 @@ Preserve unrelated work and use explicit task-owned paths when staging.
 ## Contracts and checks
 
 Read [wire format](design/SPEC_v0_30_wire_format.md), [policy](design/SPEC_v0_13_wallet_policy.md)
-and the affected newer design amendments; consult the guide's missing-spec question.
+and the affected newer design amendments; the shared source map links the me-hosted
+wire-8 design and distinguishes its md implementation owner.
 Use vector, wire-version, partial-decode, mint/recovery and seating tests.
-[xtask](crates/xtask/src/main.rs) generates coordinator evidence; preserve its source data.
+[xtask](crates/xtask/src/main.rs) generates the verdict table from recorded
+[coordinator evidence](crates/md-codec/tests/fixtures/coordinator/evidence.jsonl);
+preserve the distinction between that input and the generated table.
 Check the miniscript patch, lock, vendoring, and downstream mk/toolkit/me/shared Refugium
 pins together. CLI changes require the shared manual and utility GUI mirrors.
