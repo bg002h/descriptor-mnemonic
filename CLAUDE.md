@@ -2,6 +2,8 @@
 
 This file is auto-loaded by Claude Code when starting a session in this repository.
 
+@AGENTS.md
+
 ## Cross-repo coordination with `bg002h/mnemonic-key` (mk1) and `bg002h/mnemonic-secret` (ms1)
 
 mk1 is a sibling format (HRP `mk`, codex32-derived xpub backup) developed in `/scratch/code/shibboleth/mnemonic-key`. md1 and mk1 share the BCH plumbing (BIP 93 polynomials with HRP-mixing + per-format target residues — *forked*, not shared as a crate) and are designed to engrave alongside each other for foreign-xpub multisig recovery.
