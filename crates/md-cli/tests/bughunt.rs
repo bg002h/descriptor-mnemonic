@@ -8,6 +8,11 @@ use assert_cmd::Command;
 const XPUB_A: &str = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
 const XPUB_B: &str = "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtMJLfRuhRHqnQCPbTj3fGKTuKFLHzzwpJkp5Dtc3UtLKZKaVZe1yqMBXd6Vk";
 const KEYED: &str = "wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))";
+/// R-4 expected stderr for a `<2147483648;1>` alternative on `@0`.
+const HARDENED_2_31: &str = "md: template parse error: @0 multipath alt `2147483648` is hardened; \
+hardened derivation is impossible on a watch-only (xpub) card\n";
+const WATCH_ONLY_NOTE: &str = "note: stdout is watch-only — public keys only, cannot spend";
+const KEYLESS_NOTE: &str = "note: stdout is a keyless descriptor template (no keys)";
 
 fn md() -> Command {
     Command::cargo_bin("md").unwrap()
@@ -63,6 +68,11 @@ fn bughunt_md_01_json_encode_refuses_truncated_timelock() {
         "--json exited 0 for older(65536); stdout={}",
         String::from_utf8_lossy(&json.stdout)
     );
+    // R-1: stderr and exit code byte-identical to the text path; no stdout.
+    assert_eq!(json.status.code(), Some(1));
+    assert_eq!(json.status.code(), text.status.code());
+    assert_eq!(json.stderr, text.stderr);
+    assert!(json.stdout.is_empty());
 }
 
 /// #3. `--json` must chunk a policy too large for one string, as the text path.
@@ -78,6 +88,15 @@ fn bughunt_md_03_json_encode_chunks_large_policy() {
         "--json failed where the text path chunks: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    // R-3: the `--force-chunked` JSON shape, chunks identical to the text path.
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let expected = serde_json::json!({
+        "chunk_set_id": "0x95075",
+        "chunks": keyed_cards(),
+        "network": "mainnet",
+        "schema": "md-cli/2",
+    });
+    assert_eq!(v, expected);
 }
 
 /// #4. A multipath alternative >= 2^31 is hardened (BIP-32) and must be refused
@@ -96,6 +115,59 @@ fn bughunt_md_04_multipath_hardened_range_refused_as_hardened() {
         err.contains("hardened"),
         "refused, but not as hardened: {err}"
     );
+    // R-4: the existing hardened-alt text, exit 1.
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(err, HARDENED_2_31);
+}
+
+/// #4 (R-4), `md address`: the shared lexer refuses alt 2^31 as hardened.
+/// Today it derives `bc1q0qgl7sdpw0vvdn3g0kha052hkjugcm8zujqhea` and exits 0.
+#[test]
+fn bughunt_md_04b_address_multipath_hardened_range_refused_as_hardened() {
+    let out = md()
+        .args([
+            "address",
+            "--template",
+            "wpkh(@0/<2147483648;1>/*)",
+            "--key",
+            &format!("@0={XPUB_A}"),
+            "--count",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stdout={}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(out.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&out.stderr), HARDENED_2_31);
+}
+
+/// #4 (R-4), `md descriptor`: the shared lexer refuses alt 2^31 as hardened.
+/// Today it prints `wpkh(<xpub>/<2147483648;1>/*)#26hvecv9` and exits 0.
+#[test]
+fn bughunt_md_04c_descriptor_multipath_hardened_range_refused_as_hardened() {
+    let out = md()
+        .args([
+            "descriptor",
+            "--template",
+            "wpkh(@0/<2147483648;1>/*)",
+            "--key",
+            &format!("@0={XPUB_A}"),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stdout={}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(out.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&out.stderr), HARDENED_2_31);
 }
 
 /// #10. stdout carries only the artifact (SPEC P3 6a): every stdout line is a
@@ -113,6 +185,14 @@ fn bughunt_md_10_policy_id_fingerprint_not_on_stdout() {
     for l in stdout.lines() {
         assert!(l.starts_with("md1"), "non-artifact line on stdout: {l:?}");
     }
+    // R-10: the card alone on stdout; the unchanged line moves to stderr.
+    assert_eq!(stdout, "md1yqpqqxqq8xtwhw4xwn4qh\n");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.lines()
+            .any(|l| l == "policy-id-fingerprint: 0x3ace1082"),
+        "fingerprint line not on stderr: {err}"
+    );
 }
 
 /// #11. `inspect --json` of a keyed (wallet-policy) card must not call stdout a
@@ -128,6 +208,22 @@ fn bughunt_md_11_inspect_json_keyed_card_not_called_keyless() {
     assert!(out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(!err.contains("keyless"), "keyed card called keyless: {err}");
+    // R-11: encode's WatchOnly note instead.
+    assert!(err.lines().any(|l| l == WATCH_ONLY_NOTE), "{err}");
+}
+
+/// #11 (R-11), text path: `md inspect` of a keyed card must not call stdout a
+/// keyless template either; it prints encode's WatchOnly note.
+#[test]
+fn bughunt_md_11b_inspect_text_keyed_card_not_called_keyless() {
+    let cards = keyed_cards();
+    let mut args = vec!["inspect".to_string()];
+    args.extend(cards);
+    let out = md().args(&args).output().unwrap();
+    assert!(out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("keyless"), "keyed card called keyless: {err}");
+    assert!(err.lines().any(|l| l == WATCH_ONLY_NOTE), "{err}");
 }
 
 /// #12. A sign character is not a hex digit: `+f+f+f+f` must be refused.
@@ -139,6 +235,12 @@ fn bughunt_md_12_fingerprint_with_plus_signs_refused() {
         !out.status.success(),
         "`+f+f+f+f` accepted; stdout={}",
         String::from_utf8_lossy(&out.stdout)
+    );
+    // R-12: the existing per-byte wording, exit 1.
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "md: --fingerprint @0: invalid hex byte: +f\n"
     );
 }
 
@@ -157,4 +259,8 @@ fn bughunt_md_14_decode_single_key_canonical_card_no_origins_note() {
     assert!(out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(!err.contains("key origins carried"), "note printed: {err}");
+    // R-14: the note and the `--path` hint are both suppressed; stdout and the
+    // output-class advisory are unchanged.
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "wpkh(@0/<0;1>/*)\n");
+    assert_eq!(err, format!("{KEYLESS_NOTE}\n"));
 }
