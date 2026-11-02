@@ -149,7 +149,9 @@ stays.
 
 All in `crates/md-codec/tests/bughunt.rs` (committed with this doc) except
 the last, in `crates/md-codec/tests/policy_shape.rs`. Run on unmodified
-`b2bfdd63` (log: 14 run, 2 passed, 12 failed). Expected GREEN: all pass.
+`b2bfdd63` after the architect fold (controller re-run of the §5 filter,
+`/scratch/cache/bughunt/md/fixb-red2.log`: 14 run, 1 passed (the inverted
+#9 row), 13 failed). Expected GREEN: all pass.
 
 | row | what it asserts (GREEN) | observed on unmodified code |
 |---|---|---|
