@@ -955,6 +955,8 @@ Conformant decoders MUST distinguish the following structurally-defined error ca
 |-
 | <code>TlvOrderingViolation { prev, current }</code> || TLV entries in non-ascending tag order.
 |-
+| <code>TlvUnknownTagOutOfRange { tag }</code> || An unknown TLV entry's tag is outside the reserved range 0x04–0x1F (encoder refuses before writing).
+|-
 | <code>ChunkSetIdMismatch { expected, derived }</code> || After reassembling a chunked payload, the chunk-set-id declared by the chunks doesn't match the SHA-256-derived id of the reassembled payload.
 |}
 

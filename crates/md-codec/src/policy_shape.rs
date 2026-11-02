@@ -24,6 +24,10 @@
 //! rendering that cannot be re-parsed is the defect the wider cycle's
 //! invariant exists to prevent.
 //!
+//! A disjunction (`andor`, `or_b`, `or_c`, `or_d`, `or_i`) inside a branch
+//! that the top-level split leaves whole also makes `complete` false: listing
+//! it would need a cross product of branches.
+//!
 //! # Three extensions over the Go original
 //!
 //! 1. [`Branch::slots`] retains *which* placeholder indices a branch
@@ -637,13 +641,24 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
             };
             children.iter().all(|c| collect(c, br, keys))
         }
+        // `l:X` = or_i(0,X), `u:X` = or_i(X,0) and `and_n(X,Y)` =
+        // andor(X,Y,0): the `0` alternative is never satisfiable, so these
+        // are not disjunctions; walk them like any conjunction.
+        Tag::OrI | Tag::AndOr
+            if matches!(&n.body, Body::Children(c)
+                if (n.tag == Tag::OrI && c.iter().any(|x| x.tag == Tag::False))
+                    || (n.tag == Tag::AndOr && c.get(2).is_some_and(|x| x.tag == Tag::False))) =>
+        {
+            let Body::Children(children) = &n.body else {
+                return false;
+            };
+            children.iter().all(|c| collect(c, br, keys))
+        }
+        // A disjunction inside a branch would need a cross product of
+        // branches; the summary refuses it rather than show a wrong one.
+        Tag::AndOr | Tag::OrB | Tag::OrC | Tag::OrD | Tag::OrI => false,
         Tag::AndB
         | Tag::AndV
-        | Tag::AndOr
-        | Tag::OrB
-        | Tag::OrC
-        | Tag::OrD
-        | Tag::OrI
         | Tag::Check
         | Tag::Verify
         | Tag::Swap

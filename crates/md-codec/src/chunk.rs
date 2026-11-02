@@ -525,6 +525,11 @@ fn parse_chunk_symbols(chunk: &str, chunk_index: usize) -> Result<Vec<u8>, Error
         if c.is_whitespace() || c == '-' {
             continue;
         }
+        if !c.is_ascii() {
+            return Err(Error::Codex32DecodeError(format!(
+                "chunk {chunk_index}: character {c:?} not in codex32 alphabet"
+            )));
+        }
         let lc = c as u8;
         let sym = CODEX32_ALPHABET
             .iter()
