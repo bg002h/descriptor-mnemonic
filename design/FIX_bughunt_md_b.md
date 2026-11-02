@@ -204,6 +204,8 @@ All committed with this doc; the builder does not edit tests.
     `nkeys as usize == br.slots.len()` (`policy_shape.rs` lines 462 and 476)
     with `true` makes it FAIL (checked on the scratch fix).
 
+- `crates/md-cli/tests/bughunt.rs`, `compose_bughunt.rs`, `input_bughunt.rs`: the ignore attribute above. FIX-A's doc needs the matching line "remove the FIX-B ignore on rows 01, 03, 04, 10, 11, 12, 14".
+
 No other test changes. A scratch application of exactly section 2 passed
 every md-codec test, including the
 `proptest_to_miniscript.proptest-regressions` seed `v = 2147483648`.
@@ -212,6 +214,7 @@ every md-codec test, including the
 
 Run once each, output to a file, then grep:
 
+0. `cargo fmt --all` (§2's inline Rust texts are not rustfmt-formatted; this reflows the R-8 `return Err(...)` and the R-16 `chunk.rs` statement without changing them).
 1. `cargo nextest run --locked --workspace --all-targets --all-features --no-fail-fast`
 2. `cargo test --locked --workspace --doc --all-features`
 3. `cargo fmt --all --check`
@@ -224,9 +227,5 @@ Run once each, output to a file, then grep:
 cargo nextest run --locked --workspace -E 'test(/(^|::)bughunt_md_(02_thresh_older_truncation_checked|04b_codec_to_miniscript_alt_2_31_varint_overflow|04c_codec_to_miniscript_origin_2_31_varint_overflow|04f_codec_unselected_alt_above_2_29_varint_overflow|05_nested_or_under_and_marks_incomplete|07_canonicalize_out_of_range_tlv_index_no_panic|08_unknown_tlv_tag_above_31_not_silently_truncated|08b_unknown_tlv_tag_duplicating_known_tag_not_written|08c_duplicate_unknown_tlv_tag_refused|09_varint_noncanonical_extension_accepted_per_bip|16_single_string_non_ascii_alias_refused|16b_chunk_non_ascii_alias_refused|16c_correct_chunks_non_ascii_alias_refused)$/) | test(/(^|::)mixed_branch_with_or_under_and_v_marks_incomplete$/)'
 ```
 
-Expected workspace result for step 1: every md-codec test passes. Still
-failing, and owed elsewhere (not a FIX-B failure): the md-cli bughunt rows
-01, 03, 04, 10, 11, 12, 14 (FIX-A) and the private rows
-`md-cli/src/seat/compose_bughunt.rs` 06 (deferred to the toolkit migration)
-and `md-cli/src/seat/input_bughunt.rs` 13 (Minor, deferred; FIX-A `#[ignore]`s 06 and 13). Any other failure is
+Expected workspace result for step 1: every test passes. FIX-B adds `#[ignore = "owed to FIX-A (md bug hunt row NN)"]` (NN = the row number), on the line after `#[test]`, to the nine md-cli rows its base already carries and that FIX-A owns: `crates/md-cli/tests/bughunt.rs` rows 01, 03, 04, 10, 11, 12, 14, `crates/md-cli/src/seat/compose_bughunt.rs` row 06 and `crates/md-cli/src/seat/input_bughunt.rs` row 13. Step 1 then reports 1591 passed, 13 skipped. FIX-A removes the ignore from rows 01, 03, 04, 10, 11, 12 and 14 as its RED step and keeps 06 and 13 ignored. Any failure is a FIX-B FAIL. Any other failure is
 a FIX-B FAIL. Then the mutation gate per the coordinator's rules.
