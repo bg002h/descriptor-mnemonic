@@ -86,6 +86,134 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-bughunt-fixb-s1-m1-shape-key-refusal-text` — shape-key refusal text misdescribes a known nested disjunction
+- **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-b-s1.md` M-1, line 153 (Minor).
+- **Where:** `crates/md-cli` shape-key refusal; `SkeletonError::IncompleteShape`.
+- **What:** After R-5 a known nested disjunction is refused with "the policy walk met a node it does not understand", which misdescribes the cause (it fails closed). Suggested text: "a branch holds a nested or/andor; no single key describes it".
+- **Why deferred:** Minor deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** md toolkit migration of verify/inspect (verb placement ruling 2026-11-01).
+- **Tier:** `v1+`
+
+### `md-bughunt-fixb-s1-n1-per-key-r4-check` — R-4 check is per expanded key, so an overridden unused baseline origin is not refused
+- **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-b-s1.md` N-1, line 157 (Nit).
+- **Where:** `crates/md-codec/src/to_miniscript.rs:175-185` (`assemble_origin_and_xkey`).
+- **What:** The R-4 check runs per expanded key, so an unused baseline origin above 2^29-1 that every placeholder overrides is not refused by `to_miniscript`. Library-only (encode refuses it), no wrong result; from reading only, not run.
+- **Why deferred:** Nit deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** next md-codec change.
+- **Tier:** `nit`
+
+### `md-bughunt-fixb-s2-m1-r4-first-offending-order` — R-4 first-offending-value order is untested
+- **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-b-s2.md` M-1, line 70 (Minor).
+- **Where:** `crates/md-codec/src/to_miniscript.rs` guard chain; 04f.
+- **What:** The origin-then-alts order is untested: planting `alt_values.chain(origin_values)` passes 14/14; only the reported value would differ, fail closed. Fix: add an origin 536870913 plus alt 536870912 case to 04f and assert `VarintOverflow{value:536870913}` on every entry.
+- **Why deferred:** Minor deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** next md-codec change.
+- **Tier:** `v1+`
+
+### `md-bughunt-fixreview-b-n1` — FIX-B doc stale line citation (`assemble_origin_and_xkey`, line 172 vs 175)
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-b.md` N-1, line 148 (Nit).
+- **Where:** `design/FIX_bughunt_md_b.md` §2.4/§2.5.
+- **What:** FIX-document text cites a stale line number: stale line citation (`assemble_origin_and_xkey`, line 172 vs 175). Text-only; the doc's own anchors disambiguate.
+- **Why deferred:** Nit deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `nit`
+
+### `md-bughunt-fixreview-b-n2` — FIX-B doc stale line citation (`/// Translate`, line 349 vs 348)
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-b.md` N-2, line 149 (Nit).
+- **Where:** `design/FIX_bughunt_md_b.md` §2.4/§2.5.
+- **What:** FIX-document text cites a stale line number: stale line citation (`/// Translate`, line 349 vs 348). Text-only; the doc's own anchors disambiguate.
+- **Why deferred:** Nit deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `nit`
+
+### `md-bughunt-fixreview-b-n3` — FIX-B doc stale line citation (multipath alternative, line 258 vs 261-262; the edit there is a no-op)
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-b.md` N-3, line 150 (Nit).
+- **Where:** `design/FIX_bughunt_md_b.md` §2.4/§2.5.
+- **What:** FIX-document text cites a stale line number: stale line citation (multipath alternative, line 258 vs 261-262; the edit there is a no-op). Text-only; the doc's own anchors disambiguate.
+- **Why deferred:** Nit deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `nit`
+
+### `md-bughunt-fixreview-a-m1` — FIX-A review finding M1
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-a.md` M1, line 112 (Minor).
+- **Where:** `design/FIX_bughunt_md_a.md:180` (§2.9).
+- **What:** The §2.9 parenthetical conditions #13's owner line on Q-B, which a builder cannot observe; it fails safe because a default is given. Fix: "Write #13's owner line as given; Q-B is Brian's and does not block this commit."
+- **Why deferred:** Minor deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `v1+`
+
+### `md-bughunt-fixreview-a-m2` — FIX-A review finding M2
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-a.md` M2, line 122 (Minor).
+- **Where:** `design/FIX_bughunt_md_a.md` §3 rows 04, 12, 14.
+- **What:** The §3 row table describes rows 04, 12 and 14 differently from the committed `tests/bughunt.rs` (keyed args; row 14 encodes then decodes). The literal commands were run and give the stated outputs. Fix: make each cell quote the committed row's command.
+- **Why deferred:** Minor deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `v1+`
+
+### `md-bughunt-fixreview-a-m3` — FIX-A review finding M3
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-a.md` M3, line 135 (Minor).
+- **Where:** `crates/md-cli/src/cmd/inspect.rs` (R-11 WatchOnly note).
+- **What:** On a keyed card, text `md inspect` says "public keys only" where stdout prints no keys; fails safe (under-claims spend power) and is arguably a design line. No FIX-A fix; file with the inspect migration.
+- **Why deferred:** Minor deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `v1+`
+
+### `md-bughunt-fixreview-a-n1` — FIX-A review finding N1
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-a.md` N1, line 142 (Nit).
+- **Where:** `design/FIX_bughunt_md_a.md` §2.6.
+- **What:** §2.6 does not say whether the hex check goes before or after `from_utf8`; a non-UTF-8 chunk gives "non-utf8 hex" either way, exit 1.
+- **Why deferred:** Nit deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `nit`
+
+### `md-bughunt-fixreview-a-n2` — FIX-A review finding N2
+- **Surfaced:** md bug hunt, `design/agent-reports/fix-review-r1-md-a.md` N2, line 146 (Nit).
+- **Where:** `design/FIX_bughunt_md_a.md` §2.6.
+- **What:** §2.6 cites "line 522" while `parse_key_with_origin` has a similar loop (keys.rs:665); the function name `parse_fingerprint` disambiguates and the :665 loop is already hex-checked.
+- **Why deferred:** Nit deferred to its owner; fails closed or text-only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `nit`
+
+### `md-bughunt-fixa-wd-n1-stale-open-question-comments` — FIX-A whole-diff review finding N1
+- **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-a.md` N1 (Nit).
+- **Where:** `crates/md-cli/tests/bughunt.rs`, doc comments on rows 10 and 14.
+- **What:** the comments still say "OPEN PRODUCT QUESTION" though the rulings for R-10 and R-14 closed them.
+- **Why deferred:** Nit deferred to its owner; comment text only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `nit`
+
+### `md-bughunt-15-ap2-grind-determinism` — `gen_ap2_grind` fixture output is not deterministic across thread schedules
+- **Surfaced:** md bug hunt, finding #15 (`design/agent-reports/grade-bughunt-md.md`, ruling R-15, Nit).
+- **Where:** `crates/md-cli/src/bin/gen_ap2_grind.rs`.
+- **What:** `gen_ap2_grind` is a developer tool that is not shipped; fixture determinism matters only when someone regenerates a fixture. Fix: "`fetch_min` on the winning counter; threads stop once past the best". No row.
+- **Why deferred:** not shipped; no holder-visible effect.
+- **Status:** `deferred-minor`. **Owner:** next AP2 fixture regeneration.
+- **Tier:** `nit`
+
+### `md-bughunt-05-policy-shape-cross-product` — `policy_shape` does not enumerate the branch cross product of a nested disjunction
+- **Surfaced:** md bug hunt, finding #5 (`design/agent-reports/grade-bughunt-md.md`, ruling R-5, line 48).
+- **Where:** `crates/md-codec/src/policy_shape.rs` (`branch_of`, `collect`).
+- **What:** FIX-B marks a nested disjunction inside a branch `complete = false` (the module's honesty path) instead of expanding the cross product. The cross product is a feature, not a defect; a branch-count cap is a product number nothing has asked for.
+- **Why deferred:** a feature, not a defect.
+- **Status:** `deferred-minor`. **Owner:** none until a branch-count cap is requested.
+- **Tier:** `v1+`
+
+### `md-bughunt-06-comparison-form-mint-policy` — a pre-F-218 duplicate-slot card gets no comparison form
+- **Surfaced:** md bug hunt, finding #6 (grade-bughunt-md.md, M).
+- **Where:** `crates/md-cli/src/seat/compose_bughunt.rs` (`bughunt_md_06_comparison_form_independent_of_mint_policy`, `#[ignore]`d).
+- **What:** verify/seating refuses (exit 1, mint-policy error) a card minted before F-218 (38cc2fb5) that seats one xpub in two slots; checking an existing card should not depend on today's mint policy. Fails closed; no wrong verdict.
+- **Why deferred:** owned by the toolkit migration of verify and seating; that migration's spec owes a row asserting a verdict on such a card. Un-ignore the row there.
+- **Status:** open. **Owner:** toolkit migration of verify and seating.
+- **Tier:** cross-repo
+
+### `md-bughunt-13-dedupe-display-separators` — a hyphen-grouped and an unbroken paste of one mk1 card are not deduped
+- **Surfaced:** md bug hunt, finding #13 (grade-bughunt-md.md, M).
+- **Where:** `crates/md-cli/src/seat/input_bughunt.rs` (`bughunt_md_13_dedupe_strings_strips_display_separators`, `#[ignore]`d).
+- **What:** `--from-mk1` intake does not strip display separators before deduping. Downstream md fails closed: the same card twice exits 1 ("not a decodable mk1 string: invalid data-part length: 135"; FIX-A §3 probe).
+- **Why deferred:** Minor, fails closed; seating code moves with the toolkit migration of verify and seating. Un-ignore the row there.
+- **Status:** open. **Owner:** toolkit migration of verify and seating.
+- **Tier:** cross-repo
+
 ### `render-bare-constant-sugar` — `descriptor_to_template` prints bare `0`/`1`; Coldcard EDGE's parser refuses them (companion)
 
 - **Surfaced:** 2026-10-05, Refugium M15 signer rehearsal: a Coldcard EDGE 6.6.1X refused to import an added-wait member written `andor(pk(K),and_v(v:older(3),1),…)`. Coldcard's parser (tag `2026-08-31T1606-v6.6.1X`, `shared/miniscript.py` L174-183, L875-900, L1171) refuses only a bare `0` or `1` token; it accepts the `t:`, `l:`, `u:` and `and_n` spellings. The same member written `tv:older(3)` imported and showed the same address.

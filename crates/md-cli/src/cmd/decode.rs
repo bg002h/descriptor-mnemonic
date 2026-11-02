@@ -158,6 +158,13 @@ fn emit_origins_stderr(d: &md_codec::encode::Descriptor, w: &mut impl std::io::W
     if expanded.is_empty() {
         return;
     }
+    if expanded.len() == 1
+        && expanded[0].fingerprint.is_none()
+        && md_codec::canonical_origin::canonical_origin(&d.tree).as_ref()
+            == Some(&expanded[0].origin_path)
+    {
+        return;
+    }
     let mut out =
         String::from("note: key origins carried by this card (not shown in the template):\n");
     for e in &expanded {

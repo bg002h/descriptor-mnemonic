@@ -81,10 +81,12 @@ pub fn run(
             );
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
-        crate::output_advisory::emit_output_class_advisory(
-            crate::output_advisory::OutputClass::Template,
-            &mut std::io::stderr(),
-        );
+        let class = if descriptor.is_wallet_policy() {
+            crate::output_advisory::OutputClass::WatchOnly
+        } else {
+            crate::output_advisory::OutputClass::Template
+        };
+        crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
         if partial {
             emit_partial_stderr_note(&unres, &mut std::io::stderr());
         }
@@ -146,10 +148,12 @@ pub fn run(
             text::fmt_policy_id_fingerprint(pid)
         );
     }
-    crate::output_advisory::emit_output_class_advisory(
-        crate::output_advisory::OutputClass::Template,
-        &mut std::io::stderr(),
-    );
+    let class = if descriptor.is_wallet_policy() {
+        crate::output_advisory::OutputClass::WatchOnly
+    } else {
+        crate::output_advisory::OutputClass::Template
+    };
+    crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
     if partial {
         emit_partial_stderr_note(&unres, &mut std::io::stderr());
     }

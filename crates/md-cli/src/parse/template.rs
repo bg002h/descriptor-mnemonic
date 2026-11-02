@@ -291,7 +291,10 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
             m.as_str()
                 .split(';')
                 .map(|n| {
-                    if n.ends_with('\'') || n.ends_with('h') {
+                    if n.ends_with('\'')
+                        || n.ends_with('h')
+                        || n.parse::<u32>().is_ok_and(|v| v >= 0x8000_0000)
+                    {
                         return Err(CliError::TemplateParse(format!(
                             "@{i} multipath alt `{n}` is hardened; hardened derivation is \
                              impossible on a watch-only (xpub) card"
