@@ -1343,3 +1343,6 @@ mod tests {
         );
     }
 }
+#[cfg(test)]
+#[path = "input_bughunt.rs"]
+mod bughunt;

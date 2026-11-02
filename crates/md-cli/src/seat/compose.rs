@@ -561,3 +561,6 @@ mod tests {
         );
     }
 }
+#[cfg(test)]
+#[path = "compose_bughunt.rs"]
+mod bughunt;
