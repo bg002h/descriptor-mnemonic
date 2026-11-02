@@ -217,6 +217,57 @@ fn bughunt_md_04c_codec_to_miniscript_origin_2_31_varint_overflow() {
     });
 }
 
+/// #4 codec half, unselected alternative (architect ruling Q1/Q2). Chain 0
+/// selects alt 0, so the alt of 2^29 that overflows is not the selected one:
+/// every entry still refuses it with VarintOverflow. Control: 2^29 - 1 in the
+/// same place derives on every entry.
+#[test]
+fn bughunt_md_04f_codec_unselected_alt_above_2_29_varint_overflow() {
+    let origin = || OriginPath {
+        components: vec![
+            PathComponent {
+                hardened: true,
+                value: 84,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+            PathComponent {
+                hardened: true,
+                value: 0,
+            },
+        ],
+    };
+    let alts = |second: u32| {
+        vec![
+            Alternative {
+                hardened: false,
+                value: 0,
+            },
+            Alternative {
+                hardened: false,
+                value: second,
+            },
+        ]
+    };
+    let d = wpkh_with_key(origin(), alts(536_870_912));
+    assert_all_entries_refuse(&d, || Error::VarintOverflow { value: 536_870_912 });
+    let c = wpkh_with_key(origin(), alts(536_870_911));
+    assert!(
+        md_codec::to_miniscript::to_miniscript_descriptor(&c, 0).is_ok(),
+        "control: to_miniscript_descriptor"
+    );
+    assert!(
+        md_codec::to_miniscript::to_miniscript_descriptor_multipath(&c).is_ok(),
+        "control: to_miniscript_descriptor_multipath"
+    );
+    assert!(
+        c.derive_address(0, 0, Network::Bitcoin).is_ok(),
+        "control: derive_address"
+    );
+}
+
 /// #5 (ruling R-5). `wsh(and_v(v:pk(@0),or_d(pk(@1),older(10))))`: an `or_d`
 /// nested inside an `and_v` branch is a tag `collect` must refuse, so the
 /// whole summary is marked incomplete (no branch is shown). Top-level

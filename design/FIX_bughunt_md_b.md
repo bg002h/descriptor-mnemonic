@@ -11,9 +11,9 @@ texts that change as a consequence).
 Toolchain: `export PATH=$HOME/.cargo/bin:$PATH`; cargo 1.85.0; never
 `--release`.
 
-**Two STOP sections (S-1, S-2) must be ruled before the build starts.** The
-rows below hold under either answer to S-1 and to S-2; the production text
-for R-4 below is written for S-1 option (i) and S-2 as scratched.
+Architect ruling: `design/agent-reports/architect-md-fixdoc-stops.md`
+(R-4 refuses every value above 2^29-1 on every path; all alternatives are
+checked).
 
 ## 1. Build order
 
@@ -27,8 +27,7 @@ for R-4 below is written for S-1 option (i) and S-2 as scratched.
    - Any `md address` / `md descriptor` row FIX-A adds for #4 with a value
      above 2^29-1: the codec now refuses those (`Error::VarintOverflow`,
      text as above with the value), exit 1, where unmodified code prints an
-     address and exits 0. Under S-1 option (i) this includes
-     [2^29, 2^31), e.g. 536870912.
+     address and exits 0. This includes [2^29, 2^31), e.g. 536870912.
 
 ## 2. Spec delta (exact texts)
 
@@ -105,6 +104,8 @@ Add one line to `write`'s `# Errors` doc list:
 
 ### 2.5 R-4 guard, exact
 
+All alternatives are checked, including on the single-path entries; the first offending value is reported (key order, then origin components, then alternatives).
+
 In `assemble_origin_and_xkey`, before `let path = ...`:
 
 ```rust
@@ -155,6 +156,7 @@ the last, in `crates/md-codec/tests/policy_shape.rs`. Run on unmodified
 | `bughunt_md_02_thresh_older_truncation_checked` | `older(210000)` inside `thresh` → `Err(RelativeTimelockTruncated{..})` | FAIL: `older(210000) inside thresh must be RelativeTimelockTruncated, got Ok(())` |
 | `bughunt_md_04b_codec_to_miniscript_alt_2_31_varint_overflow` | alt 2147483648: every entry → `Err(VarintOverflow { value: 2147483648 })` | FAIL: left `Ok("wpkh(xpub6BemYiVNp19Zz9Bw6kmmfXR2LEFukA1hnhSZrXgE2AUJvNLW8a87gg72bQLi4RfGHcKcR4ojrEFgFJgNCXcjVYSH75YmvhTZ7qh9FCrxv3a/2147483648/*)#tsc5uuuc")`, right `Err(VarintOverflow { value: 2147483648 })` |
 | `bughunt_md_04c_codec_to_miniscript_origin_2_31_varint_overflow` | origin component 2147483648: every entry → `Err(VarintOverflow { value: 2147483648 })` | FAIL: left `Ok("wpkh(xpub69mdgvyMbhUa8NZU4mK1MPegY1Ly3RuFioKAUfoZME7QVTPh6HcmtzXRqq4sKVFoLutTmzr2bC3cZqC4LArSS8LM2RirENAMJ7MhCEpkcti/0/*)#8yz96sz2")` |
+| `bughunt_md_04f_codec_unselected_alt_above_2_29_varint_overflow` | origin 84'/0'/0', alts `[0, 536870912]`: every entry → `Err(VarintOverflow { value: 536870912 })` (chain 0 selects alt 0, so the overflowing alt is unselected); control alts `[0, 536870911]`: `to_miniscript_descriptor(&d, 0)`, `to_miniscript_descriptor_multipath` and `derive_address(0, 0, Bitcoin)` all `Ok` | FAIL: chain 0 returns `Ok` (no guard) |
 | `bughunt_md_05_nested_or_under_and_marks_incomplete` | `complete == false`, no branches | FAIL: `complete: true`, one branch, slots [0,1], lock OlderBlocks 10 |
 | `bughunt_md_07_canonicalize_out_of_range_tlv_index_no_panic` | `Err(PlaceholderIndexOutOfRange { idx: 5, n: 2 })` | FAIL: panic at `canonicalize.rs:137:16` `index out of bounds: the len is 2 but the index is 5` |
 | `bughunt_md_08_unknown_tlv_tag_above_31_not_silently_truncated` | `Err` text `unknown TLV tag 0x21 is outside the reserved range 0x04..=0x1f`, nothing written | FAIL: left `Ok(())` |
@@ -187,7 +189,7 @@ All committed with this doc; the builder does not edit tests.
   - rows 08 and 08b tightened to the exact R-8 Display texts;
   - row 16 tightened to the exact text plus the `'b'` control;
   - row 16b rewritten for `reassemble` (no chunk prefix);
-  - rows 04b, 04c, 08c, 16c added (04b/04c cover the grade's
+  - rows 04b, 04c, 04f, 08c, 16c added (04b/04c cover the grade's
     "codec `to_descriptor`" row: no function of that name exists, so they
     run `to_miniscript_descriptor`, `to_miniscript_descriptor_multipath` and
     `derive_address`).
@@ -212,55 +214,17 @@ Run once each, output to a file, then grep:
 2. `cargo test --locked --workspace --doc --all-features`
 3. `cargo fmt --all --check`
 4. `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`
-5. The FIX-B rows by exact name; the matched count must be **13** (12
+5. The FIX-B rows by exact name; the matched count must be **14** (13
    bughunt rows + 1 policy_shape row; `cargo nextest list` on `b2bfdd63`
-   matched 13), all passed:
+   matched 13; 04f is the 14th), all passed:
 
 ```
-cargo nextest run --locked --workspace -E 'test(/(^|::)bughunt_md_(02_thresh_older_truncation_checked|04b_codec_to_miniscript_alt_2_31_varint_overflow|04c_codec_to_miniscript_origin_2_31_varint_overflow|05_nested_or_under_and_marks_incomplete|07_canonicalize_out_of_range_tlv_index_no_panic|08_unknown_tlv_tag_above_31_not_silently_truncated|08b_unknown_tlv_tag_duplicating_known_tag_not_written|08c_duplicate_unknown_tlv_tag_refused|09_varint_noncanonical_extension_accepted_per_bip|16_single_string_non_ascii_alias_refused|16b_chunk_non_ascii_alias_refused|16c_correct_chunks_non_ascii_alias_refused)$/) | test(/(^|::)mixed_branch_with_or_under_and_v_marks_incomplete$/)'
+cargo nextest run --locked --workspace -E 'test(/(^|::)bughunt_md_(02_thresh_older_truncation_checked|04b_codec_to_miniscript_alt_2_31_varint_overflow|04c_codec_to_miniscript_origin_2_31_varint_overflow|04f_codec_unselected_alt_above_2_29_varint_overflow|05_nested_or_under_and_marks_incomplete|07_canonicalize_out_of_range_tlv_index_no_panic|08_unknown_tlv_tag_above_31_not_silently_truncated|08b_unknown_tlv_tag_duplicating_known_tag_not_written|08c_duplicate_unknown_tlv_tag_refused|09_varint_noncanonical_extension_accepted_per_bip|16_single_string_non_ascii_alias_refused|16b_chunk_non_ascii_alias_refused|16c_correct_chunks_non_ascii_alias_refused)$/) | test(/(^|::)mixed_branch_with_or_under_and_v_marks_incomplete$/)'
 ```
 
 Expected workspace result for step 1: every md-codec test passes. Still
 failing, and owed elsewhere (not a FIX-B failure): the md-cli bughunt rows
 01, 03, 04, 10, 11, 12, 14 (FIX-A) and the private rows
 `md-cli/src/seat/compose_bughunt.rs` 06 (deferred to the toolkit migration)
-and `md-cli/src/seat/input_bughunt.rs` 13 (Q-B, FIX-A). Any other failure is
+and `md-cli/src/seat/input_bughunt.rs` 13 (Minor, deferred; FIX-A `#[ignore]`s 06 and 13). Any other failure is
 a FIX-B FAIL. Then the mutation gate per the coordinator's rules.
-
-## STOP S-1: R-4's value range (contradiction in the ruling)
-
-R-4 says any origin, use-site or multipath value > 2^29-1 returns
-`VarintOverflow` (BIP :459), and also says "[2^29, 2^31) unchanged: address
-and descriptor accept them". Both cannot hold: `md address` and
-`md descriptor` go through the guarded entry points. Measured on the
-scratch fix with `md address --template 'wpkh(@0/<536870912;1>/*)'` (xpub
-fixture `xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf`):
-FIX-B prints `md: codec error: varint value 536870912 exceeds single-extension range (max 2^29 - 1)`,
-exit 1; unmodified code prints `bc1qghsy27425xapuv6gltah6uf2q9w5usrjucr5uy`,
-exit 0. 536870911 works under both (`bc1qd4366caaldhw2sx6970x8zqn5f9s8yzjm84kt2`).
-
-- (i) Guard at > 2^29-1 (as section 2.5). Consistent with the BIP and with
-  the encoder; [2^29, 2^31) is refused everywhere. FIX-A then owns a CLI row
-  for 536870912 on `md address` and `md descriptor`.
-- (ii) Guard at >= 2^31 only (`MAX_VARINT_VALUE` replaced by a
-  `>= 1 << 31` check; the error variant for that case then needs ruling,
-  since `VarintOverflow`'s text names 2^29 - 1). [2^29, 2^31) keeps deriving
-  addresses that no md1 card can carry.
-
-Rows 04b and 04c (value 2^31) pass under both. No other existing test uses a
-value in [2^29, 2^31).
-
-## STOP S-2: which value is reported, and which alts are checked
-
-- When several values overflow, section 2.5 reports the first in the order
-  origin components, then use-site alternatives (in path order). The ruling
-  does not order them.
-- The single-path entries (`to_miniscript_descriptor`, `derive_address`)
-  select one alternative; section 2.5 checks all alternatives, so an
-  overflowing alt that is not selected still refuses. The ruling says "any
-  ... multipath value", which reads as all, but does not say so for the
-  single-path entries.
-
-No row distinguishes these; a ruling either way adds no row unless it picks
-the other order or "selected alt only", in which case the ruling names the
-row.
