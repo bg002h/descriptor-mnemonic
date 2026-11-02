@@ -148,8 +148,10 @@ this FIX does not edit the toolkit.
 
 ### 2.9 Private RED rows 06 and 13 are `#[ignore]`d (architect ruling Q4)
 
-Both attributes go directly above the `#[test]`, in FIX-A's GREEN commit
-(not before):
+On FIX-B's head rows 06 and 13 carry FIX-B's
+`#[ignore = "owed to FIX-A (md bug hunt row NN)"]`. In FIX-A's GREEN commit
+(not before), replace that line on each row with the attribute below, placed
+directly above the `#[test]`:
 
 - `crates/md-cli/src/seat/compose_bughunt.rs:11`:
   `#[ignore = "deferred-minor md-bughunt-06-comparison-form-mint-policy (design/FOLLOWUPS.md)"]`
@@ -231,8 +233,9 @@ and no #13 row is added.
   `.stdout(predicate::str::contains("policy-id-fingerprint: 0x"))` becomes
   `.stderr(predicate::str::contains("policy-id-fingerprint: 0x"))`. (R-10.)
 - `crates/md-cli/src/seat/compose_bughunt.rs` and
-  `crates/md-cli/src/seat/input_bughunt.rs`: `#[ignore = "..."]` on rows 06
-  and 13 (§2.9), in the GREEN commit; plus the two FOLLOWUPS entries in
+  `crates/md-cli/src/seat/input_bughunt.rs`: FIX-B's ignore on rows 06 and 13
+  replaced by the §2.9 attributes, in the GREEN commit (FIX-B's ignore on rows
+  01, 03, 04, 10, 11, 12, 14 is deleted in §5 step 1); plus the two FOLLOWUPS entries in
   `design/FOLLOWUPS.md`.
 - No other existing test changes. Checked: `cli_output_class.rs` inspect
   tests use a keyless fixture; `decode_origins_note.rs` uses a multi-key
@@ -242,7 +245,9 @@ and no #13 row is added.
 
 ## 5. Build steps
 
-1. Rebase onto FIX-B's merged head (§1); re-run the §3 rows once to a file,
+1. Rebase onto FIX-B's merged head (§1). In `crates/md-cli/tests/bughunt.rs`,
+   delete FIX-B's `#[ignore = "owed to FIX-A (md bug hunt row NN)"]` line from
+   rows 01, 03, 04, 10, 11, 12 and 14. Re-run the §3 rows once to a file,
    confirm RED.
 2. Apply §2.1 to §2.7 in md-cli; apply §4.
 3. Run the gate (§6) once to a file; grep it.
