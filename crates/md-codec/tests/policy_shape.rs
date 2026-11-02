@@ -5,6 +5,7 @@ use common::{keyarg, multikeys, node2, node3, timelock, wrap};
 use md_codec::compose::{HashKind, HashLock, Lock as ComposeLock};
 use md_codec::policy_shape::{KeyPathKind, Lock, LockKind, policy_shape};
 use md_codec::tag::Tag;
+use md_codec::tree::{Body, Node};
 
 /// `wsh(or_d(multi(2,@0,@1,@2), and_v(v:pkh(@3), older(26280))))`
 fn kofn_recovery() -> md_codec::encode::Descriptor {
@@ -597,4 +598,58 @@ fn a_duplicate_index_multi_reports_no_threshold_in_either_spelling() {
         assert_eq!(b.slots, vec![0, 1]);
         assert_eq!((b.k, b.n), (0, 0), "no k-of-n for a duplicate-index multi");
     }
+}
+
+/// `sln:older(N)` = `s:or_i(0,n:older(N))` and `and_n(X,Y)` =
+/// `andor(X,Y,0)`: one alternative is `0`, so neither is a disjunction and
+/// the branch stays complete (whole-diff s1 I-1).
+#[test]
+fn zero_alternative_or_i_and_andor_stay_complete() {
+    let sln = wrap(
+        Tag::Swap,
+        node2(
+            Tag::OrI,
+            Node {
+                tag: Tag::False,
+                body: Body::Empty,
+            },
+            wrap(Tag::NonZero, timelock(Tag::Older, 144)),
+        ),
+    );
+    let thresh = common::thresh_node(
+        2,
+        vec![
+            keyarg(Tag::PkK, 0),
+            wrap(Tag::Swap, keyarg(Tag::PkK, 1)),
+            sln,
+        ],
+    );
+    let shape = policy_shape(&common::descriptor_of(wrap(Tag::Wsh, thresh), 2));
+    assert!(
+        shape.complete,
+        "sln:older inside thresh is not a disjunction"
+    );
+    assert_eq!(shape.branches.len(), 1);
+    assert_eq!(shape.branches[0].slots, vec![0, 1]);
+    let and_n = node3(
+        Tag::AndOr,
+        wrap(Tag::Check, keyarg(Tag::PkK, 1)),
+        timelock(Tag::Older, 144),
+        Node {
+            tag: Tag::False,
+            body: Body::Empty,
+        },
+    );
+    let tree = wrap(
+        Tag::Wsh,
+        node2(
+            Tag::AndV,
+            wrap(Tag::Verify, wrap(Tag::Check, keyarg(Tag::PkK, 0))),
+            and_n,
+        ),
+    );
+    let shape = policy_shape(&common::descriptor_of(tree, 2));
+    assert!(shape.complete, "and_n inside and_v is not a disjunction");
+    assert_eq!(shape.branches.len(), 1);
+    assert_eq!(shape.branches[0].slots, vec![0, 1]);
 }

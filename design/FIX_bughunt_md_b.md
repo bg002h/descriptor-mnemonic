@@ -80,7 +80,7 @@ tag 0x01 → `unknown TLV tag 0x01 is outside the reserved range 0x04..=0x1f`.
 |---|---|---|
 | R-2 | `older(n)` under `thresh` (`Body::Variable`) is truncation-checked: returns the existing `Error::RelativeTimelockTruncated` | `validate.rs` `walk_older`, line 238: add an arm `Body::Variable { children, .. } => { for c in children { walk_older(c, consensus_bits)?; } }` before the `Body::Tr` arm |
 | R-4 | any origin component, or any use-site multipath alternative, whose value is > 2^29-1 is refused with the existing `Error::VarintOverflow { value }` by every `to_miniscript` entry (`to_miniscript_descriptor`, `to_miniscript_descriptor_multipath`, `derive_address` and their `_with_network` forms) | `to_miniscript.rs` `assemble_origin_and_xkey`, line 172, immediately before `let path = origin_path_to_derivation(&e.origin_path);` (line 175); see 2.5 |
-| R-5 | `collect` returns `false` on `AndOr`, `OrB`, `OrC`, `OrD`, `OrI` inside a branch, so the shape is `complete == false` and `branches` is empty. Top-level splitting is unchanged | `policy_shape.rs` `collect`, line 637: remove the five tags from the `Tag::AndB \| Tag::AndV \| ...` arm and add before it `// A disjunction inside a branch would need a cross product of` / `// branches; the summary refuses it rather than show a wrong one.` / `Tag::AndOr \| Tag::OrB \| Tag::OrC \| Tag::OrD \| Tag::OrI => false,` |
+| R-5 | `collect` returns `false` on `AndOr`, `OrB`, `OrC`, `OrD`, `OrI` inside a branch, so the shape is `complete == false` and `branches` is empty. Top-level splitting is unchanged; except an `or_i` with a `0` child (`l:`/`u:`) and an `andor` whose third child is `0` (`and_n`), which `collect` walks as a conjunction | `policy_shape.rs` `collect`, line 637: remove the five tags from the `Tag::AndB \| Tag::AndV \| ...` arm and add before it `// A disjunction inside a branch would need a cross product of` / `// branches; the summary refuses it rather than show a wrong one.` / `Tag::AndOr \| Tag::OrB \| Tag::OrC \| Tag::OrD \| Tag::OrI => false,` |
 | R-7 | every TLV entry idx (in `use_site_path_overrides`, `fingerprints`, `pubkeys`, `origin_path_overrides`, in that order) must be `< d.n`; the first that is not returns the existing `Error::PlaceholderIndexOutOfRange { idx, n: d.n }`; no panic | `canonicalize.rs` `canonicalize_placeholder_indices`, immediately after `check_placeholder_bounds(&d.tree, d.n)?;` (line 165) |
 | R-8 | `TlvSection::write` checks `unknown` in order: a tag outside `0x04..=0x1f` returns `TlvUnknownTagOutOfRange { tag }`; a tag equal to an earlier unknown entry's tag returns the existing `TlvOrderingViolation { prev: tag, current: tag }`. Both before anything is written | `tlv.rs` `write`, immediately after the `let Self { .. } = self;` destructure (line 94), before `// Collect entries, sort by tag.` |
 | R-9 | none (row inverted; decoders stay lenient, BIP :752) | none |
@@ -164,6 +164,10 @@ the last, in `crates/md-codec/tests/policy_shape.rs`. Run on unmodified
 | `bughunt_md_08_unknown_tlv_tag_above_31_not_silently_truncated` | `Err` text `unknown TLV tag 0x21 is outside the reserved range 0x04..=0x1f`, nothing written | FAIL: left `Ok(())` |
 | `bughunt_md_08b_unknown_tlv_tag_duplicating_known_tag_not_written` | `Err` text `unknown TLV tag 0x01 is outside the reserved range 0x04..=0x1f` | FAIL: left `Ok(())` |
 | `bughunt_md_08c_duplicate_unknown_tlv_tag_refused` (new) | `Err(TlvOrderingViolation { prev: 5, current: 5 })` | FAIL: left `Ok(())` |
+| `bughunt_md_05b_every_nested_disjunction_tag_marks_incomplete` (whole-diff s2 I-1) | each of `AndOr`, `OrB`, `OrC`, `OrD`, `OrI` under `and_v` → `!complete`, no branches | guards fixed code; passes on the fix head (no RED step) |
+| `bughunt_md_07b_every_tlv_list_idx_equal_n_refused` (s2 I-2) | idx == n in each of the four TLV lists → `Err(PlaceholderIndexOutOfRange { idx: 2, n: 2 })`, no panic | guards fixed code; passes on the fix head |
+| `bughunt_md_08d_unknown_tlv_tag_range_boundaries` (s2 I-3) | tags 0x00, 0x03, 0x20 → `Err(TlvUnknownTagOutOfRange { tag })`, 0 bits; 0x04, 0x1f → `Ok(())` | guards fixed code; passes on the fix head |
+| `zero_alternative_or_i_and_andor_stay_complete` (policy_shape.rs, s1 I-1) | `sln:older` inside `thresh` and `and_n` inside `and_v` stay `complete`, one branch, slots [0,1] | FAIL: `sln:older inside thresh is not a disjunction` |
 | `bughunt_md_09_varint_noncanonical_extension_accepted_per_bip` (inverted) | `read_varint` → `Ok(5)` | PASS (as required) |
 | `bughunt_md_16_single_string_non_ascii_alias_refused` | `decode_md1_string("md1Źq9dsssqrqq20vuhf9agdphs")` → `codex32 decode error: character 'Ź' not in codex32 alphabet`; control `'b'` → same wording | FAIL: left `None` (decoded the card) |
 | `bughunt_md_16b_chunk_non_ascii_alias_refused` | `chunk::reassemble` with an aliased chunk 0 → `codex32 decode error: character 'Ŧ' not in codex32 alphabet` (no chunk prefix); control `'b'` same wording | FAIL: left `None` for `md1Ŧwyleqqpqptvyyqqcqqe7vaxqflrlrvl` |
@@ -191,6 +195,7 @@ All committed with this doc; the builder edits no tests except adding the §5 ig
   - rows 08 and 08b tightened to the exact R-8 Display texts;
   - row 16 tightened to the exact text plus the `'b'` control;
   - row 16b rewritten for `reassemble` (no chunk prefix);
+  - rows 05b, 07b, 08d added by the whole-diff fold (s2 I-1..I-3);
   - rows 04b, 04c, 04f, 08c, 16c added (04b/04c cover the grade's
     "codec `to_descriptor`" row: no function of that name exists, so they
     run `to_miniscript_descriptor`, `to_miniscript_descriptor_multipath` and
@@ -199,6 +204,7 @@ All committed with this doc; the builder edits no tests except adding the §5 ig
   - `mixed_branch_with_extra_key_beside_a_multi_reports_zero_threshold` is
     replaced by `mixed_branch_with_or_under_and_v_marks_incomplete` (same
     tree; R-5 makes the old assertion wrong);
+  - `zero_alternative_or_i_and_andor_stay_complete` added by the whole-diff fold (s1 I-1);
   - `mixed_branch_without_a_lock_still_reports_zero_threshold` keeps its
     assertions and now carries the guard-mutation note: replacing
     `nkeys as usize == br.slots.len()` (`policy_shape.rs` lines 462 and 476)
@@ -219,12 +225,13 @@ Run once each, output to a file, then grep:
 2. `cargo test --locked --workspace --doc --all-features`
 3. `cargo fmt --all --check`
 4. `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`
-5. The FIX-B rows by exact name; the matched count must be **14** (13
-   bughunt rows + 1 policy_shape row; `cargo nextest list` on `b2bfdd63`
-   matched 13; 04f is the 14th), all passed:
+5. The FIX-B rows by exact name; the matched count must be **18** (16
+   bughunt rows + 2 policy_shape rows; at the original build, 14 = 13 + 1:
+   `cargo nextest list` on `b2bfdd63` matched 13, 04f the 14th; the
+   whole-diff fold adds 05b, 07b, 08d and the second policy_shape row), all passed:
 
 ```
-cargo nextest run --locked --workspace -E 'test(/(^|::)bughunt_md_(02_thresh_older_truncation_checked|04b_codec_to_miniscript_alt_2_31_varint_overflow|04c_codec_to_miniscript_origin_2_31_varint_overflow|04f_codec_unselected_alt_above_2_29_varint_overflow|05_nested_or_under_and_marks_incomplete|07_canonicalize_out_of_range_tlv_index_no_panic|08_unknown_tlv_tag_above_31_not_silently_truncated|08b_unknown_tlv_tag_duplicating_known_tag_not_written|08c_duplicate_unknown_tlv_tag_refused|09_varint_noncanonical_extension_accepted_per_bip|16_single_string_non_ascii_alias_refused|16b_chunk_non_ascii_alias_refused|16c_correct_chunks_non_ascii_alias_refused)$/) | test(/(^|::)mixed_branch_with_or_under_and_v_marks_incomplete$/)'
+cargo nextest run --locked --workspace -E 'test(/(^|::)bughunt_md_(02_thresh_older_truncation_checked|04b_codec_to_miniscript_alt_2_31_varint_overflow|04c_codec_to_miniscript_origin_2_31_varint_overflow|04f_codec_unselected_alt_above_2_29_varint_overflow|05_nested_or_under_and_marks_incomplete|05b_every_nested_disjunction_tag_marks_incomplete|07_canonicalize_out_of_range_tlv_index_no_panic|08_unknown_tlv_tag_above_31_not_silently_truncated|08b_unknown_tlv_tag_duplicating_known_tag_not_written|07b_every_tlv_list_idx_equal_n_refused|08c_duplicate_unknown_tlv_tag_refused|08d_unknown_tlv_tag_range_boundaries|09_varint_noncanonical_extension_accepted_per_bip|16_single_string_non_ascii_alias_refused|16b_chunk_non_ascii_alias_refused|16c_correct_chunks_non_ascii_alias_refused)$/) | test(/(^|::)(mixed_branch_with_or_under_and_v_marks_incomplete|zero_alternative_or_i_and_andor_stay_complete)$/)'
 ```
 
 Expected workspace result for step 1: every test passes. FIX-B adds `#[ignore = "owed to FIX-A (md bug hunt row NN)"]` (NN = the row number), on the line after `#[test]`, to the nine md-cli rows its base already carries and that FIX-A owns: `crates/md-cli/tests/bughunt.rs` rows 01, 03, 04, 10, 11, 12, 14, `crates/md-cli/src/seat/compose_bughunt.rs` row 06 and `crates/md-cli/src/seat/input_bughunt.rs` row 13. Step 1 then reports 1591 passed, 13 skipped. FIX-A removes the ignore from rows 01, 03, 04, 10, 11, 12 and 14 as its RED step and keeps 06 and 13 ignored. Any failure is a FIX-B FAIL. Then the mutation gate per the coordinator's rules.

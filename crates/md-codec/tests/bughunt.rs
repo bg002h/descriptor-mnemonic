@@ -508,3 +508,115 @@ fn bughunt_md_16c_correct_chunks_non_ascii_alias_refused() {
         Some("codex32 decode error: chunk 0: character 'b' not in codex32 alphabet".to_string())
     );
 }
+
+/// #5, every disjunction tag R-5 lists (not only `or_d`).
+#[test]
+fn bughunt_md_05b_every_nested_disjunction_tag_marks_incomplete() {
+    for tag in [Tag::AndOr, Tag::OrB, Tag::OrC, Tag::OrD, Tag::OrI] {
+        let kids = if tag == Tag::AndOr {
+            vec![key(Tag::PkK, 1), key(Tag::PkK, 2), key(Tag::PkK, 3)]
+        } else {
+            vec![key(Tag::PkK, 1), key(Tag::PkK, 2)]
+        };
+        let d = desc(
+            4,
+            node(
+                Tag::Wsh,
+                Body::Children(vec![node(
+                    Tag::AndV,
+                    Body::Children(vec![
+                        node(Tag::Verify, Body::Children(vec![key(Tag::PkK, 0)])),
+                        node(tag, Body::Children(kids)),
+                    ]),
+                )]),
+            ),
+            TlvSection::new_empty(),
+        );
+        let shape = md_codec::policy_shape::policy_shape(&d);
+        assert!(
+            !shape.complete && shape.branches.is_empty(),
+            "{tag:?} under and_v must mark the summary incomplete: {shape:?}"
+        );
+    }
+}
+
+type TlvSetter = Box<dyn Fn(&mut TlvSection)>;
+
+/// #7, boundary and all four lists: idx == n (the first out-of-range value)
+/// in each TLV entry list is the typed error, never a panic.
+#[test]
+fn bughunt_md_07b_every_tlv_list_idx_equal_n_refused() {
+    let usp = UseSitePath {
+        multipath: None,
+        wildcard_hardened: false,
+    };
+    let op = OriginPath {
+        components: vec![PathComponent {
+            hardened: true,
+            value: 84,
+        }],
+    };
+    let cases: Vec<(&str, TlvSetter)> = vec![
+        (
+            "use_site_path_overrides",
+            Box::new(move |t| t.use_site_path_overrides = Some(vec![(2, usp.clone())])),
+        ),
+        (
+            "fingerprints",
+            Box::new(|t| t.fingerprints = Some(vec![(2, [1, 2, 3, 4])])),
+        ),
+        (
+            "pubkeys",
+            Box::new(|t| t.pubkeys = Some(vec![(2, [7u8; 65])])),
+        ),
+        (
+            "origin_path_overrides",
+            Box::new(move |t| t.origin_path_overrides = Some(vec![(2, op.clone())])),
+        ),
+    ];
+    for (name, set) in cases {
+        let mut tlv = TlvSection::new_empty();
+        set(&mut tlv);
+        let mut d = desc(
+            2,
+            node(
+                Tag::Wsh,
+                Body::Children(vec![node(
+                    Tag::Multi,
+                    Body::MultiKeys {
+                        k: 2,
+                        indices: vec![1, 0],
+                    },
+                )]),
+            ),
+            tlv,
+        );
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            md_codec::canonicalize::canonicalize_placeholder_indices(&mut d)
+        }));
+        assert_eq!(
+            r.ok(),
+            Some(Err(Error::PlaceholderIndexOutOfRange { idx: 2, n: 2 })),
+            "{name}: idx == n"
+        );
+    }
+}
+
+/// #8 boundaries: tag 0x03 (a known tag) and 0x20 are refused; 0x04 and 0x1f
+/// (the ends of the reserved range) are written.
+#[test]
+fn bughunt_md_08d_unknown_tlv_tag_range_boundaries() {
+    for tag in [0x00u8, 0x03, 0x20] {
+        let (r, bits) = tlv_write_err(vec![(tag, vec![0xAB], 8)]);
+        assert_eq!(
+            r,
+            Err(Error::TlvUnknownTagOutOfRange { tag }),
+            "tag {tag:#x}"
+        );
+        assert_eq!(bits, 0);
+    }
+    for tag in [0x04u8, 0x1f] {
+        let (r, _) = tlv_write_err(vec![(tag, vec![0xAB], 8)]);
+        assert_eq!(r, Ok(()), "tag {tag:#x}");
+    }
+}

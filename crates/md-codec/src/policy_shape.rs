@@ -641,6 +641,19 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
             };
             children.iter().all(|c| collect(c, br, keys))
         }
+        // `l:X` = or_i(0,X), `u:X` = or_i(X,0) and `and_n(X,Y)` =
+        // andor(X,Y,0): the `0` alternative is never satisfiable, so these
+        // are not disjunctions; walk them like any conjunction.
+        Tag::OrI | Tag::AndOr
+            if matches!(&n.body, Body::Children(c)
+                if (n.tag == Tag::OrI && c.iter().any(|x| x.tag == Tag::False))
+                    || (n.tag == Tag::AndOr && c.get(2).is_some_and(|x| x.tag == Tag::False))) =>
+        {
+            let Body::Children(children) = &n.body else {
+                return false;
+            };
+            children.iter().all(|c| collect(c, br, keys))
+        }
         // A disjunction inside a branch would need a cross product of
         // branches; the summary refuses it rather than show a wrong one.
         Tag::AndOr | Tag::OrB | Tag::OrC | Tag::OrD | Tag::OrI => false,
