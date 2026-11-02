@@ -174,6 +174,14 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
 - **Tier:** `nit`
 
+### `md-bughunt-fixa-wd-n1-stale-open-question-comments` — FIX-A whole-diff review finding N1
+- **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-a.md` N1 (Nit).
+- **Where:** `crates/md-cli/tests/bughunt.rs`, doc comments on rows 10 and 14.
+- **What:** the comments still say "OPEN PRODUCT QUESTION" though the rulings for R-10 and R-14 closed them.
+- **Why deferred:** Nit deferred to its owner; comment text only.
+- **Status:** `deferred-minor`. **Owner:** end-of-bughunt batch.
+- **Tier:** `nit`
+
 ### `md-bughunt-15-ap2-grind-determinism` — `gen_ap2_grind` fixture output is not deterministic across thread schedules
 - **Surfaced:** md bug hunt, finding #15 (`design/agent-reports/grade-bughunt-md.md`, ruling R-15, Nit).
 - **Where:** `crates/md-cli/src/bin/gen_ap2_grind.rs`.
