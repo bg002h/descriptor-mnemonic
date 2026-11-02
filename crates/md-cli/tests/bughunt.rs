@@ -118,6 +118,18 @@ fn bughunt_md_04_multipath_hardened_range_refused_as_hardened() {
     // R-4: the existing hardened-alt text, exit 1.
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(err, HARDENED_2_31);
+    // Architect ruling Q3: 2^32 is not a child index at all, so it keeps
+    // today's "not a bare unsigned integer" text (pins against a u64 lexer).
+    let big = md()
+        .args(["encode", "wpkh(@0/<4294967296;1>/*)"])
+        .output()
+        .unwrap();
+    assert_eq!(big.status.code(), Some(1));
+    assert!(big.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&big.stderr),
+        "md: template parse error: @0 multipath alt `4294967296` is not a bare unsigned integer\n"
+    );
 }
 
 /// #4 (R-4), `md address`: the shared lexer refuses alt 2^31 as hardened.
@@ -168,6 +180,79 @@ fn bughunt_md_04c_descriptor_multipath_hardened_range_refused_as_hardened() {
     );
     assert!(out.stdout.is_empty());
     assert_eq!(String::from_utf8_lossy(&out.stderr), HARDENED_2_31);
+}
+
+const VARINT_2_29: &str = "md: codec error: varint value 536870912 exceeds single-extension range \
+(max 2^29 - 1)\n";
+
+/// #4 (R-4, architect ruling Q1), `md address`: an alt in [2^29, 2^31) passes
+/// the lexer and the codec refuses it with VarintOverflow. Control: 2^29 - 1
+/// derives. Today alt 536870912 derives `bc1qghsy27425xapuv6gltah6uf2q9w5usrjucr5uy`
+/// and exits 0. GREEN on FIX-B's head.
+#[test]
+fn bughunt_md_04d_address_alt_above_2_29_refused_as_varint_overflow() {
+    let run = |alt: &str| {
+        md().args([
+            "address",
+            "--template",
+            &format!("wpkh(@0/<{alt};1>/*)"),
+            "--key",
+            &format!("@0={XPUB_A}"),
+            "--count",
+            "1",
+        ])
+        .output()
+        .unwrap()
+    };
+    let out = run("536870912");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stdout={}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(out.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&out.stderr), VARINT_2_29);
+    let ctl = run("536870911");
+    assert_eq!(ctl.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&ctl.stdout),
+        "bc1qd4366caaldhw2sx6970x8zqn5f9s8yzjm84kt2\n"
+    );
+}
+
+/// #4 (R-4, architect ruling Q1), `md descriptor`: as 04d. Control: 2^29 - 1
+/// prints a descriptor ending `/<536870911;1>/*)#rjkyn63n`. Today alt
+/// 536870912 prints a descriptor ending `#akxwxgma` and exits 0.
+#[test]
+fn bughunt_md_04e_descriptor_alt_above_2_29_refused_as_varint_overflow() {
+    let run = |alt: &str| {
+        md().args([
+            "descriptor",
+            "--template",
+            &format!("wpkh(@0/<{alt};1>/*)"),
+            "--key",
+            &format!("@0={XPUB_A}"),
+        ])
+        .output()
+        .unwrap()
+    };
+    let out = run("536870912");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stdout={}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(out.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&out.stderr), VARINT_2_29);
+    let ctl = run("536870911");
+    assert_eq!(ctl.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&ctl.stdout).ends_with("/<536870911;1>/*)#rjkyn63n\n"),
+        "stdout={}",
+        String::from_utf8_lossy(&ctl.stdout)
+    );
 }
 
 /// #10. stdout carries only the artifact (SPEC P3 6a): every stdout line is a
