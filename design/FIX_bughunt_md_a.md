@@ -154,9 +154,9 @@ On FIX-B's head rows 06 and 13 carry FIX-B's
 the line after `#[test]`):
 
 - `crates/md-cli/src/seat/compose_bughunt.rs:11`:
-  `#[ignore = "deferred-minor md-bughunt-06-comparison-form-mint-policy (design/FOLLOWUPS.md)"]`
+  `#[ignore = "deferred-minor md-bughunt-06-comparison-form-mint-policy"]`
 - `crates/md-cli/src/seat/input_bughunt.rs:6`:
-  `#[ignore = "deferred-minor md-bughunt-13-dedupe-display-separators (design/FOLLOWUPS.md)"]`
+  `#[ignore = "deferred-minor md-bughunt-13-dedupe-display-separators"]`
 
 These FOLLOWUPS entries go in descriptor-mnemonic `design/FOLLOWUPS.md`
 under "## Open items", in the same GREEN commit:

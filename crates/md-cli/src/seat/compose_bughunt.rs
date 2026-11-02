@@ -9,7 +9,7 @@ use std::str::FromStr;
 /// must still get a comparison form: checking an existing card must not depend
 /// on today's mint policy.
 #[test]
-#[ignore = "deferred-minor md-bughunt-06-comparison-form-mint-policy (design/FOLLOWUPS.md)"]
+#[ignore = "deferred-minor md-bughunt-06-comparison-form-mint-policy"]
 fn bughunt_md_06_comparison_form_independent_of_mint_policy() {
     let xpub = Xpub::from_str("xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf").unwrap();
     let mut raw = [0u8; 65];
