@@ -86,6 +86,22 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-bughunt-15-ap2-grind-determinism` — `gen_ap2_grind` fixture output is not deterministic across thread schedules
+- **Surfaced:** md bug hunt, finding #15 (`design/agent-reports/grade-bughunt-md.md`, ruling R-15, Nit).
+- **Where:** `crates/md-cli/src/bin/gen_ap2_grind.rs`.
+- **What:** `gen_ap2_grind` is a developer tool that is not shipped; fixture determinism matters only when someone regenerates a fixture. Fix: "`fetch_min` on the winning counter; threads stop once past the best". No row.
+- **Why deferred:** not shipped; no holder-visible effect.
+- **Status:** `deferred-minor`. **Owner:** next AP2 fixture regeneration.
+- **Tier:** `nit`
+
+### `md-bughunt-05-policy-shape-cross-product` — `policy_shape` does not enumerate the branch cross product of a nested disjunction
+- **Surfaced:** md bug hunt, finding #5 (`design/agent-reports/grade-bughunt-md.md`, ruling R-5, line 48).
+- **Where:** `crates/md-codec/src/policy_shape.rs` (`branch_of`, `collect`).
+- **What:** FIX-B marks a nested disjunction inside a branch `complete = false` (the module's honesty path) instead of expanding the cross product. The cross product is a feature, not a defect; a branch-count cap is a product number nothing has asked for.
+- **Why deferred:** a feature, not a defect.
+- **Status:** `deferred-minor`. **Owner:** none until a branch-count cap is requested.
+- **Tier:** `v1+`
+
 ### `md-bughunt-06-comparison-form-mint-policy` — a pre-F-218 duplicate-slot card gets no comparison form
 - **Surfaced:** md bug hunt, finding #6 (grade-bughunt-md.md, M).
 - **Where:** `crates/md-cli/src/seat/compose_bughunt.rs` (`bughunt_md_06_comparison_form_independent_of_mint_policy`, `#[ignore]`d).
