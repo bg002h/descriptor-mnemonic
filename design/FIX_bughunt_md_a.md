@@ -150,8 +150,8 @@ this FIX does not edit the toolkit.
 
 On FIX-B's head rows 06 and 13 carry FIX-B's
 `#[ignore = "owed to FIX-A (md bug hunt row NN)"]`. In FIX-A's GREEN commit
-(not before), replace that line on each row with the attribute below, placed
-directly above the `#[test]`:
+(not before), replace that line on each row with the attribute below (same place:
+the line after `#[test]`):
 
 - `crates/md-cli/src/seat/compose_bughunt.rs:11`:
   `#[ignore = "deferred-minor md-bughunt-06-comparison-form-mint-policy (design/FOLLOWUPS.md)"]`
