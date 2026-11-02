@@ -172,6 +172,17 @@ fn assemble_origin_and_xkey(
     // CKDpub, so the ADDRESSES were always right), but mk-codec's card encoder
     // rejects an xpub whose depth/child disagree with its origin, so the
     // rendered descriptor could not round-trip back into a key card.
+    // Every origin component and every use-site alternative must fit the md1
+    // varint (BIP: values above 2^29 - 1 are rejected with VarintOverflow);
+    // a larger in-memory value is refused, never mapped to another child.
+    let origin_values = e.origin_path.components.iter().map(|c| c.value);
+    let alt_values = e.use_site_path.multipath.iter().flatten().map(|a| a.value);
+    if let Some(value) = origin_values
+        .chain(alt_values)
+        .find(|&v| v > MAX_VARINT_VALUE)
+    {
+        return Err(Error::VarintOverflow { value });
+    }
     let path = origin_path_to_derivation(&e.origin_path);
     let mut xkey = xpub_from_tlv_bytes(e.idx, &xpub_bytes)?;
     // The version bytes are the caller's network (F-672): md1 does not carry
@@ -258,8 +269,7 @@ fn build_descriptor_multi_public_key(
                 .iter()
                 .map(|a| {
                     let child = if a.hardened {
-                        ChildNumber::from_hardened_idx(a.value)
-                            .unwrap_or(ChildNumber::Hardened { index: a.value })
+                        ChildNumber::Hardened { index: a.value }
                     } else {
                         ChildNumber::Normal { index: a.value }
                     };
@@ -345,6 +355,9 @@ pub fn to_miniscript_descriptor_multipath_with_network(
     node_to_descriptor(&d.tree, &keys, network, None)
 }
 
+/// Largest value an md1 LP4-ext varint carries (BIP: 2^29 - 1).
+const MAX_VARINT_VALUE: u32 = (1 << 29) - 1;
+
 /// Translate an `OriginPath` into a `bip32::DerivationPath`.
 fn origin_path_to_derivation(p: &OriginPath) -> DerivationPath {
     let children: Vec<ChildNumber> = p
@@ -352,11 +365,9 @@ fn origin_path_to_derivation(p: &OriginPath) -> DerivationPath {
         .iter()
         .map(|c| {
             if c.hardened {
-                ChildNumber::from_hardened_idx(c.value)
-                    .unwrap_or(ChildNumber::Hardened { index: c.value })
+                ChildNumber::Hardened { index: c.value }
             } else {
-                ChildNumber::from_normal_idx(c.value)
-                    .unwrap_or(ChildNumber::Normal { index: c.value })
+                ChildNumber::Normal { index: c.value }
             }
         })
         .collect();

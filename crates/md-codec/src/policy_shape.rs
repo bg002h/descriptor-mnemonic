@@ -24,6 +24,10 @@
 //! rendering that cannot be re-parsed is the defect the wider cycle's
 //! invariant exists to prevent.
 //!
+//! A disjunction (`andor`, `or_b`, `or_c`, `or_d`, `or_i`) inside a branch
+//! that the top-level split leaves whole also makes `complete` false: listing
+//! it would need a cross product of branches.
+//!
 //! # Three extensions over the Go original
 //!
 //! 1. [`Branch::slots`] retains *which* placeholder indices a branch
@@ -637,13 +641,11 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
             };
             children.iter().all(|c| collect(c, br, keys))
         }
+        // A disjunction inside a branch would need a cross product of
+        // branches; the summary refuses it rather than show a wrong one.
+        Tag::AndOr | Tag::OrB | Tag::OrC | Tag::OrD | Tag::OrI => false,
         Tag::AndB
         | Tag::AndV
-        | Tag::AndOr
-        | Tag::OrB
-        | Tag::OrC
-        | Tag::OrD
-        | Tag::OrI
         | Tag::Check
         | Tag::Verify
         | Tag::Swap
