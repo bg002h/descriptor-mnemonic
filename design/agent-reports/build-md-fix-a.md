@@ -27,3 +27,6 @@ Filed: R-15 `md-bughunt-15-ap2-grind-determinism` (Nit) and R-5 `md-bughunt-05-p
 - The Tier values for R-15 (`nit`) and R-5 (`v1+`) follow the existing entry format; the brief did not state tiers.
 
 Counts: 0 C, 0 I; 1 STOP; RED 10/12 failed as expected; GREEN 1569/1569, 12/12, 1/1.
+
+## Step 6 completion
+Coordinator ruling applied: the eleven entries (slugs and owners as ruled; Tier `v1+` for Minors, `nit` for Nits) are filed in commit 6d3c46c3 "followups: md bug-hunt deferred minors (review findings)" on fix/bughunt-a. `git diff HEAD~1 --stat` touches only `design/FOLLOWUPS.md` (88 insertions). Docs only, so no nextest run. The STOP above is closed; nothing pushed.
