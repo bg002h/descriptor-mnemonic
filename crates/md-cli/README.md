@@ -13,6 +13,8 @@ from v0.x — see [`MIGRATION.md`](../../MIGRATION.md) and
 
 [bip388]: https://github.com/bitcoin/bips/blob/master/bip-0388.mediawiki
 
+`md` keeps `encode`, `decode` and the md1-only verbs `bytecode`, `compile`, `compose`, `shape-key`, `descriptor` and `decompose`. Verbs that several formats share belong to the toolkit (`mnemonic`). `repair` moves first: `md repair` is planned for removal, and `mnemonic repair <md1 strings>` repairs md1 strings today. `inspect`, `verify` and `address` are candidates to move later. `vectors`, `gui-schema` and `gen-man` describe `md` itself and stay. Full table: [Which tool owns which verb](https://github.com/bg002h/mnemonic-toolkit/blob/master/docs/manual/src/50-comparing/51-format-decision.md#which-tool-owns-which-verb).
+
 ## Install
 
 In-repo (recommended while md-cli is pre-1.0 and unpublished):
