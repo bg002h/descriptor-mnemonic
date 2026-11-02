@@ -4,6 +4,16 @@ This file is auto-loaded by Claude Code when starting a session in this reposito
 
 @AGENTS.md
 
+## Known hazards
+
+- **Payload shape (md-codec).** Payloads carry an exact bit length (decode takes a bit count; trailing zero padding is not payload) and sparse per-`@N` origin/key-metadata overrides. Never round to whole bytes or densify them.
+- **Identities (md-codec).** The encoding id, the BIP 388 template id, the wallet-policy id and the coordinator `SkeletonKey` answer different questions. Never substitute one for another.
+- **Admission versus existing cards (md-codec).** Mint-time admission rules apply only when creating a new artifact. Hashing, decoding or re-emitting a card that already exists must not apply them (a new refusal would otherwise make older cards undecodable). Partial decode relaxes only the missing-origin rejection.
+- **Seating (md-cli).** Seating composes every complete candidate assignment and compares the resulting wallets; assignments that yield different wallets must be refused, never guessed.
+- **Verdict table (xtask).** The coordinator verdict table is generated from the recorded evidence file. Change the evidence or the rules and regenerate; never hand-edit the table. The freshness test is the gate (CI does not run `--check`).
+- **Pins.** The miniscript `[patch.crates-io]` rev, `Cargo.lock` and `vendor/` move together. Consumers that build md-codec from git, directly or through a sibling crate (mnemonic-toolkit, mnemonic-engrave, mnemonic-gui, mnemonic-refugium, refugium-wallet), repeat the same patch and pin md-codec themselves, so check them together when either side changes.
+- **GUI mirror (md-cli).** A flag change in md-cli also updates mnemonic-gui's md schema mirror (and its pinned-upstream tag), in addition to the toolkit manual required below.
+
 ## Cross-repo coordination with `bg002h/mnemonic-key` (mk1) and `bg002h/mnemonic-secret` (ms1)
 
 mk1 is a sibling format (HRP `mk`, codex32-derived xpub backup) developed in `/scratch/code/shibboleth/mnemonic-key`. md1 and mk1 share the BCH plumbing (BIP 93 polynomials with HRP-mixing + per-format target residues — *forked*, not shared as a crate) and are designed to engrave alongside each other for foreign-xpub multisig recovery.
