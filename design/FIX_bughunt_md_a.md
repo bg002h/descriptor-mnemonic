@@ -8,7 +8,8 @@ lines 40 and 43. Review class: A (printed text, manual) and B (address and
 descriptor derivation).
 
 Architect ruling: `design/agent-reports/architect-md-fixdoc-stops.md` (on
-`fix/bughunt-b`). One STOP (S-2, row names) remains in §7.
+`fix/bughunt-b`). No STOP remains; the coordinator accepted the 04b/04c
+row names (former S-2).
 
 ## 1. Build order and base
 
@@ -202,15 +203,16 @@ feature.
 
 Rows 01, 03, 04, 10, 11, 12, 14 are the triage rows (names unchanged, now
 asserting the ruled exact texts). 04b, 04c, 04d, 04e and 11b are new; 11b's name is
-R-11's, 04b/04c names are this doc's proposal (STOP S-2); 04d/04e are the
+R-11's, 04b/04c names were accepted by the coordinator; 04d/04e are the
 architect's names.
 
 Evidence:
-- RED on unmodified code: `/scratch/cache/bughunt/md/fixa-red-unmodified.log`
-  (filter `test(/(^|::)bughunt_md_/)`, md-cli: 12 run, 12 failed: the 10
-  above plus private rows 06 and 13, see §2.9).
-- GREEN check with the hint patches applied as a scratch change (reverted,
-  not committed): `/scratch/cache/bughunt/md/fixa-green-scratch.log`,
+- RED on unmodified code after the architect fold (controller re-run of the
+  §6 filter): `/scratch/cache/bughunt/md/fixa-red2.log`, 12 run, 12 failed
+  (the 12 rows above). Pre-fold: `fixa-red-unmodified.log`, 12 run, 12
+  failed (10 rows plus private rows 06 and 13, see §2.9).
+- Pre-fold (before rows 04d/04e): GREEN check with the hint patches applied
+  as a scratch change (reverted, not committed): `/scratch/cache/bughunt/md/fixa-green-scratch.log`,
   10 run, 10 passed. Workspace run with the same scratch:
   `/scratch/cache/bughunt/md/fixa-green-scratch-ws.log`, 1560 run, 1549
   passed, 11 failed = the 8 FIX-B codec rows, private rows 06 and 13, and
@@ -267,10 +269,6 @@ Run each once to a file and grep it:
 The workspace nextest is fully green: rows 06 and 13 are `#[ignore]`d per
 §2.9, with the FOLLOWUPS entries `md-bughunt-06-…` and `md-bughunt-13-…`.
 
-## 7. STOP sections (undecided; the builder does not choose)
+## 7. STOP sections
 
-**S-2. Names of the new #4 rows.** R-4 asks for address and descriptor rows
-but gives no names. This doc uses
-`bughunt_md_04b_address_multipath_hardened_range_refused_as_hardened` and
-`bughunt_md_04c_descriptor_multipath_hardened_range_refused_as_hardened`
-(the triage row 04 pattern). Confirm or rename.
+None.
