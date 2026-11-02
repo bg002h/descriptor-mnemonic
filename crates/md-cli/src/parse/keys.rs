@@ -537,6 +537,12 @@ pub fn parse_fingerprint(arg: &str) -> Result<ParsedFingerprint, CliError> {
             i,
             why: "non-utf8 hex".into(),
         })?;
+        if !chunk.iter().all(u8::is_ascii_hexdigit) {
+            return Err(CliError::BadFingerprint {
+                i,
+                why: format!("invalid hex byte: {s}"),
+            });
+        }
         fp[n] = u8::from_str_radix(s, 16).map_err(|_| CliError::BadFingerprint {
             i,
             why: format!("invalid hex byte: {s}"),

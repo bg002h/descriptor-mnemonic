@@ -121,16 +121,18 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     #[cfg(feature = "json")]
     if args.json {
         use crate::format::json::SCHEMA;
+        md_codec::validate::validate_relative_timelocks(&descriptor.tree)?;
         let mut obj = serde_json::Map::new();
         obj.insert("schema".into(), SCHEMA.into());
         obj.insert("network".into(), args.network_str.into());
-        if args.force_chunked {
-            let chunks = split(&descriptor)?;
-            let csid = derive_chunk_set_id(&compute_md1_encoding_id(&descriptor)?);
-            obj.insert("chunk_set_id".into(), format!("0x{csid:05x}").into());
-            obj.insert("chunks".into(), serde_json::to_value(&chunks).unwrap());
-        } else {
-            obj.insert("phrase".into(), encode_md1_string(&descriptor)?.into());
+        match mint_md1_cards(&descriptor, args.force_chunked)? {
+            (cards, Some(csid)) => {
+                obj.insert("chunk_set_id".into(), format!("0x{csid:05x}").into());
+                obj.insert("chunks".into(), serde_json::to_value(&cards).unwrap());
+            }
+            (cards, None) => {
+                obj.insert("phrase".into(), cards[0].clone().into());
+            }
         }
         if args.policy_id_fingerprint {
             let id = compute_wallet_policy_id(&descriptor)?;
@@ -227,7 +229,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     );
     if args.policy_id_fingerprint {
         let id = compute_wallet_policy_id(&descriptor)?;
-        println!(
+        eprintln!(
             "policy-id-fingerprint: {}",
             text::fmt_policy_id_fingerprint(&id)
         );

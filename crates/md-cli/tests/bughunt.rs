@@ -57,7 +57,6 @@ fn keyed_cards() -> Vec<String> {
 /// path does (BIP-68 keeps only bits 0-15 and 22).
 #[cfg(feature = "json")]
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 01)"]
 fn bughunt_md_01_json_encode_refuses_truncated_timelock() {
     let t = "wsh(and_v(v:pk(@0/<0;1>/*),older(65536)))";
     let text = md().args(["encode", t]).output().unwrap();
@@ -78,7 +77,6 @@ fn bughunt_md_01_json_encode_refuses_truncated_timelock() {
 /// #3. `--json` must chunk a policy too large for one string, as the text path.
 #[cfg(feature = "json")]
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 03)"]
 fn bughunt_md_03_json_encode_chunks_large_policy() {
     let mut args = keyed_args("73c5da0a");
     args.insert(1, "--json".into());
@@ -103,7 +101,6 @@ fn bughunt_md_03_json_encode_chunks_large_policy() {
 /// AT THE LEXER with a hardened-derivation message, not by a downstream varint
 /// limit. Fails closed today, so only the diagnosis is wrong.
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 04)"]
 fn bughunt_md_04_multipath_hardened_range_refused_as_hardened() {
     let out = md()
         .args(["encode", "wsh(multi(2,@0/<2147483648;1>/*,@1/<0;1>/*))"])
@@ -259,7 +256,6 @@ fn bughunt_md_04e_descriptor_alt_above_2_29_refused_as_varint_overflow() {
 /// card. OPEN PRODUCT QUESTION: `encode_with_policy_id_fingerprint_prints_two_lines`
 /// (tests/cmd_encode.rs:153) pins the line on stdout today.
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 10)"]
 fn bughunt_md_10_policy_id_fingerprint_not_on_stdout() {
     let out = md()
         .args(["encode", "wpkh(@0/<0;1>/*)", "--policy-id-fingerprint"])
@@ -284,7 +280,6 @@ fn bughunt_md_10_policy_id_fingerprint_not_on_stdout() {
 /// keyless template.
 #[cfg(feature = "json")]
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 11)"]
 fn bughunt_md_11_inspect_json_keyed_card_not_called_keyless() {
     let cards = keyed_cards();
     let mut args = vec!["inspect".to_string(), "--json".to_string()];
@@ -313,7 +308,6 @@ fn bughunt_md_11b_inspect_text_keyed_card_not_called_keyless() {
 
 /// #12. A sign character is not a hex digit: `+f+f+f+f` must be refused.
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 12)"]
 fn bughunt_md_12_fingerprint_with_plus_signs_refused() {
     let out = md().args(keyed_args("+f+f+f+f")).output().unwrap();
     assert!(
@@ -332,7 +326,6 @@ fn bughunt_md_12_fingerprint_with_plus_signs_refused() {
 /// #14. A single-key card at the canonical origin gets no origins note.
 /// OPEN PRODUCT QUESTION: what is "canonical" (BIP-84 path for wpkh assumed).
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 14)"]
 fn bughunt_md_14_decode_single_key_canonical_card_no_origins_note() {
     let enc = md()
         .args(["encode", "wpkh(@0/<0;1>/*)", "--path", "m/84h/0h/0h"])

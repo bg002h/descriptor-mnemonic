@@ -148,12 +148,12 @@ fn encode_rejects_bad_separator() {
 }
 
 #[test]
-fn encode_with_policy_id_fingerprint_prints_two_lines() {
+fn encode_with_policy_id_fingerprint_prints_it_on_stderr() {
     let mut cmd = Command::cargo_bin("md").unwrap();
     cmd.args(["encode", "wpkh(@0/<0;1>/*)", "--policy-id-fingerprint"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("policy-id-fingerprint: 0x"));
+        .stderr(predicate::str::contains("policy-id-fingerprint: 0x"));
 }
 
 #[cfg(feature = "json")]

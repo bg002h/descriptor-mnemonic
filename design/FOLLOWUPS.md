@@ -86,6 +86,22 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-bughunt-06-comparison-form-mint-policy` — a pre-F-218 duplicate-slot card gets no comparison form
+- **Surfaced:** md bug hunt, finding #6 (grade-bughunt-md.md, M).
+- **Where:** `crates/md-cli/src/seat/compose_bughunt.rs` (`bughunt_md_06_comparison_form_independent_of_mint_policy`, `#[ignore]`d).
+- **What:** verify/seating refuses (exit 1, mint-policy error) a card minted before F-218 (38cc2fb5) that seats one xpub in two slots; checking an existing card should not depend on today's mint policy. Fails closed; no wrong verdict.
+- **Why deferred:** owned by the toolkit migration of verify and seating; that migration's spec owes a row asserting a verdict on such a card. Un-ignore the row there.
+- **Status:** open. **Owner:** toolkit migration of verify and seating.
+- **Tier:** cross-repo
+
+### `md-bughunt-13-dedupe-display-separators` — a hyphen-grouped and an unbroken paste of one mk1 card are not deduped
+- **Surfaced:** md bug hunt, finding #13 (grade-bughunt-md.md, M).
+- **Where:** `crates/md-cli/src/seat/input_bughunt.rs` (`bughunt_md_13_dedupe_strings_strips_display_separators`, `#[ignore]`d).
+- **What:** `--from-mk1` intake does not strip display separators before deduping. Downstream md fails closed: the same card twice exits 1 ("not a decodable mk1 string: invalid data-part length: 135"; FIX-A §3 probe).
+- **Why deferred:** Minor, fails closed; seating code moves with the toolkit migration of verify and seating. Un-ignore the row there.
+- **Status:** open. **Owner:** toolkit migration of verify and seating.
+- **Tier:** cross-repo
+
 ### `render-bare-constant-sugar` — `descriptor_to_template` prints bare `0`/`1`; Coldcard EDGE's parser refuses them (companion)
 
 - **Surfaced:** 2026-10-05, Refugium M15 signer rehearsal: a Coldcard EDGE 6.6.1X refused to import an added-wait member written `andor(pk(K),and_v(v:older(3),1),…)`. Coldcard's parser (tag `2026-08-31T1606-v6.6.1X`, `shared/miniscript.py` L174-183, L875-900, L1171) refuses only a bare `0` or `1` token; it accepts the `t:`, `l:`, `u:` and `and_n` spellings. The same member written `tv:older(3)` imported and showed the same address.

@@ -4,7 +4,7 @@ use super::*;
 /// #13. A hyphen-grouped paste and the same card pasted unbroken name the same
 /// card and must dedupe to one string (the decoder strips display separators).
 #[test]
-#[ignore = "owed to FIX-A (md bug hunt row 13)"]
+#[ignore = "deferred-minor md-bughunt-13-dedupe-display-separators (design/FOLLOWUPS.md)"]
 fn bughunt_md_13_dedupe_strings_strips_display_separators() {
     let unbroken = "mk1qqqqqqqqqqqqqqqqqqqqqq".to_string();
     let grouped = "mk1qqqq-qqqq-qqqq-qqqq-qqqqqq".to_string();
