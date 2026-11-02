@@ -4,6 +4,54 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [0.20.4] — 2026-11-02
+
+### Fixed
+
+Patch release for the md bug hunt's CLI fixes (FIX-A). No flag, command or
+error variant is added.
+
+- **`md encode --json` checks relative timelocks.** `older(65536)` now
+  refuses with the text path's error instead of printing a card that locks for
+  0 blocks.
+- **`md encode --json` chunks exactly when the text path does.** A card that
+  needs several chunks printed a single over-long `phrase`; it now prints
+  `chunk_set_id` and `chunks`, byte-identical to the text path's cards.
+- **A bare multipath alternative of 2^31 or more is refused as hardened** on
+  `encode`, `address` and `descriptor`, with the existing hardened-alternative
+  message.
+- **`--policy-id-fingerprint` prints on stderr**, so stdout carries only the
+  md1 artifact. The `--json` field is unchanged.
+- **`md inspect` calls a keyed card watch-only**, not a keyless template.
+- **`--fingerprint` accepts only hex digits.** `+f+f+f+f` was read as a
+  fingerprint; it now refuses with `invalid hex byte`.
+- **`md decode` no longer prints the origins note for a single key at its
+  canonical origin**, where the note and its `--path` hint told the reader
+  nothing.
+
+## md-codec [0.48.5] — 2026-11-02
+
+### Fixed
+
+Patch release for the md bug hunt's codec fixes (FIX-B).
+
+- **`older(n)` under `thresh` is checked for BIP-68 truncation**, as it
+  already was elsewhere. `validate_relative_timelocks` returns
+  `RelativeTimelockTruncated`.
+- **Every `to_miniscript` entry refuses an origin component or multipath
+  alternative above 2^29-1** with `VarintOverflow`.
+- **`policy_shape` no longer lists a wrong shape for a disjunction inside a
+  branch** (`andor`, `or_b`, `or_c`, `or_d`, `or_i`): the summary is
+  `complete == false` with no branches. An `or_i` with a `0` child and an
+  `and_n` stay complete.
+- **A TLV entry index at or above the placeholder count is refused**
+  (`PlaceholderIndexOutOfRange`) instead of panicking in canonicalisation.
+- **`TlvSection::write` refuses an unknown TLV tag outside `0x04..=0x1f`**
+  with the new `Error::TlvUnknownTagOutOfRange { tag }`, and a repeated
+  unknown tag with `TlvOrderingViolation`.
+- **A non-ASCII character no longer aliases a codex32 symbol**; it reaches the
+  invalid-character refusal like any other non-alphabet character.
+
 ## md-codec [0.48.4] — 2026-09-28
 
 ### Added
