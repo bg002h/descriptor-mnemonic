@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+## md-cli [0.20.5] — 2026-11-04
+
 No functional change since 0.20.4. Only CI workflow files, root `Cargo.toml`
 comments, and design/scripts documentation changed.
 
