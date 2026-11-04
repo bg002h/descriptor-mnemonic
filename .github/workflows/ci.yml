@@ -59,13 +59,6 @@ jobs:
           CHECK_NAME: cargo test (${{ matrix.os }})
           GH_TOKEN: ${{ github.token }}
         run: bash ci/docs-only.sh
-      - name: Clone patched miniscript fork (md-codec-local-stack)
-        if: steps.docs.outputs.docs_only != 'true'
-        shell: bash
-        run: |
-          git clone --depth 50 --branch md-codec-local-stack https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
-          cd ../rust-miniscript-fork
-          git checkout b308afd
       - uses: dtolnay/rust-toolchain@1.85.0
         if: steps.docs.outputs.docs_only != 'true'
       - uses: Swatinem/rust-cache@v2
@@ -111,12 +104,6 @@ jobs:
           CHECK_NAME: cargo clippy
           GH_TOKEN: ${{ github.token }}
         run: bash ci/docs-only.sh
-      - name: Clone patched miniscript fork (md-codec-local-stack)
-        if: steps.docs.outputs.docs_only != 'true'
-        run: |
-          git clone --depth 50 --branch md-codec-local-stack https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
-          cd ../rust-miniscript-fork
-          git checkout b308afd
       - uses: dtolnay/rust-toolchain@1.85.0
         if: steps.docs.outputs.docs_only != 'true'
         with:
@@ -170,12 +157,6 @@ jobs:
           CHECK_NAME: cargo doc
           GH_TOKEN: ${{ github.token }}
         run: bash ci/docs-only.sh
-      - name: Clone patched miniscript fork (md-codec-local-stack)
-        if: steps.docs.outputs.docs_only != 'true'
-        run: |
-          git clone --depth 50 --branch md-codec-local-stack https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
-          cd ../rust-miniscript-fork
-          git checkout b308afd
       - uses: dtolnay/rust-toolchain@1.85.0
         if: steps.docs.outputs.docs_only != 'true'
       - uses: Swatinem/rust-cache@v2
@@ -234,12 +215,12 @@ jobs:
     # `#[cfg(target_os = "linux")]` path compiles + is functional on musl with
     # ZERO source change.
     #
-    # FORK-FREE SCOPE — this job is scoped `-p md-cli` and does NOT clone the
-    # `md-codec-local-stack` patched-miniscript fork the `--workspace` test job
-    # needs. `-p md-cli` resolves the registry miniscript 13.0.0 and is the same
-    # scope `man-pages.yml` already builds successfully without the fork. Do NOT
-    # run a `--workspace` musl test here without replicating the ci.yml
-    # fork-clone step.
+    # FORK-FREE SCOPE — this job is scoped `-p md-cli`. No job in this repo
+    # clones a miniscript fork any more (the `md-codec-local-stack` clone steps
+    # were vestigial since the 2026-08-20 pin and were removed 2026-11-03):
+    # miniscript resolves through the root `[patch.crates-io]` git rev, which
+    # cargo fetches itself. `-p md-cli` is the same scope `man-pages.yml`
+    # builds. The label "fork-free" below is historic.
     #
     #   * x86_64-musl — built + tested natively. Needs `musl-tools` (`musl-gcc`)
     #     + `CC_x86_64_unknown_linux_musl=musl-gcc` so cc-rs builds the ONLY C

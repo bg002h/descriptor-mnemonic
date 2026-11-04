@@ -67,13 +67,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone patched miniscript fork (md-codec-local-stack)
-        shell: bash
-        run: |
-          git clone --depth 50 --branch md-codec-local-stack https://github.com/bg002h/rust-miniscript ../rust-miniscript-fork
-          cd ../rust-miniscript-fork
-          git checkout b308afd
-
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
 
