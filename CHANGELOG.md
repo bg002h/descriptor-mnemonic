@@ -4,6 +4,11 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## md-cli [Unreleased]
+
+No functional change since 0.20.4. Only CI workflow files, root `Cargo.toml`
+comments, and design/scripts documentation changed.
+
 ## md-cli [0.20.4] — 2026-11-02
 
 ### Fixed
