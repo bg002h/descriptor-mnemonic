@@ -2074,12 +2074,13 @@ If you are **closing** an item, edit its entry from `Status: open` → `Status: 
 ### `md-codec-sortedmulti-a-to-miniscript-rendering-gap` — `to_miniscript` cannot render `SortedMultiA` (md-codec pins crates.io miniscript 13.0.0, which lacks the fragment)
 
 - **Surfaced:** 2026-06-08, toolkit Cycle A (`toolkit-trmultia-nums-internal-key`). Companion mirror filed 2026-06-09 (the toolkit-side primary is `mnemonic-toolkit/design/FOLLOWUPS.md::md-codec-sortedmulti-a-to-miniscript-rendering-gap`).
+- **UPDATE 2026-11-03 (md `c8bb97a5`; recon `cycle-prep-recon-miniscript-13-2`):** RESOLVED for the tap-leaf root. Everything under **Where**, **What** and **NOTE** below is the 2026-06-09 filing, kept as history and no longer true as written: since the ff4732e pin (2026-08-20, `5b4d20ad`) `to_miniscript.rs:689-699` converts a tap-leaf-root `Tag::SortedMultiA` to `Terminal::SortedMultiA` (upstream #910); option (a) shipped there, and option (b) was not needed. The `Err` arm that remains (`to_miniscript.rs:869-889`) is the deliberate BIP-386/387 refusal for every other position (`sortedmulti_a` is not a sub-expression), not a gap. The `Cargo.toml` requirement text still reads `13.0.0` but resolves to git `ff4732e5` through `[patch.crates-io]`.
 - **Where:** `crates/md-codec/src/to_miniscript.rs:407-411` — `(Tag::SortedMultiA, Body::MultiKeys {..})` unconditionally `Err("…rust-miniscript v13 has no Terminal::SortedMultiA fragment")`. (`Tag::MultiA` at `:394-398` DOES render.) md-codec's `Cargo.toml` pins `miniscript = 13.0.0` (crates.io). NOTE: this is a md-codec **pin + missing-arm** gap, not a true upstream gap — rust-miniscript git rev `95fdd1c` HAS `Terminal::SortedMultiA` (the toolkit uses that rev and renders `tr(sortedmulti_a)` fine via its own `build_descriptor_string`).
 - **What:** a wallet-policy md1 whose tree is `Tr{…, SortedMultiA}` cannot be lowered to a `miniscript::Descriptor` by md-codec — so any consumer using `to_miniscript_descriptor`/`derive_address` on it errors. Options: (a) bump md-codec's miniscript pin to a rev with `SortedMultiA` + add the `to_miniscript.rs` arm; (b) lower `sortedmulti_a` → sorted `multi_a` at build time (semantically equivalent for taproot script-path; needs NO miniscript bump — md-codec already renders `multi_a`); (c) wontfix.
 - **NOTE — no longer blocks toolkit restore.** `mnemonic restore --md1` (toolkit v0.49.1, `restore-multisig-taproot-reconstruction`) now reconstructs `tr-sortedmulti-a` by routing AROUND md-codec entirely (reads the tree + builds/derives via the toolkit's own miniscript). This gap remains for md-codec-native consumers (`md address`, `md decode → derive`); option (b) is the recommended close.
-- **Status:** `open`
+- **Status:** **resolved** 2026-08-20 for the tap-leaf root (md pin commit `5b4d20ad`); status corrected 2026-11-03. Remaining refusal outside a tap-leaf root is intentional (BIP-386/387). The toolkit-side decision (its `subtree_contains_sortedmulti_a` gate in `restore.rs`) belongs to the toolkit entry, not to md.
 - **Tier:** `next-cycle`
-- **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::md-codec-sortedmulti-a-to-miniscript-rendering-gap` (primary) + `restore-multisig-taproot-reconstruction` (now routes around this).
+- **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::md-codec-sortedmulti-a-to-miniscript-rendering-gap` (primary; also being corrected, toolkit branch `fix/miniscript-tripwire-13-2`) + `restore-multisig-taproot-reconstruction` (now routes around this).
 
 ### `encode-accepts-k-greater-than-n` — encoder accepts k > n multi/thresh bodies that decode rejects (`KGreaterThanN`)
 
@@ -2093,15 +2094,16 @@ If you are **closing** an item, edit its entry from `Status: open` → `Status: 
 
 ### `upstream-miniscript-taptree-depth2-display-asymmetry` — pinned miniscript 13.0.0 Displays depth-2 taptrees as malformed strings its own parser rejects
 
+- **UPDATE 2026-11-03 (md `c8bb97a5`; recon `cycle-prep-recon-miniscript-13-2`):** RESOLVED at the pin, and released. The Display fix (#953) has been in the pinned rev ff4732e5 since 2026-08-20 (`5b4d20ad`) and was released on 2026-10-17 as #1039 in miniscript **13.2.0** (its CHANGELOG: "fix unbalanced Taproot tree formatting ..."). The lines below that say "13.0.0", "NOT in any release", "13.1.0 (latest tag)", "No 13.x backport PR exists", "generator ... depth <= 1" and "reparse asserted Err" are the 2026-06 filing, true then, false now. Current state: `t_tr_tree` (`crates/md-codec/tests/common/mod.rs`) generates depth <= 2 since the pin; the cell `upstream_taptree_depth2_display_asymmetry` (`crates/md-codec/tests/proptest_to_miniscript.rs`) was inverted and now asserts the reparse is Ok, panicking "UPSTREAM REGRESSED" otherwise. The pin is NOT removable for this reason or any 13.2.0 reason: 13.2.0 still lacks #910/#915/#911/#929 (root `Cargo.toml` comment; entry `md-codec-unpublishable-while-patched-to-miniscript-master`). Kept by decision 2026-11-03 (architect miniscript-13-2): no 13.x port; drop when one release carries #910, #915, #911 and #929; the toolkit tripwire watches for it.
 - **Surfaced:** 2026-06-11, stress Cycle B P6 bring-up (`design/BRAINSTORM_proptest_fragment_domain_expansion.md` @ 69b7a74) — the property went red on `tr(K,{{a,b},c})` shapes; reduced to a PURE-upstream repro (zero md-codec involvement), independently re-reproduced by the impl reviewer.
 - **Where (upstream):** rust-miniscript **13.0.0** (crates.io, md-codec's pin) — `TapTree::combine(TapTree::combine(a,b), c)` → `Descriptor::new_tr(K, Some(tree)).to_string()` emits `tr(K,{{pk(a),pk(b),pk(c)}})` instead of `tr(K,{{pk(a),pk(b)},pk(c)})`, and miniscript's OWN `Descriptor::from_str` rejects that output with `IncorrectNumberOfChildren { description: "taptree branch", n_children: 1, min: 2, max: 2 }`. The correctly-written depth-2 string parses Ok but re-Displays broken with the SAME checksum → Display is the faulty side. 2-leaf `{a,b}` is unaffected.
 - **What (md-codec exposure):** md-codec's wire round-trip, `to_miniscript_descriptor`, and `derive_address` are all UNAFFECTED (none transit the string form); the blast radius is any consumer that STRINGIFIES the converted descriptor for a ≥3-leaf taptree (export, display, cross-tool hand-off) — the string is unparseable by miniscript itself. Pinned LOUDLY by the characterization cell `upstream_taptree_depth2_display_asymmetry` (`crates/md-codec/tests/proptest_to_miniscript.rs` — converter+derivation+wire asserted Ok; reparse asserted Err with an "UPSTREAM FIXED?" flip message), and the Cycle-B T generator is minimally constrained to taptree depth ≤ 1 (`tests/common/mod.rs::t_tr_tree` doc comment).
 - **Upstream status (verified 2026-06-11):** ALREADY FIXED on master — rust-bitcoin/rust-miniscript **PR #953** "descriptor: fix Taproot tree descriptor formatting" (merged 2026-05-25, no API change; its description matches this find exactly: the old formatter "could put three leaves in one brace group and produce display output that failed to parse back"). NOT in any release: 13.1.0 (latest tag) empirically still buggy (repro re-run against 13.1.0 → malformed Display + reparse Err; git master → correct Display + reparse Ok). No 13.x backport PR exists. Do NOT file a duplicate bug report.
 - **CHARACTERIZATION SHARPENED (2026-06-12, toolkit Cycle-7 probes on `95fdd1c`):** the bug is **LEFT-branch-specific, not depth-specific** — a `TapTree` as a LEFT child mis-Displays (brace-flattening, structurally unparseable: it can only produce wrong child-arity, never a valid-but-different tree); a right-spine taptree of any depth Displays fine. The "depth-2+" wording above is a conservative superset (kept deliberately — a gate keyed to "shapes the bug happens to spare" would be Display-luck).
 - **Actions on close:** (1) watch for the first release containing #953 (14.0 or a 13.x point release); (2) on a miniscript bump past the fix: the flip cell goes red → invert it, restore the depth-2 arm in `t_tr_tree`, resolve this entry; (3) the TOOLKIT lifts its restore depth gate (`src/cmd/restore.rs::ensure_taptree_depth_le_one`) and flips its two depth-2 refusal cells in `tests/cli_restore_taproot.rs` to reconstruction cells (see the companion's Actions-on-close). (Not filing an upstream issue — the bug is already fixed on master; a backport request was considered and declined.)
-- **Status:** `open`
+- **Status:** **resolved** 2026-08-20 at the ff4732e5 pin (#953); released 2026-10-17 in 13.2.0 (#1039); status corrected 2026-11-03. Actions on close (2) were done at the pin; (3) is the toolkit's (its depth gate is already lifted, see the companion).
 - **Tier:** `upstream`
-- **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::upstream-miniscript-taptree-depth2-display-asymmetry` (filed 2026-06-12). VERIFIED 2026-06-12: the toolkit's pinned `95fdd1c` SHARES the bug — it is a merge of PR #932 dated 2026-05-02 (predates #953's 2026-05-25), and a trace of `95fdd1c:src/descriptor/tr/taptree.rs:87-114` `fmt_helper` confirms the comma-before-close-brace defect. Toolkit exposure as of toolkit v0.55.1 is a LIVE, slug-citing structural refusal: restore reconstructs general single-leaf + depth-1 two-leaf `tr(NUMS,…)` faithfully and refuses depth ≥2 conservatively. The same miniscript bump > 13.1.0 dissolves both entries, plus `md-codec-sortedmulti-a-to-miniscript-rendering-gap` option (a) and the toolkit's own `[patch.crates-io]`.
+- **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::upstream-miniscript-taptree-depth2-display-asymmetry` (also being corrected, toolkit branch `fix/miniscript-tripwire-13-2`) (filed 2026-06-12). VERIFIED 2026-06-12: the toolkit's pinned `95fdd1c` SHARES the bug — it is a merge of PR #932 dated 2026-05-02 (predates #953's 2026-05-25), and a trace of `95fdd1c:src/descriptor/tr/taptree.rs:87-114` `fmt_helper` confirms the comma-before-close-brace defect. Toolkit exposure as of toolkit v0.55.1 is a LIVE, slug-citing structural refusal: restore reconstructs general single-leaf + depth-1 two-leaf `tr(NUMS,…)` faithfully and refuses depth ≥2 conservatively. The same miniscript bump > 13.1.0 dissolves both entries, plus `md-codec-sortedmulti-a-to-miniscript-rendering-gap` option (a) and the toolkit's own `[patch.crates-io]`.
 
 ### `bitcoind-differential-corpus-breadth` — widen the offline bitcoind differential corpus beyond its current shapes
 
@@ -3118,8 +3120,14 @@ bearer-access warning `encode` prints; keep the default refusal.
     "rust-bitcoin/rust-miniscript", rev = "ff4732e" }`, and **a `[patch]` never
     carries into a published crate**. A published md-codec would declare
     `miniscript = "13.0.0"` and not build for anyone.
-  - Those APIs are still unreleased: crates.io's latest miniscript is
-    **13.1.0 (2026-06-09)**, checked 2026-09-17. No release in three months.
+  - Those APIs are still unreleased: crates.io's latest miniscript was
+    **13.1.0 (2026-06-09)**, checked 2026-09-17. **Re-checked 2026-11-03:
+    the highest is 13.2.0 (2026-10-17); its source still has no
+    `derive_at_index`, no `into_definite` and no `Terminal::SortedMultiA`, so
+    the conclusion stands.** 13.2.0 does carry the #953 Display fix (as #1039),
+    but #910/#915/#911/#929 are still missing. Kept by decision 2026-11-03
+    (architect miniscript-13-2): no 13.x port; drop the pin when one release
+    carries all four; the toolkit tripwire watches for it.
   - So crates.io is frozen at **md-codec 0.42.0 / md-cli 0.13.0** while the tree
     is at 0.43.0 / 0.15.0.
 - **This is NOT merely a packaging nit.** The pin exists for PR #953, which fixes
@@ -3129,6 +3137,10 @@ bearer-access warning `encode` prints; keep the default refusal.
   ship a crate that emits descriptors no other wallet can parse. Not publishing
   is the SAFE outcome here, and that is worth stating plainly so a future reader
   does not "fix" it by loosening the pin.
+  **Update 2026-11-03:** the Display half of this paragraph is overtaken: 13.2.0
+  carries the #953 fix (as #1039), so a crate built on 13.2.0 would emit parseable
+  descriptors. Not publishing is still forced, but by the API gap (#910/#915/#911/
+  #929 absent from 13.2.0), under which the crate does not compile at all.
 - **What is NOT at risk:** the published md-cli 0.13.0 has neither `compose` nor
   `descriptor` (both are newer), so the vulnerable `Display` path is not
   reachable from its CLI surface at all. Verified byte-identical output between
@@ -3280,3 +3292,9 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** (1) the "admitted == unadmitted" assertions can only fire after a future codec change — intended, they guard the documented "same bytes" claim; (2) `(bytes2.clone(), tb2)` allocates on every admitted input; compare by reference instead.
 - **Status:** `deferred-minor`
 - **Tier:** `nit`
+
+### `m1-miniscript-docs-review-minors` — M1 review Minors/Nits, deferred unfixed (repo: **descriptor-mnemonic**; owning phase: next md patch release, no later than toolkit T3)
+
+- **Surfaced:** 2026-11-03, class D review of PR 45 (`design/agent-reports/review-m1-miniscript-docs.md`): 0C/0I/5M/7N.
+- **What:** M1 Cargo.toml "#929 has no clean source marker" sentence (marker `into_plan` exists; md never calls the plan API); M2 `ci.yml` comment dates (vestigial since 2026-04-30, `5350f8a7`) and its "registry-miniscript" sentence; M3 `release.yml:11-16`, `fuzz/Cargo.toml:27-29` and the `md-codec-unpublishable-while-patched-to-miniscript-master` Options item 1 still name #953 as the pin's reason; M4 `to_miniscript.rs:869-889` stale "unimplemented (R5)" error text (full entry text in the report); M5 make the depth-gate text in `upstream-miniscript-taptree-depth2-display-asymmetry` self-contained; N1-N7 as listed in the report (N3: `musig-bip390-encode-support` "latest is 13.1.0", replacement text in the report). Each fix text is in the report, applied and checked in a scratch copy by the reviewer.
+- **Status:** `deferred-minor`.

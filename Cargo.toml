@@ -19,16 +19,27 @@ miniscript = { version = "13.0.0", default-features = false, features = ["std"] 
 bitcoin = "0.32"
 bip39 = "2.2.2"
 
-# PINNED to rust-miniscript master rev ff4732e, for PR #953 (taptree Display).
+# PINNED to rust-miniscript master rev ff4732e. Kept by decision 2026-11-03
+# (architect miniscript-13-2): no 13.x port; drop when one crates.io release
+# carries #910, #915, #911 and #929; the toolkit's miniscript-fork-tripwire
+# workflow (toolkit branch `fix/miniscript-tripwire-13-2`) watches for it.
 #
-# WHY A GIT REV. #953 fixes `Descriptor`'s Display, which FLATTENS a
-# non-caterpillar taptree -- `tr(K,{{pk(A),pk(B)},pk(C)})` came out as
-# `tr(K,{{pk(A),pk(B),pk(C)}})`, which Bitcoin Core rejects. md derived correct
-# addresses and emitted a descriptor no other wallet could parse, which is the
-# "not recoverable with shipped tooling" the DD6 advisory named. The fix is
-# merged upstream and is in NO release through 13.1.0 -- verified by
-# `git merge-base --is-ancestor` against all three tags -- so a crates.io
-# version cannot carry it.
+# WHY A GIT REV, NOW. crates.io miniscript 13.2.0 (2026-10-17) is the highest
+# release. It carries the Display fix this pin was first made for (#953, taptree
+# Display flattening; backported as #1039), so that is no longer a reason. The
+# pin is required because 13.2.0 lacks the API md-codec calls, verified against
+# the 13.2.0 source: no `Terminal::SortedMultiA` (#910; to_miniscript.rs),
+# no `Descriptor::derive_at_index` and no `into_definite` (#911; derive.rs), and
+# none of #915's `Terminal::SortedMulti` / `WshInner` shapes (descriptor_route.rs).
+# #929 has no clean source marker; a drop attempt's build catches it. Dropping
+# the patch does not compile.
+#
+# The original reason, kept for history: #953 fixes `Descriptor`'s Display,
+# which FLATTENED a non-caterpillar taptree -- `tr(K,{{pk(A),pk(B)},pk(C)})`
+# came out as `tr(K,{{pk(A),pk(B),pk(C)}})`, which Bitcoin Core rejects. md
+# derived correct addresses and emitted a descriptor no other wallet could
+# parse, which is the "not recoverable with shipped tooling" the DD6 advisory
+# named. At the time (2026-08-20) it was in NO release through 13.1.0.
 #
 # This rev also carries PR #915, which moved `sortedmulti` out of the descriptor
 # enums into a miniscript Terminal. That is an INTERNAL cleanup upstream, not a
