@@ -3292,3 +3292,9 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** (1) the "admitted == unadmitted" assertions can only fire after a future codec change — intended, they guard the documented "same bytes" claim; (2) `(bytes2.clone(), tb2)` allocates on every admitted input; compare by reference instead.
 - **Status:** `deferred-minor`
 - **Tier:** `nit`
+
+### `m1-miniscript-docs-review-minors` — M1 review Minors/Nits, deferred unfixed (repo: **descriptor-mnemonic**; owning phase: next md patch release, no later than toolkit T3)
+
+- **Surfaced:** 2026-11-03, class D review of PR 45 (`design/agent-reports/review-m1-miniscript-docs.md`): 0C/0I/5M/7N.
+- **What:** M1 Cargo.toml "#929 has no clean source marker" sentence (marker `into_plan` exists; md never calls the plan API); M2 `ci.yml` comment dates (vestigial since 2026-04-30, `5350f8a7`) and its "registry-miniscript" sentence; M3 `release.yml:11-16`, `fuzz/Cargo.toml:27-29` and the `md-codec-unpublishable-while-patched-to-miniscript-master` Options item 1 still name #953 as the pin's reason; M4 `to_miniscript.rs:869-889` stale "unimplemented (R5)" error text (full entry text in the report); M5 make the depth-gate text in `upstream-miniscript-taptree-depth2-display-asymmetry` self-contained; N1-N7 as listed in the report (N3: `musig-bip390-encode-support` "latest is 13.1.0", replacement text in the report). Each fix text is in the report, applied and checked in a scratch copy by the reviewer.
+- **Status:** `deferred-minor`.
