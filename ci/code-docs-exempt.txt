@@ -5,3 +5,7 @@
 
 # Not run by CI (named only in a comment in crates/md-cli/src/seat/mod.rs).
 ^scripts/matrix-identity-check\.sh$
+
+# Not run by CI: the local ci/staging push ritual. It names design/FOLLOWUPS.md
+# only in a citation-gate pathspec that excludes it.
+^scripts/push-via-staging\.sh$
