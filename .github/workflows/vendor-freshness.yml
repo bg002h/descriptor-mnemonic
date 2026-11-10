@@ -2,8 +2,8 @@ name: vendor-freshness
 
 # THE LEADING (PR-time) vendor-freshness gate. Ported from mnemonic-toolkit.
 #
-# REDs iff the committed `vendor/` tree cannot satisfy the current `Cargo.lock`
-# under the reproducible build's `--offline --locked` source-replacement config.
+# REDs on any check of ci/repro/vendor-freshness.sh (shared file; spec:
+# mnemonic-toolkit design/SPEC_vendor_freshness_shared.md).
 #
 # WHY THIS EXISTS. mnemonic-toolkit v0.74.0 shipped with NO reproducible musl
 # binary: a dep bump rewrote Cargo.lock but did not re-run `cargo vendor`, so the
@@ -14,9 +14,6 @@ name: vendor-freshness
 # fail FAST on the PR (and on direct pushes to the default branch that skip a
 # PR), not at the next release. It does NOT re-prove bit-for-bit reproducibility
 # (that stays with the toolkit-homed repro recipe).
-#
-# CODEC two-block form: this crate is fork-free, so ci/repro/vendor-freshness.sh
-# uses the TWO-block source config (no miniscript git-fork stanza).
 
 on:
   push:
@@ -35,7 +32,7 @@ on:
       - 'Cargo.toml'
       - 'crates/**/Cargo.toml'
       - 'vendor/**'
-      - 'ci/repro/vendor-freshness.sh'
+      - 'ci/repro/**'
       - '.github/workflows/vendor-freshness.yml'
   pull_request:
     paths:
@@ -43,7 +40,7 @@ on:
       - 'Cargo.toml'
       - 'crates/**/Cargo.toml'
       - 'vendor/**'
-      - 'ci/repro/vendor-freshness.sh'
+      - 'ci/repro/**'
       - '.github/workflows/vendor-freshness.yml'
 
 permissions:
@@ -63,7 +60,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      # `cargo metadata` resolution only — no compile, no musl target, no Docker.
+      # Four checks; check (4) fetches each git source from upstream. No compile, no musl target, no Docker.
       - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Shared vendor gate files are unmodified
+        run: sha256sum --check --strict ci/repro/shared-vendor.sha256
       - name: Resolve Cargo.lock against committed vendor/ (offline, locked)
         run: bash ci/repro/vendor-freshness.sh
+      - name: Mutation tests for the gate
+        run: bash ci/repro/vendor-freshness.test.sh
