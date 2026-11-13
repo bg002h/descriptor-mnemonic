@@ -3374,7 +3374,7 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **Where:** every `print!`/`println!`/`eprintln!` of `crates/md-cli/src` and `src/bin/gen_ap2_grind.rs`; clap's `Cli::parse()` in `main.rs`.
 - **What:** One stdout path, `src/out.rs` (macros that shadow std's; `gen_ap2_grind` includes the same file): a closed pipe stops the output and keeps the verb's code; any other stdout error prints `md: cannot write the output: <error>` and turns 0, 4 and 5 into 1, keeping 1 and 2; a stderr error is ignored. Rows: `tests/output_errors.rs` and `out::tests`.
 - **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md::md-manual-when-stdout-fails` (the `42-md.md` section; it lands with the toolkit PR that pins the first md-cli release carrying this fix).
-- **Status:** `resolved <COMMIT>`
+- **Status:** `resolved d1ba957`
 - **Tier:** `cross-repo`
 
 ### `md-gen-ap2-grind-installed` — the fixture grinder `gen_ap2_grind` installs with `md` (repo: **descriptor-mnemonic**; owning phase: next md-cli release)
