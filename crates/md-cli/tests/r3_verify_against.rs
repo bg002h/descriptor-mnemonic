@@ -412,3 +412,40 @@ fn r3_an_empty_verify_against_file_names_verify_against_not_in() {
         "the flag the operator never typed must not appear: {stderr}"
     );
 }
+
+// ─── (g) a NOT-equal verdict whose stdout is lost (output-sink rule) ────────
+
+/// The 5 carries a result (the composition on stdout): when stdout cannot take
+/// it, the exit is 1 with `md: cannot write the output: …`, and the verdict
+/// line on stderr is still printed.
+#[cfg(target_os = "linux")]
+#[test]
+fn r3_a_not_equal_verdict_whose_stdout_is_lost_exits_1_and_keeps_the_verdict_line() {
+    let (_, x1) = key_record(1);
+    let (_, x2) = key_record(2);
+    let (_, x3) = key_record(3);
+    let card_a = mint_two_of_two("73c5da0a", &x1, &x2);
+    let card_b = mint_two_of_two("73c5da0a", &x1, &x3);
+    let dir = tempfile::tempdir().unwrap();
+    let target = write_lines(dir.path(), "card_b.txt", &card_b);
+
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_md"))
+        .arg("descriptor")
+        .args(&card_a)
+        .args(["--verify-against", target.to_str().unwrap()])
+        .stdout(std::process::Stdio::from(full))
+        .output()
+        .unwrap();
+    let err = err_of(&o);
+    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert!(err.contains(&not_equal_line("VALUES")), "{err}");
+    assert_eq!(
+        err.lines().last(),
+        Some("md: cannot write the output: No space left on device (os error 28)"),
+        "{err}"
+    );
+}

@@ -3299,8 +3299,110 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** M1 Cargo.toml "#929 has no clean source marker" sentence (marker `into_plan` exists; md never calls the plan API); M2 `ci.yml` comment dates (vestigial since 2026-04-30, `5350f8a7`) and its "registry-miniscript" sentence; M3 `release.yml:11-16`, `fuzz/Cargo.toml:27-29` and the `md-codec-unpublishable-while-patched-to-miniscript-master` Options item 1 still name #953 as the pin's reason; M4 `to_miniscript.rs:869-889` stale "unimplemented (R5)" error text (full entry text in the report); M5 make the depth-gate text in `upstream-miniscript-taptree-depth2-display-asymmetry` self-contained; N1-N7 as listed in the report (N3: `musig-bip390-encode-support` "latest is 13.1.0", replacement text in the report). Each fix text is in the report, applied and checked in a scratch copy by the reviewer.
 - **Status:** `deferred-minor`.
 
+### `md-output-sink-fix-r1-m1-every-binary-scan-misses-plant-g` — every_binary_includes_the_out_module passes plant G (grinder exits 0 with output lost)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M1 (Minor).
+- **Where:** `crates/md-cli/tests/output_errors.rs` `every_binary_includes_the_out_module` (section 4 rows).
+- **What:** Plant G (the grinder exits 0 with its output lost) passes every row, while section 2 row 8 says the scan pins "0, or 1 with the line". The reviewer's fix also asserts `t.contains("ExitCode::from(out::exit_code(")` (RED on plant G with `... does not take its print macros and its exit code from out.rs`, rc 100; GREEN 9 of 9 on the then-fixed tree); the review's diff is `/scratch/cache/review-fix-md-output-sink/fixg.diff`. Folding it changes the rows' sha256 in section 4.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m2-ci-workspace-test-line-in-section-7` — section 7 lacks the CI `test` job's own workspace command as a third GREEN line
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M2 (Minor).
+- **Where:** `design/FIX_md_output_sink.md` section 7 and the gate script.
+- **What:** Review ruling on the suite scope: keep the two `-p md-cli` bars and add the CI `test` job's own command `cargo nextest run --locked -j 8 --workspace --all-targets --all-features --no-fail-fast` as a third GREEN line. The reviewer measured **1619 tests run: 1619 passed, 6 skipped** on the tree before the read-only ruling; the count on the folded tree (one more row) is not measured here. Not folded in the r1 fold: the brief files Minors, and the figure needs re-measuring.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m3-windows-leg-text-cannot-confirm` — "the Windows leg must confirm std's closed-pipe mapping" cannot be confirmed by a leg with no row
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M3 (Minor).
+- **Where:** `design/FIX_md_output_sink.md` section 9 (Windows item).
+- **What:** A CI leg with no row cannot confirm the mapping. Replace with: "std maps `ERROR_BROKEN_PIPE` and `ERROR_NO_DATA` to `BrokenPipe` (`library/std/src/sys/pal/windows/mod.rs`, `decode_error_kind`); the Windows leg shows only that the crate builds and `out::tests` passes."
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m4-closed-reader-rows-linux-only` — the closed-pipe rows are `cfg(target_os = "linux")` though they need only `libc::pipe`
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M4 (Minor).
+- **Where:** `crates/md-cli/tests/output_errors.rs:14` `#![cfg(target_os = "linux")]`.
+- **What:** The macOS legs (ci.yml `cargo test (macos-latest)`, release.yml) run none of the behaviour; a `cfg(unix)` split for the closed-reader rows would cover them. Reviewer: deferrable.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m5-toolkit-companion-paragraph-above-dangles` — toolkit companion "What" says "(the paragraph above)", which dangles in the toolkit file
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M5 (Minor).
+- **Where:** `design/FIX_md_output_sink.md` section 8, toolkit companion "What".
+- **What:** Delete "(the paragraph above)"; the pointer to section 8 of the document is otherwise equivalent (the paragraph was checked verbatim against the grade's md substitution).
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n1-no-closed-fd-1-row-in-section-2` — section 2 has no `>&-` row
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N1 (Nit).
+- **Where:** `design/FIX_md_output_sink.md` section 2.
+- **What:** std reopens a closed fd 1 on `/dev/null` (`sys/pal/unix/mod.rs` `sanitize_standard_fds`), so the output is dropped and the verb's code returned (matrix column `>&-`); one sentence would record it.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n2-flush-plant-passes-every-row` — a plant dropping `.and_then(|()| o.flush())` in `stdout_write` passes every row
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N2 (Nit).
+- **Where:** `crates/md-cli/src/out.rs` `stdout_write`.
+- **What:** All md output ends in `\n`, so LineWriter writes it; harmless today.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n3-manual-paragraph-omits-version` — the manual paragraph says "from a verb or `--help`" and not `--version`
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N3 (Nit).
+- **Where:** `design/FIX_md_output_sink.md` section 8 (the manual paragraph).
+- **What:** True but partial; the text is the grade's and was not changed.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n4-md-output-sink-entry-lacks-why-deferred` — the `md-output-sink` FOLLOWUPS entry omits the template's `Why deferred` field
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N4 (Nit).
+- **Where:** `design/FOLLOWUPS.md` `md-output-sink` (block 3.5).
+- **What:** The entry is resolved in its own PR, so none applies; acceptable.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-wd-m1-fix-document-whole-set-command-lacks-no-fail-fast` — the FIX document's printed whole-set nextest commands lack `--no-fail-fast`
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-md-output-sink-s2.md` M1 (Minor; Check 3).
+- **Where:** `design/FIX_md_output_sink.md` section 7 (third bullet) and section 4 (whole-set RED count).
+- **What:** As printed the command stops early (`8/11 tests run: 1 passed, 7 failed` on the RED commit); with `--no-fail-fast` it gives `11 tests run: 2 passed, 9 failed`. The gate script passes the flag; a builder following the document gets a wrong count, not a wrong act. Fix: add `--no-fail-fast` after `-j 8` in those commands.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-wd-n1-flush-and-closed-early-return-unobservable` — the flush in `stdout_write` and the `CLOSED` early-return are unobservable today
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-md-output-sink-s2.md` N1 (Nit; Check 2).
+- **Where:** `crates/md-cli/src/out.rs` `stdout_write`.
+- **What:** Plants removing either pass every row: every `print!` in md-cli ends its text with a newline, and `WRITE_ERROR` keeps the first error. Defence in depth, not behaviour.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-wd-m2-file-over-ulimit-f-kills-md-with-sigxfsz` — a stdout file over `ulimit -f` kills md with SIGXFSZ
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-ms-output-sink-s1.md` M-2 (Minor), run on this head and it holds.
+- **Where:** `crates/md-cli/src/out.rs` (the sink), process start.
+- **What:** `bash -c 'ulimit -f 4; md address ... --count 1000 > f'` dies by signal (rc 153) with 4096 bytes written; unchanged by this diff and fails closed (non-zero). Possible fix: ignore SIGXFSZ at start so a file-size limit is a write error like the others.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
 ### `vendor-freshness-shared` — one shared vendor-freshness gate for five repos
 
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
 - **Status:** resolved -- shipped by this PR
 - Companion: mnemonic-toolkit design/FOLLOWUPS.md::vendor-freshness-shared
+
+### `md-output-sink` — a stdout or stderr write error panicked (exit 101); `--help`/`--version` exited 0 with the text lost (repo: **descriptor-mnemonic**; owning phase: this PR)
+
+- **Surfaced:** 2026-11-13, the crash sweep's F1 family rule (coordinator `agent-reports/grade-mk-crash-sweep-1.md` Q4) and the md triage (`agent-reports/triage-md-output-errors.md`); graded in `agent-reports/grade-ms-md-output-errors.md`: full stdout, closed reader (`md address … --count 1000 | head -3` panicked 10 of 10), stderr write error and `--help`/`--version` all Important.
+- **Where:** every `print!`/`println!`/`eprintln!` of `crates/md-cli/src` and `src/bin/gen_ap2_grind.rs`; clap's `Cli::parse()` in `main.rs`.
+- **What:** One stdout path, `src/out.rs` (macros that shadow std's; `gen_ap2_grind` includes the same file): a closed pipe stops the output and keeps the verb's code; any other stdout error prints `md: cannot write the output: <error>` and turns 0, 4 and 5 into 1, keeping 1 and 2; a stderr error is ignored. Rows: `tests/output_errors.rs` and `out::tests`.
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md::md-manual-when-stdout-fails` (the `42-md.md` section; it lands with the toolkit PR that pins the first md-cli release carrying this fix).
+- **Status:** `resolved d1ba957`
+- **Tier:** `cross-repo`
+
+### `md-gen-ap2-grind-installed` — the fixture grinder `gen_ap2_grind` installs with `md` (repo: **descriptor-mnemonic**; owning phase: next md-cli release)
+
+- **Surfaced:** 2026-11-13, md output-error triage section 5 (`agent-reports/triage-md-output-errors.md`).
+- **Where:** `crates/md-cli/src/bin/gen_ap2_grind.rs` (auto-discovered: `crates/md-cli/Cargo.toml` declares only `[[bin]] md` and no `autobins = false`).
+- **What:** `cargo install … md-cli` (the README's commands and the toolkit's `scripts/install.sh`, which passes no `--bin`) installs this maintainer tool, a 2^32 SHA-256 grind that regenerates `tests/fixtures/seating/v-ap2.txt`, next to `md` in the holder's bin directory. The release archives carry only `md`. Take it out of the default build (`[[bin]] name = "gen_ap2_grind"` with `required-features = ["maintainer-tools"]`, and the fixture's regeneration note updated), and keep `tests/output_errors.rs::every_binary_includes_the_out_module` for whatever stays in `src/bin`.
+- **Why deferred:** not a defect in any output (Minor); the output-sink PR routes it through `out.rs` as it ships today.
+- **Status:** `open`, Minor.
+- **Tier:** `v1+`

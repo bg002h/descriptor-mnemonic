@@ -1,5 +1,9 @@
 #![allow(missing_docs)]
 
+// First, so its print macros shadow std's in every module below.
+#[macro_use]
+mod out;
+
 mod bip388;
 mod cmd;
 #[cfg(feature = "cli-compiler")]
@@ -891,18 +895,34 @@ fn collect_mk1(inline: &[String], file: Option<&std::path::Path>) -> Result<Vec<
 fn main() -> ExitCode {
     // v0.6.1: deny other-UID /proc/$PID/cmdline reads + core dumps.
     process_hardening::set_non_dumpable();
-    let cli = Cli::parse();
-    match dispatch(cli.command) {
-        Ok(code) => ExitCode::from(code),
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            // --help and --version go to stdout under the same write-error
+            // rule as the verbs (`out`); a parse error goes to stderr.
+            if e.use_stderr() || !out::read_only() {
+                if let Err(w) = e.print() {
+                    if !e.use_stderr() {
+                        out::failed(&w);
+                    }
+                }
+            }
+            let code = u8::try_from(e.exit_code()).unwrap_or(2);
+            return ExitCode::from(out::exit_code(code));
+        }
+    };
+    let code = match dispatch(cli.command) {
+        Ok(code) => code,
         Err(CliError::BadArg(m)) => {
             eprintln!("md: {m}");
-            ExitCode::from(2)
+            2
         }
         Err(e) => {
             eprintln!("md: {e}");
-            ExitCode::from(1)
+            1
         }
-    }
+    };
+    ExitCode::from(out::exit_code(code))
 }
 
 /// v0.18 Item G — reject `--unspendable-key` values that aren't the BIP-341

@@ -52,6 +52,12 @@
 //! Measured runtime and the resulting fixture's SHA-256 are recorded in
 //! `design/agent-reports/impl-seat-ap-p0.md`.
 
+// The crate's one stdout path (src/out.rs): its print macros shadow std's, so a
+// full stdout exits 1 with a line instead of panicking.
+#[path = "../out.rs"]
+#[macro_use]
+mod out;
+
 use bitcoin::NetworkKind;
 use bitcoin::bip32::{ChainCode, ChildNumber, DerivationPath, Fingerprint, Xpub};
 use bitcoin::hashes::{Hash, sha256};
@@ -59,6 +65,7 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use mk_codec::bytecode::encode_bytecode;
 use mk_codec::string_layer::{StringLayerHeader, bytes_to_5bit, encode_5bit_to_string};
 use mk_codec::{CHUNKED_FRAGMENT_LONG_BYTES, KeyCard};
+use std::process::ExitCode;
 use std::str::FromStr;
 use std::time::Instant;
 
@@ -146,7 +153,7 @@ fn stub_list(base_tag: u8, counter: u32) -> Vec<[u8; 4]> {
     stubs
 }
 
-fn main() {
+fn main() -> ExitCode {
     // Card A and B: IDENTICAL 13-stub list (shared chunk 0), distinct fp + xpub.
     let shared_stubs: Vec<[u8; 4]> = stub_list(0xAB, 0);
     let card_a = make_card(shared_stubs.clone(), 0x11, 0xA1);
@@ -317,4 +324,5 @@ fn main() {
         out.push('\n');
     }
     print!("{out}");
+    ExitCode::from(out::exit_code(0))
 }
