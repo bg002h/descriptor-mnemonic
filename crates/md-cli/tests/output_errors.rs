@@ -363,3 +363,28 @@ fn no_access_mode_stdout_exits_1_with_the_line() {
     assert_eq!(o.status.code(), Some(1), "{err}");
     assert_eq!(err.lines().last(), Some(BADF), "{err}");
 }
+
+/// A stdout opened read-write (a terminal, `1<>file`) is writable: the probe
+/// must not treat it as read-only.
+#[test]
+fn read_write_stdout_keeps_the_output_and_exits_0() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("out");
+    let rw = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&p)
+        .unwrap();
+    let o = md()
+        .arg("gui-schema")
+        .stdout(Stdio::from(rw))
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(0), "{err}");
+    assert!(!err.contains("cannot write"), "{err}");
+    assert!(std::fs::metadata(&p).unwrap().len() > 0, "output lost");
+}
