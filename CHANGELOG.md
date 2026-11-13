@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+### Fixed
+- **A stdout that cannot take the output no longer panics or reports success.**
+  Every verb wrote with `println!`, which panicked (exit 101, "failed printing
+  to stdout") on a full disk or `> /dev/full`, and `--help` and `--version`
+  exited 0 with no text. Now any stdout write error other than a closed pipe
+  prints `md: cannot write the output: <error>` on stderr and exits 1; a verb
+  that was already failing keeps its own code (1, 2). A code that carries a
+  result becomes 1 when that result never reached stdout: a partial decode's
+  4, `repair`'s 5, and `descriptor --verify-against`'s 5 (its verdict line on
+  stderr is still printed). A reader that closes the pipe early (`md address …
+  --count 1000 | head -3`) only stops the output, and the exit code is the
+  verb's own, where 0.20.5 panicked with exit 101. A stderr that cannot take
+  text (`2>/dev/full`, or `2>&1 | head` once the reader exits) no longer panics:
+  the text is dropped and the result is unchanged. The maintainer binary
+  `gen_ap2_grind` takes the same path. `tests/output_errors.rs`.
+
 ## md-cli [0.20.5] — 2026-11-04
 
 No functional change since 0.20.4. Only CI workflow files, root `Cargo.toml`

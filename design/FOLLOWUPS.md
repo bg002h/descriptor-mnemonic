@@ -3367,3 +3367,21 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
 - **Status:** resolved -- shipped by this PR
 - Companion: mnemonic-toolkit design/FOLLOWUPS.md::vendor-freshness-shared
+
+### `md-output-sink` — a stdout or stderr write error panicked (exit 101); `--help`/`--version` exited 0 with the text lost (repo: **descriptor-mnemonic**; owning phase: this PR)
+
+- **Surfaced:** 2026-11-13, the crash sweep's F1 family rule (coordinator `agent-reports/grade-mk-crash-sweep-1.md` Q4) and the md triage (`agent-reports/triage-md-output-errors.md`); graded in `agent-reports/grade-ms-md-output-errors.md`: full stdout, closed reader (`md address … --count 1000 | head -3` panicked 10 of 10), stderr write error and `--help`/`--version` all Important.
+- **Where:** every `print!`/`println!`/`eprintln!` of `crates/md-cli/src` and `src/bin/gen_ap2_grind.rs`; clap's `Cli::parse()` in `main.rs`.
+- **What:** One stdout path, `src/out.rs` (macros that shadow std's; `gen_ap2_grind` includes the same file): a closed pipe stops the output and keeps the verb's code; any other stdout error prints `md: cannot write the output: <error>` and turns 0, 4 and 5 into 1, keeping 1 and 2; a stderr error is ignored. Rows: `tests/output_errors.rs` and `out::tests`.
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md::md-manual-when-stdout-fails` (the `42-md.md` section; it lands with the toolkit PR that pins the first md-cli release carrying this fix).
+- **Status:** `resolved <COMMIT>`
+- **Tier:** `cross-repo`
+
+### `md-gen-ap2-grind-installed` — the fixture grinder `gen_ap2_grind` installs with `md` (repo: **descriptor-mnemonic**; owning phase: next md-cli release)
+
+- **Surfaced:** 2026-11-13, md output-error triage section 5 (`agent-reports/triage-md-output-errors.md`).
+- **Where:** `crates/md-cli/src/bin/gen_ap2_grind.rs` (auto-discovered: `crates/md-cli/Cargo.toml` declares only `[[bin]] md` and no `autobins = false`).
+- **What:** `cargo install … md-cli` (the README's commands and the toolkit's `scripts/install.sh`, which passes no `--bin`) installs this maintainer tool, a 2^32 SHA-256 grind that regenerates `tests/fixtures/seating/v-ap2.txt`, next to `md` in the holder's bin directory. The release archives carry only `md`. Take it out of the default build (`[[bin]] name = "gen_ap2_grind"` with `required-features = ["maintainer-tools"]`, and the fixture's regeneration note updated), and keep `tests/output_errors.rs::every_binary_includes_the_out_module` for whatever stays in `src/bin`.
+- **Why deferred:** not a defect in any output (Minor); the output-sink PR routes it through `out.rs` as it ships today.
+- **Status:** `open`, Minor.
+- **Tier:** `v1+`
