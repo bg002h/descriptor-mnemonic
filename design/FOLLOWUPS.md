@@ -3299,6 +3299,69 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** M1 Cargo.toml "#929 has no clean source marker" sentence (marker `into_plan` exists; md never calls the plan API); M2 `ci.yml` comment dates (vestigial since 2026-04-30, `5350f8a7`) and its "registry-miniscript" sentence; M3 `release.yml:11-16`, `fuzz/Cargo.toml:27-29` and the `md-codec-unpublishable-while-patched-to-miniscript-master` Options item 1 still name #953 as the pin's reason; M4 `to_miniscript.rs:869-889` stale "unimplemented (R5)" error text (full entry text in the report); M5 make the depth-gate text in `upstream-miniscript-taptree-depth2-display-asymmetry` self-contained; N1-N7 as listed in the report (N3: `musig-bip390-encode-support` "latest is 13.1.0", replacement text in the report). Each fix text is in the report, applied and checked in a scratch copy by the reviewer.
 - **Status:** `deferred-minor`.
 
+### `md-output-sink-fix-r1-m1-every-binary-scan-misses-plant-g` — every_binary_includes_the_out_module passes plant G (grinder exits 0 with output lost)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M1 (Minor).
+- **Where:** `crates/md-cli/tests/output_errors.rs` `every_binary_includes_the_out_module` (section 4 rows).
+- **What:** Plant G (the grinder exits 0 with its output lost) passes every row, while section 2 row 8 says the scan pins "0, or 1 with the line". The reviewer's fix also asserts `t.contains("ExitCode::from(out::exit_code(")` (RED on plant G with `... does not take its print macros and its exit code from out.rs`, rc 100; GREEN 9 of 9 on the then-fixed tree); the review's diff is `/scratch/cache/review-fix-md-output-sink/fixg.diff`. Folding it changes the rows' sha256 in section 4.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m2-ci-workspace-test-line-in-section-7` — section 7 lacks the CI `test` job's own workspace command as a third GREEN line
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M2 (Minor).
+- **Where:** `design/FIX_md_output_sink.md` section 7 and the gate script.
+- **What:** Review ruling on the suite scope: keep the two `-p md-cli` bars and add the CI `test` job's own command `cargo nextest run --locked -j 8 --workspace --all-targets --all-features --no-fail-fast` as a third GREEN line. The reviewer measured **1619 tests run: 1619 passed, 6 skipped** on the tree before the read-only ruling; the count on the folded tree (one more row) is not measured here. Not folded in the r1 fold: the brief files Minors, and the figure needs re-measuring.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m3-windows-leg-text-cannot-confirm` — "the Windows leg must confirm std's closed-pipe mapping" cannot be confirmed by a leg with no row
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M3 (Minor).
+- **Where:** `design/FIX_md_output_sink.md` section 9 (Windows item).
+- **What:** A CI leg with no row cannot confirm the mapping. Replace with: "std maps `ERROR_BROKEN_PIPE` and `ERROR_NO_DATA` to `BrokenPipe` (`library/std/src/sys/pal/windows/mod.rs`, `decode_error_kind`); the Windows leg shows only that the crate builds and `out::tests` passes."
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m4-closed-reader-rows-linux-only` — the closed-pipe rows are `cfg(target_os = "linux")` though they need only `libc::pipe`
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M4 (Minor).
+- **Where:** `crates/md-cli/tests/output_errors.rs:14` `#![cfg(target_os = "linux")]`.
+- **What:** The macOS legs (ci.yml `cargo test (macos-latest)`, release.yml) run none of the behaviour; a `cfg(unix)` split for the closed-reader rows would cover them. Reviewer: deferrable.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-m5-toolkit-companion-paragraph-above-dangles` — toolkit companion "What" says "(the paragraph above)", which dangles in the toolkit file
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` M5 (Minor).
+- **Where:** `design/FIX_md_output_sink.md` section 8, toolkit companion "What".
+- **What:** Delete "(the paragraph above)"; the pointer to section 8 of the document is otherwise equivalent (the paragraph was checked verbatim against the grade's md substitution).
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n1-no-closed-fd-1-row-in-section-2` — section 2 has no `>&-` row
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N1 (Nit).
+- **Where:** `design/FIX_md_output_sink.md` section 2.
+- **What:** std reopens a closed fd 1 on `/dev/null` (`sys/pal/unix/mod.rs` `sanitize_standard_fds`), so the output is dropped and the verb's code returned (matrix column `>&-`); one sentence would record it.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n2-flush-plant-passes-every-row` — a plant dropping `.and_then(|()| o.flush())` in `stdout_write` passes every row
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N2 (Nit).
+- **Where:** `crates/md-cli/src/out.rs` `stdout_write`.
+- **What:** All md output ends in `\n`, so LineWriter writes it; harmless today.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n3-manual-paragraph-omits-version` — the manual paragraph says "from a verb or `--help`" and not `--version`
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N3 (Nit).
+- **Where:** `design/FIX_md_output_sink.md` section 8 (the manual paragraph).
+- **What:** True but partial; the text is the grade's and was not changed.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-fix-r1-n4-md-output-sink-entry-lacks-why-deferred` — the `md-output-sink` FOLLOWUPS entry omits the template's `Why deferred` field
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-md-output-sink-r1.md` N4 (Nit).
+- **Where:** `design/FOLLOWUPS.md` `md-output-sink` (block 3.5).
+- **What:** The entry is resolved in its own PR, so none applies; acceptable.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
 ### `vendor-freshness-shared` — one shared vendor-freshness gate for five repos
 
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
