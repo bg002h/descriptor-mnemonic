@@ -5,20 +5,21 @@
 # What it does:
 #   1. Extracts the document's blocks (section 3 `diff` blocks, section 4 `diff`
 #      rows and the `sh` RED commands) and checks that the code blocks and the rows
-#      hash to the sha256 the document states. If the grade's files exist, it also
-#      cmp's them byte for byte.
+#      hash to the sha256 the document states. If the architect's files exist, it also
+#      cmp's them byte for byte (fix-with-docfix.diff, rows.diff).
 #   2. In its own detached worktree at the base commit: applies the rows, runs every
 #      RED command as printed and requires each to FAIL with its `## expect:`
-#      substring; the whole-file run must be "10 tests run: 2 passed, 8 failed" and
+#      substring; the whole-file run must be "11 tests run: 2 passed, 9 failed" and
 #      the two guard rows must PASS on the base.
 #   3. Self-test: the checker must reject a wrong expectation and a passing run, or
 #      the gate dies.
-#   4. Applies the code blocks; requires the 10 rows green, the unit test green, the
-#      full md-cli suite green twice (942 with --features cli-compiler, 904 with
-#      default features), doc tests, fmt, clippy, and ci/code-docs-check.sh.
+#   4. Applies the code blocks; requires the 11 rows green, the unit test green, the
+#      full md-cli suite green twice (943 with --features cli-compiler, 905 with
+#      default features), doc tests, fmt, clippy, ci/code-docs-check.sh, and md's CI `cargo doc` job
+#      command as ci.yml prints it (RUSTDOCFLAGS=-D warnings), which must exit 0.
 #
-# What it does NOT cover: the grade's 14 plants (not re-run); the macOS, Windows,
-# FreeBSD, musl, cargo-doc and other CI legs, nor the workspace-wide test run (the
+# What it does NOT cover: the grade's 14 plants and the architect's two (not re-run);
+# the macOS, Windows, FreeBSD, musl and other CI legs, nor the workspace-wide test run (the
 # suite is -p md-cli); the toolkit manual paragraph; the coordinator's
 # mutation-gate.sh; any review. fmt runs on the repo's pinned toolchain (the grade
 # ran it on stable).
@@ -32,7 +33,7 @@ DOC=$(realpath "$DOC")
 BASE=${BASE:-6b70d5d964d9dafcae0c1cfef926a0a7887ec6a9}
 W=${W:-/scratch/cache/md-output-sink-gate-wt}
 OUT=${OUT:-/scratch/cache/md-output-sink-gate-out}
-GRADE=${GRADE:-/scratch/cache/grade-ms-md-output-errors/md}
+GRADE=${GRADE:-/scratch/cache/architect-output-sink-ro/md}
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/scratch/cache/md-output-sink-gate-target}
 case "$W$OUT$CARGO_TARGET_DIR" in /tmp*) echo "refusing /tmp" >&2; exit 2;; esac
 mkdir -p "$OUT"
@@ -60,14 +61,14 @@ wantr=re.search(r'sha256 `([0-9a-f]{64})`\)',s4).group(1)
 assert hashlib.sha256(code.encode()).hexdigest()==want,'code blocks differ from the stated sha256'
 assert hashlib.sha256(rows.encode()).hexdigest()==wantr,'rows blocks differ from the stated sha256'
 assert len(blocks(s3,'diff'))==5 and len(blocks(s4,'diff'))==2
-assert len([l for l in red.splitlines() if l.startswith('cargo nextest')])==8
+assert len([l for l in red.splitlines() if l.startswith('cargo nextest')])==9
 for n,v in (('code.diff',code),('rows.diff',rows),('red.sh',red)):
     open(out+'/'+n,'w').write(v)
 PY
 if [ -f "$GRADE/fix.diff" ]; then
-  cmp "$OUT/code.diff" "$GRADE/fix.diff" || die "code blocks differ from the grade's fix.diff"
-  cmp "$OUT/rows.diff" "$GRADE/rows.diff" || die "rows differ from the grade's rows.diff"
-  echo "cmp: blocks identical to the grade's files"
+  cmp "$OUT/code.diff" "$GRADE/fix-with-docfix.diff" || die "code blocks differ from the architect's fix-with-docfix.diff"
+  cmp "$OUT/rows.diff" "$GRADE/rows.diff" || die "rows differ from the architect's rows.diff"
+  echo "cmp: blocks identical to the architect's files"
 else echo "cmp: grade files absent, sha256 only"; fi
 
 # worktree at the base
@@ -92,15 +93,15 @@ while IFS= read -r line; do
   echo "RED $n ok (rc=$rc): ${cmd#*-E }"
   [ -n "$first_log" ] || { first_log=$log; first_rc=$rc; }
 done < "$OUT/red.sh"
-[ "$n" -eq 8 ] || die "expected 8 RED commands, ran $n"
+[ "$n" -eq 9 ] || die "expected 9 RED commands, ran $n"
 rc=0; (cd "$W" && cargo nextest run --locked -j 8 --no-fail-fast -p md-cli -E "$ROWS_FILTER") >"$OUT/red-all.log" 2>&1 || rc=$?
-grep -q '10 tests run: 2 passed, 8 failed' "$OUT/red-all.log" || die "whole-file RED is not 2 passed, 8 failed"
+grep -q '11 tests run: 2 passed, 9 failed' "$OUT/red-all.log" || die "whole-file RED is not 2 passed, 9 failed"
 grep -q 'PASS .*only_out_rs_names_stdout' "$OUT/red-all.log" || die "the scan guard did not pass on the base"
 grep -q 'PASS .*full_stdout_with_nothing_to_print_keeps_the_verbs_code' "$OUT/red-all.log" || die "the nothing-to-print guard did not pass on the base"
-echo "RED whole set: $(grep -o '10 tests run: 2 passed, 8 failed' "$OUT/red-all.log"); both guards PASS"
+echo "RED whole set: $(grep -o '11 tests run: 2 passed, 9 failed' "$OUT/red-all.log"); both guards PASS"
 # self-test of the checker
 red_check "$first_log" "$first_rc" "NO-SUCH-TEXT-XYZ" && die "self-test: a wrong expectation was accepted"
-red_check "$OUT/red-all.log" 0 "10 tests run" && die "self-test: a passing run was accepted as RED"
+red_check "$OUT/red-all.log" 0 "11 tests run" && die "self-test: a passing run was accepted as RED"
 echo "self-test ok: the checker rejects a broken row"
 
 # 3. GREEN
@@ -111,21 +112,22 @@ run() { # name cmd...
   (cd "$W" && "$@") >"$OUT/$name.log" 2>&1 || { tail -n 30 "$OUT/$name.log" >&2; die "$name failed"; }
 }
 run rows cargo nextest run --locked -j 8 -p md-cli -E "$ROWS_FILTER"
-grep -q '10 tests run: 10 passed' "$OUT/rows.log" || die "rows are not 10/10"
+grep -q '11 tests run: 11 passed' "$OUT/rows.log" || die "rows are not 11/11"
 run unit cargo nextest run --locked -j 8 -p md-cli -E 'test(/^out::tests::/)'
 grep -q '2 tests run: 2 passed' "$OUT/unit.log" || die "the out::tests unit test did not run twice and pass"
 run suite_cli cargo nextest run --locked -j 8 -p md-cli --features cli-compiler
-grep -q '942 tests run: 942 passed, 3 skipped' "$OUT/suite_cli.log" || die "cli-compiler suite is not 942/942: $(grep 'tests run' "$OUT/suite_cli.log")"
+grep -q '943 tests run: 943 passed, 3 skipped' "$OUT/suite_cli.log" || die "cli-compiler suite is not 943/943: $(grep 'tests run' "$OUT/suite_cli.log")"
 run suite_def cargo nextest run --locked -j 8 -p md-cli
-grep -q '904 tests run: 904 passed, 3 skipped' "$OUT/suite_def.log" || die "default suite is not 904/904: $(grep 'tests run' "$OUT/suite_def.log")"
+grep -q '905 tests run: 905 passed, 3 skipped' "$OUT/suite_def.log" || die "default suite is not 905/905: $(grep 'tests run' "$OUT/suite_def.log")"
 run doc cargo test --locked --workspace --doc --all-features
 run fmt cargo fmt --all --check
+run cidoc env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --all-features
 run clippy cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 git -C "$W" add -N .
 run docscheck bash ci/code-docs-check.sh
-echo "GREEN rows: $(grep -o '10 tests run: 10 passed' "$OUT/rows.log"); unit: $(grep -o '2 tests run: 2 passed' "$OUT/unit.log")"
-echo "GREEN suite cli-compiler: $(grep -o '942 tests run: 942 passed, 3 skipped' "$OUT/suite_cli.log")"
-echo "GREEN suite default: $(grep -o '904 tests run: 904 passed, 3 skipped' "$OUT/suite_def.log")"
-echo "GREEN doc, fmt, clippy, code-docs check: ok"
+echo "GREEN rows: $(grep -o '11 tests run: 11 passed' "$OUT/rows.log"); unit: $(grep -o '2 tests run: 2 passed' "$OUT/unit.log")"
+echo "GREEN suite cli-compiler: $(grep -o '943 tests run: 943 passed, 3 skipped' "$OUT/suite_cli.log")"
+echo "GREEN suite default: $(grep -o '905 tests run: 905 passed, 3 skipped' "$OUT/suite_def.log")"
+echo "GREEN doc, fmt, cargo doc (CI command), clippy, code-docs check: ok"
 reset
 echo "GATE PASS"

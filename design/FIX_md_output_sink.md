@@ -17,14 +17,15 @@ bind: the md rulings, S1, the fix, the rows and the texts), its files
 (`agent-reports/triage-md-output-errors.md`). The same fix in mk, already
 written: mnemonic-key `design/FIX_mk_output_sink.md`.
 
-Everything below is transcribed from the grade. The grade built this exact
-diff and ran it both ways: RED on the base `10 tests run: 2 passed, 8 failed`
-(the 2 passes are guards); GREEN `-p md-cli --features cli-compiler`
-`942 tests run: 942 passed, 3 skipped` and default features
-`904 tests run: 904 passed, 3 skipped`. Where the grade did not decide a point
+Everything below is transcribed from the grade, with the read-only stdout
+probe of the architect ruling (coordinator `agent-reports/architect-output-sink-read-only-stdout.md`) added. The grade built its diff
+and the architect built and ran this exact one both ways: RED on the base
+`11 tests run: 2 passed, 9 failed` (the 2 passes are guards); GREEN `-p md-cli
+--features cli-compiler` `943 tests run: 943 passed, 3 skipped` and default
+features `905 tests run: 905 passed, 3 skipped`. Where the grade did not decide a point
 that a holder can see, it is a STOP in section 10, not a choice.
 
-**One STOP is open (S2, a proposal: the `<COMMIT>` in the FOLLOWUPS entry).**
+**No STOP is open (S1, S2 ruled).**
 S1 (the manual's timing) is ruled and is section 8.
 
 ## 1. Spec delta (exact texts)
@@ -74,7 +75,12 @@ the sink).
   composition, and its verdict line goes to stderr, still printed). A failing
   code (**1**, **2**, anything else) is kept. The test is on the number (0, 4,
   5) because md's `Ok(2)` from `repair` (an uncorrectable card) is a failure,
-  so an Ok/Err test would be wrong.
+  so an Ok/Err test would be wrong. A stdout opened read-only
+  (`md gui-schema 1</dev/null`) is such an error: std's stdout reports EBADF
+  as a successful write, so `out.rs` checks fd 1 once (`fcntl(F_GETFL)`, unix
+  only) at the first write or `--help`/`--version` and records `Bad file
+  descriptor (os error 9)`. A verb that writes nothing to stdout is not
+  touched.
 - **Stderr write errors** (`2>/dev/full`, a closed `2>&1 | head`) are
   ignored: the text is dropped and the result is unchanged.
 - No new exit code, no new error variant, no flag change. A clap parse error is
@@ -92,21 +98,28 @@ the sink).
 | 3 | verb already failing (codes 1, 2), stdout full | nothing was printed | the verb's own text; no `cannot write` line (it never touched stdout) | 1 or 2 (kept) | `full_stdout_with_nothing_to_print_keeps_the_verbs_code` (public path) and the unit test `out::tests::a_closed_pipe_keeps_every_code_and_a_write_error_turns_success_into_1` (codes 1, 2, 64 kept after a write error; no md verb writes stdout and then fails, so no public path exists) |
 | 4 | `--help` / `--version` / `decode --help` / `help encode`, closed reader | stops | none | 0 | `closed_reader_exits_with_the_verbs_code` |
 | 5 | the same four, other stdout error | stops | the line | 1 (0.20.5: exit 0 with no text) | `full_stdout_exits_1_with_the_line` |
+| 5b | stdout opened read-only (`1</dev/null`): `gui-schema`, `decode`, `address --count 1000`, `--help`, `--version` | lost (before: lost with exit 0) | `md: cannot write the output: Bad file descriptor (os error 9)` last line | 1 | `read_only_stdout_exits_1_with_the_line` |
+| 5c | the same, `decode not-a-card` (fails before printing) | none | its own error; no `cannot write` | 1 (kept) | `read_only_stdout_exits_1_with_the_line` |
 | 6 | stderr write error: stderr is a closed pipe or `/dev/full` (`compose` notes), and stdout and stderr both closed (`encode --policy-id-fingerprint`, `compose`, `address`, `decode`, `decode not-a-card`, `repair` of a bad card) | as case 1 | ignored | the verb's own (0, 1 or 2) | `a_stderr_that_cannot_take_text_never_changes_the_result`, `closed_reader_on_stdout_and_stderr_exits_0` |
 | 7 | clap parse error (printed on stderr) | none | clap's text; a stderr failure is ignored | 2 (unchanged) | none new (no change in behaviour) |
 | 8 | the second binary `gen_ap2_grind` (a maintainer tool that installs next to `md`): its one `print!` goes through `out.rs`, `main` returns `ExitCode::from(out::exit_code(0))` | same rule | same rule | 0, or 1 with the line | `every_binary_includes_the_out_module` (a source scan: the binary is a ~2^32 SHA-256 grind, too slow to run in a row) |
 | 9 | no module but `out.rs` names stdout | n/a | n/a | n/a | `only_out_rs_names_stdout` (a source scan) |
 
-`--out FILE` and the reserved-tag line of the ms document do not exist in md.
+`md encode --out FILE` and `md descriptor --emit md1 --out FILE` write the card to FILE and
+nothing to stdout (the engraving card and the notes go to stderr), and `md vectors --out DIR`
+and `md gen-man --out DIR` print nothing on stdout, so a stdout that cannot take text never
+touches them: exit 0, no `cannot write` line, the file written
+(`md encode 'wpkh(@0/<0;1>/*)' --out F >/dev/full` exits 0 and F holds the card). The
+reserved-tag line of the ms document does not exist in md.
 A short write (`ulimit -f`) is not a row.
 
 ## 3. Production changes (exact)
 
 The five blocks 3.1 to 3.5 are `fix.diff` split by file, in the diff's own
-order, byte for byte: concatenated they equal the grade's file (251
-lines, sha256 `d380793acd7710e2394d0798da3654b1c101146a41e4c0c3e9de7459d94405af`, checked by the gate). Apply them with `git apply`.
+order, byte for byte: concatenated they equal the grade's file (279
+lines, sha256 `9e6ffbe64c67b3ad53905a7991b8dd830eff13a7a55b3e0429660230d9359df2`, checked by the gate). Apply them with `git apply`.
 They touch `CHANGELOG.md`, `crates/md-cli/src/bin/gen_ap2_grind.rs`,
-`crates/md-cli/src/main.rs`, `crates/md-cli/src/out.rs` (new, 99 lines) and
+`crates/md-cli/src/main.rs`, `crates/md-cli/src/out.rs` (new, 125 lines) and
 `design/FOLLOWUPS.md` (two entries: `md-output-sink` and
 `md-gen-ap2-grind-installed`, the latter Minor, open, owned by the next md-cli
 release). Block 3.5 is the FOLLOWUPS text, from the grade's diff; its literal
@@ -193,7 +206,7 @@ index a976f28..252d061 100644
 
 ```diff
 diff --git c/crates/md-cli/src/main.rs i/crates/md-cli/src/main.rs
-index 0052ac3..7d2749d 100644
+index 0052ac3..4f86f03 100644
 --- c/crates/md-cli/src/main.rs
 +++ i/crates/md-cli/src/main.rs
 @@ -1,5 +1,9 @@
@@ -206,7 +219,7 @@ index 0052ac3..7d2749d 100644
  mod bip388;
  mod cmd;
  #[cfg(feature = "cli-compiler")]
-@@ -891,18 +895,32 @@ fn collect_mk1(inline: &[String], file: Option<&std::path::Path>) -> Result<Vec<
+@@ -891,18 +895,34 @@ fn collect_mk1(inline: &[String], file: Option<&std::path::Path>) -> Result<Vec<
  fn main() -> ExitCode {
      // v0.6.1: deny other-UID /proc/$PID/cmdline reads + core dumps.
      process_hardening::set_non_dumpable();
@@ -218,9 +231,11 @@ index 0052ac3..7d2749d 100644
 +        Err(e) => {
 +            // --help and --version go to stdout under the same write-error
 +            // rule as the verbs (`out`); a parse error goes to stderr.
-+            if let Err(w) = e.print() {
-+                if !e.use_stderr() {
-+                    out::failed(&w);
++            if e.use_stderr() || !out::read_only() {
++                if let Err(w) = e.print() {
++                    if !e.use_stderr() {
++                        out::failed(&w);
++                    }
 +                }
 +            }
 +            let code = u8::try_from(e.exit_code()).unwrap_or(2);
@@ -252,10 +267,10 @@ index 0052ac3..7d2749d 100644
 ```diff
 diff --git c/crates/md-cli/src/out.rs i/crates/md-cli/src/out.rs
 new file mode 100644
-index 0000000..20e8a96
+index 0000000..c6f987e
 --- /dev/null
 +++ i/crates/md-cli/src/out.rs
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,125 @@
 +//! The one stdout path. Every `print!`/`println!` in md-cli resolves to the
 +//! macros below (declared `#[macro_use]` first in `main.rs`, so they shadow
 +//! std's in every module), and so do `eprint!`/`eprintln!`.
@@ -264,7 +279,7 @@ index 0000000..20e8a96
 +//! the output instead. A reader that closed the pipe (`md … | head -3`,
 +//! `ErrorKind::BrokenPipe`) only stops it: the exit code is the verb's own.
 +//! Any other stdout error (a full disk, `> /dev/full`) is kept, and `main`
-+//! prints "md: cannot write the output: <error>" and exits 1 (crash sweep,
++//! prints `md: cannot write the output: <error>` and exits 1 (crash sweep,
 +//! grade-mk-crash-sweep-1 Q4). A stderr write error is ignored.
 +//! `tests/output_errors.rs` pins both cases and that no other file of the
 +//! crate names stdout.
@@ -278,13 +293,39 @@ index 0000000..20e8a96
 +
 +/// Writes to stdout; after the first failure, writes nothing.
 +pub(crate) fn stdout_write(args: std::fmt::Arguments<'_>) {
-+    if CLOSED.load(Ordering::Relaxed) {
++    if CLOSED.load(Ordering::Relaxed) || read_only() {
 +        return;
 +    }
 +    let mut o = std::io::stdout().lock();
 +    if let Err(e) = o.write_fmt(args).and_then(|()| o.flush()) {
 +        failed(&e);
 +    }
++}
++
++/// std's stdout reports EBADF as a successful write, so a stdout opened
++/// read-only (`1</dev/null`) would lose the output with exit 0. Checked once,
++/// at the first write (or clap's `--help`/`--version`): then EBADF is recorded
++/// as the write error. A verb that writes nothing to stdout is not touched.
++pub(crate) fn read_only() -> bool {
++    static RO: OnceLock<bool> = OnceLock::new();
++    *RO.get_or_init(|| {
++        #[cfg(unix)]
++        {
++            // SAFETY: fcntl(F_GETFL) takes no pointer; a bad fd returns -1.
++            let fl = unsafe { libc::fcntl(1, libc::F_GETFL) };
++            let ro = fl >= 0 && (fl & libc::O_ACCMODE) == libc::O_RDONLY;
++            if ro {
++                failed(&std::io::Error::from_raw_os_error(libc::EBADF));
++            }
++            ro
++        }
++        // Windows: std turns only an invalid handle into a success, so a
++        // read-only handle's error reaches the sink as written.
++        #[cfg(not(unix))]
++        {
++            false
++        }
++    })
 +}
 +
 +/// Records a failed stdout write (also used for clap's `--help`/`--version`).
@@ -391,9 +432,9 @@ index ba9694d..f65d947 100644
 
 ## 4. RED rows
 
-The rows are `crates/md-cli/tests/output_errors.rs` (9 tests, new file) and one
+The rows are `crates/md-cli/tests/output_errors.rs` (10 tests, new file) and one
 row appended to `crates/md-cli/tests/r3_verify_against.rs`, byte for byte
-`rows.diff` (361 lines, sha256 `5f59d692c62aba711b4bd69ab55639be53a2ca579cd85ec480c44a2897c7af50`). They supersede the
+`rows.diff` (393 lines, sha256 `4164126f6c439759062fd945246e570a83e7b7e72055854c54dff05b67798e69`). They supersede the
 triage's rows; do not commit those. Apply the blocks, then run each command in
 the `sh` block on the unmodified code, from the repo root with
 `$HOME/.cargo/bin` first in PATH (the pin is 1.85.0). The text after
@@ -403,10 +444,10 @@ the `sh` block on the unmodified code, from the repo root with
 ```diff
 diff --git c/crates/md-cli/tests/output_errors.rs i/crates/md-cli/tests/output_errors.rs
 new file mode 100644
-index 0000000..1580a0b
+index 0000000..bb208da
 --- /dev/null
 +++ i/crates/md-cli/tests/output_errors.rs
-@@ -0,0 +1,310 @@
+@@ -0,0 +1,342 @@
 +//! What md does when stdout cannot take its output (crash sweep, the family
 +//! rule of grade-mk-crash-sweep-1 Q4; toolkit manual `42-md.md`
 +//! "When stdout fails").
@@ -717,6 +758,38 @@ index 0000000..1580a0b
 +        );
 +    }
 +}
++
++/// std's stdout reports EBADF as a successful write, so a stdout opened
++/// read-only (`md gui-schema 1</dev/null`) lost the output and exited 0.
++#[test]
++fn read_only_stdout_exits_1_with_the_line() {
++    const BADF: &str = "md: cannot write the output: Bad file descriptor (os error 9)";
++    let on_read_only = |a: &[String]| {
++        let ro = std::fs::File::open("/dev/null").unwrap();
++        md().args(a)
++            .stdout(Stdio::from(ro))
++            .stderr(Stdio::piped())
++            .output()
++            .unwrap()
++    };
++    for a in [
++        s(&["gui-schema"]),
++        s(&["decode", CARD]),
++        address(&["--count", "1000"]),
++        s(&["--help"]),
++        s(&["--version"]),
++    ] {
++        let o = on_read_only(&a);
++        let err = String::from_utf8_lossy(&o.stderr);
++        assert_eq!(o.status.code(), Some(1), "{a:?}: {err}");
++        assert_eq!(err.lines().last(), Some(BADF), "{a:?}: {err}");
++    }
++    // A verb that fails before printing keeps its code and prints no line.
++    let o = on_read_only(&s(&["decode", "not-a-card"]));
++    let err = String::from_utf8_lossy(&o.stderr);
++    assert_eq!(o.status.code(), Some(1), "{err}");
++    assert!(!err.contains("cannot write"), "{err}");
++}
 ```
 
 ```diff
@@ -777,6 +850,7 @@ cargo nextest run --locked -j 8 -p md-cli -E 'test(/(^|::)full_stdout_after_a_re
 cargo nextest run --locked -j 8 -p md-cli -E 'test(/(^|::)closed_reader_on_stdout_and_stderr_exits_0$/)' ## expect: ["encode", "wpkh(@0/<0;1>/*)", "--policy-id-fingerprint"]: status ExitStatus(unix_wait_status(25856))
 cargo nextest run --locked -j 8 -p md-cli -E 'test(/(^|::)full_stdout_after_a_partial_decode_exits_1_not_4$/)' ## expect: failed printing to stdout: No space left on device (os error 28)
 cargo nextest run --locked -j 8 -p md-cli -E 'test(/(^|::)r3_a_not_equal_verdict_whose_stdout_is_lost_exits_1_and_keeps_the_verdict_line$/)' ## expect: failed printing to stdout: No space left on device (os error 28)
+cargo nextest run --locked -j 8 -p md-cli -E 'test(/(^|::)read_only_stdout_exits_1_with_the_line$/)' ## expect: left: Some(0)
 ```
 
 | row | expected after GREEN | on the base code (measured by the grade, `red.log`) |
@@ -789,17 +863,18 @@ cargo nextest run --locked -j 8 -p md-cli -E 'test(/(^|::)r3_a_not_equal_verdict
 | `closed_reader_on_stdout_and_stderr_exits_0` | six invocations, stdout and stderr both closed: the verb's own code (0, 0, 0, 0, 1, 2), no signal, no panic | FAIL: `["encode", "wpkh(@0/<0;1>/*)", "--policy-id-fingerprint"]: status ExitStatus(unix_wait_status(25856))` |
 | `full_stdout_after_a_partial_decode_exits_1_not_4` | the fixture exits 4 on a good stdout; `decode` and `inspect` on a full stdout exit 1 | FAIL: the same panic (`["decode", "md1yqpqqxpzsn9favzyjwfcgx"]`) |
 | `r3_a_not_equal_verdict_whose_stdout_is_lost_exits_1_and_keeps_the_verdict_line` | exit 1; stderr keeps the `NOT spend-equal` verdict line | FAIL: left `Some(101)`, right `Some(1)` |
+| `read_only_stdout_exits_1_with_the_line` | on a stdout opened read-only: `gui-schema`, `decode`, `address --count 1000`, `--help`, `--version` each exit 1 with `md: cannot write the output: Bad file descriptor (os error 9)` last; `decode not-a-card` exits 1 with no `cannot write` | FAIL (architect, `redbase-row.log`): `left: Some(0)` / `right: Some(1)` (exit 0, output lost) |
 | `only_out_rs_names_stdout` | PASS | PASS on the base too: a source-scan guard, not a RED row. Its teeth are plants P7 and P8 (below). |
 | `full_stdout_with_nothing_to_print_keeps_the_verbs_code` | PASS | PASS on the base too: a guard (a verb that fails before printing never touches stdout). Kills nothing alone; it protects against a "every code becomes 1" over-reach together with the unit test. |
 
-Whole-file RED (grade): **10 tests run: 2 passed, 8 failed** (the two rows
+Whole-file RED (architect, `redbase-set.log`): **11 tests run: 2 passed, 9 failed** (the two rows
 files together, the filter in section 7). The unit test
 `out::tests::a_closed_pipe_keeps_every_code_and_a_write_error_turns_success_into_1`
 lives in `out.rs` (block 3.4), so it does not exist on the base; it is GREEN
 only (one test per binary, because the statics cannot be reset: a closed pipe first, then
 a write error). It is killed by P1, P2, P3, P3b, P3c and P6.
 
-### Tests can fail (the grade's 14 plants)
+### Tests can fail (the grade's 14 plants and the architect's two)
 
 Each plant was made against the fix; each fails at least one row (grade
 `plants.txt`, 14 of 14 die; the gate does not re-run them).
@@ -820,6 +895,10 @@ Each plant was made against the fix; each fails at least one row (grade
 | P10 | `gen_ap2_grind` not routed through `out.rs` | `every_binary_includes_the_out_module` |
 | P11 | a stderr write error is recorded | `a_stderr_that_cannot_take_text_never_changes_the_result` |
 | P12 | `Cli::parse()` instead of `try_parse()` | `full_stdout_exits_1_with_the_line` |
+| P13 | the clap branch not probed (`if true {` for `if e.use_stderr() \|\| !out::read_only() {`) | `read_only_stdout_exits_1_with_the_line` (at `--help`, `left: Some(0)`) |
+| P14 | the probe records no error (its `failed(...EBADF)` line removed) | `read_only_stdout_exits_1_with_the_line` (`left: Some(0)`) |
+
+P13 and P14 were run by the architect against the ruled tree (coordinator `agent-reports/architect-output-sink-read-only-stdout.md`, `plant-P1.log`, `plant-P2.log`). P1 to P12 were run against the grade's diff; P4 plants the clap branch, which the probe now wraps.
 
 (The names are the plants' labels in `plants.txt`; the failing sets are its
 rows, abbreviated. The `r3_...` row is
@@ -834,9 +913,9 @@ one test function is appended to `crates/md-cli/tests/r3_verify_against.rs`
 
 ## 6. Build order
 
-1. Add the rows (section 4) as their own commit; run the RED commands: eight FAIL for the stated reasons, the two guards PASS.
-2. Apply sections 3.1 to 3.5 (the grade's diff). Run the rows and `out::tests`: GREEN.
-3. Fill S2 (the `<COMMIT>` of `md-output-sink`) as the proposal says, or as the coordinator rules.
+1. Add the rows (section 4) as their own commit; run the RED commands: nine FAIL for the stated reasons, the two guards PASS.
+2. Apply sections 3.1 to 3.5 (the grade's diff with the architect's probe). Run the rows and `out::tests`: GREEN.
+3. Commit step 2 as one commit, then fill S2 in its own commit as section 10 rules.
 4. Gate (section 7).
 5. Toolkit manual section (section 8): not part of this PR; it goes in the toolkit PR that pins the first md-cli release carrying this fix (S1, ruled).
 6. CI on the PR must show the legs the grade did not run (section 9).
@@ -852,12 +931,12 @@ row. Its header states what it does not cover. The commands it runs, each to a
 file, then grep:
 
 - `cargo nextest run --locked -j 8 -p md-cli --features cli-compiler`
-  expecting **942 tests run: 942 passed, 3 skipped** (grade, `green-final.log`).
+  expecting **943 tests run: 943 passed, 3 skipped** (architect, `g-suite.log`).
 - `cargo nextest run --locked -j 8 -p md-cli` (default features) expecting
-  **904 tests run: 904 passed, 3 skipped** (grade, `green-default.log`).
+  **905 tests run: 905 passed, 3 skipped** (architect, `g-suite-default.log`).
 - `cargo nextest run --locked -j 8 -p md-cli -E 'binary(output_errors) | test(/(^|::)r3_a_not_equal_verdict_whose_stdout_is_lost_exits_1_and_keeps_the_verdict_line$/)'`:
-  **10 tests run: 10 passed** (a short or empty count is a FAIL); on the base,
-  **10 tests run: 2 passed, 8 failed**.
+  **11 tests run: 11 passed** (a short or empty count is a FAIL); on the base,
+  **11 tests run: 2 passed, 9 failed**.
 - `cargo nextest run --locked -j 8 -p md-cli -E 'test(/^out::tests::/)'`: **2 tests run: 2 passed** (the unit test runs once in the `md` binary and once in `gen_ap2_grind`, which includes `out.rs`).
 - `cargo test --locked --workspace --doc --all-features`
 - `cargo fmt --all --check` (the pinned 1.85.0 toolchain; the grade ran `cargo +stable fmt`)
@@ -904,8 +983,8 @@ names that toolkit entry.
 ## 9. Checks recorded
 
 - **Version:** none (section 1).
-- **Evidence (grade):** RED `10 tests run: 2 passed, 8 failed` (`red.log`); GREEN `-p md-cli --features cli-compiler` 942 run, 942 passed, 3 skipped (`green-final.log`, rerun after the plants) and default features 904 passed, 3 skipped (`green-default.log`); `cargo clippy --workspace --all-targets --all-features -D warnings` rc 0; `cargo +stable fmt --all --check` rc 0; `cargo test --workspace --doc --all-features` rc 0; `cargo test ... out::tests` rc 0; 14 of 14 plants die. On the fixed binary, `compose ... 2>/dev/full` gave 0 of 100 nonzero and `2>&1 | head -1` 0 of 100 (on the base: 100 of 100 and 1 of 100; `freq-stderr.txt`).
-- **Not run by the grade, so CI on the PR must show them** (`.github/workflows/`; the rows are Linux-only; `out.rs` is std-only and std maps Windows' closed-pipe errors to BrokenPipe):
+- **Evidence (grade, then architect for the read-only probe):** RED `11 tests run: 2 passed, 9 failed` (`redbase-set.log`); GREEN `-p md-cli --features cli-compiler` 943 run, 943 passed, 3 skipped (`g-suite.log`) and default features 905 passed, 3 skipped (`g-suite-default.log`); `cargo check --target x86_64-unknown-freebsd -p md-cli` rc 0; `cargo clippy --workspace --all-targets --all-features -D warnings` rc 0; `cargo +stable fmt --all --check` rc 0; `cargo test --workspace --doc --all-features` rc 0; `cargo test ... out::tests` rc 0; 14 of 14 plants die. On the fixed binary, `compose ... 2>/dev/full` gave 0 of 100 nonzero and `2>&1 | head -1` 0 of 100 (on the base: 100 of 100 and 1 of 100; `freq-stderr.txt`).
+- **Not run by the grade, so CI on the PR must show them** (`.github/workflows/`; the rows are Linux-only; `out.rs` is std plus one `libc::fcntl` under `cfg(unix)`, and std maps Windows' closed-pipe errors to BrokenPipe):
   1. `ci.yml` `cargo test (macos-latest)` and the advisory `cargo test (windows-latest)` (built on a ready PR): `cargo nextest run --workspace --all-targets --all-features --no-fail-fast`. The Windows leg must confirm std's closed-pipe mapping; there is no Windows row, so read it first.
   2. `ci.yml` `cargo test (ubuntu-latest)` (the required context): `cargo nextest run --workspace --all-targets --all-features --no-fail-fast` (the gate runs `-p md-cli` twice, not the whole workspace); plus `cargo test --workspace --doc --all-features`.
   3. `ci.yml` `cargo doc`: `cargo doc --workspace --no-deps --document-private-items --all-features` (the new `//!` and `///` comments are rustdoc).
@@ -918,4 +997,10 @@ names that toolkit entry.
 ## 10. STOP
 
 - **S1 (ruled 2026-11-13, coordinator `agent-reports/grade-ms-md-output-errors.md` section 4; not open).** The section 8 paragraph goes in the toolkit PR that moves `scripts/install.sh`'s md pin to the first md-cli release carrying this fix, in the same commit, and may not merge before that pin. Plain text, no marker. This PR files the cross-repo pair: descriptor-mnemonic `design/FOLLOWUPS.md::md-output-sink` (its Companion line, block 3.5) and toolkit `design/FOLLOWUPS.md::md-manual-when-stdout-fails` (section 8).
-- **S2 (open; P-1 (proposed)).** The grade's FOLLOWUPS diff gives the entry `md-output-sink` the status `resolved <COMMIT>` and does not say how the `<COMMIT>` is filled. The repo's own form (`design/FOLLOWUPS.md` L44) says: change `Status:` to `resolved <COMMIT>`, where `<COMMIT>` is the short SHA of the fix. A commit cannot hold its own SHA, and block 3.5 is held byte for byte. P-1 (proposed): the build applies block 3.5 with the literal `<COMMIT>` in the code commit, and a second commit on the PR branch replaces it with the short SHA of that code commit (one line, `md-output-sink` only; `md-gen-ap2-grind-installed` stays `open`). The coordinator rules this before the build, or names another way.
+- **S2 (ruled 2026-11-13, review r1; the same ruling as ms P-1).** The fix commit (the one
+  that applies blocks 3.1 to 3.5; not the rows commit) carries block 3.5 as printed, with the
+  literal `<COMMIT>`. The next commit on the PR branch changes only that line of
+  `md-output-sink` to ``- **Status:** `resolved <sha>` ``, where `<sha>` is the output of
+  `git rev-parse --short=7 <fix commit>`; `md-gen-ap2-grind-installed` stays `open`. Review
+  folds are new commits on top; if the branch is ever rebased, redo this commit with the new
+  SHA before merge.
