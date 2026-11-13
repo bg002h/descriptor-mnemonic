@@ -340,3 +340,21 @@ fn read_only_stdout_exits_1_with_the_line() {
     assert_eq!(o.status.code(), Some(1), "{err}");
     assert!(!err.contains("cannot write"), "{err}");
 }
+
+/// Linux accepts access mode 3 (`O_WRONLY | O_RDWR`): the fd can neither read
+/// nor write, and a write gets EBADF, which std reports as a success.
+#[test]
+fn no_access_mode_stdout_exits_1_with_the_line() {
+    const BADF: &str = "md: cannot write the output: Bad file descriptor (os error 9)";
+    let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_ACCMODE) };
+    assert!(fd >= 0);
+    let o = md()
+        .args(["gui-schema"])
+        .stdout(Stdio::from(unsafe { OwnedFd::from_raw_fd(fd) }))
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert_eq!(err.lines().last(), Some(BADF), "{err}");
+}
