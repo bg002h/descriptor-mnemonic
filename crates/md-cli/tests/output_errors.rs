@@ -306,6 +306,11 @@ fn every_binary_includes_the_out_module() {
             "{} does not take its print macros from out.rs",
             p.display()
         );
+        assert!(
+            t.contains("out::exit_code("),
+            "{} does not return its exit code through out::exit_code",
+            p.display()
+        );
     }
 }
 
