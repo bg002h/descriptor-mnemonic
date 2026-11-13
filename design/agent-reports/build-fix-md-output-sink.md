@@ -43,3 +43,27 @@ The CI fmt job uses the stable toolchain; only the pinned 1.85.0 was run here.
 None.
 
 0 Critical, 0 Important, 0 Minor
+
+## 2026-11-13 Whole-diff fold
+
+Folded: the access-mode-3 port (ms review I-1 applied to md) and md's own whole-diff findings (`agent-reports/whole-diff-md-output-sink-s2.md`). Logs: `/scratch/cache/fold-output-sink-accmode/md/logs/`. The FIX document and its gate script are not edited; they predate the port, and the PR body says so.
+
+- Port RED (`cargo nextest run --locked -j 8 -p md-cli -E 'test(no_access_mode_stdout_exits_1_with_the_line)'`): `1 test run: 0 passed, 1 failed, 908 skipped` (`left: Some(0)`, `right: Some(1)`). GREEN: `1 test run: 1 passed, 908 skipped`. Production change: the probe line and the `read_only()` doc comment only.
+- I1: assert `out::exit_code(` in `every_binary_includes_the_out_module`. RED with `ExitCode::SUCCESS` planted in `gen_ap2_grind.rs` (reverted, not committed): `1 test run: 0 passed, 1 failed`; GREEN on the head: `1 test run: 1 passed`.
+- Filed as `deferred-minor` (owner `md-output-sink-followups`): `md-output-sink-wd-m1-...` (M1), `md-output-sink-wd-n1-...` (N1), and `md-output-sink-wd-m2-...` (the ms review's M-2, run here: `ulimit -f 4` gives rc 153, 4096 bytes written, so it holds). N2 not filed (known).
+
+| command | rc | summary |
+|---|---|---|
+| nextest -p md-cli --features cli-compiler | 0 | 944 tests run: 944 passed, 3 skipped |
+| nextest -p md-cli (default) | 0 | 906 tests run: 906 passed, 3 skipped |
+| rows filter (`--no-fail-fast`) | 0 | 12 tests run: 12 passed |
+| out::tests | 0 | 2 tests run: 2 passed |
+| ci.yml test job: nextest --workspace --all-targets --all-features --no-fail-fast | 0 | 1621 tests run: 1621 passed, 6 skipped |
+| cargo test --workspace --doc --all-features | 0 | |
+| cargo fmt --all --check (1.85.0) | 0 | |
+| cargo clippy --workspace --all-targets --all-features -D warnings | 0 | |
+| ci/code-docs-check.sh | 0 | |
+| RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --all-features | 0 | |
+| cargo check --target x86_64-unknown-freebsd -p md-cli | 0 | |
+
+STOPs: none.
