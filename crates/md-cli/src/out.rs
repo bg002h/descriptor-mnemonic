@@ -29,8 +29,9 @@ pub(crate) fn stdout_write(args: std::fmt::Arguments<'_>) {
     }
 }
 
-/// std's stdout reports EBADF as a successful write, so a stdout opened
-/// read-only (`1</dev/null`) would lose the output with exit 0. Checked once,
+/// std's stdout reports EBADF as a successful write, so a stdout that cannot
+/// write (opened read-only, `1</dev/null`, as O_PATH, or with Linux's access
+/// mode 3) would lose the output with exit 0. Checked once,
 /// at the first write (or clap's `--help`/`--version`): then EBADF is recorded
 /// as the write error. A verb that writes nothing to stdout is not touched.
 pub(crate) fn read_only() -> bool {
@@ -40,7 +41,7 @@ pub(crate) fn read_only() -> bool {
         {
             // SAFETY: fcntl(F_GETFL) takes no pointer; a bad fd returns -1.
             let fl = unsafe { libc::fcntl(1, libc::F_GETFL) };
-            let ro = fl >= 0 && (fl & libc::O_ACCMODE) == libc::O_RDONLY;
+            let ro = fl >= 0 && !matches!(fl & libc::O_ACCMODE, libc::O_WRONLY | libc::O_RDWR);
             if ro {
                 failed(&std::io::Error::from_raw_os_error(libc::EBADF));
             }
