@@ -3362,6 +3362,27 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** The entry is resolved in its own PR, so none applies; acceptable.
 - **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
 
+### `md-output-sink-wd-m1-fix-document-whole-set-command-lacks-no-fail-fast` — the FIX document's printed whole-set nextest commands lack `--no-fail-fast`
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-md-output-sink-s2.md` M1 (Minor; Check 3).
+- **Where:** `design/FIX_md_output_sink.md` section 7 (third bullet) and section 4 (whole-set RED count).
+- **What:** As printed the command stops early (`8/11 tests run: 1 passed, 7 failed` on the RED commit); with `--no-fail-fast` it gives `11 tests run: 2 passed, 9 failed`. The gate script passes the flag; a builder following the document gets a wrong count, not a wrong act. Fix: add `--no-fail-fast` after `-j 8` in those commands.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-wd-n1-flush-and-closed-early-return-unobservable` — the flush in `stdout_write` and the `CLOSED` early-return are unobservable today
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-md-output-sink-s2.md` N1 (Nit; Check 2).
+- **Where:** `crates/md-cli/src/out.rs` `stdout_write`.
+- **What:** Plants removing either pass every row: every `print!` in md-cli ends its text with a newline, and `WRITE_ERROR` keeps the first error. Defence in depth, not behaviour.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
+### `md-output-sink-wd-m2-file-over-ulimit-f-kills-md-with-sigxfsz` — a stdout file over `ulimit -f` kills md with SIGXFSZ
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-ms-output-sink-s1.md` M-2 (Minor), run on this head and it holds.
+- **Where:** `crates/md-cli/src/out.rs` (the sink), process start.
+- **What:** `bash -c 'ulimit -f 4; md address ... --count 1000 > f'` dies by signal (rc 153) with 4096 bytes written; unchanged by this diff and fails closed (non-zero). Possible fix: ignore SIGXFSZ at start so a file-size limit is a write error like the others.
+- **Status:** `deferred-minor`. **Owner:** `md-output-sink-followups`.
+
 ### `vendor-freshness-shared` — one shared vendor-freshness gate for five repos
 
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
