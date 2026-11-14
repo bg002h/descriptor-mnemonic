@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+## md-cli [0.20.6] — 2026-11-14
+
 ### Fixed
 - **Printed remedies that failed as printed now work, and `md compile` refuses a
   policy whose `or`s nest too deep to answer.** (1) `md descriptor --emit md1` on a keyless card
