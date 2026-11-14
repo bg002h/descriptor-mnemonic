@@ -86,6 +86,22 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-chunk-set-id-bundle-stamped` — `md descriptor` / `md address` warn about the chunk-set id of every card `mnemonic bundle` makes (companion of mk `mk-chunk-set-id-bundle-stamped`)
+- **Surfaced:** toolkit `design/agent-reports/architect-pins-md-0.20.6-mk-0.15.0-stops.md` S4/FU1; graded 2026-11-14, coordinator `agent-reports/grade-mk-chunk-set-id-bundle.md` (Q1, Q2, "md companion"); Brian chose Option A (silent) 2026-11-14.
+- **Where:** `crates/md-cli/src/seat/input.rs` (`seat_notes`, the `declared != derived` test; new private `is_bundle_stamped`).
+- **What:** The toolkit stamps each mk1 card with the leading 20 bits of its first policy_id_stub XOR the cosigner slot (mk BIP :327); slots run 0..=31 (md1 caps keys at 32). `seat_notes` warned "was not derived from its content" on every such card and advised a re-mint. Fix: no warning when `declared ^ top20(stubs[0]) < 32`.
+- **Why deferred:** n/a, fixed in the same cycle.
+- **Status:** `fixed in this PR`.
+- **Tier:** `cross-repo`
+
+### `md-bip-32-key-cap-attributed-to-bip388` — the md BIP calls 32 "the BIP 388 placeholder cap"
+- **Surfaced:** 2026-11-14, grade `agent-reports/grade-mk-chunk-set-id-bundle.md` ("Also found", coordinator repo).
+- **Where:** `bip/` at lines :437, :608, :756.
+- **What:** (Nit) These lines attribute the 32-key cap to BIP 388, but the BIP-388 text sets no key-count cap; the 32 is md-codec's own limit (`KeyCountOutOfRange` outside `1..=32`). Text only, no fix made.
+- **Why deferred:** A Nit in the BIP's wording; nothing fails.
+- **Status:** `deferred-minor`. **Owner:** next md BIP change.
+- **Tier:** `v1+`
+
 ### `md-seat-remedy-chunk-cost-understated` — the REMEDIES text says a fingerprint per slot costs "about one extra md1 chunk"
 - **Surfaced:** 2026-11-13, grade of the md and mk printed remedies (`agent-reports/grade-md-mk-remedies.md` §10, coordinator repo).
 - **Where:** `crates/md-cli/src/seat/matching.rs:229-230` (`REMEDIES`, remedy (1)).
