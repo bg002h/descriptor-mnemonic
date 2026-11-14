@@ -45,6 +45,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   text (`2>/dev/full`, or `2>&1 | head` once the reader exits) no longer panics:
   the text is dropped and the result is unchanged. The maintainer binary
   `gen_ap2_grind` takes the same path. `tests/output_errors.rs`.
+- **Seating refuses an mk1 card of the other network.** `md address` and
+  `md descriptor` (also `--emit md1`) seated `--from-mk1`/`--from-mk1-file`
+  cards without reading their xpubs' network, so testnet cards under the
+  default `--network mainnet` printed a `bc1` address and `xpub` keys, and
+  mainnet cards under `--network testnet`, `signet` or `regtest` printed a
+  `tb1`/`bcrt1` address, at exit 0. A card whose xpub is of the other kind is
+  now refused, exit 1, naming the card and the `--network` to re-run with:
+  ``md: seating refused: --from-mk1 card <id>: its xpub is a testnet key, but --network says mainnet. Re-run with `--network testnet`, `--network signet` or `--network regtest`.``
+  A testnet card set run without `--network` was accepted and is now refused;
+  add the `--network` it names. `tests/seat_network.rs`.
 
 ## md-cli [0.20.5] — 2026-11-04
 
