@@ -91,8 +91,16 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-cli/src/seat/input.rs` (`seat_notes`, the `declared != derived` test; new private `is_bundle_stamped`).
 - **What:** The toolkit stamps each mk1 card with the leading 20 bits of its first policy_id_stub XOR the cosigner slot (mk BIP :327); slots run 0..=31 (md1 caps keys at 32). `seat_notes` warned "was not derived from its content" on every such card and advised a re-mint. Fix: no warning when `declared ^ top20(stubs[0]) < 32`.
 - **Why deferred:** n/a, fixed in the same cycle.
-- **Status:** `fixed in this PR`.
+- **Status:** `resolved` (md#55).
 - **Tier:** `cross-repo`
+
+### `md-bundle-stamped-first-stub-untested` — no test pins that only the FIRST policy_id_stub counts in `is_bundle_stamped`
+- **Surfaced:** 2026-11-14, Sonnet whole-diff review of md#55 (`design/agent-reports/review-md-csid-bundle-stamped.md` M1).
+- **Where:** `crates/md-cli/src/seat/input.rs`, unit test `is_bundle_stamped_window_is_xor_below_32`.
+- **What:** (Minor) The test uses one stub, so a `.first()` -> `.last()` plant survives (cargo-mutants cannot make that mutant). The review report gives a two-stub test it ran both ways.
+- **Why deferred:** Minor; the code is right today and matches the toolkit, whose bundle stubs are all equal.
+- **Status:** `deferred-minor`. **Owner:** next md-cli seat change.
+- **Tier:** `v1+`
 
 ### `md-bip-32-key-cap-attributed-to-bip388` — the md BIP calls 32 "the BIP 388 placeholder cap"
 - **Surfaced:** 2026-11-14, grade `agent-reports/grade-mk-chunk-set-id-bundle.md` ("Also found", coordinator repo).
