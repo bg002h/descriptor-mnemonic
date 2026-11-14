@@ -548,6 +548,24 @@ fn derived_chunk_set_id(card: &KeyCard) -> Option<u32> {
     Some(mk_codec::derive_chunk_set_id(&bytecode))
 }
 
+/// One past the highest cosigner slot a bundle can stamp: md1 holds at most
+/// 32 keys (md-codec `KeyCountOutOfRange` outside `1..=32`), so slots are
+/// `0..=31` and the XOR touches the low five bits only.
+const BUNDLE_SLOT_LIMIT: u32 = 32;
+
+/// `true` when `declared` is the toolkit's bundle id for `card` (mk BIP "Note
+/// (toolkit slot-XOR)"): the leading 20 bits of the card's FIRST
+/// policy_id_stub, XOR a cosigner slot below [`BUNDLE_SLOT_LIMIT`].
+/// `mnemonic bundle` stamps that id on purpose, so it is not a mismatch to
+/// warn about.
+fn is_bundle_stamped(declared: u32, card: &KeyCard) -> bool {
+    let Some(s) = card.policy_id_stubs.first() else {
+        return false;
+    };
+    let base = ((s[0] as u32) << 12) | ((s[1] as u32) << 4) | ((s[2] as u32) >> 4);
+    (declared ^ base) < BUNDLE_SLOT_LIMIT
+}
+
 /// R2/R6 frozen warning wording (SPEC "Behavior contracts" §2, byte-identical
 /// to mk-cli's `chunk_set_id_mismatch_warning`). R6 ("one warning everywhere")
 /// requires the SAME content on every reassembly surface; each surface
@@ -602,7 +620,7 @@ pub fn seat_notes(cards: &[DecodedCard], ap_notes: &[PartitionNote]) -> Vec<Stri
         let Some(derived) = derived_chunk_set_id(&c.card) else {
             continue;
         };
-        if declared != derived {
+        if declared != derived && !is_bundle_stamped(declared, &c.card) {
             out.push(chunk_set_id_mismatch_warning(declared, derived));
         }
     }
@@ -936,6 +954,26 @@ mod tests {
     }
 
     // ─── Contract 6 -- R2/R6 seat warning ──────────────────────────────
+
+    #[test]
+    fn is_bundle_stamped_window_is_xor_below_32() {
+        let mut card = decode_cards(&[
+            "mk1qpnxvepqqsq4kj90x4eutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4wgdpapgfl4pkhsdyytkwl5z8lphut2hvvpp5fxwekt2hrvmq69e"
+                .to_string(),
+            "mk1qpnxvepp806lhaeh6reknylagmwyjycf8044xtt9flsdlkvt6f6cthyl995lpm5zlc7d38ev0su0k".to_string(),
+        ])
+        .unwrap()
+        .0
+        .remove(0)
+        .card;
+        card.policy_id_stubs = vec![[0xda, 0x7b, 0xa5, 0x11]];
+        let base = 0xda7ba_u32;
+        assert!(is_bundle_stamped(base, &card));
+        assert!(is_bundle_stamped(base ^ 31, &card));
+        assert!(!is_bundle_stamped(base ^ 32, &card));
+        card.policy_id_stubs.clear();
+        assert!(!is_bundle_stamped(base, &card));
+    }
 
     #[test]
     fn csid_warning_fires_on_a_pinned_mismatch_and_is_silent_on_the_clean_twin() {
