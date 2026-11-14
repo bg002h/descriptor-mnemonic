@@ -419,12 +419,20 @@ fn no_placeholders_message(template: &str) -> String {
         } else {
             String::new()
         };
+        // `md decompose` defaults to mainnet and refuses a test-network key
+        // without `--network`, so the printed lines carry the flag whenever
+        // the first extended key is a test-network spelling (tpub/upub/vpub,
+        // Upub/Vpub).
+        let net = match key.find(template).map(|m| m.as_str().as_bytes()[0]) {
+            Some(b't' | b'u' | b'v' | b'T' | b'U' | b'V') => " --network <testnet|signet|regtest>",
+            _ => "",
+        };
         format!(
             "this is a concrete wallet descriptor (it carries a real extended key), not \
              an md1 template — `md encode` takes a template whose keys are `@i` \
              placeholders. md reads descriptors with `md decompose`:\n    \
-             md decompose <DESCRIPTOR> --emit commands   # the mint commands, ready to run\n    \
-             md decompose <DESCRIPTOR> --emit template   # or just the @i template for --template\
+             md decompose <DESCRIPTOR> --emit commands{net}   # the mint commands, ready to run\n    \
+             md decompose <DESCRIPTOR> --emit template{net}   # or just the @i template for --template\
              {liana_hint}"
         )
     } else {
@@ -1792,7 +1800,7 @@ fn walk_tr(
             CliError::TemplateParse(format!(
                 "unsupported internal-key form: literal hex `{key_str}` other than \
                  BIP-341 NUMS H-point. Use an @N placeholder (backed by an xpub via \
-                 --keys) for the internal key, or the BIP-341 NUMS H-point \
+                 --key) for the internal key, or the BIP-341 NUMS H-point \
                  ({NUMS_H_POINT_X_ONLY_HEX}) for the v0.30 NUMS-flag encoding."
             ))
         } else if matches!(

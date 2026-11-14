@@ -523,14 +523,33 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
         .collect::<Vec<_>>()
         .join("; ");
 
+    // C5: price the remedy before printing it. A trial card with a
+    // fingerprint on every slot (the value does not change the size) either
+    // fits md1's 64-chunk cap, and the warning states its exact cost, or does
+    // not, and the warning names --seat instead.
+    let mut trial = descriptor.clone();
+    trial.tlv.fingerprints = Some((0..descriptor.n).map(|i| (i, [0, 0, 0, i])).collect());
+    let remedy = match (
+        md_codec::chunk::split(descriptor),
+        md_codec::chunk::split(&trial),
+    ) {
+        (Ok(now), Ok(then)) => format!(
+            "Pass one --fingerprint @N=HEX per slot to make them distinguishable; the card's md1 \
+             chunk count becomes {} (now {}), and no path, key or policy changes.",
+            then.len(),
+            now.len()
+        ),
+        _ => "A fingerprint per slot would take this card past md1's 64-chunk cap, so \
+              keep it as it is and, when restoring, seat each slot yourself with \
+              --seat '@i=<chunk-set-id>'."
+            .to_string(),
+    };
     let _ = writeln!(
         stderr,
         "warning: this keyless template's slots cannot be told apart \u{2014} {detail}. \
          Restoring seats one key card per slot by matching the slot's declared origin \
          (and its fingerprint, when declared), so a card here matches several slots and \
-         a device that will not guess must refuse the whole set. Pass one \
-         --fingerprint @N=HEX per slot to make them distinguishable; it costs about \
-         one extra md1 chunk and changes no path, no key and no policy."
+         a device that will not guess must refuse the whole set. {remedy}"
     );
 }
 

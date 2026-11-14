@@ -578,6 +578,7 @@ fn preset_params_json(p: &PresetParams) -> serde_json::Value {
 /// version bumps on BREAKING changes — this addition, on its own, was not
 /// one; stage 1b task 6 later bumped it for an unrelated reason, SPEC §4a).
 /// This is the field to join on.
+#[cfg(feature = "json")]
 fn experimental_json(e: &Experimental) -> serde_json::Value {
     let (kind, path) = match e {
         Experimental::KeylessPath(i) => ("keyless_path", *i),
@@ -652,8 +653,7 @@ pub fn run(
     if unspendable.is_some() && wrapper != Wrapper::Tr {
         return Err(CliError::Compose(format!(
             "--unspendable: --wrapper {} has no taproot internal key to choose; an \
-             unspendable internal key is a taproot concept. Use --wrapper tr, or omit \
-             --unspendable.",
+             unspendable internal key is a taproot concept. Omit --unspendable.",
             wrapper_name(wrapper)
         )));
     }

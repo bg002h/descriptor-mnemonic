@@ -7,6 +7,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## md-cli [Unreleased]
 
 ### Fixed
+- **Printed remedies that failed as printed now work, and `md compile` refuses a
+  policy it cannot answer.** (1) `md descriptor --emit md1` on a keyless card
+  now says the card is keyless and to add its mk1 key cards with `--from-mk1`
+  or `--from-mk1-file`, where it said to drop `--emit md1` (the keyed card's
+  text is unchanged). (2) `md encode`, given a concrete descriptor, prints `md decompose <DESCRIPTOR> --emit
+  commands` and `--emit template` with ` --network <testnet|signet|regtest>`
+  when the first extended key is a test-network key (`tpub`, `upub`, `vpub`,
+  `Upub`, `Vpub`); decompose refuses such a key on its mainnet default.
+  (3) `md compile`'s `--unspendable` refusal under a non-taproot wrapper no
+  longer says to use `--wrapper tr` (kind 1 refuses that); it says to omit
+  `--unspendable`. (4) The tr() template message names `--key`, not the
+  nonexistent `--keys`. (5) The unseatable-template advisory prices its remedy
+  with a trial split: it states the card's md1 chunk count after one
+  `--fingerprint` per slot (and now), or, when that would pass md1's 64-chunk
+  cap, names `--seat '@i=<chunk-set-id>'` instead of the fingerprint remedy.
+  (6) New refusal: `md compile` and `md encode --from-policy` refuse a policy
+  nesting more than 8 `or`s (for `--context tap`, inside one taproot leaf),
+  exit 1, `md: compile error: compile: the policy nests 9 `or`s; the policy
+  compiler's time doubles with each nested `or`, so more than 8 is refused
+  rather than left running. Write the alternatives as one thresh(1,...):
+  or(A,or(B,C)) is thresh(1,A,B,C).` Before, a deeper policy ran for minutes
+  with no verdict. (7) `cargo build -p md-cli --no-default-features` builds
+  again (the README's serde-free install failed on an ungated json helper); CI
+  now builds it. `tests/printed_remedy_runs.rs`.
 - **A stdout that cannot take the output no longer panics or reports success.**
   Every verb wrote with `println!`, which panicked (exit 101, "failed printing
   to stdout") on a full disk or `> /dev/full`, and `--help` and `--version`

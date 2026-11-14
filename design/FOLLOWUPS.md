@@ -86,6 +86,14 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-seat-remedy-chunk-cost-understated` — the REMEDIES text says a fingerprint per slot costs "about one extra md1 chunk"
+- **Surfaced:** 2026-11-13, grade of the md and mk printed remedies (`agent-reports/grade-md-mk-remedies.md` §10, coordinator repo).
+- **Where:** `crates/md-cli/src/seat/matching.rs:229-230` (`REMEDIES`, remedy (1)).
+- **What:** The sentence "It costs about one extra md1 chunk" is understated: measured +4 chunks at 32 slots. The unseatable-template advisory in `encode.rs` now prices its own remedy exactly, so this is the separate seating-refusal text.
+- **Why deferred:** Minor, an understated cost in a refusal's advice; the refusal itself is correct. Not fixed in the printed-remedies PR.
+- **Status:** `deferred-minor`. **Owner:** next md-cli change.
+- **Tier:** `v1+`
+
 ### `md-bughunt-fixb-s1-m1-shape-key-refusal-text` — shape-key refusal text misdescribes a known nested disjunction
 - **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-b-s1.md` M-1, line 153 (Minor).
 - **Where:** `crates/md-cli` shape-key refusal; `SkeletonError::IncompleteShape`.
