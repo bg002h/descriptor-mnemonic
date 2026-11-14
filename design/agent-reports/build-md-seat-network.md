@@ -2,7 +2,7 @@
 
 - Base: e2ee3206e78d5409ce51f200fd1d42ce7ff12a27 (md-remedies head, stacked on PR 53). Branch fix/md-seat-network.
 - Source of decisions: coordinator `agent-reports/grade-md-c8b.md`; fix.diff and seat_network.rs from /scratch/cache/grade-md-c8b/.
-- PR number: (filled in below after opening)
+- PR number: 54 (draft, base main)
 
 ## RED
 `cargo nextest run --locked -p md-cli --test seat_network --no-fail-fast` on the unmodified base (no feature flag needed):
