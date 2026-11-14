@@ -42,7 +42,10 @@ impl FromStr for ScriptContext {
 /// `or` about doubles the compiler's time and memory (measured: 8 levels
 /// answer in under 7 s, 11 do not answer in 60 s), and `Policy::compile` has
 /// no bound of its own. `thresh(1,...)` states the same alternatives at no
-/// such cost, so deeper policies are refused with that rewrite named.
+/// such cost, so deeper policies are refused with that rewrite named. Only
+/// `or` multiplies the compiler's work; side-by-side chains add their times
+/// (`and`/`thresh` pass one context per child), so under this bound the work
+/// grows with the policy's size, not exponentially.
 pub const MAX_OR_DEPTH: usize = 8;
 
 /// The most `or` nodes on any root-to-leaf path of `p`.
@@ -77,7 +80,9 @@ fn check_or_depth(depth: usize, what: &str) -> Result<(), CompileError> {
         return Err(CompileError::Compile(format!(
             "{what} nests {depth} `or`s; the policy compiler's time doubles with each nested \
              `or`, so more than {MAX_OR_DEPTH} is refused rather than left running. Write the \
-             alternatives as one thresh(1,...): or(A,or(B,C)) is thresh(1,A,B,C)."
+             alternatives as one thresh(1,...): or(A,or(B,C)) is thresh(1,A,B,C). When an `and` \
+             stands between the nested `or`s, thresh(1,...) cannot join them without repeating a \
+             key; write the descriptor as a miniscript template instead and give it to md encode."
         )));
     }
     Ok(())

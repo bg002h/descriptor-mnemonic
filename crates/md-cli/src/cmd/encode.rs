@@ -150,7 +150,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         // Must fire on the --json branch too (parity with the text branch).
         emit_pathless_advisory(&descriptor, &mut std::io::stderr());
         // F-227: unseatable keyless template (stderr, warn-only).
-        emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
+        emit_unseatable_template_advisory(&descriptor, args.force_chunked, &mut std::io::stderr());
         // F-410: a placeholder origin with no hardened component. Must fire on
         // the --json branch too (parity with the text branch).
         emit_unhardened_origin_note(
@@ -241,7 +241,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // descriptor (post `--path`) still has an unresolvable origin.
     emit_pathless_advisory(&descriptor, &mut std::io::stderr());
     // F-227: unseatable keyless template (stderr, warn-only).
-    emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
+    emit_unseatable_template_advisory(&descriptor, args.force_chunked, &mut std::io::stderr());
     // F-410: a placeholder origin with no hardened component (stderr, note-only).
     emit_unhardened_origin_note(
         args.template,
@@ -429,7 +429,11 @@ pub(crate) fn emit_legacy_p2sh_advisory<W: std::io::Write>(tree: &Node, stderr: 
 ///
 /// Keyed cards are exempt: they carry their own keys, so nothing is ever seated
 /// onto them and the warning would be pure noise.
-fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
+fn emit_unseatable_template_advisory<W: std::io::Write>(
+    descriptor: &Descriptor,
+    force_chunked: bool,
+    stderr: &mut W,
+) {
     if descriptor.is_wallet_policy() {
         return;
     }
@@ -529,11 +533,13 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
     // not, and the warning names --seat instead.
     let mut trial = descriptor.clone();
     trial.tlv.fingerprints = Some((0..descriptor.n).map(|i| (i, [0, 0, 0, i])).collect());
+    // Count what `md encode` would print (a single md1 string when the card
+    // fits one, else the chunks), not the chunk split alone.
     let remedy = match (
-        md_codec::chunk::split(descriptor),
-        md_codec::chunk::split(&trial),
+        mint_md1_cards(descriptor, force_chunked),
+        mint_md1_cards(&trial, force_chunked),
     ) {
-        (Ok(now), Ok(then)) => format!(
+        (Ok((now, _)), Ok((then, _))) => format!(
             "Pass one --fingerprint @N=HEX per slot to make them distinguishable; the card's md1 \
              chunk count becomes {} (now {}), and no path, key or policy changes.",
             then.len(),

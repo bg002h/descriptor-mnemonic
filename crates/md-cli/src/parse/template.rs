@@ -419,22 +419,57 @@ fn no_placeholders_message(template: &str) -> String {
         } else {
             String::new()
         };
-        // `md decompose` defaults to mainnet and refuses a test-network key
-        // without `--network`, so the printed lines carry the flag whenever
-        // the first extended key is a test-network spelling (tpub/upub/vpub,
-        // Upub/Vpub).
-        let net = match key.find(template).map(|m| m.as_str().as_bytes()[0]) {
-            Some(b't' | b'u' | b'v' | b'T' | b'U' | b'V') => " --network <testnet|signet|regtest>",
-            _ => "",
+        // `md decompose` reads xpub and tpub keys only, defaults to mainnet and
+        // refuses a test-network key without `--network`. Print the two lines
+        // only when every extended key is an xpub (as printed) or every one a
+        // tpub (with `--network`); a SLIP-132 or private-key spelling, or a mix,
+        // fails decompose under any flag, so it is named instead.
+        let mut prefixes: Vec<&str> = Vec::new();
+        for m in key.find_iter(template) {
+            if !prefixes.contains(&&m.as_str()[..4]) {
+                prefixes.push(&m.as_str()[..4]);
+            }
+        }
+        let net = if prefixes.iter().all(|p| *p == "xpub") {
+            Some("")
+        } else if prefixes.iter().all(|p| *p == "tpub") {
+            Some(" --network <testnet|signet|regtest>")
+        } else {
+            None
         };
-        format!(
-            "this is a concrete wallet descriptor (it carries a real extended key), not \
-             an md1 template — `md encode` takes a template whose keys are `@i` \
-             placeholders. md reads descriptors with `md decompose`:\n    \
-             md decompose <DESCRIPTOR> --emit commands{net}   # the mint commands, ready to run\n    \
-             md decompose <DESCRIPTOR> --emit template{net}   # or just the @i template for --template\
-             {liana_hint}"
-        )
+        // `--emit commands` also refuses a key with no `[fingerprint/path]`
+        // origin before it, so that line is printed only when every key has one.
+        let origin_less = key
+            .find_iter(template)
+            .any(|m| !template[..m.start()].ends_with(']'));
+        match net {
+            Some(net) if !origin_less => format!(
+                "this is a concrete wallet descriptor (it carries a real extended key), not \
+                 an md1 template — `md encode` takes a template whose keys are `@i` \
+                 placeholders. md reads descriptors with `md decompose`:\n    \
+                 md decompose <DESCRIPTOR> --emit commands{net}   # the mint commands, ready to run\n    \
+                 md decompose <DESCRIPTOR> --emit template{net}   # or just the @i template for --template\
+                 {liana_hint}"
+            ),
+            Some(net) => format!(
+                "this is a concrete wallet descriptor (it carries a real extended key), not \
+                 an md1 template — `md encode` takes a template whose keys are `@i` \
+                 placeholders. md reads descriptors with `md decompose`:\n    \
+                 md decompose <DESCRIPTOR> --emit template{net}   # the @i template for --template\n\
+                 Its mint commands (--emit commands) also need each key's origin, \
+                 [fingerprint/path] before the key, which this descriptor leaves out; the \
+                 wallet that produced it knows the path.{liana_hint}"
+            ),
+            None => format!(
+                "this is a concrete wallet descriptor (it carries a real extended key), not \
+                 an md1 template — `md encode` takes a template whose keys are `@i` \
+                 placeholders. md reads descriptors with `md decompose`, which takes xpub \
+                 keys (mainnet) or tpub keys (testnet, signet, regtest), all of one kind; \
+                 this one has {}. Export the descriptor again with xpub or tpub keys and give \
+                 it to `md decompose`.{liana_hint}",
+                prefixes.join(", ")
+            ),
+        }
     } else {
         "template contains no @i placeholders".into()
     }
