@@ -147,6 +147,11 @@ pub fn run(req: &SeatingRequest<'_>) -> Result<Seating, CliError> {
     }
 
     let (cards, partition_notes) = input::decode_cards(req.from_mk1)?;
+    // An mk1 card's xpub carries its network kind (mainnet or testnet-family).
+    // Seating under a `--network` of the other kind would print the wrong
+    // network's wallet at exit 0, so refuse it, as the T row's
+    // `parse_key` does for `--key`.
+    check_card_network_kinds(&cards, req.network)?;
     // Contract 6 — after a chunked group reassembles CLEANLY (immediately
     // above), recompute the operand and warn on stamped != derived. Ahead
     // of the door/card-set checks deliberately: this is a property of the
@@ -190,6 +195,49 @@ pub fn run(req: &SeatingRequest<'_>) -> Result<Seating, CliError> {
     notes.extend(disposition::notes(&policy, &descriptor, &cards)?);
     notes.push(disposition::address_zero_note(&descriptor, req.network)?);
     Ok(Seating { descriptor, notes })
+}
+
+/// Refuse a card whose xpub network kind differs from `--network`.
+fn check_card_network_kinds(
+    cards: &[input::DecodedCard],
+    network: bitcoin::Network,
+) -> Result<(), CliError> {
+    let is_main = |c: &&input::DecodedCard| c.card.xpub.network == bitcoin::NetworkKind::Main;
+    // A set holding both kinds has no `--network` that seats it, so naming
+    // one network would send the holder round in a loop.
+    if let (Some(t), Some(m)) = (
+        cards.iter().find(|c| !is_main(c)),
+        cards.iter().find(is_main),
+    ) {
+        return Err(CliError::Seat(format!(
+            "--from-mk1 card {} holds a testnet key but card {} holds a mainnet key, so no \
+             --network seats this set. Replace the card minted on the wrong network.",
+            t.label(),
+            m.label()
+        )));
+    }
+    let want_main = network == bitcoin::Network::Bitcoin;
+    for c in cards {
+        let is_main = c.card.xpub.network == bitcoin::NetworkKind::Main;
+        if is_main == want_main {
+            continue;
+        }
+        let net = crate::parse::keys::network_name(network);
+        return Err(CliError::Seat(if is_main {
+            format!(
+                "--from-mk1 card {}: its xpub is a mainnet key, but --network says {net}. \
+                 Re-run with `--network mainnet`.",
+                c.label()
+            )
+        } else {
+            format!(
+                "--from-mk1 card {}: its xpub is a testnet key, but --network says {net}. \
+                 Re-run with `--network testnet`, `--network signet` or `--network regtest`.",
+                c.label()
+            )
+        }));
+    }
+    Ok(())
 }
 
 /// Read one mk1 string per line from a file, for `--from-mk1-file`.
