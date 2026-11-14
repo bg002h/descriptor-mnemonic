@@ -32,3 +32,20 @@ None. Open point for coordinator, not a decision: the FOLLOWUPS Tier and Owner f
 
 ## Gate
 (appended below)
+
+Logs in /scratch/cache/md-csid-logs/. RUSTFLAGS="-D warnings" as ci.yml sets it; commands as the workflows give them.
+ci.yml:
+- clippy job guards (docs-only.test.sh, shared-ci sha256, code-docs-check test and check): rc 0 (ci-guards.log)
+- fmt job: conformance-vector checksum pin rc 0; `cargo fmt --all --check` rc 0
+- test job (ubuntu equivalent): `cargo nextest run --workspace --all-targets --all-features --no-fail-fast`: 1677 tests run: 1677 passed, 6 skipped; `cargo test --workspace --doc --all-features` rc 0
+- clippy: `cargo clippy --workspace --all-targets --all-features -- -D warnings` rc 0; `cargo build --locked -p md-cli --no-default-features` rc 0
+- doc: `cargo doc --workspace --no-deps --document-private-items --all-features` rc 0
+- freebsd: `cargo check --target x86_64-unknown-freebsd -p md-cli` rc 0
+release.yml (runs on pull_request):
+- release test: `cargo nextest run --locked --workspace --no-fail-fast`: 1629 tests run: 1629 passed, 6 skipped; `cargo test --locked --workspace --doc` rc 0
+- build md linux-x86_64: `cargo build --release --locked --target x86_64-unknown-linux-gnu -p md-cli --features cli-compiler` rc 0 (workflow's own --release)
+Other workflows: fuzz-smoke, bitcoind-differential, vendor-freshness, man-pages: path filters not touched by this diff (md-codec src, Cargo files, tags): not triggered.
+
+NOT RUN: Windows and macOS legs of the test job and release build (no such host); musl x86_64 and aarch64 jobs (no musl-gcc here; aarch64 needs an arm64 runner); linux-aarch64 cross build (cross not installed); the release smoke-test step; release.yml `assemble + release` (tag only). The mutation gate (coordinator's).
+
+Counts: Critical 0, Important 0, Minor 0, Nit 0.
