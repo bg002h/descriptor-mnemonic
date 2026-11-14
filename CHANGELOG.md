@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+## md-cli [0.20.7] — 2026-11-14
+
 ### Fixed
 - **A card made by `mnemonic bundle` no longer warns about its chunk-set id in `md descriptor --from-mk1` and `md address`.** Its id is the bundle id (the first policy-id stub's leading 20 bits XOR the cosigner slot, 0-31), not one derived from its content. Re-minting such a card is not needed.
 
