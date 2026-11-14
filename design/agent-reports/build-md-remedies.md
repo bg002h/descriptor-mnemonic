@@ -1,7 +1,7 @@
 # Build report: md-cli printed remedies (items L-Q, grade C1-C7)
 
 - Base: ca65cd6d22a3c545d65809cd0fc2d7d7c9478d70 (origin/main did not move; `git apply --check -p1` of fix.diff passed).
-- Branch: fix/md-remedies, worktree /scratch/cache/wt-md-fix-remedies. PR number: (appended below).
+- Branch: fix/md-remedies, worktree /scratch/cache/wt-md-fix-remedies. PR number: 53 (draft), https://github.com/bg002h/descriptor-mnemonic/pull/53.
 - Source of decisions: coordinator `agent-reports/grade-md-mk-remedies.md`.
 
 ## RED
