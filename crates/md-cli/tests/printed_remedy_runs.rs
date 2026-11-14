@@ -1,5 +1,6 @@
 //! Printed remedies run as printed: each row runs the remedy md prints and expects it to work (md-cli, C1-C7).
 use assert_cmd::Command;
+#[cfg(feature = "cli-compiler")]
 use std::time::Duration;
 fn md() -> Command {
     Command::cargo_bin("md").unwrap()
@@ -247,10 +248,12 @@ fn c5_below_cap_cost_is_exact() {
     );
 }
 
+#[cfg(feature = "cli-compiler")]
 /// C6: policies.
 fn pk(i: usize) -> String {
     format!("pk(@{i}/<0;1>/*)")
 }
+#[cfg(feature = "cli-compiler")]
 fn chain(alts: Vec<String>) -> String {
     let mut a = alts;
     let mut s = a.pop().unwrap();
@@ -259,6 +262,7 @@ fn chain(alts: Vec<String>) -> String {
     }
     s
 }
+#[cfg(feature = "cli-compiler")]
 /// 2-of-3 primary + `d` single-key timelocked recovery paths: `d` nested `or`s.
 fn holder(d: usize) -> String {
     let mut alts = vec![format!("thresh(2,{},{},{})", pk(0), pk(1), pk(2))];
@@ -267,6 +271,7 @@ fn holder(d: usize) -> String {
     }
     chain(alts)
 }
+#[cfg(feature = "cli-compiler")]
 /// and(pk, or(pk, and(pk, or(...)))): `d` nested `or`s that taproot cannot split into leaves.
 fn andor(d: usize) -> String {
     let mut s = pk(2 * d);
@@ -275,6 +280,7 @@ fn andor(d: usize) -> String {
     }
     s
 }
+#[cfg(feature = "cli-compiler")]
 fn compile(argv: &[&str]) -> (i32, String) {
     let mut c = md();
     c.args(argv).timeout(Duration::from_secs(30));
@@ -284,6 +290,7 @@ fn compile(argv: &[&str]) -> (i32, String) {
         String::from_utf8_lossy(&o.stderr).into(),
     )
 }
+#[cfg(feature = "cli-compiler")]
 /// RED rows: a verdict within 30 s, and when it is a refusal it names the rewrite.
 fn c6_verdict(argv: &[&str]) {
     let (rc, se) = compile(argv);
@@ -292,10 +299,12 @@ fn c6_verdict(argv: &[&str]) {
         "no verdict within 30 s (rc {rc}): {se}"
     );
 }
+#[cfg(feature = "cli-compiler")]
 #[test]
 fn c6_compile_holder13_segwitv0_answers() {
     c6_verdict(&["compile", &holder(13), "--context", "segwitv0"]);
 }
+#[cfg(feature = "cli-compiler")]
 #[test]
 fn c6_encode_from_policy_holder13_answers() {
     c6_verdict(&[
@@ -306,10 +315,12 @@ fn c6_encode_from_policy_holder13_answers() {
         "segwitv0",
     ]);
 }
+#[cfg(feature = "cli-compiler")]
 #[test]
 fn c6_compile_andor14_tap_answers() {
     c6_verdict(&["compile", &andor(14), "--context", "tap"]);
 }
+#[cfg(feature = "cli-compiler")]
 /// New behaviour: the bound is exactly 8 (9 refused at once, exit 1), in both contexts.
 #[test]
 fn c6_bound_nine_refused() {
@@ -331,6 +342,7 @@ fn c6_bound_nine_refused() {
         "{se}"
     );
 }
+#[cfg(feature = "cli-compiler")]
 /// Controls (pass both ways): depth 8 compiles; a taproot or-spine of 14 compiles; the printed rewrite compiles.
 #[test]
 fn c6_control_depth_eight_compiles() {
@@ -340,10 +352,12 @@ fn c6_control_depth_eight_compiles() {
     );
     assert_eq!(compile(&["compile", &andor(8), "--context", "tap"]).0, 0);
 }
+#[cfg(feature = "cli-compiler")]
 #[test]
 fn c6_control_tap_or_spine_compiles() {
     assert_eq!(compile(&["compile", &holder(14), "--context", "tap"]).0, 0);
 }
+#[cfg(feature = "cli-compiler")]
 #[test]
 fn c6_control_thresh1_rewrite_compiles() {
     let mut alts = vec![format!("thresh(2,{},{},{})", pk(0), pk(1), pk(2))];
@@ -371,6 +385,7 @@ fn c2_slip132_testnet_prefix_gets_network() {
     }
 }
 
+#[cfg(feature = "cli-compiler")]
 /// C6: an `or` chain nested under a `thresh` is counted too (andor(14) as one of three thresh children).
 #[test]
 fn c6_compile_or_under_thresh_answers() {

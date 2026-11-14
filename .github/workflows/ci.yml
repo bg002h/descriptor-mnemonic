@@ -120,7 +120,7 @@ jobs:
         if: steps.docs.outputs.docs_only != 'true'
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
         if: steps.docs.outputs.docs_only != 'true'
-      - name: md-cli builds without default features (crates/md-cli/README.md's serde-free install)
+      - name: md-cli builds without default features (the serde-free install the md-cli readme gives)
         run: cargo build --locked -p md-cli --no-default-features
         if: steps.docs.outputs.docs_only != 'true'
 
