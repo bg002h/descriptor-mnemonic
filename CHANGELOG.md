@@ -54,7 +54,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   now refused, exit 1, naming the card and the `--network` to re-run with:
   ``md: seating refused: --from-mk1 card <id>: its xpub is a testnet key, but --network says mainnet. Re-run with `--network testnet`, `--network signet` or `--network regtest`.``
   A testnet card set run without `--network` was accepted and is now refused;
-  add the `--network` it names. `tests/seat_network.rs`.
+  add the `--network` it names. A set holding cards of both kinds is refused
+  under every `--network`, naming one card of each kind, since no `--network`
+  seats it. `tests/seat_network.rs`.
 
 ## md-cli [0.20.5] — 2026-11-04
 

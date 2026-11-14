@@ -240,31 +240,38 @@ fn control_address_prefix_follows_the_network() {
     assert!(o.stdout.starts_with("bc1"), "{}", o.stdout);
 }
 
-/// Mixed set (one testnet card, one mainnet card): refused under either
-/// network, naming the card whose kind differs.
+/// Mixed set (one testnet card, one mainnet card): refused under every
+/// network with the mixed-set text, which names no `--network` (any one it
+/// named would refuse the other card, a loop).
 #[test]
-fn mixed_kind_set_is_refused_under_either_network() {
-    let mixed = [TEST[0], TEST[1], TEST[2], MAIN[3], MAIN[4], MAIN[5]];
-    let o = run(Verb::AddressCards, &mixed, Some("mainnet"), "mix1");
-    assert_eq!(o.code, 1, "{}", o.stdout);
-    assert!(
-        o.stderr.contains("its xpub is a testnet key"),
-        "{}",
-        o.stderr
-    );
-    let o = run(Verb::AddressCards, &mixed, Some("signet"), "mix2");
-    assert_eq!(o.code, 1, "{}", o.stdout);
-    assert!(
-        o.stderr.contains("its xpub is a mainnet key"),
-        "{}",
-        o.stderr
-    );
+fn mixed_kind_set_is_refused_under_every_network() {
+    const MIX_LINE: &str = "md: seating refused: --from-mk1 card 76be9 (stub aad0e0e0) holds a \
+testnet key but card 291a0 (stub aad0e0e0) holds a mainnet key, so no --network seats this set. \
+Replace the card minted on the wrong network.\n";
+    for mixed in [
+        [TEST[0], TEST[1], TEST[2], MAIN[3], MAIN[4], MAIN[5]],
+        [MAIN[3], MAIN[4], MAIN[5], TEST[0], TEST[1], TEST[2]],
+    ] {
+        for v in VERBS {
+            for net in [
+                None,
+                Some("mainnet"),
+                Some("testnet"),
+                Some("signet"),
+                Some("regtest"),
+            ] {
+                let o = run(v, &mixed, net, "mix");
+                assert_eq!(o.code, 1, "{v:?} {net:?}: {}", o.stdout);
+                assert!(o.stdout.is_empty(), "{v:?} {net:?}: {}", o.stdout);
+                assert_eq!(o.stderr, MIX_LINE, "{v:?} {net:?}");
+            }
+        }
+    }
 }
 
 /// The ruled texts, whole: `<id>` is the card's label (chunk-set id and
-/// stub, the id `--seat` takes), the file spelling prints the same text, and
-/// a mixed set names its first card (ascending chunk-set id) of the other
-/// kind. stderr is that one line and nothing else.
+/// stub, the id `--seat` takes) and the file spelling prints the same text.
+/// stderr is that one line and nothing else.
 #[test]
 fn the_refusal_lines_are_the_ruled_texts() {
     const T_LINE: &str = "md: seating refused: --from-mk1 card 76be9 (stub aad0e0e0): \
@@ -277,15 +284,6 @@ its xpub is a mainnet key, but --network says regtest. Re-run with `--network ma
     }
     assert_eq!(
         run(Verb::DescriptorFile, MAIN, Some("regtest"), "x-m").stderr,
-        M_LINE
-    );
-    let mixed = [MAIN[3], MAIN[4], MAIN[5], TEST[0], TEST[1], TEST[2]];
-    assert_eq!(
-        run(Verb::AddressCards, &mixed, Some("mainnet"), "x-mix").stderr,
-        T_LINE
-    );
-    assert_eq!(
-        run(Verb::AddressCards, &mixed, Some("regtest"), "x-mix2").stderr,
         M_LINE
     );
 }

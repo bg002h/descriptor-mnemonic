@@ -202,6 +202,20 @@ fn check_card_network_kinds(
     cards: &[input::DecodedCard],
     network: bitcoin::Network,
 ) -> Result<(), CliError> {
+    let is_main = |c: &&input::DecodedCard| c.card.xpub.network == bitcoin::NetworkKind::Main;
+    // A set holding both kinds has no `--network` that seats it, so naming
+    // one network would send the holder round in a loop.
+    if let (Some(t), Some(m)) = (
+        cards.iter().find(|c| !is_main(c)),
+        cards.iter().find(is_main),
+    ) {
+        return Err(CliError::Seat(format!(
+            "--from-mk1 card {} holds a testnet key but card {} holds a mainnet key, so no \
+             --network seats this set. Replace the card minted on the wrong network.",
+            t.label(),
+            m.label()
+        )));
+    }
     let want_main = network == bitcoin::Network::Bitcoin;
     for c in cards {
         let is_main = c.card.xpub.network == bitcoin::NetworkKind::Main;

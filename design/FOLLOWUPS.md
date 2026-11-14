@@ -94,6 +94,14 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Status:** `deferred-minor`. **Owner:** next md-cli change.
 - **Tier:** `v1+`
 
+### `md-seat-network-review-minors` — Minors and a Nit from the review of the seat-network refusal
+- **Surfaced:** 2026-11-13, the diff review of the seat-network fix (`agent-reports/review-md-seat-network-diff.md` M-1, M-2, M-3, N-1, coordinator repo).
+- **Where:** `crates/md-cli/src/seat/mod.rs` (`seat::run`, `check_card_network_kinds`); `crates/md-cli/tests/seat_network.rs`; `design/SPEC_wallet_form_converter.md` PHASE A; `CHANGELOG.md`.
+- **What:** (M-1) No row pins that the network refusal comes before the other seating checks: moving the call to just before PHASE B leaves every row passing. The missing row is written and was run both ways (`the_network_refusal_precedes_the_seating_checks`, in the review's `plants/row-order.diff`). (M-2, owner's word) A card with mainnet version bytes minted at a testnet coin type (`m/48'/1'/0'/2'`), run under `--network signet`, is told to re-run with `--network mainnet`, which prints a `bc1` address; whether the version bytes or the coin type decide a card's network is not ruled. (M-3) The doc comment of `seat::run` and the spec's PHASE A list do not name the new check, which needs the card set but runs before the declaration-only checks. (N-1) The CHANGELOG clause "printed a `bc1` address and `xpub` keys" can be read as saying testnet cards now render `tpub`; md prints `xpub` under every `--network` (`md-descriptor-network-regtest-renders-mainnet-xpub`).
+- **Why deferred:** Minors and a Nit; the refusal fails closed and its printed remedies run. Not fixed in the seat-network PR.
+- **Status:** `deferred-minor`. **Owner:** next md-cli change.
+- **Tier:** `v1+`
+
 ### `md-bughunt-fixb-s1-m1-shape-key-refusal-text` — shape-key refusal text misdescribes a known nested disjunction
 - **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-b-s1.md` M-1, line 153 (Minor).
 - **Where:** `crates/md-cli` shape-key refusal; `SkeletonError::IncompleteShape`.
