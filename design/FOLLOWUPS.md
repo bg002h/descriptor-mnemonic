@@ -86,6 +86,14 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-seat-remedy-chunk-cost-understated` — the REMEDIES text says a fingerprint per slot costs "about one extra md1 chunk"
+- **Surfaced:** 2026-11-13, grade of the md and mk printed remedies (`agent-reports/grade-md-mk-remedies.md` §10, coordinator repo).
+- **Where:** `crates/md-cli/src/seat/matching.rs:229-230` (`REMEDIES`, remedy (1)).
+- **What:** The sentence "It costs about one extra md1 chunk" is understated: measured +4 chunks at 32 slots. The unseatable-template advisory in `encode.rs` now prices its own remedy exactly, so this is the separate seating-refusal text.
+- **Why deferred:** Minor, an understated cost in a refusal's advice; the refusal itself is correct. Not fixed in the printed-remedies PR.
+- **Status:** `deferred-minor`. **Owner:** next md-cli change.
+- **Tier:** `v1+`
+
 ### `md-bughunt-fixb-s1-m1-shape-key-refusal-text` — shape-key refusal text misdescribes a known nested disjunction
 - **Surfaced:** md bug hunt, `design/agent-reports/whole-diff-md-fix-b-s1.md` M-1, line 153 (Minor).
 - **Where:** `crates/md-cli` shape-key refusal; `SkeletonError::IncompleteShape`.
@@ -3405,4 +3413,28 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** `cargo install … md-cli` (the README's commands and the toolkit's `scripts/install.sh`, which passes no `--bin`) installs this maintainer tool, a 2^32 SHA-256 grind that regenerates `tests/fixtures/seating/v-ap2.txt`, next to `md` in the holder's bin directory. The release archives carry only `md`. Take it out of the default build (`[[bin]] name = "gen_ap2_grind"` with `required-features = ["maintainer-tools"]`, and the fixture's regeneration note updated), and keep `tests/output_errors.rs::every_binary_includes_the_out_module` for whatever stays in `src/bin`.
 - **Why deferred:** not a defect in any output (Minor); the output-sink PR routes it through `out.rs` as it ships today.
 - **Status:** `open`, Minor.
+- **Tier:** `v1+`
+
+### `md-remedies-review-m1` — a serde-free build accepts `--json` and silently prints text (repo: **descriptor-mnemonic**; owning phase: md-cli Minors after md-remedies)
+
+- **Surfaced:** 2026-11-14, coordinator `agent-reports/review-md-remedies-diff.md` M-1.
+- **Where:** every md-cli verb with `--json`, in a build without default features.
+- **What:** serde-free build: `--json` accepted, listed and silently ignored (exit 0, text output) on every verb that has it. Two unusual conditions: a non-default build plus `--json`. It fails closed for a JSON consumer, which cannot parse the text. Fix shape: refuse `--json` with exit 2 naming the missing feature, as `compile` does for cli-compiler.
+- **Status:** `deferred-minor`, Minor.
+- **Tier:** `v1+`
+
+### `md-remedies-review-m3` — `md compile`'s README row and `--help` omit the `or` depth bound (repo: **descriptor-mnemonic**; owning phase: md-cli Minors after md-remedies)
+
+- **Surfaced:** 2026-11-14, coordinator `agent-reports/review-md-remedies-diff.md` M-3.
+- **Where:** `crates/md-cli/README.md:55` (compile row) and `md compile --help`.
+- **What:** both describe compile with no `or` bound. Add to the README row: "A policy nesting more than 8 `or`s (for `--context tap`, inside one taproot leaf) is refused with exit 1; write the alternatives as one `thresh(1,...)`." The toolkit-manual paragraph rides the md pin bump.
+- **Status:** `deferred-minor`, Minor.
+- **Tier:** `v1+`
+
+### `md-remedies-fold-review-m1` — the origin-less-key row never puts the bare key after an originated one (repo: **descriptor-mnemonic**; owning phase: md-cli Minors after md-remedies)
+
+- **Surfaced:** 2026-11-14, coordinator `agent-reports/review-md-remedies-fold.md` M-1.
+- **Where:** `crates/md-cli/tests/printed_remedy_runs.rs:437-448` (`c2_origin_less_key_printed_line_runs`).
+- **What:** every origin-less case has the bare key first or alone, so a regression that checks only the first key's origin passes all 21 rows yet prints a failing `--emit commands` line for `sortedmulti(2,<originated>,<bare>)`. The code (`any` over `find_iter`) is right; the row is thin. Fix: add the case `format!("wsh(sortedmulti(2,{B0}/<0;1>/*,{bare_tpub}/<0;1>/*))")` after the existing sortedmulti entry (reviewer's diff, run both ways: `/scratch/cache/review-md-remedies-fold/fix/row-origin-not-first.diff`).
+- **Status:** `deferred-minor`, Minor.
 - **Tier:** `v1+`

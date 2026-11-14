@@ -102,7 +102,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
     // the refusal names the input mode rather than whatever the wrong mode
     // happened to fail at later.
     if args.emit == Some(Emit::Md1) {
-        check_emit_md1_input_mode(args.template, args.from_mk1)?;
+        check_emit_md1_input_mode(args.template, args.from_mk1, args.phrases)?;
     }
 
     // P2 — the S row. `--from-mk1` composes a keyless policy card with mk1
@@ -359,7 +359,11 @@ pub fn emit_seating_notes(notes: &[String]) {
 /// spelled correctly and every value parses; what is wrong is the
 /// COMBINATION, which is the class clap reports at exit 2 through its own
 /// `conflicts_with`. Nothing is being said about the material.
-fn check_emit_md1_input_mode(template: Option<&str>, from_mk1: &[String]) -> Result<(), CliError> {
+fn check_emit_md1_input_mode(
+    template: Option<&str>,
+    from_mk1: &[String],
+    phrases: &[String],
+) -> Result<(), CliError> {
     const NEEDS: &str = "--emit md1 mints a keyed card from a SEATED card set, so it needs the \
                          keyless policy card together with its mk1 key cards (--from-mk1 \
                          <STRING>, repeatable, or --from-mk1-file <FILE>).";
@@ -370,14 +374,29 @@ fn check_emit_md1_input_mode(template: Option<&str>, from_mk1: &[String]) -> Res
         )));
     }
     if from_mk1.is_empty() {
-        // Reached with a card on the positional and no key cards: a KEYED one
-        // (the re-emit the spec names) or a keyless one, and the sentence is
-        // true of both -- either way the argument already is the artifact.
-        return Err(CliError::BadArg(format!(
-            "{NEEDS} These md1 phrases are a card already, and re-emitting a card you are \
-             holding would hand back what you pasted in. Drop --emit md1 to render this card \
-             as a descriptor."
-        )));
+        // Reached with a card on the positional and no key cards. A KEYED
+        // card is the re-emit the spec names: dropping --emit md1 renders it.
+        // A KEYLESS card has no descriptor form without its key cards, so
+        // its remedy is the missing --from-mk1, not dropping the flag. A card
+        // that does not decode gets the keyed text; the decode error follows
+        // on the next run.
+        let ph = crate::cmd::strip_md1_inputs(phrases);
+        let keyless = match ph.as_slice() {
+            [one] => md_codec::decode::decode_md1_string(one).map(|d| !d.is_wallet_policy()),
+            many => {
+                let refs: Vec<&str> = many.iter().map(String::as_str).collect();
+                md_codec::chunk::reassemble(&refs).map(|d| !d.is_wallet_policy())
+            }
+        }
+        .unwrap_or(false);
+        let tail = if keyless {
+            "This card is keyless: add its mk1 key cards with --from-mk1 or --from-mk1-file."
+        } else {
+            "These md1 phrases are a card already, and re-emitting a card you are holding \
+             would hand back what you pasted in. Drop --emit md1 to render this card as a \
+             descriptor."
+        };
+        return Err(CliError::BadArg(format!("{NEEDS} {tail}")));
     }
     Ok(())
 }

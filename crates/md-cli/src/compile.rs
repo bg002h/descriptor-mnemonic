@@ -38,6 +38,56 @@ impl FromStr for ScriptContext {
     }
 }
 
+/// The deepest `or` nesting handed to the policy compiler (C6). Each nested
+/// `or` about doubles the compiler's time and memory (measured: 8 levels
+/// answer in under 7 s, 11 do not answer in 60 s), and `Policy::compile` has
+/// no bound of its own. `thresh(1,...)` states the same alternatives at no
+/// such cost, so deeper policies are refused with that rewrite named. Only
+/// `or` multiplies the compiler's work; side-by-side chains add their times
+/// (`and`/`thresh` pass one context per child), so under this bound the work
+/// grows with the policy's size, not exponentially.
+pub const MAX_OR_DEPTH: usize = 8;
+
+/// The most `or` nodes on any root-to-leaf path of `p`.
+fn or_depth(p: &miniscript::policy::concrete::Policy<String>) -> usize {
+    use miniscript::policy::concrete::Policy;
+    match p {
+        Policy::And(subs) => subs.iter().map(|s| or_depth(s)).max().unwrap_or(0),
+        Policy::Or(subs) => 1 + subs.iter().map(|(_, s)| or_depth(s)).max().unwrap_or(0),
+        Policy::Thresh(t) => t.iter().map(|s| or_depth(s)).max().unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// `or_depth` inside the taproot leaves: `compile_tr` splits root-level `or`
+/// and `thresh(1,...)` into separate leaves (miniscript
+/// `tapleaf_probability_iter`), so only the nesting inside one leaf counts.
+fn leaf_or_depth(p: &miniscript::policy::concrete::Policy<String>) -> usize {
+    use miniscript::policy::concrete::Policy;
+    match p {
+        Policy::Or(subs) => subs
+            .iter()
+            .map(|(_, s)| leaf_or_depth(s))
+            .max()
+            .unwrap_or(0),
+        Policy::Thresh(t) if t.is_or() => t.iter().map(|s| leaf_or_depth(s)).max().unwrap_or(0),
+        other => or_depth(other),
+    }
+}
+
+fn check_or_depth(depth: usize, what: &str) -> Result<(), CompileError> {
+    if depth > MAX_OR_DEPTH {
+        return Err(CompileError::Compile(format!(
+            "{what} nests {depth} `or`s; the policy compiler's time doubles with each nested \
+             `or`, so more than {MAX_OR_DEPTH} is refused rather than left running. Write the \
+             alternatives as one thresh(1,...): or(A,or(B,C)) is thresh(1,A,B,C). When an `and` \
+             stands between the nested `or`s, thresh(1,...) cannot join them without repeating a \
+             key; write the descriptor as a miniscript template instead and give it to md encode."
+        )));
+    }
+    Ok(())
+}
+
 /// Compile a high-level Concrete-Policy expression to a BIP-388 wallet-policy
 /// template string.
 ///
@@ -75,6 +125,7 @@ pub fn compile_policy_to_template(
                 unspendable_key.is_none(),
                 "unspendable_key must be None for SegwitV0; CLI should reject upstream"
             );
+            check_or_depth(or_depth(&policy), "the policy")?;
             let ms = policy
                 .compile::<miniscript::Segwitv0>()
                 .map_err(|e| CompileError::Compile(format!("{e}")))?;
@@ -91,6 +142,7 @@ pub fn compile_policy_to_template(
             let unspendable = unspendable_key
                 .map(String::from)
                 .or_else(|| Some(crate::parse::template::NUMS_H_POINT_X_ONLY_HEX.to_string()));
+            check_or_depth(leaf_or_depth(&policy), "a taproot leaf of the policy")?;
             let desc = policy
                 .compile_tr(unspendable)
                 .map_err(|e| CompileError::Compile(format!("{e}")))?;

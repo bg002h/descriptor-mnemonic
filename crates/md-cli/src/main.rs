@@ -1,4 +1,7 @@
 #![allow(missing_docs)]
+// The serde-free build (no `json`) leaves the JSON-only fields and helpers
+// unread; CI builds it with -D warnings.
+#![cfg_attr(not(feature = "json"), allow(dead_code, unused_variables))]
 
 // First, so its print macros shadow std's in every module below.
 #[macro_use]

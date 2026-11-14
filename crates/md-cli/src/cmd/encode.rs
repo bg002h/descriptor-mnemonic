@@ -150,7 +150,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         // Must fire on the --json branch too (parity with the text branch).
         emit_pathless_advisory(&descriptor, &mut std::io::stderr());
         // F-227: unseatable keyless template (stderr, warn-only).
-        emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
+        emit_unseatable_template_advisory(&descriptor, args.force_chunked, &mut std::io::stderr());
         // F-410: a placeholder origin with no hardened component. Must fire on
         // the --json branch too (parity with the text branch).
         emit_unhardened_origin_note(
@@ -241,7 +241,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // descriptor (post `--path`) still has an unresolvable origin.
     emit_pathless_advisory(&descriptor, &mut std::io::stderr());
     // F-227: unseatable keyless template (stderr, warn-only).
-    emit_unseatable_template_advisory(&descriptor, &mut std::io::stderr());
+    emit_unseatable_template_advisory(&descriptor, args.force_chunked, &mut std::io::stderr());
     // F-410: a placeholder origin with no hardened component (stderr, note-only).
     emit_unhardened_origin_note(
         args.template,
@@ -429,7 +429,11 @@ pub(crate) fn emit_legacy_p2sh_advisory<W: std::io::Write>(tree: &Node, stderr: 
 ///
 /// Keyed cards are exempt: they carry their own keys, so nothing is ever seated
 /// onto them and the warning would be pure noise.
-fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor, stderr: &mut W) {
+fn emit_unseatable_template_advisory<W: std::io::Write>(
+    descriptor: &Descriptor,
+    force_chunked: bool,
+    stderr: &mut W,
+) {
     if descriptor.is_wallet_policy() {
         return;
     }
@@ -523,14 +527,35 @@ fn emit_unseatable_template_advisory<W: std::io::Write>(descriptor: &Descriptor,
         .collect::<Vec<_>>()
         .join("; ");
 
+    // C5: price the remedy before printing it. A trial card with a
+    // fingerprint on every slot (the value does not change the size) either
+    // fits md1's 64-chunk cap, and the warning states its exact cost, or does
+    // not, and the warning names --seat instead.
+    let mut trial = descriptor.clone();
+    trial.tlv.fingerprints = Some((0..descriptor.n).map(|i| (i, [0, 0, 0, i])).collect());
+    // Count what `md encode` would print (a single md1 string when the card
+    // fits one, else the chunks), not the chunk split alone.
+    let remedy = match (
+        mint_md1_cards(descriptor, force_chunked),
+        mint_md1_cards(&trial, force_chunked),
+    ) {
+        (Ok((now, _)), Ok((then, _))) => format!(
+            "Pass one --fingerprint @N=HEX per slot to make them distinguishable; the card's md1 \
+             chunk count becomes {} (now {}), and no path, key or policy changes.",
+            then.len(),
+            now.len()
+        ),
+        _ => "A fingerprint per slot would take this card past md1's 64-chunk cap, so \
+              keep it as it is and, when restoring, seat each slot yourself with \
+              --seat '@i=<chunk-set-id>'."
+            .to_string(),
+    };
     let _ = writeln!(
         stderr,
         "warning: this keyless template's slots cannot be told apart \u{2014} {detail}. \
          Restoring seats one key card per slot by matching the slot's declared origin \
          (and its fingerprint, when declared), so a card here matches several slots and \
-         a device that will not guess must refuse the whole set. Pass one \
-         --fingerprint @N=HEX per slot to make them distinguishable; it costs about \
-         one extra md1 chunk and changes no path, no key and no policy."
+         a device that will not guess must refuse the whole set. {remedy}"
     );
 }
 
