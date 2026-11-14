@@ -3422,3 +3422,27 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **Why deferred:** not a defect in any output (Minor); the output-sink PR routes it through `out.rs` as it ships today.
 - **Status:** `open`, Minor.
 - **Tier:** `v1+`
+
+### `md-remedies-review-m1` — a serde-free build accepts `--json` and silently prints text (repo: **descriptor-mnemonic**; owning phase: md-cli Minors after md-remedies)
+
+- **Surfaced:** 2026-11-14, coordinator `agent-reports/review-md-remedies-diff.md` M-1.
+- **Where:** every md-cli verb with `--json`, in a build without default features.
+- **What:** serde-free build: `--json` accepted, listed and silently ignored (exit 0, text output) on every verb that has it. Two unusual conditions: a non-default build plus `--json`. It fails closed for a JSON consumer, which cannot parse the text. Fix shape: refuse `--json` with exit 2 naming the missing feature, as `compile` does for cli-compiler.
+- **Status:** `deferred-minor`, Minor.
+- **Tier:** `v1+`
+
+### `md-remedies-review-m3` — `md compile`'s README row and `--help` omit the `or` depth bound (repo: **descriptor-mnemonic**; owning phase: md-cli Minors after md-remedies)
+
+- **Surfaced:** 2026-11-14, coordinator `agent-reports/review-md-remedies-diff.md` M-3.
+- **Where:** `crates/md-cli/README.md:55` (compile row) and `md compile --help`.
+- **What:** both describe compile with no `or` bound. Add to the README row: "A policy nesting more than 8 `or`s (for `--context tap`, inside one taproot leaf) is refused with exit 1; write the alternatives as one `thresh(1,...)`." The toolkit-manual paragraph rides the md pin bump.
+- **Status:** `deferred-minor`, Minor.
+- **Tier:** `v1+`
+
+### `md-remedies-fold-review-m1` — the origin-less-key row never puts the bare key after an originated one (repo: **descriptor-mnemonic**; owning phase: md-cli Minors after md-remedies)
+
+- **Surfaced:** 2026-11-14, coordinator `agent-reports/review-md-remedies-fold.md` M-1.
+- **Where:** `crates/md-cli/tests/printed_remedy_runs.rs:437-448` (`c2_origin_less_key_printed_line_runs`).
+- **What:** every origin-less case has the bare key first or alone, so a regression that checks only the first key's origin passes all 21 rows yet prints a failing `--emit commands` line for `sortedmulti(2,<originated>,<bare>)`. The code (`any` over `find_iter`) is right; the row is thin. Fix: add the case `format!("wsh(sortedmulti(2,{B0}/<0;1>/*,{bare_tpub}/<0;1>/*))")` after the existing sortedmulti entry (reviewer's diff, run both ways: `/scratch/cache/review-md-remedies-fold/fix/row-origin-not-first.diff`).
+- **Status:** `deferred-minor`, Minor.
+- **Tier:** `v1+`

@@ -341,6 +341,10 @@ fn c6_bound_nine_refused() {
         se.contains("a taproot leaf of the policy nests 9 `or`s"),
         "{se}"
     );
+    assert!(
+        se.contains("cannot join them without repeating a key"),
+        "{se}"
+    );
 }
 #[cfg(feature = "cli-compiler")]
 /// Controls (pass both ways): depth 8 compiles; a taproot or-spine of 14 compiles; the printed rewrite compiles.
@@ -369,20 +373,78 @@ fn c6_control_thresh1_rewrite_compiles() {
     assert_eq!(rc, 0, "{se}");
 }
 
-/// C2 (the SLIP-132 testnet spellings): a `Vpub`/`Upub` token also gets `--network` on both printed lines.
+/// BIP-32 test vector 1, chain m: `xprv` and its public key `xpub`, whose fingerprint is `3442193e` (the
+/// parent fingerprint of chain m/0H).
+const V1_XPRV: &str = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+const V1_XPUB: &str = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+
+/// The same extended key under another version (SLIP-132 and BIP-32 differ only there).
+fn reversion(k: &str, version: [u8; 4]) -> String {
+    let mut b = bitcoin::base58::decode_check(k).unwrap();
+    b[..4].copy_from_slice(&version);
+    bitcoin::base58::encode_check(&b)
+}
+
+/// C2, every other key spelling the referral matches (SLIP-132 testnet `Vpub`, SLIP-132 mainnet `zpub` from
+/// the BIP-84 vector, a private `xprv`, an xpub beside a tpub): decompose refuses each under every flag, so
+/// no `md decompose` line is printed, the text names the spelling, and the remedy it names runs (the same
+/// descriptor with xpub or tpub keys prints two lines, and each runs).
 #[test]
-fn c2_slip132_testnet_prefix_gets_network() {
-    let d = "wsh(pk(Vpub5mtyU6Hx9xrx63Y3W4aGW1LuQkmwrq9xsQNgX7tDAM8DTHhE7vXMZ7Hue2FR8SMAGDW57fy76HFmN1jnckSmeX2cDMWVA1KViot6bLgJZuN/<0;1>/*))";
-    let (rc, _, se) = out_of(md().args(["encode", d]));
-    assert_eq!(rc, 1);
-    let printed: Vec<&str> = se
-        .lines()
-        .filter(|l| l.trim().starts_with("md decompose"))
-        .collect();
-    assert_eq!(printed.len(), 2, "{se}");
-    for l in printed {
-        assert!(l.contains("--network <testnet|signet|regtest>"), "{l}");
+fn c2_other_key_spellings_printed_lines_run() {
+    let (a0_origin, a0_tpub) = A0.split_once(']').unwrap();
+    let a0_vpub = reversion(a0_tpub, [0x02, 0x57, 0x54, 0x83]);
+    let zpub = "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs";
+    let zpub_as_xpub = reversion(zpub, [0x04, 0x88, 0xb2, 0x1e]);
+    let cases = [
+        (
+            format!("wsh(pk({a0_origin}]{a0_vpub}/<0;1>/*))"),
+            "Vpub",
+            format!("wsh(pk({A0}/<0;1>/*))"),
+        ),
+        (
+            format!("wpkh([73c5da0a/84'/0'/0']{zpub}/<0;1>/*)"),
+            "zpub",
+            format!("wpkh([73c5da0a/84'/0'/0']{zpub_as_xpub}/<0;1>/*)"),
+        ),
+        (
+            format!("wpkh({V1_XPRV}/<0;1>/*)"),
+            "xprv",
+            format!("wpkh([3442193e]{V1_XPUB}/<0;1>/*)"),
+        ),
+        (
+            format!("wsh(multi(1,[3442193e]{V1_XPUB}/<0;1>/*,{A0}/<0;1>/*))"),
+            "xpub, tpub",
+            format!(
+                "wsh(multi(1,[3442193e]{V1_XPUB}/<0;1>/*,[73c5da0a/84'/0'/0']{zpub_as_xpub}/<0;1>/*))"
+            ),
+        ),
+    ];
+    for (d, has, again) in cases {
+        assert_eq!(c2_run(&d), 0, "a decompose line printed for {d}");
+        let (_, _, se) = out_of(md().args(["encode", &d]));
+        assert!(
+            se.contains(&format!("this one has {has}.")) && se.contains("`md decompose`"),
+            "{se}"
+        );
+        assert_eq!(c2_run(&again), 2, "{again}");
     }
+}
+
+/// C2, a key with no `[fingerprint/path]` origin (xpub, and tpub beside an originated one): decompose's
+/// `--emit commands` refuses it, so only the `--emit template` line is printed and it runs; the text says
+/// why, and with the origin stated both lines are printed and run.
+#[test]
+fn c2_origin_less_key_printed_line_runs() {
+    let bare_tpub = A0.split_once(']').unwrap().1;
+    for d in [
+        format!("wpkh({V1_XPUB}/<0;1>/*)"),
+        format!("wsh(sortedmulti(2,{bare_tpub}/<0;1>/*,{B0}/<0;1>/*))"),
+    ] {
+        assert_eq!(c2_run(&d), 1, "{d}");
+        let (_, _, se) = out_of(md().args(["encode", &d]));
+        assert!(se.contains("[fingerprint/path] before the key"), "{se}");
+    }
+    assert_eq!(c2_run(&format!("wpkh([3442193e]{V1_XPUB}/<0;1>/*)")), 2);
 }
 
 #[cfg(feature = "cli-compiler")]
@@ -391,4 +453,67 @@ fn c2_slip132_testnet_prefix_gets_network() {
 fn c6_compile_or_under_thresh_answers() {
     let p = format!("thresh(2,{},{},{})", pk(29), pk(30), andor(14));
     c6_verdict(&["compile", &p, "--context", "segwitv0"]);
+}
+
+#[cfg(feature = "cli-compiler")]
+/// C6 control: side-by-side `or` chains are not bounded, only nesting (three 8-deep key chains under one
+/// `thresh` compile, in both contexts).
+#[test]
+fn c6_control_width_not_bounded() {
+    let p = format!(
+        "thresh(2,{},{},{})",
+        chain((0..9).map(pk).collect()),
+        chain((9..18).map(pk).collect()),
+        chain((18..27).map(pk).collect())
+    );
+    for ctx in ["segwitv0", "tap"] {
+        let (rc, se) = compile(&["compile", &p, "--context", ctx]);
+        assert_eq!(rc, 0, "{ctx}: {se}");
+    }
+}
+/// C5 at the single-string edge: the card fits one md1 string now and needs chunks with fingerprints; the
+/// stated counts are what `md encode` prints.
+#[test]
+fn c5_single_string_card_cost_is_exact() {
+    let t = c5_template(1);
+    let base = ["encode", t.as_str(), "--path", "bip86", "--group-size", "0"];
+    let (rc, so, se) = out_of(md().args(base));
+    assert_eq!(rc, 0);
+    let i = se
+        .find("chunk count becomes ")
+        .expect("warning states the exact cost");
+    let w: Vec<&str> = se[i + 20..].split_whitespace().collect();
+    let (then, now): (usize, usize) = (
+        w[0].parse().unwrap(),
+        w[2].trim_end_matches("),").parse().unwrap(),
+    );
+    assert_eq!(now, chunks(&so), "{se}");
+    let mut argv: Vec<String> = base.iter().map(|s| s.to_string()).collect();
+    for n in 0..4 {
+        argv.push("--fingerprint".into());
+        argv.push(format!("@{n}=0000a{n:03x}"));
+    }
+    let (rc2, so2, se2) = out_of(md().args(&argv));
+    assert_eq!(rc2, 0, "{se2}");
+    assert_eq!(then, chunks(&so2), "{se}");
+}
+#[cfg(feature = "cli-compiler")]
+/// C6 on tap: a root `thresh(1,...)` is split into leaves as compile_tr splits it, a root `thresh(2,...)` is not.
+#[test]
+fn c6_tap_root_thresh_split_matches_compile_tr() {
+    let one = format!("thresh(1,{},{})", pk(20), chain((0..10).map(pk).collect()));
+    let (rc, se) = compile(&["compile", &one, "--context", "tap"]);
+    assert_eq!(rc, 0, "{se}");
+    let two = format!(
+        "thresh(2,{},{},{})",
+        pk(20),
+        pk(21),
+        chain((0..10).map(pk).collect())
+    );
+    let (rc, se) = compile(&["compile", &two, "--context", "tap"]);
+    assert_eq!(rc, 1, "{se}");
+    assert!(
+        se.contains("a taproot leaf of the policy nests 9 `or`s"),
+        "{se}"
+    );
 }
