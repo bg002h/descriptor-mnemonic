@@ -3264,3 +3264,40 @@ mod entry_tests {
         assert!(d.use_site_path.multipath.is_none());
     }
 }
+
+/// Baseline GAP-B kill: `resolve_placeholders`' consistency check must refuse
+/// a repeated `@i` that differs from its first occurrence in ANY ONE of
+/// origin path, multipath alternatives or wildcard hardening (a `||` weakened
+/// to `&&` only refuses when all three differ).
+#[cfg(test)]
+mod gapb_resolve_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn occ(alts: &[u32], wildcard_hardened: bool, origin: Option<&str>) -> PlaceholderOccurrence {
+        PlaceholderOccurrence {
+            i: 0,
+            origin_path: origin.map(|p| DerivationPath::from_str(p).unwrap()),
+            multipath_alts: alts.to_vec(),
+            wildcard_hardened,
+        }
+    }
+
+    #[test]
+    fn resolve_placeholders_refuses_a_repeat_differing_in_one_respect() {
+        let base = occ(&[0, 1], false, Some("m/48'/0'/0'/2'"));
+        // control: an identical repeat resolves
+        assert!(resolve_placeholders(&[base.clone(), base.clone()]).is_ok());
+        for (what, other) in [
+            ("multipath", occ(&[0, 2], false, Some("m/48'/0'/0'/2'"))),
+            ("hardening", occ(&[0, 1], true, Some("m/48'/0'/0'/2'"))),
+            ("origin", occ(&[0, 1], false, Some("m/48'/0'/1'/2'"))),
+        ] {
+            let err = resolve_placeholders(&[base.clone(), other]).unwrap_err();
+            assert!(
+                format!("{err:?}").contains("inconsistent path/multipath/hardening"),
+                "{what}: {err:?}"
+            );
+        }
+    }
+}
