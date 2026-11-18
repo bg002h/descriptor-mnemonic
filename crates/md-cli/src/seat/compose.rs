@@ -373,6 +373,42 @@ mod tests {
         assert_eq!(comparison_form(&a).unwrap(), comparison_form(&b).unwrap());
     }
 
+    /// Baseline GAP-B kill (compose.rs:148:9, delete the `Body::Tr { tree:
+    /// Some(t), .. }` arm of `sort_sorted_group_instances`): a
+    /// `sortedmulti_a` INSIDE a tap tree is one sorted group too, so two
+    /// seatings that differ only by swapping two interchangeable cards must
+    /// reach the same comparison form there as they do for `sortedmulti`.
+    #[test]
+    fn comparison_form_absorbs_a_swap_inside_a_sortedmulti_a_in_a_tap_tree() {
+        use md_codec::tag::Tag;
+        use md_codec::tree::{Body, InternalKey, Node};
+        let policy = policy(V_BOUND_SEAT);
+        assert_eq!(policy.n, 2, "this row's premise: two interchangeable slots");
+        let cards = cards(V_BOUND_SEAT);
+        let mut a = compose(&policy, &cards, &[0, 1]).unwrap();
+        let mut b = compose(&policy, &cards, &[1, 0]).unwrap();
+        assert_ne!(
+            a.tlv.pubkeys, b.tlv.pubkeys,
+            "the two seatings place different keys"
+        );
+        let tr = Node {
+            tag: Tag::Tr,
+            body: Body::Tr {
+                internal_key: InternalKey::NumsPoint,
+                tree: Some(Box::new(Node {
+                    tag: Tag::SortedMultiA,
+                    body: Body::MultiKeys {
+                        k: 2,
+                        indices: vec![0, 1],
+                    },
+                })),
+            },
+        };
+        a.tree = tr.clone();
+        b.tree = tr;
+        assert_eq!(comparison_form(&a).unwrap(), comparison_form(&b).unwrap());
+    }
+
     #[test]
     fn comparison_form_separates_a_swap_across_different_use_site_paths() {
         // r5's counterexample: the same `sortedmulti`, but the two slots

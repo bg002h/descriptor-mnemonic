@@ -783,4 +783,27 @@ mod tests {
             other => panic!("unexpected: {other:?}"),
         }
     }
+    /// Baseline GAP-B kill (partition.rs:296:53 `&&`->`||` in `verify_class`):
+    /// a valid two-card class (k = 2, shared chunk 0) plus one stray chunk-0
+    /// piece of another card (same declared total, so same class) must NOT
+    /// seat: the stray piece completes no card, and silently dropping a
+    /// supplied piece is a no-partition.
+    #[test]
+    fn a_stray_piece_that_completes_no_card_refuses_the_class() {
+        let shared = include_str!("../../tests/fixtures/seating/v-ap-shared.txt");
+        let incomplete = include_str!("../../tests/fixtures/seating/v-ap-incomplete.txt");
+        // control: the shared set alone seats two cards
+        match partition(&mk1_lines(shared)) {
+            Outcome::Seated(cards) => assert_eq!(cards.len(), 2),
+            other => panic!("control: expected Seated(2), got {other:?}"),
+        }
+        // v-ap-incomplete's 3-chunk card, chunk_index 0
+        let stray = mk1_lines(incomplete)[2];
+        let mut strings = mk1_lines(shared);
+        strings.push(stray);
+        match partition(&strings) {
+            Outcome::NoPartition => {}
+            other => panic!("expected NoPartition, got {other:?}"),
+        }
+    }
 }
