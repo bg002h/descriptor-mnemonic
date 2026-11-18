@@ -3470,3 +3470,19 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** every origin-less case has the bare key first or alone, so a regression that checks only the first key's origin passes all 21 rows yet prints a failing `--emit commands` line for `sortedmulti(2,<originated>,<bare>)`. The code (`any` over `find_iter`) is right; the row is thin. Fix: add the case `format!("wsh(sortedmulti(2,{B0}/<0;1>/*,{bare_tpub}/<0;1>/*))")` after the existing sortedmulti entry (reviewer's diff, run both ways: `/scratch/cache/review-md-remedies-fold/fix/row-origin-not-first.diff`).
 - **Status:** `deferred-minor`, Minor.
 - **Tier:** `v1+`
+
+### `gapb-review-m1` — `decode_regular_errors_corrects_a_three_error_word` does not check the correction (repo: **descriptor-mnemonic**; owning phase: md Minors after GAP-B)
+
+- **Surfaced:** 2026-11-17, `design/agent-reports/review-harden-baseline-gapb.md` M1.
+- **Where:** `crates/md-codec/tests/baseline_gapb.rs`, `decode_regular_errors_corrects_a_three_error_word`.
+- **What:** asserts only `pos.len()==3` and `mag.len()==3`. It kills the :268 mutants, but does not check the correction is right. Fix text: after the asserts, apply the magnitudes at `pos` to a codeword-residue check, or at minimum assert `pos` are distinct and each `< 66`... (the kills do not depend on it).
+- **Status:** `deferred-minor`, Minor.
+- **Tier:** `v1+`
+
+### `gapb-review-m2` — `inspect_prints_the_three_ids_in_full` takes expected ids from md-codec, not pinned constants (repo: **descriptor-mnemonic**; owning phase: md Minors after GAP-B)
+
+- **Surfaced:** 2026-11-17, `design/agent-reports/review-harden-baseline-gapb.md` M2.
+- **Where:** md-cli `inspect_prints_the_three_ids_in_full`.
+- **What:** takes expected ids from md-codec's compute_* fns, not pinned hex constants; a regression in the md-codec id derivation would be invisible here (covered by md-codec's own vectors).
+- **Status:** `deferred-minor`, Minor.
+- **Tier:** `v1+`
