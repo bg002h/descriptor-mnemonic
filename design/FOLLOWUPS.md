@@ -3486,3 +3486,5 @@ exceeds a resource limit) or record that this one is intentionally latent.
 - **What:** takes expected ids from md-codec's compute_* fns, not pinned hex constants; a regression in the md-codec id derivation would be invisible here (covered by md-codec's own vectors).
 - **Status:** `deferred-minor`, Minor.
 - **Tier:** `v1+`
+- [md-descriptor-keyed-card-network-silent] status=open grade=M kind=funds owner=none filed=2026-11-20 src=coordinator/agent-reports/review-fix-md-address-names-network.md#m4 repo=descriptor-mnemonic :: md descriptor on a keyed md1 card renders xpub/tpub from --network (default mainnet) with no note naming the network; a signet card prints a mainnet xpub descriptor at exit 0.
+- [md-address-network-note-template-path-wording] status=open grade=M kind=ux owner=none filed=2026-11-20 src=coordinator/agent-reports/review-fix-md-address-names-network.md#m1 repo=descriptor-mnemonic :: md address network note says "an md1 card does not record its network" on the --template/--key path, where no card is read and --key is version-checked; wording point for the owner.
