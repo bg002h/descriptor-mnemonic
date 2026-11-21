@@ -105,8 +105,13 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
         return Ok(0);
     }
     let _ = args.json;
-    let _ = args.network_str;
 
+    // md1 records no network (Brian 2026-11-20): name the one these
+    // addresses were rendered for, on stderr so stdout stays the bare list.
+    eprintln!(
+        "note: network {} (--network, default mainnet): an md1 card does not record its network",
+        args.network_str
+    );
     for (_, _, addr) in &rows {
         println!("{addr}");
     }

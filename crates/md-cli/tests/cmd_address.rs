@@ -541,3 +541,69 @@ fn address_override_hardened_wildcard_card_refuses_loudly() {
         .code(1)
         .stderr(predicates::str::contains("hardened public-key derivation"));
 }
+
+/// The network note (Brian 2026-11-20): an md1 card records no network, so
+/// text mode names the network the addresses were rendered for, on stderr,
+/// before the watch-only note; stdout stays the bare address list.
+fn network_note(net: &str) -> String {
+    format!(
+        "note: network {net} (--network, default mainnet): an md1 card does not record its network"
+    )
+}
+
+const WATCH_ONLY_NOTE: &str = "note: stdout is watch-only \u{2014} public keys only, cannot spend";
+
+fn address_on_card(extra: &[&str]) -> std::process::Output {
+    let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
+    let key_arg = format!("@0={xpub}");
+    let mut args: Vec<String> = vec!["address".to_string()];
+    args.extend(encode_template_with_key("wpkh(@0/<0;1>/*)", &key_arg));
+    args.extend(extra.iter().map(|s| s.to_string()));
+    Command::cargo_bin("md")
+        .unwrap()
+        .args(&args)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn address_text_names_default_network() {
+    let out = address_on_card(&[]);
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu\n"
+    );
+    assert_eq!(
+        String::from_utf8(out.stderr).unwrap(),
+        format!("{}\n{WATCH_ONLY_NOTE}\n", network_note("mainnet"))
+    );
+}
+
+#[test]
+fn address_text_names_signet_network() {
+    let out = address_on_card(&["--network", "signet"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.starts_with("tb1q") && stdout.lines().count() == 1,
+        "{stdout}"
+    );
+    assert_eq!(
+        String::from_utf8(out.stderr).unwrap(),
+        format!("{}\n{WATCH_ONLY_NOTE}\n", network_note("signet"))
+    );
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn address_json_prints_no_network_note() {
+    let out = address_on_card(&["--network", "signet", "--json"]);
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["network"], "signet");
+    assert_eq!(
+        String::from_utf8(out.stderr).unwrap(),
+        format!("{WATCH_ONLY_NOTE}\n")
+    );
+}
