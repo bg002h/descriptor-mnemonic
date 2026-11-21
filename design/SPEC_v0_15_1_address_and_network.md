@@ -61,14 +61,20 @@ md address --template <T>                                  # mode (b)
 | `--count K` | `1` | Number of consecutive addresses to derive. clap `value_parser = clap::value_parser!(u32).range(1..=1000)`. |
 | `--json` | false | Emit JSON output (schema `md-cli/1`). |
 
-### Default text output (one per line)
+### Default text output (stdout one per line; `note:` lines are stderr)
 
 ```
 $ md address $PHRASE --change --index 0 --count 3
+note: network mainnet (--network, default mainnet): an md1 card does not record its network
 bc1q...                                  # change/0
 bc1q...                                  # change/1
 bc1q...                                  # change/2
+note: stdout is watch-only — public keys only, cannot spend
 ```
+
+stdout is the address list alone. An md1 card carries no network, so text mode first prints on
+stderr the network `--network` gave, or the default (owner ruling 2026-11-20); `--json` prints no such note, its
+`network` field names it.
 
 ### JSON output
 

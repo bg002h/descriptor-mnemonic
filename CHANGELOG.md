@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+### Changed
+- **`md address` names the network in text mode.** An md1 card does not record its network, so text
+  mode prints `note: network <NET> (--network, default mainnet): an md1 card does not record its network` on stderr
+  before the addresses; stdout, `--json` and the exit code are unchanged.
+
 ## md-cli [0.20.7] — 2026-11-14
 
 ### Fixed
