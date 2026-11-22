@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+## md-cli [0.21.1] — 2026-11-22
+
 ### Fixed
 
 - **`md encode` refuses a template it cannot decode back.** A tree nested deeper than the decoder's limit, such
@@ -29,6 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`md encode`, given a concrete descriptor with a key that has no origin path, no longer prints the `--emit commands` line that refuses.** A key with a fingerprint-only origin (such as a master key, `[fingerprint]xpub...`) now gets the `--emit template` line alone, like a key with no origin. In that case the explanation reads: `Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one.` It replaces the sentence ending "the wallet that produced it knows the path." More generally, `md encode` now runs that decomposition itself and prints a `md decompose` line only when it runs: when `md decompose` refuses the descriptor, or prints no template for it (a fixed use-site such as `/0/*`), no line is printed and the referral quotes decompose's refusal; when only `--emit commands` refuses, the template line is printed with decompose's reason.
 
 ## md-codec [Unreleased]
+
+## md-codec [0.48.7] — 2026-11-22
 
 ### Fixed
 
