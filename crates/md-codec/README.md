@@ -50,29 +50,22 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-md-codec = "0.32"
+md-codec = "0.48"
 ```
 
-Encode a wallet policy and decode it back:
+Decode an engraved md1 card and encode it back:
 
 ```rust
-use std::str::FromStr;
-use md_codec::{decode, encode, DecodeOptions, EncodeOptions, WalletPolicy};
+use md_codec::{decode_md1_string, descriptor_to_template, encode_md1_string};
 
-let policy = WalletPolicy::from_str("wsh(pk(@0/**))")?;
-let backup = encode(&policy, &EncodeOptions::default())?;
+// A single-string card: `wpkh(@0/<0;1>/*)` with origin m/84'/0'/0'.
+let card = "md1yq802gggqpsqwgtua24e7ssf3";
+let descriptor = decode_md1_string(card)?;
+println!("template: {}", descriptor_to_template(&descriptor)?);
 
-// `backup.chunks` holds 1+ codex32-derived strings ready to engrave.
-println!("Policy ID: {}", backup.policy_id_words);
-for (i, chunk) in backup.chunks.iter().enumerate() {
-    println!("chunk {i}: {}", chunk.raw);
-}
-
-// Decode round-trip:
-let inputs: Vec<&str> = backup.chunks.iter().map(|c| c.raw.as_str()).collect();
-let result = decode(&inputs, &DecodeOptions::new())?;
-assert_eq!(result.policy.to_canonical_string(), policy.to_canonical_string());
-# Ok::<(), md_codec::Error>(())
+// Encoding is canonical: the decoded descriptor re-encodes to the same card.
+assert_eq!(encode_md1_string(&descriptor)?, card);
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 For the full module-level overview (pipeline diagram, type-state graph,
@@ -88,13 +81,16 @@ errors per chunk) before the standard decode pipeline. Use it when a
 backup card may have a small number of damaged characters:
 
 ```rust
-use md_codec::{decode_with_correction, CorrectionDetail};
+use md_codec::decode_with_correction;
 
-let inputs = vec!["md1q...", "md1q..."]; // possibly-corrupted chunks
+// The card above with one character damaged (`gggq` engraved as `ggqq`).
+let inputs = ["md1yq802ggqqpsqwgtua24e7ssf3"];
 let (descriptor, corrections) = decode_with_correction(&inputs)?;
 for c in &corrections {
     println!("chunk {} pos {}: {:?} -> {:?}", c.chunk_index, c.position, c.was, c.now);
 }
+assert_eq!(corrections.len(), 1);
+assert_eq!(md_codec::encode_md1_string(&descriptor)?, "md1yq802gggqpsqwgtua24e7ssf3");
 # Ok::<(), md_codec::Error>(())
 ```
 
@@ -111,12 +107,8 @@ the `t=4` correction capacity, the call returns
 `Error::TooManyErrors { chunk_index, bound: 8 }` and no partial
 result is emitted (the failing chunk's index is named for diagnostics).
 
-**v0.34.0 limitation — chunked-form only:** `decode_with_correction`
-integrates via `chunk::split` + `chunk::reassemble`, which require
-chunked-form md1 input. Non-chunked single-string md1 (the form
-emitted by plain `encode` for small payloads) is rejected; use the
-standard `decode` for read-only inspection. Tracked at
-`design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`.
+A single non-chunked md1 string (the form plain `encode` emits for small payloads) is corrected the same way
+(md-codec v0.35.0+).
 
 ## Cargo features
 
