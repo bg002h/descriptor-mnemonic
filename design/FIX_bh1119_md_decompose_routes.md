@@ -123,7 +123,7 @@ routes on the Liana `preset-kofn-recovery-tr` case and the `v-d-rt` pathological
    keyless policy skips mk's membership loop ("Only KEYED policies are checked"), and mk's depth-0 check needs a depth-0 key with
    a path, which (a) excludes.
 3. For each record, `mk_codec::KeyCard::new(vec![shape_stub], Some(fp), path, xpub)` where `shape_stub` is the first four bytes of `md_codec::compute_wallet_descriptor_template_id(<the md half's decoded descriptor>)` (the stub `mk encode --from-md1-set` stamps for a keyless card, `seat/disposition.rs:74`; one stub for the whole md half, however many strings it has); `mk_codec::encode`, then `mk_codec::decode` of the strings it returned. Refusal: `mk encode refuses it: <mk_codec::Error Display>`.
-4. Run `cmd::build::build_descriptor` (the function `md descriptor <policy.md1> --from-mk1 …` calls) with the md half as the policy input and the STRINGS from step 3 as `from_mk1`, render for the decompose network, compare under N. Any refusal of `build_descriptor` withholds route 2 with `md descriptor refuses it: <CliError Display>`; a difference reads `the wallet it mints is not this descriptor`.
+4. Seat the cards the way `md descriptor <policy.md1> --from-mk1 …` does: call `crate::seat::run(&crate::seat::SeatingRequest { phrases: <the md half's strings>, from_mk1: <the STRINGS from step 3>, seats: &[], network: <the decompose network>, cmd: "descriptor" })` (`cmd/descriptor.rs:133`; `cmd::build::build_descriptor` is the `--template`/phrase path, has no `from_mk1` and does not seat). Render `seating.descriptor` with `md_codec::to_miniscript_descriptor_multipath_with_network(&d, network)` (`cmd/descriptor.rs:210`) and compare with the input descriptor under N. An `Err` from `seat::run` or from the render withholds route 2 with `md descriptor refuses it: <CliError Display>`; a difference reads `the wallet it mints is not this descriptor`. The seating notes are discarded.
 The mirror sits next to `check_depth_consistency` (which already mirrors mk's depth rule) with a comment citing mk-cli
 `keyfile.rs` `parse_key_record` and `cmd/encode.rs` provable-fingerprint loop @434d789. Drift in either direction fails
 closed (mk adds a refusal: mk exits 64, no card; mk drops one: md withholds a good route); the drift is tracked by the two
@@ -152,7 +152,7 @@ checks neither the fingerprint nor a missing path (`key_card.rs:53-55` admits a 
   - route 2's refusal reasons: the 2.3 texts, `md encode refuses it: <CliError Display>` (md half), `mk encode refuses it: keys.txt:<n>: origin ...` (2.3 a),
     `mk encode refuses it: origin fingerprint <fp> does not match the xpub: ...` (2.3 b), `mk encode refuses it: <mk_codec::Error Display>` (2.3 step 3),
     or `the wallet it mints is not this descriptor` (2.3 step 4);
-  - `md descriptor refuses it: <CliError Display>` (2.3 step 4: `build_descriptor` refuses).
+  - `md descriptor refuses it: <CliError Display>` (2.3 step 4: `seat::run` or the render refuses).
   Because a withheld line now prints only after the 2.0 template check passed, its pointer `see `md decompose --emit template``
   is true (T8's pointer kept); the all-withheld refusal keeps its list for the same reason.
 
