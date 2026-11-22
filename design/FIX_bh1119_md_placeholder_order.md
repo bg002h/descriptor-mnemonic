@@ -36,15 +36,18 @@ order (`@1` before `@0`); that is legal input.
   and run on the base: `2 tests run: 0 passed, 2 failed` (":40 descriptor mutated despite returned error",
   ":52 retry after repair diverges from one-shot control"), then removed.
 
-Author's RED runner (scratch; the builder commits it as the gate):
-`bash /scratch/cache/md-bh-criticals-red/red.sh target/debug/md` on the base: e1-e7 and e11 FAIL, e8-e10
-PASS (log `/scratch/cache/md-bh-criticals-red/base-5df4cb92.log`).
+RED runner (committed): `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh target/debug/md` on the
+base: e1-e7 and e11 FAIL, e8-e10, e16, e17 PASS; exit 1, `rows failed: 8` (measured by the fold on b4074415).
 
 ## 2. Rules (normative)
 
 **R1 (C2). Canonicalisation recomputes the use-site baseline.** In `canonicalize_placeholder_indices`, on the
 non-identity path only (the identity fast path at `canonicalize.rs:213-215` is unchanged and returns `d`
 untouched):
+0. After the identity fast path and before any mutation: if `d.tlv.use_site_path_overrides` holds two entries
+   with the same index `i`, return `Err(Error::OverrideOrderViolation { prev: i, current: i })` (the encoder's
+   existing error for this input on the identity path, `tlv.rs:123`), leaving `d` unchanged. With duplicates
+   excluded, step 1's lookup is unique.
 1. Before any mutation, resolve each OLD slot's use-site: `old[i]` = the override entry for `i` if present,
    else `d.use_site_path`, for every `i` in `0..n`.
 2. Map to new slots: `new[perm[i]] = old[i]`.
@@ -68,15 +71,17 @@ policy-id stub derived from a decodable md1, changes.
 
 **R3 (I12). `canonicalize_placeholder_indices` is atomic:** on every `Err` it leaves `d` exactly as it was.
 The `DivergentPathCountMismatch` length check (`canonicalize.rs:229-234`) moves to after the identity fast
-path and before `remap_indices` (`:218`); every other `Err` already returns before any mutation. The identity
+path and before `remap_indices` (`:218`); every other `Err` (including R1 step 0's) already returns before any mutation. The identity
 fast path still returns `Ok(())` for a short Divergent vector (pinned by
 `canonicalize_identity_short_divergent_not_reached`, `:778`, unchanged). The in-branch guard then cannot
 fire and is removed. R1 adds no fallible step after the first mutation.
 
-**R4 (I2). Spend-equality compares canonical numberings.** `spend_equal_verdict(a, b)` first clones both
-sides and runs `md_codec::canonicalize_placeholder_indices` on each clone (a codec error maps through the
-existing `From<md_codec::Error> for CliError`), then runs today's three checks, in today's order (values,
-use-sites, structure), on the canonical clones. `spend_equal` follows. On canonical inputs (every decoded
+**R4 (I2). Spend-equality compares canonical numberings.** `spend_equal_verdict(a, b)` first runs today's
+three checks, in today's order (values, use-sites, structure), on `a` and `b` as given; if that verdict is
+`Equal`, it returns `Equal`. Otherwise it clones both sides, runs `md_codec::canonicalize_placeholder_indices`
+on each clone (a codec error maps through the existing `From<md_codec::Error> for CliError`), and returns
+today's three checks on the canonical clones. An `Equal` on the inputs as given is kept because it already
+required equal stripped `comparison_form` bytes, which mean the same scripts. `spend_equal` follows. On canonical inputs (every decoded
 card, every first-occurrence template, every seating composition) the result is unchanged. A side that fails
 canonicalisation was unreachable through the CLI before (a template that parses always canonicalises) and
 stays so; no text or exit code is added.
@@ -99,7 +104,7 @@ Signet keys (BIP-39 test vector "abandon x11 about", fingerprint `73c5da0a`, `mn
 signet`): KA = m/48'/1'/0'/2' `tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ`,
 KB = m/48'/1'/1'/2' `tpubDEYM1BmQ5rp2PWKvCgvQxNeUrEv8gu5819xRdmu6S23fYpS8x2icwAeoVaBTLyN3fGWJQcWoaiKMduTXWKtG9bXNpVrZPRF7XVxrANtAEcR`.
 CLI rows go in a new `crates/md-cli/tests/bh1119_md_placeholder_order.rs`; library rows in
-`crates/md-codec/tests/bh1119_md_placeholder_order.rs` (e12, e14, e15) and the `seat/compose.rs` test module
+`crates/md-codec/tests/bh1119_md_placeholder_order.rs` (e12, e14, e15, e18) and the `seat/compose.rs` test module
 (e13; md-cli has no lib target, so its unit rows live in the module, building `a` with `crate::parse::template::parse_template` and keys from `crate::parse::keys::parse_key`). Each test function is named exactly as its row.
 
 | row | command / call | base (seen unless marked) | fixed (expected) |
@@ -119,6 +124,9 @@ CLI rows go in a new `crates/md-cli/tests/bh1119_md_placeholder_order.rs`; libra
 | e13_i2_verdict_either_order | md-cli unit: `a` = e6's template parsed with `--key @0=KA`, `--key @1=KB`, signet (not canonicalised); `b` = a clone of `a` passed through `canonicalize_placeholder_indices`; `spend_equal_verdict(a, b)` and `spend_equal_verdict(b, a)` | not run (`Values` expected on the base by the code at `compose.rs:244-252`) | both `SpendEqualVerdict::Equal` |
 | e14_i12_error_leaves_descriptor_unchanged | library: the triage t4 test `error_leaves_descriptor_unchanged` (n = 2, `MultiKeys [1, 0]`, `Divergent(vec![])`) | FAIL at `assert_eq!(d, pre)` (seen) | `Err(DivergentPathCountMismatch { n: 2, got: 0 })` and `d == pre` |
 | e15_i12_repair_and_retry_matches_one_shot | library: triage t4 `repair_and_retry_matches_one_shot` (Divergent `[84', 48']` after a failed call) | FAIL, retry gives paths `[84', 48']` with tree `[0, 1]` against the control's `[48', 84']` (seen) | retry equals the one-shot control |
+| e16_i2_sortedmulti_respelled_same_wallet | `md encode 'wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*))' --key @0=KA --key @1=KB --network signet --out own.md1`; `md descriptor --template 'wsh(sortedmulti(2,@1/<0;1>/*,@0/<0;1>/*))' --key @0=KA --key @1=KB --network signet --verify-against own.md1` | rc 0, SPEND-EQUAL (seen) | unchanged (rc 0) |
+| e17_i2_noncanonical_replaced_key | `md encode 'wsh(multi(2,@1/<0;1>/*,@0/<0;1>/*))' --key @0=KA --key @1=KB --network signet --out own.md1`; `md descriptor --template <same> --key @0=KA --key @1=KC --network signet --verify-against own.md1` (KC = m/48'/1'/2'/2' `tpubDEPGZXGPF2v3uNGTWHteRSQnZdEFfMvh6Dcp3DykkBE48hTA6pe3Es6nWH5dAThPyvqmZGmZqQhTw5kxqgR5uJW6Ei2VWyAAN92yLcYBvzV`) | rc 5, VALUES (seen) | unchanged (rc 5) |
+| e18_c2_duplicate_override_refused | md-codec library: n = 2, tree `Wsh(Multi [1, 0])`, baseline `<0;1>`, `use_site_path_overrides = Some(vec![(1, <2;3>), (1, <4;5>)])`; `canonicalize_placeholder_indices(&mut d)` and `encode_payload(&pre)` | debug: panic at `canonicalize.rs:270` post-condition (seen) | `Err(OverrideOrderViolation { prev: 1, current: 1 })`, `d == pre`; `encode_payload` is `Err` |
 
 Plausible wrong implementations and the row that catches each:
 - Recompute the baseline but keep overrides equal to it (redundant): e3 (`@1` equals the new baseline; the
@@ -129,13 +137,16 @@ Plausible wrong implementations and the row that catches each:
 - Keep `remap_tlv_vec` and only rewrite an entry keyed on 0: e4 (the old baseline `<2;3>` must become an
   override at new `@1`).
 - Canonicalise only the first argument of `spend_equal_verdict`: e13 (`(b, a)` order).
+- Canonicalise both sides unconditionally (R4 without the as-given pass): e16 (rc 5).
+- Resolve duplicate overrides by taking the first (or last) entry instead of refusing: e18 (the card would be
+  minted, bound to a guessed use-site).
 - Move the I12 guard before the identity fast path: `canonicalize_identity_short_divergent_not_reached`
   (existing) fails.
 - Clone-and-restore only on the Divergent error: e14 still passes, but R3 holds for every `Err`; the other
   errors already precede mutation, so no further row is needed (checked by reading `:157-210`).
 
-Coverage map (rule -> rows): R1 -> e1, e2, e3, e4, e5, e9, e10; R2 -> e10, e12, and the unchanged goldens
-(section 4); R3 -> e14, e15, `canonicalize_identity_short_divergent_not_reached`; R4 -> e6, e7, e8, e11, e13;
+Coverage map (rule -> rows): R1 -> e1, e2, e3, e4, e5, e9, e10, e18; R2 -> e10, e12, and the unchanged goldens
+(section 4); R3 -> e14, e15, e18, `canonicalize_identity_short_divergent_not_reached`; R4 -> e6, e7, e8, e11, e13, e16, e17;
 R5 -> e1-e8, e11 (texts are existing ones); R6 -> section 5 and 6 (no row; review checks the diff).
 
 ## 4. Tests that change
@@ -149,7 +160,7 @@ R5 -> e1-e8, e11 (texts are existing ones); R6 -> section 5 and 6 (no row; revie
 - Goldens: none expected to change (R2: only undecodable outputs change). If any wire golden, vector file
   (`crates/md-codec/tests/vectors/`), corpus or proptest regression changes, STOP and report it: that would be
   a decodable card changing.
-- New: e1-e15 (section 3).
+- New: e1-e18 (section 3).
 
 ## 5. CHANGELOG (exact texts)
 
@@ -194,9 +205,11 @@ not part of this FIX.
 
 ## 8. Gate line
 
-`bash scripts/fix-bh1119-md-criticals-gate.sh` (builder commits it with its coordinator catalog row; the
-same script as row #4's): the author's red.sh rows e1-e11 against the built `md` (all PASS), the named
-library rows e12-e15 and the two changed unit tests by filter (each filter's match count checked: 1), then
+`bash scripts/fix-bh1119-md-placeholder-order-gate.sh` (builder commits it with its coordinator catalog row;
+row #4 has its own gate). It runs `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh <built md>`
+(committed with this FIX: the E block of the author's red.sh, i.e. its header, the `erow`, e2, e5 and `vrow`
+rows, plus e16 and e17; exit 0 only when no E row fails; base exit 1, `rows failed: 8`), then the named
+library and unit rows e12, e13, e14, e15, e18 and the two changed unit tests by filter (each filter's match count checked: 1), then
 the repo CI set (`cargo nextest run --locked --workspace --all-targets --all-features --no-fail-fast
 --build-jobs 6 -j 6`, doc tests, clippy `-D warnings`, `cargo fmt --all --check`, `cargo build --locked
 -p md-cli --no-default-features`, `RUSTDOCFLAGS=-D warnings cargo doc ...`, `bash ci/code-docs-check.sh`),
