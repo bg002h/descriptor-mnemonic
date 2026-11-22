@@ -363,19 +363,13 @@ fn t_row_one_key_at_two_disjoint_use_sites_refuses_as_the_r_n1d_delta() {
     assert!(!line.to_lowercase().contains("invalid"), "{line}");
 }
 
-/// THE SAME SLOT SUPPLIED TWICE IS NOT SHAPE (1) and keeps today's behaviour,
-/// which is FIRST-WINS — measured 2026-08-30 at 9d0c30dc: `--key @0=X --key
-/// @0=Y --key @1=Y` composed byte-identically to `--key @0=X --key @1=Y`
-/// (`#jywr5cj9`). One placeholder cannot be two cosigners, so there is no
-/// reuse to refuse; pinned here so the C1 check cannot silently absorb it.
+/// THE SAME SLOT SUPPLIED TWICE IS NOT SHAPE (1) and is refused by the slot-binding check, not by the
+/// key-reuse check: one placeholder cannot be two cosigners. `--key @0=K0 --key @0=K1 --key @1=K1`
+/// exits 1 with the "arguments 1 and 2" line (FIX bh1119 md-slot-bindings, bh-md-C3); it used to be
+/// first-wins (measured 2026-08-30 at 9d0c30dc). Stderr must not mention BIP 388.
 #[test]
-fn t_row_the_same_slot_supplied_twice_keeps_first_wins() {
+fn t_row_the_same_slot_supplied_twice_is_refused() {
     let two_slot = "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*))";
-    let once = compose(
-        "descriptor",
-        two_slot,
-        &[&format!("@0={K0}"), &format!("@1={K1}")],
-    );
     let twice = compose(
         "descriptor",
         two_slot,
@@ -385,16 +379,14 @@ fn t_row_the_same_slot_supplied_twice_keeps_first_wins() {
             &format!("@1={K1}"),
         ],
     );
-    assert!(
-        once.status.success() && twice.status.success(),
-        "supplying @0 twice must not refuse: {}",
-        String::from_utf8_lossy(&twice.stderr)
-    );
+    assert_eq!(twice.status.code(), Some(1));
+    assert!(twice.stdout.is_empty());
+    let err = String::from_utf8_lossy(&twice.stderr);
     assert_eq!(
-        String::from_utf8_lossy(&once.stdout),
-        String::from_utf8_lossy(&twice.stdout),
-        "a repeated --key for ONE slot must still be first-wins"
+        err,
+        "md: MISMATCH: @0: --key arguments 1 and 2 both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @0=... you mean and remove the other.\n"
     );
+    assert!(!err.contains("BIP 388"), "{err}");
 }
 
 // ─── ORDERING PIN (whole-diff review r1 I2) ─────────────────────────────────

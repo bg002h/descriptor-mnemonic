@@ -73,6 +73,7 @@ pub(crate) fn descriptor_for_mint(
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
+    crate::parse::keys::refuse_repeated_bare_slot_bindings(&parsed_keys, &parsed_fps)?;
     // N1's REFUSE disposition: `encode` MINTS, so a shape the taxonomy names
     // must never reach a plate (SPEC_mdcli_mini.md N1 "Verb dispositions").
     let descriptor = parse_template_ext(
