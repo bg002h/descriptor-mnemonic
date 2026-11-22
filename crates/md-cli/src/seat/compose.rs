@@ -238,6 +238,25 @@ impl SpendEqualVerdict {
 /// plain [`spend_equal`] wrapper below stays the boolean entrance the P2
 /// tests already pin.
 pub fn spend_equal_verdict(a: &Descriptor, b: &Descriptor) -> Result<SpendEqualVerdict, CliError> {
+    // bughunt-1119 I2: a template side keeps the holder's slot numbering while a
+    // decoded card is canonical. An `Equal` as given is kept (it already required
+    // equal stripped comparison bytes); otherwise compare the canonical clones.
+    let as_given = spend_equal_verdict_as_given(a, b)?;
+    if as_given == SpendEqualVerdict::Equal {
+        return Ok(as_given);
+    }
+    let mut ca = a.clone();
+    let mut cb = b.clone();
+    md_codec::canonicalize_placeholder_indices(&mut ca)?;
+    md_codec::canonicalize_placeholder_indices(&mut cb)?;
+    spend_equal_verdict_as_given(&ca, &cb)
+}
+
+/// The three checks (values, use-sites, structure) on the descriptors as given.
+fn spend_equal_verdict_as_given(
+    a: &Descriptor,
+    b: &Descriptor,
+) -> Result<SpendEqualVerdict, CliError> {
     // Per-slot xpub values and use-site paths, read through the same
     // expansion the identity computation uses. Checked BEFORE the byte
     // form — see the enum's doc comment for why the order is load-bearing.

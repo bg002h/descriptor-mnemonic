@@ -79,9 +79,17 @@ fn e12_c2_identities_follow_the_canonical_spelling() {
         compute_wallet_policy_id(&n).unwrap(),
         compute_wallet_policy_id(&d).unwrap()
     );
-    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let hex = |b: &[u8]| -> String {
+        use std::fmt::Write;
+        b.iter().fold(String::new(), |mut acc, x| {
+            write!(acc, "{x:02x}").unwrap();
+            acc
+        })
+    };
     assert_eq!(
-        hex(compute_wallet_descriptor_template_id(&n).unwrap().as_bytes()),
+        hex(compute_wallet_descriptor_template_id(&n)
+            .unwrap()
+            .as_bytes()),
         "ee4e423a9b62fec656e822b2022eafb8"
     );
     assert_eq!(
@@ -137,7 +145,10 @@ fn e15_i12_repair_and_retry_matches_one_shot() {
     assert!(canonicalize_placeholder_indices(&mut d).is_err());
     d.path_decl.paths = PathDeclPaths::Divergent(paths);
     canonicalize_placeholder_indices(&mut d).unwrap();
-    assert_eq!(d, control, "retry after repair diverges from one-shot control");
+    assert_eq!(
+        d, control,
+        "retry after repair diverges from one-shot control"
+    );
 }
 
 #[test]

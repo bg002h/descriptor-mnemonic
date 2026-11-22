@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+### Fixed
+- **`md descriptor --verify-against` compares slot numberings in canonical order.** A template that numbers its slots out of first-occurrence order no longer reports its own fresh card as "NOT spend-equal — the VALUES half differs".
+
+## md-codec [Unreleased]
+
+### Fixed
+- **A template that numbers its slots out of first-occurrence order now mints a card that decodes.** `canonicalize_placeholder_indices` recomputes the use-site baseline from the new `@0` and keeps an override only where a later slot differs. Before, a template such as `wsh(multi(2,@1/<2;3>/*,@0/<0;1>/*))` minted a card the decoder refused ("use-site override keyed on baseline @0"); it now mints the same card as its first-occurrence spelling. The template id and encoding id of such a spelling now equal its first-occurrence spelling's; no card that decoded before changes.
+- **`canonicalize_placeholder_indices` leaves the descriptor unchanged when it returns an error.** The Divergent path-count check now runs before any index is rewritten.
+
 ## md-cli [0.20.8] — 2026-11-20
 
 ### Changed
