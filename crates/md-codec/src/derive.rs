@@ -81,8 +81,9 @@ impl Descriptor {
     /// - [`Error::MissingPubkey`] when any `@N` lacks an xpub.
     /// - [`Error::InvalidXpubBytes`] when an xpub's 33-byte pubkey field
     ///   doesn't parse as a valid secp256k1 point.
-    /// - [`Error::ChainIndexOutOfRange`] when `chain` is out of range for
-    ///   the use-site multipath.
+    /// - [`Error::ChainIndexOutOfRange`] when `chain` is out of
+    ///   range for the widest use-site multipath across all keys (shared check
+    ///   with [`crate::to_miniscript_descriptor`]).
     /// - [`Error::HardenedPublicDerivation`] when the use-site path
     ///   requires a hardened derivation step.
     /// - [`Error::MissingExplicitOrigin`] propagated from
@@ -105,31 +106,9 @@ impl Descriptor {
         if crate::to_miniscript::has_hardened_use_site(self) {
             return Err(Error::HardenedPublicDerivation);
         }
-        // Pre-flight: chain index in range. Bound by the MAX alt-count across
-        // the baseline use-site path AND every per-`@N` override (None →
-        // alt-count 1, i.e. only chain 0). The per-key path
-        // (use_site_to_derivation_path) is the real authority and STILL
-        // fail-closes per key; this coarse gate must not be narrower than the
-        // widest key, or a valid override change chain is rejected.
-        let baseline_alts = self
-            .use_site_path
-            .multipath
-            .as_ref()
-            .map(|a| a.len())
-            .unwrap_or(1);
-        let max_alts = self
-            .tlv
-            .use_site_path_overrides
-            .iter()
-            .flatten()
-            .map(|(_, p)| p.multipath.as_ref().map(|a| a.len()).unwrap_or(1))
-            .fold(baseline_alts, std::cmp::max);
-        if (chain as usize) >= max_alts {
-            return Err(Error::ChainIndexOutOfRange {
-                chain,
-                alt_count: max_alts,
-            });
-        }
+        // Pre-flight: chain index in range (shared with
+        // `to_miniscript_descriptor_with_network`).
+        crate::to_miniscript::check_chain_in_range(self, chain)?;
 
         let desc =
             crate::to_miniscript::to_miniscript_descriptor_with_network(self, chain, network)?;

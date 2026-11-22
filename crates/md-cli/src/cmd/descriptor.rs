@@ -237,11 +237,28 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
     // printed. `md descriptor` READS an existing card, usually one already
     // engraved, so it never refuses on a verdict (design §4, r2 C-4): the
     // notice is stderr only and the exit code is untouched.
-    let form = match args.chain {
-        None => Some(md_codec::coordinator::Form::Multipath),
-        Some(0) => Some(md_codec::coordinator::Form::Chain0),
-        Some(1) => Some(md_codec::coordinator::Form::Chain1),
-        Some(_) => None,
+    // S9: a wallet where no key has two or more branches prints no `<0;1>`, so
+    // its verdict names no spelling.
+    let has_branches = descriptor
+        .use_site_path
+        .multipath
+        .as_ref()
+        .is_some_and(|a| a.len() > 1)
+        || descriptor
+            .tlv
+            .use_site_path_overrides
+            .iter()
+            .flatten()
+            .any(|(_, p)| p.multipath.as_ref().is_some_and(|a| a.len() > 1));
+    let form = if !has_branches {
+        None
+    } else {
+        match args.chain {
+            None => Some(md_codec::coordinator::Form::Multipath),
+            Some(0) => Some(md_codec::coordinator::Form::Chain0),
+            Some(1) => Some(md_codec::coordinator::Form::Chain1),
+            Some(_) => None,
+        }
     };
     let what = match form {
         Some(f) => format!("this descriptor, {} form", f.as_str()),

@@ -53,6 +53,9 @@ use crate::nums::{NUMS_H_POINT_X_ONLY_HEX, liana_unspendable_xpub};
 /// - [`Error::MissingPubkey`] / [`Error::InvalidXpubBytes`] /
 ///   [`Error::MissingExplicitOrigin`] propagated from
 ///   [`expand_per_at_n`].
+/// - [`Error::ChainIndexOutOfRange`] when `chain` is at or beyond the widest
+///   use-site multipath alt-count across all keys (a key with no multipath
+///   counts as 1); checked before key expansion.
 /// - [`Error::AddressDerivationFailed`] wrapping any miniscript-layer
 ///   failure (type check, context error, unsupported fragment) or arity
 ///   mismatch raised by the converter.
@@ -92,6 +95,7 @@ pub fn to_miniscript_descriptor_with_network(
     chain: u32,
     network: Network,
 ) -> Result<miniscript::Descriptor<DescriptorPublicKey>, Error> {
+    check_chain_in_range(d, chain)?;
     let expanded = expand_per_at_n(d)?;
     let mut keys: Vec<DescriptorPublicKey> = Vec::with_capacity(expanded.len());
     for e in &expanded {
@@ -107,6 +111,36 @@ pub fn to_miniscript_descriptor_with_network(
         )?);
     }
     node_to_descriptor(&d.tree, &keys, network, Some(chain))
+}
+
+/// Descriptor-wide chain pre-flight shared by [`to_miniscript_descriptor_with_network`]
+/// and `Descriptor::derive_address`: `chain` is bound by the MAX alt-count
+/// across the baseline use-site path AND every per-`@N` override (`None` →
+/// alt-count 1, i.e. only chain 0). The per-key path
+/// (`use_site_to_derivation_path`) is the real authority and STILL
+/// fail-closes per key; this coarse gate must not be narrower than the
+/// widest key, or a valid override change chain is rejected.
+pub(crate) fn check_chain_in_range(d: &Descriptor, chain: u32) -> Result<(), Error> {
+    let baseline_alts = d
+        .use_site_path
+        .multipath
+        .as_ref()
+        .map(|a| a.len())
+        .unwrap_or(1);
+    let max_alts = d
+        .tlv
+        .use_site_path_overrides
+        .iter()
+        .flatten()
+        .map(|(_, p)| p.multipath.as_ref().map(|a| a.len()).unwrap_or(1))
+        .fold(baseline_alts, std::cmp::max);
+    if (chain as usize) >= max_alts {
+        return Err(Error::ChainIndexOutOfRange {
+            chain,
+            alt_count: max_alts,
+        });
+    }
+    Ok(())
 }
 
 /// Returns `true` if ANY use-site path on `d` requires a hardened public

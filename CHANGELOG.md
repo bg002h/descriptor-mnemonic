@@ -12,6 +12,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   as `wsh(` followed by 127 `n` wrappers and `:pk(@0/<0;1>/*))`, minted three chunks at exit 0 that `md decode`
   refused; it now prints `md: codec error: decode recursion depth 128 exceeded maximum 128` and exits 1 with
   nothing on stdout. 126 wrappers still mint and decode.
+- **`md descriptor --change` refuses a wallet with no change branch.** On a wallet where no key has a multipath
+  (for example `wpkh(@0/*)`), `--change` and `--chain N` (N > 0) printed the receive descriptor at exit 0. They now
+  print `md: codec error: chain index 1 out of range; use-site multipath alt-count is 1` (with N and the widest
+  alt-count) and exit 1, as `md address` already did. A wallet where at least one key has the branch still renders.
+- **`md descriptor` no longer gives a wallet without a change branch the multipath verdict.** For a wallet where no
+  key has two or more branches (for example `wpkh(@0/*)`), the coordinator note named the "multipath form" and said
+  Bitcoin Core 24.2-28.4 refuses "the <0;1> multipath spelling (use --chain 0 and --chain 1)", although the printed
+  descriptor has no `<0;1>` and `--chain 1` is refused there. The note now names no form, as it does for a
+  template, and Core reads `unproven`; `--chain 0` prints the same note, since it prints the same descriptor.
 
 ## md-cli [0.21.0] — 2026-11-22
 
@@ -38,6 +47,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   origin override, an `@0` or redundant use-site override) or a `wsh` over 127 nested single-child wrappers
   encoded at `Ok` and the card could not be decoded. Bytes of every accepted payload are unchanged;
   `encode_payload_unadmitted` and hashing do not run the check. Costs one decode per mint.
+- **`to_miniscript_descriptor` / `to_miniscript_descriptor_with_network` refuse a chain no key has.** They now return
+  `Error::ChainIndexOutOfRange` when `chain` is at or beyond the widest use-site multipath alt-count across all keys
+  (the check `Descriptor::derive_address` already made, now shared); before, a key with no multipath ignored `chain`
+  and every chain returned the chain-0 descriptor.
 
 ## md-codec [0.48.6] — 2026-11-22
 
