@@ -173,6 +173,80 @@ fn parse_index(s: &str) -> Result<u8, CliError> {
         .map_err(|_| CliError::BadArg(format!("--key index must be 0..255, got: {s}")))
 }
 
+/// One `--key` value as the slot-binding check compares it (FIX bh1119 md-slot-bindings R2): the
+/// bracket fingerprint (`None` when bare), the bracket path (empty when bare) and the 65 payload bytes
+/// md reads. Typed, never Debug text; `ParsedKey::depth` is not compared.
+pub(crate) type SlotKeyValue = (u8, Option<[u8; 4]>, DerivationPath, [u8; 65]);
+
+/// The slot-binding check (FIX bh1119 md-slot-bindings R1-R6): one `--key` and one `--fingerprint` per
+/// slot. Walks the `--key` values in argument order, then the `--fingerprint` values; the first repeat
+/// found refuses. A DIFFERENT value for the slot is `Mismatch` (exit 1); an EQUAL value is `BadArg`
+/// (exit 2). `{a}`/`{b}` are 1-based positions among the `--key` arguments.
+pub(crate) fn refuse_repeated_slot_bindings(
+    keys: &[SlotKeyValue],
+    fps: &[ParsedFingerprint],
+) -> Result<(), CliError> {
+    let mut first_key: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
+    for (pos, k) in keys.iter().enumerate() {
+        match first_key.get(&k.0) {
+            None => {
+                first_key.insert(k.0, pos);
+            }
+            Some(&first) => {
+                let (a, b) = (first + 1, pos + 1);
+                return if keys[first] == *k {
+                    Err(CliError::BadArg(format!(
+                        "@{}: --key arguments {a} and {b} bind this slot to the same value; give each slot's --key once.",
+                        k.0
+                    )))
+                } else {
+                    Err(CliError::Mismatch(format!(
+                        "@{}: --key arguments {a} and {b} both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @{}=... you mean and remove the other.",
+                        k.0, k.0
+                    )))
+                };
+            }
+        }
+    }
+    let hex = |fp: [u8; 4]| format!("{:02x}{:02x}{:02x}{:02x}", fp[0], fp[1], fp[2], fp[3]);
+    let mut first_fp: std::collections::BTreeMap<u8, [u8; 4]> = std::collections::BTreeMap::new();
+    for f in fps {
+        match first_fp.get(&f.i) {
+            None => {
+                first_fp.insert(f.i, f.fp);
+            }
+            Some(&x) if x == f.fp => {
+                return Err(CliError::BadArg(format!(
+                    "@{}: --fingerprint {} is given more than once for this slot; give each slot's --fingerprint once.",
+                    f.i,
+                    hex(x)
+                )));
+            }
+            Some(&x) => {
+                return Err(CliError::Mismatch(format!(
+                    "@{}: --fingerprint {} and --fingerprint {} both bind this slot; a slot takes exactly one master fingerprint, and md never picks one for you. Keep the one you mean and remove the other.",
+                    f.i,
+                    hex(x),
+                    hex(f.fp)
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// [`refuse_repeated_slot_bindings`] for the bare-`parse_key` commands (`encode`, `verify`).
+pub(crate) fn refuse_repeated_bare_slot_bindings(
+    keys: &[ParsedKey],
+    fps: &[ParsedFingerprint],
+) -> Result<(), CliError> {
+    let v: Vec<SlotKeyValue> = keys
+        .iter()
+        .map(|k| (k.i, None, DerivationPath::default(), k.payload))
+        .collect();
+    refuse_repeated_slot_bindings(&v, fps)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

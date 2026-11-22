@@ -44,6 +44,7 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
+    crate::parse::keys::refuse_repeated_bare_slot_bindings(&parsed_keys, &parsed_fps)?;
     // N1's WARN disposition, not REFUSE. `verify` READS: an operator holding a
     // legacy plate that carries a shape this cycle newly refuses must still be
     // able to check it, or the refusal has taken away the only tool that could

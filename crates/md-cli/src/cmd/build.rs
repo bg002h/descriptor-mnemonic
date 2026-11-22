@@ -164,6 +164,13 @@ fn resolve_keys_fingerprints_and_precedence(
         .iter()
         .map(|s| parse_fingerprint(s))
         .collect::<Result<Vec<_>, _>>()?;
+    // R1 (FIX bh1119 md-slot-bindings): one --key and one --fingerprint per slot, refused before
+    // anything below reads them.
+    let key_values: Vec<crate::parse::keys::SlotKeyValue> = origin_keys
+        .iter()
+        .map(|ok| (ok.i, ok.fingerprint, ok.path.clone(), ok.key.payload))
+        .collect();
+    crate::parse::keys::refuse_repeated_slot_bindings(&key_values, &explicit_fps)?;
 
     // Inline per-slot template origins, read BEFORE parse_template folds them
     // into path_decl's Shared/Divergent representation — which cannot answer
@@ -259,11 +266,10 @@ fn resolve_keys_fingerprints_and_precedence(
             None => {
                 // N3: neither an inline template origin nor --path supplies
                 // a path for @i, so the bracket becomes the last-resort
-                // SOURCE. First writer wins for a given slot (mirroring
-                // inline_paths' own `or_insert_with` above) -- the CLI has
-                // no syntax for binding two different --key values to the
-                // same @i in the first place, so this is not a reachable
-                // disagreement in practice.
+                // SOURCE. The slot-binding check at the top of this function
+                // has already refused two --key values for one slot, so at
+                // most one bracket reaches this arm per slot and
+                // `or_insert_with` is never a choice.
                 bracket_sourced
                     .entry(ok.i)
                     .or_insert_with(|| ok.path.clone());
