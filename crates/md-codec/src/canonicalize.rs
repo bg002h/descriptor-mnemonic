@@ -762,11 +762,13 @@ mod tests {
             },
             tlv: TlvSection::new_empty(),
         };
+        let pre = d.clone();
         let err = canonicalize_placeholder_indices(&mut d).unwrap_err();
         assert!(
             matches!(err, Error::DivergentPathCountMismatch { n: 2, got: 1 }),
             "expected DivergentPathCountMismatch{{n:2,got:1}}, got {err:?}"
         );
+        assert_eq!(d, pre);
     }
 
     /// L6 scope-bound regression: a CANONICAL-ordering descriptor with a
@@ -830,8 +832,14 @@ mod tests {
             },
         };
         canonicalize_placeholder_indices(&mut d).unwrap();
-        // After: original @1 → new @0; override should now key on @0.
-        assert_eq!(d.tlv.use_site_path_overrides.unwrap(), vec![(0, custom)],);
+        // bughunt-1119 C2: the old assertion (`vec![(0, custom)]`) pinned the defect
+        // (an override keyed on the baseline @0, which the decoder refuses).
+        // After: original @1 -> new @0 becomes the baseline; old @0 (no_multipath) is the override at new @1.
+        assert_eq!(d.use_site_path, custom);
+        assert_eq!(
+            d.tlv.use_site_path_overrides,
+            Some(vec![(1, no_multipath())])
+        );
     }
 
     /// Both `fingerprints` and `pubkeys` carry @N idx; both must be

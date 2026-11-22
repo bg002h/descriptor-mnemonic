@@ -329,6 +329,41 @@ mod tests {
         compose(&policy, &cards, &assignment).unwrap()
     }
 
+    /// bughunt-1119 row #5, e13: `spend_equal_verdict` agrees in either argument
+    /// order between a template (holder's numbering) and its canonical form.
+    #[test]
+    fn e13_i2_verdict_either_order() {
+        use crate::parse::keys::{ScriptCtx, parse_key};
+        use crate::parse::template::parse_template;
+        const KA: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
+        const KB: &str = "tpubDEYM1BmQ5rp2PWKvCgvQxNeUrEv8gu5819xRdmu6S23fYpS8x2icwAeoVaBTLyN3fGWJQcWoaiKMduTXWKtG9bXNpVrZPRF7XVxrANtAEcR";
+        let keys = vec![
+            parse_key(
+                &format!("@0={KA}"),
+                ScriptCtx::MultiSig,
+                bitcoin::Network::Signet,
+            )
+            .unwrap(),
+            parse_key(
+                &format!("@1={KB}"),
+                ScriptCtx::MultiSig,
+                bitcoin::Network::Signet,
+            )
+            .unwrap(),
+        ];
+        let a = parse_template("wsh(multi(2,@1/<0;1>/*,@0/<0;1>/*))", &keys, &[]).unwrap();
+        let mut b = a.clone();
+        md_codec::canonicalize_placeholder_indices(&mut b).unwrap();
+        assert_eq!(
+            spend_equal_verdict(&a, &b).unwrap(),
+            SpendEqualVerdict::Equal
+        );
+        assert_eq!(
+            spend_equal_verdict(&b, &a).unwrap(),
+            SpendEqualVerdict::Equal
+        );
+    }
+
     #[test]
     fn composition_touches_only_the_pubkeys_and_absent_fingerprints() {
         // The tree, the origin-path declaration and the use-site paths are
