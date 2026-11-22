@@ -73,8 +73,10 @@ impl CliNetwork {
 /// is a plate.
 ///
 /// The refusal names BOTH remedies (§6h — remedy text must be executable):
-/// `--separator space` for a grouped card, `--group-size 0` for an unbroken
-/// one. Someone reaching for `hyphen` wanted one or the other.
+/// `--group-size 5 --separator space` for a grouped card (`--separator space`
+/// alone no longer groups: the default group size is 0), dropping
+/// `--separator` for an unbroken one. Someone reaching for `hyphen` wanted one
+/// or the other.
 fn parse_separator(s: &str) -> Result<char, String> {
     match s {
         "space" | " " => Ok(' '),
@@ -82,12 +84,13 @@ fn parse_separator(s: &str) -> Result<char, String> {
             "separator {s:?} is no longer accepted: --separator is whitespace-only across the \
              constellation (SPEC §6c), because `mt` strips whitespace and nothing else on decode, \
              so a hyphen- or comma-grouped card is one `mt` refuses AFTER the plates are cut. \
-             Use `--separator space` (or the literal \" \") for a grouped card, or \
-             `--group-size 0` for an unbroken one."
+             Use `--group-size 5 --separator space` (or the literal \" \") for a grouped card, or \
+             drop `--separator` for an unbroken one (the default)."
         )),
         other => Err(format!(
             "invalid separator {other:?}; --separator is whitespace-only: expected `space` (or \
-             the literal \" \"). Use `--group-size 0` for an unbroken card."
+             the literal \" \"). Drop `--separator` for an unbroken card (the default), or use \
+             `--group-size 5 --separator space` for a grouped one."
         )),
     }
 }
@@ -115,8 +118,9 @@ enum Command {
         in_file: Option<std::path::PathBuf>,
         /// Write the md1 artifact to FILE instead of stdout, CREATED 0600
         /// (SPEC §6b, F-244) — which a shell redirect cannot do. OVERWRITES an
-        /// existing file, and tightens its mode. The stderr engraving card,
-        /// the chunk-set-id and the advisories are unaffected.
+        /// existing file, and tightens its mode. The file holds exactly what
+        /// stdout would have (grouped only under `--group-size`); the
+        /// chunk-set-id and the advisories still go to stderr.
         #[arg(long = "out", value_name = "FILE")]
         out_file: Option<std::path::PathBuf>,
         /// Compile a sub-Miniscript-Policy expression into a template (cli-compiler).
@@ -157,14 +161,14 @@ enum Command {
         /// Force chunked encoding even for short policies.
         #[arg(long)]
         force_chunked: bool,
-        /// Insert a separator every N characters in the ENGRAVING CARD on
-        /// stderr (0 = unbroken card). SPEC §6c. stdout is always the
-        /// unbroken md1 string; --json stays unbroken too.
-        #[arg(long, default_value_t = 5)]
+        /// Group each md1 string on stdout every N characters, for hand
+        /// engraving (0 = unbroken, the default). `--out` receives the same
+        /// bytes; `--json` stays unbroken.
+        #[arg(long, default_value_t = 0)]
         group_size: u16,
-        /// Separator for the engraving card: `space` (keyword) or the literal
-        /// " ". Whitespace only — `hyphen` and `comma` are no longer accepted.
-        /// SPEC §6c.
+        /// Separator to use with `--group-size`: `space` (keyword) or the
+        /// literal " ". Whitespace only — `hyphen` and `comma` are no longer
+        /// accepted.
         #[arg(long, default_value = "space", value_parser = parse_separator)]
         separator: char,
         /// Removed in v0.12.0; now a hard error. md1 is regular-code-only
@@ -199,8 +203,8 @@ enum Command {
         #[arg(num_args = 1..)]
         strings: Vec<String>,
         /// Read md1 strings from FILE, one per line (SPEC §6b). Display
-        /// separators are stripped per line, so a card copied off the
-        /// engraving card re-ingests.
+        /// separators are stripped per line, so a card copied in grouped form
+        /// re-ingests.
         #[arg(long = "in", value_name = "FILE")]
         in_file: Option<std::path::PathBuf>,
         /// Emit a structured JSON object on stdout instead of the
@@ -560,24 +564,24 @@ enum Command {
         /// Write the KEYED md1 artifact to FILE instead of stdout, CREATED
         /// 0600 -- mirrors `md encode --out` (F-244) byte for byte, which a
         /// shell redirect cannot do. OVERWRITES an existing file, and
-        /// tightens its mode. The stderr engraving card, the chunk-set-id
-        /// and the advisories are unaffected. Only meaningful with `--emit
+        /// tightens its mode. The file holds exactly what stdout would have
+        /// (grouped only under `--group-size`); the chunk-set-id and the
+        /// advisories still go to stderr. Only meaningful with `--emit
         /// md1` -- `requires = "emit"` refuses it structurally rather than
         /// silently discarding it on the plain descriptor row (the I4
         /// defect class this cycle keeps naming on this verb).
         #[arg(long = "out", value_name = "FILE", requires = "emit")]
         out_file: Option<std::path::PathBuf>,
-        /// Insert a separator every N characters in the ENGRAVING CARD on
-        /// stderr (0 = unbroken card) -- mirrors `md encode --group-size`
-        /// exactly, same default. stdout is always the unbroken md1 string.
-        /// Only meaningful with `--emit md1`; see `--out`'s note on
-        /// `requires`.
-        #[arg(long, default_value_t = 5, requires = "emit")]
-        group_size: u16,
-        /// Separator for the engraving card: `space` (keyword) or the
-        /// literal " " -- mirrors `md encode --separator` exactly, same
-        /// default. Whitespace only. Only meaningful with `--emit md1`; see
+        /// Group each md1 string on stdout every N characters, for hand
+        /// engraving (0 = unbroken, the default) -- mirrors `md encode
+        /// --group-size` exactly. Only meaningful with `--emit md1`; see
         /// `--out`'s note on `requires`.
+        #[arg(long, default_value_t = 0, requires = "emit")]
+        group_size: u16,
+        /// Separator to use with `--group-size`: `space` (keyword) or the
+        /// literal " " -- mirrors `md encode --separator` exactly. Whitespace
+        /// only. Only meaningful with `--emit md1`; see `--out`'s note on
+        /// `requires`.
         #[arg(
             long,
             default_value = "space",

@@ -123,8 +123,8 @@ fn out_overwrites_on_a_second_run() {
     assert_eq!(mode_of(&f), 0o600);
 }
 
-/// `--out` SUPPRESSES NOTHING ELSE. The stderr engraving card, the chunk-set-id
-/// and the output-class advisory all still fire; only the artifact moved.
+/// `--out` SUPPRESSES NOTHING ELSE. The chunk-set-id and the output-class
+/// advisory still fire; only the artifact moved, and stderr carries no copy.
 #[test]
 fn out_suppresses_nothing_on_stderr() {
     let dir = tempfile::tempdir().unwrap();
@@ -136,8 +136,10 @@ fn out_suppresses_nothing_on_stderr() {
         out_err, plain_err,
         "--out must not change what stderr carries"
     );
-    assert!(out_err.contains("md1yq pqqxq q8xtw hw4xw n4qh"));
-    assert!(out_err.contains("group size: 5"));
+    assert_eq!(
+        out_err,
+        "note: stdout is a keyless descriptor template (no keys)\n"
+    );
 }
 
 /// A CHUNK SET through `--out`: every chunk lands in the file, unbroken, one

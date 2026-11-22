@@ -509,14 +509,12 @@ fn n2_emit_md1_composes_with_seat() {
 // `--group-size`, no `--separator`, and printed no engraving card at all —
 // `md encode` supplies all four, on the one card `md encode` cannot mint.
 // These rows measure that `--emit md1` now carries the SAME contract,
-// single-sourced through `cmd::encode::emit_engraving_card` /
-// `cmd::encode::mint_md1_cards` rather than a second renderer.
+// single-sourced through `cmd::encode::render_artifact` /
+// `cmd::encode::mint_md1_cards` rather than a second renderer. Since the
+// single print (2026-11-22) neither surface prints an engraving card.
 
-/// The engraving-card LINES on stderr: the rendered card string(s) plus the
-/// `group size:` / `separator:` lines `emit_engraving_card` writes. Filters
-/// out `chunk-set-id:`, the seating notes and the output-class advisory —
-/// `md encode`'s stderr has none of the seating notes, so this is the slice
-/// that is meaningful to compare between the two surfaces.
+/// Single print (2026-11-22): the engraving-card lines that used to sit on
+/// stderr -- a rendered md1 string, `group size:`, `separator:`. None remain.
 fn engraving_block(stderr: &str) -> Vec<&str> {
     stderr
         .lines()
@@ -552,31 +550,31 @@ fn emit_b1_with(extra: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
-/// **The default shape.** With no group/separator flags, `--emit md1`'s
-/// engraving card is BYTE-IDENTICAL to `md encode`'s, for the same wallet —
-/// same grouped string(s), same `group size: 5`, same `separator: space`.
-/// Before the fold this row is RED: the baseline prints no engraving card at
-/// all, so `engraving_block` on the minted side is empty.
+/// **The default shape.** With no group/separator flags, `--emit md1`'s stdout
+/// is BYTE-IDENTICAL to `md encode`'s for the same wallet, and neither prints
+/// an engraving card on stderr.
 #[test]
-fn n2_emit_md1_default_engraving_card_matches_md_encodes_default_shape() {
+fn n2_emit_md1_default_output_matches_md_encodes_default_shape() {
     let oracle = oracle_encode(&[]);
     let minted = emit_b1_with(&["--emit", "md1"]);
     assert!(minted.status.success(), "{}", err_of(&minted));
     assert!(oracle.status.success(), "{}", err_of(&oracle));
-    assert_eq!(
-        engraving_block(&err_of(&minted)),
-        engraving_block(&err_of(&oracle)),
-        "minted stderr:\n{}\noracle stderr:\n{}",
-        err_of(&minted),
+    assert_eq!(out_of(&minted), out_of(&oracle));
+    assert!(!out_of(&oracle).is_empty());
+    assert!(
+        engraving_block(&err_of(&minted)).is_empty(),
+        "{}",
+        err_of(&minted)
+    );
+    assert!(
+        engraving_block(&err_of(&oracle)).is_empty(),
+        "{}",
         err_of(&oracle)
     );
-    // Not a vacuous comparison of two empty vectors.
-    assert!(!engraving_block(&err_of(&oracle)).is_empty());
 }
 
-/// **`--group-size` — a differential row.** Same strings in
-/// (`--group-size 0`, unbroken; `--group-size 8`), same rendered engraving
-/// card out, on both surfaces.
+/// **`--group-size` — a differential row.** Same flags in (`--group-size 0`,
+/// unbroken; `8`; `3`), same grouped stdout out, on both surfaces.
 #[test]
 fn n2_emit_md1_group_size_behaves_identically_to_md_encodes() {
     for gs in ["0", "8", "3"] {
@@ -584,13 +582,13 @@ fn n2_emit_md1_group_size_behaves_identically_to_md_encodes() {
         let minted = emit_b1_with(&["--emit", "md1", "--group-size", gs]);
         assert!(oracle.status.success(), "{}", err_of(&oracle));
         assert!(minted.status.success(), "{}", err_of(&minted));
-        assert_eq!(
-            engraving_block(&err_of(&minted)),
-            engraving_block(&err_of(&oracle)),
-            "--group-size {gs}: minted stderr:\n{}\noracle stderr:\n{}",
-            err_of(&minted),
-            err_of(&oracle)
-        );
+        assert_eq!(out_of(&minted), out_of(&oracle), "--group-size {gs}");
+        if gs != "0" {
+            assert!(
+                out_of(&minted).contains(' '),
+                "--group-size {gs} groups stdout"
+            );
+        }
     }
 }
 
@@ -603,16 +601,14 @@ fn n2_emit_md1_separator_behaves_identically_to_md_encodes() {
     let minted = emit_b1_with(&["--emit", "md1", "--separator", "space", "--group-size", "6"]);
     assert!(oracle.status.success(), "{}", err_of(&oracle));
     assert!(minted.status.success(), "{}", err_of(&minted));
-    assert_eq!(
-        engraving_block(&err_of(&minted)),
-        engraving_block(&err_of(&oracle))
-    );
+    assert_eq!(out_of(&minted), out_of(&oracle));
+    assert!(out_of(&minted).contains(' '));
 }
 
 /// **`--out` — a differential row, both sides of the contract.** stdout is
 /// empty and the artifact lands in the FILE, created 0600 — `md encode
 /// --out`'s exact behaviour (`cli_channels.rs::out_creates_the_file_owner_only`),
-/// and the stderr engraving card, chunk-set-id and advisories are UNAFFECTED
+/// and the stderr chunk-set-id and advisories are UNAFFECTED
 /// (mirrors `cli_channels.rs::out_suppresses_nothing_on_stderr`).
 #[test]
 fn n2_emit_md1_out_writes_the_file_and_stdout_matches_md_encodes_out_contract() {
@@ -642,9 +638,10 @@ fn n2_emit_md1_out_writes_the_file_and_stdout_matches_md_encodes_out_contract() 
         assert_eq!(mode_of(&minted_f), 0o600, "--out must CREATE 0600");
     }
 
-    // Nothing on stderr is suppressed by routing the artifact to a file.
+    // Nothing on stderr is suppressed by routing the artifact to a file, and
+    // stderr carries no copy of it.
     assert!(err_of(&minted).contains("chunk-set-id: 0x"));
-    assert!(!engraving_block(&err_of(&minted)).is_empty());
+    assert!(engraving_block(&err_of(&minted)).is_empty());
     assert!(err_of(&minted).contains("stdout is watch-only"));
 }
 

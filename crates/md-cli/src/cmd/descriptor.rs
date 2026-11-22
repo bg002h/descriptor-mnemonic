@@ -69,15 +69,15 @@ pub struct DescriptorArgs<'a> {
     /// `emit-md1-has-no-transcribe-ready-form`: write the keyed md1
     /// artifact to this file (created 0600) instead of stdout when `emit ==
     /// Some(Emit::Md1)`. Mirrors `md encode`'s `--out` byte for byte
-    /// (`crate::cmd::write_artifact`); the engraving card, the
-    /// chunk-set-id and the advisories are unaffected. `None`/inert when
+    /// (`crate::cmd::write_artifact`); the chunk-set-id and the advisories
+    /// are unaffected. `None`/inert when
     /// `emit` is `None` -- the clap surface's `requires = "emit"` is what
     /// keeps that combination unreachable.
     pub out_file: Option<&'a std::path::Path>,
-    /// mstring display-grouping for the `--emit md1` engraving card, mirroring
+    /// mstring display-grouping for the `--emit md1` artifact, mirroring
     /// `md encode`'s `group_size`/`separator` exactly (same default, same
     /// meaning): insert `separator` every `group_size` chars (0 = unbroken).
-    /// Display only, on stderr. Inert when `emit` is `None`.
+    /// Applies to stdout and `--out`. Inert when `emit` is `None`.
     pub group_size: usize,
     pub separator: char,
     pub json: bool,
@@ -404,19 +404,18 @@ fn check_emit_md1_input_mode(
 /// Mint the seated policy as a keyed md1 card: the SAME transcribe-ready
 /// output contract as `md encode` (`emit-md1-has-no-transcribe-ready-form`).
 ///
-/// The cards come from [`crate::cmd::encode::mint_md1_cards`], and the
-/// engraving card comes from [`crate::cmd::encode::emit_engraving_card`] --
-/// the SAME two functions `md encode` mints and renders through, so N2's
-/// byte-identity oracle is a question about the composed `Descriptor` alone,
-/// and the two minting surfaces cannot drift into two card renderers.
+/// The cards come from [`crate::cmd::encode::mint_md1_cards`], and the text
+/// from [`crate::cmd::encode::render_artifact`] -- the SAME two functions
+/// `md encode` mints and renders through, so N2's byte-identity oracle is a
+/// question about the composed `Descriptor` alone, and the two minting
+/// surfaces cannot drift into two renderers.
 ///
 /// Mirrors `md encode`'s §6a/§6b/§6c contract exactly (measured against the
 /// binary, `design/agent-reports/IMPL-emit-md1-form.md`): stdout is the
-/// canonical artifact, UNBROKEN and nothing else, written to `out_file` when
-/// given (created 0600, `crate::cmd::write_artifact`) instead of stdout; the
-/// chunk-set-id (when chunked), the grouped engraving card, `group size:`
-/// and `separator:` all go to stderr in that order, immediately after the
-/// artifact is written -- exactly where `md encode` puts them. Only after
+/// artifact and nothing else, printed ONCE (grouped only when `--group-size`
+/// asks), written to `out_file` when given (created 0600,
+/// `crate::cmd::write_artifact`) instead of stdout; the chunk-set-id (when
+/// chunked) goes to stderr -- exactly where `md encode` puts it. Only after
 /// that does this diverge from `md encode`'s stderr shape, for
 /// `emit_seating_notes` -- an S-row-only insertion with no `md encode`
 /// counterpart -- before the advisories both surfaces share.
@@ -446,22 +445,13 @@ fn emit_md1_card(
         // artifact and nothing else.
         eprintln!("chunk-set-id: 0x{csid:05x}");
     }
-    let mut body = String::new();
-    for s in &cards {
-        body.push_str(s);
-        body.push('\n');
-    }
+    let body = crate::cmd::encode::render_artifact(&cards, group_size, separator);
     // `md encode --out`'s exact contract: FILE when given (created 0600, a
     // shell redirect cannot do that -- F-244), stdout otherwise.
     match out_file {
         Some(p) => crate::cmd::write_artifact(p, &body)?,
         None => print!("{body}"),
     }
-    // THE ENGRAVING CARD -- `md encode`'s own stderr rendering, single-sourced
-    // (`emit-md1-has-no-transcribe-ready-form`). Same function, same
-    // position relative to the artifact write, same three lines: the grouped
-    // card(s), `group size:`, `separator:`.
-    crate::cmd::encode::emit_engraving_card(&cards, group_size, separator, &mut std::io::stderr());
     emit_seating_notes(seating_notes);
     // F-A4: legacy-P2SH-multisig footgun advisory, carried across from `md
     // encode` (review r1 I3) -- this is a minting surface too, and which

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+### Changed
+- **Each md1 string is printed once.** `md encode` and `md descriptor --emit md1` no longer repeat their
+  strings on stderr as a grouped engraving card, and the `group size:` / `separator:` lines are gone (Brian
+  2026-11-22, reversing D4 of the constellation uniformity spec). `--group-size N` now groups stdout, on
+  request; its default is `0`, so a plain `md encode` prints on stdout exactly what it printed before. `--out
+  FILE` receives the same bytes stdout would have carried. `chunk-set-id:` stays on stderr. `--json` is
+  unchanged.
+
 ### Fixed
 - **`md descriptor --verify-against` compares slot numberings in canonical order.** A template that numbers its slots out of first-occurrence order no longer reports its own fresh card as "NOT spend-equal — the VALUES half differs".
 - **`md decompose --emit commands` prints a mint route only after proving it.** md now mints each route's card in memory and compares the wallet it describes with the input descriptor. A route that would mint a different wallet (a use-site md1 cannot hold, such as `/0/*` or none) or that `md encode`/`mk encode` would refuse (such as a depth-0 key) is withheld with one line; when no route reproduces the descriptor the command refuses (exit 1). `--emit template` and `--emit all` (and `--emit commands`) now refuse a descriptor whose key use-site md1 cannot hold (a fixed step such as `/0/*`, or none), since the template they printed minted a different wallet.
