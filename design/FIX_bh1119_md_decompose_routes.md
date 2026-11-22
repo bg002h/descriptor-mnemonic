@@ -75,8 +75,7 @@ that does not reproduce the input is withheld.
 2.0 **Template check (Q2, ruled).** In `decompose` (not only `commands()`), after `build_template` (`decompose/mod.rs:525`)
 and before any emission that prints the template, md reads the template back with its own lexer
 (`parse::template::lex_placeholders`, no admission rules) and, for every `@i` in index order, requires the read-back
-origin path (none = empty) and use-site (multipath alternatives, wildcard, hardening) to equal occurrence i's. A lexer
-read-back, not a use-site allow-list, so the check cannot drift from md's parser. The first `@i` that differs fails the
+origin path (none = empty) and use-site (multipath alternatives, wildcard, hardening) to equal occurrence i's. The read-back use-site is rendered as text: `/<a;b;…>` when it has multipath alternatives, then `/*` or `/*h` (the lexer cannot tell a missing wildcard from `/*`, so a read-back always renders a wildcard); the occurrence's use-site is its text with `'` spelt `h` (empty when none). The two are compared as strings and the origin paths as `DerivationPath`s. An occurrence with no use-site therefore never equals its read-back. If `lex_placeholders` returns `Err` for the template, lex each occurrence's own text (`@{i}{origin_path_text}{use_site}`) by itself and fail on the first `@i` whose lex errors, naming that key and its use-site in the same refusal text (so `/<0;1>/5/*` reads `key @0 has use-site `/<0;1>/5/*``); if every single occurrence lexes but the whole template does not, fail on `@0` with its use-site. The first `@i` that differs fails the
 check (the template then never reaches stdout). Result by emission:
 - `--emit template` and `--emit all`: exit 1 (`CliError::Decompose`), stdout empty, stderr one line, PROPOSED:
 
@@ -90,7 +89,7 @@ check (the template then never reaches stdout). Result by emission:
   emission is unaffected; `--emit template` and `--emit commands` refuse.` (it reads as today when the template is not refused).
 - Auto-widening `/0/*` to `/<0;1>/*` is not done (it would add a change branch the input lacks); the refusal asks the holder.
 
-2.1 Order of checks in `commands()` (`decompose.rs:124`): (1) today's origin-less refusal, unchanged, first;
+2.1 Order of checks in `commands()` (`decompose.rs:124`): (1) today's origin-less refusal, first; when the 2.0 template check also fails for the input, the refusal's list of emissions that still work reads "`--emit keys`, `--emit descriptor`" (comma-separated, like the refusal's existing list; PROPOSED), otherwise the refusal is byte-identical to base;
 (2) the 2.0 template refusal; (3) build every route's lines exactly as today; (4) prove route 1, then route 2; (5) print.
 
 2.2 **Route 1 proof.** With exactly the printed arguments (the template, every `--key`, every
@@ -115,24 +114,22 @@ routes on the Liana `preset-kofn-recovery-tr` case and the `v-d-rt` pathological
 
 2.3 **Route 2 proof (Q1, ruled option A).** md-cli proves route 2 in process; any failing step withholds route 2 with the reason given.
 1. md half: the same calls as the route-1 proof (2.2) with no `--key`: the printed template, the printed `--fingerprint`s,
-   `--experimental` iff printed, the decompose `--network`. Refusal: `md encode refuses it: <CliError Display>`.
-2. mk-cli's record admission, mirrored for the two rules a decompose record can reach, for each heredoc record n (1-based), in order:
-   (a) empty origin path: `mk encode refuses it: keys.txt:<n>: origin "<fp>" has no derivation path; a key card must declare one (e.g. `[<fp>/48'/0'/0'/2']`)`;
-   (b) one-component origin path and `xpub.parent_fingerprint != fp`: `mk encode refuses it: origin fingerprint <fp> does not match the xpub: at depth 1 the xpub's parent is the master key, so the fingerprint must be <parent fp>. The record pairs a key with an origin that is not its own.`
+   `--experimental` iff printed, no `--network` (the printed line has none). Refusal: `md encode refuses it: <CliError Display>`.
+2. mk-cli's record admission, mirrored for the two rules a decompose record can reach, rule (a) for every record in order first, then rule (b) for every record in order:
+   (a) for each heredoc record n (1-based): empty origin path: `mk encode refuses it: keys.txt:<n>: origin "<fp>" has no derivation path; a key card must declare one (e.g. `[<fp>/48'/0'/0'/2']`)`;
+   (b) for each record: one-component origin path and `xpub.parent_fingerprint != fp`: `mk encode refuses it: origin fingerprint <fp> does not match the xpub: at depth 1 the xpub's parent is the master key, so the fingerprint must be <parent fp>. The record pairs a key with an origin that is not its own.`
    Both texts are mk's own. The other mk rules are unreachable from a decompose record: origin-less keys refuse first, depth/child
    mismatch refuses in `decompose/mod.rs:412-452`, repeated keys in `:281-370`, records carry a bare xpub/tpub and no suffix, the
    keyless policy skips mk's membership loop ("Only KEYED policies are checked"), and mk's depth-0 check needs a depth-0 key with
    a path, which (a) excludes.
-3. Each record to `mk_codec::KeyCard::new(vec![stub], Some(fp), path, xpub)` with the stub md's own `--from-mk1` seating reads from
-   the md half, `mk_codec::encode`, then `mk_codec::decode`. Refusal: `mk encode refuses it: <mk_codec::Error Display>`.
-4. Seat the decoded cards on the md half with the function `md descriptor --from-mk1` uses, render with the network, compare
-   under N. Differ: `the wallet it mints is not this descriptor`.
+3. For each record, `mk_codec::KeyCard::new(vec![shape_stub], Some(fp), path, xpub)` where `shape_stub` is the first four bytes of `md_codec::compute_wallet_descriptor_template_id(<the md half's decoded descriptor>)` (the stub `mk encode --from-md1-set` stamps for a keyless card, `seat/disposition.rs:74`; one stub for the whole md half, however many strings it has); `mk_codec::encode`, then `mk_codec::decode` of the strings it returned. Refusal: `mk encode refuses it: <mk_codec::Error Display>`.
+4. Run `cmd::build::build_descriptor` (the function `md descriptor <policy.md1> --from-mk1 …` calls) with the md half as the policy input and the STRINGS from step 3 as `from_mk1`, render for the decompose network, compare under N. Any refusal of `build_descriptor` withholds route 2 with `md descriptor refuses it: <CliError Display>`; a difference reads `the wallet it mints is not this descriptor`.
 The mirror sits next to `check_depth_consistency` (which already mirrors mk's depth rule) with a comment citing mk-cli
 `keyfile.rs` `parse_key_record` and `cmd/encode.rs` provable-fingerprint loop @434d789. Drift in either direction fails
 closed (mk adds a refusal: mk exits 64, no card; mk drops one: md withholds a good route); the drift is tracked by the two
 FOLLOWUPS lines in section 6. The data proof (steps 3-4) uses the linked codec and cannot drift. mk-codec 0.5 `encode`
 checks neither the fingerprint nor a missing path (`key_card.rs:53-55` admits a depth-0 / no-path key), so a data-only proof
-(option C) would pass d10 and d4 and route 2 would still fail as printed. The D4 row (I9) ends with route 2 withheld and the D5 row with route 2 printed.
+(option C) would pass d10 and d4 and route 2 would still fail as printed. Row d4 withholds route 2 and row d5 prints it.
 
 2.4 **Output.**
 - Every route proven: stdout and stderr byte for byte as today (row D6b pins the control's stdout hash).
@@ -154,7 +151,8 @@ checks neither the fingerprint nor a missing path (`key_card.rs:53-55` admits a 
   - `the wallet it mints is not this descriptor` (the comparison differs);
   - route 2's refusal reasons: the 2.3 texts, `md encode refuses it: <CliError Display>` (md half), `mk encode refuses it: keys.txt:<n>: origin ...` (2.3 a),
     `mk encode refuses it: origin fingerprint <fp> does not match the xpub: ...` (2.3 b), `mk encode refuses it: <mk_codec::Error Display>` (2.3 step 3),
-    or `the wallet it mints is not this descriptor` (2.3 step 4).
+    or `the wallet it mints is not this descriptor` (2.3 step 4);
+  - `md descriptor refuses it: <CliError Display>` (2.3 step 4: `build_descriptor` refuses).
   Because a withheld line now prints only after the 2.0 template check passed, its pointer `see `md decompose --emit template``
   is true (T8's pointer kept); the all-withheld refusal keeps its list for the same reason.
 
@@ -191,6 +189,7 @@ keys`, `fingerprints` and `descriptor` change only by the 2.0 note sentence. No 
 `crates/md-cli/tests/bh1119_md_decompose_routes.rs`, each test function named exactly as its row. "Runs and
 reproduces" = the printed block run by `bash` exits 0 and its artifacts compose (route 1: `md descriptor
 <cards>`; route 2: `md descriptor <policy.md1> --from-mk1 <mk1 cards>`) to the input under N.
+The nextest file asserts only what `md decompose` prints (exit code, stdout, stderr, the withheld lines) and runs route 1's printed block with `bash` and the built `md` on PATH (as `emit_commands_route1_line_actually_runs` does). It never spawns `mk`: "route 2 runs and reproduces" is checked only by the gate script (§7), with the installed `mk`, and recorded with `mk --version`.
 
 | row | input to `md decompose ... --emit commands` | base (seen) | fixed |
 |---|---|---|---|
@@ -200,17 +199,18 @@ reproduces" = the printed block run by `bash` exits 0 and its artifacts compose 
 | d1t_c1_fixed_step_template | `wpkh(O KA/0/*)` `--emit template` | rc 0, stdout `wpkh(@0/48'/1'/0'/2'/0/*)` (folded) | rc 1, stdout empty, the 2.0 template refusal, use-site `/0/*` |
 | d2t_no_wildcard_template | `wpkh(O KA)` `--emit template` | rc 0, stdout `wpkh(@0/48'/1'/0'/2')` (folded) | rc 1, stdout empty, the 2.0 template refusal, `has no use-site` |
 | d3t_fixed_step_then_multipath_template | `wpkh(O KA/7/<0;1>/*)` `--emit template` | rc 0, stdout `wpkh(@0/48'/1'/0'/2'/7/<0;1>/*)` (folded) | rc 1, stdout empty, the 2.0 template refusal, use-site `/7/<0;1>/*` |
+| d3u_trailing_step_after_multipath_template | `wpkh(O KA/<0;1>/5/*)` `--emit template` | rc 0 (measured), stdout `wpkh(@0/48'/1'/0'/2'/<0;1>/5/*)` plus a note that `md encode` may not accept it | rc 1, stdout empty, the 2.0 template refusal naming key @0 and use-site `/<0;1>/5/*` |
 | d1a_c1_fixed_step_all | `wpkh(O KA/0/*)` `--emit all` | rc 0, stdout carries the folded template under the `md encode <TEMPLATE>` header | rc 1, stdout empty, the 2.0 template refusal, use-site `/0/*` |
 | d4_i9_master_key | `wpkh([73c5da0a]M0/<0;1>/*)` `--emit commands` | rc 0; route 1 rc 1 (`got 0`), route 2 rc 64 (mk, no derivation path) | rc 1, stdout empty, route 1 reason `md encode refuses it: --key @0: expected an account-level xpub at depth 3 or 4 (this script context conventionally uses 3), got 0`, route 2 reason (2.3 a, n=1) `mk encode refuses it: keys.txt:1: origin "73c5da0a" has no derivation path; a key card must declare one (e.g. `[73c5da0a/48'/0'/0'/2']`)` |
 | d5_depth2_route1_withheld | `wpkh([73c5da0a/84'/1']K2/<0;1>/*)` `--emit commands` | rc 0; route 1 rc 1 (`got 2`); route 2 runs and reproduces | rc 0; stdout line 1 is the 2.4 withheld line for route 1 with reason `md encode refuses it: --key @0: expected an account-level xpub at depth 3 or 4 (this script context conventionally uses 3), got 2`; route 2 block as today, runs and reproduces |
 | d10_depth1_wrong_fingerprint | `wpkh([deadbeef/84']K1/<0;1>/*)` `--emit commands` | rc 0; route 1 rc 1 (`got 1`); route 2 rc 64 (mk: origin fingerprint deadbeef does not match the xpub) | rc 1, stdout empty, route 1 reason `md encode refuses it: --key @0: expected an account-level xpub at depth 3 or 4 (this script context conventionally uses 3), got 1`, route 2 reason (2.3 b) `mk encode refuses it: origin fingerprint deadbeef does not match the xpub: at depth 1 the xpub's parent is the master key, so the fingerprint must be 73c5da0a. The record pairs a key with an origin that is not its own.` (RED for Q1 option C and for a missing 2.3 b) |
 | d10b_depth1_right_fingerprint | `wpkh([73c5da0a/84']K1/<0;1>/*)` `--emit commands` | rc 0; route 1 rc 1 (`got 1`); route 2 rc 0 and composes to the input under N | rc 0; stdout line 1 is the 2.4 withheld line for route 1 with reason `md encode refuses it: --key @0: ... got 1`; route 2 block as today, runs (rc 0) and reproduces |
-| d11_origin_less_fixed_step | `wpkh(KA/0/*)` | `commands`: rc 1 origin-less refusal; `template`: rc 0 stdout `wpkh(@0/0/*)`; `keys`: rc 0, note ends `The template and descriptor emissions are unaffected; `--emit commands` refuses.` | `commands`: rc 1, origin-less refusal byte-identical to base; `template`: rc 1, stdout empty, the 2.0 template refusal, use-site `/0/*`; `keys`: rc 0, stdout as base, note ends `The descriptor emission is unaffected; `--emit template` and `--emit commands` refuse.` |
+| d11_origin_less_fixed_step | `wpkh(KA/0/*)` | `commands`: rc 1 origin-less refusal, its list reads `--emit template`, `--emit keys`, `--emit descriptor` (run on base); `template`: rc 0 stdout `wpkh(@0/0/*)`; `keys`: rc 0, note ends `The template and descriptor emissions are unaffected; `--emit commands` refuses.` | `commands`: rc 1, the origin-less refusal; its list of emissions that still work is `--emit keys`, `--emit descriptor` (PROPOSED); `template`: rc 1, stdout empty, the 2.0 template refusal, use-site `/0/*`; `keys`: rc 0, stdout as base, note ends `The descriptor emission is unaffected; `--emit template` and `--emit commands` refuse.` |
+| d9_origin_less_unchanged | `wpkh(KA/<0;1>/*)` `--emit commands` | rc 1, origin-less refusal text; its list reads `--emit template`, `--emit keys`, `--emit descriptor` (run on base) | byte-identical, the full list kept (the 2.0 check passes, so the list is not shortened) |
 | d12_template_controls | `wpkh(O KA/<2;3>/*)`, `wpkh(O KA/*)`, `wpkh(O KA/<0;1;2>/*)`, and depth-0 `wpkh([73c5da0a]M0/<0;1>/*)`, each `--emit template` | rc 0; stdout `wpkh(@0/48'/1'/0'/2'/<2;3>/*)`, `wpkh(@0/48'/1'/0'/2'/*)`, `wpkh(@0/48'/1'/0'/2'/<0;1;2>/*)`, `wpkh(@0/<0;1>/*)` | unchanged, byte-identical |
 | d6_control_standard | `wpkh(O KA/<0;1>/*)` | both routes run and reproduce | unchanged; stdout sha256 prefix `db14761d61c955d2` (d6b) |
 | d7_control_other_multipath | `wpkh(O KA/<2;3>/*)` | both run and reproduce | unchanged |
 | d8_control_bare_wildcard | `wpkh(O KA/*)` | both run and reproduce | unchanged |
-| d9_origin_less_unchanged | `wpkh(KA/<0;1>/*)` | rc 1, origin-less refusal text | byte-identical (the check runs first) |
 
 Base column: every row above was run by the folder on base `f4dad6e5` (md-cli built from it, `mk 0.16.0`; log in the fold
 report); the d10/d10b/d4 route lines were run as printed. The architect's scratch plant of the 2.0 check
