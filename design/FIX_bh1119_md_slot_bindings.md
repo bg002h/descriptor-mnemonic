@@ -9,10 +9,10 @@ Repo descriptor-mnemonic, branch `fix/md-slot-bindings` from main `6aa7e5e32638e
 Crate `md-cli` only; no md-codec change, no wire change, no new flag, type or command; clap help unchanged.
 Author: Claude Opus 5.5 (claude-opus-5-5), 2026-11-22.
 
-**One STOP is open (Q1, section 9): what an EQUAL repeat does.** The grader's fix shape refuses only unequal
-repeats; P2 (Brian B2) ruled the sibling mk question "refuse all repeats, one rule is smaller". Everything about
-UNEQUAL repeats is decided here; the rows for equal repeats (e1-e4) carry both candidate outcomes. Every new
-holder-visible text is PROPOSED (architect confirms).
+**Q1 is ruled (section 9): an EQUAL repeat refuses, option B, exit 2, on all four commands** (coordinator, 2026-11-22;
+it follows Brian's B2 for the sibling mk question, "refuse all repeats, one rule is smaller"). The grader's fix shape
+refused only UNEQUAL repeats; R6 extends it to equal ones (rows e1-e6). Nothing is open. Every new holder-visible text
+is PROPOSED (architect confirms).
 
 Toolchain: `export PATH=$HOME/.cargo/bin:$PATH`; cargo 1.85.0 (`rust-toolchain.toml`); `--locked`;
 nextest `--build-jobs 6 -j 6`; never `--release`. Signet keys only.
@@ -126,7 +126,7 @@ Help text: unchanged (`Repeatable.` stays true: one per slot). Toolkit manual lo
 - L170: in the cell, `repeatable; requires \`--template\`.` becomes `repeatable, one per slot (a second \`--key\` for one \`@i\` is refused, even with the same value, and the same xpub with and without an origin counts as two values); requires \`--template\`.`
 - L171: after `requires \`--template\`;` insert ` one per slot (a second \`--fingerprint\` for one \`@i\` is refused, even with the same value);`.
 
-CHANGELOG: `md encode, verify, descriptor and address refuse a second --key, or a second --fingerprint, for one @i. Two different values exit 1 (descriptor and address used to compose the first key or the last fingerprint; encode and verify failed with an ordering error); the same value given twice exits 2 (descriptor and address used to accept it; encode and verify failed with the ordering error, exit 1) (bh-md-C3).`
+CHANGELOG (CHANGELOG.md, `## md-cli [Unreleased]`, `### Fixed`; a new bullet), PROPOSED: `- **\`md encode\`, \`verify\`, \`descriptor\` and \`address\` refuse a second \`--key\`, or a second \`--fingerprint\`, for one \`@i\`.** Two different values exit 1 (\`descriptor\` and \`address\` used to compose the first key or the last fingerprint; \`encode\` and \`verify\` failed with an ordering error, exit 1). The same value given twice exits 2 (\`descriptor\` and \`address\` used to accept it; \`encode\` and \`verify\` failed with the ordering error, exit 1) (bh-md-C3).`
 
 ## 4. TRACE rows (RED on the base; GREEN after the build)
 
@@ -160,27 +160,27 @@ All base outcomes below were run by the author on `6aa7e5e3` (section 1).
 | e5_descriptor_same_fingerprint_two_spellings | `descriptor --template T --key @0=KA --fingerprint @0=AABBCCDD --fingerprint @0=0xaabbccdd` | rc 0, `[aabbccdd]` `#8ljlmjwr` | E-F(0,aabbccdd), exit 2 |
 | e6_descriptor_same_bracket_two_spellings | `descriptor --template T --key "@0=[73c5da0a/84'/1'/0']KA" --key "@0=[73C5DA0A/84h/1h/0h]KA"` | rc 0, `#t0h7m450` | E-K(0,1,2), exit 2 |
 
-RED expectation for the builder: s1-s16 and e1-e6 fail on the base (s11-s14 and the Q1-B form of e2/e4 fail on
-the text, not the exit); s17 passes on the base and after. The triage test
+RED expectation for the builder: s1-s16 and e1-e6 fail on the base (s11-s14 fail on the text, not the exit; e2 and e4 fail on both);
+s17 passes on the base and after. The triage test
 `bh_md_c3_conflicting_slot_bindings_refused` (`/scratch/cache/bh1119-md-t1/`) is superseded by s1-s5 and is not
 copied in.
 
 Coverage map (rule -> rows): R1 four commands -> s1/s3/s11/s13 (keys), s5/s7/s12/s14 (fingerprints); R1 runs before
 V-FPAGREE / bracket-path -> s8, s9; R2 typed equality -> s8, s9, s10, e1-e6 (e5, e6 fail a string compare); R3 both orders -> s1/s2, s3/s4; R4 both
-orders -> s5/s6; R3 `{a}`/`{b}` and argument order -> s15; R5 -> s16; R6 -> e1-e4; R7 -> (comment, no row); R8 ->
+orders -> s5/s6; R3 `{a}`/`{b}` and argument order -> s15; R5 -> s16; R6 -> e1-e6; R7 -> (comment, no row); R8 ->
 s17 and the unchanged existing suite.
 
 ## 5. Tests that change
 
 Measured: a scratch patch refusing every repeated slot (equal or not) on the four commands, run as
 `cargo nextest run --locked -p md-cli --no-fail-fast` on `6aa7e5e3`: `1014 tests run: 1013 passed, 1 failed,
-3 skipped`. The one failure, which changes under either Q1 option:
+3 skipped`. The one failure:
 - `crates/md-cli/tests/duplicate_key_slots.rs:372` `t_row_the_same_slot_supplied_twice_keeps_first_wins` (and its
   doc comment L366-370) pins FIRST-WINS for `--key @0=K0 --key @0=K1 --key @1=K1` on `md descriptor` (measured
   2026-08-30). It becomes `t_row_the_same_slot_supplied_twice_is_refused`: the same command exits 1, stdout empty,
   stderr K(0,1,2); the doc comment says one placeholder cannot be two cosigners, so this is not shape (1) and is
   refused by the slot-binding check, not by the key-reuse check (stderr must not contain `BIP 388`).
-No existing test supplies an equal repeat, so Q1 changes no further existing test.
+No existing test supplies an equal repeat, so Q1-B changes no further existing test.
 
 ## 6. FOLLOWUPS
 
@@ -191,14 +191,14 @@ No new line is filed.
 
 `bash scripts/fix-bh1119-md-slot-bindings-gate.sh` (builder commits it, with its coordinator catalog row): runs the
 rows of section 4 as printed commands against the built `md` (each row's exit code, stdout and stderr line compared
-to the fixed column; e1-e4 against the option Q1 rules), requires all PASS, then the repo CI set:
+to the fixed column; e1-e6 included), requires all PASS, then the repo CI set:
 `cargo nextest run --locked --workspace --all-targets --all-features --no-fail-fast --build-jobs 6 -j 6`,
 `cargo test --locked --workspace --doc --all-features`, `cargo clippy --workspace --all-targets --all-features -- -D
 warnings`, `cargo fmt --all --check`, `cargo build --locked -p md-cli --no-default-features`, `RUSTDOCFLAGS=-D
 warnings cargo doc --workspace --no-deps --document-private-items --all-features`, `bash ci/code-docs-check.sh`.
 Shown RED once on the base. Not covered: the toolkit manual edit (separate toolkit change at the pin bump), the
 mnemonic-gui schema mirror (no flag or help change, so none owed), macOS/Windows/FreeBSD/musl legs, the
-WORDING_REVIEW row for texts K, F (and E-K, E-F under Q1-B).
+WORDING_REVIEW row for texts K, F (and E-K, E-F).
 
 ## 8. Overlaps
 
@@ -209,18 +209,11 @@ WORDING_REVIEW row for texts K, F (and E-K, E-F under Q1-B).
   touch the same files at other lines (not checked: neither branch existed when this was written); whichever
   lands second rebases.
 
-## 9. STOP Q1: an EQUAL repeat (`--key @0=KA --key @0=KA`, `--fingerprint @0=X --fingerprint @0=X`)
+## 9. Q1 (RULED B, coordinator 2026-11-22): an EQUAL repeat (`--key @0=KA --key @0=KA`, `--fingerprint @0=X --fingerprint @0=X`)
 
-Not decided by the inputs, and two decided precedents point opposite ways:
-- The grader's fix shape (grade-md.md:48, adopted by T1 "proceeds unchanged") refuses only UNEQUAL repeats, and
-  md's own V-FPAGREE treats agreement as a no-op ("agree — no-op, never an override", build.rs:295).
-- P2 / Brian B2 for mk's key records weighed exactly "refuse contradictions, de-duplicate exact repeats" and chose
-  "refuse all", because "BIP-388 forbids repeated keys and one rule is smaller".
-- Today `md encode` and `md verify` already refuse equal repeats (exit 1, the ordering error); `md descriptor` and
-  `md address` accept them (exit 0, the correct single-binding output). No output is wrong either way.
-
-Options: **A** no-op on all four commands (`md encode` newly ACCEPTS an equal repeat and mints the same card as one
-binding). **B** refuse on all four with E-K / E-F, exit 2 (`md descriptor`/`md address` newly refuse a harmless
-input). Author's recommendation: **B**, for the P2 reason (one rule across the fleet; and a mint command never
-widens what it accepts). The builder can build everything except rows e1-e4 and the option-B texts before the
-ruling.
+An equal repeat refuses on all four commands with text E-K / E-F, exit 2 (R6), the same one rule as for unequal repeats and
+the one P2 / Brian B2 chose for mk's key records ("BIP-388 forbids repeated keys and one rule is smaller"). Effect on the
+base: `md descriptor` and `md address` newly refuse an input they accepted with the correct single-binding output (e1, e3);
+`md encode` and `md verify` keep refusing but with E-K / E-F at exit 2 instead of the ordering error at exit 1 (e2, e4).
+Option A (an equal repeat is a no-op, as V-FPAGREE treats agreement, build.rs:295) was considered and not taken.
+Nothing in this FIX is left for the builder to decide.
