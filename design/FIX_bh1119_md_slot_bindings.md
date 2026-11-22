@@ -95,10 +95,7 @@ slot's first fingerprint, `{y}` the refusing one, each as 8 lower-case hex digit
 found is the only line printed. (clap collects the two flags into separate lists, so their mutual interleaving on the
 command line is not observable and plays no part.)
 
-**R6. Equal repeats:** OPEN, STOP Q1 (section 9). Option A: an equal repeat is a no-op (the second binding is dropped
-before anything reads the list), on all four commands. Option B: an equal repeat refuses with text E-K / E-F,
-exit 2, on all four commands. Either way the walk in R3/R4 handles equal and unequal repeats in the same pass, in
-argument order.
+**R6. Equal repeats refuse** (Q1 ruled B by the coordinator, 2026-11-22). At the first argument whose slot already holds an EQUAL value (R2), refuse: exit 2, stdout empty, stderr exactly one line, text E-K for --key ({a}, {b} as in R3) or E-F for --fingerprint ({x} the value as 8 lower-case hex digits, fp_hex). The R3/R4 walk handles equal and unequal repeats in one pass, in argument order; the first repeat found decides the text and the exit.
 
 **R7. Stale comment.** Replace build.rs:262-266's "the CLI has no syntax for binding two different --key values to
 the same @i ... not a reachable disagreement in practice" with a statement that the R1 check has already refused two
@@ -116,23 +113,20 @@ variant V-FPAGREE already uses for "two values for one slot datum disagree" (bui
 
 - **K** (R3): `md: MISMATCH: @{i}: --key arguments {a} and {b} both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @{i}=... you mean and remove the other.`
 - **F** (R4): `md: MISMATCH: @{i}: --fingerprint {x} and --fingerprint {y} both bind this slot; a slot takes exactly one master fingerprint, and md never picks one for you. Keep the one you mean and remove the other.`
-- Only under Q1 option B, rendered through `CliError::BadArg` (main prints `md: {m}`, exit 2: a flag repeated
+- Rendered through `CliError::BadArg` (main prints `md: {m}`, exit 2: a flag repeated
   with the same value is a spelling fault, the class `reject_unreferenced_bindings` already sends to exit 2):
   - **E-K**: `md: @{i}: --key arguments {a} and {b} bind this slot to the same value; give each slot's --key once.`
   - **E-F**: `md: @{i}: --fingerprint {x} is given more than once for this slot; give each slot's --fingerprint once.`
 
 Help text: unchanged (`Repeatable.` stays true: one per slot). Toolkit manual lockstep (mnemonic-toolkit master
 `b0b99a16`, `docs/manual/src/40-cli-reference/42-md.md`), exact replacements, PROPOSED:
-- L35 (`md encode`) and L621 (`md verify`): `| \`--key <@i=XPUB>\` | concrete xpub for placeholder \`@i\`; repeatable, one per slot (two different values for one \`@i\` are refused) |`
-- L36 (`md encode`): `| \`--fingerprint <@i=HEX>\` | master-key fingerprint for placeholder \`@i\`; repeatable, one per slot (two different values for one \`@i\` are refused) |`
-- L622 (`md verify`): `| \`--fingerprint <@i=HEX>\` | master-key fingerprint for placeholder \`@i\`; one per slot (two different values for one \`@i\` are refused) |`
-- L170 (`md address`, inherited by `md descriptor` via L209-214): in the cell, `repeatable; requires \`--template\`.` becomes `repeatable, one per slot (two different values for one \`@i\`, including the same xpub with and without an origin, are refused); requires \`--template\`.`
-- L171: after `requires \`--template\`;` insert ` one per slot (two different values for one \`@i\` are refused);`.
-- If Q1 rules B, each "two different values for one `@i` are refused" reads "a second value for one `@i` is refused".
+- L35 (`md encode`) and L621 (`md verify`): `| \`--key <@i=XPUB>\` | concrete xpub for placeholder \`@i\`; repeatable, one per slot (a second \`--key\` for one \`@i\` is refused, even with the same value) |`
+- L36 (`md encode`): `| \`--fingerprint <@i=HEX>\` | master-key fingerprint for placeholder \`@i\`; repeatable, one per slot (a second \`--fingerprint\` for one \`@i\` is refused, even with the same value) |`
+- L622 (`md verify`): `| \`--fingerprint <@i=HEX>\` | master-key fingerprint for placeholder \`@i\`; one per slot (a second \`--fingerprint\` for one \`@i\` is refused, even with the same value) |`
+- L170: in the cell, `repeatable; requires \`--template\`.` becomes `repeatable, one per slot (a second \`--key\` for one \`@i\` is refused, even with the same value, and the same xpub with and without an origin counts as two values); requires \`--template\`.`
+- L171: after `requires \`--template\`;` insert ` one per slot (a second \`--fingerprint\` for one \`@i\` is refused, even with the same value);`.
 
-CHANGELOG (md-cli, Unreleased, Fixed), PROPOSED: `md encode, verify, descriptor and address refuse two different
---key values, or two different --fingerprint values, for one @i (they used to compose the first key or the last
-fingerprint, or fail with an ordering error) (bh-md-C3).`
+CHANGELOG: `md encode, verify, descriptor and address refuse a second --key, or a second --fingerprint, for one @i. Two different values exit 1 (descriptor and address used to compose the first key or the last fingerprint; encode and verify failed with an ordering error); the same value given twice exits 2 (descriptor and address used to accept it; encode and verify failed with the ordering error, exit 1) (bh-md-C3).`
 
 ## 4. TRACE rows (RED on the base; GREEN after the build)
 
@@ -159,18 +153,20 @@ All base outcomes below were run by the author on `6aa7e5e3` (section 1).
 | s15_first_conflict_in_argument_order | `descriptor --template T2 --key @0=KA --key @1=KB --key @1=KA --key @0=KB` | rc 0, `#5zanlgag` | K(1,2,3) |
 | s16_keys_before_fingerprints | `descriptor --template T --key @0=KA --key @0=KB --fingerprint @0=11223344 --fingerprint @0=aabbccdd` | rc 0, `[aabbccdd]` `#8ljlmjwr` | K(0,1,2) only |
 | s17_one_key_per_slot_still_composes | `descriptor --template T2 --key @0=KA --key @1=KB` | rc 0, `#5zanlgag` | unchanged (GREEN on base) |
-| e1_descriptor_same_key_twice | `descriptor --template T --key @0=KA --key @0=KA` | rc 0, `#34l6j3pf` | Q1-A: rc 0, stdout identical to the single-key run; Q1-B: E-K(0,1,2), exit 2 |
-| e2_encode_same_key_twice | `encode T --key @0=KA --key @0=KA` | rc 1, `override ordering violation` | Q1-A: rc 0, stdout byte-identical to CARD; Q1-B: E-K(0,1,2), exit 2 |
-| e3_descriptor_same_fingerprint_twice | `descriptor --template T --key @0=KA --fingerprint @0=11223344 --fingerprint @0=11223344` | rc 0, `#3xm0shwm` | Q1-A: rc 0, identical to one `--fingerprint`; Q1-B: E-F(0,11223344), exit 2 |
-| e4_encode_same_fingerprint_twice | `encode T --key @0=KA --fingerprint @0=11223344 --fingerprint @0=11223344` | rc 1, `override ordering violation` | Q1-A: rc 0, identical to one `--fingerprint`; Q1-B: E-F(0,11223344), exit 2 |
+| e1_descriptor_same_key_twice | `descriptor --template T --key @0=KA --key @0=KA` | rc 0, `#34l6j3pf` | E-K(0,1,2), exit 2 |
+| e2_encode_same_key_twice | `encode T --key @0=KA --key @0=KA` | rc 1, `override ordering violation` | E-K(0,1,2), exit 2 |
+| e3_descriptor_same_fingerprint_twice | `descriptor --template T --key @0=KA --fingerprint @0=11223344 --fingerprint @0=11223344` | rc 0, `#3xm0shwm` | E-F(0,11223344), exit 2 |
+| e4_encode_same_fingerprint_twice | `encode T --key @0=KA --fingerprint @0=11223344 --fingerprint @0=11223344` | rc 1, `override ordering violation` | E-F(0,11223344), exit 2 |
+| e5_descriptor_same_fingerprint_two_spellings | `descriptor --template T --key @0=KA --fingerprint @0=AABBCCDD --fingerprint @0=0xaabbccdd` | rc 0, `[aabbccdd]` `#8ljlmjwr` | E-F(0,aabbccdd), exit 2 |
+| e6_descriptor_same_bracket_two_spellings | `descriptor --template T --key "@0=[73c5da0a/84'/1'/0']KA" --key "@0=[73C5DA0A/84h/1h/0h]KA"` | rc 0, `#t0h7m450` | E-K(0,1,2), exit 2 |
 
-RED expectation for the builder: s1-s16 and e1-e4 fail on the base (s11-s14 and the Q1-B form of e2/e4 fail on
+RED expectation for the builder: s1-s16 and e1-e6 fail on the base (s11-s14 and the Q1-B form of e2/e4 fail on
 the text, not the exit); s17 passes on the base and after. The triage test
 `bh_md_c3_conflicting_slot_bindings_refused` (`/scratch/cache/bh1119-md-t1/`) is superseded by s1-s5 and is not
 copied in.
 
 Coverage map (rule -> rows): R1 four commands -> s1/s3/s11/s13 (keys), s5/s7/s12/s14 (fingerprints); R1 runs before
-V-FPAGREE / bracket-path -> s8, s9; R2 typed equality -> s8, s9, s10, e1-e4; R3 both orders -> s1/s2, s3/s4; R4 both
+V-FPAGREE / bracket-path -> s8, s9; R2 typed equality -> s8, s9, s10, e1-e6 (e5, e6 fail a string compare); R3 both orders -> s1/s2, s3/s4; R4 both
 orders -> s5/s6; R3 `{a}`/`{b}` and argument order -> s15; R5 -> s16; R6 -> e1-e4; R7 -> (comment, no row); R8 ->
 s17 and the unchanged existing suite.
 
