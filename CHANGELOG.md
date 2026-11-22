@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`md encode`, `verify`, `descriptor` and `address` refuse a second `--key`, or a second `--fingerprint`, for one `@i`.** Two different values exit 1 (`descriptor` and `address` used to compose the first key or the last fingerprint; `encode` and `verify` failed with an ordering error, exit 1). The same value given twice exits 2 (`descriptor` and `address` used to accept it; `encode` and `verify` failed with the ordering error, exit 1) (bh-md-C3).
 - **`md encode` refuses a template it cannot decode back.** A tree nested deeper than the decoder's limit, such
   as `wsh(` followed by 127 `n` wrappers and `:pk(@0/<0;1>/*))`, minted three chunks at exit 0 that `md decode`
   refused; it now prints `md: codec error: decode recursion depth 128 exceeded maximum 128` and exits 1 with
