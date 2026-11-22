@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+### Fixed
+- **`md descriptor --verify-against` compares slot numberings in canonical order.** A template that numbers its slots out of first-occurrence order no longer reports its own fresh card as "NOT spend-equal — the VALUES half differs".
+- **`md decompose --emit commands` prints a mint route only after proving it.** md now mints each route's card in memory and compares the wallet it describes with the input descriptor. A route that would mint a different wallet (a use-site md1 cannot hold, such as `/0/*` or none) or that `md encode`/`mk encode` would refuse (such as a depth-0 key) is withheld with one line; when no route reproduces the descriptor the command refuses (exit 1). `--emit template` and `--emit all` (and `--emit commands`) now refuse a descriptor whose key use-site md1 cannot hold (a fixed step such as `/0/*`, or none), since the template they printed minted a different wallet.
+- **`md encode`, given a concrete descriptor with a key that has no origin path, no longer prints the `--emit commands` line that refuses.** A key with a fingerprint-only origin (such as a master key, `[fingerprint]xpub...`) now gets the `--emit template` line alone, like a key with no origin. In that case the explanation reads: `Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one.` It replaces the sentence ending "the wallet that produced it knows the path." More generally, `md encode` now runs that decomposition itself and prints a `md decompose` line only when it runs: when `md decompose` refuses the descriptor, or prints no template for it (a fixed use-site such as `/0/*`), no line is printed and the referral quotes decompose's refusal; when only `--emit commands` refuses, the template line is printed with decompose's reason.
+
+## md-codec [Unreleased]
+
+### Fixed
+- **A template that numbers its slots out of first-occurrence order now mints a card that decodes.** `canonicalize_placeholder_indices` recomputes the use-site baseline from the new `@0` and keeps an override only where a later slot differs. Before, a template such as `wsh(multi(2,@1/<2;3>/*,@0/<0;1>/*))` minted a card the decoder refused ("use-site override keyed on baseline @0"); it now mints the same card as its first-occurrence spelling. The template id and encoding id of such a spelling now equal its first-occurrence spelling's; no card that decoded before changes.
+- **`canonicalize_placeholder_indices` leaves the descriptor unchanged when it returns an error.** The Divergent path-count check now runs before any index is rewritten.
+
 ## md-cli [0.20.8] — 2026-11-20
 
 ### Changed
