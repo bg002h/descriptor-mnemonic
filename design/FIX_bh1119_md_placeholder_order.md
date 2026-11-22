@@ -206,7 +206,7 @@ not part of this FIX.
 ## 8. Gate line
 
 `bash scripts/fix-bh1119-md-placeholder-order-gate.sh` (builder commits it with its coordinator catalog row;
-row #4 has its own gate). It runs `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh <built md>`
+row #4 has its own gate). It runs Usage: `bash scripts/fix-bh1119-md-placeholder-order-gate.sh`, no arguments, from the repo root, `$HOME/.cargo/bin` first in PATH, `--locked` everywhere. Step 1: `cargo build --locked -p md-cli`, then `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh target/debug/md`. Step 2: `cargo nextest run --locked -p md-codec -E 'test(=<name>)'` for each of e12, e14, e15, e18 (full function names from section 3) and the two changed canonicalize.rs tests, and `-p md-cli` for e13; each must run exactly 1 test (counted from `cargo nextest list`). Step 3: the CI set. Step 4: the golden `git diff --exit-code`. Every step runs; exit 0 only if all passed, else exit 1 after printing the failed step names. No quick mode. 'Shown RED' means the E-row script on a base build (`rows failed: 8`, rc 1), recorded in the builder's report; the wrapper is not run on the base. `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh <built md>`
 (committed with this FIX: the E block of the author's red.sh, i.e. its header, the `erow`, e2, e5 and `vrow`
 rows, plus e16 and e17; exit 0 only when no E row fails; base exit 1, `rows failed: 8`), then the named
 library and unit rows e12, e13, e14, e15, e18 and the two changed unit tests by filter (each filter's match count checked: 1), then
