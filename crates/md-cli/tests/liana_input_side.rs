@@ -351,11 +351,19 @@ fn decompose_does_not_recognise_a_non_canonical_internal_key_use_site() {
     for (label, internal_key_expr) in cases {
         let d = kofn_with_internal_key(internal_key_expr);
         let (out, err, code) = md(&["decompose", &d, "--emit", "template"]);
-        assert_eq!(code, 0, "[{label}] decompose failed: {err}");
         assert!(
             !out.contains("UNSPENDABLE(liana)"),
             "[{label}] must NOT be recognised as Liana's own internal key: {out}"
         );
+        // Row #4 (FIX_bh1119_md_decompose_routes 2.0): a use-site md1 cannot
+        // hold (`/0/*`, `/0`, `/<0;1>/5/*`) now refuses at the template check.
+        if label.starts_with("/0/*") || label.starts_with("/0 ") || label.starts_with("/<0;1>/5/*")
+        {
+            assert_eq!(code, 1, "[{label}] must refuse: {out} {err}");
+            assert_eq!(out, "", "[{label}] stdout must be empty");
+            continue;
+        }
+        assert_eq!(code, 0, "[{label}] decompose failed: {err}");
         assert!(
             out.contains("tr(@0/"),
             "[{label}] must fall through to an ordinary slot: {out}"

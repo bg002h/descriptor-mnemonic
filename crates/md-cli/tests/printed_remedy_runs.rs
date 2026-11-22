@@ -388,7 +388,8 @@ fn reversion(k: &str, version: [u8; 4]) -> String {
 /// C2, every other key spelling the referral matches (SLIP-132 testnet `Vpub`, SLIP-132 mainnet `zpub` from
 /// the BIP-84 vector, a private `xprv`, an xpub beside a tpub): decompose refuses each under every flag, so
 /// no `md decompose` line is printed, the text names the spelling, and the remedy it names runs (the same
-/// descriptor with xpub or tpub keys prints two lines, and each runs).
+/// descriptor with xpub or tpub keys prints two lines, and each runs; one line, the template, where a key is
+/// the master key with no origin path, as in the xprv and xpub-beside-tpub rows).
 #[test]
 fn c2_other_key_spellings_printed_lines_run() {
     let (a0_origin, a0_tpub) = A0.split_once(']').unwrap();
@@ -400,16 +401,19 @@ fn c2_other_key_spellings_printed_lines_run() {
             format!("wsh(pk({a0_origin}]{a0_vpub}/<0;1>/*))"),
             "Vpub",
             format!("wsh(pk({A0}/<0;1>/*))"),
+            2,
         ),
         (
             format!("wpkh([73c5da0a/84'/0'/0']{zpub}/<0;1>/*)"),
             "zpub",
             format!("wpkh([73c5da0a/84'/0'/0']{zpub_as_xpub}/<0;1>/*)"),
+            2,
         ),
         (
             format!("wpkh({V1_XPRV}/<0;1>/*)"),
             "xprv",
             format!("wpkh([3442193e]{V1_XPUB}/<0;1>/*)"),
+            1,
         ),
         (
             format!("wsh(multi(1,[3442193e]{V1_XPUB}/<0;1>/*,{A0}/<0;1>/*))"),
@@ -417,34 +421,37 @@ fn c2_other_key_spellings_printed_lines_run() {
             format!(
                 "wsh(multi(1,[3442193e]{V1_XPUB}/<0;1>/*,[73c5da0a/84'/0'/0']{zpub_as_xpub}/<0;1>/*))"
             ),
+            1,
         ),
     ];
-    for (d, has, again) in cases {
+    for (d, has, again, lines) in cases {
         assert_eq!(c2_run(&d), 0, "a decompose line printed for {d}");
         let (_, _, se) = out_of(md().args(["encode", &d]));
         assert!(
             se.contains(&format!("this one has {has}.")) && se.contains("`md decompose`"),
             "{se}"
         );
-        assert_eq!(c2_run(&again), 2, "{again}");
+        assert_eq!(c2_run(&again), lines, "{again}");
     }
 }
 
-/// C2, a key with no `[fingerprint/path]` origin (xpub, and tpub beside an originated one): decompose's
+/// C2, a key with no `[fingerprint/path]` origin (xpub, tpub beside an originated one, and a master xpub
+/// with its fingerprint but no path, which decompose's two mint routes both refuse): decompose's
 /// `--emit commands` refuses it, so only the `--emit template` line is printed and it runs; the text says
-/// why, and with the origin stated both lines are printed and run.
+/// why, and with the origin path stated both lines are printed and run.
 #[test]
 fn c2_origin_less_key_printed_line_runs() {
     let bare_tpub = A0.split_once(']').unwrap().1;
     for d in [
         format!("wpkh({V1_XPUB}/<0;1>/*)"),
         format!("wsh(sortedmulti(2,{bare_tpub}/<0;1>/*,{B0}/<0;1>/*))"),
+        format!("wpkh([3442193e]{V1_XPUB}/<0;1>/*)"),
     ] {
         assert_eq!(c2_run(&d), 1, "{d}");
         let (_, _, se) = out_of(md().args(["encode", &d]));
         assert!(se.contains("[fingerprint/path] before the key"), "{se}");
     }
-    assert_eq!(c2_run(&format!("wpkh([3442193e]{V1_XPUB}/<0;1>/*)")), 2);
+    assert_eq!(c2_run(&format!("wsh(pk({A0}/<0;1>/*))")), 2);
 }
 
 #[cfg(feature = "cli-compiler")]

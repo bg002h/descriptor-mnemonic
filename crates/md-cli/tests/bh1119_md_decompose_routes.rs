@@ -157,9 +157,7 @@ fn d5_depth2_route1_withheld() {
     let first = out.lines().next().unwrap();
     assert_eq!(
         first,
-        format!(
-            "# ── route 1 withheld: {DEPTH_REASON} 2; see `md decompose --emit template` ──"
-        )
+        format!("# ── route 1 withheld: {DEPTH_REASON} 2; see `md decompose --emit template` ──")
     );
     assert_eq!(out.lines().nth(1), Some(""));
     assert!(
@@ -192,9 +190,7 @@ fn d10b_depth1_right_fingerprint() {
     assert_eq!(rc, 0, "stderr: {err}");
     assert_eq!(
         out.lines().next().unwrap(),
-        format!(
-            "# ── route 1 withheld: {DEPTH_REASON} 1; see `md decompose --emit template` ──"
-        )
+        format!("# ── route 1 withheld: {DEPTH_REASON} 1; see `md decompose --emit template` ──")
     );
     assert!(
         out.lines()
@@ -267,7 +263,10 @@ fn d12_template_controls() {
 fn control(desc: &str) -> String {
     let (rc, out, err) = decompose(desc, "commands");
     assert_eq!(rc, 0, "stderr: {err}");
-    assert!(out.starts_with("# ── route 1: the KEYED card"), "got: {out}");
+    assert!(
+        out.starts_with("# ── route 1: the KEYED card"),
+        "got: {out}"
+    );
     assert!(out.contains("# ── route 2: the SPLIT set"), "got: {out}");
     assert!(!out.contains("withheld"));
     out
@@ -295,7 +294,11 @@ fn d6_control_standard() {
         .env("PATH", path)
         .output()
         .unwrap();
-    assert!(ran.status.success(), "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
     let card = String::from_utf8(ran.stdout).unwrap();
     let mut args = vec!["decode"];
     args.extend(card.split_whitespace());

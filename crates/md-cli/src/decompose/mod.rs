@@ -19,6 +19,7 @@
 //! a repeated-key descriptor is well-formed script and this is a POLICY
 //! refusal of a BIP-forbidden shape (operator ruling 2026-08-30).
 
+pub mod prove;
 pub mod walk;
 
 use crate::error::CliError;
@@ -41,6 +42,11 @@ pub struct Decomposition {
     pub occurrences: Vec<Occurrence>,
     /// Advisories for stderr. stdout stays the machine contract.
     pub notes: Vec<String>,
+    /// `Some(message)` when the 2.0 template check failed: the template read
+    /// back with md's own lexer does not say what the input says (a use-site
+    /// an md1 card cannot hold), so no emission may print it. The message is
+    /// the `CliError::Decompose` text of the refusal.
+    pub template_refusal: Option<String>,
 }
 
 impl Decomposition {
@@ -524,6 +530,8 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
 
     let template = walk::build_template(&desc, &occurrences, liana_internal_key.as_deref())?;
 
+    let template_refusal = prove::template_refusal(&template, &occurrences);
+
     let mut notes = Vec::new();
     let origin_less = occurrences
         .iter()
@@ -536,10 +544,14 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
             "{} key(s) state NO origin in this descriptor — {}. They are emitted as bare key \
              lines and are EXCLUDED from the mk-mintable set: an mk1 card binds a key to the \
              origin it was derived at by design, and `mk encode --keys` refuses a record that \
-             is not `[fingerprint/path]xpub`. The template and descriptor emissions are \
-             unaffected; `--emit commands` refuses.",
+             is not `[fingerprint/path]xpub`. {}",
             origin_less.len(),
-            origin_less.join(", ")
+            origin_less.join(", "),
+            if template_refusal.is_some() {
+                "The descriptor emission is unaffected; `--emit template` and `--emit commands` refuse."
+            } else {
+                "The template and descriptor emissions are unaffected; `--emit commands` refuses."
+            }
         ));
     }
     // md's template surface is narrower than BIP 388's. Say so HERE, where the
@@ -557,6 +569,7 @@ pub fn decompose(raw: &[String], network: Network) -> Result<Decomposition, CliE
         descriptor,
         occurrences,
         notes,
+        template_refusal,
     })
 }
 

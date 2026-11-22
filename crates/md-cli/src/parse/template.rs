@@ -439,9 +439,10 @@ fn no_placeholders_message(template: &str) -> String {
         };
         // `--emit commands` also refuses a key with no `[fingerprint/path]`
         // origin before it, so that line is printed only when every key has one.
-        let origin_less = key
-            .find_iter(template)
-            .any(|m| !template[..m.start()].ends_with(']'));
+        let origin_less = key.find_iter(template).any(|m| {
+            let pre = &template[..m.start()];
+            !(pre.ends_with(']') && pre.rfind('[').is_some_and(|i| pre[i..].contains('/')))
+        });
         match net {
             Some(net) if !origin_less => format!(
                 "this is a concrete wallet descriptor (it carries a real extended key), not \
@@ -456,9 +457,9 @@ fn no_placeholders_message(template: &str) -> String {
                  an md1 template — `md encode` takes a template whose keys are `@i` \
                  placeholders. md reads descriptors with `md decompose`:\n    \
                  md decompose <DESCRIPTOR> --emit template{net}   # the @i template for --template\n\
-                 Its mint commands (--emit commands) also need each key's origin, \
-                 [fingerprint/path] before the key, which this descriptor leaves out; the \
-                 wallet that produced it knows the path.{liana_hint}"
+                 Its mint commands (--emit commands) also need each key at account level \
+                 with its origin, [fingerprint/path] before the key; this descriptor has a \
+                 key without one.{liana_hint}"
             ),
             None => format!(
                 "this is a concrete wallet descriptor (it carries a real extended key), not \
