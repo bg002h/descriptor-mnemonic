@@ -1,4 +1,4 @@
-# FIX_bh1119_md_printed_examples: two `--help` examples that fail in a shell, and an md-codec README that does not compile (bh-md-I10, bh-md-I11, bh-md-F1 Important)
+# FIX_bh1119_md_printed_examples: five `--help` examples that fail as printed, and an md-codec README that does not compile (bh-md-I10, bh-md-I11, bh-md-F1 Important)
 
 Small-fix track (bughunt-1119 FIX table row #41; both keys graded I; I11's grade rests on ruling P8/B8: README and
 remedy code count as printed, so "no printed command fails as printed" covers them). Not class B: no card, key,
@@ -37,7 +37,7 @@ exit 2
 ```
 
 The other subcommands with a `$` example: `md decode --help` runs as printed (control); `md descriptor`, `md address`
-and `md repair` print elided placeholders (`md1qq...`), which section 8 F1 files, out of this row.
+and `md repair` print elided placeholders (`md1qq...`); F1, folded in as S9-S11.
 
 I11. `crates/md-codec/README.md:56-76` ("Encode a wallet policy and decode it back") uses an API md-codec no longer
 has. Run as a doctest (trial harness of section 2.2, reverted):
@@ -84,7 +84,7 @@ example uses (the crate is 0.48.7).
     every ```` ```rust ```` block of `crates/md-codec/README.md` (the `toml` and `sh` blocks are not Rust and are not
     run). CI already runs `cargo test --workspace --doc --all-features` (`ci.yml:87`), so a README block that stops
     compiling or running fails CI.
-  - `#[cfg(test)]` unit test `i11_readme_dependency_pin_matches_crate_version`: the README contains
+  - a unit test inside `#[cfg(test)] mod tests` (the TRACE filter `readme_doctests::tests::...` needs that module path) `i11_readme_dependency_pin_matches_crate_version`: the README contains
     `md-codec = "<MAJOR>.<MINOR>"` built from `CARGO_PKG_VERSION_MAJOR`/`_MINOR`; failure message
     `README quickstart must pin md-codec = "0.48"` (with the current pair). A minor bump then fails the test until
     the README pin moves with it.
@@ -167,7 +167,7 @@ assert_eq!(md_codec::encode_md1_string(&descriptor)?, "md1yq802gggqpsqwgtua24e7s
   `verify-examples.sh` transcript, so no `.cmd`/`.out` pair moves.
 - CHANGELOG.md, under `## md-cli [Unreleased]`, add `### Fixed` if absent and append:
   "- **The `md encode`, `md decompose`, `md descriptor`, `md address` and `md repair` help examples run as printed.** Two had unquoted templates (a shell syntax error) and three used elided `md1qq...` cards; they are now quoted and use real cards (bh-md-I10, bh-md-F1)."
-- CHANGELOG.md, under `## md-codec [Unreleased]` / `### Fixed`, append:
+- CHANGELOG.md, under `## md-codec [Unreleased]` / `### Fixed` (add `### Fixed` if absent), append:
   "- **The README examples compile and run.** The quickstart used an API md-codec no longer has and pinned 0.32;
   it now decodes a card and re-encodes it with the current API and pins 0.48. The error-correction example uses a
   real damaged card instead of placeholders, and the stale \"chunked-form only\" note is gone. Both README blocks now
@@ -192,8 +192,7 @@ equals the next help line, trimmed; it also asserts exactly one `$` line for tha
 | f1_repair_help_examples_run_as_printed | md-cli | same, `test(=f1_repair_help_examples_run_as_printed)` | FAIL: `md repair md1qq...` exit 2, `md: repair: codex32 decode error: chunk 0: character '.' not in codex32 alphabet` | PASS |
 
 Order (test first): commit RED = the md-cli test file, `readme_doctests.rs` + its `lib.rs` line + the S4
-rule, with the README and help unchanged; run every row above and see the RED column. Commit GREEN = S1, S2,
-S5-S8, CHANGELOG; run the gate. The doctest row has no function name; it is identified by the filter
+rule, with the README and help unchanged; run every row above and see the RED column. Commit GREEN = S1, S2, S5-S11, CHANGELOG, and the deletion of `crates/md-cli/tests/help_examples.rs` (I1); run the gate. The doctest row has no function name; it is identified by the filter
 `readme_doctests::ReadmeDoctests` and its count (exactly 2 tests, 2 passed).
 
 Author trial (reverted; logs in `/scratch/cache/md-printed-examples-trial/`): md-cli rows RED 1 passed 2 failed,
@@ -202,8 +201,12 @@ GREEN 3 passed; pin row RED then GREEN; doctest RED 2 failed, GREEN 2 passed; `c
 
 ## 5. Tests that change
 
-None existing. No test pins either help line or the README: `git grep -F` for both example command texts finds only
-`main.rs:109` and `:826`. The README card `md1yq802gggqpsqwgtua24e7ssf3` is already pinned (as the output of encoding the
+`crates/md-cli/tests/help_examples.rs` runs each EXAMPLES line split on whitespace, without a shell, so S1's and
+S2's quotes reach `md` as literal characters and `encode_example_matches_actual_output` and
+`decompose_example_matches_actual_output` fail (stdout empty). The GREEN commit deletes
+`crates/md-cli/tests/help_examples.rs`: the new file runs the same three examples (c1, i10 x2) through `bash -c`,
+which is how a reader runs them. No other existing test pins either help line or the README (`git grep -F` for both example
+command texts finds only `main.rs:109` and `:826`). The README card `md1yq802gggqpsqwgtua24e7ssf3` is already pinned (as the output of encoding the
 inline-origin template `wpkh(@0/84'/0'/0'/<0;1>/*)`) by `crates/md-cli/tests/cli_unhardened_origin_note.rs:95`,
 so a codec change that moves it fails that test too.
 
