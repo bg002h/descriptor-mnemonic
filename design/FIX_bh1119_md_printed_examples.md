@@ -84,7 +84,8 @@ example uses (the crate is 0.48.7).
     every ```` ```rust ```` block of `crates/md-codec/README.md` (the `toml` and `sh` blocks are not Rust and are not
     run). CI already runs `cargo test --workspace --doc --all-features` (`ci.yml:87`), so a README block that stops
     compiling or running fails CI.
-  - a unit test inside `#[cfg(test)] mod tests` (the TRACE filter `readme_doctests::tests::...` needs that module path) `i11_readme_dependency_pin_matches_crate_version`: the README contains
+  - unit test `i11_readme_dependency_pin_matches_crate_version`, inside `#[cfg(test)] mod tests` (its TRACE filter
+    `readme_doctests::tests::i11_readme_dependency_pin_matches_crate_version` needs that module path): the README contains
     `md-codec = "<MAJOR>.<MINOR>"` built from `CARGO_PKG_VERSION_MAJOR`/`_MINOR`; failure message
     `README quickstart must pin md-codec = "0.48"` (with the current pair). A minor bump then fails the test until
     the README pin moves with it.
