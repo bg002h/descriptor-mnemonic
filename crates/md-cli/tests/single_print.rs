@@ -222,3 +222,15 @@ fn separator_refusal_remedies_run_as_printed() {
         "{se}"
     );
 }
+
+#[test]
+fn descriptor_emit_md1_out_writes_the_stdout_bytes() {
+    let grouped = text(&emit_b1(&["--group-size", "5"]).stdout);
+    assert!(grouped.contains(' '));
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("policy.md1");
+    let o = emit_b1(&["--group-size", "5", "--out", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o.stderr));
+    assert_eq!(text(&o.stdout), "");
+    assert_eq!(std::fs::read_to_string(&f).unwrap(), grouped);
+}
