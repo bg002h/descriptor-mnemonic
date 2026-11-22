@@ -437,7 +437,7 @@ probe** — and emits: the keyless template, origin-notated key lines
   refuse with guidance (extract the string; combine the pair to
   `<0;1>`) — extraction stays the operator's or a future front-end's
   job, and the refusal must not be the bare checksum error measured
-  today (the F-420 class).
+  today (the F-420 class). A fixed-path descriptor is accepted, but md1 cannot hold its use-site, so `--emit template`, `--emit all` and `--emit commands` refuse it (there is no md1 template for it); `--emit keys`, `--emit fingerprints` and `--emit descriptor` still work.
 
 ## Canonicalisation
 
