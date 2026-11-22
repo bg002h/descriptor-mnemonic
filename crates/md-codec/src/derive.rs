@@ -369,6 +369,64 @@ mod tests {
         }
     }
 
+    /// `wpkh(@0/*)`: no multipath anywhere, so only chain 0 exists.
+    fn single_chain_wpkh_descriptor() -> Descriptor {
+        Descriptor {
+            n: 1,
+            path_decl: PathDecl {
+                n: 1,
+                paths: PathDeclPaths::Shared(bip84_origin()),
+            },
+            use_site_path: UseSitePath {
+                multipath: None,
+                wildcard_hardened: false,
+            },
+            tree: Node {
+                tag: Tag::Wpkh,
+                body: Body::KeyArg { index: 0 },
+            },
+            tlv: {
+                let mut t = TlvSection::new_empty();
+                t.pubkeys = Some(vec![(0u8, one_test_xpub_bytes())]);
+                t
+            },
+        }
+    }
+
+    #[test]
+    fn r4_to_miniscript_chain1_without_multipath_refused() {
+        let d = single_chain_wpkh_descriptor();
+        let e1 = crate::to_miniscript_descriptor_with_network(&d, 1, Network::Bitcoin).unwrap_err();
+        assert!(
+            matches!(
+                e1,
+                Error::ChainIndexOutOfRange {
+                    chain: 1,
+                    alt_count: 1
+                }
+            ),
+            "{e1:?}"
+        );
+        let e2 = crate::to_miniscript_descriptor(&d, 1).unwrap_err();
+        assert!(
+            matches!(
+                e2,
+                Error::ChainIndexOutOfRange {
+                    chain: 1,
+                    alt_count: 1
+                }
+            ),
+            "{e2:?}"
+        );
+        assert!(crate::to_miniscript_descriptor_with_network(&d, 0, Network::Bitcoin).is_ok());
+    }
+
+    #[test]
+    fn c6_to_miniscript_override_change_chain_still_renders() {
+        let d = none_baseline_override_change_descriptor();
+        assert!(crate::to_miniscript_descriptor_with_network(&d, 1, Network::Bitcoin).is_ok());
+    }
+
     #[test]
     fn derive_address_override_change_chain_derivable() {
         // Funds-availability (M3): a `None`-baseline + `Some(<0;1>)`-override
