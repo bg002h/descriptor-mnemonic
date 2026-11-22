@@ -451,15 +451,16 @@ pub enum Error {
         idx: u8,
     },
 
-    /// `Descriptor::derive_address` was called with a `chain` index
-    /// outside the use-site multipath alt-count (or non-zero when no
-    /// multipath is present).
+    /// `Descriptor::derive_address` or `to_miniscript_descriptor` was called
+    /// with a `chain` index at or beyond the widest use-site multipath
+    /// alt-count across all keys (the baseline and every per-`@N` override;
+    /// a key with no multipath counts as 1).
     #[error("chain index {chain} out of range; use-site multipath alt-count is {alt_count}")]
     ChainIndexOutOfRange {
         /// The provided chain index.
         chain: u32,
-        /// The number of alternatives in the use-site multipath (`0` when
-        /// no multipath component is present).
+        /// The widest alt-count across all keys (`1` when no key has a
+        /// multipath component).
         alt_count: usize,
     },
 
