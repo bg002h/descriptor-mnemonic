@@ -2,6 +2,9 @@
 
 Model: Claude Opus 5.5 (claude-opus-5-5), 2026-11-22. Author of this FIX document (not the coordinator).
 Base: `origin/main` 5df4cb92 (md-cli 0.20.8). Branch `fix/single-print`.
+Folded for review r1 (`coordinator/agent-reports/review-fix-single-print-r1.md`; fold model Claude Sonnet 5.5,
+claude-sonnet-5-5, 2026-11-22): I-2 (the `--separator` refusal remedies: sections 0, 1, 3, 4, 5), I-3 (section 8b),
+I-4 (section 8), M-3 (`md repair --in` help). `origin/main` was still 5df4cb92 when the fold ran.
 
 ## 0. Ruling and scope
 
@@ -19,7 +22,8 @@ descriptor --emit md1`. Out of scope: every other md verb (`md repair` prints it
 - P1. `--group-size` and `--separator` (on `md encode`, and on `md descriptor` where they still `requires = "emit"`)
   are KEPT and group STDOUT on request, as `mt encode` and `mnemonic bundle` do. `--group-size` default changes
   5 -> 0 (unbroken), so a plain `md encode` prints on stdout exactly what it printed before. `--separator` keeps its
-  parser, its refusal texts (unchanged: "... or `--group-size 0` for an unbroken one" stays true) and default `space`.
+  parser, its refusal texts (the remedy sentences are reworded: `--separator space` alone no longer groups; exact
+  texts in section 1, review r1 I-2) and default `space`.
 - P2. `--out FILE` receives exactly the bytes stdout would have carried (grouped under `--group-size`), as `mt encode
   --out` does; the single renderer `cmd::encode::render_artifact` serves both verbs and both destinations.
 - P3. `--json` ignores the grouping flags (unchanged; measured byte-identical to the base).
@@ -47,7 +51,21 @@ descriptor --emit md1`. Out of scope: every other md verb (`md repair` prints it
         [default: space]
 
 `md descriptor --help` (`--out`, `--group-size`, `--separator`) and the `--in` help of the reading verbs change the
-same way; the exact doc-comment text is in the section-3 diff (`main.rs`).
+same way; the exact doc-comment text is in the section-3 diff (`main.rs`; `repair.rs` for `md repair --in`, review
+r1 M-3: "so a card copied in grouped form re-ingests", as `md decode --in`).
+
+`--separator` refusals (review r1 I-2; `parse_separator` in `main.rs`, shared by `md encode` and `md descriptor`; exit
+2 as before). With the default group size now 0, `--separator space` alone prints unbroken, so the remedy sentences
+change (the retired-value text before the sentence is unchanged):
+
+- retired value (`hyphen`, `-`, `comma`, `,`), last sentence: "Use `--group-size 5 --separator space` (or the literal
+  " ") for a grouped card, or drop `--separator` for an unbroken one (the default)."
+- any other value, last sentence: "Drop `--separator` for an unbroken card (the default), or use `--group-size 5
+  --separator space` for a grouped one."
+
+Both remedies run as printed (measured): `md encode 'wpkh(@0/<0;1>/*)' --network signet --group-size 5 --separator
+space` prints `md1yq pqqxq q8xtw hw4xw n4qh`, and without `--separator` it prints `md1yqpqqxqq8xtwhw4xwn4qh`, both
+exit 0.
 
 `CHANGELOG.md`, under the md-cli Unreleased heading:
 
@@ -86,7 +104,7 @@ Measured on the GREEN build; every exit is 0.
 | the same with `--group-size 5` | `md1yq pqqxq q8xtw hw4xw n4qh\n` | `NT\n` | stdout unbroken |
 | `md descriptor <v-b1-wallet md1 x4> --from-mk1 <its 4 mk1> --emit md1` (fixture `crates/md-cli/tests/fixtures/seating/v-b1-wallet.txt`) | the 4 unbroken md1 lines (unchanged) | `chunk-set-id: 0x7a2e1`, then the 3 seating `note:` lines, then `N` | the 4 grouped lines + `group size: 5` + `separator: space` sat between `chunk-set-id:` and the seating notes |
 | the same with `--group-size 5` | the 4 lines grouped by 5 | as the row above | stdout unbroken |
-| refusals, exit codes, `requires = "emit"` | unchanged | unchanged | — |
+| refusals, exit codes, `requires = "emit"` | unchanged, except the two `--separator` remedy sentences (section 1) | unchanged | — |
 
 ## 3. Production changes (exact; the GREEN build measured in section 6)
 
@@ -300,11 +318,54 @@ index b0a3a730..2d19adc2 100644
  }
  
  /// F-A4: is `tree` a top-level bare legacy P2SH multisig — `sh(multi(...))`
+diff --git i/crates/md-cli/src/cmd/repair.rs w/crates/md-cli/src/cmd/repair.rs
+index 2cfb0b77..12a35ba2 100644
+--- i/crates/md-cli/src/cmd/repair.rs
++++ w/crates/md-cli/src/cmd/repair.rs
+@@ -50,7 +50,7 @@ pub struct RepairArgs {
+     pub md1_strings: Vec<String>,
+ 
+     /// P3 §6b — read md1 strings from FILE, one per line. Display separators
+-    /// are stripped per line, so a card copied off an engraving card
++    /// are stripped per line, so a card copied in grouped form
+     /// re-ingests.
+     #[arg(long = "in", value_name = "FILE")]
+     pub in_file: Option<std::path::PathBuf>,
 diff --git i/crates/md-cli/src/main.rs w/crates/md-cli/src/main.rs
-index 97c98a8e..ff8e4adc 100644
+index 97c98a8e..f665bf6f 100644
 --- i/crates/md-cli/src/main.rs
 +++ w/crates/md-cli/src/main.rs
-@@ -115,8 +115,9 @@ enum Command {
+@@ -73,8 +73,10 @@ impl CliNetwork {
+ /// is a plate.
+ ///
+ /// The refusal names BOTH remedies (§6h — remedy text must be executable):
+-/// `--separator space` for a grouped card, `--group-size 0` for an unbroken
+-/// one. Someone reaching for `hyphen` wanted one or the other.
++/// `--group-size 5 --separator space` for a grouped card (`--separator space`
++/// alone no longer groups: the default group size is 0), dropping
++/// `--separator` for an unbroken one. Someone reaching for `hyphen` wanted one
++/// or the other.
+ fn parse_separator(s: &str) -> Result<char, String> {
+     match s {
+         "space" | " " => Ok(' '),
+@@ -82,12 +84,13 @@ fn parse_separator(s: &str) -> Result<char, String> {
+             "separator {s:?} is no longer accepted: --separator is whitespace-only across the \
+              constellation (SPEC §6c), because `mt` strips whitespace and nothing else on decode, \
+              so a hyphen- or comma-grouped card is one `mt` refuses AFTER the plates are cut. \
+-             Use `--separator space` (or the literal \" \") for a grouped card, or \
+-             `--group-size 0` for an unbroken one."
++             Use `--group-size 5 --separator space` (or the literal \" \") for a grouped card, or \
++             drop `--separator` for an unbroken one (the default)."
+         )),
+         other => Err(format!(
+             "invalid separator {other:?}; --separator is whitespace-only: expected `space` (or \
+-             the literal \" \"). Use `--group-size 0` for an unbroken card."
++             the literal \" \"). Drop `--separator` for an unbroken card (the default), or use \
++             `--group-size 5 --separator space` for a grouped one."
+         )),
+     }
+ }
+@@ -115,8 +118,9 @@ enum Command {
          in_file: Option<std::path::PathBuf>,
          /// Write the md1 artifact to FILE instead of stdout, CREATED 0600
          /// (SPEC §6b, F-244) — which a shell redirect cannot do. OVERWRITES an
@@ -316,7 +377,7 @@ index 97c98a8e..ff8e4adc 100644
          #[arg(long = "out", value_name = "FILE")]
          out_file: Option<std::path::PathBuf>,
          /// Compile a sub-Miniscript-Policy expression into a template (cli-compiler).
-@@ -157,14 +158,14 @@ enum Command {
+@@ -157,14 +161,14 @@ enum Command {
          /// Force chunked encoding even for short policies.
          #[arg(long)]
          force_chunked: bool,
@@ -338,7 +399,7 @@ index 97c98a8e..ff8e4adc 100644
          #[arg(long, default_value = "space", value_parser = parse_separator)]
          separator: char,
          /// Removed in v0.12.0; now a hard error. md1 is regular-code-only
-@@ -199,8 +200,8 @@ enum Command {
+@@ -199,8 +203,8 @@ enum Command {
          #[arg(num_args = 1..)]
          strings: Vec<String>,
          /// Read md1 strings from FILE, one per line (SPEC §6b). Display
@@ -349,7 +410,7 @@ index 97c98a8e..ff8e4adc 100644
          #[arg(long = "in", value_name = "FILE")]
          in_file: Option<std::path::PathBuf>,
          /// Emit a structured JSON object on stdout instead of the
-@@ -560,24 +561,24 @@ enum Command {
+@@ -560,24 +564,24 @@ enum Command {
          /// Write the KEYED md1 artifact to FILE instead of stdout, CREATED
          /// 0600 -- mirrors `md encode --out` (F-244) byte for byte, which a
          /// shell redirect cannot do. OVERWRITES an existing file, and
@@ -400,9 +461,11 @@ New file `crates/md-cli/tests/single_print.rs` (verbatim below; rustfmt-clean). 
 | `encode_single_chunk_template_prints_once` | stdout `md1yqpqqxqq8xtwhw4xwn4qh\n`; stderr exactly `NT\n` | FAIL: stderr `md1yq pqqxq q8xtw hw4xw n4qh\ngroup size: 5\nseparator: space\nNT\n` |
 | `descriptor_emit_md1_prints_each_chunk_once` | no stderr line starts `md1`, `group size:` or `separator:` | FAIL: a grouped `md1f0 ghpps ...` line on stderr |
 | `descriptor_emit_md1_group_size_groups_stdout` | `--group-size 5` stdout = the default stdout regrouped by 5 | FAIL: stdout unbroken |
+| `separator_refusal_remedies_run_as_printed` | `--separator hyphen` exits 2 with the new retired-arm sentence; `--group-size 5 --separator space` exits 0 and prints `md1yq pqqxq q8xtw hw4xw n4qh\n`; no `--separator` prints `md1yqpqqxqq8xtwhw4xwn4qh\n`; `--separator x` exits 2 with the new catch-all sentence | FAIL: the refusal still says "Use `--separator space` (or the literal " ") for a grouped card, or `--group-size 0` for an unbroken one." |
 
 Command (run, not pinned): `CARGO_TARGET_DIR=<own> cargo nextest run --locked --build-jobs 6 -j 6 -p md-cli --test
-single_print`. Base result: `6 tests run: 0 passed, 6 failed`. Assertion excerpts from that run:
+single_print`. Base result: `7 tests run: 0 passed, 7 failed` (log `/scratch/cache/fold-sp-md-red.log`, nextest rc 100, run on
+`origin/main` 5df4cb92 with only the new file added). Assertion excerpts from that run:
 
 ```text
     thread 'encode_prints_each_chunk_once' panicked at crates/md-cli/tests/single_print.rs:94:5:
@@ -415,6 +478,8 @@ single_print`. Base result: `6 tests run: 0 passed, 6 failed`. Assertion excerpt
     thread 'descriptor_emit_md1_group_size_groups_stdout' panicked at crates/md-cli/tests/single_print.rs:155:5:
       left: "md1f0ghpps9q2tvyyy5jmpprj5qqcy8ppgtcgu79mg9tnchdq59wpyhwsv0jskp2rsal4egz4eqdccu772e060rs\nmd1f0ghppsf5859p875x67p5s3wem7sgluxl3d2a3syx3m7halwd7s7d5e8l2xm3y3xzfmadfjcjukwzsuw7pydp\nmd1f0ghppsje20ur0anz7jwkzae8efejcxy50llpx82qfmryv7l68w6hzragnj3g5qrl85zeapccg28cpyh2qcaz\nmd1f0ghppse8wq0vdczfyy55tqsd5576trsa3p40nfpd7hs
      right: "md1f0 ghpps 9q2tv yyy5j mpprj 5qqcy 8ppgt cgu79 mg9tn chdq5 9wpyh wsv0j skp2r sal4e gz4eq dccu7 72e06 0rs\nmd1f0 ghpps f5859 p875x 67p5s 3wem7 sglux l3d2a 3syx3 m7hal wd7s7 d5e8l 2xm3y 3xzfm adfjc jukwz suw7p ydp\nmd1f0 ghpps je20u r0anz 7jwkz ae8ef ejcxy 50llp x82qf mryv7 l68w6 hzrag nj3g5 qrl85 zeapc cg28c pyh2q c
+    thread 'separator_refusal_remedies_run_as_printed' panicked at crates/md-cli/tests/single_print.rs:180:5:
+    error: invalid value 'hyphen' for '--separator <SEPARATOR>': separator "hyphen" is no longer accepted: ... Use `--separator space` (or the literal " ") for a grouped card, or `--group-size 0` for an unbroken one.
     thread 'encode_out_writes_the_stdout_bytes' panicked at crates/md-cli/tests/single_print.rs:115:5:
       left: "chunk-set-id: 0x9c25f\nmd1fn sjlpq pqpm6 j8pqq xqqks 883w6 pg25z 995kj 6tfd9 5kj6t fd952 c99a0 666r6 9m\nmd1fn sjlpq fd95k j6tfd 95kj6 tfd95 kj6tf d95kj 6tfgz rfa9d 853cu vgm24 dp0q9 5f\nmd1fn sjlpq klkqk q4p8r le9rd zqpmv rraa6 zjn9f cmd34 x5udt 9t5qc vmqx6 e0y3y rt\ngroup size: 5\nseparator: space\nnote: stdout is
      right: "chunk-set-id: 0x9c25f\nnote: stdout is watch-only — public keys only, cannot spend\n"
@@ -582,11 +647,79 @@ fn descriptor_emit_md1_group_size_groups_stdout() {
     assert_eq!(o.status.code(), Some(0), "{}", text(&o.stderr));
     assert_eq!(text(&o.stdout), regroup5(&plain));
 }
+
+// ---- the `--separator` refusal remedies run as printed (review r1 I-2) ----
+
+const WPKH: &str = "wpkh(@0/<0;1>/*)";
+
+/// With the default group size 0, `--separator space` alone prints unbroken,
+/// so the refusal's remedy for "a grouped card" must carry `--group-size 5`.
+/// Both remedies are run exactly as the refusal prints them.
+#[test]
+fn separator_refusal_remedies_run_as_printed() {
+    let refused = md()
+        .args([
+            "encode",
+            WPKH,
+            "--network",
+            "signet",
+            "--separator",
+            "hyphen",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(2));
+    let se = text(&refused.stderr);
+    assert!(
+        se.contains(
+            "Use `--group-size 5 --separator space` (or the literal \" \") for a grouped card, \
+             or drop `--separator` for an unbroken one (the default)."
+        ),
+        "{se}"
+    );
+
+    let grouped = md()
+        .args([
+            "encode",
+            WPKH,
+            "--network",
+            "signet",
+            "--group-size",
+            "5",
+            "--separator",
+            "space",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(grouped.status.code(), Some(0));
+    assert_eq!(text(&grouped.stdout), "md1yq pqqxq q8xtw hw4xw n4qh\n");
+
+    let unbroken = md()
+        .args(["encode", WPKH, "--network", "signet"])
+        .output()
+        .unwrap();
+    assert_eq!(unbroken.status.code(), Some(0));
+    assert_eq!(text(&unbroken.stdout), "md1yqpqqxqq8xtwhw4xwn4qh\n");
+
+    let other = md()
+        .args(["encode", WPKH, "--network", "signet", "--separator", "x"])
+        .output()
+        .unwrap();
+    assert_eq!(other.status.code(), Some(2));
+    let se = text(&other.stderr);
+    assert!(
+        se.contains(
+            "Drop `--separator` for an unbroken card (the default), or use \
+             `--group-size 5 --separator space` for a grouped one."
+        ),
+        "{se}"
+    );
+}
 ```
 
 ## 5. Tests that change
 
-Measured: the full suite with the section-3 production change and the base tests failed exactly 8 rows
+Measured: the full suite with the section-3 production change and the base tests failed exactly 8 rows (the first-round measurement; the refusal-sentence row below is the ninth, measured in the fold round)
 (`/scratch/cache/sp-md-basetests.log`, `1652 tests run: 1644 passed, 8 failed`). Two more pass on the change only
 vacuously (they compare two empty card slices) and are rewritten:
 
@@ -602,6 +735,7 @@ vacuously (they compare two empty card slices) and are rewritten:
 | `n2_emit_md1::n2_emit_md1_out_writes_the_file_and_stdout_matches_md_encodes_out_contract` | asserts NO card line on stderr (was: a card present) |
 | `n2_emit_md1::n2_emit_md1_group_size_behaves_identically_to_md_encodes` (vacuous) | compares stdout of both surfaces at `--group-size 0, 8, 3`, and that 8 and 3 group |
 | `n2_emit_md1::n2_emit_md1_separator_behaves_identically_to_md_encodes` (vacuous) | compares stdout of both surfaces at `--separator space --group-size 6` |
+| `cmd_encode::encode_refuses_the_retired_separators` (review r1 I-2) | pins the new remedy: stderr contains `--separator space`, `` `--group-size 5 --separator space` `` and ``drop `--separator` for an unbroken one`` (was: `--group-size 0`). Measured: with the reworded refusal and the old pin the row FAILS (`/scratch/cache/fold-sp-md-oldpin.log`, 1 failed) |
 
 Every other `--group-size 0` use in the suite (fixtures, `seating/generate.sh`, `printed_remedy_runs`, ...) passes
 unchanged: 0 is now the default, so those flags are redundant but valid.
@@ -638,7 +772,7 @@ index 8b99871b..f0107add 100644
  
  /// A CHUNK SET through `--out`: every chunk lands in the file, unbroken, one
 diff --git i/crates/md-cli/tests/cmd_encode.rs w/crates/md-cli/tests/cmd_encode.rs
-index 95794ef4..ba0fb16e 100644
+index 95794ef4..d40c5e0d 100644
 --- i/crates/md-cli/tests/cmd_encode.rs
 +++ w/crates/md-cli/tests/cmd_encode.rs
 @@ -22,19 +22,16 @@ fn encode_template_only_emits_a_phrase() {
@@ -666,7 +800,18 @@ index 95794ef4..ba0fb16e 100644
          .unwrap()
          .lines()
          .next()
-@@ -115,14 +112,21 @@ fn encode_refuses_the_retired_separators() {
+@@ -109,20 +106,31 @@ fn encode_refuses_the_retired_separators() {
+             "the refusal must name what replaced it; got {stderr:?}"
+         );
+         assert!(
+-            stderr.contains("--group-size 0"),
++            stderr.contains("`--group-size 5 --separator space`"),
++            "the grouped remedy needs the group size; got {stderr:?}"
++        );
++        assert!(
++            stderr.contains("drop `--separator` for an unbroken one"),
+             "and the other way to get an unbroken card; got {stderr:?}"
+         );
      }
  }
  
@@ -691,7 +836,7 @@ index 95794ef4..ba0fb16e 100644
              .output()
              .unwrap();
          assert!(
-@@ -130,11 +134,8 @@ fn encode_still_accepts_whitespace_separators() {
+@@ -130,11 +138,8 @@ fn encode_still_accepts_whitespace_separators() {
              "--separator {arg:?} must still work: {}",
              String::from_utf8_lossy(&out.stderr)
          );
@@ -705,7 +850,7 @@ index 95794ef4..ba0fb16e 100644
      }
  }
  
-@@ -1126,14 +1127,14 @@ fn the_auto_chunked_header_is_on_stderr_too() {
+@@ -1126,14 +1131,14 @@ fn the_auto_chunked_header_is_on_stderr_too() {
  }
  
  // ──────────────────────────────────────────────────────────────────────────
@@ -723,7 +868,7 @@ index 95794ef4..ba0fb16e 100644
      let out = Command::cargo_bin("md")
          .unwrap()
          .args(["encode", "wpkh(@0/<0;1>/*)"])
-@@ -1147,26 +1148,15 @@ fn encode_stdout_is_unbroken_and_the_card_is_on_stderr() {
+@@ -1147,26 +1152,15 @@ fn encode_stdout_is_unbroken_and_the_card_is_on_stderr() {
          format!("{WPKH_UNBROKEN}\n"),
          "stdout must be the canonical artifact, unbroken, and nothing else"
      );
@@ -755,7 +900,7 @@ index 95794ef4..ba0fb16e 100644
      let run = |extra: &[&str]| {
          let mut args = vec!["encode", "wpkh(@0/<0;1>/*)"];
          args.extend_from_slice(extra);
-@@ -1176,39 +1166,28 @@ fn grouping_flags_move_the_card_and_not_stdout() {
+@@ -1176,39 +1170,28 @@ fn grouping_flags_move_the_card_and_not_stdout() {
              .output()
              .unwrap();
          assert!(out.status.success());
@@ -805,7 +950,7 @@ index 95794ef4..ba0fb16e 100644
          .output()
          .unwrap();
      assert!(out.status.success());
-@@ -1222,20 +1201,26 @@ fn chunked_stdout_is_bare_md1_tokens_and_the_card_carries_every_chunk() {
+@@ -1222,20 +1205,26 @@ fn chunked_stdout_is_bare_md1_tokens_and_the_card_carries_every_chunk() {
              !l.contains(char::is_whitespace),
              "stdout must be unbroken; got {l:?}"
          );
@@ -979,7 +1124,7 @@ index 21e0e50a..43ad3ad0 100644
 
 | CI step | command | result |
 |---|---|---|
-| test | `cargo nextest run --locked --workspace --no-fail-fast` (`--build-jobs 6 -j 6`, own target dir) | 1658 passed, 6 skipped as on the base (`/scratch/cache/sp-md-full2.log`) |
+| test | `cargo nextest run --locked --workspace --no-fail-fast` (`--build-jobs 6 -j 6`, own target dir) | 1659 passed, 6 skipped (`/scratch/cache/fold-sp-md-green2.log`, on `origin/main` 5df4cb92 + sections 3 and 5 + `single_print.rs`) |
 | doc tests | `cargo test --locked --workspace --doc` | ok |
 | clippy | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` | clean |
 | docs | `RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --document-private-items --all-features` | clean |
@@ -992,13 +1137,33 @@ The build re-runs the whole gate on its own commits; this table is the author's 
 
 ## 7. Build order
 
-1. RED commit: add `crates/md-cli/tests/single_print.rs`; run the row command; see 6 FAIL.
+1. RED commit: add `crates/md-cli/tests/single_print.rs`; run the row command; see 7 FAIL.
 2. GREEN commit: section 3, section 5, the CHANGELOG entry (section 1); full gate.
 3. Release (PROPOSED next: md-cli 0.21.0, a CLI-output change). md-codec is untouched (no codec release).
 
 ## 8. Lockstep
 
-### 8a. Toolkit manual (`mnemonic-toolkit` `docs/manual/src/40-cli-reference/42-md.md`), lands with the toolkit's md pin bump
+### 8.0 Landing order (review r1 I-4; replaces steps 3-5 of the author report's "Landing order"; steps 1-2 unchanged)
+
+3. mnemonic-gui: `pinned-upstream.toml` md/ms/mk tags + the schema edits of md 8c, ms 8c, mk 8b; schema-mirror; gui
+   release.
+4. mnemonic-toolkit, ONE commit: bump the md/ms/mk install pins AND the mnemonic-gui install pin to the step-3
+   release, with the toolkit lockstep of all three FIX docs (incl. the I-3 sites below and
+   `docs/manual-gui/tests/expected_gui_schema_inventory.json`), so `{#installer-ahead}` never names these three
+   releases; the `manual` job incl. doc-flag-lint mutation self-test. The replacement text for the
+   `{#installer-ahead}` section (`82-binary-and-launch.md`) is in the mk FIX, section 8a-bis (one place for all
+   three).
+
+Why: with the toolkit installer ahead of the GUI, the installed GUI's schema still says `default_value: Some("5")`
+for `--group-size` (md encode and md descriptor forms); its `is_at_default` (mnemonic-gui
+`src/form/invocation.rs:96-121`) suppresses a Number flag equal to the schema default, so a user who sets 5 sends no
+`--group-size`, and the new CLI applies 0: unbroken output with no message. If the toolkit must land first instead,
+each FIX doc's toolkit section must carry this `{#installer-ahead}` sentence (PROPOSED text, from the review): "On
+the `md encode`, `md descriptor --emit md1`, `ms encode` and `mk encode` forms, this GUI does not send `--group-size
+5` (its shown default), and these CLI releases print the unbroken string unless `--group-size` is given: to print
+groups of five, run the CLI with `--group-size 5`."
+
+### 8a. Toolkit manual (`mnemonic-toolkit` `docs/manual/src/40-cli-reference/42-md.md`), lands in step 4 (the toolkit's one commit)
 
 Line 30 (`md encode --out` row): replace "the stderr engraving card, chunk-set id and advisories are unaffected" with
 "the file holds exactly what stdout would (grouped under `--group-size`); the chunk-set id and advisories stay on
@@ -1023,7 +1188,7 @@ Line 220 (`md descriptor --group-size` row) becomes:
 
 Line 221 (`md descriptor --separator` row): replace "the card's separator" with "the separator for `--group-size`".
 
-### 8b. Toolkit technical manual and GUI manual, land with the toolkit's md pin bump
+### 8b. Toolkit technical manual and GUI manual, land in step 4 (the toolkit's one commit)
 
 - `docs/technical-manual/transcripts/md1-encode-wpkh-basic.out` (cmd `$MD_BIN encode 'wpkh(@0/<0;1>/*)'`) becomes
   exactly `md1yqpqqxqq8xtwhw4xwn4qh\nnote: stdout is a keyless descriptor template (no keys)\n` (measured, GREEN
@@ -1034,8 +1199,21 @@ Line 221 (`md descriptor --separator` row): replace "the card's separator" with 
 - `docs/manual-gui/src/50-md/5E-descriptor.md:166`: "with its engraving card on stderr" is deleted (the sentence
   ends "minted from the seating result."); line 178-179: "Groups the engraving card on stderr." becomes "Groups
   each md1 string on standard output.", and "default `5`" becomes "default `0`".
+- Review r1 I-3, more `docs/manual-gui/src/50-md/` sites (line anchors @cdedd8a2; the gui-manual lints check flag
+  names, outlines and CLI pins, not defaults, so nothing else catches these):
+  - `53-encode.md:23` becomes: "- [`--group-size`](#md-encode-group-size) — display grouping: group each md1 string
+    on stdout every N characters (default 0 = unbroken)".
+  - `53-encode.md:41-46` becomes: "Display-grouping control: print each `md1` string on stdout in groups of N
+    characters. Number widget; range `0`–`65535`, default `0` (unbroken). The GUI renders the field unset with a
+    `Set` button — leave it unset and the CLI applies its own default (`0`, unbroken); clicking `Set` activates a
+    spin-box (which starts at the range minimum, `0`); set `5` for the five-character groups used for hand
+    engraving."
+  - `54-decode.md:21` and `5A-repair.md:63`: "so a card copied off the engraving card re-ingests" / "copied off an
+    engraving card" becomes "so a card copied in grouped form re-ingests" (this FIX's own `--in` wording).
+  - `5E-descriptor.md:51` becomes: "— group each md1 string on stdout (only with `--emit md1`)"; `:52` becomes: "—
+    separator for `--group-size` (only with `--emit md1`)".
 
-### 8c. mnemonic-gui (`src/schema/md.rs`), lands with the gui's md pin bump
+### 8c. mnemonic-gui (`src/schema/md.rs`), lands in step 3 (the gui release, AHEAD of the toolkit)
 
 - `ENCODE_FLAGS` `--group-size`: `default_value: Some("0")`; `help: "Group each md1 string on stdout every N
   characters, for hand engraving (default 0 = unbroken). Cosmetic — intake strips separators."`
