@@ -5,13 +5,10 @@ the receive descriptor makes a coordinator reuse receive addresses for change). 
 (coordinator `agent-reports/bughunt-1119/grade-md.md:51`): the descriptor route refuses a branch no slot has, using
 the same max-alt rule (baseline plus every per-slot override) as `md address` (`crates/md-codec/src/derive.rs:108-132`),
 not the triage scratch's all-nonmultipath check. Repo descriptor-mnemonic, branch `fix/md-change-branch` from main
-`6aa7e5e32638e963014d43fcce251720090820b2` (md-codec 0.48.6, md-cli 0.21.0 at that head). Crates md-codec and
-md-cli tests; one md-codec function changes behaviour; no wire change, no new flag, type, error variant or command.
+`6aa7e5e32638e963014d43fcce251720090820b2` (md-codec 0.48.6, md-cli 0.21.0 at that head). Crates md-codec and md-cli; one md-codec function changes behaviour (S1-S3) and one md-cli block changes which verdict form prints (S9); no wire change, no new flag, type, error variant or command.
 Author: Claude Opus 5.5 (claude-opus-5-5), 2026-11-22.
 
-**No STOP is open for this row.** No new printed text: the refusal is the existing `md address` text. The
-CHANGELOG and manual sentences in section 3 are PROPOSED (architect confirms). Section 8 lists two related defects
-found while writing this FIX; neither is in this row's scope, and Q1 there asks the architect whether to fold one.
+**No STOP is open for this row.** No new printed string: the refusal is the existing `md address` text, and S9 only selects among existing verdict lines. The CHANGELOG and manual sentences in section 3 are PROPOSED (architect confirms). Section 8 lists one related defect (F2) outside this row; F1 (the multipath verdict on a wallet with no multipath) was folded into this row by the architect's ruling (C/agent-reports/architect-md30-q1.md) as S9.
 
 Toolchain: `export PATH=$HOME/.cargo/bin:$PATH`; cargo 1.85.0 (`rust-toolchain.toml`); `--locked`; nextest
 `--build-jobs 6 -j 6`; never `--release`. `X` below is
@@ -64,7 +61,7 @@ S5. Error precedence on the descriptor route: the chain check runs before key ex
 check. So `wpkh(@0/*h) --chain 1` (E6) now refuses with the chain text, not the hardened text that `md address` prints
 for the same input (address checks hardened first, S3). Both exit 1. `--chain 0` on `/*h` is unchanged (exit 0).
 
-S6. md-cli: no source change. `md descriptor` with `--chain N` (or `--change`, N = 1) where N is at least W, the
+S6. md-cli, refusal path: no source change (S9 changes the verdict form only). `md descriptor` with `--chain N` (or `--change`, N = 1) where N is at least W, the
 widest alt-count across all keys (1 when no key has a multipath), now prints, on stderr, exactly
 `md: codec error: chain index N out of range; use-site multipath alt-count is W`
 and exits 1 with nothing on stdout. The text and exit code are the ones `md address` already prints (E4). The
@@ -87,7 +84,7 @@ S8. Out of scope, unchanged: `--emit md1` still ignores `--chain`/`--change` (se
 1". No committed vector is single-path: all 48 `*.conformance.json` carry a chain "1" entry with addresses, so
 the corpus does not move).
 
-S9. md-cli `crates/md-cli/src/cmd/descriptor.rs` (the coordinator-verdict block, today :236-250): the verdict form
+S9. md-cli `crates/md-cli/src/cmd/descriptor.rs` (the coordinator-verdict block, the block ending at the `notice` call): the verdict form
 names the spelling md printed. Before the `match args.chain` that picks the form, compute
 `has_branches` = true when the baseline `use_site_path.multipath` or any `tlv.use_site_path_overrides` entry's
 `multipath` has more than one alternative (the quantity `check_chain_in_range` calls `max_alts`, tested `> 1`).
@@ -110,7 +107,7 @@ Mixed and override-only multipath wallets keep the multipath form.
   (for example `wpkh(@0/*)`), `--change` and `--chain N` (N > 0) printed the receive descriptor at exit 0. They now
   print `md: codec error: chain index 1 out of range; use-site multipath alt-count is 1` (with N and the widest
   alt-count) and exit 1, as `md address` already did. A wallet where at least one key has the branch still renders."
-- S9 (architect Q1 item 3): CHANGELOG.md, under `## md-cli [Unreleased]` / `### Fixed`, after the entry above, append:
+- Q1 CHANGELOG (architect item 3): CHANGELOG.md, under `## md-cli [Unreleased]` / `### Fixed`, after the entry above, append:
 
 ```text
 - **`md descriptor` no longer gives a wallet without a change branch the multipath verdict.** For a wallet where no
@@ -132,7 +129,7 @@ Mixed and override-only multipath wallets keep the multipath form.
   wallet written `wpkh(@0/*)` has only chain 0. The refusal is the one `md address` prints,
   `md: codec error: chain index 1 out of range; use-site multipath alt-count is 1`, exit 1, with nothing on stdout."
   No other manual line changes (line 177's `--chain` row stays accurate).
-- S9 (architect Q1 item 4): toolkit manual lockstep, mnemonic-toolkit master `b0b99a160f119fac20a0b398d275ef787d0e2140`, `docs/manual/src/40-cli-reference/42-md.md`: replace lines 235-237 (from "the spelling it judged" to "refuse the other:"; line 234 keeps its last words "The header names") with:
+- Q1 manual (architect item 4): toolkit manual lockstep, mnemonic-toolkit master `b0b99a160f119fac20a0b398d275ef787d0e2140`, `docs/manual/src/40-cli-reference/42-md.md`: replace lines 235-237 (from "the spelling it judged" to "refuse the other:"; line 234 keeps its last words "The header names") with:
 
 ```text
 the spelling it judged — `multipath` by default, `chain0` / `chain1`
@@ -167,12 +164,11 @@ reuse `bip84_origin`, `one_test_xpub_bytes`, `none_baseline_override_change_desc
 
 The author ran all 11 rows on the base (5 FAIL: r1-r5; 6 PASS: c1-c6). With a scratch helper per S1-S2 the same
 11 rows all PASS. The full workspace suite (`--all-features`) under the scratch fix gave 1762 passed, 6 skipped,
-0 failed. The scratch code is not on this branch.
+0 failed. The scratch code is not on this branch. With S9 and the six Q1 rows added, the architect's full workspace run gave 1768 passed, 6 skipped, 0 failed.
 
-Coverage map: S1/S2 -> r1, r2, r4; S2 network-less entry -> r4; S3 (address unchanged) -> c4, c5; S4 -> c2, c3, c6;
-S5 -> r5, c1; S6 (exact stderr, empty stdout, `--json`) -> r1, r2, r3; S8 corpus -> gate step 4.
+Coverage map: S1/S2 -> r1, r2, r4; S2 network-less entry -> r4; S3 (address unchanged) -> c4, c5; S4 -> c2, c3, c6; S5 -> r5, c1; S6 (exact stderr, empty stdout, `--json`) -> r1, r2, r3; S8 corpus -> gate step 3; S9 -> q1_r1, q1_r2, q1_r3 (no form), q1_r4 (every printed `--chain N` runs), q1_c1, q1_c2 (multipath, mixed and override-only keep the multipath form).
 
-Q1 rows (architect ruling, md-cli): the six tests of `crates/md-cli/tests/bh1119_md_single_path_verdict.rs`, given here as this FIX's test text (no file under `crates/` on this branch). Base 18528b50 (architect's scratch run): r1, r2, r3, r4 FAIL; c1, c2 PASS.
+Q1 rows (architect ruling, md-cli): the builder creates `crates/md-cli/tests/bh1119_md_single_path_verdict.rs` with exactly the Rust text below (rustfmt output; clippy `-D warnings` and `cargo fmt --check` clean) and implements S9 in `crates/md-cli/src/cmd/descriptor.rs`. Base 18528b50 (run by this review): q1_r1, q1_r2, q1_r3, q1_r4 FAIL; q1_c1, q1_c2 PASS; with S1-S2 and S9 all six PASS.
 
 ```rust
 //! Bughunt-1119 #30 Q1: the coordinator verdict `md descriptor` prints for a
@@ -340,12 +336,11 @@ fn q1_c2_descriptor_mixed_and_override_multipath_keep_multipath_form() {
 
 None. The full suite passed unchanged under the scratch fix: `derive_address_chain_out_of_range`,
 `derive_address_override_change_chain_derivable`, `derive_address_override_chain_over_max_still_rejects`,
-`vector_corpus::vectors_output_matches_committed_corpus` and `proptest_to_miniscript` all pass. New: the 11 rows
-above.
+`vector_corpus::vectors_output_matches_committed_corpus` and `proptest_to_miniscript` all pass. New: the 11 rows above and the six Q1 rows (17 in all).
 
 ## 6. FOLLOWUPS
 
-None appended in the PR. The report lists the closing line for bh-md-I6 and the two new lines from section 8.
+None appended in the PR. The report lists the closing line for bh-md-I6 and the new line for F2 from section 8 (F1 closed inside this row; the architect dropped its proposed line).
 They are pushed directly after the merge.
 
 ## 7. Gate line
@@ -366,14 +361,7 @@ PR, or the release.
 
 ## 8. Related defects found (not in this row; for the architect)
 
-F1 (proposed grade I, kind ux): `md descriptor` with no `--chain` on a single-path wallet (`wpkh(@0/*)`) prints the
-"multipath form" coordinator note (`descriptor.rs:240-245` maps `None` to `Form::Multipath` without looking at the
-descriptor). That note includes `Bitcoin Core 24.2-28.4: refuses (the <0;1> multipath spelling (use --chain 0 and
---chain 1))` (registry.rs:330). The descriptor has no `<0;1>`, so the verdict is wrong for it. Its remedy's
-`--chain 1` returns the receive descriptor on the base, and after this FIX it is refused. So the remedy is a printed
-command that fails as printed (B8). **Q1 (architect): fold into this row or file separately?** Fixing it means
-choosing the Form for a no-multipath descriptor (Chain0? no note?), which is a verdict-semantics decision the
-rulings do not give. This FIX does not change it.
+F1 (grade I, kind ux; RULED and folded into this row as S9, architect md30-q1): `md descriptor` with no `--chain` on a wallet where no key has two or more branches (`wpkh(@0/*)`) printed the "multipath form" note, including `Bitcoin Core 24.2-28.4: refuses (the <0;1> multipath spelling (use --chain 0 and --chain 1))` (registry.rs:330), although the printed descriptor has no `<0;1>` and its `--chain 1` is refused (after this FIX; `wpkh(@0/<5>/*)` already on base). S9 gives such a wallet no form; rows Q1 pin it.
 
 F2 (proposed grade M, kind ux; code read, not run): `md descriptor --emit md1` returns at `descriptor.rs:188-197`
 before `args.chain` is read, so `--chain`/`--change` are silently ignored on that form for any wallet. clap does not
