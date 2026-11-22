@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+### Fixed
+
+- **`md repair` keeps an uppercase card uppercase.** When a letter on an all-uppercase md1 card (the QR form) was
+  misread as a digit, the corrected card was printed with that one letter in lowercase (for example
+  `MD1yQPQQXQQ8XTWHW4XWN4QH`), a mixed-case string `md decode` refuses. Each corrected card is now printed in the
+  case of the string it corrects (`MD1YQPQQXQQ8XTWHW4XWN4QH`), in text and `--json` output and for chunked sets
+  (bh-md-I3).
+
 ## md-cli [0.21.1] — 2026-11-22
 
 ### Fixed

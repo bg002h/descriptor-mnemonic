@@ -37,7 +37,7 @@ The rest of this document is I3 only.
 
 ## 1. The defect (RED evidence, run by the author on the base)
 
-`apply_corrections` (`crates/md-cli/src/cmd/repair.rs:235-255`) writes each correction in the case of the DAMAGED
+`apply_corrections` (`crates/md-cli/src/cmd/repair.rs:235-253`) writes each correction in the case of the DAMAGED
 character (`chars[abs_idx].is_ascii_uppercase()`, `:245`). The codec reports `now` in lowercase. A digit is never
 uppercase, so when an all-uppercase card (the QR / BIP-173 uppercase form) has a letter misread as a digit, the
 corrected card gets one lowercase letter and is mixed case, which `md decode` (and every other md reader) refuses:
@@ -55,7 +55,7 @@ exit=1
 ```
 
 Every caller of `apply_corrections` goes through `build_reports` (`repair.rs:133`): the normal path (`run`, single and
-multi-string, text and `--json`) and the unsupported-wire-version path (`corrected_but_unsupported`, `:166`). All three
+multi-string, text and `--json`) and the unsupported-wire-version path (`corrected_but_unsupported`, `:167`). All three
 were run on the base and emit a mixed-case card (rows R1-R6 below).
 
 ## 2. Spec delta (behaviour)
@@ -75,9 +75,7 @@ stderr lines, the output-class note, and lowercase input behaviour (byte-identic
 
 Code shape (builder's choice of form): `apply_corrections` computes one flag from `original` (any ASCII uppercase char)
 and uses it in place of `chars[abs_idx].is_ascii_uppercase()`; the M-9 comment at `:241-244` is updated to say the
-case comes from the whole input string because the damaged character may be a digit. This matches the toolkit's
-`mnemonic repair`, which already takes case from the whole chunk (mnemonic-toolkit `04c56bfa`
-`crates/mnemonic-toolkit/src/repair.rs:684`); no toolkit change.
+case comes from the whole input string because the damaged character may be a digit. The toolkit's `mnemonic repair` never emits mixed case: it re-encodes every corrected chunk in lowercase (mnemonic-toolkit 04c56bfa `crates/mnemonic-toolkit/src/repair.rs:792` `encode_chunk`, :870); md keeps M-9's input-case rule, so the two differ in case for an uppercase input, as they already do today for letter damage. No toolkit change; the code comment does not cite the toolkit.
 
 ## 3. Help, manual, CHANGELOG
 

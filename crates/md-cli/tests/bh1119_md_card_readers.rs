@@ -14,8 +14,10 @@ use std::process::Command;
 
 const S_DAMAGED: &str = "MD12QPQQXQQ8XTWHW4XWN4QH";
 const S_CLEAN: &str = "MD1YQPQQXQQ8XTWHW4XWN4QH";
-const C0: &str = "MD1F0C9LQSPZ6TVYYY4QQXPPC2CPYDZK0ZDTPNKQQQQQQQZYQQQQQZYQQQQQPNQQQQQPZQCJG0YYNDM69P4";
-const C1_CLEAN: &str = "MD1F0C9LQSGQQQQP2SQQQQQESQQQQQWUQQQQQGSQQQQQYEQQQQQZ4QQQQQPWCQQQQQCQ7H9LLL0W28FY4";
+const C0: &str =
+    "MD1F0C9LQSPZ6TVYYY4QQXPPC2CPYDZK0ZDTPNKQQQQQQQZYQQQQQZYQQQQQPNQQQQQPZQCJG0YYNDM69P4";
+const C1_CLEAN: &str =
+    "MD1F0C9LQSGQQQQP2SQQQQQESQQQQQWUQQQQQGSQQQQQYEQQQQQZ4QQQQQPWCQQQQQCQ7H9LLL0W28FY4";
 const V12_DAMAGED: &str = "MD12ZFDSSSJJTVYYW2FDSSJ54QQXPPCGSCU5E7M9JGAWLHG";
 const V12_UPPER: &str = "MD1UZFDSSSJJTVYYW2FDSSJ54QQXPPCGSCU5E7M9JGAWLHG";
 
@@ -51,7 +53,9 @@ fn i3_r1_repair_upper_digit_damage_text_emits_upper_card() {
     assert_eq!(code, 5);
     assert_eq!(
         out,
-        format!("# Repair report\n#   md1 chunk 0: 1 correction at position 0: '2' -> 'y'\n{S_CLEAN}\n")
+        format!(
+            "# Repair report\n#   md1 chunk 0: 1 correction at position 0: '2' -> 'y'\n{S_CLEAN}\n"
+        )
     );
     let (dcode, dout, _) = md(&["decode", S_CLEAN]);
     assert_eq!(dcode, 0);
@@ -81,7 +85,9 @@ fn i3_r3_repair_upper_chunked_digit_damage_text_emits_upper_set() {
     assert_eq!(code, 5);
     assert_eq!(
         out,
-        format!("# Repair report\n#   md1 chunk 1: 1 correction at position 7: '7' -> 'g'\n{C0}\n{C1_CLEAN}\n")
+        format!(
+            "# Repair report\n#   md1 chunk 1: 1 correction at position 7: '7' -> 'g'\n{C0}\n{C1_CLEAN}\n"
+        )
     );
     assert_eq!(md(&["decode", C0, C1_CLEAN]).0, 0);
 }
@@ -114,10 +120,14 @@ fn i3_r6_repair_upper_unsupported_version_emits_upper_card() {
     assert_eq!(code, 5);
     assert_eq!(
         out,
-        format!("# Repair report\n#   md1 chunk 0: 1 correction at position 0: '2' -> 'u'\n{V12_UPPER}\n")
+        format!(
+            "# Repair report\n#   md1 chunk 0: 1 correction at position 0: '2' -> 'u'\n{V12_UPPER}\n"
+        )
     );
     assert!(
-        err.contains("md: repair: corrected, but this build cannot read wire version 12 (accepted: 4, 8)"),
+        err.contains(
+            "md: repair: corrected, but this build cannot read wire version 12 (accepted: 4, 8)"
+        ),
         "stderr={err}"
     );
 }
