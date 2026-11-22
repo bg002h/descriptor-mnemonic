@@ -988,6 +988,8 @@ Beyond the structural errors above, a conformant decoder enforces the following 
 | <code>EmptyTlvEntry { tag }</code> || A present sparse TLV that carries no <code>(idx, value)</code> pairs (encoders MUST omit empty TLVs).
 |}
 
+Encoders MUST NOT emit a payload that a conforming decoder rejects, with the one relaxation that a decoder's partial-allowing entry point makes (an <code>@N</code> whose origin cannot be resolved; see the paragraph "Shapes with no canonical entry (partial decode)"). The reference encoder enforces this by decoding every payload it mints, before returning it, and returning the decoder's error instead of the payload if the decoder refuses; so, for example, a tree whose recursion depth reaches the decoder's cap of 128 (§"Error taxonomy", <code>DecodeRecursionDepthExceeded</code>) is refused at mint time, not discovered at recovery. Re-emitting, hashing or comparing a card that already exists does not run this check.
+
 ===Decoder reporting===
 
 For every decode attempt, decoders SHOULD report:
