@@ -231,6 +231,10 @@ Existing tests that keep passing unchanged (the proof must not withhold their ro
 row (:208); `printed_remedy_runs.rs` (:434). If any of them changes, STOP (the proof is withholding a good
 route).
 
+Exception, ruled by the architect in `agent-reports/architect-md-bh4-c2-tests.md`: the master-key inputs of `printed_remedy_runs.rs` `c2_origin_less_key_printed_line_runs` and `c2_other_key_spellings_printed_lines_run` (`[3442193e]` plus the BIP-32 vector-1 xpub, depth 0, no origin path) are row d4's case. `md encode`'s referral (`parse/template.rs`) runs the same decomposition its printed lines run and prints each `md decompose` line only when that line exits 0 (md#60 review I1; ruling in the coordinator's `agent-reports/architect-md60-i1-referral.md`), so for these inputs it prints the template line alone, and the two rows expect one line (exact edits in that report). Every printed line still runs as printed.
+
+Wording (Brian 2026-11-22, typed choice; coordinator ruling X): in the whole `Some(net) =>` branch of that referral (a bare key, a fingerprint-only origin, or both), the explanation `md encode` prints replaces the old sentence ending "the wallet that produced it knows the path." with exactly: `Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one.` The Liana hint stays appended after it. `printed_remedy_runs.rs` `c2_origin_less_key_printed_line_runs` pins the sentence (md#60 review I2).
+
 ## 5. Tests that change
 
 Two existing tests pin the folded template and change (both found failing by the architect's plant of 2.0: 1014 run, 1012 pass, 2 fail):

@@ -836,9 +836,13 @@ enum Command {
         /// Which artifact to print. `all` (the default) prints template, key
         /// lines and fingerprint flags under `#` headers; the single-section
         /// forms redirect straight into the file the next command wants.
-        /// `commands` prints runnable `md encode` / `mk encode` lines and
-        /// REFUSES when any key states no origin (an mk1 card binds key to
-        /// origin by design).
+        /// `commands` prints runnable `md encode` / `mk encode` lines for each
+        /// mint route md has proven reproduces the descriptor, withholding any
+        /// other route with one line, and REFUSES when any key states no origin
+        /// (an mk1 card binds key to origin by design) or when no route
+        /// reproduces the descriptor. `template` and `all` REFUSE when a key's
+        /// use-site is one an md1 card cannot hold (a fixed step such as
+        /// `/0/*`, or none).
         #[arg(long, value_enum, default_value_t = cmd::decompose::Emit::All)]
         emit: cmd::decompose::Emit,
         /// Network the descriptor's extended keys must belong to.

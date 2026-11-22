@@ -42,6 +42,49 @@ pub struct EncodeArgs<'a> {
     pub experimental: bool,
 }
 
+/// The calls `md encode` makes, in its order, to turn a template plus its
+/// `--key` / `--fingerprint` arguments into the descriptor it mints: script
+/// context, `parse_key` per key, `parse_fingerprint` per fingerprint, then
+/// `parse_template_ext` with the REFUSE disposition (N1).
+///
+/// Shared with `md decompose --emit commands`' route proofs
+/// (`decompose::prove`), so the proof runs the very calls `md encode` runs and
+/// cannot drift from them.
+pub(crate) fn descriptor_for_mint(
+    template: &str,
+    keys: &[String],
+    fingerprints: &[String],
+    experimental: bool,
+    network: bitcoin::Network,
+) -> Result<
+    (
+        Descriptor,
+        Vec<ParsedKey>,
+        Vec<crate::parse::keys::ParsedFingerprint>,
+    ),
+    CliError,
+> {
+    let ctx = ctx_for_template(template);
+    let parsed_keys = keys
+        .iter()
+        .map(|k| parse_key(k, ctx, network))
+        .collect::<Result<Vec<_>, _>>()?;
+    let parsed_fps = fingerprints
+        .iter()
+        .map(|s| parse_fingerprint(s))
+        .collect::<Result<Vec<_>, _>>()?;
+    // N1's REFUSE disposition: `encode` MINTS, so a shape the taxonomy names
+    // must never reach a plate (SPEC_mdcli_mini.md N1 "Verb dispositions").
+    let descriptor = parse_template_ext(
+        template,
+        &parsed_keys,
+        &parsed_fps,
+        experimental,
+        crate::parse::reuse::Disposition::Refuse,
+    )?;
+    Ok((descriptor, parsed_keys, parsed_fps))
+}
+
 pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // F-A3: the long BCH code was removed in v0.12.0; md1 is regular-code-only
     // (payloads that don't fit a single string are chunked). The flag is kept
@@ -53,25 +96,12 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             "the long BCH code was removed in v0.12.0; md1 is regular-code-only (payloads >400 bits are chunked)".into(),
         ));
     }
-    let ctx = ctx_for_template(args.template);
-    let parsed_keys = args
-        .keys
-        .iter()
-        .map(|k| parse_key(k, ctx, args.network))
-        .collect::<Result<Vec<_>, _>>()?;
-    let parsed_fps = args
-        .fingerprints
-        .iter()
-        .map(|s| parse_fingerprint(s))
-        .collect::<Result<Vec<_>, _>>()?;
-    // N1's REFUSE disposition: `encode` MINTS, so a shape the taxonomy names
-    // must never reach a plate (SPEC_mdcli_mini.md N1 "Verb dispositions").
-    let mut descriptor = parse_template_ext(
+    let (mut descriptor, parsed_keys, parsed_fps) = descriptor_for_mint(
         args.template,
-        &parsed_keys,
-        &parsed_fps,
+        args.keys,
+        args.fingerprints,
         args.experimental,
-        crate::parse::reuse::Disposition::Refuse,
+        args.network,
     )?;
     if args.experimental {
         // F-599: this warning used to fire on the FLAG and never consult the

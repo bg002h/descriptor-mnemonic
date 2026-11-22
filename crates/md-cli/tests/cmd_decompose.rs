@@ -300,9 +300,18 @@ fn v_d_pair_a_single_fixed_path_descriptor_is_still_accepted() {
     // could be implemented as "refuse every single-chain descriptor" and the
     // row above would still pass.
     let recv = format!("wsh(sortedmulti(2,{K0}/0/*,{K1}/0/*,{K2}/0/*))");
-    let (code, stdout, stderr) = run(&["decompose", &recv, "--emit", "template"]);
+    let (code, stdout, stderr) = run(&["decompose", &recv, "--emit", "descriptor"]);
     assert_eq!(code, 0, "stderr: {stderr}");
-    assert!(stdout.contains("@0/48'/0'/0'/2'/0/*"), "got: {stdout}");
+    assert!(stdout.starts_with("wsh(sortedmulti(2,"), "got: {stdout}");
+    // md1 cannot hold the `/0/*` use-site, so there is no template for it
+    // (row #4, FIX_bh1119_md_decompose_routes 2.0): `--emit template` refuses.
+    let (code, stdout, stderr) = run(&["decompose", &recv, "--emit", "template"]);
+    assert_eq!(code, 1, "stderr: {stderr}");
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains("this descriptor has no md1 template: key @0 has use-site `/0/*`"),
+        "got: {stderr}"
+    );
 }
 
 // ─── V-D-DEPTH ──────────────────────────────────────────────────────────────

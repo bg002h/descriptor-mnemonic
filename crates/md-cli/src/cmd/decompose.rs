@@ -14,7 +14,7 @@ use crate::error::CliError;
 pub enum Emit {
     /// Template, key lines and fingerprint flags, under `#` headers.
     All,
-    /// The keyless BIP-388 template alone, one line, no checksum.
+    /// The keyless BIP-388 template alone, one line, no checksum. REFUSES when a key's use-site is one an md1 card cannot hold (a fixed step such as `/0/*`, or none).
     Template,
     /// The origin-notated key records alone — an `mk encode --keys` file.
     Keys,
@@ -22,7 +22,7 @@ pub enum Emit {
     Fingerprints,
     /// The canonicalised concrete descriptor with a recomputed checksum.
     Descriptor,
-    /// Runnable `md encode` / `mk encode` command lines for both mint routes.
+    /// Runnable `md encode` / `mk encode` command lines for each mint route proven to reproduce the descriptor
     Commands,
 }
 
@@ -48,6 +48,13 @@ pub fn run(a: DecomposeArgs<'_>) -> Result<u8, CliError> {
         None => a.descriptors.to_vec(),
     };
     let d = decompose(&raw, a.network)?;
+
+    // 2.0: no emission prints a template an md1 card cannot hold.
+    if matches!(a.emit, Emit::Template | Emit::All) {
+        if let Some(m) = &d.template_refusal {
+            return Err(CliError::Decompose(m.clone()));
+        }
+    }
 
     match a.emit {
         Emit::Template => println!("{}", d.template),
@@ -121,7 +128,10 @@ fn sh_quote(s: &str) -> String {
 /// lacks an origin, naming the keys and the reason. The template, keys and
 /// descriptor emissions still work — only the MINT instructions are withheld,
 /// because they are the ones that would not run.
-fn commands(d: &Decomposition, network: bitcoin::Network) -> Result<Vec<String>, CliError> {
+pub(crate) fn commands(
+    d: &Decomposition,
+    network: bitcoin::Network,
+) -> Result<Vec<String>, CliError> {
     let missing = d.origin_less();
     if !missing.is_empty() {
         let named = missing
@@ -138,13 +148,20 @@ fn commands(d: &Decomposition, network: bitcoin::Network) -> Result<Vec<String>,
              so a card cannot be minted for an origin the input never stated, and \
              `mk encode --keys` refuses such a record (\"expected BIP-380 origin notation \
              `[fingerprint/path]xpub`\"). The emissions that mint nothing still work: \
-             `--emit template`, `--emit keys`, `--emit descriptor`. To mint, add the origin \
+             {}. To mint, add the origin \
              to the descriptor — the wallet that produced it knows the derivation path.",
-            missing.len()
+            missing.len(),
+            if d.template_refusal.is_some() {
+                "`--emit keys`, `--emit descriptor`"
+            } else {
+                "`--emit template`, `--emit keys`, `--emit descriptor`"
+            }
         )));
     }
+    if let Some(m) = &d.template_refusal {
+        return Err(CliError::Decompose(m.clone()));
+    }
 
-    let mut out = Vec::new();
     let fps: Vec<String> = d
         .occurrences
         .iter()
@@ -155,7 +172,21 @@ fn commands(d: &Decomposition, network: bitcoin::Network) -> Result<Vec<String>,
         })
         .collect();
 
-    out.push("# ── route 1: the KEYED card — one md1 artifact carrying template + keys ──".into());
+    let key_args: Vec<String> = d
+        .occurrences
+        .iter()
+        .enumerate()
+        .map(|(i, o)| format!("@{i}={}", o.xpub))
+        .collect();
+    let fp_args: Vec<String> = d
+        .occurrences
+        .iter()
+        .enumerate()
+        .filter_map(|(i, o)| o.fingerprint().map(|f| format!("@{i}={f}")))
+        .collect();
+    let mut route1: Vec<String> = Vec::new();
+    route1
+        .push("# ── route 1: the KEYED card — one md1 artifact carrying template + keys ──".into());
     let keys: Vec<String> = d
         .occurrences
         .iter()
@@ -197,7 +228,7 @@ fn commands(d: &Decomposition, network: bitcoin::Network) -> Result<Vec<String>,
         // the four above (`CliNetwork`), so nothing else reaches here.
         _ => "",
     };
-    out.push(format!(
+    route1.push(format!(
         "md encode {} \\\n  {} \\\n  {}{}{}",
         sh_quote(&d.template),
         keys.join(" \\\n  "),
@@ -205,19 +236,51 @@ fn commands(d: &Decomposition, network: bitcoin::Network) -> Result<Vec<String>,
         xflag,
         nflag
     ));
-    out.push(String::new());
-    out.push(
+    let mut route2: Vec<String> = Vec::new();
+    route2.push(
         "# ── route 2: the SPLIT set — a keyless policy card + one mk1 card per key ──".into(),
     );
-    out.push(format!(
+    route2.push(format!(
         "md encode {} \\\n  {}{} \\\n  --out policy.md1",
         sh_quote(&d.template),
         fps.join(" \\\n  "),
         xflag
     ));
-    out.push("cat > keys.txt <<'MDKEYS'".into());
-    out.extend(d.occurrences.iter().map(|o| o.record.clone()));
-    out.push("MDKEYS".into());
-    out.push("mk encode --keys keys.txt --from-md1-set policy.md1".into());
+    route2.push("cat > keys.txt <<'MDKEYS'".into());
+    route2.extend(d.occurrences.iter().map(|o| o.record.clone()));
+    route2.push("MDKEYS".into());
+    route2.push("mk encode --keys keys.txt --from-md1-set policy.md1".into());
+
+    // 2.2 / 2.3: print a route only after proving it.
+    let p1 = crate::decompose::prove::prove_route1(d, &key_args, &fp_args, experimental, network);
+    let p2 = crate::decompose::prove::prove_route2(d, &fp_args, experimental, network);
+    let withheld = |n: u8, reason: &str| {
+        format!("# ── route {n} withheld: {reason}; see `md decompose --emit template` ──")
+    };
+    let mut out = Vec::new();
+    match (p1, p2) {
+        (Ok(()), Ok(())) => {
+            out.extend(route1);
+            out.push(String::new());
+            out.extend(route2);
+        }
+        (Err(r1), Ok(())) => {
+            out.push(withheld(1, &r1));
+            out.push(String::new());
+            out.extend(route2);
+        }
+        (Ok(()), Err(r2)) => {
+            out.extend(route1);
+            out.push(String::new());
+            out.push(withheld(2, &r2));
+        }
+        (Err(r1), Err(r2)) => {
+            return Err(CliError::Decompose(format!(
+                "--emit commands cannot be produced: no mint route reproduces this descriptor. \
+                 route 1: {r1}. route 2: {r2}. The emissions that mint nothing still work: \
+                 `--emit template`, `--emit keys`, `--emit descriptor`."
+            )));
+        }
+    }
     Ok(out)
 }
