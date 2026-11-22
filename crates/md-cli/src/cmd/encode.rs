@@ -14,8 +14,8 @@ use md_codec::tree::{Body, Node};
 pub struct EncodeArgs<'a> {
     pub template: &'a str,
     /// P3 §6b — write the artifact to this file (created 0600) instead of
-    /// stdout. Affects the ARTIFACT only: the engraving card, the chunk-set-id
-    /// and every advisory still go to stderr.
+    /// stdout. Affects the ARTIFACT only: the chunk-set-id and every advisory
+    /// still go to stderr.
     pub out_file: Option<&'a std::path::Path>,
     pub keys: &'a [String],
     pub fingerprints: &'a [String],
@@ -219,17 +219,13 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // the same gate on md's authoring surface.
     md_codec::validate::validate_relative_timelocks(&descriptor.tree)?;
 
-    // P3 §6a + D4. stdout is the canonical artifact, UNBROKEN, and nothing
-    // else; the grouped form -- the thing a human actually transcribes onto a
-    // plate -- moves to the stderr engraving card below. Before this, a
-    // pipeline had to strip a header line AND pass `--group-size 0`, and
-    // `me sysw pack` classified a grouped chunk as "not a form this container
-    // can place" at exit 4.
+    // P3 §6a. stdout is the artifact and nothing else, printed ONCE: unbroken
+    // by default (`me sysw pack` classifies a grouped chunk as "not a form this
+    // container can place" at exit 4), grouped when `--group-size` asks.
     let (cards, chunk_set_id) = mint_md1_cards(&descriptor, args.force_chunked)?;
     if let Some(csid) = chunk_set_id {
         // The chunk-set-id is not deleted -- it is the only thing that tells
-        // an operator which chunks belong to one card. It heads the engraving
-        // card on stderr.
+        // an operator which chunks belong to one card. It goes to stderr.
         //
         // The fixture-file writer in `cmd/vectors.rs` still emits this same
         // text into a FILE and is deliberately untouched: §6a is a rule about
@@ -242,21 +238,11 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // bearing on it. The file is CREATED 0600 through the shared crate's
     // `write_private`; a shell redirect cannot do that, which is why the flag
     // exists at all (F-244).
-    let mut body = String::new();
-    for s in &cards {
-        body.push_str(s);
-        body.push('\n');
-    }
+    let body = render_artifact(&cards, args.group_size, args.separator);
     match args.out_file {
         Some(p) => crate::cmd::write_artifact(p, &body)?,
         None => print!("{body}"),
     }
-    emit_engraving_card(
-        &cards,
-        args.group_size,
-        args.separator,
-        &mut std::io::stderr(),
-    );
     if args.policy_id_fingerprint {
         let id = compute_wallet_policy_id(&descriptor)?;
         eprintln!(
@@ -340,56 +326,19 @@ pub fn mint_md1_cards(
     }
 }
 
-/// P3 §6c: the keyword for a separator char, for the card's `separator:` line.
+/// The artifact text: one md1 string per line, grouped every `group_size`
+/// characters when asked (0 = unbroken). Printed ONCE, on stdout or to `--out`
+/// (Brian 2026-11-22, reversing D4) -- there is no stderr engraving card.
 ///
-/// The card names the flag VALUE a reader would pass to reproduce it, not the
-/// raw char -- ` ` on a line of its own is invisible, which is the one value
-/// that matters after §6c narrows this to whitespace.
-fn separator_name(sep: char) -> String {
-    match sep {
-        ' ' => "space".into(),
-        '-' => "hyphen".into(),
-        ',' => "comma".into(),
-        other => other.to_string(),
-    }
-}
-
-/// P3 §6c / D4 — the engraving card, on stderr.
-///
-/// §6c rules that `md` and `mk` have no card to move the grouped form to, that
-/// P3 owns the contents, and that the minimum it must carry is the grouped
-/// string itself -- after D4 this is the only place that form exists.
-///
-/// SHAPE follows `ms`'s: plain `label: value` lines, no prefix character,
-/// ending with the tool's existing output-class advisory (emitted by the
-/// caller, after the warnings). `mnemonic bundle`'s `#`-prefixed card is the
-/// other in-constellation precedent and is deliberately NOT followed -- its `#`
-/// mirrors the comment headers on its own stdout, a surface `md` does not have.
-///
-/// The grouped string comes FIRST because it is the thing a human transcribes.
-/// Every chunk of a chunk set is rendered, not just the first: a chunk missing
-/// from the card is a chunk nobody engraves.
-///
-/// There is no `--no-engraving-card` on `md` -- §6c names that flag for `ms`
-/// and `mnemonic` only, and warns that it is what makes "no grouped form
-/// anywhere" possible.
-///
-/// `pub(crate)`, not private: `cmd::descriptor::emit_md1_card` (N2's `--emit
-/// md1`, the S -> K cell) calls this SAME function so the two minting
-/// surfaces cannot drift into two card renderers (the followup this closes,
-/// `emit-md1-has-no-transcribe-ready-form`) -- single-sourced exactly the way
-/// `mint_md1_cards` above already is.
-pub(crate) fn emit_engraving_card<W: std::io::Write>(
-    cards: &[String],
-    group_size: usize,
-    separator: char,
-    stderr: &mut W,
-) {
+/// `pub(crate)`: `cmd::descriptor::emit_md1_card` (`--emit md1`) renders
+/// through this same function, so the two minting surfaces cannot drift.
+pub(crate) fn render_artifact(cards: &[String], group_size: usize, separator: char) -> String {
+    let mut body = String::new();
     for s in cards {
-        let _ = writeln!(stderr, "{}", render_grouped(s, group_size, separator));
+        body.push_str(&render_grouped(s, group_size, separator));
+        body.push('\n');
     }
-    let _ = writeln!(stderr, "group size: {group_size}");
-    let _ = writeln!(stderr, "separator: {}", separator_name(separator));
+    body
 }
 
 /// F-A4: is `tree` a top-level bare legacy P2SH multisig — `sh(multi(...))`

@@ -22,19 +22,16 @@ fn encode_template_only_emits_a_phrase() {
 const WPKH_UNBROKEN: &str = "md1yqpqqxqq8xtwhw4xwn4qh";
 
 #[test]
-fn encode_default_groups_space_5() {
-    // mstring display-grouping (SPEC §3): default = space/5, single line.
-    //
-    // P3 §6c / D4 moved the grouped form off stdout and onto the stderr
-    // engraving card. The DEFAULT is unchanged -- space/5 -- and this test
-    // still pins it; only the stream it is read from moved.
+fn encode_group_size_5_groups_stdout_space_5() {
+    // mstring display-grouping (SPEC §3): `--group-size 5` = space/5, single
+    // line, on STDOUT (single print, 2026-11-22). The default is unbroken.
     let out = Command::cargo_bin("md")
         .unwrap()
-        .args(["encode", "wpkh(@0/<0;1>/*)"])
+        .args(["encode", "wpkh(@0/<0;1>/*)", "--group-size", "5"])
         .output()
         .unwrap();
     assert!(out.status.success());
-    let line = String::from_utf8(out.stderr)
+    let line = String::from_utf8(out.stdout)
         .unwrap()
         .lines()
         .next()
@@ -109,20 +106,31 @@ fn encode_refuses_the_retired_separators() {
             "the refusal must name what replaced it; got {stderr:?}"
         );
         assert!(
-            stderr.contains("--group-size 0"),
+            stderr.contains("`--group-size 5 --separator space`"),
+            "the grouped remedy needs the group size; got {stderr:?}"
+        );
+        assert!(
+            stderr.contains("drop `--separator` for an unbroken one"),
             "and the other way to get an unbroken card; got {stderr:?}"
         );
     }
 }
 
-/// The control: whitespace still works, by keyword AND by literal, and still
-/// shapes the card.
+/// The control: whitespace still works, by keyword AND by literal, and
+/// shapes stdout.
 #[test]
 fn encode_still_accepts_whitespace_separators() {
     for arg in ["space", " "] {
         let out = Command::cargo_bin("md")
             .unwrap()
-            .args(["encode", "wpkh(@0/<0;1>/*)", "--separator", arg])
+            .args([
+                "encode",
+                "wpkh(@0/<0;1>/*)",
+                "--group-size",
+                "5",
+                "--separator",
+                arg,
+            ])
             .output()
             .unwrap();
         assert!(
@@ -130,11 +138,8 @@ fn encode_still_accepts_whitespace_separators() {
             "--separator {arg:?} must still work: {}",
             String::from_utf8_lossy(&out.stderr)
         );
-        let stderr = String::from_utf8(out.stderr).unwrap();
-        assert!(
-            stderr.contains("md1yq pqqxq q8xtw hw4xw n4qh") && stderr.contains("separator: space"),
-            "got {stderr:?}"
-        );
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        assert_eq!(stdout, "md1yq pqqxq q8xtw hw4xw n4qh\n", "got {stdout:?}");
     }
 }
 
@@ -1126,14 +1131,14 @@ fn the_auto_chunked_header_is_on_stderr_too() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// P3 §6c / D4 — stdout is the UNBROKEN artifact; the grouped form moves to a
-// stderr engraving card
+// Single print (Brian 2026-11-22, reversing D4) — stdout is the artifact,
+// printed once; `--group-size` groups it on request; stderr carries no copy
 // ──────────────────────────────────────────────────────────────────────────
 
 /// The single-string case, asserted as byte-equality on stdout rather than as
 /// "no space at position 5". Equality is what a pipeline sees.
 #[test]
-fn encode_stdout_is_unbroken_and_the_card_is_on_stderr() {
+fn encode_stdout_is_unbroken_and_stderr_has_no_copy() {
     let out = Command::cargo_bin("md")
         .unwrap()
         .args(["encode", "wpkh(@0/<0;1>/*)"])
@@ -1147,26 +1152,15 @@ fn encode_stdout_is_unbroken_and_the_card_is_on_stderr() {
         format!("{WPKH_UNBROKEN}\n"),
         "stdout must be the canonical artifact, unbroken, and nothing else"
     );
-    // The card: the grouped string first (it is the thing a human transcribes),
-    // then the two flags that shaped it, then the existing advisory last.
-    assert!(
-        stderr.contains("md1yq pqqxq q8xtw hw4xw n4qh"),
-        "the grouped form must survive, on the card; got {stderr:?}"
-    );
-    assert!(stderr.contains("group size: 5"), "got {stderr:?}");
-    assert!(stderr.contains("separator: space"), "got {stderr:?}");
-    assert!(
-        stderr
-            .trim_end()
-            .ends_with("note: stdout is a keyless descriptor template (no keys)"),
-        "the card ends with the existing output-class advisory; got {stderr:?}"
+    assert_eq!(
+        stderr, "note: stdout is a keyless descriptor template (no keys)\n",
+        "stderr carries only the output-class advisory"
     );
 }
 
-/// `--group-size` and `--separator` shape the CARD and never stdout. A run with
-/// non-default grouping must leave stdout byte-identical to the default run.
+/// `--group-size` and `--separator` shape STDOUT, on request.
 #[test]
-fn grouping_flags_move_the_card_and_not_stdout() {
+fn grouping_flags_shape_stdout() {
     let run = |extra: &[&str]| {
         let mut args = vec!["encode", "wpkh(@0/<0;1>/*)"];
         args.extend_from_slice(extra);
@@ -1176,39 +1170,28 @@ fn grouping_flags_move_the_card_and_not_stdout() {
             .output()
             .unwrap();
         assert!(out.status.success());
-        (
-            String::from_utf8(out.stdout).unwrap(),
-            String::from_utf8(out.stderr).unwrap(),
-        )
+        String::from_utf8(out.stdout).unwrap()
     };
-    let (base_out, _) = run(&[]);
-    let (g4_out, g4_err) = run(&["--group-size", "4"]);
-    let (g0_out, g0_err) = run(&["--group-size", "0"]);
-    assert_eq!(base_out, g4_out, "--group-size must not reach stdout");
-    assert_eq!(base_out, g0_out, "--group-size 0 must not reach stdout");
-    assert!(
-        g4_err.contains("md1y qpqq xqq8 xtwh w4xw n4qh") && g4_err.contains("group size: 4"),
-        "the card must follow --group-size; got {g4_err:?}"
-    );
-    assert!(
-        g0_err.contains("group size: 0") && g0_err.contains(WPKH_UNBROKEN),
-        "group size 0 renders the card unbroken; got {g0_err:?}"
+    assert_eq!(run(&[]), format!("{WPKH_UNBROKEN}\n"));
+    assert_eq!(run(&["--group-size", "0"]), format!("{WPKH_UNBROKEN}\n"));
+    assert_eq!(
+        run(&["--group-size", "4"]),
+        "md1y qpqq xqq8 xtwh w4xw n4qh\n"
     );
 }
 
 /// The chunked case. Every stdout line is a bare md1 token carrying NO
-/// whitespace — which is exactly what `me sysw pack` classifies a record by,
-/// and the property whose absence made `md encode | me sysw pack` need a
-/// `grep` plus a `--group-size 0`.
+/// whitespace under the default -- which is exactly what `me sysw pack`
+/// classifies a record by -- and `--group-size 5` groups EVERY chunk.
 #[test]
-fn chunked_stdout_is_bare_md1_tokens_and_the_card_carries_every_chunk() {
+fn chunked_stdout_is_bare_md1_tokens_and_group_size_groups_every_chunk() {
     let mut args = keyed_policy_args();
     // Drop the fixture's own `--group-size 0`, so this runs the DEFAULT.
     let g = args.iter().position(|a| a == "--group-size").unwrap();
     args.drain(g..g + 2);
     let out = Command::cargo_bin("md")
         .unwrap()
-        .args(args)
+        .args(&args)
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -1222,20 +1205,26 @@ fn chunked_stdout_is_bare_md1_tokens_and_the_card_carries_every_chunk() {
             !l.contains(char::is_whitespace),
             "stdout must be unbroken; got {l:?}"
         );
+        assert!(!stderr.contains(l), "stderr repeats a chunk: {stderr}");
     }
-    // The card carries the grouped form of EVERY chunk, not just the first.
-    for l in &lines {
-        let grouped: String = l
-            .chars()
-            .collect::<Vec<_>>()
-            .chunks(5)
-            .map(|c| c.iter().collect::<String>())
-            .collect::<Vec<_>>()
-            .join(" ");
-        assert!(
-            stderr.contains(&grouped),
-            "the card is missing a chunk: {grouped:?}\nstderr: {stderr}"
-        );
-    }
-    assert!(stderr.contains("group size: 5") && stderr.contains("separator: space"));
+    args.extend(["--group-size".to_string(), "5".to_string()]);
+    let grouped_out = Command::cargo_bin("md")
+        .unwrap()
+        .args(&args)
+        .output()
+        .unwrap();
+    assert!(grouped_out.status.success());
+    let want: String = lines
+        .iter()
+        .map(|l| {
+            l.chars()
+                .collect::<Vec<_>>()
+                .chunks(5)
+                .map(|c| c.iter().collect::<String>())
+                .collect::<Vec<_>>()
+                .join(" ")
+                + "\n"
+        })
+        .collect();
+    assert_eq!(String::from_utf8(grouped_out.stdout).unwrap(), want);
 }

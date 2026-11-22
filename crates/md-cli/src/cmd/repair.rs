@@ -50,7 +50,7 @@ pub struct RepairArgs {
     pub md1_strings: Vec<String>,
 
     /// P3 §6b — read md1 strings from FILE, one per line. Display separators
-    /// are stripped per line, so a card copied off an engraving card
+    /// are stripped per line, so a card copied in grouped form
     /// re-ingests.
     #[arg(long = "in", value_name = "FILE")]
     pub in_file: Option<std::path::PathBuf>,
