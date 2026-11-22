@@ -205,17 +205,32 @@ not part of this FIX.
 
 ## 8. Gate line
 
-`bash scripts/fix-bh1119-md-placeholder-order-gate.sh` (builder commits it with its coordinator catalog row;
-row #4 has its own gate). It runs Usage: `bash scripts/fix-bh1119-md-placeholder-order-gate.sh`, no arguments, from the repo root, `$HOME/.cargo/bin` first in PATH, `--locked` everywhere. Step 1: `cargo build --locked -p md-cli`, then `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh target/debug/md`. Step 2: `cargo nextest run --locked -p md-codec -E 'test(=<name>)'` for each of e12, e14, e15, e18 (full function names from section 3) and the two changed canonicalize.rs tests, and `-p md-cli` for e13; each must run exactly 1 test (counted from `cargo nextest list`). Step 3: the CI set. Step 4: the golden `git diff --exit-code`. Every step runs; exit 0 only if all passed, else exit 1 after printing the failed step names. No quick mode. 'Shown RED' means the E-row script on a base build (`rows failed: 8`, rc 1), recorded in the builder's report; the wrapper is not run on the base. `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh <built md>`
-(committed with this FIX: the E block of the author's red.sh, i.e. its header, the `erow`, e2, e5 and `vrow`
-rows, plus e16 and e17; exit 0 only when no E row fails; base exit 1, `rows failed: 8`), then the named
-library and unit rows e12, e13, e14, e15, e18 and the two changed unit tests by filter (each filter's match count checked: 1), then
-the repo CI set (`cargo nextest run --locked --workspace --all-targets --all-features --no-fail-fast
---build-jobs 6 -j 6`, doc tests, clippy `-D warnings`, `cargo fmt --all --check`, `cargo build --locked
--p md-cli --no-default-features`, `RUSTDOCFLAGS=-D warnings cargo doc ...`, `bash ci/code-docs-check.sh`),
-plus `git diff --exit-code -- crates/md-codec/tests/vectors design/display-grouping-vectors.tsv` after the
-suite (no golden moved). Shown RED once on the base. Not covered: the bitcoind-differential and fuzz-smoke
-workflows (run as CI on the PR), the consumer pin bumps, the release commit.
+`bash scripts/fix-bh1119-md-placeholder-order-gate.sh` is the gate. The builder commits it with its coordinator catalog row, and adds
+a catalog row for `scripts/fix-bh1119-md-placeholder-order-gate-erows.sh`; row #4 has its own gate. Usage: no arguments, run from the
+repo root, `$HOME/.cargo/bin` first in PATH, `--locked` everywhere. Every step runs; the wrapper exits 0 only if all passed, else exits 1
+after printing the failed step names. There is no quick mode.
+- Step 1: `cargo build --locked -p md-cli`, then `bash scripts/fix-bh1119-md-placeholder-order-gate-erows.sh target/debug/md`. That
+  script is committed with this FIX: the E block of the author's red.sh (its header, the `erow`, e2, e5 and `vrow` rows) plus e16 and e17;
+  it exits 0 only when no E row fails; on a base build it exits 1 with `rows failed: 8`.
+- Step 2: the named library and unit rows, one run each, as `cargo nextest run --locked -p <crate> -E 'test(=<path>)'`, where `<path>`
+  is the nextest test name: for the integration rows `e12_c2_identities_follow_the_canonical_spelling`,
+  `e14_i12_error_leaves_descriptor_unchanged`, `e15_i12_repair_and_retry_matches_one_shot`, `e18_c2_duplicate_override_refused` (`-p md-codec`);
+  for the unit tests `canonicalize::tests::permute_with_use_site_path_overrides` and
+  `canonicalize::tests::canonicalize_short_divergent_returns_typed_error` (`-p md-codec`) and `seat::compose::tests::e13_i2_verdict_either_order`
+  (`-p md-cli`). Before each run, the match count is checked: `cargo nextest list --locked -p <crate> --message-format oneline -E '<same filter>' 2>/dev/null | wc -l`
+  must print 1.
+- Step 3: the repo CI set, as `.github/workflows/ci.yml` runs it: `cargo nextest run --locked --workspace --all-targets --all-features
+  --no-fail-fast --build-jobs 6 -j 6`; `cargo test --locked --workspace --doc --all-features`; `cargo clippy --locked --workspace --all-targets
+  --all-features -- -D warnings`; `cargo fmt --all --check`; `cargo build --locked -p md-cli --no-default-features`;
+  `RUSTDOCFLAGS='-D warnings' cargo doc --locked --workspace --no-deps --document-private-items --all-features`;
+  `(cd design && sha256sum -c display-grouping-vectors.tsv.sha256)`; `sha256sum --check --strict ci/shared-ci.sha256`;
+  `bash ci/docs-only.test.sh`; `bash ci/code-docs-check.test.sh`; `bash ci/code-docs-check.sh`.
+- Step 4: `git diff --exit-code "$(git merge-base HEAD origin/main)" -- crates/md-codec/tests/vectors design/display-grouping-vectors.tsv`
+  (no golden moved against the base; a changed golden is a STOP, section 4).
+
+"Shown RED" means the step-1 E-row script on a base build (`rows failed: 8`, exit 1), recorded in the builder's report; the wrapper is not
+run on the base. Not covered: the bitcoind-differential and fuzz-smoke workflows (run as CI on the PR), the freebsd and musl/aarch64 jobs,
+the consumer pin bumps, the release commit.
 
 ## 9. FOLLOWUPS
 
