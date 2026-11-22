@@ -449,9 +449,113 @@ fn c2_origin_less_key_printed_line_runs() {
     ] {
         assert_eq!(c2_run(&d), 1, "{d}");
         let (_, _, se) = out_of(md().args(["encode", &d]));
-        assert!(se.contains("[fingerprint/path] before the key"), "{se}");
+        assert!(
+            se.contains(
+                "Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one."
+            ),
+            "{se}"
+        );
+        assert!(!se.contains("knows the path"), "{se}");
     }
     assert_eq!(c2_run(&format!("wsh(pk({A0}/<0;1>/*))")), 2);
+}
+
+/// Signet keys from `bh1119_md_decompose_routes.rs`: `KA` at depth 4 under `[73c5da0a/48'/1'/0'/2']`, `K1` at
+/// depth 1 under `[73c5da0a/84']`, `K2` at depth 2 under `[73c5da0a/84'/1']`.
+const KA: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
+const K1: &str = "tpubD97UxEEVXiRvic42NcHLjLAWv5L3CEkuj587dZtEmb4T4Da74DpjbC5tjm7qBq3G4LxjU9SYuTv7edTvTefctXWPkvgSn7MHUmiPCsSyzyJ";
+const K2: &str = "tpubDB5GSFrKWykZsJgwdd9ViGUECU8AQvTxig4iZonrS5BJ2k9V4ucfHifnXTNfRExUaDsLvZedPfbEN2iphbq11CMDe4WJQAvQRqXaGJuwhwk";
+const C2_HEAD: &str = "md: template parse error: this is a concrete wallet descriptor (it carries a real extended key), not an md1 template — `md encode` takes a template whose keys are `@i` placeholders. md reads descriptors with `md decompose`";
+const C2_NO_PATH: &str = "Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one.";
+const TPUB_NET: &str = " --network <testnet|signet|regtest>";
+fn c2_stderr(desc: &str) -> String {
+    out_of(md().args(["encode", desc])).2
+}
+fn c2_both_lines(net: &str) -> String {
+    format!(
+        "{C2_HEAD}:\n    md decompose <DESCRIPTOR> --emit commands{net}   # the mint commands, ready to run\n    md decompose <DESCRIPTOR> --emit template{net}   # or just the @i template for --template\n"
+    )
+}
+fn c2_fixed_refusal() -> String {
+    format!(
+        "{C2_HEAD}, which prints no template for this one: this descriptor has no md1 template: key @0 has use-site `/0/*`, which an md1 card cannot hold (after the origin it holds only a wildcard, optionally after one multipath step such as `/<0;1>/*`), so a template, and any card minted from it, would describe a different wallet. If this is the receive (`/0/*`) or change (`/1/*`) half of a wallet, give the descriptor with `/<0;1>/*` in its place. The emissions that need no template still work: `--emit keys`, `--emit fingerprints`, `--emit descriptor`."
+    )
+}
+
+/// C2 (review md60 I1.1): a key with a fixed use-site `/0/*` has no md1 template, so `--emit template` and
+/// `--emit commands` both refuse it: no `md decompose` line is printed, the text is decompose's own refusal
+/// (it names `/<0;1>/*`), plus the no-path sentence for an origin-less key; with `/<0;1>/*` in its place the
+/// lines are printed and run.
+#[test]
+fn c2_fixed_use_site_prints_no_decompose_line() {
+    let d = format!("wpkh([73c5da0a/48'/1'/0'/2']{KA}/0/*)");
+    assert_eq!(c2_run(&d), 0, "{d}");
+    assert_eq!(c2_stderr(&d), format!("{}\n", c2_fixed_refusal()));
+    assert_eq!(
+        c2_run(&format!("wpkh([73c5da0a/48'/1'/0'/2']{KA}/<0;1>/*)")),
+        2
+    );
+
+    let d = format!("wpkh({KA}/0/*)");
+    assert_eq!(c2_run(&d), 0, "{d}");
+    assert_eq!(
+        c2_stderr(&d),
+        format!("{}\n{C2_NO_PATH}\n", c2_fixed_refusal())
+    );
+    assert_eq!(c2_run(&format!("wpkh({KA}/<0;1>/*)")), 1);
+}
+
+/// C2 (review md60 I1.2): a depth-1 key whose origin fingerprint is not its parent's: decompose proves no
+/// mint route, so only the `--emit template` line is printed (it runs), and the text is decompose's refusal.
+#[test]
+fn c2_no_mint_route_prints_template_line_only() {
+    let d = format!("wpkh([deadbeef/84']{K1}/<0;1>/*)");
+    assert_eq!(c2_run(&d), 1, "{d}");
+    assert_eq!(
+        c2_stderr(&d),
+        format!(
+            "{C2_HEAD}:\n    md decompose <DESCRIPTOR> --emit template{TPUB_NET}   # the @i template for --template\nIts mint commands are not printed: --emit commands cannot be produced: no mint route reproduces this descriptor. route 1: md encode refuses it: --key @0: expected an account-level xpub at depth 3 or 4 (this script context conventionally uses 3), got 1. route 2: mk encode refuses it: origin fingerprint deadbeef does not match the xpub: at depth 1 the xpub's parent is the master key, so the fingerprint must be 73c5da0a. The record pairs a key with an origin that is not its own.. The emissions that mint nothing still work: `--emit template`, `--emit keys`, `--emit descriptor`.\n"
+        )
+    );
+}
+
+/// C2 (review md60 I1.3): a depth-0 key under a 3-step origin path: decompose refuses the descriptor, so no
+/// `md decompose` line is printed and the text is decompose's refusal; the same key with its true origin
+/// (fingerprint, no path) prints the template line, which runs.
+#[test]
+fn c2_depth_inconsistent_prints_no_decompose_line() {
+    let d = format!("wpkh([3442193e/84'/0'/0']{V1_XPUB}/<0;1>/*)");
+    assert_eq!(c2_run(&d), 0, "{d}");
+    assert_eq!(
+        c2_stderr(&d),
+        format!(
+            "{C2_HEAD}, which refuses this one: key @0 is depth-inconsistent IN THE INPUT: the extended key states depth 0, but its origin path `[3442193e/84'/0'/0']` has 3 component(s) — depth 3. An mk1 key card drops depth and child number from the wire and reconstructs BOTH from the origin path, so `mk encode --keys` refuses such a record outright (\"xpub origin-path mismatch: xpub depth 0 … vs origin_path depth 3 …\"). decompose will not emit a key line that could not be minted: correct the origin in the descriptor so it states the path this key was actually derived at.\n"
+        )
+    );
+    assert_eq!(c2_run(&format!("wpkh([3442193e]{V1_XPUB}/<0;1>/*)")), 1);
+}
+
+/// C2 (review md60 M2): a depth-1 and a depth-2 key with their true origins: route 1 is withheld and route 2
+/// proven, so `--emit commands` runs; both lines are printed and run.
+#[test]
+fn c2_depth_1_2_key_printed_lines_run() {
+    for d in [
+        format!("wpkh([73c5da0a/84']{K1}/<0;1>/*)"),
+        format!("wpkh([73c5da0a/84'/1']{K2}/<0;1>/*)"),
+    ] {
+        assert_eq!(c2_run(&d), 2, "{d}");
+        assert_eq!(c2_stderr(&d), c2_both_lines(TPUB_NET));
+        let (rc, so, se) =
+            out_of(md().args(["decompose", &d, "--network", "signet", "--emit", "commands"]));
+        assert_eq!(rc, 0, "{se}");
+        assert!(so.starts_with("# ── route 1 withheld: "), "{so}");
+        assert!(
+            so.contains(
+                "# ── route 2: the SPLIT set — a keyless policy card + one mk1 card per key ──"
+            ),
+            "{so}"
+        );
+    }
 }
 
 #[cfg(feature = "cli-compiler")]
