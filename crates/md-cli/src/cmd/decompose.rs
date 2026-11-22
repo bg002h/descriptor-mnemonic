@@ -128,7 +128,10 @@ fn sh_quote(s: &str) -> String {
 /// lacks an origin, naming the keys and the reason. The template, keys and
 /// descriptor emissions still work — only the MINT instructions are withheld,
 /// because they are the ones that would not run.
-fn commands(d: &Decomposition, network: bitcoin::Network) -> Result<Vec<String>, CliError> {
+pub(crate) fn commands(
+    d: &Decomposition,
+    network: bitcoin::Network,
+) -> Result<Vec<String>, CliError> {
     let missing = d.origin_less();
     if !missing.is_empty() {
         let named = missing

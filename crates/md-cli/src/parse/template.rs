@@ -359,6 +359,70 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
     Ok(out)
 }
 
+/// The `md decompose` referral for a concrete descriptor whose keys are all
+/// xpub (`net` empty) or all tpub (`net` the `--network` placeholder).
+///
+/// Every `md decompose <DESCRIPTOR> ...` line printed here must run as printed
+/// (exit 0), so this runs the same decomposition the line would run and prints
+/// a line only when it succeeds; otherwise it prints decompose's own refusal.
+/// A tpub decomposes and proves alike under testnet, signet and regtest (the
+/// version bytes are shared; only route 1's `--network` text differs), so
+/// signet stands in for the placeholder.
+fn decompose_referral(template: &str, net: &str, liana_hint: &str) -> String {
+    const HEAD: &str = "this is a concrete wallet descriptor (it carries a real extended key), not \
+         an md1 template — `md encode` takes a template whose keys are `@i` placeholders. md \
+         reads descriptors with `md decompose`";
+    // Brian 2026-11-22 (md #4): the text for a key whose origin states no path.
+    const NO_PATH: &str = "Its mint commands (--emit commands) also need each key at account \
+         level with its origin, [fingerprint/path] before the key; this descriptor has a key \
+         without one.";
+    let network = if net.is_empty() {
+        bitcoin::Network::Bitcoin
+    } else {
+        bitcoin::Network::Signet
+    };
+    let why = |e: CliError| match e {
+        CliError::Decompose(m) => m,
+        e => e.to_string(),
+    };
+    let d = match crate::decompose::decompose(&[template.to_string()], network) {
+        Ok(d) => d,
+        Err(e) => return format!("{HEAD}, which refuses this one: {}{liana_hint}", why(e)),
+    };
+    let no_path = d
+        .occurrences
+        .iter()
+        .any(|o| !matches!(&o.origin, Some((_, p)) if !p.is_empty()));
+    if let Some(m) = &d.template_refusal {
+        let also = if no_path {
+            format!("\n{NO_PATH}")
+        } else {
+            String::new()
+        };
+        return format!("{HEAD}, which prints no template for this one: {m}{also}{liana_hint}");
+    }
+    match crate::cmd::decompose::commands(&d, network) {
+        Ok(_) => format!(
+            "{HEAD}:\n    \
+             md decompose <DESCRIPTOR> --emit commands{net}   # the mint commands, ready to run\n    \
+             md decompose <DESCRIPTOR> --emit template{net}   # or just the @i template for --template\
+             {liana_hint}"
+        ),
+        Err(e) => {
+            let reason = if no_path {
+                NO_PATH.to_string()
+            } else {
+                format!("Its mint commands are not printed: {}", why(e))
+            };
+            format!(
+                "{HEAD}:\n    \
+                 md decompose <DESCRIPTOR> --emit template{net}   # the @i template for --template\n\
+                 {reason}{liana_hint}"
+            )
+        }
+    }
+}
+
 /// F-420 (mnemonic-engrave FOLLOWUPS, 2026-08-28 journey walk W2): `md` is the
 /// tool NAMED for descriptors, so the natural wrong inputs here are a concrete
 /// descriptor and a BlueWallet `Key: value` export — both refuse on this arm.
@@ -437,30 +501,8 @@ fn no_placeholders_message(template: &str) -> String {
         } else {
             None
         };
-        // `--emit commands` also refuses a key with no `[fingerprint/path]`
-        // origin before it, so that line is printed only when every key has one.
-        let origin_less = key.find_iter(template).any(|m| {
-            let pre = &template[..m.start()];
-            !(pre.ends_with(']') && pre.rfind('[').is_some_and(|i| pre[i..].contains('/')))
-        });
         match net {
-            Some(net) if !origin_less => format!(
-                "this is a concrete wallet descriptor (it carries a real extended key), not \
-                 an md1 template — `md encode` takes a template whose keys are `@i` \
-                 placeholders. md reads descriptors with `md decompose`:\n    \
-                 md decompose <DESCRIPTOR> --emit commands{net}   # the mint commands, ready to run\n    \
-                 md decompose <DESCRIPTOR> --emit template{net}   # or just the @i template for --template\
-                 {liana_hint}"
-            ),
-            Some(net) => format!(
-                "this is a concrete wallet descriptor (it carries a real extended key), not \
-                 an md1 template — `md encode` takes a template whose keys are `@i` \
-                 placeholders. md reads descriptors with `md decompose`:\n    \
-                 md decompose <DESCRIPTOR> --emit template{net}   # the @i template for --template\n\
-                 Its mint commands (--emit commands) also need each key at account level \
-                 with its origin, [fingerprint/path] before the key; this descriptor has a \
-                 key without one.{liana_hint}"
-            ),
+            Some(net) => decompose_referral(template, net, &liana_hint),
             None => format!(
                 "this is a concrete wallet descriptor (it carries a real extended key), not \
                  an md1 template — `md encode` takes a template whose keys are `@i` \
