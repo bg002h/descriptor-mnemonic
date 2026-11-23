@@ -188,6 +188,7 @@ equals the next help line, trimmed; it also asserts exactly one `$` line for tha
 | c1_decode_help_example_runs_as_printed | md-cli | same, `test(=c1_decode_help_example_runs_as_printed)` | PASS (control: the harness is sound) | PASS |
 | i11_readme_dependency_pin_matches_crate_version | md-codec | `cargo nextest run --locked -p md-codec -E 'test(=readme_doctests::tests::i11_readme_dependency_pin_matches_crate_version)'` | FAIL: `README quickstart must pin md-codec = "0.48"` | PASS |
 | i11_readme_blocks_run (doctest) | md-codec | `cargo test --locked -p md-codec --doc -- readme_doctests::ReadmeDoctests` | FAIL: 2 failed (line 58: E0432 x1 line naming 3 imports, E0423 x2; line 90: Codex32DecodeError panic) | `test result: ok. 2 passed` |
+| i11_readme_doctest_carrier_is_wired_and_blocks_run | md-codec | `cargo nextest run --locked -p md-codec -E 'test(=i11_readme_doctest_carrier_is_wired_and_blocks_run)'` | not run on base (row added by review-md66-s1 I1; RED shown under three plants: README fence `ignore`, `include_str!` removed from `readme_doctests.rs`, `mod readme_doctests;` removed) | PASS |
 | f1_descriptor_help_example_runs_as_printed | md-cli | same, `test(=f1_descriptor_help_example_runs_as_printed)` | FAIL: `md descriptor md1qq...` exit 1, `md: codec error: codex32 decode error: character '.' not in codex32 alphabet` | PASS |
 | f1_address_help_example_runs_as_printed | md-cli | same, `test(=f1_address_help_example_runs_as_printed)` | FAIL: `md address md1qq...` exit 1, same message | PASS |
 | f1_repair_help_examples_run_as_printed | md-cli | same, `test(=f1_repair_help_examples_run_as_printed)` | FAIL: `md repair md1qq...` exit 2, `md: repair: codex32 decode error: chunk 0: character '.' not in codex32 alphabet` | PASS |
@@ -218,7 +219,7 @@ so a codec change that moves it fails that test too.
 | S1 | i10_encode_help_example_runs_as_printed |
 | S2 | i10_decompose_help_example_runs_as_printed |
 | harness soundness | c1_decode_help_example_runs_as_printed |
-| S3 doctest, S6, S7 | i11_readme_blocks_run |
+| S3 doctest, S6, S7 | i11_readme_blocks_run, i11_readme_doctest_carrier_is_wired_and_blocks_run |
 | S3 pin test, S5 | i11_readme_dependency_pin_matches_crate_version |
 | S4 | gate step 2k (`ci/code-docs-check.sh`) |
 | S8 | prose only; reviewer reads it against `chunk.rs:700-727` |
