@@ -235,18 +235,18 @@ fn corrected_but_unsupported(
 fn apply_corrections(original: &str, positions: &[(usize, char, char)]) -> String {
     let hrp_len = 3; // "md1"
     let mut chars: Vec<char> = original.chars().collect();
+    // Whole-branch review M-9, widened by bh-md-I3: write each correction in
+    // the INPUT STRING's case, not the damaged character's. md1 is
+    // single-case (BIP-173); an all-uppercase card (the QR alphanumeric form)
+    // given a lowercase char becomes a mixed-case string md refuses to read.
+    // The case comes from the whole string because the damaged character may
+    // be a digit, which has no case. Every input string starts with `md`/`MD`,
+    // so its case is always determined.
+    let upper = chars.iter().any(|c| c.is_ascii_uppercase());
     for &(pos, _was, now) in positions {
         let abs_idx = hrp_len + pos;
         if abs_idx < chars.len() {
-            // Whole-branch review M-9: write the correction in the INPUT's
-            // case. md1 is single-case (BIP-173); an all-uppercase card (the
-            // QR alphanumeric form) given a lowercase char becomes a
-            // mixed-case string md refuses to read.
-            chars[abs_idx] = if chars[abs_idx].is_ascii_uppercase() {
-                now.to_ascii_uppercase()
-            } else {
-                now
-            };
+            chars[abs_idx] = if upper { now.to_ascii_uppercase() } else { now };
         }
     }
     chars.iter().collect()
