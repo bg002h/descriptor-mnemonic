@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The `md encode`, `md decompose`, `md descriptor`, `md address` and `md repair` help examples run as printed.** Two had unquoted templates (a shell syntax error) and three used elided `md1qq...` cards; they are now quoted and use real cards (bh-md-I10, bh-md-F1).
 - **`md repair` keeps an uppercase card uppercase.** When a letter on an all-uppercase md1 card (the QR form) was
   misread as a digit, the corrected card was printed with that one letter in lowercase (for example
   `MD1yQPQQXQQ8XTWHW4XWN4QH`), a mixed-case string `md decode` refuses. Each corrected card is now printed in the
@@ -49,6 +50,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`md encode`, given a concrete descriptor with a key that has no origin path, no longer prints the `--emit commands` line that refuses.** A key with a fingerprint-only origin (such as a master key, `[fingerprint]xpub...`) now gets the `--emit template` line alone, like a key with no origin. In that case the explanation reads: `Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one.` It replaces the sentence ending "the wallet that produced it knows the path." More generally, `md encode` now runs that decomposition itself and prints a `md decompose` line only when it runs: when `md decompose` refuses the descriptor, or prints no template for it (a fixed use-site such as `/0/*`), no line is printed and the referral quotes decompose's refusal; when only `--emit commands` refuses, the template line is printed with decompose's reason.
 
 ## md-codec [Unreleased]
+
+### Fixed
+
+- **The README examples compile and run.** The quickstart used an API md-codec no longer has and pinned 0.32;
+  it now decodes a card and re-encodes it with the current API and pins 0.48. The error-correction example uses a
+  real damaged card instead of placeholders, and the stale "chunked-form only" note is gone. Both README blocks now
+  run as doctests, and a test keeps the version pin in step with the crate (bh-md-I11).
 
 ## md-codec [0.48.7] — 2026-11-22
 
