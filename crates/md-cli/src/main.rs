@@ -106,7 +106,7 @@ struct Cli {
 enum Command {
     /// Encode a wallet policy into MD backup string(s).
     #[command(
-        after_long_help = "EXAMPLES:\n  $ md encode wpkh(@0/<0;1>/*) --group-size 0\n  md1yqpqqxqq8xtwhw4xwn4qh"
+        after_long_help = "EXAMPLES:\n  $ md encode 'wpkh(@0/<0;1>/*)' --group-size 0\n  md1yqpqqxqq8xtwhw4xwn4qh"
     )]
     Encode {
         /// BIP 388 template, e.g. `wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))`.
@@ -378,7 +378,7 @@ enum Command {
     // the two are meant to be supplied TOGETHER on the S row. `template`
     // stays mutually exclusive with both via its own `conflicts_with`
     // attributes, unaffected by this group's `multiple` setting.
-    #[command(after_long_help = "EXAMPLES:\n  $ md descriptor md1qq...\n  wsh(...)#checksum",
+    #[command(after_long_help = "EXAMPLES:\n  $ md descriptor md1fwkhxpqpqztvyyy4qqxqqks883w6pg25z9m5rru59s2su80aw2q4qg9e343jwu6tsn md1fwkhxpq0yxs7s5yl6smtcxjz9m806prlsm794tkxqs6806lhaeh6qwafumf4dq3lcd md1fwkhxpq3umfj075dhzfzvynh66n94j5lcxlmx9ayav9mj0jjqdxqaazpst259n\n  wpkh([73c5da0a/48'/0'/0'/2']xpub6DXuQW1Q2JpZxsEnFKrPvDuiRMmQgU4fzHU1wsvM5EqgGAWRJ3cmwbtS8u1HQjrEHg3YFb7XGnFovPydJ8qpaGNNd2hSEPoheWd27EABdGH/<0;1>/*)#78r8grf2",
               group = clap::ArgGroup::new("descriptor_input").required(true).multiple(true).args(["phrases", "template", "from_mk1"]))]
     Descriptor {
         /// One or more md1 phrases. Mutually exclusive with --template.
@@ -626,7 +626,7 @@ enum Command {
 
     /// Derive bitcoin addresses from a wallet-policy-mode descriptor.
     // R9 — see the identical comment on `descriptor_input` above.
-    #[command(after_long_help = "EXAMPLES:\n  $ md address md1qq...\n  bc1q...",
+    #[command(after_long_help = "EXAMPLES:\n  $ md address md1fwkhxpqpqztvyyy4qqxqqks883w6pg25z9m5rru59s2su80aw2q4qg9e343jwu6tsn md1fwkhxpq0yxs7s5yl6smtcxjz9m806prlsm794tkxqs6806lhaeh6qwafumf4dq3lcd md1fwkhxpq3umfj075dhzfzvynh66n94j5lcxlmx9ayav9mj0jjqdxqaazpst259n\n  bc1qtncy45g8qy8laah6jvxn6ppvj0s9rluxj5uxf6",
               group = clap::ArgGroup::new("address_input").required(true).multiple(true).args(["phrases", "template", "from_mk1"]))]
     Address {
         /// One or more md1 phrases. Mutually exclusive with --template.
@@ -823,7 +823,7 @@ enum Command {
     /// Bitcoin Core's `listdescriptors` JSON and separate receive/change
     /// descriptor PAIRS are refused with guidance rather than parsed.
     #[command(
-        after_long_help = "EXAMPLES:\n  $ md decompose wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf/<0;1>/*) --emit template\n  wpkh(@0/48'/0'/0'/2'/<0;1>/*)"
+        after_long_help = "EXAMPLES:\n  $ md decompose \"wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf/<0;1>/*)\" --emit template\n  wpkh(@0/48'/0'/0'/2'/<0;1>/*)"
     )]
     #[command(group = clap::ArgGroup::new("decompose_source").required(true).args(["descriptors", "in_file"]))]
     Decompose {
@@ -875,7 +875,7 @@ enum Command {
     ///       the stderr message and NO partial corrected output is emitted
     ///       on stdout.
     #[command(
-        after_long_help = "ATOMIC SEMANTICS (multi-chunk):\n  When more than one md1 chunk is supplied, the call is atomic per plan\n  §1 D28: if ANY chunk fails BCH error-correction capacity (> 4 errors),\n  the WHOLE call exits 2 with the failing chunk index named on stderr.\n  NO partial corrected chunks are emitted on stdout.\n\nINPUT FORMAT:\n  Accepts BOTH chunked-form md1 strings (those bearing a chunk header, as\n  emitted by `md encode --force-chunked` or by automatic chunking when the\n  payload exceeds 320 bits) AND non-chunked single-string md1 (those\n  emitted by plain `md encode` for small payloads). Since md-codec v0.35.0,\n  single-string md1 are repaired directly — no need to fall back to\n  `md decode`.\n\nEXAMPLES:\n  $ md repair md1qq...\n  $ md repair md1qq... md1qq... md1qq...\n  $ md repair --json md1qq..."
+        after_long_help = "ATOMIC SEMANTICS (multi-chunk):\n  When more than one md1 chunk is supplied, the call is atomic per plan\n  §1 D28: if ANY chunk fails BCH error-correction capacity (> 4 errors),\n  the WHOLE call exits 2 with the failing chunk index named on stderr.\n  NO partial corrected chunks are emitted on stdout.\n\nINPUT FORMAT:\n  Accepts BOTH chunked-form md1 strings (those bearing a chunk header, as\n  emitted by `md encode --force-chunked` or by automatic chunking when the\n  payload exceeds 320 bits) AND non-chunked single-string md1 (those\n  emitted by plain `md encode` for small payloads). Since md-codec v0.35.0,\n  single-string md1 are repaired directly — no need to fall back to\n  `md decode`.\n\nEXAMPLES:\n  $ md repair md1yq802ggqqpsqwgtua24e7ssf3\n  $ md repair md1fwkhxpqpqztvyyy4qqxqqks883w6pg25z9m5rru59s2su80aw2q4qg9e343jwu6tsn md1fwkhxpq0yxs7q5yl6smtcxjz9m806prlsm794tkxqs6806lhaeh6qwafumf4dq3lcd md1fwkhxpq3umfj075dhzfzvynh66n94j5lcxlmx9ayav9mj0jjqdxqaazpst259n\n  $ md repair --json md1yq802ggqqpsqwgtua24e7ssf3"
     )]
     Repair(cmd::repair::RepairArgs),
     /// Generate roff man pages for the whole `md` CLI tree into a directory.

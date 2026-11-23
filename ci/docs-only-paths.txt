@@ -12,3 +12,6 @@
 + ^[^/]+\.md$
 # read by crates/md-codec/tests/display_grouping_conformance.rs; its .sha256 by ci.yml fmt
 - ^design/display-grouping-vectors\.tsv
+# crates/md-codec/src/readme_doctests.rs reads crates/md-codec/README.md as "../README.md";
+# the code-docs check matches that tail to this file, so it counts as code.
+- ^README\.md$
