@@ -3,7 +3,8 @@
 
 #[test]
 fn i11_readme_doctest_carrier_is_wired_and_blocks_run() {
-    let lib = include_str!("../src/lib.rs");
+    // A Windows checkout may carry CRLF line ends; compare in LF form.
+    let lib = include_str!("../src/lib.rs").replace("\r\n", "\n");
     assert!(
         lib.contains("#[cfg(any(test, doctest))]\nmod readme_doctests;"),
         "lib.rs must declare readme_doctests"
@@ -13,7 +14,7 @@ fn i11_readme_doctest_carrier_is_wired_and_blocks_run() {
         carrier.contains("#[doc = include_str!(\"../README.md\")]"),
         "readme_doctests.rs must include the README"
     );
-    let readme = include_str!("../README.md");
+    let readme = include_str!("../README.md").replace("\r\n", "\n");
     for line in readme.lines().filter(|l| l.starts_with("```")) {
         assert!(
             ["```", "```rust", "```toml", "```sh"].contains(&line),
