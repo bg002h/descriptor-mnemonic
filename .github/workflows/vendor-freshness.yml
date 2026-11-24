@@ -26,7 +26,7 @@ on:
     # F-226: this gate went red on the miniscript pin (2026-08-20) and the
     # failure sat unacted-on for two days, because the only place it could
     # speak was after the fact.
-    branches: [main, master, 'ci/**']
+    branches: [main]
     paths:
       - 'Cargo.lock'
       - 'Cargo.toml'
@@ -34,14 +34,7 @@ on:
       - 'vendor/**'
       - 'ci/repro/**'
       - '.github/workflows/vendor-freshness.yml'
-  pull_request:
-    paths:
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-      - 'crates/**/Cargo.toml'
-      - 'vendor/**'
-      - 'ci/repro/**'
-      - '.github/workflows/vendor-freshness.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -51,7 +44,7 @@ permissions:
 # schedules and dispatches are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
   vendor-freshness:

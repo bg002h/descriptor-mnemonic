@@ -23,6 +23,11 @@ on:
       - 'descriptor-mnemonic-md-cli-v*'
   workflow_dispatch:
 
+# Never cancel a tag or dispatch run; only a superseded run on the default branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
 jobs:
   man-pages:
     runs-on: ubuntu-latest

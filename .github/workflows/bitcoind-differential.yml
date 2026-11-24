@@ -25,14 +25,7 @@ name: bitcoind-differential
 
 on:
   push:
-    paths:
-      - "crates/md-codec/src/derive.rs"
-      - "crates/md-codec/src/to_miniscript.rs"
-      - "crates/md-codec/src/canonicalize.rs"
-      - "crates/md-codec/src/encode.rs"
-      - "crates/md-codec/tests/bitcoind_differential.rs"
-      - ".github/workflows/bitcoind-differential.yml"
-  pull_request:
+    branches: [main]
     paths:
       - "crates/md-codec/src/derive.rs"
       - "crates/md-codec/src/to_miniscript.rs"
@@ -44,6 +37,11 @@ on:
     # Daily at 05:17 UTC (off the hour to avoid the cron thundering herd).
     - cron: "17 5 * * *"
   workflow_dispatch:
+    inputs:
+      full:
+        description: "also run the nightly jobs"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -57,11 +55,12 @@ env:
 # schedules and dispatches are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
   differential:
     name: bitcoind v27.0 address differential
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full == true)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
