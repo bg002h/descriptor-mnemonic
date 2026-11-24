@@ -22,6 +22,11 @@ on:
     tags:
       - 'descriptor-mnemonic-md-cli-v*'
   workflow_dispatch:
+    inputs:
+      full:
+        description: "also run the nightly jobs (no nightly jobs in this workflow; accepted so the release gate can pass -f full=true everywhere)"
+        type: boolean
+        default: false
 
 # Never cancel a tag or dispatch run; only a superseded run on the default branch.
 concurrency:
