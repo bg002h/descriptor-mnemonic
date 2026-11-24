@@ -26,7 +26,7 @@ on:
 # Never cancel a tag or dispatch run; only a superseded run on the default branch.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+  cancel-in-progress: false
 
 jobs:
   man-pages:
