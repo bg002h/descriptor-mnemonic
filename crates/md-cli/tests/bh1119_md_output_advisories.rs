@@ -31,12 +31,17 @@ const TAIL_D: &str = " It was minted with --experimental; the card carries no re
 const LOCK_AFTER_100: &str = " after(100) is block height 100, not 100 blocks from now; md cannot see the chain, so if the chain is already past height 100, that path is open today.";
 const LOCK_OLDER_144: &str = " older(144) is 144 blocks after each coin confirms.";
 const LOCK_OLDER_512S: &str = " older(4194305) is 512 seconds after each coin confirms.";
-const HEAD_E: &str = "warning: --experimental relaxed the signature rule. This descriptor can be spent with NO key";
+const HEAD_E: &str =
+    "warning: --experimental relaxed the signature rule. This descriptor can be spent with NO key";
 const HEAD_D: &str = "warning: this card can be spent with NO key";
 const Z_BODY: &str = ": anyone who has this policy and its public keys can spend it now.";
 
 fn md(args: &[&str]) -> (String, String, i32) {
-    let out = Command::cargo_bin("md").unwrap().args(args).output().unwrap();
+    let out = Command::cargo_bin("md")
+        .unwrap()
+        .args(args)
+        .output()
+        .unwrap();
     (
         String::from_utf8(out.stdout).unwrap(),
         String::from_utf8(out.stderr).unwrap(),
@@ -118,7 +123,10 @@ fn m5_r1_decode_json_keyed_card_is_watch_only() {
     let (o, e, c) = md(&keyed_args(&["decode", "--json"], &k));
     assert_eq!(c, 0, "{e}");
     let v: serde_json::Value = serde_json::from_str(&o).unwrap();
-    assert_eq!(v["descriptor"]["tlv"]["pubkeys"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        v["descriptor"]["tlv"]["pubkeys"].as_array().unwrap().len(),
+        1
+    );
     assert_eq!(e, format!("{WATCH}\n"));
 }
 
@@ -202,8 +210,14 @@ fn i8_r1_encode_absolute_timelock_path_names_the_lock() {
     assert_eq!(c, 0, "{e}");
     assert_eq!(o, format!("{CARD_AFTER}\n"));
     let l = lines(&e);
-    assert_eq!(l[0], "warning: --experimental relaxed the signature rule. This descriptor can be spent with NO key when: after(100). A path there needs no secret at all: once its timelock condition is met, anyone who has this policy and its public keys can spend it. after(100) is block height 100, not 100 blocks from now; md cannot see the chain, so if the chain is already past height 100, that path is open today. Malleability, resource limits, repeated keys and timelock mixing were still checked.");
-    assert_eq!(l[0], e_line("after(100)", &format!("{S_T}{LOCK_AFTER_100}")));
+    assert_eq!(
+        l[0],
+        "warning: --experimental relaxed the signature rule. This descriptor can be spent with NO key when: after(100). A path there needs no secret at all: once its timelock condition is met, anyone who has this policy and its public keys can spend it. after(100) is block height 100, not 100 blocks from now; md cannot see the chain, so if the chain is already past height 100, that path is open today. Malleability, resource limits, repeated keys and timelock mixing were still checked."
+    );
+    assert_eq!(
+        l[0],
+        e_line("after(100)", &format!("{S_T}{LOCK_AFTER_100}"))
+    );
     assert_eq!(l[1], TMPL);
     assert!(!e.contains("preimage") && !e.contains("BEARER"), "{e}");
 }
@@ -278,8 +292,14 @@ fn i8_r7_decode_text_timelock_card_names_the_lock() {
     assert_eq!(c, 0, "{e}");
     assert_eq!(o, "wsh(or_i(pk(@0/<0;1>/*),after(100)))\n");
     let l = lines(&e);
-    assert_eq!(l[0], "warning: this card can be spent with NO key when: after(100). A path there needs no secret at all: once its timelock condition is met, anyone who has this policy and its public keys can spend it. after(100) is block height 100, not 100 blocks from now; md cannot see the chain, so if the chain is already past height 100, that path is open today. It was minted with --experimental; the card carries no record of that, so this is derived from the policy itself.");
-    assert_eq!(l[0], d_line("after(100)", &format!("{S_T}{LOCK_AFTER_100}")));
+    assert_eq!(
+        l[0],
+        "warning: this card can be spent with NO key when: after(100). A path there needs no secret at all: once its timelock condition is met, anyone who has this policy and its public keys can spend it. after(100) is block height 100, not 100 blocks from now; md cannot see the chain, so if the chain is already past height 100, that path is open today. It was minted with --experimental; the card carries no record of that, so this is derived from the policy itself."
+    );
+    assert_eq!(
+        l[0],
+        d_line("after(100)", &format!("{S_T}{LOCK_AFTER_100}"))
+    );
     assert_eq!(*l.last().unwrap(), TMPL);
 }
 
@@ -351,7 +371,10 @@ fn i8_r12_refusal_hint_names_no_preimage() {
     assert_eq!(c, 1, "{e}");
     assert!(e.contains("a spend path that needs no key"), "{e}");
     let low = e.to_lowercase();
-    assert!(!low.contains("preimage") && !low.contains("bearer"), "{e}");
+    assert!(
+        !low.contains("whoever holds the preimage") && !low.contains("bearer"),
+        "{e}"
+    );
 }
 
 #[test]
@@ -393,7 +416,10 @@ fn i8_r15_hash_only_on_a_keyed_path_is_not_bearer() {
 fn i8_c1_encode_not_needed_note_unchanged() {
     let (_, e, c) = mint_exp("wsh(and_v(v:pk(@0/**),after(100)))");
     assert_eq!(c, 0, "{e}");
-    assert_eq!(lines(&e)[0], "note: --experimental was not needed for this descriptor. Every spend path here requires a signature, so the flag relaxed nothing and this card is not bearer access. Re-run without it to get the same plate under the unrelaxed rules.");
+    assert_eq!(
+        lines(&e)[0],
+        "note: --experimental was not needed for this descriptor. Every spend path here requires a signature, so the flag relaxed nothing and this card is not bearer access. Re-run without it to get the same plate under the unrelaxed rules."
+    );
     assert!(!e.contains("warning:"), "{e}");
 }
 

@@ -8,6 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`md decode --json` and `md bytecode` call a keyed card watch-only.** On a card that carries public keys they
+  printed them (the JSON `tlv.pubkeys` entries; the payload hex) under `note: stdout is a keyless descriptor
+  template (no keys)`. They now print `note: stdout is watch-only — public keys only, cannot spend`, as `md inspect`
+  and `md repair` already did, except on a card that has a no-key spend path, where the warning replaces the note. A keyless card, and `md decode` text output (the `@N` template only), keep the
+  template note (bh-md-M5).
+- **The `--experimental` no-key warning names what opens the path.** `md encode --experimental` and `md decode`
+  said whoever learns "its preimage" can spend, even on a path opened by a timelock alone, such as
+  `wsh(or_i(pk(@0/**),after(100)))`, which has no preimage and which anyone with the policy and its public keys can
+  spend once the lock is met. The warning now prints the no-key condition (`after(100)`), says when a path needs no
+  secret, and keeps `THE PLATE IS BEARER ACCESS` only when a preimage is named. `md decode --json`, which printed no
+  warning, now prints it on stderr, and `md encode --help` says the same. The hint a minting verb prints when it refuses such a path no longer says 'whoever holds the preimage' (bh-md-I8).
 - **The `md encode`, `md decompose`, `md descriptor`, `md address` and `md repair` help examples run as printed.** Two had unquoted templates (a shell syntax error) and three used elided `md1qq...` cards; they are now quoted and use real cards (bh-md-I10, bh-md-F1).
 - **`md repair` keeps an uppercase card uppercase.** When a letter on an all-uppercase md1 card (the QR form) was
   misread as a digit, the corrected card was printed with that one letter in lowercase (for example

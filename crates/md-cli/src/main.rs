@@ -14,6 +14,7 @@ mod compile;
 mod decompose;
 mod error;
 mod format;
+mod keyless_advisory;
 mod output_advisory;
 mod parse;
 mod process_hardening;
@@ -188,9 +189,12 @@ enum Command {
         /// require a signature" — a safety policy, not a language rule; the
         /// script is well-formed and valid. This relaxes ONLY that rule:
         /// malleability, resource limits, repeated keys and timelock mixing are
-        /// still enforced. Whoever learns the preimage of a keyless path can
-        /// spend it alone, so if that preimage is engraved, the plate is bearer
-        /// access. Prints a warning on every use.
+        /// still enforced. A keyless path opens on what it names instead of a
+        /// key: a preimage (whoever learns it can spend that path, so an
+        /// engraved preimage makes the plate bearer access) or a timelock alone
+        /// (once it is met, anyone who has the policy and its public keys can
+        /// spend that path). Prints a warning naming those conditions, or a note
+        /// when the flag relaxed nothing.
         #[arg(long)]
         experimental: bool,
     },

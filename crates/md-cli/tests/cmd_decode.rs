@@ -259,7 +259,10 @@ fn decoding_a_bearer_card_warns_the_restorer() {
     assert!(dec.status.success(), "a bearer card must still decode");
     let err = String::from_utf8_lossy(&dec.stderr);
     assert!(
-        err.contains("needs NO KEY") && err.contains("BEARER ACCESS"),
+        err.contains(&format!(
+            "can be spent with NO key when: and(sha256({H}),after(100))."
+        )) && err.contains("BEARER ACCESS")
+            && !err.contains("needs no secret"),
         "the restorer is told nothing about the key-less path:\n{err}"
     );
 
@@ -288,7 +291,7 @@ fn decoding_a_bearer_card_warns_the_restorer() {
         .output()
         .unwrap();
     assert!(
-        !String::from_utf8_lossy(&plain_dec.stderr).contains("NO KEY"),
+        !String::from_utf8_lossy(&plain_dec.stderr).contains("NO key"),
         "an ordinary multisig card is called bearer access"
     );
 }

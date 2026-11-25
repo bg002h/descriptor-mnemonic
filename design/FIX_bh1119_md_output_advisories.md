@@ -176,7 +176,7 @@ spend`; `TMPL` = `note: stdout is a keyless descriptor template (no keys)`. "lin
 | R15 `i8_r14_hash_and_timelock_path_says_no_secret_is_not_free` | `md encode 'wsh(or_d(pk(@0/**),and_v(v:sha256(H),after(100))))' --path bip84 --network signet --experimental` | exit 0; line 1 exactly `warning: --experimental relaxed the signature rule. This descriptor can be spent with NO key when: and(sha256(H),after(100)).` + `S_H` + the `after(100)` lock piece + `TAIL_E` (H expanded); line 1 contains no `needs no secret` | base warning; on mutant A (`S_T` keyed on a timelock in `K`) the extra `S_T` |
 | R16 `i8_r15_hash_only_on_a_keyed_path_is_not_bearer` | `md encode 'wsh(or_i(and_v(v:pk(@0/**),sha256(H)),after(100)))' --path bip84 --network signet --experimental` | exit 0; line 1 exactly R4's line 1 (K = `after(100)`); stderr contains neither `preimage` nor `BEARER` | base warning (says `preimage`) |
 | R17 `m5_r4_keyed_keyless_card_never_says_cannot_spend` | mint `md encode 'wsh(or_d(pk(@0/<0;1>/*),1))' --network signet --path bip84 --key @0=KA --experimental`; then each of `md decode --json C...`, `md bytecode C...`, `md bytecode --json C...` | each exits 0; its stderr is exactly the case-Z decode line + `\n`; its stderr does not contain `cannot spend` | stderr is `TMPL` only (row fails); on the previous green of this doc stderr contains `cannot spend` (row fails) |
-| R18 `i8_r12_refusal_hint_names_no_preimage` | `md encode 'wsh(or_i(pk(@0/**),after(100)))' --path bip84 --network signet` (no `--experimental`) | exit 1; stderr contains `a spend path that needs no key` and contains neither `preimage` nor `bearer` | stderr contains `whoever holds the preimage` (row fails) |
+| R18 `i8_r12_refusal_hint_names_no_preimage` | `md encode 'wsh(or_i(pk(@0/**),after(100)))' --path bip84 --network signet` (no `--experimental`) | exit 1; stderr contains `a spend path that needs no key` and contains neither `whoever holds the preimage` nor `bearer` (coordinator ruling 2026-11-24: the I8-S5 hint itself says `a preimage or a timelock`, so the bare word `preimage` is allowed; the false claims were the old sentence and `bearer access`) | stderr contains `whoever holds the preimage` (row fails) |
 | R19 `i8_r13_relative_time_lock_in_seconds` | `md encode 'wsh(or_d(pk(@0/**),older(4194305)))' --path bip84 --network signet --experimental` | line 1 contains ` older(4194305) is 512 seconds after each coin confirms.` | count of `512 seconds` is 0 (row fails) |
 | C3 `i8_c1_encode_not_needed_note_unchanged` | `md encode 'wsh(and_v(v:pk(@0/**),after(100)))' --path bip84 --network signet --experimental` | exit 0; line 1 `note: --experimental was not needed for this descriptor. Every spend path here requires a signature, so the flag relaxed nothing and this card is not bearer access. Re-run without it to get the same plate under the unrelaxed rules.`; no `warning:` line (passes on the base) | same |
 | C4 `i8_c2_decode_json_ordinary_card_has_no_warning` | `md decode --json KEYLESS` | stderr exactly `TMPL\n` (passes on the base; also C2) | same |
@@ -190,7 +190,7 @@ author's report). U1-U2 test a new function and are RED by not compiling. GREEN 
 Coverage map: M5-S1 -> R1, C2; M5-S2 -> R2, R3, C2; M5-S3 -> C1, R1 (stdout keys), C2. I8-S1 -> R4-R8, R12, U1, U2;
 I8-S2 case N with `S_T` only -> R4, R5, R9, R10, R11; case N with `S_H` only -> R6, R12; case N with both -> R8;
 case Z -> R7, R13; case F -> U1, U2. I8-S3 encode text/json -> R4, R9; decode text -> R10; decode `--json` (new, with
-order) -> R11, R12, R13; unchanged "not needed" note -> C3; no warning on an ordinary card -> C4. I8-S4 -> R14.
+order) -> R11, R12, R13; unchanged "not needed" note -> C3; no warning on an ordinary card -> C4. I8-S4 -> R14. I8-S2 `S_T` only when a keyless path needs no secret (T) -> R15; `S_H`/`BEARER` only for a hash kept in `K` (not one behind a key) -> R16; lock piece for `older` in seconds -> R19; M5-S1 keyed card with a no-key path (warning, no class note) -> R17; I8-S5 -> R18.
 
 MUTATION notes for the test file: Template unconditional in `decode.rs`/`bytecode.rs` -> R1-R3 fail; `S_H` printed
 unconditionally -> R4 fails; `S_T` dropped -> R4, R8 fail; the JSON-branch call removed -> R11-R13 fail; predicate
@@ -266,7 +266,7 @@ the repo CI set (`cargo nextest run --locked --workspace --all-targets --all-fea
 warnings`, `cargo fmt --all --check`, `cargo build --locked -p md-cli --no-default-features`, `RUSTDOCFLAGS=-D warnings
 cargo doc --locked --workspace --no-deps --document-private-items --all-features`, the grouping and shared-ci sha
 checks, `ci/docs-only.test.sh`, `ci/code-docs-check.test.sh`, `ci/code-docs-check.sh`); step 3 no golden moved against
-the merge-base. Every cargo call with `CARGO_BUILD_JOBS=6`. Shown RED once on the base (step 1 fails: R1-R14 assert,
+the merge-base. Every cargo call with `CARGO_BUILD_JOBS=6`. Shown RED once on the base (step 1 fails: R1-R19 assert,
 U1-U2 do not compile). Not covered: bitcoind-differential, fuzz-smoke, FreeBSD and musl legs, the toolkit `manual`
 job (run in the toolkit PR), the release.
 
