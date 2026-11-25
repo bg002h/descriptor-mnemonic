@@ -36,19 +36,19 @@ struct Row {
 impl Row {
     fn new() -> Row {
         let dir = tempfile::tempdir().unwrap();
-        let fix = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/seating/v-b1-wallet.txt");
+        let fix =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/seating/v-b1-wallet.txt");
         let text = std::fs::read_to_string(fix).unwrap();
         let m = text
             .lines()
             .find(|l| l.starts_with("md1"))
             .unwrap()
             .to_string();
-        let mk: String = text
-            .lines()
-            .filter(|l| l.starts_with("mk1"))
-            .map(|l| format!("{l}\n"))
-            .collect();
+        let mut mk = String::new();
+        for l in text.lines().filter(|l| l.starts_with("mk1")) {
+            mk.push_str(l);
+            mk.push('\n');
+        }
         let r = Row { dir, m };
         r.put("tpl.txt", &format!("{TPL}\n"));
         r.put("desc.txt", &format!("{DESC}\n"));
@@ -57,7 +57,14 @@ impl Row {
         assert_eq!(card.rc, 0);
         r.put("card.txt", std::str::from_utf8(&card.stdout).unwrap());
         let v = r.run(
-            &["descriptor", &r.m, "--from-mk1-file", "K.txt", "--emit", "md1"],
+            &[
+                "descriptor",
+                &r.m,
+                "--from-mk1-file",
+                "K.txt",
+                "--emit",
+                "md1",
+            ],
             Out::Pipe,
             None,
         );
@@ -156,7 +163,11 @@ fn refused(r: &Res, line: &str) {
 fn n1_encode_out_same_path_as_in_refuses() {
     let w = Row::new();
     let before = w.get("tpl.txt");
-    let r = w.run(&["encode", "--in", "tpl.txt", "--out", "tpl.txt"], Out::Pipe, None);
+    let r = w.run(
+        &["encode", "--in", "tpl.txt", "--out", "tpl.txt"],
+        Out::Pipe,
+        None,
+    );
     refused(&r, &x1("tpl.txt", "--in tpl.txt"));
     assert_eq!(w.get("tpl.txt"), before);
 }
@@ -167,7 +178,11 @@ fn n2_encode_out_hard_link_to_in_refuses() {
     let w = Row::new();
     std::fs::hard_link(w.path("tpl.txt"), w.path("hl")).unwrap();
     let before = w.get("tpl.txt");
-    let r = w.run(&["encode", "--in", "tpl.txt", "--out", "hl"], Out::Pipe, None);
+    let r = w.run(
+        &["encode", "--in", "tpl.txt", "--out", "hl"],
+        Out::Pipe,
+        None,
+    );
     refused(&r, &x1("hl", "--in tpl.txt"));
     assert_eq!(w.get("tpl.txt"), before);
     assert_eq!(w.get("hl"), before);
@@ -179,7 +194,11 @@ fn n3_encode_out_symlink_to_in_refuses() {
     let w = Row::new();
     std::os::unix::fs::symlink("tpl.txt", w.path("sl")).unwrap();
     let before = w.get("tpl.txt");
-    let r = w.run(&["encode", "--in", "tpl.txt", "--out", "sl"], Out::Pipe, None);
+    let r = w.run(
+        &["encode", "--in", "tpl.txt", "--out", "sl"],
+        Out::Pipe,
+        None,
+    );
     refused(&r, &x1("sl", "--in tpl.txt"));
     assert_eq!(w.get("tpl.txt"), before);
 }
@@ -188,7 +207,11 @@ fn n3_encode_out_symlink_to_in_refuses() {
 fn n4_encode_out_other_spelling_of_in_refuses() {
     let w = Row::new();
     let before = w.get("tpl.txt");
-    let r = w.run(&["encode", "--in", "./tpl.txt", "--out", "tpl.txt"], Out::Pipe, None);
+    let r = w.run(
+        &["encode", "--in", "./tpl.txt", "--out", "tpl.txt"],
+        Out::Pipe,
+        None,
+    );
     refused(&r, &x1("tpl.txt", "--in ./tpl.txt"));
     assert_eq!(w.get("tpl.txt"), before);
 }
@@ -211,7 +234,16 @@ fn n6_descriptor_out_same_as_mk1_file_refuses() {
     let w = Row::new();
     let before = w.get("K.txt");
     let r = w.run(
-        &["descriptor", &w.m, "--from-mk1-file", "K.txt", "--emit", "md1", "--out", "K.txt"],
+        &[
+            "descriptor",
+            &w.m,
+            "--from-mk1-file",
+            "K.txt",
+            "--emit",
+            "md1",
+            "--out",
+            "K.txt",
+        ],
         Out::Pipe,
         None,
     );
@@ -226,7 +258,16 @@ fn n7_descriptor_out_symlink_to_mk1_file_refuses() {
     std::os::unix::fs::symlink("K.txt", w.path("kl")).unwrap();
     let before = w.get("K.txt");
     let r = w.run(
-        &["descriptor", &w.m, "--from-mk1-file", "K.txt", "--emit", "md1", "--out", "kl"],
+        &[
+            "descriptor",
+            &w.m,
+            "--from-mk1-file",
+            "K.txt",
+            "--emit",
+            "md1",
+            "--out",
+            "kl",
+        ],
         Out::Pipe,
         None,
     );
@@ -240,8 +281,18 @@ fn n8_descriptor_out_same_as_verify_against_file_refuses() {
     let before = w.get("V.txt");
     let r = w.run(
         &[
-            "descriptor", &w.m, "--from-mk1-file", "K.txt", "--emit", "md1", "--group-size", "5",
-            "--verify-against", "V.txt", "--out", "V.txt",
+            "descriptor",
+            &w.m,
+            "--from-mk1-file",
+            "K.txt",
+            "--emit",
+            "md1",
+            "--group-size",
+            "5",
+            "--verify-against",
+            "V.txt",
+            "--out",
+            "V.txt",
         ],
         Out::Pipe,
         None,
@@ -296,7 +347,11 @@ fn n11_encode_stdout_truncating_in_refuses() {
 fn n12_decode_stdout_appended_to_in_refuses() {
     let w = Row::new();
     let before = w.get("card.txt");
-    let r = w.run(&["decode", "--in", "card.txt"], Out::Append("card.txt"), None);
+    let r = w.run(
+        &["decode", "--in", "card.txt"],
+        Out::Append("card.txt"),
+        None,
+    );
     redirect_refused(&w, &r, &x2("--in card.txt"), "card.txt", &before);
 }
 
@@ -318,7 +373,11 @@ fn n13_verify_stdout_appended_to_in_refuses() {
 fn n14_inspect_stdout_appended_to_in_refuses() {
     let w = Row::new();
     let before = w.get("card.txt");
-    let r = w.run(&["inspect", "--in", "card.txt"], Out::Append("card.txt"), None);
+    let r = w.run(
+        &["inspect", "--in", "card.txt"],
+        Out::Append("card.txt"),
+        None,
+    );
     redirect_refused(&w, &r, &x2("--in card.txt"), "card.txt", &before);
 }
 
@@ -327,7 +386,11 @@ fn n14_inspect_stdout_appended_to_in_refuses() {
 fn n15_bytecode_stdout_appended_to_in_refuses() {
     let w = Row::new();
     let before = w.get("card.txt");
-    let r = w.run(&["bytecode", "--in", "card.txt"], Out::Append("card.txt"), None);
+    let r = w.run(
+        &["bytecode", "--in", "card.txt"],
+        Out::Append("card.txt"),
+        None,
+    );
     redirect_refused(&w, &r, &x2("--in card.txt"), "card.txt", &before);
 }
 
@@ -336,7 +399,11 @@ fn n15_bytecode_stdout_appended_to_in_refuses() {
 fn n16_repair_stdout_appended_to_in_refuses() {
     let w = Row::new();
     let before = w.get("card.txt");
-    let r = w.run(&["repair", "--in", "card.txt"], Out::Append("card.txt"), None);
+    let r = w.run(
+        &["repair", "--in", "card.txt"],
+        Out::Append("card.txt"),
+        None,
+    );
     redirect_refused(&w, &r, &x2("--in card.txt"), "card.txt", &before);
 }
 
@@ -345,7 +412,11 @@ fn n16_repair_stdout_appended_to_in_refuses() {
 fn n17_decompose_stdout_appended_to_in_refuses() {
     let w = Row::new();
     let before = w.get("desc.txt");
-    let r = w.run(&["decompose", "--in", "desc.txt"], Out::Append("desc.txt"), None);
+    let r = w.run(
+        &["decompose", "--in", "desc.txt"],
+        Out::Append("desc.txt"),
+        None,
+    );
     redirect_refused(&w, &r, &x2("--in desc.txt"), "desc.txt", &before);
 }
 
@@ -363,7 +434,11 @@ fn n18_decode_stdin_and_stdout_one_file_refuses() {
 fn n19_decompose_stdin_and_stdout_one_file_refuses() {
     let w = Row::new();
     let before = w.get("desc.txt");
-    let r = w.run(&["decompose", "-"], Out::Append("desc.txt"), Some("desc.txt"));
+    let r = w.run(
+        &["decompose", "-"],
+        Out::Append("desc.txt"),
+        Some("desc.txt"),
+    );
     redirect_refused(&w, &r, &x2("standard input"), "desc.txt", &before);
 }
 
@@ -399,7 +474,14 @@ fn n22_descriptor_stdout_appended_to_verify_against_refuses() {
     let w = Row::new();
     let before = w.get("V.txt");
     let r = w.run(
-        &["descriptor", &w.m, "--from-mk1-file", "K.txt", "--verify-against", "V.txt"],
+        &[
+            "descriptor",
+            &w.m,
+            "--from-mk1-file",
+            "K.txt",
+            "--verify-against",
+            "V.txt",
+        ],
         Out::Append("V.txt"),
         None,
     );
@@ -427,7 +509,11 @@ fn n23_encode_json_out_stdout_appended_to_in_refuses() {
 fn n24_encode_json_out_is_stdout_appended_refuses() {
     let w = Row::new();
     w.put("F", "keep\n");
-    let r = w.run(&["encode", TPL, "--json", "--out", "F"], Out::Append("F"), None);
+    let r = w.run(
+        &["encode", TPL, "--json", "--out", "F"],
+        Out::Append("F"),
+        None,
+    );
     redirect_refused(&w, &r, &x3("F"), "F", b"keep\n");
 }
 
@@ -436,7 +522,11 @@ fn n24_encode_json_out_is_stdout_appended_refuses() {
 fn n25_encode_json_out_is_stdout_truncated_refuses() {
     let w = Row::new();
     w.put("F", "keep\n");
-    let r = w.run(&["encode", TPL, "--json", "--out", "F"], Out::Trunc("F"), None);
+    let r = w.run(
+        &["encode", TPL, "--json", "--out", "F"],
+        Out::Trunc("F"),
+        None,
+    );
     redirect_refused(&w, &r, &x3("F"), "F", b"");
 }
 
@@ -477,8 +567,16 @@ fn n29_first_matching_input_is_named() {
     let before = w.get("K.txt");
     let r = w.run(
         &[
-            "descriptor", &w.m, "--from-mk1-file", "K.txt", "--emit", "md1", "--verify-against",
-            "K.txt", "--out", "K.txt",
+            "descriptor",
+            &w.m,
+            "--from-mk1-file",
+            "K.txt",
+            "--emit",
+            "md1",
+            "--verify-against",
+            "K.txt",
+            "--out",
+            "K.txt",
         ],
         Out::Pipe,
         None,
@@ -492,7 +590,11 @@ fn n29_first_matching_input_is_named() {
 #[test]
 fn c1_encode_out_new_name_writes() {
     let w = Row::new();
-    let r = w.run(&["encode", "--in", "tpl.txt", "--out", "new.txt"], Out::Pipe, None);
+    let r = w.run(
+        &["encode", "--in", "tpl.txt", "--out", "new.txt"],
+        Out::Pipe,
+        None,
+    );
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert_eq!(w.get("new.txt"), w.get("card.txt"));
 }
@@ -501,7 +603,11 @@ fn c1_encode_out_new_name_writes() {
 #[cfg(unix)]
 fn c2_decode_stdout_other_file_writes() {
     let w = Row::new();
-    let r = w.run(&["decode", "--in", "card.txt"], Out::Append("out.txt"), None);
+    let r = w.run(
+        &["decode", "--in", "card.txt"],
+        Out::Append("out.txt"),
+        None,
+    );
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert_eq!(w.get("out.txt"), format!("{TPL}\n").as_bytes());
 }
@@ -520,7 +626,16 @@ fn c4_descriptor_out_set_stdout_not_checked() {
     let w = Row::new();
     let before = w.get("K.txt");
     let r = w.run(
-        &["descriptor", &w.m, "--from-mk1-file", "K.txt", "--emit", "md1", "--out", "G"],
+        &[
+            "descriptor",
+            &w.m,
+            "--from-mk1-file",
+            "K.txt",
+            "--emit",
+            "md1",
+            "--out",
+            "G",
+        ],
         Out::Append("K.txt"),
         None,
     );
@@ -535,8 +650,16 @@ fn c5_verify_against_md1_string_is_not_an_input() {
     let m = w.m.clone();
     let r = w.run(
         &[
-            "descriptor", &m, "--from-mk1-file", "K.txt", "--emit", "md1", "--verify-against",
-            &m, "--out", &m,
+            "descriptor",
+            &m,
+            "--from-mk1-file",
+            "K.txt",
+            "--emit",
+            "md1",
+            "--verify-against",
+            &m,
+            "--out",
+            &m,
         ],
         Out::Pipe,
         None,

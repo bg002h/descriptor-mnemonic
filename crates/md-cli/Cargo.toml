@@ -48,9 +48,10 @@ miniscript = { workspace = true }
 # tarball on every build, so this crate needs no grounding, and md's only
 # remaining git source is the miniscript fork.
 #
-# `write_private` is the only item `md` adopts (P3 boundary table, 1 of 11) and
-# it is reached as `mnemonic_io_lib::write::write_private` — `write` is a
-# `pub mod` with NO root re-export, so the unqualified path is an E0425.
+# `write_private` and (since FIX_bh1119_md_out_names_input) `same_file` with its
+# `Endpoint` are the items `md` adopts from the P3 boundary table, reached as
+# `mnemonic_io_lib::write::...` -- `write` is a `pub mod` with NO root re-export,
+# so an unqualified path is an E0425.
 mnemonic-io-lib = "0.1.3"
 # The wallet-form converter's mk1 decoding (D1,
 # `design/IMPLEMENTATION_PLAN_wallet_form_converter.md` §2) — taken from the

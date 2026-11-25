@@ -6,8 +6,8 @@
 //! P3 deliberately declined, or by widening a rule §6 scoped narrowly. Each one
 //! names the ruling it rests on, so a future reader cannot delete it as noise.
 //!
-//! `md` adopts **1 of the crate's 11 items** — `write::write_private` — and
-//! declines the other ten.
+//! `md` adopts `write::write_private` and (FIX_bh1119_md_out_names_input) `write::same_file` with
+//! `write::Endpoint`, and declines the crate's other items.
 
 use assert_cmd::Command;
 
@@ -97,13 +97,22 @@ fn md_adopts_exactly_one_crate_item_and_declines_the_other_ten() {
         !adopted.is_empty(),
         "no crate path found at all -- the scan proves nothing"
     );
+    // FIX_bh1119_md_out_names_input (Brian 2026-11-23 Q2, T5) adds
+    // `write::same_file` and its `write::Endpoint` (with its variants).
+    const ADOPTED: [&str; 3] = [
+        "write::write_private",
+        "write::same_file",
+        "write::Endpoint",
+    ];
     for (path, item) in &adopted {
-        assert_eq!(
-            item, "write::write_private",
+        assert!(
+            ADOPTED
+                .iter()
+                .any(|a| item == a || item.starts_with(&format!("{a}::"))),
             "{path} reaches `mnemonic_io_lib::{item}`. P3's boundary table gives \
-             `md` ONE of the crate's 11 items -- `write::write_private` -- and \
-             declines the other ten. If a later phase wants one, that is a \
-             ruling, not a tidy-up."
+             `md` `write::write_private`, and FIX_bh1119_md_out_names_input adds \
+             `write::same_file` with `write::Endpoint`; md declines every other \
+             item. If a later phase wants one, that is a ruling, not a tidy-up."
         );
     }
 }

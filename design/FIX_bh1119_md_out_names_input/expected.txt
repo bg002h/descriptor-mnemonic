@@ -1,0 +1,138 @@
+== n1: "$MD" encode --in tpl.txt --out tpl.txt
+   rc=2 stdout=0B
+   stderr: md: --out tpl.txt is the same file as --in tpl.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n2: ln tpl.txt hl && "$MD" encode --in tpl.txt --out hl
+   rc=2 stdout=0B
+   stderr: md: --out hl is the same file as --in tpl.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n3: ln -s tpl.txt sl && "$MD" encode --in tpl.txt --out sl
+   rc=2 stdout=0B
+   stderr: md: --out sl is the same file as --in tpl.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n4: "$MD" encode --in ./tpl.txt --out tpl.txt
+   rc=2 stdout=0B
+   stderr: md: --out tpl.txt is the same file as --in ./tpl.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n5: "$MD" encode --json --in tpl.txt --out tpl.txt
+   rc=2 stdout=0B
+   stderr: md: --out tpl.txt is the same file as --in tpl.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n6: "$MD" descriptor "$M" --from-mk1-file K.txt --emit md1 --out K.txt
+   rc=2 stdout=0B
+   stderr: md: --out K.txt is the same file as --from-mk1-file K.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   K.txt: 5 lines, first: mk1qpyzfnpqqsqk4qq7mdeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4
+== n7: ln -s K.txt kl && "$MD" descriptor "$M" --from-mk1-file K.txt --emit md1 --out kl
+   rc=2 stdout=0B
+   stderr: md: --out kl is the same file as --from-mk1-file K.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   K.txt: 5 lines, first: mk1qpyzfnpqqsqk4qq7mdeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4
+== n8: "$MD" descriptor "$M" --from-mk1-file K.txt --emit md1 --group-size 5 --verify-against V.txt --out V.txt
+   rc=2 stdout=0B
+   stderr: md: --out V.txt is the same file as --verify-against V.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   V.txt: 4 lines, first: md1f0ghpps9q2tvyyy5jmpprj5qqcy8ppgtcgu79mg9tnchdq59wpyhwsv0j
+== n9: "$MD" encode --in tpl.txt --out /dev/stdout >>tpl.txt
+   rc=2 stdout=0B
+   stderr: md: --out /dev/stdout is the same file as --in tpl.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n10: "$MD" encode --in tpl.txt >>tpl.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in tpl.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n11: "$MD" encode --in tpl.txt >tpl.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in tpl.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   tpl.txt: 0 lines, first: 
+== n12: "$MD" decode --in card.txt >>card.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in card.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== n13: "$MD" verify --in card.txt --template "$TPL" >>card.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in card.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== n14: "$MD" inspect --in card.txt >>card.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in card.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== n15: "$MD" bytecode --in card.txt >>card.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in card.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== n16: "$MD" repair --in card.txt >>card.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in card.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== n17: "$MD" decompose --in desc.txt >>desc.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in desc.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   desc.txt: 1 lines, first: wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU
+== n18: "$MD" decode - <card.txt >>card.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as standard input, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== n19: "$MD" decompose - <desc.txt >>desc.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as standard input, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   desc.txt: 1 lines, first: wpkh([73c5da0a/48'/0'/0'/2']xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU
+== n20: "$MD" descriptor "$M" --from-mk1-file K.txt >>K.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --from-mk1-file K.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   K.txt: 5 lines, first: mk1qpyzfnpqqsqk4qq7mdeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4
+== n21: "$MD" address "$M" --from-mk1-file K.txt >>K.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --from-mk1-file K.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   K.txt: 5 lines, first: mk1qpyzfnpqqsqk4qq7mdeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4
+== n22: "$MD" descriptor "$M" --from-mk1-file K.txt --verify-against V.txt >>V.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --verify-against V.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   V.txt: 4 lines, first: md1f0ghpps9q2tvyyy5jmpprj5qqcy8ppgtcgu79mg9tnchdq59wpyhwsv0j
+== n23: "$MD" encode --json --in tpl.txt --out G >>tpl.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in tpl.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n24: printf "keep\n" >F && "$MD" encode "$TPL" --json --out F >>F
+   rc=2 stdout=0B
+   stderr: md: --out F and standard output are the same file (the same path, a symlink or a hard link), so what md prints on stdout would go into the file it writes. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   F: 1 lines, first: keep
+== n25: printf "keep\n" >F && "$MD" encode "$TPL" --json --out F >F
+   rc=2 stdout=0B
+   stderr: md: --out F and standard output are the same file (the same path, a symlink or a hard link), so what md prints on stdout would go into the file it writes. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   F: 0 lines, first: 
+== n26: "$MD" encode --json --in tpl.txt --out tpl.txt >>tpl.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as --in tpl.txt, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== n27: "$MD" decode - <card.txt >card.txt
+   rc=2 stdout=0B
+   stderr: md: standard output is the same file as standard input, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.
+   card.txt: 0 lines, first: 
+== n28: "$MD" encode --in x --out x
+   rc=2 stdout=0B
+   stderr: md: --out x is the same file as --in x (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   x: absent
+== n29: "$MD" descriptor "$M" --from-mk1-file K.txt --emit md1 --verify-against K.txt --out K.txt
+   rc=2 stdout=0B
+   stderr: md: --out K.txt is the same file as --from-mk1-file K.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.
+   K.txt: 5 lines, first: mk1qpyzfnpqqsqk4qq7mdeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4
+== c1: "$MD" encode --in tpl.txt --out new.txt
+   rc=0 stdout=0B
+   new.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== c2: "$MD" decode --in card.txt >out.txt
+   rc=0 stdout=0B
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== c3: "$MD" decode --in card.txt | cat >/dev/null
+   rc=0 stdout=0B
+   card.txt: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh
+== c4: "$MD" descriptor "$M" --from-mk1-file K.txt --emit md1 --out G >>K.txt
+   rc=0 stdout=0B
+   K.txt: 5 lines, first: mk1qpyzfnpqqsqk4qq7mdeutks2q5zg3vs7rnefw94m5rru59s2su80aw2q4
+== c5: "$MD" descriptor "$M" --from-mk1-file K.txt --emit md1 --verify-against "$M" --out "$M"
+   rc=5 stdout=0B
+   stderr: md: --verify-against: NOT spend-equal — the VALUES half differs. Origin metadata (fingerprints, key origins, path declaration) is excluded from this comparison: it is seating/signing guidance, not script content.
+   md15pfdsssjjtvyyw2sqrqsuy9p0prnchdq4w0za5zst076dhvcvrcvh: 4 lines, first: md1f0ghpps9q2tvyyy5jmpprj5qqcy8ppgtcgu79mg9tnchdq59wpyhwsv0j
+== c6: "$MD" encode "$TPL" --out F >>tpl.txt
+   rc=0 stdout=0B
+   tpl.txt: 1 lines, first: wpkh(@0/<0;1>/*)
+== c7: printf "keep\n" >F && "$MD" encode "$TPL" --out F >>F
+   rc=0 stdout=0B
+   F: 1 lines, first: md1yqpqqxqq8xtwhw4xwn4qh

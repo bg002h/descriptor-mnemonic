@@ -123,7 +123,8 @@ enum Command {
         /// existing file unchanged. The file holds exactly what stdout would
         /// have without `--json` (grouped only under `--group-size`); with
         /// `--json` the JSON still goes to stdout. The chunk-set-id and the
-        /// advisories still go to stderr
+        /// advisories still go to stderr. Refused (exit 2) when FILE is the
+        /// --in file, or, with --json, when stdout is FILE.
         #[arg(long = "out", value_name = "FILE")]
         out_file: Option<std::path::PathBuf>,
         /// Compile a sub-Miniscript-Policy expression into a template (cli-compiler).
@@ -572,7 +573,8 @@ enum Command {
         /// shell redirect cannot do. OVERWRITES an existing file, and
         /// tightens its mode. The file holds exactly what stdout would have
         /// (grouped only under `--group-size`); the chunk-set-id and the
-        /// advisories still go to stderr. Only meaningful with `--emit
+        /// advisories still go to stderr. Refused (exit 2) when FILE is the
+        /// --from-mk1-file or --verify-against file. Only meaningful with `--emit
         /// md1` -- `requires = "emit"` refuses it structurally rather than
         /// silently discarding it on the plain descriptor row (the I4
         /// defect class this cycle keeps naming on this verb).
@@ -982,6 +984,13 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             json,
             experimental,
         } => {
+            // FIX_bh1119_md_out_names_input S2: the guard is the first statement.
+            cmd::refuse_output_names_input(
+                out_file.is_none() || json,
+                out_file.as_deref(),
+                json && out_file.is_some(),
+                &cmd::InputName::in_or_stdin(in_file.as_deref(), &[]),
+            )?;
             let template_str: String = if let Some(expr) = from_policy {
                 #[cfg(feature = "cli-compiler")]
                 {
@@ -1053,7 +1062,15 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             strings,
             in_file,
             json,
-        } => cmd::decode::run(&strings, in_file.as_deref(), json),
+        } => {
+            cmd::refuse_output_names_input(
+                true,
+                None,
+                false,
+                &cmd::InputName::in_or_stdin(in_file.as_deref(), &strings),
+            )?;
+            cmd::decode::run(&strings, in_file.as_deref(), json)
+        }
         Command::Verify {
             strings,
             in_file,
@@ -1063,26 +1080,50 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             path,
             network,
             experimental,
-        } => cmd::verify::run(cmd::verify::VerifyArgs {
-            strings: &strings,
-            in_file: in_file.as_deref(),
-            template: &template,
-            keys: &keys,
-            fingerprints: &fingerprints,
-            path: path.as_deref(),
-            network: network.into(),
-            experimental,
-        }),
+        } => {
+            cmd::refuse_output_names_input(
+                true,
+                None,
+                false,
+                &cmd::InputName::in_or_stdin(in_file.as_deref(), &strings),
+            )?;
+            cmd::verify::run(cmd::verify::VerifyArgs {
+                strings: &strings,
+                in_file: in_file.as_deref(),
+                template: &template,
+                keys: &keys,
+                fingerprints: &fingerprints,
+                path: path.as_deref(),
+                network: network.into(),
+                experimental,
+            })
+        }
         Command::Inspect {
             strings,
             in_file,
             json,
-        } => cmd::inspect::run(&strings, in_file.as_deref(), json),
+        } => {
+            cmd::refuse_output_names_input(
+                true,
+                None,
+                false,
+                &cmd::InputName::in_or_stdin(in_file.as_deref(), &strings),
+            )?;
+            cmd::inspect::run(&strings, in_file.as_deref(), json)
+        }
         Command::Bytecode {
             strings,
             in_file,
             json,
-        } => cmd::bytecode::run(&strings, in_file.as_deref(), json),
+        } => {
+            cmd::refuse_output_names_input(
+                true,
+                None,
+                false,
+                &cmd::InputName::in_or_stdin(in_file.as_deref(), &strings),
+            )?;
+            cmd::bytecode::run(&strings, in_file.as_deref(), json)
+        }
         Command::Vectors { out } => cmd::vectors::run(out),
         Command::Compile {
             expr,
@@ -1153,6 +1194,25 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             verify_against,
             experimental,
         } => {
+            // FIX_bh1119_md_out_names_input S2/S3: first statement. Inputs in
+            // order: --from-mk1-file, then --verify-against when it is a file
+            // (the `is_file` test `resolve_verify_against` uses).
+            let mut inputs: Vec<cmd::InputName<'_>> = Vec::new();
+            if let Some(p) = from_mk1_file.as_deref() {
+                inputs.push(cmd::InputName::path("--from-mk1-file", p));
+            }
+            if let Some(v) = verify_against.as_deref() {
+                let p = std::path::Path::new(v);
+                if p.is_file() {
+                    inputs.push(cmd::InputName::path("--verify-against", p));
+                }
+            }
+            cmd::refuse_output_names_input(
+                !(emit.is_some() && out_file.is_some()),
+                out_file.as_deref(),
+                false,
+                &inputs,
+            )?;
             let chain = if change { Some(1) } else { chain };
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::descriptor::run(cmd::descriptor::DescriptorArgs {
@@ -1192,6 +1252,13 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             json,
             experimental,
         } => {
+            // FIX_bh1119_md_out_names_input S2/S3: first statement.
+            let inputs: Vec<cmd::InputName<'_>> = from_mk1_file
+                .as_deref()
+                .map(|p| cmd::InputName::path("--from-mk1-file", p))
+                .into_iter()
+                .collect();
+            cmd::refuse_output_names_input(true, None, false, &inputs)?;
             let chain = if change { 1 } else { chain };
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::address::run(cmd::address::AddressArgs {
@@ -1216,12 +1283,27 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             in_file,
             emit,
             network,
-        } => cmd::decompose::run(cmd::decompose::DecomposeArgs {
-            descriptors: &descriptors,
-            in_file: in_file.as_deref(),
-            emit,
-            network: network.into(),
-        }),
+        } => {
+            // FIX_bh1119_md_out_names_input S3: standard input only when the
+            // positional is exactly one `-` (`cmd/decompose.rs:45`).
+            let stdin_dash: &[String] = if descriptors.len() == 1 {
+                &descriptors
+            } else {
+                &[]
+            };
+            cmd::refuse_output_names_input(
+                true,
+                None,
+                false,
+                &cmd::InputName::in_or_stdin(in_file.as_deref(), stdin_dash),
+            )?;
+            cmd::decompose::run(cmd::decompose::DecomposeArgs {
+                descriptors: &descriptors,
+                in_file: in_file.as_deref(),
+                emit,
+                network: network.into(),
+            })
+        }
         #[cfg(feature = "json")]
         Command::GuiSchema => cmd::gui_schema::run(),
         Command::Repair(a) => cmd::repair::run(a),
