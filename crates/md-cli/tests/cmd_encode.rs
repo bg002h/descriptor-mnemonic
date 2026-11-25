@@ -970,7 +970,7 @@ fn experimental_does_not_claim_bearer_access_for_a_wallet_that_needs_no_relaxing
         "a single-key wallet is announced as bearer access:\n{err}"
     );
     assert!(
-        !err.contains("needs NO key"),
+        !err.contains("NO key"),
         "a single-key wallet is told it has a key-less spend path:\n{err}"
     );
     // And it says so plainly, rather than going silent -- the operator passed a
