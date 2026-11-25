@@ -171,9 +171,17 @@ fn o5_symlink_out_replaces_target_keeps_link() {
     std::os::unix::fs::symlink(&t, &l).unwrap();
     let o = run(md_cmd(&["encode", T, "--out", s(&l)]));
     assert_eq!(rc(&o), 0, "{}", se(&o));
-    assert!(std::fs::symlink_metadata(&l).unwrap().file_type().is_symlink());
+    assert!(
+        std::fs::symlink_metadata(&l)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert_eq!(std::fs::read_to_string(&t).unwrap(), CARD);
-    assert_eq!(std::fs::metadata(&t).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        std::fs::metadata(&t).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 
 #[test]
@@ -183,7 +191,10 @@ fn o6_json_with_out_writes_both() {
     let o = run(md_cmd(&["encode", T, "--json", "--out", s(&f)]));
     assert_eq!(rc(&o), 0, "{}", se(&o));
     assert_eq!(std::fs::read_to_string(&f).unwrap(), CARD);
-    assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        std::fs::metadata(&f).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     let plain = run(md_cmd(&["encode", T, "--json"]));
     assert_eq!(so(&o), so(&plain));
     assert_eq!(se(&o), format!("{NOTE}\n"));
@@ -193,7 +204,15 @@ fn o6_json_with_out_writes_both() {
 fn o7_json_with_out_grouped_file_unbroken_json() {
     let d = tempfile::tempdir().unwrap();
     let f = d.path().join("F");
-    let o = run(md_cmd(&["encode", T, "--json", "--group-size", "5", "--out", s(&f)]));
+    let o = run(md_cmd(&[
+        "encode",
+        T,
+        "--json",
+        "--group-size",
+        "5",
+        "--out",
+        s(&f),
+    ]));
     assert_eq!(rc(&o), 0, "{}", se(&o));
     assert_eq!(
         std::fs::read_to_string(&f).unwrap(),
@@ -226,7 +245,10 @@ fn o9_json_with_out_and_full_stdout_keeps_file() {
     }
     let d = tempfile::tempdir().unwrap();
     let f = d.path().join("F");
-    let full = std::fs::OpenOptions::new().write(true).open("/dev/full").unwrap();
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
     let mut c = md_cmd(&["encode", T, "--json", "--out", s(&f)]);
     c.stdout(Stdio::from(full));
     let o = run(c);
@@ -243,7 +265,13 @@ fn o10_failed_policy_id_keeps_prior_file() {
     let d = tempfile::tempdir().unwrap();
     let f = d.path().join("F");
     std::fs::write(&f, "PRIOR\n").unwrap();
-    let o = run(md_cmd(&["encode", W, "--policy-id-fingerprint", "--out", s(&f)]));
+    let o = run(md_cmd(&[
+        "encode",
+        W,
+        "--policy-id-fingerprint",
+        "--out",
+        s(&f),
+    ]));
     assert_eq!(rc(&o), 1);
     assert_eq!(se(&o), format!("{CODEC}\n"));
     assert_eq!(so(&o), "");
@@ -262,7 +290,13 @@ fn o11_failed_policy_id_prints_nothing_on_stdout() {
 fn o12_failed_policy_id_absent_out_stays_absent() {
     let d = tempfile::tempdir().unwrap();
     let n = d.path().join("N");
-    let o = run(md_cmd(&["encode", W, "--policy-id-fingerprint", "--out", s(&n)]));
+    let o = run(md_cmd(&[
+        "encode",
+        W,
+        "--policy-id-fingerprint",
+        "--out",
+        s(&n),
+    ]));
     assert_eq!(rc(&o), 1);
     assert!(!n.exists());
 }
@@ -306,7 +340,10 @@ fn o15_stdio_alias_onto_a_file_names_no_state() {
     let d = tempfile::tempdir().unwrap();
     let sfile = d.path().join("s.txt");
     std::fs::write(&sfile, "OLD BACKUP\n").unwrap();
-    let appended = std::fs::OpenOptions::new().append(true).open(&sfile).unwrap();
+    let appended = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&sfile)
+        .unwrap();
     let mut c = fsize(md_cmd(&["encode", T, "--out", "/dev/stdout"]), 0);
     c.stdout(Stdio::from(appended));
     let o = run(c);

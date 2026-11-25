@@ -135,7 +135,7 @@ every fixed result was seen on a scratch prototype of R1-R4 (reverted; section 5
 `<dir>` in a row is the test's temp dir.
 
 o13's fixed column is R3's rule; the prototype computed the id after the chunk-set-id line, so it still printed it.
-Every other fixed cell was seen. RED expectation for the builder: o1-o4, o6-o13 and o15 fail on the base (o15 also has a builder-must-see-it-fail plant: a plant of R2 that skips the alias rule prints `/dev/stdout is unchanged.`); o5 and o14 pass
+Every other fixed cell was seen. o15's fixed cell was run by the builder on mnemonic-io-lib 0.1.3 (registry): it passes (rc 1, the exact stderr above, s.txt still `OLD BACKUP\n`), and the plant that skips the alias rule fails it with `... File too large (os error 27). /dev/stdout is unchanged.`. RED expectation for the builder: o1-o4, o6-o13 and o15 fail on the base (o15 also has a builder-must-see-it-fail plant: a plant of R2 that skips the alias rule prints `/dev/stdout is unchanged.`); o5 and o14 pass
 on the base and after.
 
 Coverage map (rule -> rows): R1 old file kept -> o1, o2; R1 read-only directory -> o4; R1 symlink -> o5; R1 hard link,

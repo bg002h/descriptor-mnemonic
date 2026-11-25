@@ -106,9 +106,97 @@ pub fn read_template_file(path: &std::path::Path) -> Result<String, CliError> {
 /// the mode a SECOND time on the open file because `OpenOptions::mode()` binds
 /// on create only -- an existing 0644 target would otherwise stay 0644, which
 /// is the case a re-run actually hits.
+///
+/// mnemonic-io-lib 0.1.3 writes a temporary beside FILE and renames it over FILE, so a
+/// failed write leaves an existing FILE unchanged. A write error exits 1 with
+/// `md: cannot write the output: <FILE>: <error>` plus a state sentence only when a second
+/// look at FILE confirms it (bh-md-C4, R2); a standard-stream name says nothing about the disk.
 pub fn write_artifact(path: &std::path::Path, body: &str) -> Result<(), CliError> {
-    mnemonic_io_lib::write::write_private(path, body.as_bytes())
-        .map_err(|e| CliError::BadArg(format!("--out {}: {e}", path.display())))
+    let stdio = names_standard_stream(path);
+    let before = if stdio { Snap::Other } else { Snap::take(path) };
+    match mnemonic_io_lib::write::write_private(path, body.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // R2 (T6): one line, exit 1. The state sentence is said only when a
+            // second look confirms it; a standard-stream alias is written into
+            // the open stream, so nothing is said about the disk.
+            let f = path.display();
+            let after = if stdio { Snap::Other } else { Snap::take(path) };
+            let tail = match (&before, &after) {
+                (Snap::Regular(a), Snap::Regular(b)) if a == b => format!(". {f} is unchanged."),
+                (Snap::Absent, Snap::Absent) => ". Nothing was written.".to_string(),
+                _ => String::new(),
+            };
+            Err(CliError::Compose(format!(
+                "cannot write the output: {f}: {e}{tail}"
+            )))
+        }
+    }
+}
+
+/// What `std::fs::metadata` (symlinks followed) says about an `--out` FILE.
+enum Snap {
+    /// A regular file: (dev, ino, len, mtime seconds, mtime nanoseconds).
+    Regular((u64, u64, u64, i64, i64)),
+    /// NotFound, including a dangling symlink.
+    Absent,
+    Other,
+}
+
+impl Snap {
+    fn take(path: &std::path::Path) -> Snap {
+        use std::os::unix::fs::MetadataExt;
+        match std::fs::metadata(path) {
+            Ok(m) if m.is_file() => {
+                Snap::Regular((m.dev(), m.ino(), m.len(), m.mtime(), m.mtime_nsec()))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Snap::Absent,
+            _ => Snap::Other,
+        }
+    }
+}
+
+/// True when FILE names a standard stream: its typed path, its canonical
+/// parent joined with its name, or a hop of its symlink chain starts with
+/// `/dev/` or `/proc/`.
+fn names_standard_stream(path: &std::path::Path) -> bool {
+    fn hit(p: &std::path::Path) -> bool {
+        let s = p.to_string_lossy();
+        s.starts_with("/dev/") || s.starts_with("/proc/")
+    }
+    if hit(path) {
+        return true;
+    }
+    if let Some(name) = path.file_name() {
+        let parent = match path.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p,
+            _ => std::path::Path::new("."),
+        };
+        if let Ok(c) = std::fs::canonicalize(parent) {
+            if hit(&c.join(name)) {
+                return true;
+            }
+        }
+    }
+    let mut cur = path.to_path_buf();
+    // A bounded walk: a symlink loop ends the chain.
+    for _ in 0..40 {
+        match std::fs::read_link(&cur) {
+            Ok(t) => {
+                let next = if t.is_absolute() {
+                    t
+                } else {
+                    cur.parent().unwrap_or(std::path::Path::new("")).join(t)
+                };
+                if hit(&next) {
+                    return true;
+                }
+                cur = next;
+            }
+            Err(_) => break,
+        }
+    }
+    false
 }
 
 pub fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {

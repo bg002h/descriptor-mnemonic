@@ -156,12 +156,13 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         let mut obj = serde_json::Map::new();
         obj.insert("schema".into(), SCHEMA.into());
         obj.insert("network".into(), args.network_str.into());
-        match mint_md1_cards(&descriptor, args.force_chunked)? {
-            (cards, Some(csid)) => {
+        let (cards, chunk_set_id) = mint_md1_cards(&descriptor, args.force_chunked)?;
+        match chunk_set_id {
+            Some(csid) => {
                 obj.insert("chunk_set_id".into(), format!("0x{csid:05x}").into());
                 obj.insert("chunks".into(), serde_json::to_value(&cards).unwrap());
             }
-            (cards, None) => {
+            None => {
                 obj.insert("phrase".into(), cards[0].clone().into());
             }
         }
@@ -171,6 +172,13 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
                 "policy_id_fingerprint".into(),
                 text::fmt_policy_id_fingerprint(&id).into(),
             );
+        }
+        // bh-md-I1 (R4): `--json --out FILE` writes FILE too, with exactly the
+        // bytes the text branch writes, after every fallible step above and
+        // before the JSON is printed.
+        if let Some(p) = args.out_file {
+            let body = render_artifact(&cards, args.group_size, args.separator);
+            crate::cmd::write_artifact(p, &body)?;
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
         // F-A4: legacy-P2SH-multisig footgun advisory (stderr, warn-only).
@@ -224,6 +232,13 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // by default (`me sysw pack` classifies a grouped chunk as "not a form this
     // container can place" at exit 4), grouped when `--group-size` asks.
     let (cards, chunk_set_id) = mint_md1_cards(&descriptor, args.force_chunked)?;
+    // bh-md-I7 (R3): every fallible step finishes before anything is written or
+    // printed, so a failing run leaves `--out` and stdout untouched.
+    let policy_id = if args.policy_id_fingerprint {
+        Some(compute_wallet_policy_id(&descriptor)?)
+    } else {
+        None
+    };
     if let Some(csid) = chunk_set_id {
         // The chunk-set-id is not deleted -- it is the only thing that tells
         // an operator which chunks belong to one card. It goes to stderr.
@@ -244,8 +259,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         Some(p) => crate::cmd::write_artifact(p, &body)?,
         None => print!("{body}"),
     }
-    if args.policy_id_fingerprint {
-        let id = compute_wallet_policy_id(&descriptor)?;
+    if let Some(id) = policy_id {
         eprintln!(
             "policy-id-fingerprint: {}",
             text::fmt_policy_id_fingerprint(&id)
