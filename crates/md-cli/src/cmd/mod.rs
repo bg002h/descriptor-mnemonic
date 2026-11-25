@@ -137,6 +137,7 @@ pub fn write_artifact(path: &std::path::Path, body: &str) -> Result<(), CliError
 /// What `std::fs::metadata` (symlinks followed) says about an `--out` FILE.
 enum Snap {
     /// A regular file: (dev, ino, len, mtime seconds, mtime nanoseconds).
+    #[cfg_attr(not(unix), allow(dead_code))]
     Regular((u64, u64, u64, i64, i64)),
     /// NotFound, including a dangling symlink.
     Absent,
@@ -145,9 +146,10 @@ enum Snap {
 
 impl Snap {
     fn take(path: &std::path::Path) -> Snap {
-        use std::os::unix::fs::MetadataExt;
         match std::fs::metadata(path) {
+            #[cfg(unix)]
             Ok(m) if m.is_file() => {
+                use std::os::unix::fs::MetadataExt;
                 Snap::Regular((m.dev(), m.ino(), m.len(), m.mtime(), m.mtime_nsec()))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Snap::Absent,

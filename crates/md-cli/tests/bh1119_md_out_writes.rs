@@ -7,6 +7,7 @@
 //! limit returns `EFBIG`; this stands in for a full disk or a quota.
 
 #![allow(missing_docs)]
+#![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
