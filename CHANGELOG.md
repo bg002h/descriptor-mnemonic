@@ -29,16 +29,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   case of the string it corrects (`MD1YQPQQXQQ8XTWHW4XWN4QH`), in text and `--json` output and for chunked sets
   (bh-md-I3).
 - **An output that is one of md's inputs is refused.** `md encode --in F --out F` replaced the template with the card, `md descriptor --from-mk1-file K --emit md1 --out K` replaced the mk1 key cards, and `md decode --in F >>F` (and every reading verb) appended to its input, all at exit 0. md now refuses these before reading anything, names both, and exits 2; so does `md encode --json --out F` with stdout redirected to F ([md-out-names-input]).
-
-## md-cli [0.21.1] — 2026-11-22
-
-### Fixed
-
 - **`md encode`, `verify`, `descriptor` and `address` refuse a second `--key`, or a second `--fingerprint`, for one `@i`.** Two different values exit 1 (`descriptor` and `address` used to compose the first key or the last fingerprint; `encode` and `verify` failed with an ordering error, exit 1). The same value given twice exits 2 (`descriptor` and `address` used to accept it; `encode` and `verify` failed with the ordering error, exit 1) (bh-md-C3).
-- **`md encode` refuses a template it cannot decode back.** A tree nested deeper than the decoder's limit, such
-  as `wsh(` followed by 127 `n` wrappers and `:pk(@0/<0;1>/*))`, minted three chunks at exit 0 that `md decode`
-  refused; it now prints `md: codec error: decode recursion depth 128 exceeded maximum 128` and exits 1 with
-  nothing on stdout. 126 wrappers still mint and decode.
 - **`md descriptor --change` refuses a wallet with no change branch.** On a wallet where no key has a multipath
   (for example `wpkh(@0/*)`), `--change` and `--chain N` (N > 0) printed the receive descriptor at exit 0. They now
   print `md: codec error: chain index 1 out of range; use-site multipath alt-count is 1` (with N and the widest
@@ -48,6 +39,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Bitcoin Core 24.2-28.4 refuses "the <0;1> multipath spelling (use --chain 0 and --chain 1)", although the printed
   descriptor has no `<0;1>` and `--chain 1` is refused there. The note now names no form, as it does for a
   template, and Core reads `unproven`; `--chain 0` prints the same note, since it prints the same descriptor.
+- _Moved here from the 0.21.1 entry (bug hunt 2026-11-25 X2): the three bullets above (bh-md-C3, `--change`, the verdict form) landed after the 0.21.1
+  release commit `e11b4ce` and are not in the released 0.21.1._
+
+## md-cli [0.21.1] — 2026-11-22
+
+### Fixed
+
+- **`md encode` refuses a template it cannot decode back.** A tree nested deeper than the decoder's limit, such
+  as `wsh(` followed by 127 `n` wrappers and `:pk(@0/<0;1>/*))`, minted three chunks at exit 0 that `md decode`
+  refused; it now prints `md: codec error: decode recursion depth 128 exceeded maximum 128` and exits 1 with
+  nothing on stdout. 126 wrappers still mint and decode.
 
 ## md-cli [0.21.0] — 2026-11-22
 
@@ -72,6 +74,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   it now decodes a card and re-encodes it with the current API and pins 0.48. The error-correction example uses a
   real damaged card instead of placeholders, and the stale "chunked-form only" note is gone. Both README blocks now
   run as doctests, and a test keeps the version pin in step with the crate (bh-md-I11).
+- **`to_miniscript_descriptor` / `to_miniscript_descriptor_with_network` refuse a chain no key has.** They now return
+  `Error::ChainIndexOutOfRange` when `chain` is at or beyond the widest use-site multipath alt-count across all keys
+  (the check `Descriptor::derive_address` already made, now shared); before, a key with no multipath ignored `chain`
+  and every chain returned the chain-0 descriptor.
+- _Moved here from the 0.48.7 entry (bug hunt 2026-11-25 X2): this fix landed in `4b763d7`, after the 0.48.7
+  release commit `e11b4ce` (tag `md-codec-v0.48.7`), so the released 0.48.7 does not have it. It needs a release
+  under a new version number._
 
 ## md-codec [0.48.7] — 2026-11-22
 
@@ -83,10 +92,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   origin override, an `@0` or redundant use-site override) or a `wsh` over 127 nested single-child wrappers
   encoded at `Ok` and the card could not be decoded. Bytes of every accepted payload are unchanged;
   `encode_payload_unadmitted` and hashing do not run the check. Costs one decode per mint.
-- **`to_miniscript_descriptor` / `to_miniscript_descriptor_with_network` refuse a chain no key has.** They now return
-  `Error::ChainIndexOutOfRange` when `chain` is at or beyond the widest use-site multipath alt-count across all keys
-  (the check `Descriptor::derive_address` already made, now shared); before, a key with no multipath ignored `chain`
-  and every chain returned the chain-0 descriptor.
 
 ## md-codec [0.48.6] — 2026-11-22
 
