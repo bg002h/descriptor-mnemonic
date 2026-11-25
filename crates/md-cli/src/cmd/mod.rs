@@ -158,42 +158,41 @@ impl Snap {
     }
 }
 
-/// True when FILE names a standard stream: its typed path, its canonical
-/// parent joined with its name, or a hop of its symlink chain starts with
-/// `/dev/` or `/proc/`.
+/// True when FILE names a standard stream: its typed path, or a hop of its
+/// symlink chain, or that path's or hop's canonical parent joined with its
+/// name, starts with `/dev/` or `/proc/`.
 fn names_standard_stream(path: &std::path::Path) -> bool {
     fn hit(p: &std::path::Path) -> bool {
         let s = p.to_string_lossy();
         s.starts_with("/dev/") || s.starts_with("/proc/")
     }
-    if hit(path) {
-        return true;
-    }
-    if let Some(name) = path.file_name() {
-        let parent = match path.parent() {
-            Some(p) if !p.as_os_str().is_empty() => p,
+    // The typed name, or its canonical parent joined with its name.
+    fn spelled(p: &std::path::Path) -> bool {
+        if hit(p) {
+            return true;
+        }
+        let Some(name) = p.file_name() else {
+            return false;
+        };
+        let parent = match p.parent() {
+            Some(d) if !d.as_os_str().is_empty() => d,
             _ => std::path::Path::new("."),
         };
-        if let Ok(c) = std::fs::canonicalize(parent) {
-            if hit(&c.join(name)) {
-                return true;
-            }
-        }
+        std::fs::canonicalize(parent).is_ok_and(|c| hit(&c.join(name)))
     }
     let mut cur = path.to_path_buf();
-    // A bounded walk: a symlink loop ends the chain.
-    for _ in 0..40 {
+    // A bounded walk: every hop is tested as spelled, and a symlink loop ends the chain.
+    for _ in 0..=40 {
+        if spelled(&cur) {
+            return true;
+        }
         match std::fs::read_link(&cur) {
             Ok(t) => {
-                let next = if t.is_absolute() {
+                cur = if t.is_absolute() {
                     t
                 } else {
                     cur.parent().unwrap_or(std::path::Path::new("")).join(t)
                 };
-                if hit(&next) {
-                    return true;
-                }
-                cur = next;
             }
             Err(_) => break,
         }

@@ -333,6 +333,44 @@ fn o14_failed_policy_id_json_out_keeps_prior_file() {
     assert_eq!(std::fs::read_to_string(&f).unwrap(), "PRIOR\n");
 }
 
+/// Run `encode T --out <out>` with RLIMIT_FSIZE 0 and stdout appended to `s.txt` (`OLD BACKUP\n`);
+/// the stream is the target, so md must say nothing about the disk. Skips off Linux.
+fn alias_row(out_of: impl Fn(&Path) -> std::path::PathBuf) {
+    if !Path::new("/dev/stdout").exists() {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let out = out_of(d.path());
+    let sfile = d.path().join("s.txt");
+    std::fs::write(&sfile, "OLD BACKUP\n").unwrap();
+    let appended = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&sfile)
+        .unwrap();
+    let mut c = fsize(md_cmd(&["encode", T, "--out", s(&out)]), 0);
+    c.stdout(Stdio::from(appended));
+    let o = run(c);
+    assert_eq!(rc(&o), 1);
+    assert_eq!(
+        se(&o),
+        format!(
+            "md: cannot write the output: {}: File too large (os error 27)\n",
+            out.display()
+        )
+    );
+    assert_eq!(std::fs::read_to_string(&sfile).unwrap(), "OLD BACKUP\n");
+}
+
+#[test]
+fn o16_link_through_dev_dir_link_names_no_state() {
+    // d -> /dev, L -> d/fd/1: no hop starts with /dev/, only a hop's canonical parent does.
+    alias_row(|d| {
+        std::os::unix::fs::symlink("/dev", d.join("d")).unwrap();
+        std::os::unix::fs::symlink("d/fd/1", d.join("L")).unwrap();
+        d.join("L")
+    });
+}
+
 #[test]
 fn o15_stdio_alias_onto_a_file_names_no_state() {
     if !Path::new("/dev/stdout").exists() {
