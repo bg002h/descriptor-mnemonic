@@ -282,7 +282,10 @@ impl Branch {
 pub struct PolicyShape {
     /// The honesty contract, ported verbatim in meaning from the Go: FALSE
     /// means the walk met a node it could not classify, and NO part of this
-    /// summary may be presented or keyed on.
+    /// summary may be presented or keyed on. It is also FALSE for any
+    /// `thresh` whose children are not all on the allowlist, and for a
+    /// `thresh` with `k != n` that is not at a path root (md thresh /
+    /// seedhammer I-1).
     pub complete: bool,
     /// The taproot internal key's classification; [`KeyPathKind::NotTaproot`]
     /// for every non-`tr` root.
