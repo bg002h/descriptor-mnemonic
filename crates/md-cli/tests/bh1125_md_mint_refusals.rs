@@ -101,18 +101,53 @@ fn md3_multipath_without_wildcard_refused_at_mint() {
     );
 }
 
+/// r1 A2 (owner ruling 2026-11-25): a placeholder with no use-site tail at
+/// all (`@0`, `@0/84'/0'/0'`) is refused at mint, as the multipath case is.
 #[test]
-fn md3_bare_placeholder_mints_as_before_with_a_note() {
-    let (code, out, err) = run(&["encode", "wpkh(@0)"]);
+fn a2_bare_placeholder_refused_at_mint() {
+    for (t, i) in [
+        ("wpkh(@0)", "0"),
+        ("wpkh(@0/84'/0'/0')", "0"),
+        ("wsh(multi(1,@0/<0;1>/*,@1))", "1"),
+    ] {
+        let (code, out, err) = run(&["encode", t, "--path", "bip84"]);
+        assert_eq!(code, 1, "{t}: stderr: {err}");
+        assert_eq!(out, "", "{t}");
+        assert_eq!(
+            err,
+            format!(
+                "md: unsupported: @{i} has no use-site tail, which an md1 card cannot hold: the \
+                 card records every key as ranged, so a card minted from this template would \
+                 describe `@{i}/*`, a different wallet from the single key `@{i}` names. Write \
+                 `@{i}/<0;1>/*` for a receive and change pair, or `@{i}/*` for one ranged \
+                 chain.\n"
+            ),
+            "{t}"
+        );
+    }
+}
+
+/// The other minting verbs share the minting parse, so they refuse too.
+#[test]
+fn a2_bare_placeholder_refused_by_descriptor_verb() {
+    let k = key(0, X0);
+    let (code, out, err) = run(&["descriptor", "--template", "wpkh(@0)", "--key", &k]);
+    assert_ne!(code, 0, "stderr: {err}");
+    assert_eq!(out, "");
+    assert!(err.contains("@0 has no use-site tail"), "stderr: {err}");
+}
+
+/// A card minted before the ruling (`wpkh(@0)` minted as `/*`) still decodes
+/// and re-encodes to the same string.
+#[test]
+fn a2_existing_bare_card_still_decodes_and_reemits() {
+    let card = "md1yqqqq2wy43c0uqcl29";
+    let (code, out, err) = run(&["decode", card]);
     assert_eq!(code, 0, "stderr: {err}");
-    // Same card as before the fix (and as `wpkh(@0/*)`).
-    assert_eq!(out, "md1yqqqq2wy43c0uqcl29\n");
-    assert!(
-        err.contains("note: @0 has no use-site tail, so this card records it as `/*`"),
-        "stderr: {err}"
-    );
-    let (_, _, explicit) = run(&["encode", "wpkh(@0/*)"]);
-    assert!(!explicit.contains("no use-site tail"), "stderr: {explicit}");
+    assert!(out.contains("wpkh(@0/*)"), "stdout: {out}");
+    let (code, again, err) = run(&["encode", "wpkh(@0/*)"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert_eq!(again, format!("{card}\n"));
 }
 
 // ─── md#4: `c:` over a non-key child ────────────────────────────────────────

@@ -183,42 +183,40 @@ fn placeholder_regex() -> &'static Regex {
     })
 }
 
-/// Bug hunt 2026-11-25 md#3: the placeholder indices (sorted, deduplicated)
-/// written with NO wildcard and NO multipath (`@0`, `@0/84'/0'/0'`), which an
-/// md1 card records as `/*`. Read on the `/**`-desugared text, so `@0/**` is
-/// never listed.
-pub(crate) fn placeholders_without_wildcard(template: &str) -> Vec<u8> {
-    let desugared = desugar_double_wildcard(template);
-    let mut out: Vec<u8> = placeholder_regex()
-        .captures_iter(&desugared)
-        .filter(|c| c.get(3).is_none() && c.get(4).is_none())
-        .filter_map(|c| c[1].parse::<u8>().ok())
-        .collect();
-    out.sort_unstable();
-    out.dedup();
-    out
-}
-
-/// Bug hunt 2026-11-25 md#3: REFUSE, when minting, a placeholder with a
-/// multipath group and no trailing wildcard (`@0/<0;1>`). In descriptor terms
-/// that is two FIXED keys, a different wallet from the ranged `@0/<0;1>/*` an
-/// md1 card would record; the use-site block cannot hold it (see
-/// `md_codec::use_site_path`), and `md decompose` refuses the same shape on a
-/// concrete descriptor. Called only under the minting disposition, so reading
-/// verbs and existing cards are unaffected.
-pub(crate) fn refuse_multipath_without_wildcard(template: &str) -> Result<(), CliError> {
+/// Bug hunt 2026-11-25 md#3 and r1 A2 (owner ruling 2026-11-25): REFUSE,
+/// when minting, a placeholder with no trailing wildcard. With a multipath
+/// group (`@0/<0;1>`) that is two FIXED keys; with no use-site tail at all
+/// (`@0`, `@0/84'/0'/0'`) it is one fixed key. Either way it is a different
+/// wallet from the ranged form an md1 card records (`@0/<0;1>/*`, `@0/*`): the
+/// use-site block cannot hold a fixed key (see `md_codec::use_site_path`), and
+/// `md decompose` refuses the same shape on a concrete descriptor. Called
+/// only under the minting disposition, so reading verbs and existing cards
+/// (including bare-`@N` cards minted before A2 as `/*`) are unaffected.
+pub(crate) fn refuse_placeholder_without_wildcard(template: &str) -> Result<(), CliError> {
     let desugared = desugar_double_wildcard(template);
     for c in placeholder_regex().captures_iter(&desugared) {
-        if let (Some(m), None) = (c.get(3), c.get(4)) {
-            let i = &c[1];
-            let alts = m.as_str();
-            return Err(CliError::Unsupported(format!(
-                "@{i} has use-site `/<{alts}>` with no trailing `/*`, which an md1 card \
-                 cannot hold: the card records every key as ranged, so a card minted from \
-                 this template would describe `@{i}/<{alts}>/*`, a different wallet. Write \
-                 `@{i}/<{alts}>/*` if that is the wallet you mean."
-            )));
+        if c.get(4).is_some() {
+            continue;
         }
+        let i = &c[1];
+        return Err(CliError::Unsupported(match c.get(3) {
+            Some(m) => {
+                let alts = m.as_str();
+                format!(
+                    "@{i} has use-site `/<{alts}>` with no trailing `/*`, which an md1 card \
+                     cannot hold: the card records every key as ranged, so a card minted from \
+                     this template would describe `@{i}/<{alts}>/*`, a different wallet. Write \
+                     `@{i}/<{alts}>/*` if that is the wallet you mean."
+                )
+            }
+            None => format!(
+                "@{i} has no use-site tail, which an md1 card cannot hold: the card records \
+                 every key as ranged, so a card minted from this template would describe \
+                 `@{i}/*`, a different wallet from the single key `@{i}` names. Write \
+                 `@{i}/<0;1>/*` for a receive and change pair, or `@{i}/*` for one ranged \
+                 chain."
+            ),
+        }));
     }
     Ok(())
 }
@@ -2977,7 +2975,7 @@ pub fn parse_template_ext(
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
     if matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
-        refuse_multipath_without_wildcard(template)?;
+        refuse_placeholder_without_wildcard(template)?;
     }
     reject_unreferenced_bindings(&occs, keys, fingerprints)?;
     // N1 (SPEC_mdcli_mini.md §N1) runs on the OCCURRENCE LIST, so it must sit

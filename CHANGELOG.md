@@ -47,7 +47,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (bug hunt 2026-11-25 md#2).
 - **A placeholder with a multipath and no wildcard is refused at mint.** `md encode "wpkh(@0/<0;1>)"` minted the
   ranged `@0/<0;1>/*`; minting verbs (`encode`, `descriptor`, `address`, `compose`) now refuse it at exit 1.
-  A placeholder with neither (`@0`) still mints as `/*`, now with a note saying so (md#3).
+  A placeholder with neither (`@0`, `@0/84'/0'/0'`) is now refused the same way, asking for `/<0;1>/*` (or `/*`):
+  it named one fixed key but minted the ranged `@0/*`, a different wallet. Cards already minted that way still
+  decode and re-emit unchanged (md#3; owner ruling 2026-11-25, bug hunt r1 A2).
 - **`md encode` refuses a `c:` over anything but a single key.** `wsh(c:or_i(pk_k(@0/..),pk_k(@1/..)))` and
   similar minted a card that `md address` and `md descriptor` could never render. Existing cards still decode
   (md#4).

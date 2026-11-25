@@ -210,8 +210,6 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             args.path.is_some(),
             &mut std::io::stderr(),
         );
-        // Bug hunt 2026-11-25 md#3 (parity with the text branch).
-        emit_implied_wildcard_note(args.template, &mut std::io::stderr());
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -299,9 +297,6 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         args.path.is_some(),
         &mut std::io::stderr(),
     );
-    // Bug hunt 2026-11-25 md#3: a placeholder written with no `/*` was
-    // minted as `/*`; say so.
-    emit_implied_wildcard_note(args.template, &mut std::io::stderr());
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -509,34 +504,6 @@ pub(crate) fn fill_canonical_origins(
         PathDeclPaths::Divergent(paths)
     };
     filled
-}
-
-/// Bug hunt 2026-11-25 md#3: note each placeholder written with no wildcard
-/// and no multipath (`@0`, `@0/84'/0'/0'`), which `md encode` mints as `/*`.
-/// A multipath with no wildcard (`@0/<0;1>`) never gets here: the minting
-/// parse refuses it ([`crate::parse::template::refuse_multipath_without_wildcard`]).
-/// Note only; stdout and the exit code are untouched.
-fn emit_implied_wildcard_note<W: std::io::Write>(template: &str, stderr: &mut W) {
-    let bare = crate::parse::template::placeholders_without_wildcard(template);
-    if bare.is_empty() {
-        return;
-    }
-    let list = bare
-        .iter()
-        .map(|i| format!("@{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let (verb, pron) = if bare.len() == 1 {
-        ("has", "it")
-    } else {
-        ("have", "each")
-    };
-    let _ = writeln!(
-        stderr,
-        "note: {list} {verb} no use-site tail, so this card records {pron} as `/*`: one ranged \
-         chain (child keys /0, /1, ...), with no change branch, not one fixed key. Write \
-         `/<0;1>/*` for a receive and change pair."
-    );
 }
 
 /// The md1 artifact for a descriptor: ONE string when it fits the codex32
