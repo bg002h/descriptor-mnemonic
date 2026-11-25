@@ -49,7 +49,7 @@ column of section 4. In short:
   `mnemonic_io_lib::write::same_file` (io-lib 0.1.3, `crates/mnemonic-io-lib/src/write.rs:585-605` at mnemonic-engrave
   0cc8383f; already on #9's pin, no pin change). Identity is io-lib's: dev+ino of the file a path resolves to (symlinks
   followed, hard links equal); an absent path by its canonical directory plus name, so `--in x --out x` with x absent is
-  one file; a pipe, terminal or device never matches; a failed lookup never matches; off Unix a hard link and a
+  one file; a pipe, terminal or device never matches; a failed lookup never matches; on Windows a hard link and a
   redirected stdin or stdout are not detected (io-lib's documented limit).
 - **S2 (where it runs).** The guard is the FIRST step of each verb below, before any other check, before any input is
   read and before anything is printed on stdout or stderr: as the first statement of the verb's arm in `dispatch`
@@ -57,7 +57,7 @@ column of section 4. In short:
   `:1172` Address, `:1208` Decompose) and as the first statement of `cmd::repair::run` (`cmd/repair.rs:88`). On a
   refusal md prints exactly one stderr line (X1, X2 or X3), nothing on stdout, writes no file and exits **2**. `--json`
   changes nothing here (md prints every error on stderr; it has no error envelope). No other verb is checked
-  (`compile`, `compose`, `shape-key`, `build`, `partial`, `verdict` and `gui-schema` read no file; `vectors --out DIR`
+  (`compile`, `compose`, `shape-key` and `gui-schema` read no file; `vectors --out DIR`
   and `gen-man --out DIR` write directories and are out of scope, as in #9 section 8).
 - **S3 (inputs, in this order; the first match is named).**
   - `encode`: `--in PATH` when given (`Endpoint::Path`). The template on argv is not an input.
@@ -88,7 +88,8 @@ column of section 4. In short:
   `# `Endpoint` are the items `md` adopts from the P3 boundary table, reached as`
   `# `mnemonic_io_lib::write::...` -- `write` is a `pub mod` with NO root re-export,`
   `# so an unqualified path is an E0425.`
-- **Not changed:** every success path (rows c1-c7 keep their base result); #9's failure line and write path; the
+- **Not changed:** stderr naming an input (`2>>K.txt`) is not checked (Q2 and architect 1124 s4 rule stdout); filed
+  as [md-stderr-names-input]. Every success path (rows c1-c7 keep their base result); #9's failure line and write path; the
   `md: cannot write the output: <error>` stdout sink.
 
 ## 3. Texts (exact)
@@ -97,19 +98,20 @@ column of section 4. In short:
 `--verify-against <PATH>` (PATH as typed) or `standard input`. Each is printed by `main` as `md: <message>`.
 
 - **X1, `--out` names an input, PROPOSED (architect confirms; mk #10 X1 in md's form):**
-  `md: --out <OUT> is the same file as <INPUT>, so writing the card would replace the input md is reading. Write to a new name.`
+  `md: --out <OUT> is the same file as <INPUT> (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.`
+  The mk #10 X1 takes this same wording at its build.
 - **X2, standard output names an input, PROPOSED (mk #10 X2 / mt §8.2i in md's form; "the output" because six of
   the eight verbs print something other than a card):**
   `md: standard output is the same file as <INPUT>, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.`
 - **X3, `--out` and standard output one file, PROPOSED (ms #11 E2 / mk #10 X3 with md):**
   `md: --out <OUT> and standard output are the same file (the same path, a symlink or a hard link), so what md prints on stdout would go into the file it writes. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.`
-- **H2, appended to #9's H1 (`md encode --out`, `main.rs:119-124`), PROPOSED:**
+- **H2 follows H1's final sentence in the doc comment (`...still go to stderr.` then ` Refused ...`) (`md encode --out`, `main.rs:119-124`), PROPOSED:**
   ` Refused (exit 2) when FILE is the --in file, or, with --json, when stdout is FILE.`
 - **H3, `md descriptor --out` help, inserted after "advisories still go to stderr." (`main.rs:568-569`), PROPOSED:**
   ` Refused (exit 2) when FILE is the --from-mk1-file or --verify-against file.`
 - **M3, toolkit manual (mnemonic-toolkit master 4bfa645f, `docs/manual/src/40-cli-reference/42-md.md`), PROPOSED:** a
   new paragraph after the "When stdout fails" paragraph (`:806`, after #9's M2 sentence):
-  `` **When an output is one of the inputs.** md refuses, before it reads anything, a run whose `--out` FILE or redirected stdout is the same file (the same path, a symlink or a hard link) as one of its inputs (`--in`, `--from-mk1-file`, a `--verify-against` FILE, or stdin read through `-`), and an `md encode --json --out FILE` whose stdout is FILE. It names both and exits 2 (`md: --out tpl.txt is the same file as --in tpl.txt, so writing the card would replace the input md is reading. Write to a new name.`). A `>` redirect has already emptied the file before md starts; `>>` leaves it as it was. Pipes and terminals are never refused. ``
+  `` **When an output is one of the inputs.** md refuses, before it reads anything, a run whose `--out` FILE or redirected stdout is the same file (the same path, a symlink or a hard link) as one of its inputs (`--in`, `--from-mk1-file`, a `--verify-against` FILE, or stdin read through `-`), and an `md encode --json --out FILE` whose stdout is FILE. It names both and exits 2 (`md: --out tpl.txt is the same file as --in tpl.txt (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.`). A `>` redirect has already emptied the file before md starts; `>>` leaves it as it was. Pipes and terminals are never refused. ``
   And the `md encode` `--out` row (`:30`, #9's M1) and the `md descriptor` `--out` row (`:223`) each end with
   `` ; refused (exit 2) when FILE is one of the inputs ``.
 - **C1, CHANGELOG `## md-cli [Unreleased]` / `### Fixed`, PROPOSED, one bullet:**
@@ -120,7 +122,11 @@ Each of X1, X2, X3, H2, H3, M3 and C1 gets a `design/WORDING_REVIEW.md` row (dir
 ## 4. TRACE rows (RED on the base; GREEN after the build)
 
 New file `crates/md-cli/tests/bh1119_md_out_names_input.rs`, one test function per row, named exactly as the "test"
-column. Each test runs the built `md` (`env!("CARGO_BIN_EXE_md")`) in a `tempfile::tempdir()` holding the section 1
+column. Rows n2, n3, n7 and n9-n27 carry `#[cfg(unix)]`
+(hard links, symlinks, `/dev/stdout` and a redirected stdin or stdout are Unix-only for io-lib's `same_file`,
+write.rs:594-595); n1, n4-n6, n8, n28, n29 and c1-c7 run on every OS (a same-path or absent-path match is detected
+everywhere, and the controls refuse nothing). A row that redirects with `>`/`>>` builds its `Stdio` from a `File`
+as above on every OS. Each test runs the built `md` (`env!("CARGO_BIN_EXE_md")`) in a `tempfile::tempdir()` holding the section 1
 files; a redirect row opens the file with `OpenOptions` (`append(true)` for `>>`, `write(true).truncate(true)` for `>`)
 and passes it as the child's `Stdio`; stdin rows pass `File::open`. "unchanged" = byte-identical to the file before the
 run. Abbreviations: `X1(o, i)` = the X1 line with `<OUT>` = o and `<INPUT>` = i; likewise `X2(i)`, `X3(o)`. In the
@@ -172,9 +178,35 @@ the verb writes nothing on it.
 
 ## 5. Tests that change
 
-None. Searched (`grep -l '"--out"' crates/md-cli/tests/*.rs` then the hits for `"--in"`/`--from-mk1-file`/
-`--verify-against`): no existing test passes an output that is one of its inputs, and every test runs `md` with piped
-stdout, which never matches. The builder confirms with the full suite (gate step 2).
+One test changes. `crates/md-cli/tests/cli_p3_decline.rs` (P3 row 20) asserts md reaches only
+`mnemonic_io_lib::write::write_private`; S1 adds `write::same_file` and `write::Endpoint` (Brian 2026-11-23 Q2, T5).
+The guard reaches both fully qualified (`mnemonic_io_lib::write::same_file`, `mnemonic_io_lib::write::Endpoint::Path`),
+never through `use` (the test refuses any `use mnemonic_io_lib`). In the test, the module doc lines 9-10 become
+``//! `md` adopts `write::write_private` and (FIX_bh1119_md_out_names_input) `write::same_file` with``
+``//! `write::Endpoint`, and declines the crate's other items.`` and the loop at :100-108 becomes exactly:
+
+```
+    // FIX_bh1119_md_out_names_input (Brian 2026-11-23 Q2, T5) adds
+    // `write::same_file` and its `write::Endpoint` (with its variants).
+    const ADOPTED: [&str; 3] = [
+        "write::write_private",
+        "write::same_file",
+        "write::Endpoint",
+    ];
+    for (path, item) in &adopted {
+        assert!(
+            ADOPTED
+                .iter()
+                .any(|a| item == a || item.starts_with(&format!("{a}::"))),
+            "{path} reaches `mnemonic_io_lib::{item}`. P3's boundary table gives \
+             `md` `write::write_private`, and FIX_bh1119_md_out_names_input adds \
+             `write::same_file` with `write::Endpoint`; md declines every other \
+             item. If a later phase wants one, that is a ruling, not a tidy-up."
+        );
+    }
+```
+
+The test keeps its name (its RED history cites it).
 
 ## 6. FOLLOWUPS
 
@@ -212,4 +244,4 @@ Unix), the WORDING_REVIEW rows.
    two stdin flags).
 5. `--verify-against` is an input only when it names an existing file, by the same `is_file` test that decides how it
    is read (c5).
-6. X1 says "the card" (both md `--out` sites write an md1 card); X2 says "the output" (most verbs print other text).
+6. X1 names no consequence (it differs by link kind); X2 says "the output".

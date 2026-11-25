@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RED/GREEN probe for FIX_bh1119_md_out_names_input (rows n1-n27).
+# RED/GREEN probe for FIX_bh1119_md_out_names_input (rows n1-n29 and c1-c7).
 # Usage: red.sh <md binary> <scratch dir, not under /tmp>
 # Runs each row as printed in the FIX doc section 4, in a fresh subdirectory,
 # and prints: rc, stdout byte count, stderr (first 2 lines), and the state of
