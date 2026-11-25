@@ -51,7 +51,8 @@ for r in m5_r1_decode_json_keyed_card_is_watch_only \
   i8_c2_decode_json_ordinary_card_has_no_warning; do
   step "1 md-cli $r" named_row md-cli "$r"
 done
-for r in i8_u1_fallback_when_policy_cannot_be_lifted i8_u2_fallback_when_every_path_needs_a_key \
+for r in keyless_advisory::tests::i8_u1_fallback_when_policy_cannot_be_lifted \
+  keyless_advisory::tests::i8_u2_fallback_when_every_path_needs_a_key \
   decoding_a_bearer_card_warns_the_restorer \
   experimental_does_not_claim_bearer_access_for_a_wallet_that_needs_no_relaxing; do
   step "1 md-cli $r" named_row md-cli "$r"
