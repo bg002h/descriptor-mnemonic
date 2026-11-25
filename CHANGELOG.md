@@ -4,7 +4,18 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## md-cli [Unreleased]
+## md-cli [0.21.2] — unreleased
+
+Pins md-codec `=0.49.0`. Not tagged or published.
+
+### Changed
+
+- **The coordinator note follows md-codec 0.49.0's `thresh` summary (md thresh / seedhammer I-1).** `md compose`
+  and `md descriptor` print `note: coordinators: no verdict (md cannot break this policy into spend paths: it has a
+  threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a
+  partial decomposition)` for a policy md-codec no longer summarises, and `md shape-key` refuses it with the same
+  sentence. For BIP-388's decaying multisig the Liana line reads "unproven" instead of the false "refuses (no
+  unlocked path)". Exit status is unchanged.
 
 ### Fixed
 
@@ -98,7 +109,50 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`md decompose --emit commands` prints a mint route only after proving it.** md now mints each route's card in memory and compares the wallet it describes with the input descriptor. A route that would mint a different wallet (a use-site md1 cannot hold, such as `/0/*` or none) or that `md encode`/`mk encode` would refuse (such as a depth-0 key) is withheld with one line; when no route reproduces the descriptor the command refuses (exit 1). `--emit template` and `--emit all` (and `--emit commands`) now refuse a descriptor whose key use-site md1 cannot hold (a fixed step such as `/0/*`, or none), since the template they printed minted a different wallet.
 - **`md encode`, given a concrete descriptor with a key that has no origin path, no longer prints the `--emit commands` line that refuses.** A key with a fingerprint-only origin (such as a master key, `[fingerprint]xpub...`) now gets the `--emit template` line alone, like a key with no origin. In that case the explanation reads: `Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one.` It replaces the sentence ending "the wallet that produced it knows the path." More generally, `md encode` now runs that decomposition itself and prints a `md decompose` line only when it runs: when `md decompose` refuses the descriptor, or prints no template for it (a fixed use-site such as `/0/*`), no line is printed and the referral quotes decompose's refusal; when only `--emit commands` refuses, the template line is printed with decompose's reason.
 
-## md-codec [Unreleased]
+## md-codec [0.49.0] — unreleased
+
+Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, and `policy_shape` returns
+`complete == false` for some shapes it summarised before. Not tagged or published.
+
+### Changed
+
+- **`policy_shape` summarises `thresh` honestly (md thresh / seedhammer I-1).** It walked every `thresh` as a
+  conjunction: a `thresh(2,…)` over three keys read as "3 keys", and BIP-388's decaying multisig
+  `wsh(thresh(3,pk,s:pk,s:pk,sln:older(12960)))` as needing all three keys and the lock. Now a `thresh` with
+  `1 <= k < n` at a spend-path root (or `a:thresh` as `or_b`'s second child) whose every child is on a fixed list of
+  key and timelock spellings is ONE entry with `Branch::any_of = Some(AnyOf { k, n })`: any `k` of its `n`
+  conditions satisfy it, and `Branch::any_of_min_keys()` gives the fewest keys that can spend. The list (`pk`,
+  `pkh`, under at most one `c:`; `ln:`/`un:`/`nl:`/`nu:` over `after`/`older` with `1 <= v < 2^31`; later children
+  as `s:pk`, `a:pk`, `a:pkh`, `s:`/`a:` over a lock) is the spellings BIP-379's type rules make leave exactly 0 or 1
+  on the stack, so the count is exact. A `thresh` with `k == n` is still a conjunction, but only when every child is
+  on the same list: `thresh(3,pk,s:pk,av:pk)` was summarised as three required keys while the holder of the third
+  spends alone.
+- **No card, id, address or SkeletonKey text changes** for any policy that keeps a key: the 20 minted vectors keep
+  the exact key `md shape-key` printed before, and two policies' bytes, ids and first address are pinned.
+- **These policies lose their SkeletonKey and their on-device summary** (`complete == false`; `skeleton()` returns
+  `IncompleteShape`):
+  - a `thresh` with `k < n` under `and_v`/`and_b`, or as `X`/`Y` of `andor`, such as the policy compiler's
+    `and(pk,thresh(…))` output `and_v(v:pk,thresh(…))`. Only the key is a real loss: the summary it had was false,
+    a conjunction shown for a threshold;
+  - a `thresh` inside another `thresh`;
+  - a `thresh` (any `k`) with a `multi`/`sortedmulti`/`multi_a` child, a compound child (`and_*`, `or_*`,
+    `andor`), or a hashlock child, including the compiler's `sjtv:sha256(H)`;
+  - a `thresh` (any `k`) with a key or timelock child in a spelling outside the list (`sn:pk`, `sndv:older`, …);
+  - a `thresh` with two key children on one placeholder;
+  - a `thresh(1,…)` written to follow `md compile`'s own printed remedy ("Write the alternatives as one
+    thresh(1,...)") when the compiled `thresh` has a compound alternative, such as `and(pk,older(n))`.
+  No vendored evidence row or verdict-table cell holds a `thresh`, so no measured verdict moves; `cargo xtask
+  verdicts` regenerates the table unchanged. This closes the defect for `thresh` only, not for other shapes.
+- **`SkeletonError::IncompleteShape` names every cause:** "md cannot break this policy into spend paths: it has a
+  threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a
+  partial decomposition" (was "the policy walk met a node it does not understand; …").
+- **Coordinator rules read an any-of entry.** Liana's "no unlocked path" no longer fires on an any-of entry with
+  enough keys to spend without its lock (it printed a false refusal for BIP-388's decaying multisig; that line is
+  now "unproven"). "A path with no key" (Liana, Nunchuk, Core) fires when an any-of entry's timelocks alone reach
+  `k`. Liana's "one signer twice in a path", "two paths with one lock" and "a second unlocked k-of-n path" skip an
+  any-of entry that has a timelock, and the as-built reading takes an all-keys any-of as its own k-of-n.
+- **New shape-vector file** `tests/fixtures/policy_shape/cases.json` (67 cases, generated and freshness-tested),
+  for the seedhammer Go port to vendor and compare against.
 
 ### Fixed
 

@@ -50,7 +50,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-md-codec = "0.48"
+md-codec = "0.49"
 ```
 
 Decode an engraved md1 card and encode it back:

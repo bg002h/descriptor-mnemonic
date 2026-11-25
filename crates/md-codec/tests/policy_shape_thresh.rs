@@ -448,6 +448,19 @@ fn hand_built_in_scope_trees() {
     assert_eq!(shape.branches[0].slots, vec![0, 1, 2]);
     assert_eq!(shape.branches[0].any_of_min_keys(), Some(2));
 
+    // R1 N-2: `older(0x400000)` is in range (units flag, 0 units) but delays
+    // nothing; `md encode` mints it today. The summary still counts it as a
+    // timelock; min keys is unaffected (it already assumes the lock is met).
+    let shape = shape_of(wsh(th(
+        2,
+        vec![pk(0), s(pk(1)), s(l(n(older(0x0040_0000))))],
+    )));
+    assert!(shape.complete);
+    let b = &shape.branches[0];
+    assert_eq!(b.any_of, Some(AnyOf { k: 2, n: 3 }));
+    assert_eq!(b.locks, vec![lk(LockKind::OlderUnits, 0)]);
+    assert_eq!(b.any_of_min_keys(), Some(1));
+
     // k == n under `and_v`: still a conjunction.
     let shape = shape_of(wsh(node2(
         Tag::AndV,

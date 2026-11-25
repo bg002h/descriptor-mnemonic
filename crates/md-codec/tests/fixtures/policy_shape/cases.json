@@ -3756,6 +3756,126 @@
     },
     {
       "md1": [
+        "md1fgx33qqpq2tvyyy4qqxpxsg3gw9fenzf8qqgqqqqq2mx5jtxy32glx"
+      ],
+      "md1_absent": null,
+      "name": "thresh_zero_delay_units_lock",
+      "shape": {
+        "branches": [
+          {
+            "any_of": {
+              "k": 2,
+              "n": 3
+            },
+            "depth": 0,
+            "hashlocks": 0,
+            "k": 0,
+            "key_path_entry": false,
+            "locks": [
+              {
+                "kind": "OlderUnits",
+                "value": 0
+              }
+            ],
+            "min_keys": 1,
+            "n": 0,
+            "slots": [
+              0,
+              1
+            ],
+            "sorted": false
+          }
+        ],
+        "complete": true,
+        "key_path": "NotTaproot",
+        "tap_depth": 0
+      },
+      "template": null,
+      "tree": {
+        "body": {
+          "data": [
+            {
+              "body": {
+                "data": {
+                  "children": [
+                    {
+                      "body": {
+                        "data": {
+                          "index": 0
+                        },
+                        "kind": "KeyArg"
+                      },
+                      "tag": "PkK"
+                    },
+                    {
+                      "body": {
+                        "data": [
+                          {
+                            "body": {
+                              "data": {
+                                "index": 1
+                              },
+                              "kind": "KeyArg"
+                            },
+                            "tag": "PkK"
+                          }
+                        ],
+                        "kind": "Children"
+                      },
+                      "tag": "Swap"
+                    },
+                    {
+                      "body": {
+                        "data": [
+                          {
+                            "body": {
+                              "data": [
+                                {
+                                  "body": {
+                                    "kind": "Empty"
+                                  },
+                                  "tag": "False"
+                                },
+                                {
+                                  "body": {
+                                    "data": [
+                                      {
+                                        "body": {
+                                          "data": 4194304,
+                                          "kind": "Timelock"
+                                        },
+                                        "tag": "Older"
+                                      }
+                                    ],
+                                    "kind": "Children"
+                                  },
+                                  "tag": "ZeroNotEqual"
+                                }
+                              ],
+                              "kind": "Children"
+                            },
+                            "tag": "OrI"
+                          }
+                        ],
+                        "kind": "Children"
+                      },
+                      "tag": "Swap"
+                    }
+                  ],
+                  "k": 2
+                },
+                "kind": "Variable"
+              },
+              "tag": "Thresh"
+            }
+          ],
+          "kind": "Children"
+        },
+        "tag": "Wsh"
+      }
+    },
+    {
+      "md1": [
         "md1f7ns7qqpqjtvyyy4qqxpxsg3s5r3s5neshqsu2q9xs3x4jvf"
       ],
       "md1_absent": null,

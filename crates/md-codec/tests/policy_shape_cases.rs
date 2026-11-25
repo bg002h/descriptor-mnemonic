@@ -185,6 +185,10 @@ fn hand_built() -> Vec<(&'static str, Node)> {
             )),
         ),
         (
+            "thresh_zero_delay_units_lock",
+            wsh(two_of(s(l(n(older(0x0040_0000)))))),
+        ),
+        (
             "thresh_check_wrapped_keys",
             wsh(th(2, vec![c(pk(0)), s(c(pk(1))), a(c(pkh(2)))])),
         ),
@@ -361,7 +365,7 @@ fn policy_shape_cases_json_is_fresh() {
 fn every_design_case_is_present_with_its_verdict() {
     let v: Value = serde_json::from_str(&generate()).unwrap();
     let cases = v["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 30 + 36);
+    assert_eq!(cases.len(), 30 + 37);
     for c in cases {
         let name = c["name"].as_str().unwrap();
         let complete = c["shape"]["complete"].as_bool().unwrap();
