@@ -131,7 +131,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 - **Where:** `crates/md-cli` shape-key refusal; `SkeletonError::IncompleteShape`.
 - **What:** After R-5 a known nested disjunction is refused with "the policy walk met a node it does not understand", which misdescribes the cause (it fails closed). Suggested text: "a branch holds a nested or/andor; no single key describes it".
 - **Why deferred:** Minor deferred to its owner; fails closed or text-only.
-- **Status:** `deferred-minor`. **Owner:** md toolkit migration of verify/inspect (verb placement ruling 2026-11-01).
+- **Status:** `resolved` by the md thresh / seedhammer I-1 commit (branch `claude/project-thread-utm1aa`): `IncompleteShape` now reads "md cannot break this policy into spend paths: it has a threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a partial decomposition". **Owner:** md toolkit migration of verify/inspect (verb placement ruling 2026-11-01).
 - **Tier:** `v1+`
 
 ### `md-bughunt-fixb-s1-n1-per-key-r4-check` — R-4 check is per expanded key, so an overridden unused baseline origin is not refused

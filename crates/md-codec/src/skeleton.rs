@@ -126,7 +126,7 @@ impl std::fmt::Display for SkeletonError {
         match self {
             SkeletonError::IncompleteShape => write!(
                 f,
-                "the policy walk met a node it does not understand; no key can be computed from a partial decomposition"
+                "md cannot break this policy into spend paths: it has a threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a partial decomposition"
             ),
             SkeletonError::KeysDoNotExpand(e) => write!(f, "keys will not expand: {e}"),
             SkeletonError::Render(e) => write!(f, "abstract-template render failed: {e}"),

@@ -10,8 +10,9 @@ use md_codec::encode::Descriptor;
 use md_codec::skeleton::skeleton;
 
 /// Print the notice for `d` and return the verdicts, or `None` when the card
-/// has no key at all (design §1A (a3): keys that will not expand, or a walk
-/// the classifier does not understand), in which case one line says so and
+/// has no key at all (design §1A (a3): keys that will not expand, or a
+/// policy the walk cannot break into spend paths, such as a `thresh` or an
+/// `or` it does not summarise), in which case one line says so and
 /// no coordinator row is printed.
 pub fn notice(d: &Descriptor, form: Option<Form>, what: &str) -> Option<Vec<CoordinatorVerdict>> {
     let s = match skeleton(d) {

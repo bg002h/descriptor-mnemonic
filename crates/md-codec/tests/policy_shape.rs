@@ -41,14 +41,12 @@ fn branch_retains_its_slot_set_not_just_a_count() {
 /// of a partial (and therefore misleading) decomposition.
 ///
 /// DEVIATION FROM THE BRIEF'S DRAFT: the brief proposed a bare `thresh` over
-/// keys at the wsh root. Traced against the Go original (`md/policy_shape.go`
-/// `collect`'s `tagThresh` arm, `splitBranches`'s `default` arm calling
-/// `branchOf`), that shape does NOT refuse -- `thresh(2,pk_k(@0),pk_k(@1),
-/// pk_k(@2))` is exactly the "combinatorial-but-still-one-branch" case the
-/// Go doc comment on `splitBranches` describes, and it decodes to one
-/// Complete=true branch with Keys=3, K=0/N=0. The brief's own step 6 text
-/// anticipated this ("If the Go original DOES classify this shape, pick
-/// whatever node it refuses").
+/// keys at the wsh root. That shape does not refuse: since md thresh /
+/// seedhammer I-1 a `thresh` with `k < n` at a path root and every child on
+/// the allowlist is one complete ANY-OF entry (`Branch::any_of`), and
+/// `thresh(2,pk_k(@0),pk_k(@1),pk_k(@2))` (a bare key as a later child) is
+/// refused for its spelling, not as an unknown node. See
+/// `tests/policy_shape_thresh.rs`.
 ///
 /// The fork's OWN test, `TestPolicyShapeRefusesAnUnknownTag`
 /// (md/policy_shape_test.go:175-189), pins the actual refusing shape: a
@@ -602,7 +600,11 @@ fn a_duplicate_index_multi_reports_no_threshold_in_either_spelling() {
 
 /// `sln:older(N)` = `s:or_i(0,n:older(N))` and `and_n(X,Y)` =
 /// `andor(X,Y,0)`: one alternative is `0`, so neither is a disjunction and
-/// the branch stays complete (whole-diff s1 I-1).
+/// the branch stays complete (whole-diff s1 I-1). The `sln` child is
+/// `s:or_i(0,n:older)`: `n:` is `Tag::ZeroNotEqual`. It was built with
+/// `Tag::NonZero` (`j:`), the untypable `s:l:j:older`, which md thresh /
+/// seedhammer I-1 now refuses (`thresh_neg_slj_older`). The `thresh` is
+/// 2-of-3 at the path root, so it is one any-of entry.
 #[test]
 fn zero_alternative_or_i_and_andor_stay_complete() {
     let sln = wrap(
@@ -613,7 +615,7 @@ fn zero_alternative_or_i_and_andor_stay_complete() {
                 tag: Tag::False,
                 body: Body::Empty,
             },
-            wrap(Tag::NonZero, timelock(Tag::Older, 144)),
+            wrap(Tag::ZeroNotEqual, timelock(Tag::Older, 144)),
         ),
     );
     let thresh = common::thresh_node(
@@ -631,6 +633,10 @@ fn zero_alternative_or_i_and_andor_stay_complete() {
     );
     assert_eq!(shape.branches.len(), 1);
     assert_eq!(shape.branches[0].slots, vec![0, 1]);
+    assert_eq!(
+        shape.branches[0].any_of,
+        Some(md_codec::policy_shape::AnyOf { k: 2, n: 3 })
+    );
     let and_n = node3(
         Tag::AndOr,
         wrap(Tag::Check, keyarg(Tag::PkK, 1)),
