@@ -20,6 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   secret, and keeps `THE PLATE IS BEARER ACCESS` only when a preimage is named. `md decode --json`, which printed no
   warning, now prints it on stderr, and `md encode --help` says the same. The hint a minting verb prints when it refuses such a path no longer says 'whoever holds the preimage' (bh-md-I8).
 - **The `md encode`, `md decompose`, `md descriptor`, `md address` and `md repair` help examples run as printed.** Two had unquoted templates (a shell syntax error) and three used elided `md1qq...` cards; they are now quoted and use real cards (bh-md-I10, bh-md-F1).
+- **A failed `--out` write no longer destroys the existing file.** `md encode --out` and `md descriptor --emit md1 --out` now write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.3), so a full disk or quota leaves the old file byte-identical. FILE's directory must now be writable (bh-md-C4).
+- **`md encode --json --out FILE` writes FILE.** The md1 string(s) go to FILE and the JSON to stdout; before, FILE was silently not written at exit 0 (bh-md-I1).
+- **A failing `md encode` writes nothing.** `--policy-id-fingerprint` on a template with no origin path used to write the card to `--out` (or stdout) and then fail; the policy id is now computed first. A `--out` write error now prints `md: cannot write the output: <FILE>: <error>` and says whether FILE is unchanged and exits 1 (was `md: --out FILE: <error>`, exit 2) (bh-md-I7).
 - **`md repair` keeps an uppercase card uppercase.** When a letter on an all-uppercase md1 card (the QR form) was
   misread as a digit, the corrected card was printed with that one letter in lowercase (for example
   `MD1yQPQQXQQ8XTWHW4XWN4QH`), a mixed-case string `md decode` refuses. Each corrected card is now printed in the

@@ -119,9 +119,11 @@ enum Command {
         in_file: Option<std::path::PathBuf>,
         /// Write the md1 artifact to FILE instead of stdout, CREATED 0600
         /// (SPEC §6b, F-244) — which a shell redirect cannot do. OVERWRITES an
-        /// existing file, and tightens its mode. The file holds exactly what
-        /// stdout would have (grouped only under `--group-size`); the
-        /// chunk-set-id and the advisories still go to stderr.
+        /// existing file, and tightens its mode; a failed write leaves the
+        /// existing file unchanged. The file holds exactly what stdout would
+        /// have without `--json` (grouped only under `--group-size`); with
+        /// `--json` the JSON still goes to stdout. The chunk-set-id and the
+        /// advisories still go to stderr
         #[arg(long = "out", value_name = "FILE")]
         out_file: Option<std::path::PathBuf>,
         /// Compile a sub-Miniscript-Policy expression into a template (cli-compiler).

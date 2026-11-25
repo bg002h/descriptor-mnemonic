@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 //! P3 row 1 — the pin, asserted by a CALL rather than by a manifest line.
 //!
-//! `mnemonic-io-lib` is pinned by exact git rev in `Cargo.toml`. A manifest
+//! `mnemonic-io-lib` is pinned to the registry version in `Cargo.toml`. A manifest
 //! entry proves the dependency resolves; it does not prove the pinned rev
 //! exposes the one item `md` adopts. This file is the compile-level assertion
 //! that it does, written at the module-qualified path — `write` is a `pub mod`
