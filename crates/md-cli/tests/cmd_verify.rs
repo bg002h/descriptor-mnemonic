@@ -86,10 +86,13 @@ fn verify_mismatch_returns_1() {
 #[test]
 fn a_mismatch_caused_by_missing_fingerprints_says_so() {
     const TMPL: &str = "wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))";
+    // Depth-4 keys whose header child number is 2', so they agree with the
+    // canonical `m/48'/0'/0'/2'` md encode now writes for this shape (bug hunt
+    // 2026-11-25 md#1/md#2; the earlier fixtures carried child 1').
     const K: [&str; 3] = [
-        "xpub6EddmgK6uMbst7251zES359MJzfz3o2wTJWeefTzSiPJf1FUg6easA2Uk3jUbztBffWS4Dg2oWjhomvU2jJKr4EZukDfxVxb4VJva3jXGAK",
-        "xpub6EPimu5ztRjy6dfECvb9AQNAadNHN8qumZYQhvdPWh9U9xJ9XMi328aXAFMGHwc11wZWrmdwsHUWJn5in6BHywGrbJx5ZLUWe8xhNPRf5kL",
-        "xpub6EVA2mZiCBtGYbGM5eEs42k8tso4QekUog2t8U14UDyjUYpKByLYcXB8t3yVAvapQymRSK2MDM84cspZa5udQEEUSVGo28RJJt47eeC846C",
+        "xpub6EddmgK6uMbsver3YwzX3cDKFkEWngsfPqmY9CGVE4rgF5UP1pdkExjg2Hb4bCQ7JZtXbprYiVNVrNt2VeRd3MPH2AhVQfkdu3kA5Y2kWqS",
+        "xpub6EPimu5ztRjy9BVCjtMEAwS8XNvp72gdi6oJCTRtJ3cqk2X3s5hCPwHiSVCrH97veqwcQNpTnG7JMP3HF1JbBERZhjRu1WGZUhPvt2aAYoB",
+        "xpub6EVA2mZiCBtGb96Kcbzx4Zp6qdMb9YbCkDHmczoZFaT74d3DXhKhzKtLAHq5A86k3t9WyvCs8KkrfUn8312vbXPBYukcUJDM9SVMADmpjXw",
     ];
     const FP: [&str; 3] = ["@0=aabbccdd", "@1=11223344", "@2=55667788"];
 

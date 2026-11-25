@@ -60,6 +60,12 @@ pub fn run(args: VerifyArgs<'_>) -> Result<u8, CliError> {
     // Mirrors `md encode --path`; see cmd/address.rs for why a verify without it
     // cannot reach a non-canonical wrapper at all.
     apply_path_override(&mut expected, args.path)?;
+    // md#1 (bug hunt 2026-11-25): `md encode` writes a keyed card's missing
+    // canonical origin explicitly, so the template is expanded the same way
+    // before comparing. A keyless template is unchanged.
+    if args.path.is_none() {
+        crate::cmd::encode::fill_canonical_origins(&mut expected, args.network);
+    }
     // F-639 (F-449 stage 2): verify COMPARES two serialisations and mints
     // nothing, so neither side goes through mint-time admission policy --
     // the comment above says the same of the parse. A mint rule must never

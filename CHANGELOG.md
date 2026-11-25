@@ -35,7 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   it as the master node (`[fp]xpub661...`, `[fp/m]`, `--path m`). It now writes the shape's canonical origin on the
   card (coin type `1'` off mainnet), the same card `--path bip84` (etc.) mints, and refuses with a request for
   `--path` when the key's header contradicts that origin. A keyed card with no origin (`--path m`, or a
-  non-canonical wrapper with none) is refused. Reading a keyed card that has no origin, md no longer shows `m`,
+  non-canonical wrapper with none) is refused. `md verify` expands the template the same way, so a new card verifies
+  against the template and keys it was minted from. Reading a keyed card that has no origin, md no longer shows `m`,
   never advises `--path m`, and warns that the path is not on the card. Keyless templates still elide, and the
   wallet-policy id is unchanged (bug hunt 2026-11-25 md#1).
 - **`md encode` refuses a key whose header contradicts its declared origin.** A depth-4 key under a 3-level
