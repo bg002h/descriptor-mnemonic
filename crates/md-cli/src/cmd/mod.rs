@@ -130,6 +130,98 @@ pub fn write_artifact(path: &std::path::Path, body: &str) -> Result<(), CliError
     }
 }
 
+/// One input of a verb, for [`refuse_output_names_input`]: where it is read from,
+/// and the label the refusal prints for it (`--in tpl.txt`, `standard input`).
+pub struct InputName<'a> {
+    endpoint: mnemonic_io_lib::write::Endpoint<'a>,
+    label: String,
+}
+
+impl<'a> InputName<'a> {
+    /// An input named by a flag and a path (`--in`, `--from-mk1-file`,
+    /// `--verify-against`), the path as typed.
+    pub fn path(flag: &str, p: &'a std::path::Path) -> Self {
+        InputName {
+            endpoint: mnemonic_io_lib::write::Endpoint::Path(p),
+            label: format!("{flag} {}", p.display()),
+        }
+    }
+
+    /// Standard input.
+    pub fn stdin() -> Self {
+        InputName {
+            endpoint: mnemonic_io_lib::write::Endpoint::Stdin,
+            label: "standard input".to_string(),
+        }
+    }
+
+    /// `--in PATH` when given, else standard input when the positional
+    /// strings include `-` (what `read_md1_strings` reads), else none.
+    pub fn in_or_stdin(
+        in_file: Option<&'a std::path::Path>,
+        strings: &[String],
+    ) -> Vec<InputName<'a>> {
+        match in_file {
+            Some(p) => vec![InputName::path("--in", p)],
+            None if strings.iter().any(|s| s == "-") => vec![InputName::stdin()],
+            None => Vec::new(),
+        }
+    }
+}
+
+/// FIX_bh1119_md_out_names_input S1-S4: refuse, before anything is read or
+/// printed, a run whose output is one of its own inputs.
+///
+/// `stdout` is true when the verb will write on standard output; `out` is the
+/// `--out FILE`; `json_out` is true for `md encode` with both `--json` and
+/// `--out` (X3: stdout and FILE one file). Identity is the shared crate's
+/// `same_file` (symlinks followed, hard links equal, pipes and terminals never
+/// match). The checks run in order X2 (stdout), X1 (`--out`), X3; the first
+/// match refuses with exit 2 and names the first matching input.
+pub fn refuse_output_names_input(
+    stdout: bool,
+    out: Option<&std::path::Path>,
+    json_out: bool,
+    inputs: &[InputName<'_>],
+) -> Result<(), CliError> {
+    let eps: Vec<mnemonic_io_lib::write::Endpoint<'_>> =
+        inputs.iter().map(|i| i.endpoint).collect();
+    if stdout {
+        if let Some(i) =
+            mnemonic_io_lib::write::same_file(mnemonic_io_lib::write::Endpoint::Stdout, &eps)
+        {
+            return Err(CliError::BadArg(format!(
+                "standard output is the same file as {}, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.",
+                inputs[i].label
+            )));
+        }
+    }
+    if let Some(o) = out {
+        if let Some(i) =
+            mnemonic_io_lib::write::same_file(mnemonic_io_lib::write::Endpoint::Path(o), &eps)
+        {
+            return Err(CliError::BadArg(format!(
+                "--out {} is the same file as {} (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.",
+                o.display(),
+                inputs[i].label
+            )));
+        }
+        if json_out
+            && mnemonic_io_lib::write::same_file(
+                mnemonic_io_lib::write::Endpoint::Stdout,
+                &[mnemonic_io_lib::write::Endpoint::Path(o)],
+            )
+            .is_some()
+        {
+            return Err(CliError::BadArg(format!(
+                "--out {} and standard output are the same file (the same path, a symlink or a hard link), so what md prints on stdout would go into the file it writes. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.",
+                o.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// The state sentence (with its leading `. `) when the two looks at FILE agree, else empty.
 fn state_tail(f: &str, before: &Snap, after: &Snap) -> String {
     match (before, after) {

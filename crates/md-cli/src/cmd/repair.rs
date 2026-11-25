@@ -86,6 +86,13 @@ struct RepairDetail {
 /// stderr and returns `Ok(2)` — bypassing the `CliError::Codec → 1`
 /// default route so the repair exit-code contract is honored.
 pub fn run(args: RepairArgs) -> Result<u8, CliError> {
+    // FIX_bh1119_md_out_names_input S2: the guard is the first statement.
+    crate::cmd::refuse_output_names_input(
+        true,
+        None,
+        false,
+        &crate::cmd::InputName::in_or_stdin(args.in_file.as_deref(), &args.md1_strings),
+    )?;
     let strings = crate::cmd::read_md1_inputs(&args.md1_strings, args.in_file.as_deref(), "--in")?;
 
     // Atomic per D28: decode_with_correction either succeeds for ALL
