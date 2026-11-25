@@ -160,6 +160,7 @@ fn o4_read_only_dir_refuses_and_keeps_file() {
         )
     );
     assert_eq!(std::fs::read_to_string(&f).unwrap(), CARD);
+    assert_eq!(tmp_files(&ro), Vec::<String>::new());
 }
 
 #[test]
@@ -299,6 +300,7 @@ fn o12_failed_policy_id_absent_out_stays_absent() {
         s(&n),
     ]));
     assert_eq!(rc(&o), 1);
+    assert_eq!(se(&o), format!("{CODEC}\n"));
     assert!(!n.exists());
 }
 
