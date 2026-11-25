@@ -11,7 +11,7 @@ wire change, no new flag, type or command. Author: Claude Opus 5.5 (claude-opus-
 Final grades: **bh-md-C4 Important** (hunter Critical; grader and Fable: I, the P5 class), **bh-md-I1 Important**,
 **bh-md-I7 Important**.
 
-**Q1 (the io-lib pin form) is settled: Brian 2026-11-24, registry `mnemonic-io-lib = "0.1.2"`, published from mnemonic-engrave e09d538d (section 9). Everything is decided.** Every new
+**Q1 (the io-lib pin form) is settled: Brian 2026-11-24, registry `mnemonic-io-lib = "0.1.3"`, the first published release (section 9). Everything is decided.** Every new
 holder-visible text is PROPOSED (architect confirms) unless it is quoted from T6.
 
 Toolchain: `export PATH=$HOME/.cargo/bin:$PATH`; cargo 1.85.0 (`rust-toolchain.toml`); `--locked`; every cargo call
@@ -47,9 +47,9 @@ returns EFBIG; this stands in for a full disk or quota).
 
 ## 2. Spec delta (behaviour)
 
-- **R1 (C4, T5).** md-cli takes mnemonic-io-lib **0.1.2** from crates.io: `crates/md-cli/Cargo.toml:54` becomes `mnemonic-io-lib = "0.1.2"` (Brian 2026-11-24; no git pin, no `.github/` edit). The builder first runs `cargo search mnemonic-io-lib --limit 1`; if 0.1.2 is not listed it does every step that needs no build and STOPs (overrides). `write_artifact` keeps calling
+- **R1 (C4, T5).** md-cli takes mnemonic-io-lib **0.1.3** from crates.io: `crates/md-cli/Cargo.toml:54` becomes `mnemonic-io-lib = "0.1.3"` (Brian 2026-11-24; no git pin, no `.github/` edit). The builder first runs `cargo search mnemonic-io-lib --limit 1`; if 0.1.3 is not listed it does every step that needs no build and STOPs (overrides). `write_artifact` keeps calling
   `mnemonic_io_lib::write::write_private` and adds no write logic of its own. What the holder sees, for both
-  `md encode --out FILE` and `md descriptor --emit md1 --out FILE`, all from 0.1.2's documented behaviour
+  `md encode --out FILE` and `md descriptor --emit md1 --out FILE`, all from 0.1.3's documented behaviour
   (`crates/mnemonic-io-lib/src/write.rs:77-98` at mnemonic-engrave e09d538d):
   - an existing regular FILE (or an absent one) is written to a temporary `<name>.<pid>.<n>.tmp` beside it, created
     0600, synced, and renamed over FILE; any error leaves an existing FILE byte-identical and removes the temporary;
@@ -88,7 +88,7 @@ returns EFBIG; this stands in for a full disk or quota).
 - **R5 (help).** `md encode --out` help text changes (section 3, H1). `md descriptor --out` help is unchanged (it
   says it mirrors `md encode --out`). No flag is added, removed or renamed, so the mnemonic-gui schema mirror is not
   touched (`md gui-schema` carries no help text; checked: no `OVERWRITES` in its output).
-- **R6 (pin consequences).** `cargo update -p mnemonic-io-lib --precise 0.1.2` (the Cargo.lock entry becomes registry 0.1.2 with its checksum), re-vendor `vendor/mnemonic-io-lib` with `cargo vendor` (today 0.1.0) and commit it with `Cargo.lock`. The `crates/md-cli/Cargo.toml:39-53` comment stays (it already records the registry rationale). `crates/md-cli/tests/crate_pin.rs:4` "is pinned by exact git rev in `Cargo.toml`" (stale today) becomes "is pinned to the registry version in `Cargo.toml`". No `vendor-git-sources.txt` row and no `.github/` change.
+- **R6 (pin consequences).** `cargo update -p mnemonic-io-lib --precise 0.1.3` (the Cargo.lock entry becomes registry 0.1.3 with its checksum), re-vendor `vendor/mnemonic-io-lib` with `cargo vendor` (today 0.1.0) and commit it with `Cargo.lock`. The `crates/md-cli/Cargo.toml:39-53` comment stays (it already records the registry rationale). `crates/md-cli/tests/crate_pin.rs:4` "is pinned by exact git rev in `Cargo.toml`" (stale today) becomes "is pinned to the registry version in `Cargo.toml`". No `vendor-git-sources.txt` row and no `.github/` change.
 
 ## 3. Texts (exact)
 
@@ -100,7 +100,7 @@ returns EFBIG; this stands in for a full disk or quota).
 - **M2, manual `42-md.md:806` ("When stdout fails"), PROPOSED, sentence appended to the paragraph:**
   `` A write error on the `--out` file of `md encode` or `md descriptor --emit md1` (a full disk, a directory that does not exist or cannot be written) prints `md: cannot write the output: <FILE>: <error>` followed by `. <FILE> is unchanged.` or `. Nothing was written.` when md can see that is so, and exits 1, and an existing file is left unchanged.``
 - **C1, CHANGELOG `## md-cli [Unreleased]` / `### Fixed`, PROPOSED (three bullets):**
-  - ``**A failed `--out` write no longer destroys the existing file.** `md encode --out` and `md descriptor --emit md1 --out` now write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.2), so a full disk or quota leaves the old file byte-identical. FILE's directory must now be writable (bh-md-C4).``
+  - ``**A failed `--out` write no longer destroys the existing file.** `md encode --out` and `md descriptor --emit md1 --out` now write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.3), so a full disk or quota leaves the old file byte-identical. FILE's directory must now be writable (bh-md-C4).``
   - ``**`md encode --json --out FILE` writes FILE.** The md1 string(s) go to FILE and the JSON to stdout; before, FILE was silently not written at exit 0 (bh-md-I1).``
   - ``**A failing `md encode` writes nothing.** `--policy-id-fingerprint` on a template with no origin path used to write the card to `--out` (or stdout) and then fail; the policy id is now computed first. A `--out` write error now prints `md: cannot write the output: <FILE>: <error>` and says whether FILE is unchanged and exits 1 (was `md: --out FILE: <error>`, exit 2) (bh-md-I7).``
 
@@ -133,13 +133,15 @@ every fixed result was seen on a scratch prototype of R1-R4 (reverted; section 5
 | o14_failed_policy_id_json_out_keeps_prior_file | F = `PRIOR\n`; `encode W --policy-id-fingerprint --json --out F` | rc 1, CODEC, F == `PRIOR\n` | same (control, GREEN on base; pins R4's order) |
 | o15_stdio_alias_onto_a_file_names_no_state | s.txt = `OLD BACKUP\n`; with RLIMIT_FSIZE 0 and SIGXFSZ ignored, stdout appended to s.txt: `encode T --out /dev/stdout` (skip off Linux) | rc 2, `md: --out /dev/stdout: File too large (os error 27)`, s.txt 0 bytes | rc 1, stderr exactly `md: cannot write the output: /dev/stdout: File too large (os error 27)` (no state sentence), s.txt still `OLD BACKUP\n` (11 bytes) |
 
+`<dir>` in a row is the test's temp dir.
+
 o13's fixed column is R3's rule; the prototype computed the id after the chunk-set-id line, so it still printed it.
-Every other fixed cell was seen. RED expectation for the builder: o1-o4, o6-o13 and o15 fail on the base; o5 and o14 pass
+Every other fixed cell was seen. RED expectation for the builder: o1-o4, o6-o13 and o15 fail on the base (o15 also has a builder-must-see-it-fail plant: a plant of R2 that skips the alias rule prints `/dev/stdout is unchanged.`); o5 and o14 pass
 on the base and after.
 
 Coverage map (rule -> rows): R1 old file kept -> o1, o2; R1 read-only directory -> o4; R1 symlink -> o5; R1 hard link,
 FIFO and killed-run temporary -> mnemonic-io-lib's own rows (not repeated here); R2 text and exit -> o1, o2, o3, o4,
-o8; second look: o15; R3 -> o10, o11, o12, o13, o14; R4 write both -> o6, o7; R4 order -> o8, o9, o14; R5 -> `cli_channels.rs`
+o8; second look: o15 (alias: no state sentence); R3 -> o10, o11, o12, o13, o14; R4 write both -> o6, o7; R4 order -> o8, o9, o14; R5 -> `cli_channels.rs`
 `the_help_surface_carries_the_channels` (unchanged) and the manual diff; R6 -> gate step 2h (vendor-freshness) and
 `crate_pin.rs`.
 
@@ -182,9 +184,9 @@ FreeBSD/musl legs, the WORDING_REVIEW rows for H1, M1, M2.
   key cards at exit 0 (reviewer r1 I2, measured). Brian 2026-11-23 Q2 rules refuse; it is NOT built here and goes to
   the same separate md row as architect 1124 F2 (`md encode --in F --out F`), whose scope is widened to every md input
   file, including `--from-mk1-file`.
-- The other io-lib consumers (mk, ms, mt, me, tk) take 0.1.2 in their own rows; their manual chapters will need the
+- The other io-lib consumers (mk, ms, mt, me, tk) take 0.1.3 in their own rows; their manual chapters will need the
   same M2-style sentence, which this FIX does not write.
 
 ## 9. Q1 (settled)
 
-Brian 2026-11-24 (overrides, io-lib bullet): mnemonic-io-lib 0.1.2 is published to crates.io from mnemonic-engrave e09d538d and md pins the registry `"0.1.2"`; no git pin, no `.github/` edit. This is the author's option (a). Until 0.1.2 is listed by `cargo search`, the builder STOPs at the first build step.
+Brian 2026-11-24 (overrides, io-lib bullet): mnemonic-io-lib 0.1.3 is the first published release (from mnemonic-engrave master after the build/io-lib-0.1.3 merge) and md pins the registry `"0.1.3"`; no git pin, no `.github/` edit. This is the author's option (a). Until 0.1.3 is listed by `cargo search`, the builder STOPs at the first build step.
