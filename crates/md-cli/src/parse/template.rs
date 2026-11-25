@@ -3006,7 +3006,8 @@ pub fn parse_template_ext(
                 let hint = if e.to_string().contains("require a signature") {
                     " -- a spend path that needs no key. `md compose` refuses the same shape \
                      without --experimental; pass --experimental here to encode it as \
-                     EXPERIMENTAL (whoever holds the preimage can spend: bearer access)"
+                     EXPERIMENTAL (that path opens with no key, on a preimage or a timelock it \
+                     names; the warning --experimental prints says which)"
                 } else {
                     ""
                 };
@@ -3105,6 +3106,16 @@ pub fn ctx_for_template(template: &str) -> ScriptCtx {
     } else {
         ScriptCtx::MultiSig
     }
+}
+
+/// The `--experimental` parse of `template` (synthetic keys substituted, no sanity or ext
+/// check): the descriptor `parse_template_ext` builds before it re-applies the relaxed rules.
+/// Any error is `None`. Used by the no-key warning (`crate::keyless_advisory`).
+pub(crate) fn relaxed_ms_descriptor(template: &str) -> Option<MsDescriptor<DescriptorPublicKey>> {
+    let (substituted, _) = substitute_synthetic(template, ctx_for_template(template)).ok()?;
+    let tree = miniscript::expression::Tree::from_str(&substituted).ok()?;
+    <MsDescriptor<DescriptorPublicKey> as miniscript::expression::FromTree>::from_tree(tree.root())
+        .ok()
 }
 
 /// True iff `head` is a bare key-path taproot — `tr( <internal-key> )` with NO

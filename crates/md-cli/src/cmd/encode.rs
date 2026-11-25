@@ -132,11 +132,11 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             // card itself carries no record that a flag was used to create it
             // — the operator's memory and this line are the only trace.
             eprintln!(
-                "warning: --experimental relaxed the signature rule. This descriptor has at \
-                 least one spend path that needs NO key, so whoever learns its preimage can \
-                 spend it alone. If that preimage is engraved, THE PLATE IS BEARER ACCESS. \
-                 Malleability, resource limits, repeated keys and timelock mixing were still \
-                 checked."
+                "{}",
+                crate::keyless_advisory::render_keyless_warning(
+                    args.template,
+                    crate::keyless_advisory::Verb::Encode
+                )
             );
         } else {
             eprintln!(

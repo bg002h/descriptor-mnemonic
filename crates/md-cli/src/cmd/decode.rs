@@ -52,10 +52,8 @@ pub fn run(
             );
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
-        crate::output_advisory::emit_output_class_advisory(
-            crate::output_advisory::OutputClass::Template,
-            &mut std::io::stderr(),
-        );
+        // bh-md-M5 / bh-md-I8: the no-key warning (JSON path too) and the class note.
+        crate::keyless_advisory::emit_card_advisories(&descriptor, &mut std::io::stderr());
         if partial {
             emit_partial_stderr_note(&unres, &mut std::io::stderr());
         }
@@ -84,35 +82,13 @@ pub fn run(
     // rendered template WITHOUT `--experimental`. Failing there means the
     // signature rule is what rejects it -- that flag relaxes exactly one rule.
     // A template that parses cleanly says nothing, so this cannot become noise.
-    if crate::parse::template::parse_template_ext(
-        &template,
-        &[],
-        &[],
-        false,
-        // REFUSE, NOT WARN, AND THAT IS THE WHOLE TRICK. `Disposition::Warn` is
-        // the READ-side disposition -- deliberately lenient so a plate already
-        // carrying a newly-refused shape can still be read -- so it returns Ok
-        // here and the check silently never fires. Measured: the first version
-        // of this used Warn, compiled, installed, and printed nothing on a
-        // bearer card. The question being asked is "would a MINTING verb refuse
-        // this?", so it must be asked in the minting disposition.
-        crate::parse::reuse::Disposition::Refuse,
-    )
-    .is_err()
-        && crate::parse::template::parse_template_ext(
-            &template,
-            &[],
-            &[],
-            true,
-            crate::parse::reuse::Disposition::Refuse,
-        )
-        .is_ok()
-    {
+    if crate::keyless_advisory::needs_no_key(&template) {
         eprintln!(
-            "warning: this card has at least one spend path that needs NO KEY. Whoever \
-             learns its preimage can spend that path alone — if the preimage is engraved, \
-             THE PLATE IS BEARER ACCESS. It was minted with --experimental; the card carries \
-             no record of that, so this is derived from the policy itself."
+            "{}",
+            crate::keyless_advisory::render_keyless_warning(
+                &template,
+                crate::keyless_advisory::Verb::Decode
+            )
         );
     }
     // THE ORIGINS, ON STDERR (F-219).
