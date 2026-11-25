@@ -533,15 +533,37 @@ pub fn describe(v: &CoordinatorVerdict) -> String {
 // its clause's `ReadSet` declares.
 // ---------------------------------------------------------------------------
 
+/// No timelock among the entry's conditions at all.
 fn unlocked(b: &Branch) -> bool {
     b.locks.is_empty()
 }
 
+/// Some satisfying choice needs no timelock: a conjunction with no lock, or
+/// an any-of entry with at least `k` keys (md thresh / seedhammer I-1).
+fn can_spend_without_lock(b: &Branch) -> bool {
+    match b.any_of {
+        None => b.locks.is_empty(),
+        Some(a) => b.slots.len() >= usize::from(a.k),
+    }
+}
+
 /// A spend path with no key that a lock or hash alone satisfies. A `0`
 /// branch (`or_i(X,0)`) has no key and no lock and is NOT one: it is
-/// unsatisfiable. A `1` branch is missed, which errs toward silence.
+/// unsatisfiable. A `1` branch is missed, which errs toward silence. An
+/// any-of entry is one when its timelocks alone reach `k` (BIP-379: `thresh`
+/// is "s" exactly when at most k-1 children are non-s).
 fn keyless_gated(b: &Branch) -> bool {
-    b.slots.is_empty() && (!b.locks.is_empty() || !b.hashlocks.is_empty())
+    match b.any_of {
+        None => b.slots.is_empty() && (!b.locks.is_empty() || !b.hashlocks.is_empty()),
+        Some(a) => b.locks.len() >= usize::from(a.k),
+    }
+}
+
+/// An any-of entry with at least one timelock among its conditions. How a
+/// coordinator reads its locks and signers is unmeasured, so the clauses
+/// that depend on a per-path lock model skip it (errs toward silence).
+fn mixed_any_of(b: &Branch) -> bool {
+    b.any_of.is_some() && !b.locks.is_empty()
 }
 
 fn any_lock(s: &Skeleton, kinds: &[LockKind]) -> bool {

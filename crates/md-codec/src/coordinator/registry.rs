@@ -11,7 +11,8 @@
 
 use super::{
     Clause, Coordinator, CoordinatorId, Description, Form, FormRefusal, ReadSet, Reason, RuleSet,
-    Span, Version, any_lock, is_nums, is_tr, keyless_gated, unlocked,
+    Span, Version, any_lock, can_spend_without_lock, is_nums, is_tr, keyless_gated, mixed_any_of,
+    unlocked,
 };
 use crate::policy_shape::{KeyPathKind, LockKind, RootKind};
 use crate::skeleton::Skeleton;
@@ -60,8 +61,19 @@ const LIANA_CLAUSES: &[Clause] = &[
             class: "one signer twice in a path",
             cite: "Liana: \"is derived from the same origin as another key present in the same spending path\" (evidence X11-wsh-samefp-in-path)",
         },
-        reads: K,
-        fires: |s| s.fp_partition.iter().flatten().any(|g| g.len() >= 2),
+        // md thresh / seedhammer I-1: sound for an all-keys any-of (the same
+        // key set as the equivalent `multi`); a mixed entry is skipped, as
+        // how Liana reads its signers is unmeasured. Reading which entry is
+        // mixed is STRUCTURE, so this clause reads K with S.
+        reads: K.with(S),
+        fires: |s| {
+            s.fp_partition
+                .iter()
+                .zip(&s.shape.branches)
+                .filter(|(_, b)| !mixed_any_of(b))
+                .flat_map(|(groups, _)| groups)
+                .any(|g| g.len() >= 2)
+        },
     },
     Clause {
         reason: Reason {
@@ -143,8 +155,10 @@ const LIANA_CLAUSES: &[Clause] = &[
         // walk already pushes a real internal key as its own unlocked branch
         // 0, so adding it again double-counts (recon §1d). A Liana key and a
         // NUMS key push no branch, and count as nothing.
+        // md thresh / seedhammer I-1: an any-of entry with enough keys can
+        // be spent without its locks, so it is an unlocked path.
         reads: S,
-        fires: |s| !s.shape.branches.iter().any(unlocked),
+        fires: |s| !s.shape.branches.iter().any(can_spend_without_lock),
     },
     Clause {
         reason: Reason {
@@ -154,7 +168,10 @@ const LIANA_CLAUSES: &[Clause] = &[
         reads: SV,
         fires: |s| {
             let mut seen: Vec<u32> = Vec::new();
-            for b in &s.shape.branches {
+            // A mixed any-of entry's locks are skipped (md thresh /
+            // seedhammer I-1): Liana's per-path lock model is unmeasured
+            // for them.
+            for b in s.shape.branches.iter().filter(|b| !mixed_any_of(b)) {
                 for l in &b.locks {
                     if l.kind == LockKind::OlderBlocks {
                         if seen.contains(&l.value) {
@@ -180,14 +197,17 @@ const LIANA_CLAUSES: &[Clause] = &[
         // a second unlocked path that stays a threshold: `k >= 2`. A second
         // path that is an `and` of keys (k = 0, two slots) is refused by
         // Liana too and missed here, which errs toward silence.
+        // Silent whenever any entry is a mixed any-of (md thresh /
+        // seedhammer I-1): Liana's path model is unmeasured for it.
         reads: S,
         fires: |s| {
-            s.shape
-                .branches
-                .iter()
-                .filter(|b| unlocked(b))
-                .skip(1)
-                .any(|b| b.k >= 2)
+            !s.shape.branches.iter().any(mixed_any_of)
+                && s.shape
+                    .branches
+                    .iter()
+                    .filter(|b| unlocked(b))
+                    .skip(1)
+                    .any(|b| b.k >= 2)
         },
     },
 ];
@@ -197,10 +217,20 @@ const LIANA_CLAUSES: &[Clause] = &[
 /// 2-of-3 plus 1-of-1, read as 2-of-4), which is exactly an import "not as
 /// built".
 fn liana_reads_as_built(s: &Skeleton, d: &Description) -> bool {
-    let mut primaries = s.shape.branches.iter().filter(|b| unlocked(b));
+    let mut primaries = s
+        .shape
+        .branches
+        .iter()
+        .filter(|b| can_spend_without_lock(b));
     let (Some(p), None) = (primaries.next(), primaries.next()) else {
         return false;
     };
+    // An all-keys any-of primary is built as its own k-of-n; a mixed one
+    // has no single k-of-n, as for a custom entry.
+    if let Some(a) = p.any_of {
+        let built = p.locks.is_empty().then_some((a.k, a.n));
+        return built.is_some() && built == d.threshold;
+    }
     let built = match (p.k, p.slots.len()) {
         (0, 1) => Some((1, 1)),
         (0, _) => None,
