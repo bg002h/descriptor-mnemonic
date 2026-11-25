@@ -113,6 +113,34 @@ pub fn to_miniscript_descriptor_with_network(
     node_to_descriptor(&d.tree, &keys, network, Some(chain))
 }
 
+/// md review r2 I-1: does `d`'s tree convert to typed miniscript in its own
+/// context (top-level `wsh`/`sh`/`tr` leaf rules, every combinator's child
+/// types, resource limits)? Runs the SAME conversion
+/// [`to_miniscript_descriptor`] runs, over synthetic keys (`@i` is the
+/// master xpub of the seed `[i; 32]`), so it answers for a template-only card
+/// and for a card whose origins do not resolve, and never reads key
+/// material. A type error is a property of the tree, not of the keys.
+pub(crate) fn tree_type_checks(d: &Descriptor) -> bool {
+    use bitcoin::bip32::{Xpriv, Xpub};
+    use bitcoin::secp256k1::Secp256k1;
+    let secp = Secp256k1::signing_only();
+    let mut keys = Vec::with_capacity(usize::from(d.n));
+    for i in 0..d.n {
+        // A distinct master xpub per slot: the Liana unspendable recipe
+        // needs xpub leaf keys, and an xpub works in every context.
+        let Ok(master) = Xpriv::new_master(Network::Bitcoin, &[i; 32]) else {
+            return false;
+        };
+        keys.push(DescriptorPublicKey::XPub(DescriptorXKey {
+            origin: None,
+            xkey: Xpub::from_priv(&secp, &master),
+            derivation_path: DerivationPath::master(),
+            wildcard: Wildcard::None,
+        }));
+    }
+    node_to_descriptor(&d.tree, &keys, Network::Bitcoin, Some(0)).is_ok()
+}
+
 /// Descriptor-wide chain pre-flight shared by [`to_miniscript_descriptor_with_network`]
 /// and `Descriptor::derive_address`: `chain` is bound by the MAX alt-count
 /// across the baseline use-site path AND every per-`@N` override (`None` →

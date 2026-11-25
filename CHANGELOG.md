@@ -10,6 +10,10 @@ Pins md-codec `=0.49.0`. Not tagged or published.
 
 ### Changed
 
+- **A policy that is not typed miniscript gets no verdict and no shape key (md review r2 I-1).** `md compose` and
+  `md descriptor` print `note: coordinators: no verdict (this policy is not valid miniscript (it does not
+  type-check), so md shows no spend-path summary for it; no key can be computed from it)`, and `md shape-key`
+  refuses with that sentence. `md decode`, `inspect`, `bytecode` and the ids are unchanged for such a card.
 - **The coordinator note follows md-codec 0.49.0's `thresh` summary (md thresh / seedhammer I-1).** `md compose`
   and `md descriptor` print `note: coordinators: no verdict (md cannot break this policy into spend paths: it has a
   threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a
@@ -111,8 +115,9 @@ Pins md-codec `=0.49.0`. Not tagged or published.
 
 ## md-codec [0.49.0] — unreleased
 
-Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, and `policy_shape` returns
-`complete == false` for some shapes it summarised before. Not tagged or published.
+Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, `SkeletonError` gains the variant
+`NotMiniscript`, and `policy_shape` returns `complete == false` for some shapes it summarised before. Not tagged or
+published.
 
 ### Changed
 
@@ -143,6 +148,18 @@ Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, and `p
     thresh(1,...)") when the compiled `thresh` has a compound alternative, such as `and(pk,older(n))`.
   No vendored evidence row or verdict-table cell holds a `thresh`, so no measured verdict moves; `cargo xtask
   verdicts` regenerates the table unchanged. This closes the defect for `thresh` only, not for other shapes.
+- **A policy that is not typed miniscript has no summary and no SkeletonKey (md review r2 I-1).** The shape walk
+  checked each fragment, never its context, so a hand-built card such as
+  `wsh(or_b(pk(@0),thresh(2,pk(@1),s:pk(@2),s:pk(@3))))` (and plain `wsh(or_b(pk(@0),pk(@1)))`) was summarised
+  as "1 key / any 2 of 3" and keyed, although it spends with no signature: `or_b` needs a W second child, the bare
+  `thresh` is B, and its first `CHECKSIG` consumes the 0 `pk(@0)` left. New `policy_shape::policy_type_checks`
+  runs rust-miniscript's type checker over the tree in its script context (the same conversion as
+  `to_miniscript`, over synthetic keys). `policy_shape` now returns `complete = walk && typed`, every other field
+  as the walk leaves it, and `skeleton()` refuses such a tree with the new `SkeletonError::NotMiniscript`: "this
+  policy is not valid miniscript (it does not type-check), so md shows no spend-path summary for it; no key can be
+  computed from it". Display and identity only: these cards still decode, re-encode to the same bytes and keep
+  their ids and addresses. No minted vector, evidence row or verdict-table cell changes (`cargo xtask verdicts`
+  regenerates the table unchanged). The type rule is normative for ports; `policy_type_checks`'s doc states it.
 - **`SkeletonError::IncompleteShape` names every cause:** "md cannot break this policy into spend paths: it has a
   threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a
   partial decomposition" (was "the policy walk met a node it does not understand; …").
@@ -151,8 +168,11 @@ Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, and `p
   now "unproven"). "A path with no key" (Liana, Nunchuk, Core) fires when an any-of entry's timelocks alone reach
   `k`. Liana's "one signer twice in a path", "two paths with one lock" and "a second unlocked k-of-n path" skip an
   any-of entry that has a timelock, and the as-built reading takes an all-keys any-of as its own k-of-n.
-- **New shape-vector file** `tests/fixtures/policy_shape/cases.json` (67 cases, generated and freshness-tested),
-  for the seedhammer Go port to vendor and compare against.
+- **New shape-vector file** `tests/fixtures/policy_shape/cases.json` (84 cases, generated and freshness-tested),
+  for the seedhammer Go port to vendor and compare against. Each case records `typed` (the type rule's answer);
+  the 17 `untyped_*` cases (the review's two cards and one untyped tree per combinator: `or_b`, `or_c`, `or_d`,
+  `or_i`, `and_v`, `and_b`, `andor`, `thresh`, `multi`, and the `v:`/`a:`/`s:`/`j:` wrappers, in `wsh` and a
+  taproot leaf) need a type check to get right. `shape` is Rust's own output, so the file is a parity file.
 
 ### Fixed
 

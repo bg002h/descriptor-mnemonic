@@ -301,12 +301,24 @@ pub struct PolicyShape {
 /// Walk a decoded descriptor's tree and summarize its structure. Never
 /// panics on an unrecognized shape: that is reported as `complete = false`,
 /// because "I do not understand this" is a result the caller must act on,
-/// not an exception to swallow.
+/// not an exception to swallow. A tree that is not typed miniscript
+/// ([`policy_type_checks`]) is also `complete = false`.
 ///
 /// NOTE: `crate::`, never `md_codec::` — this crate does not self-alias
 /// (`lib.rs` has no `extern crate self as md_codec`). Integration tests
 /// under `tests/` are a separate crate and correctly say `md_codec::`.
 pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
+    let mut s = walk_shape(d);
+    // md review r2 I-1: an untyped tree has no summary. Only `complete`
+    // moves, so a port computes its walk as before and ANDs the type rule in.
+    if !policy_type_checks(d) {
+        s.complete = false;
+    }
+    s
+}
+
+/// The structural walk behind [`policy_shape`], before the type rule.
+fn walk_shape(d: &crate::encode::Descriptor) -> PolicyShape {
     let tree = &d.tree;
     let mut s = PolicyShape {
         complete: true,
@@ -395,6 +407,23 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
         }
     }
     s
+}
+
+/// md review r2 I-1: whether `d`'s tree is typed miniscript in its context.
+/// THE TYPE RULE of this summary, normative for every port: a tree that
+/// fails it has NO summary (`complete == false`) and no key, whatever the
+/// walk would say; `policy_shape` sets `complete = walk && typed` and leaves
+/// every other field as the walk left it. The walk's allowlist vouches for a `thresh` node
+/// alone; this vouches for the context around it (`or_b(pk, thresh(…))`
+/// spends with no signature, because the `thresh` is B where `or_b` needs a
+/// W). Rust answers it with rust-miniscript's own type checker
+/// (`to_miniscript`'s conversion over synthetic keys); a port without one
+/// implements the B/V/K/W and z/o/n/d/u rules of BIP-379 for md's fragment
+/// set, and `tests/fixtures/policy_shape/cases.json` records each case's
+/// answer (`typed`) to compare against. Display and identity only: decode,
+/// ids, addresses and re-encoding never consult it.
+pub fn policy_type_checks(d: &crate::encode::Descriptor) -> bool {
+    crate::to_miniscript::tree_type_checks(d)
 }
 
 /// The zero-value `PolicyShape`: `complete = false` and nothing else filled

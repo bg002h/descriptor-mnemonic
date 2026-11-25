@@ -10,17 +10,30 @@
 //! `.descriptor.json` files (`tag`, `body.kind`, `body.data`); `md1`, the
 //! card as chunk strings with an explicit origin (`m/48'/0'/0'/2'` for the
 //! hand-built trees), or `null` with `md1_absent` saying why no card can
-//! carry the tree; and `shape`, Rust's `policy_shape`. `key_path_entry`
-//! marks the entry Rust adds for a spendable taproot internal key.
+//! carry the tree; `typed`, whether the tree is typed miniscript (BIP-379's
+//! B/V/K/W and z/o/n/d/u rules, in its script context); and `shape`, Rust's
+//! `policy_shape`. `key_path_entry` marks the entry Rust adds for a spendable
+//! taproot internal key.
+//!
+//! `shape` is Rust's own output, so this is a parity file: a port compares
+//! against Rust, not against the design table (md review r2 n-2). The
+//! independent expectations are `policy_shape_thresh.rs` and the verdict test
+//! below.
+//!
+//! md review r2 I-1: a tree that is not typed miniscript has no summary
+//! (`complete` false) and no key, whatever the allowlist says. The
+//! `untyped_*` cases are such trees, one per combinator, plus the review's two
+//! cards; a port needs a type check to get them right, which `typed: false`
+//! marks. Several `thresh_neg_*` cases are also `typed: false`.
 
 mod common;
 
-use common::{keyarg, node2, thresh_node, timelock, wrap};
+use common::{UNTYPED_CARDS, keyarg, node2, thresh_node, timelock, untyped_trees, wrap};
 use md_codec::chunk::{reassemble, split, split_unadmitted};
 use md_codec::descriptor_route::descriptor_from_text;
 use md_codec::encode::Descriptor;
 use md_codec::origin_path::{OriginPath, PathComponent, PathDecl, PathDeclPaths};
-use md_codec::policy_shape::{KeyPathKind, PolicyShape, policy_shape};
+use md_codec::policy_shape::{KeyPathKind, PolicyShape, policy_shape, policy_type_checks};
 use md_codec::tag::Tag;
 use md_codec::tlv::TlvSection;
 use md_codec::tree::{Body, InternalKey, Node};
@@ -318,6 +331,7 @@ fn case(
         "tree": node_json(&d.tree),
         "md1": md1,
         "md1_absent": absent,
+        "typed": policy_type_checks(&d),
         "shape": shape_json(&policy_shape(&d)),
     })
 }
@@ -330,7 +344,18 @@ fn generate() -> String {
         let md1 = split(&d).map_err(|e| e.to_string());
         cases.push(case(fields[0], Some(fields[1]), &d, md1));
     }
-    for (name, tree) in hand_built() {
+    for (name, card) in UNTYPED_CARDS {
+        let d = md_codec::decode::decode_md1_string(card).unwrap_or_else(|e| panic!("{name}: {e}"));
+        cases.push(case(name, None, &d, Ok(vec![card.to_string()])));
+    }
+    let untyped = untyped_trees()
+        .into_iter()
+        .map(|(name, tree)| (format!("untyped_{name}"), tree));
+    let built = hand_built()
+        .into_iter()
+        .map(|(name, tree)| (name.to_string(), tree));
+    for (name, tree) in built.chain(untyped) {
+        let name = name.as_str();
         let d = template_card(tree);
         let md1 = if d.n == 0 {
             Err("no placeholder: an md1 card holds at least one".to_string())
@@ -360,12 +385,13 @@ fn policy_shape_cases_json_is_fresh() {
 
 /// Every case of DESIGN section 6 is in the file, and its shape is the one
 /// `policy_shape_thresh.rs` asserts: any-of entries for the in-scope names,
-/// incomplete for every `thresh_neg_*`.
+/// incomplete for every `thresh_neg_*`; every `untyped_*` is untyped and
+/// incomplete, and every complete case is typed.
 #[test]
 fn every_design_case_is_present_with_its_verdict() {
     let v: Value = serde_json::from_str(&generate()).unwrap();
     let cases = v["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 30 + 37);
+    assert_eq!(cases.len(), 30 + 37 + 2 + 15);
     for c in cases {
         let name = c["name"].as_str().unwrap();
         let complete = c["shape"]["complete"].as_bool().unwrap();
@@ -374,7 +400,11 @@ fn every_design_case_is_present_with_its_verdict() {
             .unwrap()
             .iter()
             .any(|b| !b["any_of"].is_null());
-        if name.starts_with("thresh_neg_") {
+        let typed = c["typed"].as_bool().unwrap();
+        assert!(typed || !complete, "{name}: complete but untyped");
+        if name.starts_with("untyped_") {
+            assert!(!typed && !complete, "{name}");
+        } else if name.starts_with("thresh_neg_") {
             assert!(!complete, "{name}");
         } else if name.starts_with("thresh_kn_") {
             assert!(complete && !has_any_of, "{name}");

@@ -104,6 +104,12 @@ pub enum SkeletonError {
     /// not understand. A partial decomposition keyed as if whole would
     /// match evidence measured on a policy it is not.
     IncompleteShape,
+    /// md review r2 I-1: the tree does not type-check as miniscript in its
+    /// context ([`crate::policy_shape::policy_type_checks`]). Its script can
+    /// do something no summary of its fragments describes (an `or_b` over two
+    /// B children spends with no signature), so it has neither a summary nor
+    /// a key. Checked before [`SkeletonError::IncompleteShape`].
+    NotMiniscript,
     /// [`expand_per_at_n`] failed — at least one `@N`'s origin cannot be
     /// resolved. No partition is computable, so no key exists (design §1A
     /// clause (a3)); the wrapped [`Error`] is whatever `expand_per_at_n`
@@ -127,6 +133,10 @@ impl std::fmt::Display for SkeletonError {
             SkeletonError::IncompleteShape => write!(
                 f,
                 "md cannot break this policy into spend paths: it has a threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a partial decomposition"
+            ),
+            SkeletonError::NotMiniscript => write!(
+                f,
+                "this policy is not valid miniscript (it does not type-check), so md shows no spend-path summary for it; no key can be computed from it"
             ),
             SkeletonError::KeysDoNotExpand(e) => write!(f, "keys will not expand: {e}"),
             SkeletonError::Render(e) => write!(f, "abstract-template render failed: {e}"),
@@ -189,10 +199,12 @@ fn root_kind(tree: &Node) -> Result<(RootKind, bool), SkeletonError> {
 ///
 /// # Errors
 ///
-/// Refuses — never infers, never guesses — in exactly two cases, checked
-/// BEFORE any partition is computed (see the module doc's hard constraint):
+/// Refuses — never infers, never guesses — in exactly three cases, checked
+/// in this order BEFORE any partition is computed (see the module doc's hard
+/// constraint):
 ///
 /// - [`SkeletonError::KeysDoNotExpand`]: `expand_per_at_n(d)` failed.
+/// - [`SkeletonError::NotMiniscript`]: the tree is not typed miniscript.
 /// - [`SkeletonError::IncompleteShape`]: `policy_shape(d).complete` is
 ///   `false`.
 pub fn skeleton(d: &Descriptor) -> Result<Skeleton, SkeletonError> {
@@ -205,7 +217,13 @@ pub fn skeleton(d: &Descriptor) -> Result<Skeleton, SkeletonError> {
     // present-but-empty `OriginPathOverrides` entry).
     expand_per_at_n(d).map_err(SkeletonError::KeysDoNotExpand)?;
 
-    // Gate 2: the honesty contract. A partial decomposition keyed as if
+    // Gate 2 (md review r2 I-1): an untyped tree has no key, whatever its
+    // shape walk says.
+    if !policy_shape::policy_type_checks(d) {
+        return Err(SkeletonError::NotMiniscript);
+    }
+
+    // Gate 3: the honesty contract. A partial decomposition keyed as if
     // whole would match evidence measured on a policy it is not.
     let shape = policy_shape::policy_shape(d);
     if !shape.complete {

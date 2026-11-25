@@ -131,7 +131,7 @@ pub fn three_older_descriptor(a: u32, b: u32, c: u32) -> md_codec::encode::Descr
     let branch = |i: u8, v: u32| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             timelock(Tag::Older, v),
         )
     };
@@ -155,7 +155,7 @@ pub fn two_after_descriptor(height: u32, time: u32) -> md_codec::encode::Descrip
     let branch = |i: u8, v: u32| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             timelock(Tag::After, v),
         )
     };
@@ -177,7 +177,7 @@ pub fn two_older_descriptor(blocks: u32, units: u32) -> md_codec::encode::Descri
     let branch = |i: u8, v: u32| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             timelock(Tag::Older, v),
         )
     };
@@ -195,7 +195,7 @@ pub fn two_sha256_descriptor(a: [u8; 32], b: [u8; 32]) -> md_codec::encode::Desc
     let branch = |i: u8, h: [u8; 32]| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             hash32(Tag::Sha256, h),
         )
     };
@@ -211,7 +211,7 @@ pub fn kofn_recovery_with_use_site() -> md_codec::encode::Descriptor {
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let tree = wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery));
@@ -236,7 +236,7 @@ fn kofn_recovery_tree() -> Node {
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery))
@@ -373,9 +373,10 @@ pub fn seated_same_key_with_overrides(
 // Task 4 (Skeleton / SkeletonKey) fixtures.
 // ─────────────────────────────────────────────────────────────────────────
 
-/// `wsh(or_d(and_v(v:pkh(@3), older(26280)), multi(2,@0,@1,@2)))` — the
-/// `kofn_recovery` shape with its two `or_d` operands SWAPPED (recovery leg
-/// first, the multi second), so branch 0 is the HIGH-numbered slot [3] and
+/// `wsh(or_i(and_v(v:pkh(@3), older(26280)), multi(2,@0,@1,@2)))` — the
+/// `kofn_recovery` shape with its two operands SWAPPED (recovery leg
+/// first, the multi second; `or_i`, because `or_d` with an `and_v` first is
+/// not typed miniscript and md r2 I-1 gives such a tree no key), so branch 0 is the HIGH-numbered slot [3] and
 /// branch 1 is the LOW-numbered slots [0,1,2]. This is deliberate, not a
 /// typo: with the un-swapped order, branch 0's rendered group list always
 /// starts with a lower digit than branch 1's (branch 0 always holds the
@@ -389,11 +390,11 @@ pub fn seated_same_key_with_overrides(
 fn kofn_recovery_first_tree() -> Node {
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
-    wrap(Tag::Wsh, node2(Tag::OrD, recovery, primary))
+    wrap(Tag::Wsh, node2(Tag::OrI, recovery, primary))
 }
 
 /// The [`kofn_recovery_first_tree`] shape with BOTH a `Fingerprints` TLV
@@ -518,7 +519,9 @@ pub fn sh_wsh_2of3() -> md_codec::encode::Descriptor {
     descriptor_of(tree, 3)
 }
 
-/// `sh(wsh(or_d(sortedmulti(2,@0,@1,@2), and_v(v:pkh(@3),older(26280)))))` —
+/// `sh(wsh(or_d(multi(2,@0,@1,@2), and_v(v:pkh(@3),older(26280)))))` —
+/// (`multi`, not `sortedmulti`: `sortedmulti` is no miniscript fragment, so
+/// inside `or_d` it does not type-check and md r2 I-1 gives no summary) —
 /// final whole-branch review, I-1: `sh_wsh_2of3`'s single-`multi` shape
 /// cannot tell whether the `sh(wsh(...))` unwrap in `policy_shape` actually
 /// runs (a bare threshold decomposes identically either way). This shape is
@@ -530,11 +533,11 @@ pub fn sh_wsh_2of3() -> md_codec::encode::Descriptor {
 /// (`is_wsh_inner_multi`); this fixture's inner is `or_d(...)`, the same
 /// non-canonical shape `kofn_recovery_tree`'s bare `wsh(or_d(...))` is, so it
 /// needs the same explicit non-empty shared origin path.
-pub fn sh_wsh_or_d_sortedmulti_and_recovery() -> md_codec::encode::Descriptor {
-    let primary = multikeys(Tag::SortedMulti, 2, vec![0, 1, 2]);
+pub fn sh_wsh_or_d_multi_and_recovery() -> md_codec::encode::Descriptor {
+    let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let inner = node2(Tag::OrD, primary, recovery);
@@ -1631,4 +1634,86 @@ pub fn corrupt_chunk_at(chunk: &str, pos: usize, xor_mask: u8) -> String {
         .unwrap() as u8;
     chars[idx] = A[((sym ^ (xor_mask & 0x1F)) & 0x1F) as usize] as char;
     chars.into_iter().collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// md review r2 I-1: trees that are not typed miniscript (no summary, no key).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The review's two cards, hand-built (the encoder does not type-check):
+/// `wsh(or_b(pk(@0),thresh(2,pk(@1),s:pk(@2),s:pk(@3))))` and
+/// `wsh(or_b(pk(@0),pk(@1)))`. Both spend with no signature.
+pub const UNTYPED_CARDS: [(&str, &str); 2] = [
+    (
+        "untyped_review_or_b_thresh",
+        "md1f7xrgqq9qeuedejan9uuw2jemuklxheeuvn3jkxtsqrqjc5xsg3f8z5w9vqqw5d36huyrgmg",
+    ),
+    (
+        "untyped_review_or_b_pk_pk",
+        "md1fa7e5qq9qfcu49nhed7d0ncqpsfv2z5qd7jmntp59fk69",
+    ),
+];
+
+/// One untyped tree per combinator md decodes, with the rule it breaks.
+pub fn untyped_trees() -> Vec<(&'static str, Node)> {
+    let pk = |i: u8| keyarg(Tag::PkK, i);
+    let s = |x: Node| wrap(Tag::Swap, x);
+    let a = |x: Node| wrap(Tag::Alt, x);
+    let v = |x: Node| wrap(Tag::Verify, x);
+    let wsh = |x: Node| wrap(Tag::Wsh, x);
+    let three = |first: u8| thresh_node(2, vec![pk(first), s(pk(first + 1)), s(pk(first + 2))]);
+    let nums = |x: Node| Node {
+        tag: Tag::Tr,
+        body: Body::Tr {
+            internal_key: InternalKey::NumsPoint,
+            tree: Some(Box::new(x)),
+        },
+    };
+    vec![
+        ("or_b_second_not_w", wsh(node2(Tag::OrB, pk(0), three(1)))),
+        ("or_b_pk_pk", wsh(node2(Tag::OrB, pk(0), pk(1)))),
+        ("or_d_z_not_b", wsh(node2(Tag::OrD, pk(0), s(pk(1))))),
+        (
+            "or_c_z_not_v",
+            wsh(wrap(Tag::Verify, node2(Tag::OrC, pk(0), pk(1)))),
+        ),
+        ("or_i_mixed_types", wsh(node2(Tag::OrI, pk(0), s(pk(1))))),
+        ("and_v_x_not_v", wsh(node2(Tag::AndV, pk(0), pk(1)))),
+        ("and_b_y_not_w", wsh(node2(Tag::AndB, pk(0), pk(1)))),
+        (
+            "andor_z_not_b",
+            wsh(node3(Tag::AndOr, pk(0), pk(1), s(pk(2)))),
+        ),
+        (
+            "thresh_later_not_w",
+            wsh(thresh_node(3, vec![pk(0), pk(1), pk(2)])),
+        ),
+        (
+            "multi_under_and_v_x",
+            wsh(node2(
+                Tag::AndV,
+                multikeys(Tag::Multi, 1, vec![0, 1]),
+                pk(2),
+            )),
+        ),
+        (
+            "s_over_multi",
+            wsh(node2(
+                Tag::AndB,
+                pk(0),
+                s(multikeys(Tag::Multi, 1, vec![1, 2])),
+            )),
+        ),
+        ("top_level_v", wsh(v(pk(0)))),
+        ("top_level_a", wsh(a(pk(0)))),
+        (
+            "j_over_older",
+            wsh(node2(
+                Tag::AndV,
+                v(pk(0)),
+                wrap(Tag::NonZero, timelock(Tag::Older, 10)),
+            )),
+        ),
+        ("tr_leaf_or_b_pk_pk", nums(node2(Tag::OrB, pk(0), pk(1)))),
+    ]
 }

@@ -12,7 +12,7 @@ fn kofn_recovery() -> md_codec::encode::Descriptor {
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let tree = wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery));
@@ -516,7 +516,7 @@ fn sh_wsh_unwraps_to_the_same_shape_as_bare_wsh() {
 /// single-`multi` script decomposes identically with or without it --
 /// `plain_multi` fails on `Tag::Wsh` either way, then `sole_multi` finds the
 /// same one multi under the (still-present, one-level-shallower) `Wsh`
-/// wrapper regardless. `sh(wsh(or_d(sortedmulti(2,@0,@1,@2),
+/// wrapper regardless. `sh(wsh(or_d(multi(2,@0,@1,@2),
 /// and_v(v:pkh(@3),older(26280)))))` is wire-reachable (18 bytes / 139 bits,
 /// strict-decodes byte-identical -- reviewer-measured) and MULTI-branch: with
 /// the unwrap disabled, `inner` stays the still-wrapped `Wsh` node, and
@@ -529,7 +529,7 @@ fn sh_wsh_unwraps_to_the_same_shape_as_bare_wsh() {
 /// changing every slot set involved.
 #[test]
 fn sh_wsh_with_multiple_branches_unwraps_correctly() {
-    let d = common::sh_wsh_or_d_sortedmulti_and_recovery();
+    let d = common::sh_wsh_or_d_multi_and_recovery();
     let shape = policy_shape(&d);
     assert!(shape.complete);
     assert_eq!(
@@ -546,8 +546,8 @@ fn sh_wsh_with_multiple_branches_unwraps_correctly() {
             shape.branches[0].n,
             shape.branches[0].sorted
         ),
-        (2, 3, true),
-        "the primary leg is sortedmulti(2,@0,@1,@2)"
+        (2, 3, false),
+        "the primary leg is multi(2,@0,@1,@2)"
     );
 }
 

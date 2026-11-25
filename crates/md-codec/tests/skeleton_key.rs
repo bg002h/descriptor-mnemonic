@@ -309,7 +309,7 @@ fn root_and_inner_wsh_are_read_correctly() {
 // doc comment names.
 // ─────────────────────────────────────────────────────────────────────────
 
-/// `seated_and_keyed_asymmetric()`: multi-path (the recovery-first `or_d`
+/// `seated_and_keyed_asymmetric()`: multi-path (the recovery-first `or_i`
 /// shape, two branches — see [`common::kofn_recovery_first_tree`]'s doc for
 /// why the operands are swapped from `kofn_recovery`'s order), with an
 /// ASYMMETRIC `fp_partition` (branch 0, the recovery leg, is the singleton
@@ -330,7 +330,7 @@ fn golden_key_multi_path_asymmetric_fp_and_key_partition() {
     let s = skeleton(&common::seated_and_keyed_asymmetric()).unwrap();
     assert_eq!(
         skeleton_key(&s).as_str(),
-        "wsh(or_d(and_v(v:pkh(@3/<0;1>/*),older(older-blocks#1)),multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*)))\u{1f}[[[3]][[0,1][2]]][[0,3][1][2]]\u{1f}NotTaproot"
+        "wsh(or_i(and_v(v:pkh(@3/<0;1>/*),older(older-blocks#1)),multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*)))\u{1f}[[[3]][[0,1][2]]][[0,3][1][2]]\u{1f}NotTaproot"
     );
 }
 
