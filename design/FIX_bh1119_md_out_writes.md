@@ -11,7 +11,7 @@ wire change, no new flag, type or command. Author: Claude Opus 5.5 (claude-opus-
 Final grades: **bh-md-C4 Important** (hunter Critical; grader and Fable: I, the P5 class), **bh-md-I1 Important**,
 **bh-md-I7 Important**.
 
-**Q1 (the io-lib pin form) is settled: Brian 2026-11-24, registry `mnemonic-io-lib = "0.1.3"`, the first published release (section 9). Everything is decided.** Every new
+**Q1 (the io-lib pin form) is settled: Brian 2026-11-24, registry `mnemonic-io-lib = "0.1.3"`, (0.1.2 is never published; 0.1.3 is the release, overrides 17:45; section 9). Everything is decided.** Every new
 holder-visible text is PROPOSED (architect confirms) unless it is quoted from T6.
 
 Toolchain: `export PATH=$HOME/.cargo/bin:$PATH`; cargo 1.85.0 (`rust-toolchain.toml`); `--locked`; every cargo call
@@ -49,8 +49,7 @@ returns EFBIG; this stands in for a full disk or quota).
 
 - **R1 (C4, T5).** md-cli takes mnemonic-io-lib **0.1.3** from crates.io: `crates/md-cli/Cargo.toml:54` becomes `mnemonic-io-lib = "0.1.3"` (Brian 2026-11-24; no git pin, no `.github/` edit). The builder first runs `cargo search mnemonic-io-lib --limit 1`; if 0.1.3 is not listed it does every step that needs no build and STOPs (overrides). `write_artifact` keeps calling
   `mnemonic_io_lib::write::write_private` and adds no write logic of its own. What the holder sees, for both
-  `md encode --out FILE` and `md descriptor --emit md1 --out FILE`, all from 0.1.3's documented behaviour
-  (`crates/mnemonic-io-lib/src/write.rs:77-98` at mnemonic-engrave e09d538d):
+  `md encode --out FILE` and `md descriptor --emit md1 --out FILE`, all from 0.1.3's documented behaviour (`crates/mnemonic-io-lib/src/write.rs:78-103` at mnemonic-engrave 0cc8383f, the build/io-lib-0.1.3 head; the coordinator swaps in the published tag or merge sha, the builder does not):
   - an existing regular FILE (or an absent one) is written to a temporary `<name>.<pid>.<n>.tmp` beside it, created
     0600, synced, and renamed over FILE; any error leaves an existing FILE byte-identical and removes the temporary;
   - a run killed mid-write can leave that temporary behind (0600);
@@ -189,4 +188,4 @@ FreeBSD/musl legs, the WORDING_REVIEW rows for H1, M1, M2.
 
 ## 9. Q1 (settled)
 
-Brian 2026-11-24 (overrides, io-lib bullet): mnemonic-io-lib 0.1.3 is the first published release (from mnemonic-engrave master after the build/io-lib-0.1.3 merge) and md pins the registry `"0.1.3"`; no git pin, no `.github/` edit. This is the author's option (a). Until 0.1.3 is listed by `cargo search`, the builder STOPs at the first build step.
+Brian 2026-11-24 (overrides, io-lib bullet; version per the 17:45 UPDATE): md pins the registry `"0.1.3"`, the release that writes a stdio alias into the open stream (0.1.2 is never published; today's lock is 0.1.0); no git pin, no `.github/` edit. This is the author's option (a). Until 0.1.3 is listed by `cargo search`, the builder STOPs at the first build step.
