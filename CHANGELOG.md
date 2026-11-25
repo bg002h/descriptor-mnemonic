@@ -37,8 +37,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `--path` when the key's header contradicts that origin. A keyed card with no origin (`--path m`, or a
   non-canonical wrapper with none) is refused. `md verify` expands the template the same way, so a new card verifies
   against the template and keys it was minted from. Reading a keyed card that has no origin, md no longer shows `m`,
-  never advises `--path m`, and warns that the path is not on the card. Keyless templates still elide, and the
-  wallet-policy id is unchanged (bug hunt 2026-11-25 md#1).
+  never advises `--path m`, and warns that the path is not on the card. Keyless templates still elide. The
+  wallet-policy id is unchanged on mainnet; off mainnet a keyed card minted with no origin now records coin `1'`,
+  so its wallet-policy id changes (testnet: `52bcbf43…` becomes `8ff60878…`) (bug hunt 2026-11-25 md#1, r1 m3).
 - **`md encode` refuses a key whose header contradicts its declared origin.** A depth-4 key under a 3-level
   origin, a key whose child number is not the origin's step at the key's depth, or a 4-level origin with a
   hardened step past a depth-3 key minted at exit 0; a restore rebuilt the xpub header from the origin and printed
