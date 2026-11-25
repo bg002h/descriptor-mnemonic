@@ -195,6 +195,9 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         )?;
         return Ok(verify_exit.unwrap_or(code));
     }
+    // md#1 (bug hunt 2026-11-25): a keyed card with no origin path is
+    // rendered without guessing one, and said so loudly.
+    crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
 
     // G-1 caller (SPEC §4 / plan Step 4): `args.network` is already in
     // scope for this command (`--network`), so this switches to the

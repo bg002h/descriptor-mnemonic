@@ -148,9 +148,18 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         }
     }
     apply_path_override(&mut descriptor, args.path)?;
-    // Bug hunt 2026-11-25 md#2: after `--path`, so the origin compared is
-    // the one the card will carry.
-    refuse_key_origin_contradiction(&descriptor, &parsed_keys)?;
+    // Bug hunt 2026-11-25 md#1 (Brian's ruling): a KEYED card carries every
+    // key's origin explicitly. With no `--path`, a canonical wrapper's slots
+    // that declare none get the canonical origin written out; a keyless
+    // template keeps eliding exactly as before.
+    let filled = if args.path.is_none() {
+        fill_canonical_origins(&mut descriptor, args.network)
+    } else {
+        Vec::new()
+    };
+    // Bug hunt 2026-11-25 md#2: after `--path` and the md#1 fill, so the
+    // origin compared is the one the card will carry.
+    refuse_key_origin_contradiction(&descriptor, &parsed_keys, &filled)?;
 
     #[cfg(feature = "json")]
     if args.json {
@@ -327,8 +336,9 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
 ///     cannot be the key such an origin names).
 ///
 /// NOT refused, deliberately:
-///   * an EMPTY (elided) origin — what it means on a keyed card is an open
-///     decision (bug hunt md#1), so nothing is compared against it;
+///   * an EMPTY origin — after the md#1 fill ([`fill_canonical_origins`]) only
+///     `--path m` or a non-canonical wrapper leaves one, and the mint refuses
+///     both ([`refuse_unrestorable_card`]);
 ///   * an origin LONGER than the key's depth whose excess steps are all
 ///     unhardened — the F-411 ruling made that a note
 ///     ([`emit_unhardened_origin_note`]), never a refusal.
@@ -337,6 +347,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
 pub(crate) fn refuse_key_origin_contradiction(
     descriptor: &Descriptor,
     keys: &[ParsedKey],
+    filled: &[u8],
 ) -> Result<(), CliError> {
     // An expansion failure is not this check's error to raise; the validator
     // that owns it reports it in its own words.
@@ -404,6 +415,21 @@ pub(crate) fn refuse_key_origin_contradiction(
             None
         };
         if let Some(why) = why {
+            if filled.contains(&key.i) {
+                return Err(CliError::BadXpub {
+                    i: key.i,
+                    why: format!(
+                        "no origin was given for @{i}, so md would write this shape's standard \
+                         origin `{origin}` on the card, but the key's own header (depth \
+                         {depth}, child number {child}) says it was not derived there. A keyed \
+                         card records each key's origin, and md will not record one the key \
+                         contradicts. Pass --path with the path this key was derived at (or \
+                         write it in the template after @{i}).",
+                        i = key.i,
+                        child = step(key.child_number)
+                    ),
+                });
+            }
             return Err(CliError::BadXpub {
                 i: key.i,
                 why: format!(
@@ -417,6 +443,72 @@ pub(crate) fn refuse_key_origin_contradiction(
         }
     }
     Ok(())
+}
+
+/// Bug hunt 2026-11-25 md#1 (Brian's ruling of 2026-11-25): on a KEYED card,
+/// write the canonical origin of a canonical wrapper explicitly for every slot
+/// that declares none, instead of eliding it. Returns the slots filled.
+///
+/// The coin type follows `network` (`0'` on mainnet, `1'` otherwise), the
+/// same origin a wallet for that network derives at. A keyless template, a
+/// wrapper with no canonical origin, and a slot that already declares an
+/// origin are left exactly as they are. The wallet-policy id is unchanged on
+/// mainnet: it already hashed an elided origin as the canonical one.
+pub(crate) fn fill_canonical_origins(
+    descriptor: &mut Descriptor,
+    network: bitcoin::Network,
+) -> Vec<u8> {
+    use md_codec::origin_path::{OriginPath, PathDeclPaths};
+    if !descriptor.is_wallet_policy() {
+        return Vec::new();
+    }
+    let Some(mut canonical) = md_codec::canonical_origin::canonical_origin(&descriptor.tree) else {
+        return Vec::new();
+    };
+    if network != bitcoin::Network::Bitcoin {
+        if let Some(coin) = canonical.components.get_mut(1) {
+            coin.value = 1;
+        }
+    }
+    let overridden = |i: u8| {
+        descriptor
+            .tlv
+            .origin_path_overrides
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|(j, _)| *j == i)
+    };
+    let n = descriptor.path_decl.n;
+    let current: Vec<OriginPath> = (0..n)
+        .map(|i| match &descriptor.path_decl.paths {
+            PathDeclPaths::Shared(p) => p.clone(),
+            PathDeclPaths::Divergent(v) => v[usize::from(i)].clone(),
+        })
+        .collect();
+    let filled: Vec<u8> = (0..n)
+        .filter(|&i| current[usize::from(i)].components.is_empty() && !overridden(i))
+        .collect();
+    if filled.is_empty() {
+        return filled;
+    }
+    let paths: Vec<OriginPath> = current
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| {
+            if filled.contains(&(i as u8)) {
+                canonical.clone()
+            } else {
+                p
+            }
+        })
+        .collect();
+    descriptor.path_decl.paths = if paths.iter().all(|p| *p == paths[0]) {
+        PathDeclPaths::Shared(paths[0].clone())
+    } else {
+        PathDeclPaths::Divergent(paths)
+    };
+    filled
 }
 
 /// Bug hunt 2026-11-25 md#3: note each placeholder written with no wildcard
@@ -551,6 +643,35 @@ pub(crate) fn refuse_unrestorable_card(descriptor: &Descriptor) -> Result<(), Cl
         ));
     }
     if descriptor.is_wallet_policy() {
+        // md#1 (Brian's ruling of 2026-11-25): a keyed card never carries an
+        // empty origin. `md encode` writes the canonical one when no origin is
+        // given; this catches every other way to reach a mint without one.
+        {
+            // A non-canonical wrapper's empty slots fail expansion and are
+            // listed by `unresolved_origin_indices`; a canonical wrapper's
+            // expand to an empty path.
+            let mut idx = descriptor.unresolved_origin_indices();
+            if let Ok(expanded) = md_codec::canonicalize::expand_per_at_n(descriptor) {
+                idx.extend(
+                    expanded
+                        .iter()
+                        .filter(|e| e.origin_path.components.is_empty())
+                        .map(|e| e.idx),
+                );
+            }
+            idx.sort_unstable();
+            idx.dedup();
+            let empty: Vec<String> = idx.iter().map(|i| format!("@{i}")).collect();
+            if !empty.is_empty() {
+                return Err(CliError::Unsupported(format!(
+                    "{} would have no origin path on this keyed card. A keyed card records the \
+                     path each key was derived at, so a signer can find it; md mints none \
+                     without one (an empty origin, such as --path m, is not recorded). Give the \
+                     path with --path or after the placeholder in the template.",
+                    empty.join(", ")
+                )));
+            }
+        }
         let mut hardened = Vec::new();
         if descriptor.use_site_path.wildcard_hardened {
             hardened.push("the shared use-site".to_string());

@@ -87,6 +87,7 @@ pub fn run(
             crate::output_advisory::OutputClass::Template
         };
         crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
+        crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
         crate::output_advisory::emit_fingerprint_privacy_note(
             &descriptor,
             false,
@@ -125,8 +126,25 @@ pub fn run(
     match md_codec::canonicalize::expand_per_at_n(&descriptor) {
         Ok(expanded) if !expanded.is_empty() => {
             println!("origins:");
+            // md#1: a keyed slot with no origin is shown as having none,
+            // never as the master node `m`.
+            let missing = crate::output_advisory::keyed_slots_without_origin(&descriptor);
             for e in &expanded {
                 let path = fmt_origin_path(&e.origin_path);
+                if missing.contains(&e.idx) {
+                    match e.fingerprint {
+                        Some(fp) => println!(
+                            "  @{}: [{}] (origin path not on the card)",
+                            e.idx,
+                            fp.iter().fold(String::with_capacity(8), |mut a, b| {
+                                let _ = write!(a, "{b:02x}");
+                                a
+                            })
+                        ),
+                        None => println!("  @{}: (origin path not on the card)", e.idx),
+                    }
+                    continue;
+                }
                 match e.fingerprint {
                     Some(fp) => println!(
                         "  @{}: [{}/{}]",
@@ -159,6 +177,7 @@ pub fn run(
         crate::output_advisory::OutputClass::Template
     };
     crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
+    crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
     crate::output_advisory::emit_fingerprint_privacy_note(
         &descriptor,
         false,

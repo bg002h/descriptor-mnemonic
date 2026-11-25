@@ -54,6 +54,7 @@ pub fn run(
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
         // bh-md-M5 / bh-md-I8: the no-key warning (JSON path too) and the class note.
         crate::keyless_advisory::emit_card_advisories(&descriptor, &mut std::io::stderr());
+        crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
         crate::output_advisory::emit_fingerprint_privacy_note(
             &descriptor,
             false,
@@ -120,6 +121,7 @@ pub fn run(
         crate::output_advisory::OutputClass::Template,
         &mut std::io::stderr(),
     );
+    crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
     crate::output_advisory::emit_fingerprint_privacy_note(
         &descriptor,
         false,
@@ -153,7 +155,25 @@ fn emit_origins_stderr(d: &md_codec::encode::Descriptor, w: &mut impl std::io::W
     }
     let mut out =
         String::from("note: key origins carried by this card (not shown in the template):\n");
+    // md#1: a keyed slot with no origin is shown as having none, never as the
+    // master node `m`.
+    let missing = crate::output_advisory::keyed_slots_without_origin(d);
     for e in &expanded {
+        if missing.contains(&e.idx) {
+            match e.fingerprint {
+                Some(fp) => {
+                    let mut hex = String::with_capacity(8);
+                    for b in &fp {
+                        let _ = write!(hex, "{b:02x}");
+                    }
+                    let _ = writeln!(out, "  @{}: [{hex}] (origin path not on the card)", e.idx);
+                }
+                None => {
+                    let _ = writeln!(out, "  @{}: (origin path not on the card)", e.idx);
+                }
+            }
+            continue;
+        }
         let mut path = String::from("m");
         for c in &e.origin_path.components {
             let _ = write!(path, "/{}{}", c.value, if c.hardened { "'" } else { "" });
@@ -195,7 +215,11 @@ fn emit_origins_stderr(d: &md_codec::encode::Descriptor, w: &mut impl std::io::W
         .first()
         .map(|h| shared.iter().all(|e| e.origin_path == h.origin_path))
         .unwrap_or(false);
-    if one_origin {
+    // md#1: never advise `--path m`. An empty origin is either elided on a
+    // keyless canonical wrapper (the verbs resolve it themselves) or not on a
+    // keyed card at all (and md does not guess it).
+    let empty_origin = expanded[0].origin_path.components.is_empty();
+    if one_origin && !empty_origin {
         let mut path = String::from("m");
         for c in &expanded[0].origin_path.components {
             let _ = write!(path, "/{}{}", c.value, if c.hardened { "'" } else { "" });

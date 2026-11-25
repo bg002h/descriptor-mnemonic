@@ -178,11 +178,28 @@ depth gate, which rejects trees exceeding
 
 ===Elided origins and canonical-default paths===
 
-When an origin path is not supplied explicitly, an encoder MAY '''elide''' it by
-writing a depth-0 origin (the 4-bit zero-depth field of §"origin-path-encoding").
-A depth-0 origin does '''not''' mean "derive at the master node <code>m</code>":
-it is a signal to resolve the derivation path from the ''canonical-origin table''
-keyed on the top-level wrapper shape.
+When an origin path is not supplied explicitly, an encoder of a '''keyless'''
+Template Card (one that carries no xpubs, i.e. no <code>Pubkeys</code> TLV) MAY
+'''elide''' it by writing a depth-0 origin (the 4-bit zero-depth field of
+§"origin-path-encoding"). A depth-0 origin does '''not''' mean "derive at the
+master node <code>m</code>": it is a signal to resolve the derivation path from the
+''canonical-origin table'' keyed on the top-level wrapper shape.
+
+A '''keyed''' card (one carrying a <code>Pubkeys</code> TLV) MUST carry every
+key's origin explicitly; elision applies to keyless cards only. When no origin is
+supplied for a key on a wrapper shape listed below, an encoder MUST write the
+canonical origin for that shape explicitly (with the coin type of the target
+network: <code>0'</code> on mainnet, <code>1'</code> on test networks), and MUST
+refuse when the xpub's own depth or child number contradicts that origin. An
+encoder MUST NOT write a depth-0 origin on a keyed card.
+
+A reader that meets a keyed card whose origin for some key is depth-0 (a card
+produced against an earlier revision of this text) MUST NOT guess the path. With
+the seed available it MAY search the common derivation paths and accept the one
+that reproduces the card's key exactly, telling the user the path was found by
+search and was not on the card. Without the seed it MUST NOT present the key as
+derived at the master node <code>m</code> or at the canonical origin, and MUST warn
+the user that the origin path is not on the card.
 
 {| class="wikitable"
 ! Wrapper shape !! Canonical origin !! Reference
@@ -202,8 +219,9 @@ keyed on the top-level wrapper shape.
 
 This table reproduces the reference implementation's canonical-origin map
 (<code>crates/md-codec/src/canonical_origin.rs</code>), which is the single source
-of truth. '''A decoder MUST resolve a depth-0 origin, on any wrapper shape listed
-in this table, through the corresponding canonical origin before deriving keys.'''
+of truth. '''On a keyless Template Card, a decoder MUST resolve a depth-0 origin,
+on any wrapper shape listed in this table, through the corresponding canonical
+origin before deriving keys.'''
 Deriving at the literal master node instead would recover the wrong wallet. Most
 of the reference test corpus — and hence this BIP's §"Test Vectors" table —
 carries an elided (depth-0) origin resolved this way.
@@ -446,7 +464,7 @@ Each origin-path-encoding is:
 
 ''depth'' is the number of BIP 32 derivation components in the path, held in a 4-bit field, so the wire cannot represent a depth above 15. This is therefore an '''encoder-side''' constraint: encoders MUST reject paths deeper than 15 before serialization (<code>Error::PathDepthExceeded { got, max: 15 }</code>); a decoder reading this 4-bit field can never observe an out-of-range depth. The cap is defense-in-depth — no real-world BIP path family exceeds 6 components (BIP 48 + change/index = 6); 15 leaves generous headroom.
 
-A depth-<code>0</code> encoding (the 4-bit zero-depth field with no following components) does '''not''' denote deriving at the literal master node <code>m</code>: it marks an '''elided''' origin, resolved through the canonical-origin table for the wrapper shape (§"Elided origins and canonical-default paths"). For a wrapper with no canonical entry, a depth-0 origin is handled per that section.
+A depth-<code>0</code> encoding (the 4-bit zero-depth field with no following components) does '''not''' denote deriving at the literal master node <code>m</code>: on a keyless Template Card it marks an '''elided''' origin, resolved through the canonical-origin table for the wrapper shape (§"Elided origins and canonical-default paths"). A keyed card never carries it (encoders write every key's origin explicitly), and a reader meeting one on a keyed card handles it per that section. For a wrapper with no canonical entry, a depth-0 origin is handled per that section.
 
 The v0.30 wire format does not carry a path dictionary; a non-elided origin path is encoded via the depth-prefixed form above, and an elided origin is the depth-0 form resolved via the canonical-origin table. (Historical context: pre-v0.11 versions carried a 1-byte indicator that selected between well-known BIP 44 / 48 / 84 / 86 / 87 paths and an explicit encoding; that mechanism was retired by the v0.11 wire-format reset and has never returned.)
 

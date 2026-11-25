@@ -29,6 +29,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   case of the string it corrects (`MD1YQPQQXQQ8XTWHW4XWN4QH`), in text and `--json` output and for chunked sets
   (bh-md-I3).
 - **An output that is one of md's inputs is refused.** `md encode --in F --out F` replaced the template with the card, `md descriptor --from-mk1-file K --emit md1 --out K` replaced the mk1 key cards, and `md decode --in F >>F` (and every reading verb) appended to its input, all at exit 0. md now refuses these before reading anything, names both, and exits 2; so does `md encode --json --out F` with stdout redirected to F ([md-out-names-input]).
+- **A keyed card always carries each key's origin (Brian's ruling of 2026-11-25).** `md encode` with keys and no
+  origin on a canonical wrapper (`wpkh`, `pkh`, `sh(wpkh)`, key-path `tr`, `wsh(multi/sortedmulti)`,
+  `sh(wsh(multi/sortedmulti))`) used to elide the origin, and `md descriptor`, `md inspect` and `md decode` then read
+  it as the master node (`[fp]xpub661...`, `[fp/m]`, `--path m`). It now writes the shape's canonical origin on the
+  card (coin type `1'` off mainnet), the same card `--path bip84` (etc.) mints, and refuses with a request for
+  `--path` when the key's header contradicts that origin. A keyed card with no origin (`--path m`, or a
+  non-canonical wrapper with none) is refused. Reading a keyed card that has no origin, md no longer shows `m`,
+  never advises `--path m`, and warns that the path is not on the card. Keyless templates still elide, and the
+  wallet-policy id is unchanged (bug hunt 2026-11-25 md#1).
 - **`md encode` refuses a key whose header contradicts its declared origin.** A depth-4 key under a 3-level
   origin, a key whose child number is not the origin's step at the key's depth, or a 4-level origin with a
   hardened step past a depth-3 key minted at exit 0; a restore rebuilt the xpub header from the origin and printed

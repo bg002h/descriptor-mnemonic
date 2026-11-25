@@ -68,6 +68,9 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
                 .into(),
         ));
     }
+    // md#1 (bug hunt 2026-11-25): addresses do not depend on the origin, but
+    // a keyed card with none is said so loudly here too.
+    crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
 
     // Collect (chain, index, address) tuples first; then emit text or JSON.
     let mut rows: Vec<(u32, u32, String)> = Vec::with_capacity(args.count as usize);
