@@ -87,6 +87,11 @@ pub fn run(
             crate::output_advisory::OutputClass::Template
         };
         crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
+        crate::output_advisory::emit_fingerprint_privacy_note(
+            &descriptor,
+            false,
+            &mut std::io::stderr(),
+        );
         if partial {
             emit_partial_stderr_note(&unres, &mut std::io::stderr());
         }
@@ -154,6 +159,11 @@ pub fn run(
         crate::output_advisory::OutputClass::Template
     };
     crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
+    crate::output_advisory::emit_fingerprint_privacy_note(
+        &descriptor,
+        false,
+        &mut std::io::stderr(),
+    );
     if partial {
         emit_partial_stderr_note(&unres, &mut std::io::stderr());
     }

@@ -41,6 +41,12 @@ pub struct ParsedKey {
     /// the `depth >= 1` guard downstream is exercised by a unit test rather
     /// than an end-to-end one.
     pub depth: u8,
+    /// BIP-32 child number of the seated xpub — bytes 9..13 of the 78-byte
+    /// serialization, big-endian, hardened bit included. Like `depth`, NOT
+    /// part of the encoded payload: it exists so `md encode` can refuse a key
+    /// whose header contradicts the origin the card declares for its slot
+    /// (bug hunt 2026-11-25 md#2). `0` where no real xpub is at hand.
+    pub child_number: u32,
     /// chain code (32) ‖ compressed pubkey (33).
     pub payload: [u8; 65],
 }
@@ -161,9 +167,15 @@ pub fn parse_key(
         i,
         why: format!("xpub public key is not a valid secp256k1 point: {e}"),
     })?;
+    let child_number = u32::from_be_bytes([bytes[9], bytes[10], bytes[11], bytes[12]]);
     let mut payload = [0u8; 65];
     payload.copy_from_slice(&bytes[13..78]);
-    Ok(ParsedKey { i, depth, payload })
+    Ok(ParsedKey {
+        i,
+        depth,
+        child_number,
+        payload,
+    })
 }
 
 fn parse_index(s: &str) -> Result<u8, CliError> {

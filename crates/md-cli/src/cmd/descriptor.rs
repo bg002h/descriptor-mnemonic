@@ -488,5 +488,6 @@ fn emit_md1_card(
         crate::output_advisory::OutputClass::WatchOnly,
         &mut std::io::stderr(),
     );
+    crate::output_advisory::emit_fingerprint_privacy_note(descriptor, true, &mut std::io::stderr());
     Ok(0)
 }

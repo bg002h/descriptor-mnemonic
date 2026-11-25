@@ -243,21 +243,17 @@ fn matching_depth_origin_is_silent() {
 }
 
 #[test]
-fn excess_hardened_suffix_is_silent() {
-    // CLEAN NEGATIVE. `84'/0'/0'/0'` is 4 levels over a depth-3 key, so the
-    // origin does run deeper — but the excess step is HARDENED, and an xpub
-    // cannot derive a hardened child. No descriptor-style reading is available,
-    // so there is no ambiguity to report.
+fn excess_hardened_suffix_is_refused_not_noted() {
+    // `84'/0'/0'/0'` is 4 levels over a depth-3 key, and the excess step is
+    // HARDENED: an xpub cannot derive a hardened child, so the key provably
+    // is not the key that origin names. This used to mint silently; since bug
+    // hunt 2026-11-25 md#2 it is refused (the keyed note still never fires).
     let (stdout, stderr, code) = encode_keyed("wpkh(@0/84'/0'/0'/0'/*)", &[&format!("@0={K3}")]);
-    assert_eq!(code, 0, "{stderr}");
+    assert_eq!((code, stdout.as_str()), (1, ""), "{stderr}");
+    assert!(!stderr.contains(KEYED), "{stderr}");
     assert!(
-        !stderr.contains(KEYED),
-        "a hardened excess step must be SILENT: {stderr}"
-    );
-    assert_eq!(
-        stdout,
-        "md1f5j46qspqzt6jzzqqp2sg8kjtcxg2y6qpz8f3lt0aeyzl9flkeemudugfjxg3dujn6sufnq67c2ehzh8\n\
-         md1f5j46qsf5g5seqdm5eyg0eurl495gd6nefux4etke4l3sk39c8alzzwae9ycw0h6t6q9ae683czvlzs6\n"
+        stderr.contains("continues past depth 3 with a hardened step that no xpub can derive"),
+        "{stderr}"
     );
 }
 
@@ -279,11 +275,25 @@ fn the_same_template_with_no_key_is_silent() {
 
 #[test]
 fn the_keyless_narrow_note_is_unchanged_by_a_seated_key() {
-    // REGRESSION GUARD on the F-410 tier: `@0/0/*` is all-unhardened, so the
-    // narrow note fires whether or not a key is seated, and it must keep firing
-    // with its own wording. The keyed clause does not apply here (a 1-level
-    // origin is not deeper than a depth-3 key), so exactly one note is said.
-    let (stdout, stderr, code) = encode_keyed("wpkh(@0/0/*)", &[&format!("@0={K3}")]);
+    // REGRESSION GUARD on the F-410 tier: an all-unhardened origin draws the
+    // narrow note whether or not a key is seated, and it must keep firing with
+    // its own wording. The keyed clause does not apply here (the origin is not
+    // deeper than the seated key), so exactly one note is said.
+    //
+    // The seated key is MASTER/0/0/0 (depth 3, child 0), declared at its own
+    // origin `m/0/0/0`. Before bug hunt 2026-11-25 md#2 this test seated K3
+    // (depth 3, child 0') under `m/0`, a header the origin contradicts, which
+    // md now refuses (see `a_shallower_origin_than_the_seated_key_is_refused`).
+    use std::str::FromStr as _;
+    let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+    let master = bitcoin::bip32::Xpub::from_str(MASTER).unwrap();
+    let k = master
+        .derive_pub(
+            &secp,
+            &bitcoin::bip32::DerivationPath::from_str("m/0/0/0").unwrap(),
+        )
+        .unwrap();
+    let (stdout, stderr, code) = encode_keyed("wpkh(@0/0/0/0/*)", &[&format!("@0={k}")]);
     assert_eq!(code, 0, "{stderr}");
     assert!(
         stderr.contains(NARROW),
@@ -291,12 +301,22 @@ fn the_keyless_narrow_note_is_unchanged_by_a_seated_key() {
     );
     assert!(
         !stderr.contains(KEYED),
-        "a SHALLOWER origin than the seated key is not this clause's business: {stderr}"
+        "an origin no deeper than the seated key is not this clause's business: {stderr}"
     );
-    assert_eq!(
-        stdout,
-        "md1fmxtuqspqqsqq92pq76f0qepgngqygax8adlhystu487m8803h3pxgez9hj202rg3xshruum4rpzsh\n\
-         md1fmxtuqs2gvsxa6vjy8u7pl6j6yxafu57r2u4mv6lcctgjur7l3p8wujjv88ma9aqwdlkhp49hwah3\n"
+    assert!(stdout.starts_with("md1"), "{stdout}");
+}
+
+#[test]
+fn a_shallower_origin_than_the_seated_key_is_refused() {
+    // Bug hunt 2026-11-25 md#2: a depth-3 key declared at the 1-level origin
+    // `m/0` would restore with a header rebuilt to depth 1.
+    let (stdout, stderr, code) = encode_keyed("wpkh(@0/0/*)", &[&format!("@0={K3}")]);
+    assert_eq!((code, stdout.as_str()), (1, ""), "{stderr}");
+    assert!(
+        stderr.contains(
+            "the extended key states depth 3, but the origin this card declares for @0 is `m/0`"
+        ),
+        "{stderr}"
     );
 }
 

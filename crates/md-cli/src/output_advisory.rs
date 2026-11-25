@@ -36,3 +36,28 @@ pub fn emit_output_class_advisory<W: Write>(class: OutputClass, stderr: &mut W) 
     };
     let _ = writeln!(stderr, "{line}");
 }
+
+/// Bug hunt 2026-11-25 md#6: the BIP's MUSTs on fingerprints
+/// (`bip/bip-mnemonic-descriptor.mediawiki`, the `Fingerprints` TLV paragraph): "Recovery tools MUST
+/// warn the user before including fingerprints" and "Decoders that surface
+/// parsed fingerprints to the user MUST flag the data as privacy-sensitive".
+/// Silent when the card carries no fingerprint. stderr only.
+pub fn emit_fingerprint_privacy_note<W: Write>(
+    d: &md_codec::encode::Descriptor,
+    minting: bool,
+    stderr: &mut W,
+) {
+    if d.tlv.fingerprints.as_deref().unwrap_or_default().is_empty() {
+        return;
+    }
+    let line = if minting {
+        "warning: this card will carry master-key fingerprints. A fingerprint identifies \
+         the seed behind a key and links the card to that seed's other wallets: anyone who \
+         reads the card learns it. Leave the fingerprints out if you do not need them to \
+         tell slots apart."
+    } else {
+        "note: the fingerprints shown are privacy-sensitive: a fingerprint identifies the \
+         seed behind a key and links this card to that seed's other wallets."
+    };
+    let _ = writeln!(stderr, "{line}");
+}

@@ -148,6 +148,9 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         }
     }
     apply_path_override(&mut descriptor, args.path)?;
+    // Bug hunt 2026-11-25 md#2: after `--path`, so the origin compared is
+    // the one the card will carry.
+    refuse_key_origin_contradiction(&descriptor, &parsed_keys)?;
 
     #[cfg(feature = "json")]
     if args.json {
@@ -198,6 +201,8 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             args.path.is_some(),
             &mut std::io::stderr(),
         );
+        // Bug hunt 2026-11-25 md#3 (parity with the text branch).
+        emit_implied_wildcard_note(args.template, &mut std::io::stderr());
         // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a
         // keyless template — branch the advisory on the Pubkeys TLV.
         let class = if descriptor.is_wallet_policy() {
@@ -206,6 +211,11 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
             crate::output_advisory::OutputClass::Template
         };
         crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
+        crate::output_advisory::emit_fingerprint_privacy_note(
+            &descriptor,
+            true,
+            &mut std::io::stderr(),
+        );
         return Ok(0);
     }
 
@@ -280,6 +290,9 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         args.path.is_some(),
         &mut std::io::stderr(),
     );
+    // Bug hunt 2026-11-25 md#3: a placeholder written with no `/*` was
+    // minted as `/*`; say so.
+    emit_implied_wildcard_note(args.template, &mut std::io::stderr());
     // L19 (cycle-9): a keyed (wallet-policy) md1 is watch-only, not a keyless
     // template — branch the advisory on the Pubkeys TLV.
     let class = if descriptor.is_wallet_policy() {
@@ -288,7 +301,150 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
         crate::output_advisory::OutputClass::Template
     };
     crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
+    crate::output_advisory::emit_fingerprint_privacy_note(
+        &descriptor,
+        true,
+        &mut std::io::stderr(),
+    );
     Ok(0)
+}
+
+/// Bug hunt 2026-11-25 md#2: refuse to mint a keyed card whose `--key` xpub
+/// header provably contradicts the origin the card declares for that slot.
+///
+/// An md1 card carries a key's chain code and point only (65 bytes); its depth
+/// and child number are not on the wire, and a restore (`md descriptor`)
+/// REBUILDS both from the declared origin. A key whose own header says it was
+/// derived elsewhere therefore restores as a different xpub string, under an
+/// origin the key was not derived at, and a signer deriving at that origin gets
+/// a different key. `md decompose` and `mk encode` refuse the same record.
+///
+/// Refused, for the first `depth` components of the resolved origin:
+///   * the origin is SHORTER than the key's depth;
+///   * the component at position `depth` (1-based) is not the key's child
+///     number (for an origin exactly as long as the depth: its last step);
+///   * a component BEYOND the key's depth is hardened (an xpub at that depth
+///     cannot be the key such an origin names).
+///
+/// NOT refused, deliberately:
+///   * an EMPTY (elided) origin — what it means on a keyed card is an open
+///     decision (bug hunt md#1), so nothing is compared against it;
+///   * an origin LONGER than the key's depth whose excess steps are all
+///     unhardened — the F-411 ruling made that a note
+///     ([`emit_unhardened_origin_note`]), never a refusal.
+///
+/// Mint-time only: nothing here runs on a decoded card.
+pub(crate) fn refuse_key_origin_contradiction(
+    descriptor: &Descriptor,
+    keys: &[ParsedKey],
+) -> Result<(), CliError> {
+    // An expansion failure is not this check's error to raise; the validator
+    // that owns it reports it in its own words.
+    let Ok(expanded) = md_codec::canonicalize::expand_per_at_n(descriptor) else {
+        return Ok(());
+    };
+    for key in keys {
+        let Some(slot) = expanded.iter().find(|e| e.idx == key.i) else {
+            continue;
+        };
+        let comps = &slot.origin_path.components;
+        if comps.is_empty() {
+            continue;
+        }
+        let depth = usize::from(key.depth);
+        if depth == 0 {
+            // `parse_key` admits only depth 3 or 4; nothing to compare.
+            continue;
+        }
+        let raw = |c: &md_codec::origin_path::PathComponent| {
+            if c.hardened {
+                c.value | 0x8000_0000
+            } else {
+                c.value
+            }
+        };
+        let step = |v: u32| {
+            if v & 0x8000_0000 != 0 {
+                format!("{}'", v & 0x7FFF_FFFF)
+            } else {
+                v.to_string()
+            }
+        };
+        let origin = {
+            let mut o = String::from("m");
+            for c in comps {
+                o.push('/');
+                o.push_str(&step(raw(c)));
+            }
+            o
+        };
+        let why = if comps.len() < depth {
+            Some(format!(
+                "the extended key states depth {depth}, but the origin this card declares \
+                 for @{i} is `{origin}`, {n} level(s)",
+                i = key.i,
+                n = comps.len()
+            ))
+        } else if raw(&comps[depth - 1]) != key.child_number {
+            Some(format!(
+                "the extended key states depth {depth} and child number {child}, but the \
+                 origin this card declares for @{i} is `{origin}`, whose step {depth} is {at}",
+                child = step(key.child_number),
+                i = key.i,
+                at = step(raw(&comps[depth - 1]))
+            ))
+        } else if comps[depth..].iter().any(|c| c.hardened) {
+            Some(format!(
+                "the extended key states depth {depth}, but the origin this card declares \
+                 for @{i} is `{origin}`, which continues past depth {depth} with a hardened \
+                 step that no xpub can derive",
+                i = key.i
+            ))
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            return Err(CliError::BadXpub {
+                i: key.i,
+                why: format!(
+                    "{why}. An md1 card does not carry a key's depth or child number: a restore \
+                     rebuilds both from the declared origin, so this card would restore a \
+                     different xpub under an origin this key was not derived at (`md decompose` \
+                     and `mk encode` refuse the same record). Declare the origin this key was \
+                     derived at, in the template or with --path."
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Bug hunt 2026-11-25 md#3: note each placeholder written with no wildcard
+/// and no multipath (`@0`, `@0/84'/0'/0'`), which `md encode` mints as `/*`.
+/// A multipath with no wildcard (`@0/<0;1>`) never gets here: the minting
+/// parse refuses it ([`crate::parse::template::refuse_multipath_without_wildcard`]).
+/// Note only; stdout and the exit code are untouched.
+fn emit_implied_wildcard_note<W: std::io::Write>(template: &str, stderr: &mut W) {
+    let bare = crate::parse::template::placeholders_without_wildcard(template);
+    if bare.is_empty() {
+        return;
+    }
+    let list = bare
+        .iter()
+        .map(|i| format!("@{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let (verb, pron) = if bare.len() == 1 {
+        ("has", "it")
+    } else {
+        ("have", "each")
+    };
+    let _ = writeln!(
+        stderr,
+        "note: {list} {verb} no use-site tail, so this card records {pron} as `/*`: one ranged \
+         chain (child keys /0, /1, ...), with no change branch, not one fixed key. Write \
+         `/<0;1>/*` for a receive and change pair."
+    );
 }
 
 /// The md1 artifact for a descriptor: ONE string when it fits the codex32
@@ -322,6 +478,7 @@ pub fn mint_md1_cards(
     descriptor: &Descriptor,
     force_chunked: bool,
 ) -> Result<(Vec<String>, Option<u32>), CliError> {
+    refuse_unrestorable_card(descriptor)?;
     let single = if force_chunked {
         None
     } else {
@@ -339,6 +496,96 @@ pub fn mint_md1_cards(
             Ok((chunks, Some(csid)))
         }
     }
+}
+
+/// Mint-time refusals (bug hunt 2026-11-25) for cards md would mint and then
+/// could not turn back into a wallet. Run by [`mint_md1_cards`], so every md
+/// minting surface (`md encode`, `md descriptor --emit md1`) applies them, and
+/// `md decompose`'s route proofs see the same answer. Never run on a decoded
+/// card: reading, hashing and re-emitting existing cards are unaffected.
+///
+/// * **md#4** — a `Tag::Check` (`c:`) over anything but a bare key. The walker
+///   writes `c:pk_k(K)`/`c:pk_h(K)` as a bare key tag, and the decoder turns
+///   every bare key tag back into `c:pk_k`/`c:pk_h` (type B), so a `c:` left on
+///   the wire (`c:or_i(pk_k,pk_k)`, `c:and_v(v:pk,pk_k)`, `c:andor(..)`) wraps a
+///   type-B fragment on decode and no address or descriptor can be produced.
+/// * **md#5** — a keyed card whose use-site (shared or per-`@N`) has a hardened
+///   wildcard (`/*h`): BIP 32 forbids hardened derivation from an xpub, so the
+///   card's own keys can never derive an address. Keyless templates are not
+///   affected (a restore from a seed can derive hardened children).
+/// * **X4** — a keyed card carrying a key with an all-zero chain code: that is
+///   how a WIF (a single fixed key) is written as an "xpub", and its children
+///   are keys no wallet watches. `mk address`/`mk derive` refuse such a card.
+pub(crate) fn refuse_unrestorable_card(descriptor: &Descriptor) -> Result<(), CliError> {
+    fn check_over_non_key(n: &Node) -> bool {
+        let kids: &[Node] = match &n.body {
+            Body::Children(c) => c,
+            Body::Variable { children, .. } => children,
+            Body::Tr { tree: Some(t), .. } => std::slice::from_ref(t.as_ref()),
+            _ => &[],
+        };
+        if n.tag == Tag::Check
+            && !matches!(
+                kids,
+                [Node {
+                    tag: Tag::PkK | Tag::PkH,
+                    body: Body::KeyArg { .. },
+                }]
+            )
+        {
+            return true;
+        }
+        kids.iter().any(check_over_non_key)
+    }
+    if check_over_non_key(&descriptor.tree) {
+        return Err(CliError::Unsupported(
+            "this template wraps a fragment other than a single key in `c:` (for example \
+             `c:or_i(pk_k(..),pk_k(..))` or `c:and_v(v:pk(..),pk_k(..))`). md1 writes \
+             `c:pk_k(K)` as the bare key and reads every bare key back as `c:pk_k(K)`, so \
+             the inner keys of such a `c:` come back already checked and the card could \
+             never be turned into a descriptor or an address. md1 cannot carry this \
+             script. A spelling with `c:` on each key (for example `or_i(pk(..),pk(..))`) \
+             is a different script with different addresses: use it only for a wallet \
+             that has not received funds yet."
+                .into(),
+        ));
+    }
+    if descriptor.is_wallet_policy() {
+        let mut hardened = Vec::new();
+        if descriptor.use_site_path.wildcard_hardened {
+            hardened.push("the shared use-site".to_string());
+        }
+        for (i, u) in descriptor
+            .tlv
+            .use_site_path_overrides
+            .as_deref()
+            .unwrap_or_default()
+        {
+            if u.wildcard_hardened {
+                hardened.push(format!("@{i}'s use-site"));
+            }
+        }
+        if !hardened.is_empty() {
+            return Err(CliError::Unsupported(format!(
+                "{} ends in a hardened wildcard (`*h`), and this card carries xpubs: BIP 32 \
+                 forbids hardened derivation from an xpub, so the card could never derive an \
+                 address from its own keys. Use an unhardened wildcard (`/<0;1>/*`), or mint a \
+                 keyless template.",
+                hardened.join(" and ")
+            )));
+        }
+        for (i, payload) in descriptor.tlv.pubkeys.as_deref().unwrap_or_default() {
+            if payload[..32].iter().all(|b| *b == 0) {
+                return Err(CliError::Unsupported(format!(
+                    "the key at @{i} has an all-zero chain code: it is one fixed key (this is \
+                     how a WIF key is written as an extended key), not an HD account key, and \
+                     the child keys a card derives from it are keys no wallet watches. md \
+                     mints no card from it."
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The artifact text: one md1 string per line, grouped every `group_size`
@@ -787,6 +1034,7 @@ mod tests {
         ParsedKey {
             i,
             depth,
+            child_number: 0,
             payload: [0u8; 65],
         }
     }

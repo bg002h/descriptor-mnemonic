@@ -54,6 +54,11 @@ pub fn run(
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
         // bh-md-M5 / bh-md-I8: the no-key warning (JSON path too) and the class note.
         crate::keyless_advisory::emit_card_advisories(&descriptor, &mut std::io::stderr());
+        crate::output_advisory::emit_fingerprint_privacy_note(
+            &descriptor,
+            false,
+            &mut std::io::stderr(),
+        );
         if partial {
             emit_partial_stderr_note(&unres, &mut std::io::stderr());
         }
@@ -113,6 +118,11 @@ pub fn run(
     emit_origins_stderr(&descriptor, &mut std::io::stderr());
     crate::output_advisory::emit_output_class_advisory(
         crate::output_advisory::OutputClass::Template,
+        &mut std::io::stderr(),
+    );
+    crate::output_advisory::emit_fingerprint_privacy_note(
+        &descriptor,
+        false,
         &mut std::io::stderr(),
     );
     if partial {

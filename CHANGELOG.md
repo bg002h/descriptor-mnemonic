@@ -29,6 +29,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   case of the string it corrects (`MD1YQPQQXQQ8XTWHW4XWN4QH`), in text and `--json` output and for chunked sets
   (bh-md-I3).
 - **An output that is one of md's inputs is refused.** `md encode --in F --out F` replaced the template with the card, `md descriptor --from-mk1-file K --emit md1 --out K` replaced the mk1 key cards, and `md decode --in F >>F` (and every reading verb) appended to its input, all at exit 0. md now refuses these before reading anything, names both, and exits 2; so does `md encode --json --out F` with stdout redirected to F ([md-out-names-input]).
+- **`md encode` refuses a key whose header contradicts its declared origin.** A depth-4 key under a 3-level
+  origin, a key whose child number is not the origin's step at the key's depth, or a 4-level origin with a
+  hardened step past a depth-3 key minted at exit 0; a restore rebuilt the xpub header from the origin and printed
+  a different xpub under an origin the key was not derived at. These now exit 1 (`md: --key @N: the extended key
+  states depth ...`). An origin longer than the key whose extra steps are all unhardened keeps its F-411 note
+  (bug hunt 2026-11-25 md#2).
+- **A placeholder with a multipath and no wildcard is refused at mint.** `md encode "wpkh(@0/<0;1>)"` minted the
+  ranged `@0/<0;1>/*`; minting verbs (`encode`, `descriptor`, `address`, `compose`) now refuse it at exit 1.
+  A placeholder with neither (`@0`) still mints as `/*`, now with a note saying so (md#3).
+- **`md encode` refuses a `c:` over anything but a single key.** `wsh(c:or_i(pk_k(@0/..),pk_k(@1/..)))` and
+  similar minted a card that `md address` and `md descriptor` could never render. Existing cards still decode
+  (md#4).
+- **A keyed card with a hardened wildcard (`/*h`) is refused at mint.** It could never derive an address from its
+  own xpubs. Keyless templates with `/*h` still mint (md#5).
+- **A key with an all-zero chain code is refused at mint.** That is how a WIF slot is written as an xpub; its
+  children are keys no wallet watches (X4).
+- **Fingerprints are flagged as privacy-sensitive.** `md encode` and `md descriptor --emit md1` warn on stderr when
+  the card will carry fingerprints, and `md decode` and `md inspect` note that the fingerprints they show are
+  privacy-sensitive, as the BIP requires (md#6).
 - **`md encode`, `verify`, `descriptor` and `address` refuse a second `--key`, or a second `--fingerprint`, for one `@i`.** Two different values exit 1 (`descriptor` and `address` used to compose the first key or the last fingerprint; `encode` and `verify` failed with an ordering error, exit 1). The same value given twice exits 2 (`descriptor` and `address` used to accept it; `encode` and `verify` failed with the ordering error, exit 1) (bh-md-C3).
 - **`md descriptor --change` refuses a wallet with no change branch.** On a wallet where no key has a multipath
   (for example `wpkh(@0/*)`), `--change` and `--chain N` (N > 0) printed the receive descriptor at exit 0. They now

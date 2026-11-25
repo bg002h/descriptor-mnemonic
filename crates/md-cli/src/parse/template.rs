@@ -143,13 +143,11 @@ fn rewrite_double_wildcard<'a>(text: &'a str, re: &Regex) -> std::borrow::Cow<'a
     std::borrow::Cow::Owned(out)
 }
 
-/// Pass A: extract every `@i/...` placeholder from the raw template string.
-pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, CliError> {
-    // BIP-388 `/**` sugar, resolved before ANY other pass reads the template.
-    let desugared = desugar_double_wildcard(template);
-    let template: &str = &desugared;
+/// The placeholder lexer regex [`lex_placeholders`] uses (shared with the
+/// bug hunt 2026-11-25 md#3 wildcard checks so the two cannot disagree).
+fn placeholder_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
+    RE.get_or_init(|| {
         // Captures:
         //   1: @i index digits
         //   2: optional origin path (e.g. "/48'/0'/0'/2'")
@@ -182,7 +180,55 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         // requirement, instead of misdirecting through M5.
         Regex::new(r"@(\d+)((?:/\d+(?:'|h)?)*)(?:/<([^>]*)>)?(/\*(?:'|h)?)?")
             .expect("static regex compiles")
-    });
+    })
+}
+
+/// Bug hunt 2026-11-25 md#3: the placeholder indices (sorted, deduplicated)
+/// written with NO wildcard and NO multipath (`@0`, `@0/84'/0'/0'`), which an
+/// md1 card records as `/*`. Read on the `/**`-desugared text, so `@0/**` is
+/// never listed.
+pub(crate) fn placeholders_without_wildcard(template: &str) -> Vec<u8> {
+    let desugared = desugar_double_wildcard(template);
+    let mut out: Vec<u8> = placeholder_regex()
+        .captures_iter(&desugared)
+        .filter(|c| c.get(3).is_none() && c.get(4).is_none())
+        .filter_map(|c| c[1].parse::<u8>().ok())
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Bug hunt 2026-11-25 md#3: REFUSE, when minting, a placeholder with a
+/// multipath group and no trailing wildcard (`@0/<0;1>`). In descriptor terms
+/// that is two FIXED keys, a different wallet from the ranged `@0/<0;1>/*` an
+/// md1 card would record; the use-site block cannot hold it (see
+/// `md_codec::use_site_path`), and `md decompose` refuses the same shape on a
+/// concrete descriptor. Called only under the minting disposition, so reading
+/// verbs and existing cards are unaffected.
+pub(crate) fn refuse_multipath_without_wildcard(template: &str) -> Result<(), CliError> {
+    let desugared = desugar_double_wildcard(template);
+    for c in placeholder_regex().captures_iter(&desugared) {
+        if let (Some(m), None) = (c.get(3), c.get(4)) {
+            let i = &c[1];
+            let alts = m.as_str();
+            return Err(CliError::Unsupported(format!(
+                "@{i} has use-site `/<{alts}>` with no trailing `/*`, which an md1 card \
+                 cannot hold: the card records every key as ranged, so a card minted from \
+                 this template would describe `@{i}/<{alts}>/*`, a different wallet. Write \
+                 `@{i}/<{alts}>/*` if that is the wallet you mean."
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Pass A: extract every `@i/...` placeholder from the raw template string.
+pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, CliError> {
+    // BIP-388 `/**` sugar, resolved before ANY other pass reads the template.
+    let desugared = desugar_double_wildcard(template);
+    let template: &str = &desugared;
+    let re = placeholder_regex();
 
     // REFUSE a descriptor-style origin PREFIX before it can confuse anyone.
     //
@@ -2930,6 +2976,9 @@ pub fn parse_template_ext(
     validate_marker_position(template)?;
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
+    if matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
+        refuse_multipath_without_wildcard(template)?;
+    }
     reject_unreferenced_bindings(&occs, keys, fingerprints)?;
     // N1 (SPEC_mdcli_mini.md §N1) runs on the OCCURRENCE LIST, so it must sit
     // ahead of `resolve_placeholders` — which collapses same-`@i` occurrences
