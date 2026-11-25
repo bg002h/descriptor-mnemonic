@@ -58,11 +58,11 @@ returns EFBIG; this stands in for a full disk or quota).
     is now refused (R2 text) and left unchanged;
   - a symlink FILE is followed and its target replaced; the link stays a link. A hard-linked FILE is replaced at this
     name only;
-  - a FIFO, device or standard-stream alias (`/dev/stdout`, `/dev/fd/N`) is written directly, as today.
+  - a FIFO or device is written directly; a standard-stream alias (`/dev/stdout`, `/dev/fd/N`) is written into the open stream at its own offset and never truncated (io-lib 0.1.3).
 - **R2 (T6).** Any error from writing the `--out` file (including a path that cannot be created) exits **1** (was
   `md: --out <FILE>: <error>`, exit 2). `<error>` is the `std::io::Error` Display, unmodified (for example `File too
   large (os error 27)`). Before the write md takes `std::fs::metadata(FILE)` (symlinks followed): for a regular file it
-  keeps (dev, ino, len, mtime); NotFound (including a dangling symlink) is "absent"; anything else is "other". On a
+  keeps (dev, ino, len, mtime); NotFound (including a dangling symlink) is "absent"; anything else is "other". A FILE that names a standard stream is always "other": its typed path, or its canonical parent joined with its name, starts with `/dev/` or `/proc/`, or a hop of its symlink chain (`std::fs::read_link`, repeated) does. md then prints only `md: cannot write the output: <FILE>: <error>`. (io-lib 0.1.3 writes such a name into the open stream, so a second look cannot say what is on disk.) On a
   write error md takes the same metadata again and prints exactly one stderr line, then exits 1: regular before and the
   same (dev, ino, len, mtime) after: `md: cannot write the output: <FILE>: <error>. <FILE> is unchanged.`; absent
   before and still NotFound after: `md: cannot write the output: <FILE>: <error>. Nothing was written.`; anything else:
@@ -110,7 +110,7 @@ New file `crates/md-cli/tests/bh1119_md_out_writes.rs`, one test function per ro
 files in a `tempfile::tempdir()`. FSIZE8 rows use `std::process::Command` with `pre_exec` (`libc::setrlimit
 RLIMIT_FSIZE 8/8`, `libc::signal(SIGXFSZ, SIG_IGN)`), as triage test `bh_md_c4_failed_out_write_keeps_previous_backup`
 did (`agent-reports/bughunt-1119/triage-md-t1.md`). `CARD` = `md1yqpqqxqq8xtwhw4xwn4qh` + newline (T's card).
-`ERR27(P)` = `md: cannot write the output: P: File too large (os error 27). P is unchanged.`; `CODEC` =
+`ERR27(X)` = `md: cannot write the output: X: File too large (os error 27). X is unchanged.`; X is the --out path as typed; `CODEC` =
 `md: codec error: non-canonical wrapper requires explicit origin for @0, but none provided`; `NOTE` =
 `note: stdout is a keyless descriptor template (no keys)`. Every base result below was seen by the author on d02bc778;
 every fixed result was seen on a scratch prototype of R1-R4 (reverted; section 5).
@@ -120,7 +120,7 @@ every fixed result was seen on a scratch prototype of R1-R4 (reverted; section 5
 | o1_failed_overwrite_keeps_previous_file | F = output of `encode T --out F`; FSIZE8 `encode P --out F` | rc 2, `md: --out F: File too large (os error 27)`, F = `md1yqpqq` (8 bytes) | rc 1, stderr exactly ERR27(F), stdout empty, F == CARD, no `*.tmp` in the dir |
 | o2_failed_overwrite_keeps_previous_file_descriptor_emit_md1 | D = output of `descriptor <v-b1-wallet md1> --from-mk1-file <its mk1 lines> --emit md1 --out D` (353 bytes); the same under FSIZE8 | rc 2, stderr `chunk-set-id: 0x7a2e1` + `md: --out D: File too large (os error 27)`, D 8 bytes | rc 1, stderr `chunk-set-id: 0x7a2e1` then ERR27(D), D byte-identical |
 | o3_out_write_error_text_and_exit | `encode T --out <dir>/nodir/x.md1` | rc 2, `md: --out <dir>/nodir/x.md1: No such file or directory (os error 2)` | rc 1, stderr exactly `md: cannot write the output: <dir>/nodir/x.md1: No such file or directory (os error 2). Nothing was written.`, stdout empty |
-| o4_read_only_dir_refuses_and_keeps_file | `encode T --out ro/F`, chmod 0500 ro; `encode P --out ro/F` (skip when euid is 0) | rc 0, F replaced by `md1yqpqqxzq2qwfv8urt848e` | rc 1, stderr exactly `md: cannot write the output: <ro/F>: Permission denied (os error 13). <ro/F> is unchanged.`, F == CARD |
+| o4_read_only_dir_refuses_and_keeps_file | `encode T --out ro/F`, chmod 0500 ro; `encode P --out ro/F` (skip when euid is 0) | rc 0, F replaced by `md1yqpqqxzq2qwfv8urt848e` | rc 1, stderr exactly `md: cannot write the output: <dir>/ro/F: Permission denied (os error 13). <dir>/ro/F is unchanged.`, F == CARD |
 | o5_symlink_out_replaces_target_keeps_link | `T.md1` = `OLD\n` 0644, `L.md1 -> T.md1`; `encode T --out L.md1` | rc 0, L a symlink, T.md1 == CARD, mode 600 | same (control, GREEN on base) |
 | o6_json_with_out_writes_both | `encode T --json --out F` (F absent) | rc 0, F absent | rc 0, F == CARD mode 600, stdout == stdout of `encode T --json`, stderr == NOTE + newline |
 | o7_json_with_out_grouped_file_unbroken_json | `encode T --json --group-size 5 --out F` | rc 0, F absent | rc 0, F == `md1yq pqqxq q8xtw hw4xw n4qh` + newline, JSON `phrase` == `md1yqpqqxqq8xtwhw4xwn4qh` |
@@ -131,7 +131,7 @@ every fixed result was seen on a scratch prototype of R1-R4 (reverted; section 5
 | o12_failed_policy_id_absent_out_stays_absent | `encode W --policy-id-fingerprint --out N` (N absent) | rc 1, N created | rc 1, N absent |
 | o13_failed_policy_id_force_chunked_prints_only_the_error | `encode W --policy-id-fingerprint --force-chunked` | rc 1, stdout 1 chunk line, stderr `chunk-set-id: 0xc992e` then CODEC | rc 1, stdout empty, stderr exactly CODEC (no chunk-set-id line) |
 | o14_failed_policy_id_json_out_keeps_prior_file | F = `PRIOR\n`; `encode W --policy-id-fingerprint --json --out F` | rc 1, CODEC, F == `PRIOR\n` | same (control, GREEN on base; pins R4's order) |
-| o15_stdio_alias_onto_a_file_names_no_state | s.txt = `OLD BACKUP\n`; with RLIMIT_FSIZE 0 and SIGXFSZ ignored, stdout appended to s.txt: `encode T --out /dev/stdout` (skip off Linux) | rc 2, `md: --out /dev/stdout: File too large (os error 27)`, s.txt 0 bytes | rc 1, stderr exactly `md: cannot write the output: /dev/stdout: File too large (os error 27)` (no state sentence), s.txt 0 bytes |
+| o15_stdio_alias_onto_a_file_names_no_state | s.txt = `OLD BACKUP\n`; with RLIMIT_FSIZE 0 and SIGXFSZ ignored, stdout appended to s.txt: `encode T --out /dev/stdout` (skip off Linux) | rc 2, `md: --out /dev/stdout: File too large (os error 27)`, s.txt 0 bytes | rc 1, stderr exactly `md: cannot write the output: /dev/stdout: File too large (os error 27)` (no state sentence), s.txt still `OLD BACKUP\n` (11 bytes) |
 
 o13's fixed column is R3's rule; the prototype computed the id after the chunk-set-id line, so it still printed it.
 Every other fixed cell was seen. RED expectation for the builder: o1-o4, o6-o13 and o15 fail on the base; o5 and o14 pass
