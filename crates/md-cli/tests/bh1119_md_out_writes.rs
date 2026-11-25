@@ -373,6 +373,8 @@ fn o15b_symlink_to_stdout() {
     });
 }
 
+// /proc/self/fd exists on Linux only (macOS: ENOENT, run 45538430838).
+#[cfg(target_os = "linux")]
 #[test]
 fn o15c_proc_fd_name() {
     alias_row(|_| std::path::PathBuf::from("/proc/self/fd/1"));
