@@ -51,7 +51,7 @@ miniscript = { workspace = true }
 # `write_private` is the only item `md` adopts (P3 boundary table, 1 of 11) and
 # it is reached as `mnemonic_io_lib::write::write_private` — `write` is a
 # `pub mod` with NO root re-export, so the unqualified path is an E0425.
-mnemonic-io-lib = "0.1.0"
+mnemonic-io-lib = "0.1.3"
 # The wallet-form converter's mk1 decoding (D1,
 # `design/IMPLEMENTATION_PLAN_wallet_form_converter.md` §2) — taken from the
 # REGISTRY, same rationale as `mnemonic-io-lib` above: NOT `path =`, and NOT
