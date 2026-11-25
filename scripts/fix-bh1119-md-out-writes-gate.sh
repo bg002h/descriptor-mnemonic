@@ -46,7 +46,7 @@ rows() {
   F="$D/o1"; "$MD" encode "$T" --out "$F" 2>/dev/null
   run fs 8 encode "$P" --out "$F"
   exp="md: cannot write the output: $F: File too large (os error 27). $F is unchanged."
-  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && [ "$(cat "$F")" = "$CARD" ] && ok=1
+  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && cmp -s "$F" <(printf '%s\n' "$CARD") && ok=1
   chk o1 $ok
   # o3
   F="$D/nodir/x.md1"
@@ -60,14 +60,14 @@ rows() {
     run "$MD" encode "$P" --out "$F"
     chmod 0700 "$D/ro"
     exp="md: cannot write the output: $F: Permission denied (os error 13). $F is unchanged."
-    ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && [ "$(cat "$F")" = "$CARD" ] && ok=1
+    ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && cmp -s "$F" <(printf '%s\n' "$CARD") && ok=1
     chk o4 $ok
   fi
   # o6
   F="$D/o6"
   run "$MD" encode "$T" --json --out "$F"
   local plain; plain=$("$MD" encode "$T" --json 2>/dev/null)
-  ok=0; [ "$code" = 0 ] && [ "$out" = "$plain" ] && [ "$err" = "$NOTE" ] && [ "$(cat "$F" 2>/dev/null)" = "$CARD" ] \
+  ok=0; [ "$code" = 0 ] && [ "$out" = "$plain" ] && [ "$err" = "$NOTE" ] && cmp -s "$F" <(printf '%s\n' "$CARD") 2>/dev/null \
     && [ "$(stat -c %a "$F" 2>/dev/null)" = 600 ] && ok=1
   chk o6 $ok
   # o8
