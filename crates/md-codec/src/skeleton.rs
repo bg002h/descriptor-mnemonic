@@ -136,7 +136,7 @@ impl std::fmt::Display for SkeletonError {
             ),
             SkeletonError::NotMiniscript => write!(
                 f,
-                "this policy is not valid miniscript (it does not type-check), so md shows no spend-path summary for it; no key can be computed from it"
+                "this policy is not valid miniscript (it fails a miniscript type, timelock or script-limit rule), so md shows no spend-path summary for it; no key can be computed from it"
             ),
             SkeletonError::KeysDoNotExpand(e) => write!(f, "keys will not expand: {e}"),
             SkeletonError::Render(e) => write!(f, "abstract-template render failed: {e}"),
@@ -384,8 +384,11 @@ fn key_path_kind_label(k: KeyPathKind) -> &'static str {
 /// `template` is also not injective ON TREES, independent of the
 /// abstraction in its own doc comment: `Tag::Pkh` and `Tag::PkH` both
 /// render `pkh(@i/...)`, and `Verify(PkK)` and `Verify(Check(PkK))` both
-/// render `v:pk(@i/...)` — two spellings of one miniscript fragment each,
-/// so sharing a key is correct, not a defect (fix round 1, N-1).
+/// render `v:pk(@i/...)`. `Verify(PkK)` and `Verify(Check(PkK))` are two
+/// spellings of one miniscript fragment, so sharing a key is correct, not a
+/// defect (fix round 1, N-1). A `Tag::Pkh` nested inside miniscript is not
+/// valid miniscript at all and never reaches here: [`skeleton`] refuses it
+/// with [`SkeletonError::NotMiniscript`] (md review r3 n-1).
 pub fn skeleton_key(s: &Skeleton) -> SkeletonKey {
     let mut out = s.template.clone();
     out.push('\u{001F}');

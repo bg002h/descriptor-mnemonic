@@ -71,9 +71,17 @@ fn the_review_cards_decode_but_get_no_summary_and_no_key() {
 
 #[test]
 fn an_untyped_tree_for_every_combinator_is_incomplete() {
+    let accepted: Vec<&str> = untyped_trees()
+        .into_iter()
+        .filter(|(_, tree)| policy_type_checks(&template(tree.clone())))
+        .map(|(name, _)| name)
+        .collect();
+    assert!(
+        accepted.is_empty(),
+        "accepted as valid miniscript: {accepted:?}"
+    );
     for (name, tree) in untyped_trees() {
         let d = template(tree);
-        assert!(!policy_type_checks(&d), "{name}");
         assert!(!policy_shape(&d).complete, "{name}");
         assert_eq!(
             skeleton(&d).unwrap_err(),
@@ -103,7 +111,7 @@ fn the_typed_spellings_stay_complete() {
 fn the_not_miniscript_refusal_text() {
     assert_eq!(
         SkeletonError::NotMiniscript.to_string(),
-        "this policy is not valid miniscript (it does not type-check), so md shows no spend-path \
-         summary for it; no key can be computed from it"
+        "this policy is not valid miniscript (it fails a miniscript type, timelock or script-limit \
+         rule), so md shows no spend-path summary for it; no key can be computed from it"
     );
 }

@@ -113,13 +113,21 @@ pub fn to_miniscript_descriptor_with_network(
     node_to_descriptor(&d.tree, &keys, network, Some(chain))
 }
 
-/// md review r2 I-1: does `d`'s tree convert to typed miniscript in its own
-/// context (top-level `wsh`/`sh`/`tr` leaf rules, every combinator's child
-/// types, resource limits)? Runs the SAME conversion
-/// [`to_miniscript_descriptor`] runs, over synthetic keys (`@i` is the
-/// master xpub of the seed `[i; 32]`), so it answers for a template-only card
-/// and for a card whose origins do not resolve, and never reads key
-/// material. A type error is a property of the tree, not of the keys.
+/// md review r2 I-1 / r3: does `d`'s tree convert to valid miniscript in its
+/// own context? Runs the SAME conversion [`to_miniscript_descriptor`] runs,
+/// over synthetic keys (`@i` is the master xpub of the seed `[i; 32]`), so it
+/// answers for a template-only card and for a card whose origins do not
+/// resolve, and never reads key material. The conversion checks every
+/// combinator's child types, timelock ranges, fragment placement and the
+/// standard script size; two checks it does not make are added here:
+///
+/// - every script root is type B. `Wsh::new` checks that for `wsh`/`sh`, but
+///   a tap leaf is wrapped with no top-level check, and a `v:`/`a:`/`s:` leaf
+///   can never leave the single true element BIP-342 requires (r3 I-1);
+/// - each script is within its context's satisfaction limits
+///   (`within_resource_limits`: at most 201 executed ops for `wsh`/`sh`,
+///   the standard witness-item and scriptSig limits, a satisfiable script;
+///   r3 m-3).
 pub(crate) fn tree_type_checks(d: &Descriptor) -> bool {
     use bitcoin::bip32::{Xpriv, Xpub};
     use bitcoin::secp256k1::Secp256k1;
@@ -138,7 +146,24 @@ pub(crate) fn tree_type_checks(d: &Descriptor) -> bool {
             wildcard: Wildcard::None,
         }));
     }
-    node_to_descriptor(&d.tree, &keys, Network::Bitcoin, Some(0)).is_ok()
+    let Ok(desc) = node_to_descriptor(&d.tree, &keys, Network::Bitcoin, Some(0)) else {
+        return false;
+    };
+    fn script_ok<Ctx: ScriptContext>(ms: &Miniscript<DescriptorPublicKey, Ctx>) -> bool {
+        Ctx::top_level_type_check(ms).is_ok() && ms.within_resource_limits()
+    }
+    use miniscript::descriptor::ShInner;
+    match &desc {
+        miniscript::Descriptor::Wsh(w) => script_ok(w.as_inner()),
+        miniscript::Descriptor::Sh(sh) => match sh.as_inner() {
+            ShInner::Wsh(w) => script_ok(w.as_inner()),
+            ShInner::Ms(ms) => script_ok(ms),
+            ShInner::Wpkh(_) => true,
+        },
+        miniscript::Descriptor::Tr(tr) => tr.leaves().all(|leaf| script_ok(leaf.miniscript())),
+        miniscript::Descriptor::Bare(b) => script_ok(b.as_inner()),
+        miniscript::Descriptor::Pkh(_) | miniscript::Descriptor::Wpkh(_) => true,
+    }
 }
 
 /// Descriptor-wide chain pre-flight shared by [`to_miniscript_descriptor_with_network`]

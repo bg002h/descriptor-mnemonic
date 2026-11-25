@@ -1642,8 +1642,10 @@ pub fn corrupt_chunk_at(chunk: &str, pos: usize, xor_mask: u8) -> String {
 
 /// The review's two cards, hand-built (the encoder does not type-check):
 /// `wsh(or_b(pk(@0),thresh(2,pk(@1),s:pk(@2),s:pk(@3))))` and
-/// `wsh(or_b(pk(@0),pk(@1)))`. Both spend with no signature.
-pub const UNTYPED_CARDS: [(&str, &str); 2] = [
+/// `wsh(or_b(pk(@0),pk(@1)))`. Both spend with no signature. And the r3
+/// review's `tr(NUMS,v:pk(@0))`, which can never be spent (its only leaf
+/// leaves an empty stack).
+pub const UNTYPED_CARDS: [(&str, &str); 3] = [
     (
         "untyped_review_or_b_thresh",
         "md1f7xrgqq9qeuedejan9uuw2jemuklxheeuvn3jkxtsqrqjc5xsg3f8z5w9vqqw5d36huyrgmg",
@@ -1652,9 +1654,73 @@ pub const UNTYPED_CARDS: [(&str, &str); 2] = [
         "untyped_review_or_b_pk_pk",
         "md1fa7e5qq9qfcu49nhed7d0ncqpsfv2z5qd7jmntp59fk69",
     ),
+    (
+        "untyped_review_r3_tap_leaf_v",
+        "md1fajunqq9qpcu49cqps8xjsgqjcysy6hxsr3",
+    ),
 ];
 
 /// One untyped tree per combinator md decodes, with the rule it breaks.
+fn tap(l: Node, r: Node) -> Node {
+    Node {
+        tag: Tag::TapTree,
+        body: Body::Children(vec![l, r]),
+    }
+}
+
+fn tr_with(internal_key: InternalKey, x: Node) -> Node {
+    Node {
+        tag: Tag::Tr,
+        body: Body::Tr {
+            internal_key,
+            tree: Some(Box::new(x)),
+        },
+    }
+}
+
+/// `and_v(v:pkh(@0),pk(@1))` spelled with the top-level `Tag::Pkh`.
+fn v_pkh_then_pk() -> Node {
+    node2(
+        Tag::AndV,
+        wrap(Tag::Verify, keyarg(Tag::Pkh, 0)),
+        keyarg(Tag::PkK, 1),
+    )
+}
+
+/// A balanced binary tree of `n >= 1` leaves joined by `tag`, so it stays
+/// shallow (JSON readers limit nesting depth; serde_json's is 128).
+fn balanced(tag: Tag, leaves: Vec<Node>) -> Node {
+    let mut layer = leaves;
+    while layer.len() > 1 {
+        let mut next = Vec::with_capacity(layer.len().div_ceil(2));
+        let mut it = layer.into_iter();
+        while let Some(l) = it.next() {
+            next.push(match it.next() {
+                Some(r) => node2(tag, l, r),
+                None => l,
+            });
+        }
+        layer = next;
+    }
+    layer.pop().expect("n >= 1")
+}
+
+/// `pk(@0)` joined by `or_i` `n` times over (a balanced tree): typed, but a
+/// witness script over the 3600-byte standard limit for `n = 128`.
+fn or_i_chain(n: usize) -> Node {
+    balanced(Tag::OrI, (0..n).map(|_| keyarg(Tag::PkK, 0)).collect())
+}
+
+/// `and_v(<v:older(1) and_v … v:older(n)>, pk(@0))`, the locks a balanced
+/// `and_v` tree of V nodes: typed, but every satisfaction executes `2n + 1`
+/// ops (`CSV VERIFY` per lock, one `CHECKSIG`), over 201 for `n = 101`.
+fn v_older_chain(n: u32) -> Node {
+    let locks = (1..=n)
+        .map(|i| wrap(Tag::Verify, timelock(Tag::Older, i)))
+        .collect();
+    node2(Tag::AndV, balanced(Tag::AndV, locks), keyarg(Tag::PkK, 0))
+}
+
 pub fn untyped_trees() -> Vec<(&'static str, Node)> {
     let pk = |i: u8| keyarg(Tag::PkK, i);
     let s = |x: Node| wrap(Tag::Swap, x);
@@ -1715,5 +1781,45 @@ pub fn untyped_trees() -> Vec<(&'static str, Node)> {
             )),
         ),
         ("tr_leaf_or_b_pk_pk", nums(node2(Tag::OrB, pk(0), pk(1)))),
+        // md review r3 I-1: a tap leaf's root must be B, as wsh's is (BIP-342
+        // needs one true element left; v: leaves none, a:/s: leave two).
+        ("tap_leaf_v", nums(v(pk(0)))),
+        ("tap_leaf_a", nums(a(pk(0)))),
+        ("tap_leaf_s", nums(s(pk(0)))),
+        (
+            "tap_leaf_and_v_v_v",
+            nums(node2(Tag::AndV, v(pk(0)), v(pk(1)))),
+        ),
+        ("tap_two_leaves_one_v", nums(tap(pk(0), v(pk(1))))),
+        ("tr_slot_leaf_v", tr_with(InternalKey::Slot(0), v(pk(1)))),
+        (
+            "tr_liana_two_leaves_one_v",
+            tr_with(InternalKey::LianaUnspendable, tap(pk(0), v(pk(1)))),
+        ),
+        // md review r3 m-1: not a type rule, but refused the same way.
+        (
+            "older_zero",
+            wsh(node2(Tag::AndV, v(pk(0)), timelock(Tag::Older, 0))),
+        ),
+        (
+            "after_above_i32",
+            wsh(node2(Tag::AndV, v(pk(0)), timelock(Tag::After, u32::MAX))),
+        ),
+        (
+            "multi_in_tap_leaf",
+            nums(multikeys(Tag::Multi, 1, vec![0, 1])),
+        ),
+        (
+            "nested_sortedmulti",
+            wsh(node2(
+                Tag::OrD,
+                multikeys(Tag::SortedMulti, 1, vec![0, 1]),
+                pk(2),
+            )),
+        ),
+        ("nested_pkh_wrapper", wsh(v_pkh_then_pk())),
+        ("script_over_3600_bytes", wsh(or_i_chain(128))),
+        // md review r3 m-3: every satisfaction runs more than 201 ops.
+        ("ops_over_201", wsh(v_older_chain(101))),
     ]
 }

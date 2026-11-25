@@ -409,19 +409,48 @@ fn walk_shape(d: &crate::encode::Descriptor) -> PolicyShape {
     s
 }
 
-/// md review r2 I-1: whether `d`'s tree is typed miniscript in its context.
-/// THE TYPE RULE of this summary, normative for every port: a tree that
-/// fails it has NO summary (`complete == false`) and no key, whatever the
-/// walk would say; `policy_shape` sets `complete = walk && typed` and leaves
-/// every other field as the walk left it. The walk's allowlist vouches for a `thresh` node
-/// alone; this vouches for the context around it (`or_b(pk, thresh(…))`
-/// spends with no signature, because the `thresh` is B where `or_b` needs a
-/// W). Rust answers it with rust-miniscript's own type checker
-/// (`to_miniscript`'s conversion over synthetic keys); a port without one
-/// implements the B/V/K/W and z/o/n/d/u rules of BIP-379 for md's fragment
-/// set, and `tests/fixtures/policy_shape/cases.json` records each case's
-/// answer (`typed`) to compare against. Display and identity only: decode,
-/// ids, addresses and re-encoding never consult it.
+/// md review r2 I-1 / r3: whether `d`'s tree is valid miniscript in its
+/// script context. THE RULE of this summary, normative for every port: a
+/// tree that fails it has NO summary (`complete == false`) and no key,
+/// whatever the walk would say; `policy_shape` sets `complete = walk &&
+/// typed` and leaves every other field as the walk left it. The walk's
+/// allowlist vouches for a `thresh` node alone; this vouches for the context
+/// around it (`or_b(pk, thresh(…))` spends with no signature, because the
+/// `thresh` is B where `or_b` needs a W).
+///
+/// Exactly what Rust refuses (rust-miniscript's checks, run by
+/// `to_miniscript`'s conversion over synthetic keys, plus two added there):
+///
+/// 1. **Types.** BIP-379's B/V/K/W base types and z/o/n/d/u properties for
+///    every combinator and wrapper, including `thresh`'s first child B and
+///    later children W.
+/// 2. **Script roots are B.** The `wsh`, `sh(wsh)`, `sh` script and EVERY
+///    tap leaf: a `v:`/`a:`/`s:`/`and_v(…,v:…)` root is refused.
+/// 3. **Timelock ranges.** `older(v)` needs `1 <= v` and a valid BIP-68
+///    value (`older(0)` and `older(0x80000001)` are refused); `after(v)`
+///    needs `1 <= v <= 0x7fffffff`.
+/// 4. **Fragment placement.** `multi`/`sortedmulti` only in `wsh`/`sh`
+///    (`multi` in a tap leaf is refused), `multi_a`/`sortedmulti_a` only in
+///    a tap leaf, `sortedmulti` only as the whole script, the descriptor
+///    wrapper `pkh` (`Tag::Pkh`) never inside miniscript (`Tag::PkH` is the
+///    fragment), and no raw `pk_h`.
+/// 5. **Script limits.** The standard `wsh` witness-script size (3600 bytes),
+///    the 520-byte `sh` script limit, rust-miniscript's recursion depth.
+/// 6. **Satisfaction limits** (`within_resource_limits`, per script): some
+///    satisfaction exists; for `wsh`/`sh`, at most 201 executed non-push ops,
+///    at most 100 standard witness items (`wsh`) or a 1650-byte scriptSig
+///    (`sh`); for a tap leaf, the 1000-element stack limit. rust-miniscript's
+///    analysis counts a `thresh` with a never-satisfiable child (`0`,
+///    `or_i(0,0)`, `and_v(…,0)`) as never satisfiable, even when `k` other
+///    children could satisfy it (measured: `thresh(2,pk,s:pk,s:or_i(0,0))`
+///    fails), and a port follows that.
+///
+/// Duplicate keys and malleability are NOT refused. A port without a
+/// miniscript library implements these rules for md's fragment set;
+/// `tests/fixtures/policy_shape/cases.json` records each case's answer
+/// (`typed`, which means "valid miniscript" in this sense), with an
+/// `untyped_*` vector for each rule. Display and identity only: decode, ids,
+/// addresses and re-encoding never consult it.
 pub fn policy_type_checks(d: &crate::encode::Descriptor) -> bool {
     crate::to_miniscript::tree_type_checks(d)
 }

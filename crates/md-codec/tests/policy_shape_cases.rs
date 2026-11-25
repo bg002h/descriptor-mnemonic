@@ -20,11 +20,14 @@
 //! independent expectations are `policy_shape_thresh.rs` and the verdict test
 //! below.
 //!
-//! md review r2 I-1: a tree that is not typed miniscript has no summary
-//! (`complete` false) and no key, whatever the allowlist says. The
-//! `untyped_*` cases are such trees, one per combinator, plus the review's two
-//! cards; a port needs a type check to get them right, which `typed: false`
-//! marks. Several `thresh_neg_*` cases are also `typed: false`.
+//! md reviews r2 I-1 and r3: a tree that is not valid miniscript in its
+//! context (`policy_type_checks`'s doc lists every rule: types, B script
+//! roots including each tap leaf, timelock ranges, fragment placement, script
+//! and satisfaction limits) has no summary (`complete` false) and no key,
+//! whatever the allowlist says. The `untyped_*` cases are such trees, one or
+//! more per rule, plus the r2 review's two cards and the r3 review's card; `typed: false` marks that a
+//! port needs that check to get them right. Several `thresh_neg_*` cases are
+//! also `typed: false`.
 
 mod common;
 
@@ -391,7 +394,7 @@ fn policy_shape_cases_json_is_fresh() {
 fn every_design_case_is_present_with_its_verdict() {
     let v: Value = serde_json::from_str(&generate()).unwrap();
     let cases = v["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 30 + 37 + 2 + 15);
+    assert_eq!(cases.len(), 30 + 37 + 3 + 29);
     for c in cases {
         let name = c["name"].as_str().unwrap();
         let complete = c["shape"]["complete"].as_bool().unwrap();
