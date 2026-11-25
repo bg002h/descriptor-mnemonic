@@ -65,7 +65,9 @@ fn md(args: &[String]) -> Out {
 
 fn run(verb: Verb, cards: &[&str], net: Option<&str>, tag: &str) -> Out {
     let mut a: Vec<String> = Vec::new();
-    let file = std::env::temp_dir().join(format!("c8b-{}-{tag}.txt", std::process::id()));
+    // md review r2 n-1: the verb is in the name, or two verbs sharing a tag
+    // race on one file across the test threads of this process.
+    let file = std::env::temp_dir().join(format!("c8b-{}-{tag}-{verb:?}.txt", std::process::id()));
     match verb {
         Verb::AddressCards => {
             a.extend(["address".into(), POLICY.into(), "--from-mk1".into()]);
