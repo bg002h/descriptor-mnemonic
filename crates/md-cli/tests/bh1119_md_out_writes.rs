@@ -362,6 +362,30 @@ fn alias_row(out_of: impl Fn(&Path) -> std::path::PathBuf) {
 }
 
 #[test]
+fn o15b_symlink_to_stdout() {
+    // L -> /dev/stdout, L2 -> L: the chain's first hop starts with /dev/.
+    alias_row(|d| {
+        std::os::unix::fs::symlink("/dev/stdout", d.join("L")).unwrap();
+        std::os::unix::fs::symlink("L", d.join("L2")).unwrap();
+        d.join("L2")
+    });
+}
+
+#[test]
+fn o15c_proc_fd_name() {
+    alias_row(|_| std::path::PathBuf::from("/proc/self/fd/1"));
+}
+
+#[test]
+fn o15d_dir_symlink_to_dev() {
+    // dl -> /dev: neither the typed path nor a hop starts with /dev/; the canonical parent does.
+    alias_row(|d| {
+        std::os::unix::fs::symlink("/dev", d.join("dl")).unwrap();
+        d.join("dl").join("stdout")
+    });
+}
+
+#[test]
 fn o16_link_through_dev_dir_link_names_no_state() {
     // d -> /dev, L -> d/fd/1: no hop starts with /dev/, only a hop's canonical parent does.
     alias_row(|d| {
