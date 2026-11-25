@@ -33,9 +33,10 @@ fi
 rows() {
   local bad=0 D out err code ef
   D=$(mktemp -d)
-  ef="$D/stderr.txt"
+  ef="$D/stdout.txt"
   # run <cmd...>: sets out, err, code
-  run() { out=$("$@" 2>"$ef"); code=$?; err=$(cat "$ef"); }
+  # stderr goes through a pipe and stdout to a file read after: a file on stderr would itself hit prlimit
+  run() { err=$("$@" 2>&1 >"$ef"); code=$?; out=$(cat "$ef"); }
   fs() { local lim=$1; shift; bash -c "trap '' XFSZ; exec prlimit --fsize=$lim \"\$@\"" _ "$MD" "$@"; }
   chk() { # name ok
     if [ "$2" = 1 ]; then echo "PASS $1"; else echo "FAIL $1 (rc $code, stdout [$out], stderr [$err])"; bad=1; fi
