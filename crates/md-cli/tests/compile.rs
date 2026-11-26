@@ -11,8 +11,8 @@ use assert_cmd::Command;
 /// in a comment alongside.
 const GOLDEN: &[(&str, &str, &str)] = &[
     // (policy, context, expected_template_starts_with)
-    ("pk(@0)", "segwitv0", "wsh(pk(@0))"),
-    ("pk(@0)", "tap", "tr(@0)"),
+    ("pk(@0)", "segwitv0", "wsh(pk(@0/<0;1>/*))"),
+    ("pk(@0)", "tap", "tr(@0/<0;1>/*)"),
 ];
 
 #[test]
