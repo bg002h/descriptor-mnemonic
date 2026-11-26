@@ -388,3 +388,51 @@ fn read_write_stdout_keeps_the_output_and_exits_0() {
     assert!(!err.contains("cannot write"), "{err}");
     assert!(std::fs::metadata(&p).unwrap().len() > 0, "output lost");
 }
+
+/// `md … >&-`: with fd 1 closed, std's runtime puts `/dev/null` on it before
+/// `main`, so the output was lost with exit 0. A verb that prints exits 1 with
+/// the EBADF line, like a read-only stdout; one that prints nothing keeps its
+/// code.
+#[test]
+fn closed_stdout_exits_1_with_the_line() {
+    const BADF: &str = "md: cannot write the output: Bad file descriptor (os error 9)";
+    let closed = |a: &[String]| {
+        Command::new("sh")
+            .arg("-c")
+            .arg("exec \"$0\" \"$@\" >&-")
+            .arg(env!("CARGO_BIN_EXE_md"))
+            .args(a)
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap()
+    };
+    for a in [
+        s(&["gui-schema"]),
+        s(&["decode", CARD]),
+        s(&["encode", TEMPLATE]),
+        s(&["repair", DAMAGED]),
+        address(&["--count", "2"]),
+        s(&["--help"]),
+        s(&["--version"]),
+    ] {
+        let o = closed(&a);
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert_eq!(o.status.code(), Some(1), "{a:?}: {err}");
+        assert_eq!(err.lines().last(), Some(BADF), "{a:?}: {err}");
+    }
+    let o = closed(&s(&["decode", "not-a-card"]));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert!(!err.contains("cannot write"), "{err}");
+
+    // `--out` writes nothing to stdout: exit 0, and the file holds exactly the
+    // card (no stdout text landed in it through a reused fd 1).
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("card");
+    let o = closed(&s(&["encode", TEMPLATE, "--out", p.to_str().unwrap()]));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(0), "{err}");
+    assert!(!err.contains("cannot write"), "{err}");
+    let want = md().args(["encode", TEMPLATE]).output().unwrap().stdout;
+    assert_eq!(std::fs::read(&p).unwrap(), want);
+}

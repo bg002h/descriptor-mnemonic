@@ -30,8 +30,9 @@ pub(crate) fn stdout_write(args: std::fmt::Arguments<'_>) {
 }
 
 /// std's stdout reports EBADF as a successful write, so a stdout that cannot
-/// write (opened read-only, `1</dev/null`, as O_PATH, or with Linux's access
-/// mode 3) would lose the output with exit 0. Checked once,
+/// write (opened read-only, `1</dev/null`, as O_PATH, with Linux's access
+/// mode 3, or closed at exec, `>&-`, see `fd_probe`) would lose the output
+/// with exit 0. Checked once,
 /// at the first write (or clap's `--help`/`--version`): then EBADF is recorded
 /// as the write error. A verb that writes nothing to stdout is not touched.
 pub(crate) fn read_only() -> bool {
@@ -41,7 +42,8 @@ pub(crate) fn read_only() -> bool {
         {
             // SAFETY: fcntl(F_GETFL) takes no pointer; a bad fd returns -1.
             let fl = unsafe { libc::fcntl(1, libc::F_GETFL) };
-            let ro = fl >= 0 && !matches!(fl & libc::O_ACCMODE, libc::O_WRONLY | libc::O_RDWR);
+            let ro = STDOUT_WAS_CLOSED.load(Ordering::Relaxed)
+                || (fl >= 0 && !matches!(fl & libc::O_ACCMODE, libc::O_WRONLY | libc::O_RDWR));
             if ro {
                 failed(&std::io::Error::from_raw_os_error(libc::EBADF));
             }
@@ -54,6 +56,62 @@ pub(crate) fn read_only() -> bool {
             false
         }
     })
+}
+
+/// Set when fd 1 was closed at exec (`md … >&-`).
+static STDOUT_WAS_CLOSED: AtomicBool = AtomicBool::new(false);
+
+/// A closed fd 1 cannot be seen from `main`: std's runtime opens `/dev/null`
+/// on every closed fd 0-2 before `main` runs, and the output then vanishes
+/// with exit 0. So this runs earlier, as a load-time constructor: it records
+/// a closed fd 1 (then `read_only` reports EBADF at the first stdout write)
+/// and itself puts `/dev/null` on each closed fd 0-2, in order, so no later
+/// `open` (an `--out` file, say) can take a standard fd number.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd",
+    target_os = "dragonfly",
+    target_os = "macos",
+    target_os = "ios"
+))]
+mod fd_probe {
+    #[used]
+    #[cfg_attr(
+        any(target_os = "macos", target_os = "ios"),
+        unsafe(link_section = "__DATA,__mod_init_func")
+    )]
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "ios")),
+        unsafe(link_section = ".init_array")
+    )]
+    static PROBE: extern "C" fn() = probe;
+
+    extern "C" fn probe() {
+        for fd in 0..=2 {
+            // SAFETY: fcntl(F_GETFD) takes no pointer; a closed fd returns -1
+            // with EBADF.
+            let closed = unsafe { libc::fcntl(fd, libc::F_GETFD) } == -1
+                && std::io::Error::last_os_error().raw_os_error() == Some(libc::EBADF);
+            if !closed {
+                continue;
+            }
+            if fd == 1 {
+                super::STDOUT_WAS_CLOSED.store(true, super::Ordering::Relaxed);
+            }
+            // SAFETY: a NUL-terminated path; the fd is left open on purpose.
+            // open returns the lowest free fd, which is `fd` (lower ones are
+            // open by now); anything else is closed again and std's own
+            // /dev/null fallback takes over.
+            let got = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
+            if got >= 0 && got != fd {
+                // SAFETY: `got` is the fd just opened here.
+                unsafe { libc::close(got) };
+            }
+        }
+    }
 }
 
 /// Records a failed stdout write (also used for clap's `--help`/`--version`).
