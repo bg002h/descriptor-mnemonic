@@ -65,7 +65,12 @@ fn md(args: &[String]) -> Out {
 
 fn run(verb: Verb, cards: &[&str], net: Option<&str>, tag: &str) -> Out {
     let mut a: Vec<String> = Vec::new();
-    let file = std::env::temp_dir().join(format!("c8b-{}-{tag}.txt", std::process::id()));
+    // A unique name per call: the tests of this file run in parallel in one
+    // process, and several pass the same `tag`, so a shared name let one test
+    // delete or overwrite another's card file.
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let file = std::env::temp_dir().join(format!("c8b-{}-{tag}-{seq}.txt", std::process::id()));
     match verb {
         Verb::AddressCards => {
             a.extend(["address".into(), POLICY.into(), "--from-mk1".into()]);
