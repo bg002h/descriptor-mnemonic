@@ -10,6 +10,15 @@ Pins md-codec `=0.49.0`. Not tagged or published.
 
 ### Changed
 
+- **`md compose --preset` is now `--scheme` (cross-repo naming decision, 2026-11-26).** The flag picks a named
+  wallet scheme (`kofn-recovery,2of3,older=26280` and the other five); "template" stays reserved for BIP 388
+  wallet descriptor template text. The parameter grammar, values, output and exit codes are unchanged, and
+  `--preset` is still accepted as a hidden alias (absent from `--help`), so existing scripts keep working.
+  Everything compose prints that names the flag now says `--scheme` (`--scheme frobnicate: expected one of ...`,
+  clap's `--path`/`--scheme` conflict), and its parameter refusals start `scheme <name>` where they started
+  `preset <name>` (`scheme kofn-recovery needs older=<n>`, `... which schemes cannot express -- use --path ...`).
+  The `--json` key `preset` keeps its name. Flag change: the toolkit manual and the mnemonic-gui md schema mirror
+  follow.
 - **`md compile` and `md encode --from-policy` write BIP 388's canonical tail on a bare placeholder (Fable review
   I-1).** `pk(@0)` compiles to `tr(@0/<0;1>/*)`, so the printed template mints; before, the bare-`@N` mint refusal
   refused the compiler's own output. A placeholder that already has a tail keeps it, and a hand-typed bare `@N`
@@ -146,6 +155,8 @@ Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, `Skele
 published.
 
 ### Changed
+- `ComposeError::PresetShape` now displays `scheme: <why>` instead of `preset: <why>`, matching `md compose --scheme`
+  (the variant name is unchanged).
 
 - **Without the `derive` feature, nothing gets a summary or a key (Fable review I-2).** The type rule needs
   `miniscript`, which only `derive` brings, so in a `default-features = false` build `policy_type_checks` returns

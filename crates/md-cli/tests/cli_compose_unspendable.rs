@@ -74,6 +74,9 @@ fn omitting_the_flag_is_byte_identical_to_the_previous_release() {
     for invocation in golden.keys() {
         let args: Vec<&str> = invocation.split(' ').collect();
         wrappers.insert(value_after(&args, "--wrapper").expect("row names a wrapper"));
+        // The golden's keys are the argv run against md-cli 0.18.0, which
+        // spelled the flag `--preset`; replaying them keeps exercising that
+        // spelling, now a hidden alias of `--scheme`.
         let spec = value_after(&args, "--preset").expect("row names a preset");
         presets.insert(spec.split(',').next().unwrap_or(spec));
     }
@@ -118,7 +121,7 @@ fn liana_changes_the_internal_key_and_nothing_else() {
         "compose",
         "--wrapper",
         "tr",
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3,older=26280",
         "--unspendable",
         "nums",
@@ -127,7 +130,7 @@ fn liana_changes_the_internal_key_and_nothing_else() {
         "compose",
         "--wrapper",
         "tr",
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3,older=26280",
         "--unspendable",
         "liana",
@@ -178,7 +181,7 @@ const WRAPPER_PRESETS: [(&str, &str); 4] = [
 #[test]
 fn unspendable_is_refused_under_every_non_tr_wrapper_and_only_there() {
     for (wrapper, preset) in WRAPPER_PRESETS {
-        let base = ["compose", "--wrapper", wrapper, "--preset", preset];
+        let base = ["compose", "--wrapper", wrapper, "--scheme", preset];
         let (out, err, code) = md(&base);
         assert_eq!(code, 0, "flagless --wrapper {wrapper}: {err}");
         assert!(
@@ -215,7 +218,7 @@ fn unspendable_value_is_matched_exactly() {
             "compose",
             "--wrapper",
             "tr",
-            "--preset",
+            "--scheme",
             "kofn-recovery,2of3,older=26280",
             "--unspendable",
             bad,
@@ -241,7 +244,7 @@ fn compose_json_carries_the_third_state() {
             "compose",
             "--wrapper",
             "tr",
-            "--preset",
+            "--scheme",
             preset,
             "--json",
             "--unspendable",
@@ -306,7 +309,7 @@ fn compose_tr(extra: &[&str]) -> (String, String, i32) {
 #[test]
 fn liana_refuses_a_sortedmulti_a_leaf_and_the_default_still_composes() {
     for spelling in [
-        &["--preset", "plain-multisig,2of3"][..],
+        &["--scheme", "plain-multisig,2of3"][..],
         &["--path", "2of3"][..],
     ] {
         let mut args = spelling.to_vec();
@@ -341,7 +344,7 @@ fn liana_policy_verdict_comes_from_the_registry_by_shape_not_name() {
     let cases: [(&str, Vec<&str>, &str); 4] = [
         (
             "hashlock preset",
-            vec!["--preset", &hashlock_preset],
+            vec!["--scheme", &hashlock_preset],
             "a hash lock",
         ),
         (
@@ -352,7 +355,7 @@ fn liana_policy_verdict_comes_from_the_registry_by_shape_not_name() {
         (
             "decaying preset",
             vec![
-                "--preset",
+                "--scheme",
                 "decaying-multisig,2of2,1of1,older1=13140,older2=26280,after=1000000",
             ],
             "an absolute lock",
@@ -388,7 +391,7 @@ fn liana_policy_verdict_comes_from_the_registry_by_shape_not_name() {
     // The canonical Liana shape: no Liana refusal (a template claims no
     // import either, so Liana is silent).
     let (_, err, code) = compose_tr(&[
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3,older=26280",
         "--unspendable",
         "liana",
@@ -407,7 +410,7 @@ fn liana_policy_verdict_comes_from_the_registry_by_shape_not_name() {
 #[test]
 fn liana_over_a_real_internal_key_warns_no_effect() {
     let (out, err, code) = compose_tr(&[
-        "--preset",
+        "--scheme",
         "simple-timelocked-inheritance,older=26280",
         "--unspendable",
         "liana",
@@ -418,7 +421,7 @@ fn liana_over_a_real_internal_key_warns_no_effect() {
     assert!(err.contains("path 1"), "names the extracted path: {err}");
 
     // Default: no warning.
-    let (_, err, code) = compose_tr(&["--preset", "simple-timelocked-inheritance,older=26280"]);
+    let (_, err, code) = compose_tr(&["--scheme", "simple-timelocked-inheritance,older=26280"]);
     assert_eq!(code, 0, "{err}");
     assert_eq!(err.matches(WARN_NO_EFFECT).count(), 0, "{err}");
 }

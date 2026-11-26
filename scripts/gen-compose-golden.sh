@@ -23,6 +23,10 @@
 # The parameter fixtures are the presets' own valid-parameter fixtures from
 # crates/md-cli/src/cmd/compose.rs (`every_preset_name_parses_with_some_valid_parameters`).
 #
+# The flag is spelled `--preset` here on purpose: md-cli 0.18.0 knows no
+# other spelling. Since md-cli 0.21.2 the flag is `--scheme` and `--preset`
+# is its hidden alias, so the recorded keys still replay unchanged.
+#
 #   MD=/path/to/pre-flag/md scripts/gen-compose-golden.sh
 #   (default MD: ${CARGO_TARGET_DIR:-target}/debug/md)
 set -euo pipefail

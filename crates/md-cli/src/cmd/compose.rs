@@ -179,7 +179,7 @@ fn kind_for_option(name: &str) -> Option<HashKind> {
 
 /// `value` as `kind.digest_len()` lowercase-hex bytes, or a
 /// `{ctx}: <kind> needs N hex characters` refusal.
-/// Shared by `--path ...,<kind>=HEX` and `--preset hashlock-gated,<kind>=HEX`.
+/// Shared by `--path ...,<kind>=HEX` and `--scheme hashlock-gated,<kind>=HEX`.
 ///
 /// **THE WIDTH COMES FROM `digest_len()`, never from a literal** (spec §5:
 /// "the only place a length is written"). A 40-hex `sha256` and a 64-hex
@@ -247,7 +247,7 @@ fn hex_digest(h: &HashLock) -> String {
     )
 }
 
-/// The resolved parameters of one `--preset` invocation, named for `--json`'s
+/// The resolved parameters of one `--scheme` invocation, named for `--json`'s
 /// `preset` field (SPEC §4d, C2). One variant per `md_codec::compose::presets`
 /// constructor, same field names as its arguments.
 #[derive(Debug, Clone, Copy)]
@@ -287,7 +287,7 @@ pub enum PresetParams {
     },
 }
 
-/// The six archetype names, kebab-case, in the order `--preset --help` and
+/// The six archetype names, kebab-case, in the order `--scheme --help` and
 /// every "expected one of" refusal lists them.
 pub const PRESET_NAMES: [&str; 6] = [
     "plain-multisig",
@@ -311,7 +311,7 @@ fn parse_kofn(tok: &str, ctx: &str) -> Result<(u8, u8), CliError> {
     Ok((k, n))
 }
 
-/// `--preset <name>[,<k>of<n>]*[,<param>=<value>]*` (SPEC §4d, C2; the CLI
+/// `--scheme <name>[,<k>of<n>]*[,<param>=<value>]*` (SPEC §4d, C2; the CLI
 /// grammar this task defines). The `<k>of<n>` tokens are consumed IN LISTED
 /// ORDER to fill the archetype's key-set parameters (tier 1 before tier 2,
 /// where an archetype has two); `<param>=<value>` tokens are matched BY NAME,
@@ -326,11 +326,11 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
     let name = parts.next().unwrap_or("");
     if !PRESET_NAMES.contains(&name) {
         return Err(CliError::Compose(format!(
-            "--preset {name}: expected one of {}",
+            "--scheme {name}: expected one of {}",
             PRESET_NAMES.join(", ")
         )));
     }
-    let ctx = format!("preset {name}");
+    let ctx = format!("scheme {name}");
     let mut ofs: Vec<(u8, u8)> = Vec::new();
     let mut named: std::collections::BTreeMap<&str, &str> = std::collections::BTreeMap::new();
     for tok in parts {
@@ -384,7 +384,7 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
         if let Some((rest, meaning)) = suffixed {
             if rest.parse::<u32>().is_ok() {
                 return Err(CliError::Compose(format!(
-                    "{ctx} {k}: `{v}` is --path's {meaning} spelling, which presets cannot express -- use --path with `{k}={v}` instead"
+                    "{ctx} {k}: `{v}` is --path's {meaning} spelling, which schemes cannot express -- use --path with `{k}={v}` instead"
                 )));
             }
         }
@@ -402,7 +402,7 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
         let v = need_u32(k)?;
         if v >= md_codec::compose::LOCKTIME_THRESHOLD {
             return Err(CliError::Compose(format!(
-                "{ctx}: {k}={v} reads as a block height and is above the height band (1..=499999999); presets cannot express a Unix time -- use --path with `after={v}t` instead"
+                "{ctx}: {k}={v} reads as a block height and is above the height band (1..=499999999); schemes cannot express a Unix time -- use --path with `after={v}t` instead"
             )));
         }
         Ok(v)
@@ -506,7 +506,7 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
             ))
         }
         other => Err(CliError::Compose(format!(
-            "preset {other}: internal error -- PRESET_NAMES advertises this name but no lowering rule exists for it (this is a bug in md, not a mistake in your command)"
+            "scheme {other}: internal error -- PRESET_NAMES advertises this name but no lowering rule exists for it (this is a bug in md, not a mistake in your command)"
         ))),
     }
 }
@@ -637,7 +637,7 @@ fn unspendable_liana_checks(composed: &md_codec::compose::Composed) -> Result<()
 pub fn run(
     wrapper: &str,
     paths: &[String],
-    preset: Option<&str>,
+    scheme: Option<&str>,
     experimental: bool,
     json: bool,
     unspendable: Option<&str>,
@@ -662,7 +662,7 @@ pub fn run(
         None => UnspendableKind::Nums,
         Some(s) => parse_unspendable(s)?,
     };
-    let (list, preset_params): (PathList, Option<PresetParams>) = match preset {
+    let (list, preset_params): (PathList, Option<PresetParams>) = match scheme {
         Some(spec) => {
             let (params, list) = parse_preset(wrapper, spec)?;
             (list, Some(params))
@@ -725,7 +725,7 @@ pub fn run(
     // (spec §5a: the §8b confirm fires only where sorted was legal); say so
     // rather than accept a typed request silently. No preset ever sets
     // `sorted: false` (`presets::ks` always sorts), so this loop is inert for
-    // every `--preset` list and unchanged from `--path`'s behaviour.
+    // every `--scheme` list and unchanged from `--path`'s behaviour.
     for (i, p) in list.paths.iter().enumerate() {
         if matches!(p.keys, Some(KeySet { n, sorted: false, .. }) if n >= 2)
             && !composed
@@ -885,7 +885,7 @@ mod tests {
     // `PRESET_NAMES` or the `match` in `parse_preset`. Confirmed live: adding
     // a 7th, unmatched name to `PRESET_NAMES` compiled, passed clippy, passed
     // all 31 CLI tests, and then PANICKED (`unreachable!()`, exit 101) on a
-    // real `md compose --preset <name>,...` invocation. This version iterates
+    // real `md compose --scheme <name>,...` invocation. This version iterates
     // `PRESET_NAMES` ITSELF and calls `parse_preset` directly (only possible
     // from inside this crate -- `cli_compose_preset.rs` is a black-box
     // integration test with no access to either), so a name added to

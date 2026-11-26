@@ -301,7 +301,7 @@ enum Command {
     /// Lower an ORDERED list of spend paths to a BIP-388 template by FIXED rules
     /// (SPEC_wallet_policy_composer.md §5). The opposite of `compile`: no search,
     /// no cost model, the same text from every implementation.
-    #[command(group = clap::ArgGroup::new("path_source").required(true).args(["paths", "preset"]))]
+    #[command(group = clap::ArgGroup::new("path_source").required(true).args(["paths", "scheme"]))]
     Compose {
         /// tr | wsh | sh-wsh | sh
         #[arg(long, value_name = "WRAPPER", required = true)]
@@ -309,22 +309,24 @@ enum Command {
         /// One spend path in listed order: `<k>of<n>[,older=N|older=Nu|after=H|after=Tt][,<hash>=HEX][,unsorted]`
         /// or `keyless,<hash>=HEX[,older=..|after=..]`, where `<hash>` is one of
         /// `sha256`/`hash256` (64 hex) or `ripemd160`/`hash160` (40 hex), at most
-        /// one per path. Repeatable. Mutually exclusive with --preset.
+        /// one per path. Repeatable. Mutually exclusive with --scheme.
         #[arg(long = "path", value_name = "PATH", action = clap::ArgAction::Append)]
         paths: Vec<String>,
-        /// One of the six named archetypes (SPEC_wallet_policy_composer.md
+        /// One of the six named wallet schemes (SPEC_wallet_policy_composer.md
         /// §4d): `<name>[,<k>of<n>]*[,<param>=<value>]*`, e.g.
         /// `kofn-recovery,2of3,older=26280`. Mutually exclusive with --path.
         /// For decaying-multisig, `older1` locks the FIRST (primary) tier and
         /// `older2` the second -- the primary tier does not spend immediately.
-        #[arg(long, value_name = "PRESET")]
-        preset: Option<String>,
+        // `--preset` is the old spelling, kept as a hidden alias.
+        #[arg(long, value_name = "SCHEME", alias = "preset")]
+        scheme: Option<String>,
         /// Admit key-less paths and unsorted-where-sorted-was-legal, with a warning.
         #[arg(long)]
         experimental: bool,
         /// Emit JSON: the origin-less template, the inline-origin template, the
         /// slot map, the taproot internal-key path, the EXPERIMENTAL marks, and
-        /// (with --preset) the resolved preset name and parameters.
+        /// (with --scheme) the resolved scheme name and parameters (JSON key
+        /// `preset`, unchanged).
         #[arg(long)]
         json: bool,
         /// Which unspendable taproot internal key to use when no spend path supplies
@@ -1172,7 +1174,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
         Command::Compose {
             wrapper,
             paths,
-            preset,
+            scheme,
             experimental,
             json,
             unspendable,
@@ -1180,7 +1182,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
         } => cmd::compose::run(
             &wrapper,
             &paths,
-            preset.as_deref(),
+            scheme.as_deref(),
             experimental,
             json,
             unspendable.as_deref(),

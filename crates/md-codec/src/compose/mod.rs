@@ -518,7 +518,7 @@ impl core::fmt::Display for ComposeError {
                 f,
                 "slots @{a} and @{b} declare the same origin without two distinct fingerprints; a template like that cannot be restored"
             ),
-            ComposeError::PresetShape { why } => write!(f, "preset: {why}"),
+            ComposeError::PresetShape { why } => write!(f, "scheme: {why}"),
         }
     }
 }

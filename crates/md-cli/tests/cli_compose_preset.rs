@@ -1,7 +1,8 @@
-//! `md compose --preset` (F-453, SPEC_wallet_policy_composer.md §4d, C2): the
-//! six archetypes as one-tap presets, mutually exclusive with `--path`, still
+//! `md compose --scheme` (F-453, SPEC_wallet_policy_composer.md §4d, C2;
+//! spelled `--preset` until 2026-11-26, still a hidden alias): the six
+//! archetypes as named wallet schemes, mutually exclusive with `--path`, still
 //! honouring `--wrapper`/`--experimental`/`--json`. Grammar:
-//! `--preset <name>[,<k>of<n>]*[,<param>=<value>]*`.
+//! `--scheme <name>[,<k>of<n>]*[,<param>=<value>]*`.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -17,7 +18,7 @@ fn preset_plain_multisig_matches_the_equivalent_path_list() {
             "compose",
             "--wrapper",
             "wsh",
-            "--preset",
+            "--scheme",
             "plain-multisig,2of3",
         ])
         .output()
@@ -37,7 +38,7 @@ fn preset_kofn_recovery_matches_the_equivalent_path_list_under_tr() {
             "compose",
             "--wrapper",
             "tr",
-            "--preset",
+            "--scheme",
             "kofn-recovery,2of3,older=26280",
         ])
         .output()
@@ -64,7 +65,7 @@ fn preset_tiered_recovery_and_decaying_multisig_and_hashlock_gated_compose() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "tiered-recovery,2of2,1of2,older=26280",
     ])
     .assert()
@@ -76,7 +77,7 @@ fn preset_tiered_recovery_and_decaying_multisig_and_hashlock_gated_compose() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "decaying-multisig,2of2,1of1,older1=13140,older2=26280,after=1000000",
     ])
     .assert()
@@ -89,7 +90,7 @@ fn preset_tiered_recovery_and_decaying_multisig_and_hashlock_gated_compose() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         &format!("hashlock-gated,sha256={h},older=26280"),
     ])
     .assert()
@@ -107,7 +108,7 @@ fn preset_and_path_are_mutually_exclusive() {
         "wsh",
         "--path",
         "2of3",
-        "--preset",
+        "--scheme",
         "plain-multisig,2of3",
     ])
     .assert()
@@ -126,7 +127,7 @@ fn compose_refuses_when_neither_path_nor_preset_given() {
 
 #[test]
 fn preset_refuses_an_unknown_name() {
-    md().args(["compose", "--wrapper", "wsh", "--preset", "frobnicate,2of3"])
+    md().args(["compose", "--wrapper", "wsh", "--scheme", "frobnicate,2of3"])
         .assert()
         .failure()
         .code(1)
@@ -141,14 +142,14 @@ fn preset_refuses_a_missing_parameter() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset kofn-recovery needs older=<n>",
+        "scheme kofn-recovery needs older=<n>",
     ));
 }
 
@@ -158,27 +159,27 @@ fn preset_refuses_an_extra_parameter() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,2of3,older=10",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset plain-multisig admits no older= parameter",
+        "scheme plain-multisig admits no older= parameter",
     ));
     md().args([
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,2of3,1of1",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset plain-multisig needs exactly 1 <k>of<n> parameter, got 2",
+        "scheme plain-multisig needs exactly 1 <k>of<n> parameter, got 2",
     ));
 }
 
@@ -191,27 +192,27 @@ fn preset_names_an_unknown_parameter_before_counting_kofn() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,2of3=x",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset plain-multisig admits no 2of3= parameter",
+        "scheme plain-multisig admits no 2of3= parameter",
     ));
     md().args([
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,bogus=1",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset plain-multisig admits no bogus= parameter",
+        "scheme plain-multisig admits no bogus= parameter",
     ));
 }
 
@@ -224,41 +225,41 @@ fn preset_names_the_path_remedy_for_u_and_t_suffixes() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "simple-timelocked-inheritance,older=100u",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset simple-timelocked-inheritance older: `100u` is --path's `u` (older in 512-second units) spelling, which presets cannot express -- use --path with `older=100u` instead",
+        "scheme simple-timelocked-inheritance older: `100u` is --path's `u` (older in 512-second units) spelling, which schemes cannot express -- use --path with `older=100u` instead",
     ));
     md().args([
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "decaying-multisig,2of2,1of1,older1=13140,older2=26280,after=500000001t",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset decaying-multisig after: `500000001t` is --path's `t` (after as a Unix time) spelling, which presets cannot express -- use --path with `after=500000001t` instead",
+        "scheme decaying-multisig after: `500000001t` is --path's `t` (after as a Unix time) spelling, which schemes cannot express -- use --path with `after=500000001t` instead",
     ));
     // A suffix on a non-number stays the generic refusal.
     md().args([
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "simple-timelocked-inheritance,older=xu",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset simple-timelocked-inheritance older: `xu` is not a number in 0..=4294967295",
+        "scheme simple-timelocked-inheritance older: `xu` is not a number in 0..=4294967295",
     ));
 }
 
@@ -271,7 +272,7 @@ fn preset_propagates_a_parameter_the_constructor_rejects() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3,older=70000",
     ])
     .assert()
@@ -304,7 +305,7 @@ fn preset_every_non_plain_archetype_refuses_under_both_legacy_wrappers_spec_4d_s
     ];
     for wrapper in ["sh", "sh-wsh"] {
         for (name, params) in &non_plain {
-            md().args(["compose", "--wrapper", wrapper, "--preset", &format!("{name},{params}")])
+            md().args(["compose", "--wrapper", wrapper, "--scheme", &format!("{name},{params}")])
                 .assert()
                 .failure()
                 .code(1)
@@ -316,7 +317,7 @@ fn preset_every_non_plain_archetype_refuses_under_both_legacy_wrappers_spec_4d_s
             "compose",
             "--wrapper",
             wrapper,
-            "--preset",
+            "--scheme",
             "plain-multisig,2of3",
         ])
         .assert()
@@ -330,27 +331,27 @@ fn preset_decaying_multisig_propagates_preset_shape_refusals() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "decaying-multisig,2of2,2of3,older1=2000,older2=1000,after=100",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset: decaying tiers must unlock progressively later (the second older must exceed the first)",
+        "scheme: decaying tiers must unlock progressively later (the second older must exceed the first)",
     ));
     md().args([
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "decaying-multisig,1of2,2of3,older1=1000,older2=2000,after=100",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset: a decaying multisig decays: the recovery threshold cannot exceed the primary threshold",
+        "scheme: a decaying multisig decays: the recovery threshold cannot exceed the primary threshold",
     ));
 }
 
@@ -360,7 +361,7 @@ fn preset_unknown_name_wins_over_a_malformed_token() {
     // token, so an unknown name is reported even when a token is ALSO
     // malformed -- not "`2/3` is not <k>of<n>" for a name that was never a
     // preset in the first place.
-    md().args(["compose", "--wrapper", "wsh", "--preset", "multisig,2/3"])
+    md().args(["compose", "--wrapper", "wsh", "--scheme", "multisig,2/3"])
         .assert()
         .failure()
         .code(1)
@@ -375,14 +376,14 @@ fn preset_refuses_a_duplicate_named_parameter() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3,older=100,older=200",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset kofn-recovery: `older=` given twice",
+        "scheme kofn-recovery: `older=` given twice",
     ));
 }
 
@@ -392,14 +393,14 @@ fn preset_refuses_a_malformed_kofn_token() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,2/3",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset plain-multisig: `2/3` is not <k>of<n>",
+        "scheme plain-multisig: `2/3` is not <k>of<n>",
     ));
 }
 
@@ -414,33 +415,33 @@ fn preset_refuses_a_kofn_magnitude_that_does_not_fit_a_small_number() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,300of3",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset plain-multisig: k `300` is not a small number",
+        "scheme plain-multisig: k `300` is not a small number",
     ));
     md().args([
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,2of300",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset plain-multisig: n `300` is not a small number",
+        "scheme plain-multisig: n `300` is not a small number",
     ));
     md().args([
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "plain-multisig,2of15",
     ])
     .assert()
@@ -457,14 +458,14 @@ fn preset_refuses_a_non_numeric_named_value() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3,older=soon",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset kofn-recovery older: `soon` is not a number in 0..=4294967295",
+        "scheme kofn-recovery older: `soon` is not a number in 0..=4294967295",
     ));
 }
 
@@ -474,7 +475,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "hashlock-gated,older=1",
     ])
     .assert()
@@ -491,7 +492,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "hashlock-gated,sha256=ab,older=1",
     ])
     .assert()
@@ -508,7 +509,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "hashlock-gated,ripemd160=ab,older=1",
     ])
     .assert()
@@ -526,7 +527,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "hashlock-gated,sha256=a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8,ripemd160=09e7bb5051d89788fb4e4b374126721dbcc2946b,older=1",
     ])
     .assert()
@@ -546,14 +547,14 @@ fn preset_decaying_multisig_after_in_the_time_band_names_path_as_the_remedy() {
         "compose",
         "--wrapper",
         "wsh",
-        "--preset",
+        "--scheme",
         "decaying-multisig,2of2,1of1,older1=100,older2=200,after=1893456000",
     ])
     .assert()
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "after=1893456000 reads as a block height and is above the height band (1..=499999999); presets cannot express a Unix time -- use --path with `after=1893456000t` instead",
+        "after=1893456000 reads as a block height and is above the height band (1..=499999999); schemes cannot express a Unix time -- use --path with `after=1893456000t` instead",
     ));
 }
 
@@ -567,14 +568,14 @@ fn preset_never_needs_experimental() {
             "compose",
             "--wrapper",
             "wsh",
-            "--preset",
+            "--scheme",
             "plain-multisig,2of3",
         ],
         vec![
             "compose",
             "--wrapper",
             "tr",
-            "--preset",
+            "--scheme",
             "kofn-recovery,2of3,older=26280",
         ],
     ] {
@@ -594,7 +595,7 @@ fn preset_json_names_the_preset_and_its_resolved_parameters() {
             "--wrapper",
             "tr",
             "--json",
-            "--preset",
+            "--scheme",
             "kofn-recovery,2of3,older=26280",
         ])
         .output()

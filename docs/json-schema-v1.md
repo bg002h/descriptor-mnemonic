@@ -74,7 +74,7 @@ not have to be reverse-engineered from git blame.
 | `unspendable_kind` | `"liana_unspendable"` or ABSENT (not `null`) — since md-cli 0.19.0 (F-449 stage 2) |
 | `experimental` | array of string — **PROSE for humans**, byte-identical to the `warning: EXPERIMENTAL:` lines on stderr. Its path numbers count from **1**. |
 | `experimental_paths` | array of `{ "kind": "keyless_path"\|"unsorted_keys", "path": usize }` — `path` is **0-based** and joins `slots[].path` |
-| `preset` | `{ "name": string, "params": object }` or `null` — present with `--preset` |
+| `preset` | `{ "name": string, "params": object }` or `null` — present with `--scheme` (spelled `--preset` before md-cli 0.21.2; the key keeps the old word) |
 
 **`unspendable_kind` is compose's half of SPEC §4a's third state**, with
 decode's vocabulary and presence rule (`JsonBody::Tr` below): ABSENT for a
