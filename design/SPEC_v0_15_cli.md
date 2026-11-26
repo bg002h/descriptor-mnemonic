@@ -60,13 +60,20 @@ md compile <EXPR> --context <tap|segwitv0> [--json]                         # cl
 - `--fingerprint @i=<HEX>` populates fingerprints TLV. Independent of `--key`.
 - `--path <PATH>` accepts a name (`bip48`), hex (`0x05`), or literal path
   (`m/48'/0'/0'/2'`).
-- Unknown subcommand or arg → exit 2.
+- Unknown subcommand or arg → exit 64.
 - `verify` re-encodes and compares; prints `OK` or `MISMATCH: <reason>`.
 - `vectors` writes corpus to `--out <DIR>` (default `crates/md-codec/tests/vectors/`).
 
 ### Exit codes
 
-| Code | Meaning |
+Superseded (2026-11-26) by the constellation exit-code scheme,
+mnemonic-engrave `design/SPEC_constellation_exit_codes.md` §3: 0 OK; a sum
+(1 to 63) of 1 NO (a `verify` mismatch, NOT spend-equal), 2 INVALID (bad
+input, decode failure), 4 UNVERIFIED (partial decode), 8 REFUSED (network,
+`--experimental`, an output that is an input), 16 REPAIRED, 32 IO; 64 a
+usage error alone; 101 an internal error.
+
+| Code | Meaning (v0.15, historical) |
 |------|---------|
 | 0    | success |
 | 1    | user error (bad input, `verify` mismatch, decode failure) |
