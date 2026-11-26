@@ -879,8 +879,12 @@ enum Command {
     ///         verify the card before trusting it
     ///   22 -- a corrected single string that still does not decode (for
     ///         example a wire version this build cannot read); it is printed
-    ///   2  -- uncorrectable, or the strings are not a card; nothing is
+    ///   2  -- uncorrectable, or the strings are not a card (including a
+    ///         chunk set with a repeated, stray or extra chunk); nothing is
     ///         printed and the failing chunk is named on stderr
+    ///   32 -- the --in file or stdin could not be read; or stdout failed,
+    ///         added to the code above
+    ///   64 -- a bad command line
     #[command(
         after_long_help = "ATOMIC SEMANTICS (multi-chunk):\n  When more than one md1 chunk is supplied, the call is atomic per plan\n  §1 D28: if ANY chunk fails BCH error-correction capacity (> 4 errors),\n  the WHOLE call exits 2 with the failing chunk index named on stderr.\n  NO partial corrected chunks are emitted on stdout.\n  An INCOMPLETE set (or one chunk of a larger set) is corrected chunk\n  by chunk and printed: exit 16 if a correction was applied, 0 if every\n  chunk was clean.\n\nINPUT FORMAT:\n  Accepts BOTH chunked-form md1 strings (those bearing a chunk header, as\n  emitted by `md encode --force-chunked` or by automatic chunking when the\n  payload exceeds 320 bits) AND non-chunked single-string md1 (those\n  emitted by plain `md encode` for small payloads). Since md-codec v0.35.0,\n  single-string md1 are repaired directly — no need to fall back to\n  `md decode`.\n\nEXAMPLES:\n  $ md repair md1yq802ggqqpsqwgtua24e7ssf3\n  $ md repair md1fwkhxpqpqztvyyy4qqxqqks883w6pg25z9m5rru59s2su80aw2q4qg9e343jwu6tsn md1fwkhxpq0yxs7q5yl6smtcxjz9m806prlsm794tkxqs6806lhaeh6qwafumf4dq3lcd md1fwkhxpq3umfj075dhzfzvynh66n94j5lcxlmx9ayav9mj0jjqdxqaazpst259n\n  $ md repair --json md1yq802ggqqpsqwgtua24e7ssf3"
     )]
@@ -999,6 +1003,8 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 json && out_file.is_some(),
                 &cmd::InputName::in_or_stdin(in_file.as_deref(), &[]),
             )?;
+            // R2: a usage error before `--in` is read.
+            cmd::encode::refuse_force_long_code(force_long_code)?;
             let template_str: String = if let Some(expr) = from_policy {
                 #[cfg(feature = "cli-compiler")]
                 {
@@ -1222,6 +1228,13 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 &inputs,
             )?;
             let chain = if change { Some(1) } else { chain };
+            cmd::build::check_from_mk1_arity(
+                &phrases,
+                &from_mk1,
+                from_mk1_file.is_some(),
+                template.as_deref(),
+                "descriptor",
+            )?;
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::descriptor::run(cmd::descriptor::DescriptorArgs {
                 experimental,
@@ -1268,6 +1281,13 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 .collect();
             cmd::refuse_output_names_input(true, None, false, &inputs)?;
             let chain = if change { 1 } else { chain };
+            cmd::build::check_from_mk1_arity(
+                &phrases,
+                &from_mk1,
+                from_mk1_file.is_some(),
+                template.as_deref(),
+                "address",
+            )?;
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::address::run(cmd::address::AddressArgs {
                 experimental,

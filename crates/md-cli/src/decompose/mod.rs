@@ -171,7 +171,7 @@ pub fn read_descriptor_file(path: &std::path::Path) -> Result<Vec<String>, CliEr
 pub fn read_descriptor_stdin() -> Result<Vec<String>, CliError> {
     let mut buf = String::new();
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-        .map_err(|e| CliError::Io(format!("stdin read: {e}")))?;
+        .map_err(|e| CliError::read_failure(format_args!("stdin read"), &e))?;
     if looks_like_json(&buf) {
         return Err(json_refusal());
     }

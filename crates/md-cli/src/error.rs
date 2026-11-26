@@ -58,7 +58,7 @@ pub enum CliError {
     Network(String),
     /// A bug: a failure no class covers. Exit 101 (INTERNAL).
     Internal(String),
-    /// `md compose` refusals: structural (§4e), lock band (§4c), DSL, or an
+    /// `md compose` refusals: structural (§4e), lock band (§4c), or the
     /// DSL. The message is complete in itself; `main` prefixes `md: `. Exit 2:
     /// the wrapper, paths and preset are the wallet's shape, an input. (An
     /// EXPERIMENTAL shape without `--experimental`, and `--md-only`'s refusal,
@@ -176,8 +176,8 @@ impl CliError {
         use crate::exit;
         match self {
             CliError::Mismatch(_) => exit::NO,
-            CliError::Codec(_)
-            | CliError::Render(_)
+            CliError::Codec(e) => codec_class(e),
+            CliError::Render(_)
             | CliError::TemplateParse(_)
             | CliError::BadXpub { .. }
             | CliError::BadFingerprint { .. }
@@ -210,6 +210,81 @@ impl CliError {
 }
 
 impl std::error::Error for CliError {}
+
+/// The §3 class of a codec error (spec R13). Every variant is named, with no
+/// wildcard, so a new `md_codec::Error` fails to compile until it is placed.
+/// Most are a card or template that is wrong (2). Three are reachable only
+/// through an md bug (101): md calls the `_with_network` entry points
+/// (`NetworkRequiredForUnspendable`), checks its input is non-empty before
+/// reassembly (`ChunkSetEmpty`), and the codec never builds
+/// `Codex32EncodeError`. `AddressDerivationFailed` stays 2: a card whose
+/// miniscript does not type-check, or an index the derivation refuses,
+/// reaches it from user input.
+pub(crate) fn codec_class(e: &md_codec::Error) -> u8 {
+    use md_codec::Error as E;
+    match e {
+        E::NetworkRequiredForUnspendable | E::ChunkSetEmpty | E::Codex32EncodeError(_) => {
+            crate::exit::INTERNAL
+        }
+        E::BitStreamTruncated { .. }
+        | E::WireVersionMismatch { .. }
+        | E::MalformedHeader { .. }
+        | E::PathDepthExceeded { .. }
+        | E::KeyCountOutOfRange { .. }
+        | E::DivergentPathCountMismatch { .. }
+        | E::AltCountOutOfRange { .. }
+        | E::TagOutOfRange { .. }
+        | E::ThresholdOutOfRange { .. }
+        | E::ChildCountOutOfRange { .. }
+        | E::KGreaterThanN { .. }
+        | E::TlvUnknownTagOutOfRange { .. }
+        | E::TlvOrderingViolation { .. }
+        | E::PlaceholderIndexOutOfRange { .. }
+        | E::OverrideOrderViolation { .. }
+        | E::EmptyTlvEntry { .. }
+        | E::TlvLengthExceedsRemaining { .. }
+        | E::PlaceholderNotReferenced { .. }
+        | E::PlaceholderFirstOccurrenceOutOfOrder { .. }
+        | E::MultipathAltCountMismatch { .. }
+        | E::BaselineUseSiteOverride { .. }
+        | E::RedundantUseSiteOverride { .. }
+        | E::ForbiddenTapTreeLeaf { .. }
+        | E::OperatorContextViolation { .. }
+        | E::ChunkCountOutOfRange { .. }
+        | E::ChunkIndexOutOfRange { .. }
+        | E::ChunkSetIdOutOfRange { .. }
+        | E::ChunkHeaderChunkedFlagMissing
+        | E::ChunkCountExceedsMax { .. }
+        | E::Codex32DecodeError(_)
+        | E::ChunkSetInconsistent
+        | E::ChunkSetIncomplete { .. }
+        | E::ChunkIndexGap { .. }
+        | E::ChunkSetIdMismatch { .. }
+        | E::VarintOverflow { .. }
+        | E::MissingExplicitOrigin { .. }
+        | E::EmptyOriginOverride { .. }
+        | E::InvalidPresenceByte { .. }
+        | E::DuplicateKeySlots { .. }
+        | E::OriginKeyContradiction { .. }
+        | E::InvalidXpubBytes { .. }
+        | E::MissingPubkey { .. }
+        | E::ChainIndexOutOfRange { .. }
+        | E::HardenedPublicDerivation
+        | E::AddressDerivationFailed { .. }
+        | E::NUMSSentinelConflict
+        | E::DecodeRecursionDepthExceeded { .. }
+        | E::TooManyErrors { .. }
+        | E::RelativeTimelockTruncated { .. }
+        | E::PayloadTooLongForSingleString { .. }
+        | E::ChunkSymbolCountOutOfRange { .. }
+        | E::StringSymbolCountOutOfRange { .. }
+        | E::MalformedPayloadPadding { .. }
+        | E::UnspendableWithSortedMultiA
+        | E::UnspendableUseSiteNotCanonical { .. }
+        | E::UnspendableNotRootTr
+        | E::NonMinimalWireVersion { .. } => crate::exit::INVALID,
+    }
+}
 
 impl From<md_codec::Error> for CliError {
     fn from(e: md_codec::Error) -> Self {
@@ -254,58 +329,51 @@ mod tests {
         assert_eq!(format!("{e}"), "MISMATCH: policy id differs");
     }
 
-    /// Spec R13: every variant maps to its §3 class. The `match` has no
-    /// wildcard, so a new variant fails to compile until it is placed here.
+    /// Spec R13: each variant's §3 class, stated here row by row rather
+    /// than copied from `exit_code`. `exit_code` and `codec_class` have no
+    /// wildcard, so a new variant fails to compile until it is classed
+    /// there; a row for it is added here by hand.
     #[test]
     fn every_variant_maps_to_its_class() {
+        use md_codec::Error as E;
         let s = || String::from("x");
-        let all = [
-            CliError::Codec(md_codec::Error::ChunkSetEmpty),
-            CliError::Render(md_codec::RenderError::MalformedTree(s())),
-            CliError::TemplateParse(s()),
-            CliError::BadXpub { i: 0, why: s() },
-            CliError::BadFingerprint { i: 0, why: s() },
-            CliError::BadOrigin { i: 0, why: s() },
-            CliError::Compile(s()),
-            CliError::Mismatch(s()),
-            CliError::Usage(s()),
-            CliError::Input(s()),
-            CliError::Io(s()),
-            CliError::Refused(s()),
-            CliError::Network(s()),
-            CliError::Internal(s()),
-            CliError::Compose(s()),
-            CliError::Seat(s()),
-            CliError::KeyReuse(s()),
-            CliError::Unsupported(s()),
-            CliError::Decompose(s()),
-            CliError::VerifyAgainstUnreadable(s()),
+        let rows: Vec<(CliError, u8)> = vec![
+            (CliError::Mismatch(s()), 1),
+            (CliError::Codec(E::ChunkSetInconsistent), 2),
+            (CliError::Codec(E::Codex32DecodeError(s())), 2),
+            (CliError::Codec(E::WireVersionMismatch { got: 1 }), 2),
+            (
+                CliError::Codec(E::AddressDerivationFailed { detail: s() }),
+                2,
+            ),
+            (CliError::Codec(E::NetworkRequiredForUnspendable), 101),
+            (CliError::Codec(E::ChunkSetEmpty), 101),
+            (CliError::Codec(E::Codex32EncodeError(s())), 101),
+            (
+                CliError::Render(md_codec::RenderError::MalformedTree(s())),
+                2,
+            ),
+            (CliError::TemplateParse(s()), 2),
+            (CliError::BadXpub { i: 0, why: s() }, 2),
+            (CliError::BadFingerprint { i: 0, why: s() }, 2),
+            (CliError::BadOrigin { i: 0, why: s() }, 2),
+            (CliError::Compile(s()), 2),
+            (CliError::Input(s()), 2),
+            (CliError::Compose(s()), 2),
+            (CliError::Seat(s()), 2),
+            (CliError::KeyReuse(s()), 2),
+            (CliError::Unsupported(s()), 2),
+            (CliError::Decompose(s()), 2),
+            (CliError::VerifyAgainstUnreadable(s()), 2),
+            (CliError::Refused(s()), 8),
+            (CliError::Network(s()), 8),
+            (CliError::Io(s()), 32),
+            (CliError::Usage(s()), 64),
+            (CliError::Internal(s()), 101),
         ];
-        for e in &all {
-            let want = match e {
-                CliError::Mismatch(_) => 1,
-                CliError::Codec(_)
-                | CliError::Render(_)
-                | CliError::TemplateParse(_)
-                | CliError::BadXpub { .. }
-                | CliError::BadFingerprint { .. }
-                | CliError::BadOrigin { .. }
-                | CliError::Compile(_)
-                | CliError::Input(_)
-                | CliError::Compose(_)
-                | CliError::Seat(_)
-                | CliError::KeyReuse(_)
-                | CliError::Unsupported(_)
-                | CliError::Decompose(_)
-                | CliError::VerifyAgainstUnreadable(_) => 2,
-                CliError::Refused(_) | CliError::Network(_) => 8,
-                CliError::Io(_) => 32,
-                CliError::Usage(_) => 64,
-                CliError::Internal(_) => 101,
-            };
-            assert_eq!(e.exit_code(), want, "{e:?}");
+        for (e, want) in &rows {
+            assert_eq!(e.exit_code(), *want, "{e:?}");
         }
-        assert_eq!(all.len(), 20, "a variant is missing from the table");
     }
 
     #[test]

@@ -117,8 +117,18 @@ mod tests {
 
     #[test]
     fn the_legend_is_the_specs_text() {
-        assert!(LEGEND.starts_with("Exit status: 0 = done, every check passed. 64 = bad"));
-        assert!(LEGEND.ends_with("32 a file, device or helper failed."));
-        assert!(!LEGEND.contains("  "), "{LEGEND}");
+        // The spec's quoted block (§4, R11), word for word.
+        assert_eq!(
+            LEGEND,
+            [
+                "Exit status: 0 = done, every check passed. 64 = bad command line, nothing ran.",
+                "101 = internal error. 130 = stopped by the operator. Other codes from 128 up =",
+                "killed by a signal. Otherwise the sum (1 to 63) of: 1 a check said no; 2 an",
+                "input is invalid; 4 verify the result before trusting it; 8 refused (network",
+                "mismatch, secret on the command line, unsafe output); 16 a correction was",
+                "applied; 32 a file, device or helper failed.",
+            ]
+            .join(" ")
+        );
     }
 }

@@ -306,7 +306,7 @@ pub fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {
             consumed_stdin = true;
             let mut buf = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-                .map_err(|e| CliError::Io(format!("stdin read: {e}")))?;
+                .map_err(|e| CliError::read_failure(format_args!("stdin read"), &e))?;
             for line in buf.lines() {
                 // mstring display-grouping (SPEC §3.2): strip separators so a
                 // grouped or unbroken card both re-ingest. (repair OUTPUT stays

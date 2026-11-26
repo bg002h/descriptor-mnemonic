@@ -93,6 +93,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
     crate::cmd::build::check_from_mk1_arity(
         args.phrases,
         args.from_mk1,
+        false,
         args.template,
         "descriptor",
     )?;

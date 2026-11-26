@@ -249,10 +249,7 @@ fn check_card_network_kinds(
 /// quietly ignore.
 pub fn read_mk1_file(path: &std::path::Path) -> Result<Vec<String>, CliError> {
     let text = std::fs::read_to_string(path).map_err(|e| {
-        CliError::read_failure(
-            format_args!("seating refused: --from-mk1-file {}", path.display()),
-            &e,
-        )
+        CliError::read_failure(format_args!("--from-mk1-file {}", path.display()), &e)
     })?;
     let mut out = Vec::new();
     for (n, line) in text.lines().enumerate() {

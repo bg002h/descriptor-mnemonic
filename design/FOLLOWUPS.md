@@ -86,6 +86,39 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-exit-codes-manual-lockstep` — the toolkit's user manual and GUI manual still state md's pre-cutover exit codes (companion to toolkit)
+- **Surfaced:** independent review of the exit-code cutover, `design/agent-reports/exit-codes-impl-review-2026-11-26.md` M-7.
+- **Where:** mnemonic-toolkit `docs/manual/src/40-cli-reference/42-md.md` and `docs/manual-gui/src/50-md/`; mnemonic-engrave `demo/sh2/rehearse.sh:60`; mnemonic-gui's exit badge (spec §7j).
+- **What:** md-cli moved to the constellation exit codes (mnemonic-engrave `design/SPEC_constellation_exit_codes.md` rev 5, §7a). These lines must follow:
+  - `42-md.md`:
+    - :205: a chain index out of range is 2, checked before any `--verify-against` verdict.
+    - :228: `--verify-against` is 0 spend-equal, 1 NOT spend-equal, 2 an input that does not decode, 32 a file that cannot be read.
+    - :399: `compile` with too many nested `or`s is 2.
+    - :523 and :560: the `--md-only` refusal is 8.
+    - :683-721 and :741: repair is 0, 16, 20, 22, 2, 32 or 64.
+      - An incomplete set (fewer chunks than the set holds, each once) is printed with 16 or 0.
+      - A set with a repeated, stray or extra chunk is 2 with nothing printed.
+      - "md1 always 5" and the divergence note go.
+    - :799-805: a `gen-man` I/O error is 32.
+    - :810-812: a stdout failure adds 32 to the verb's code.
+    - The appendix legend changes, and every usage error is 64.
+  - `manual-gui/src/50-md/`:
+    - Every clap usage line becomes 64: 53-encode:294, 59-address:224, 5C-compose:22/173/174, 5D-shape-key:60/61, 5E-descriptor:19/152/238-240, 5F-decompose:150/151.
+    - 5A-repair takes the repair codes above.
+    - 5C-compose:
+      - `--unspendable` with a non-tr wrapper is 2.
+      - Needs `--experimental` is 8.
+      - `--md-only` is 8.
+    - 5E-descriptor:
+      - :197 is 0/1.
+      - :241 is 2 for an xprv and 8 for a key of the other network.
+    - 5F-decompose:116/152-154 is 2.
+  - `rehearse.sh:60` expects 5 from `md repair` of a single string; it now gets 20.
+- **Why deferred:** these are cross-repo changes, made by the toolkit, engrave and GUI changes that pair with this cutover.
+- **Status:** `open`
+- **Tier:** `cross-repo`
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md` (to be filed with the manual change; the primary entry lives there under `manual-cli-surface-mirror`).
+
 ### `md-chunk-set-id-bundle-stamped` — `md descriptor` / `md address` warn about the chunk-set id of every card `mnemonic bundle` makes (companion of mk `mk-chunk-set-id-bundle-stamped`)
 - **Surfaced:** toolkit `design/agent-reports/architect-pins-md-0.20.6-mk-0.15.0-stops.md` S4/FU1; graded 2026-11-14, coordinator `agent-reports/grade-mk-chunk-set-id-bundle.md` (Q1, Q2, "md companion"); Brian chose Option A (silent) 2026-11-14.
 - **Where:** `crates/md-cli/src/seat/input.rs` (`seat_notes`, the `declared != derived` test; new private `is_bundle_stamped`).

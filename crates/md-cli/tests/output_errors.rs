@@ -391,9 +391,9 @@ fn read_write_stdout_keeps_the_output_and_exits_0() {
 }
 
 /// `md … >&-`: with fd 1 closed, std's runtime puts `/dev/null` on it before
-/// `main`, so the output was lost with exit 0. A verb that prints exits 1 with
-/// the EBADF line, like a read-only stdout; one that prints nothing keeps its
-/// code.
+/// `main`, so the output was lost with exit 0. A verb that prints exits 32
+/// (IO) with the EBADF line, like a read-only stdout; one that prints nothing
+/// keeps its code.
 #[test]
 fn closed_stdout_exits_32_with_the_line() {
     const BADF: &str = "md: cannot write the output: Bad file descriptor (os error 9)";

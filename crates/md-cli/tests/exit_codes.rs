@@ -47,10 +47,14 @@ const C2_BAD: &str = "md1fwkhxpq0yxs7q5yl6smtcxjz9m806prlsm794tkxqs6806lhaeh6qwa
 const OK: &str = "md1yqpqqxqq8xtwhw4xwn4qh";
 
 fn run(args: &[&str]) -> (i32, String, String) {
+    run_stdin(args, b"")
+}
+
+fn run_stdin(args: &[&str], stdin: &[u8]) -> (i32, String, String) {
     let o = Command::cargo_bin("md")
         .unwrap()
         .args(args)
-        .write_stdin(String::new())
+        .write_stdin(stdin.to_vec())
         .output()
         .unwrap();
     (
@@ -99,6 +103,17 @@ fn usage_errors_are_64() {
             .unwrap();
         assert_eq!(o.status.code(), Some(64), "non-UTF-8 argv");
     }
+    // R2: a usage error is 64 before any input file is read, so a missing
+    // file does not turn it into 32.
+    let missing = "/nonexistent/md-exit-codes/missing.txt";
+    let (code, _, err) = run(&["encode", "--in", missing, "--force-long-code"]);
+    assert_eq!(code, 64, "{err}");
+    for verb in ["descriptor", "address"] {
+        let (code, _, err) = run(&[verb, "--from-mk1-file", missing]);
+        assert_eq!(code, 64, "{verb}: {err}");
+        let (code, _, err) = run(&[verb, "--from-mk1", "mk1qqqq", "--from-mk1-file", missing]);
+        assert_eq!(code, 64, "{verb}: {err}");
+    }
 }
 
 /// Decision 3 and test 2: empty input and a file that is not text are 2; a
@@ -115,6 +130,10 @@ fn empty_input_is_2_and_a_missing_file_is_32() {
     assert_eq!(run(&["decode", "-"]).0, 2, "empty stdin");
     assert_eq!(run(&["decode", "--in", empty.to_str().unwrap()]).0, 2);
     assert_eq!(run(&["decode", "--in", bin.to_str().unwrap()]).0, 2);
+    for verb in ["decode", "decompose"] {
+        let (code, _, err) = run_stdin(&[verb, "-"], b"\xff\xfe\n");
+        assert_eq!(code, 2, "non-UTF-8 stdin on {verb}: {err}");
+    }
     assert_eq!(run(&["decode", "--in", missing.to_str().unwrap()]).0, 32);
     assert_eq!(run(&["encode", "--in", missing.to_str().unwrap()]).0, 32);
     let (code, _, err) = run(&[
@@ -223,4 +242,35 @@ fn repair_codes_follow_decisions_6_and_7() {
     assert_eq!(code, 20, "{err}");
     assert!(err.contains("UNVERIFIED"), "{err}");
     assert_eq!(run(&["repair", "md1qqqqqqqqqqqqqqqqqqqqqq"]).0, 2);
+    // A set that is not short of chunks is not "incomplete" (I-1, M-6):
+    // more chunks than the set holds, a chunk given twice, or a chunk whose
+    // index is outside its set is 2 with nothing printed.
+    for args in [
+        &["repair", C1, C2_BAD, C3, C2_BAD][..],
+        &["repair", C1, C2, C3, C2][..],
+        &["repair", C1, C1][..],
+        &["repair", C1, C2_BAD, C2_BAD][..],
+    ] {
+        let (code, out, err) = run(args);
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}: {err}");
+        assert!(!err.contains("incomplete"), "{args:?}: {err}");
+    }
+    let stray = with_chunk_index(C1, 40);
+    let (code, out, err) = run(&["repair", &stray]);
+    assert_eq!((code, out.as_str()), (2, ""), "{err}");
+}
+
+/// `chunk` with its header's index field set to `index`, re-checksummed.
+fn with_chunk_index(chunk: &str, index: u64) -> String {
+    use md_codec::bitstream::{BitReader, BitWriter};
+    let (bytes, bits) = md_codec::codex32::unwrap_string(chunk).unwrap();
+    let mut r = BitReader::with_bit_limit(&bytes, bits);
+    let mut w = BitWriter::new();
+    w.write_bits(r.read_bits(31).unwrap(), 31); // version, flag, id, count
+    r.read_bits(6).unwrap();
+    w.write_bits(index, 6);
+    for _ in 37..bits {
+        w.write_bits(r.read_bits(1).unwrap(), 1);
+    }
+    md_codec::codex32::wrap_payload(&w.into_bytes(), bits).unwrap()
 }

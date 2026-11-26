@@ -143,7 +143,14 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
         // printed chunk by chunk. Every chunk header parsed, so each string
         // decodes as a chunk of its format; the content id checks the
         // corrections when the rest of the set is reassembled.
+        // Only a set short of chunks, with distinct indices inside the set,
+        // is incomplete (decision 6: each string decodes as a chunk of its
+        // set); a set with too many, repeated or stray chunks is 2.
         Err(md_codec::Error::ChunkSetIncomplete { got, expected }) => {
+            if let Err(why) = short_set_of_distinct_chunks(&corrected, got, expected) {
+                eprintln!("md: repair: {why}");
+                return Ok(INVALID);
+            }
             emit(&corrected_chunks, &reports, args.json)?;
             if any_correction {
                 eprintln!(
@@ -194,6 +201,45 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
             Ok(INVALID)
         }
     }
+}
+
+/// `Ok` when `chunks` are fewer than the `expected` count of their set, and
+/// their indices are distinct and below that count; otherwise what is wrong.
+fn short_set_of_distinct_chunks(
+    chunks: &[String],
+    got: usize,
+    expected: usize,
+) -> Result<(), String> {
+    if got > expected {
+        return Err(format!(
+            "{got} chunks were given, but the set holds {expected}; the set does not reassemble"
+        ));
+    }
+    let mut seen = vec![false; expected];
+    for (n, chunk) in chunks.iter().enumerate() {
+        let (bytes, bits) =
+            md_codec::codex32::unwrap_string(chunk).map_err(|e| format!("chunk {}: {e}", n + 1))?;
+        let mut r = md_codec::bitstream::BitReader::with_bit_limit(&bytes, bits);
+        let h = md_codec::chunk::ChunkHeader::read(&mut r)
+            .map_err(|e| format!("chunk {}: {e}", n + 1))?;
+        let index = usize::from(h.index);
+        match seen.get_mut(index) {
+            None => {
+                return Err(format!(
+                    "chunk {} claims index {index}, outside its set of {expected}",
+                    n + 1
+                ));
+            }
+            Some(true) => {
+                return Err(format!(
+                    "chunk {} repeats index {index}; each chunk of the set is given once",
+                    n + 1
+                ));
+            }
+            Some(slot) => *slot = true,
+        }
+    }
+    Ok(())
 }
 
 /// The chunked flag: bit 0 of the first data symbol (after the 4-bit

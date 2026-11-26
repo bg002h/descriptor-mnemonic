@@ -427,9 +427,15 @@ fn fp_hex(fp: [u8; 4]) -> String {
 /// before `strip_md1_inputs`' dedupe or `seat::run`'s own pipeline -- so a
 /// grouped/copy-pasted card is recognised by prefix the same way the read
 /// verbs already do.
+///
+/// `file_given` is true when `--from-mk1-file` is set and its lines are not
+/// yet in `from_mk1`: `main` runs this check before reading that file (R2:
+/// a usage error is 64 before any input is read), then the verb runs it
+/// again on the merged list with `file_given` false.
 pub fn check_from_mk1_arity(
     phrases: &[String],
     from_mk1: &[String],
+    file_given: bool,
     template: Option<&str>,
     cmd: &'static str,
 ) -> Result<(), CliError> {
@@ -456,7 +462,7 @@ pub fn check_from_mk1_arity(
              {cmd}'s positional instead, where the policy phrase belongs."
         )));
     }
-    if phrases.is_empty() && template.is_none() && !from_mk1.is_empty() {
+    if phrases.is_empty() && template.is_none() && (file_given || !from_mk1.is_empty()) {
         return Err(CliError::Usage(format!(
             "{cmd} --from-mk1 supplies key cards, not the policy: no md1 policy phrase is on \
              the positional and no --template was given. Supply the keyless md1 policy \
