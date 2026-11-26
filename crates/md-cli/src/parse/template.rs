@@ -2963,6 +2963,36 @@ pub fn parse_template_ext(
     experimental: bool,
     reuse: crate::parse::reuse::Disposition,
 ) -> Result<Descriptor, CliError> {
+    parse_template_impl(template, keys, fingerprints, experimental, reuse, true)
+}
+
+/// The minting parse WITHOUT the dead-leaf rule (md review r4 I-1), for
+/// `keyless_advisory::needs_no_key`, which runs it on the template of a card
+/// that already exists and asks only whether the SIGNATURE rule is what
+/// refuses it (md review r5 I-1: with the dead-leaf rule in, a card with a
+/// dead leaf and a no-key leaf lost its "spend with NO key" warning).
+pub(crate) fn parse_template_signature_probe(
+    template: &str,
+    experimental: bool,
+) -> Result<Descriptor, CliError> {
+    parse_template_impl(
+        template,
+        &[],
+        &[],
+        experimental,
+        crate::parse::reuse::Disposition::Refuse,
+        false,
+    )
+}
+
+fn parse_template_impl(
+    template: &str,
+    keys: &[ParsedKey],
+    fingerprints: &[ParsedFingerprint],
+    experimental: bool,
+    reuse: crate::parse::reuse::Disposition,
+    dead_leaf_rule: bool,
+) -> Result<Descriptor, CliError> {
     // I-1 fix (whole-branch review, Important): checked FIRST, before
     // `lex_placeholders` below — which refuses ANY template carrying no `@i`
     // placeholder outright, so a template whose only `UNSPENDABLE(liana)`
@@ -3068,8 +3098,9 @@ pub fn parse_template_ext(
     // cannot be spent). rust-miniscript's sanity and `ext_check` rules miss
     // it in `tr` (its `Tap` limits check reads `sat_data` only when present);
     // they refuse the same shape in `wsh`/`sh`. Reading verbs and existing
-    // cards are unchanged.
-    if matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
+    // cards are unchanged, and so is the signature probe the read verbs run
+    // on an existing card's template (`dead_leaf_rule` false).
+    if dead_leaf_rule && matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
         if let MsDescriptor::Tr(inner) = &ms_desc {
             use miniscript::ScriptContext as _;
             let n = inner.leaves().count();
@@ -3078,9 +3109,9 @@ pub fn parse_template_ext(
                     // The leaf's text would show the synthetic keys, so name
                     // it by position (taptree order, left to right).
                     return Err(CliError::TemplateParse(format!(
-                        "a taproot leaf can never be satisfied (leaf {} of {n}): it is a spend \
-                         path that does not exist, and a wallet with no other path cannot be \
-                         spent",
+                        "a taproot leaf can never be satisfied (leaf {} of {n}): it is not a \
+                         spend path, and md refuses a taproot wallet with any such leaf; remove \
+                         it",
                         i + 1
                     )));
                 }

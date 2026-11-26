@@ -294,7 +294,7 @@ fn r4_unsatisfiable_tap_leaf_refused_at_mint() {
         assert_eq!(code, 1, "{t}: stderr: {err}");
         assert_eq!(out, "", "{t}");
         assert!(
-            err.contains("a taproot leaf can never be satisfied"),
+            err.contains("a taproot leaf can never be satisfied") && err.contains("; remove it"),
             "{t}: stderr: {err}"
         );
     }
@@ -306,4 +306,51 @@ fn r4_satisfiable_tap_leaves_still_mint() {
     let t = format!("tr({NUMS},{{pk(@0/<0;1>/*),and_v(v:pk(@1/<0;1>/*),older(10))}})");
     let (code, _, err) = run(&["encode", &t, "--path", "bip48"]);
     assert_eq!(code, 0, "stderr: {err}");
+}
+
+// ─── md review r5 I-1: the dead-leaf mint rule must not reach read verbs ─────
+//
+// Both cards were minted by the md before the r4 fold (`md encode
+// --experimental 'tr(NUMS,{and_v(v:pk(@0/<0;1>/*),0),older(10)})'`, the
+// second with `--key @0=… --path bip86`): one dead leaf, and one leaf anyone
+// can spend after 10 blocks. Reading them must still warn about the latter.
+
+const DEAD_LEAF_KEYLESS: &str = "md1yqfdsssj5qqcr32v6238qqqqqq587m7pw4u7l9p3";
+const DEAD_LEAF_WALLET: [&str; 3] = [
+    "md1fm0cjpqpqpm66zzqqvpc4xd9gnsqqqqq2z4q329g4z52329g4z52sx9mzfr7vlfutr",
+    "md1fm0cjpqg4z52329g4z52329g4z52329g4z52329g4z5qyn2tdngnq8g8fhdtw9j5mu",
+    "md1fm0cjpqkzqev4x7j46uajq92f4zan6kcpty5yvm5c3g6wf2dqanqqazn3pfcgnlw60",
+];
+const NO_KEY: &str = "warning: this card can be spent with NO key when: older(10)";
+
+#[test]
+fn r5_existing_dead_leaf_card_still_warns_on_decode_bytecode_and_json() {
+    for verb in [
+        vec!["decode"],
+        vec!["decode", "--json"],
+        vec!["bytecode"],
+        vec!["bytecode", "--json"],
+    ] {
+        let mut args = verb.clone();
+        args.push(DEAD_LEAF_KEYLESS);
+        let (code, _, err) = run(&args);
+        assert_eq!(code, 0, "{verb:?}: stderr: {err}");
+        assert!(err.contains(NO_KEY), "{verb:?}: stderr: {err}");
+    }
+}
+
+#[test]
+fn r5_existing_dead_leaf_wallet_card_is_not_called_watch_only() {
+    for verb in [
+        vec!["decode", "--json"],
+        vec!["bytecode"],
+        vec!["bytecode", "--json"],
+    ] {
+        let mut args = verb.clone();
+        args.extend(DEAD_LEAF_WALLET);
+        let (code, _, err) = run(&args);
+        assert_eq!(code, 0, "{verb:?}: stderr: {err}");
+        assert!(err.contains(NO_KEY), "{verb:?}: stderr: {err}");
+        assert!(!err.contains("watch-only"), "{verb:?}: stderr: {err}");
+    }
 }

@@ -115,3 +115,41 @@ fn the_not_miniscript_refusal_text() {
          rule), so md shows no spend-path summary for it; no key can be computed from it"
     );
 }
+
+/// seedhammer review: `chained_multis(5)` breaks the 100-standard-witness-item
+/// limit and nothing else, and `chained_multis(4)` breaks nothing. Asked of
+/// rust-miniscript directly, over 20 real keys: `check_local_validity` runs
+/// the script-size, op-count and witness-item checks in that order, so
+/// `MaxWitnessItemsExceeded` means the others passed.
+#[test]
+fn the_witness_item_limit_alone_refuses_five_chained_multis() {
+    use md_codec::policy_shape::policy_type_checks;
+    use miniscript::{Miniscript, ScriptContext, Segwitv0};
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let keys: Vec<String> = (1..=20u8)
+        .map(|i| {
+            let sk = bitcoin::secp256k1::SecretKey::from_slice(&[i; 32]).unwrap();
+            bitcoin::PublicKey::new(sk.public_key(&secp)).to_string()
+        })
+        .collect();
+    let multi = format!("multi(20,{})", keys.join(","));
+    let chain = |count: usize| {
+        let mut x = multi.clone();
+        for _ in 1..count {
+            x = format!("and_v(v:{multi},{x})");
+        }
+        Miniscript::<bitcoin::PublicKey, Segwitv0>::from_str_insane(&x).unwrap()
+    };
+    // `ScriptContextError` is not exported, so match its Display text.
+    let err = Segwitv0::check_local_validity(&chain(5))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("witness items (limit: 100)"), "{err}");
+    assert!(Segwitv0::check_local_validity(&chain(4)).is_ok());
+    assert!(!policy_type_checks(&template(wsh(common::chained_multis(
+        5
+    )))));
+    assert!(policy_type_checks(&template(wsh(common::chained_multis(
+        4
+    )))));
+}

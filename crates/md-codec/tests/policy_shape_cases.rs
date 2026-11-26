@@ -31,7 +31,9 @@
 
 mod common;
 
-use common::{UNTYPED_CARDS, keyarg, node2, thresh_node, timelock, untyped_trees, wrap};
+use common::{
+    UNTYPED_CARDS, chained_multis, keyarg, node2, thresh_node, timelock, untyped_trees, wrap,
+};
 use md_codec::chunk::{reassemble, split, split_unadmitted};
 use md_codec::descriptor_route::descriptor_from_text;
 use md_codec::encode::Descriptor;
@@ -300,6 +302,8 @@ fn hand_built() -> Vec<(&'static str, Node)> {
             "thresh_neg_dup_slot",
             wsh(th(2, vec![pk(0), s(pk(0)), s(pk(1))])),
         ),
+        // seedhammer review: the typed side of `untyped_witness_items_over_100`.
+        ("typed_witness_items_84", wsh(chained_multis(4))),
         ("thresh_neg_k_zero", wsh(th(0, vec![pk(0), s(pk(1))]))),
         ("thresh_neg_k_above_n", wsh(th(3, vec![pk(0), s(pk(1))]))),
     ]
@@ -412,7 +416,7 @@ fn policy_shape_cases_json_is_fresh() {
 fn every_design_case_is_present_with_its_verdict() {
     let v: Value = serde_json::from_str(&generate()).unwrap();
     let cases = v["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 30 + 39 + 3 + 32);
+    assert_eq!(cases.len(), 30 + 40 + 3 + 33);
     for c in cases {
         let name = c["name"].as_str().unwrap();
         let complete = c["shape"]["complete"].as_bool().unwrap();
@@ -430,7 +434,9 @@ fn every_design_case_is_present_with_its_verdict() {
             _ => {}
         }
         assert!(typed || !complete, "{name}: complete but untyped");
-        if name.starts_with("untyped_") {
+        if name.starts_with("typed_") {
+            assert!(typed, "{name}");
+        } else if name.starts_with("untyped_") {
             assert!(!typed && !complete, "{name}");
         } else if name.starts_with("thresh_neg_") {
             assert!(!complete, "{name}");

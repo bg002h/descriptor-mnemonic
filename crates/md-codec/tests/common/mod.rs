@@ -1660,7 +1660,21 @@ pub const UNTYPED_CARDS: [(&str, &str); 3] = [
     ),
 ];
 
-/// One untyped tree per combinator md decodes, with the rule it breaks.
+/// `count` 20-of-20 `multi`s over `@0..@19`, chained by `and_v` (all but the
+/// last under `v:`). Each needs 21 witness items (20 signatures and the
+/// CHECKMULTISIG dummy) and runs 21 ops in 683 script bytes, so 5 of them
+/// break ONLY the 100-standard-witness-item limit (105 items, 105 ops, 3415
+/// bytes), and 4 break nothing (84 items).
+pub fn chained_multis(count: usize) -> Node {
+    let multi = || multikeys(Tag::Multi, 20, (0..20).collect());
+    let mut x = multi();
+    for _ in 1..count {
+        x = node2(Tag::AndV, wrap(Tag::Verify, multi()), x);
+    }
+    x
+}
+
+/// The miniscript `0`.
 fn zero() -> Node {
     Node {
         tag: Tag::False,
@@ -1728,6 +1742,9 @@ fn v_older_chain(n: u32) -> Node {
     node2(Tag::AndV, balanced(Tag::AndV, locks), keyarg(Tag::PkK, 0))
 }
 
+/// Trees that are not valid miniscript in their context, each with the rule
+/// it breaks: one per combinator md decodes, then the tap-leaf, timelock,
+/// placement and limit rules (`policy_type_checks`'s doc lists them).
 pub fn untyped_trees() -> Vec<(&'static str, Node)> {
     let pk = |i: u8| keyarg(Tag::PkK, i);
     let s = |x: Node| wrap(Tag::Swap, x);
@@ -1839,6 +1856,9 @@ pub fn untyped_trees() -> Vec<(&'static str, Node)> {
         ),
         ("nested_pkh_wrapper", wsh(v_pkh_then_pk())),
         ("script_over_3600_bytes", wsh(or_i_chain(128))),
+        // seedhammer review: the 100-witness-item limit alone (see
+        // `chained_multis`; four of them are typed).
+        ("witness_items_over_100", wsh(chained_multis(5))),
         // md review r3 m-3: every satisfaction runs more than 201 ops.
         ("ops_over_201", wsh(v_older_chain(101))),
     ]

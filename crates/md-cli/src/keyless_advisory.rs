@@ -157,23 +157,12 @@ pub fn render_from(lifted: Option<&Pol>, verb: Verb) -> String {
 /// REFUSE, NOT WARN: `Disposition::Warn` is the READ-side disposition and returns Ok, so the
 /// check would silently never fire. The question is "would a MINTING verb refuse this?", so it
 /// is asked in the minting disposition.
+///
+/// It skips the dead-leaf rule (md review r5 I-1): that rule is about another defect, and with it
+/// in, a card with a dead leaf and a no-key leaf failed both parses and lost this warning.
 pub(crate) fn needs_no_key(template: &str) -> bool {
-    crate::parse::template::parse_template_ext(
-        template,
-        &[],
-        &[],
-        false,
-        crate::parse::reuse::Disposition::Refuse,
-    )
-    .is_err()
-        && crate::parse::template::parse_template_ext(
-            template,
-            &[],
-            &[],
-            true,
-            crate::parse::reuse::Disposition::Refuse,
-        )
-        .is_ok()
+    crate::parse::template::parse_template_signature_probe(template, false).is_err()
+        && crate::parse::template::parse_template_signature_probe(template, true).is_ok()
 }
 
 /// stderr of `md decode --json` and `md bytecode` (text and `--json`), bh-md-M5 and bh-md-I8:
