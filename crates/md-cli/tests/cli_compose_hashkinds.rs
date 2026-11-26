@@ -127,7 +127,7 @@ fn the_preset_takes_every_kind_and_the_json_names_it() {
             "compose",
             "--wrapper",
             "wsh",
-            "--preset",
+            "--scheme",
             &format!("hashlock-gated,{kind}={h},older=144"),
             "--json",
         ]);

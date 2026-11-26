@@ -298,7 +298,7 @@ fn encode_refuses_from_policy_together_with_in() {
 /// <TEMPLATE> --in <FILE> [STRINGS]...` -- the two alternatives printed side by
 /// side, as if supplying both were the shape being asked for.
 ///
-/// Fixed with the mechanism `md compose` already used for `--path`/`--preset`:
+/// Fixed with the mechanism `md compose` already used for `--path`/`--scheme`:
 /// a clap ArgGroup, which renders the alternation. Applied to all five reading
 /// verbs with this shape, not just the one the journey hit. NOT applied to
 /// `md encode`, whose third source (`--from-policy`) and hand-written

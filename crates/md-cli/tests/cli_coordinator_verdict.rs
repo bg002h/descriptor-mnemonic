@@ -149,7 +149,7 @@ fn compose_prints_refusals_and_silences_never_imports() {
         "compose",
         "--wrapper",
         "tr",
-        "--preset",
+        "--scheme",
         "kofn-recovery,2of3,older=26280",
     ]);
     assert_eq!(code, 0, "{err}");
