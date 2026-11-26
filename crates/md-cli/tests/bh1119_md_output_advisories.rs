@@ -368,7 +368,7 @@ fn i8_r12_refusal_hint_names_no_preimage() {
         "--network",
         "signet",
     ]);
-    assert_eq!(c, 1, "{e}");
+    assert_eq!(c, 8, "{e}");
     assert!(e.contains("a spend path that needs no key"), "{e}");
     let low = e.to_lowercase();
     assert!(

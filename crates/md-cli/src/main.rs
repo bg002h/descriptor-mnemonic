@@ -13,6 +13,7 @@ mod cmd;
 mod compile;
 mod decompose;
 mod error;
+mod exit;
 mod format;
 mod keyless_advisory;
 mod output_advisory;
@@ -61,7 +62,7 @@ impl CliNetwork {
 
 /// Parse `--separator`: WHITESPACE ONLY — the keyword `space` or the literal
 /// `" "`. Returns the separator char. SPEC §6c. Rejection is a clap parse error
-/// (exit 2), before command dispatch.
+/// (exit 64: a setting), before command dispatch.
 ///
 /// `hyphen` and `comma` were accepted before P3 and are now refused. The
 /// reason is cross-tool rather than local: `md`'s own decoder strips display
@@ -97,7 +98,7 @@ fn parse_separator(s: &str) -> Result<char, String> {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "md", version, about = "Mnemonic Descriptor (MD) — engravable BIP 388 wallet policy backups", long_about = None)]
+#[command(name = "md", version, about = "Mnemonic Descriptor (MD) — engravable BIP 388 wallet policy backups", long_about = None, after_help = exit::LEGEND)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -123,7 +124,7 @@ enum Command {
         /// existing file unchanged. The file holds exactly what stdout would
         /// have without `--json` (grouped only under `--group-size`); with
         /// `--json` the JSON still goes to stdout. The chunk-set-id and the
-        /// advisories still go to stderr. Refused (exit 2) when FILE is the
+        /// advisories still go to stderr. Refused (exit 8) when FILE is the
         /// --in file, or, with --json, when stdout is FILE.
         #[arg(long = "out", value_name = "FILE")]
         out_file: Option<std::path::PathBuf>,
@@ -573,7 +574,7 @@ enum Command {
         /// shell redirect cannot do. OVERWRITES an existing file, and
         /// tightens its mode. The file holds exactly what stdout would have
         /// (grouped only under `--group-size`); the chunk-set-id and the
-        /// advisories still go to stderr. Refused (exit 2) when FILE is the
+        /// advisories still go to stderr. Refused (exit 8) when FILE is the
         /// --from-mk1-file or --verify-against file. Only meaningful with `--emit
         /// md1` -- `requires = "emit"` refuses it structurally rather than
         /// silently discarding it on the plain descriptor row (the I4
@@ -606,10 +607,10 @@ enum Command {
         /// values, use-sites), and states that origin metadata is excluded
         /// and why.
         ///
-        /// Exit codes: 0 = spend-equal; 5 = NOT spend-equal (`md repair`'s
-        /// reserved-5 precedent for a non-error, non-default answer); 1/2 =
-        /// errors, unchanged — so a mistyped input can never read as "not
-        /// equal", the false signal that invites re-cutting a good plate.
+        /// Exit codes: 0 = spend-equal; 1 = NOT spend-equal (a check said
+        /// no); an input that does not decode is 2, and a file that cannot
+        /// be read 32 -- so a mistyped input can never read as "not equal",
+        /// the false signal that invites re-cutting a good plate.
         ///
         /// Admissible on every input mode that composes a descriptor here
         /// (the positional card, --from-mk1/--from-mk1-file seating,
@@ -870,20 +871,18 @@ enum Command {
     /// BCH error-correction for md1 strings. Wraps `md_codec::decode_with_correction`
     /// and renders a per-chunk repair report.
     ///
-    /// Exit codes (D26 cross-CLI parity with `ms repair` / `mk repair` /
-    /// `mnemonic repair`):
-    ///   0 — every input was already valid (no corrections applied)
-    ///   5 — at least one chunk had corrections applied (REPAIR_APPLIED);
-    ///       since md-cli 0.19.0 also when a SINGLE corrected card carries a
-    ///       wire version this build cannot read — stdout is the corrected
-    ///       card, stderr names the version (`mnemonic repair` exits 2 there,
-    ///       F-642); several strings at such a version still exit 2
-    ///   2 — atomic-fail per plan §1 D28: ANY chunk failing BCH capacity
-    ///       fails the whole call; the failing chunk's index is named in
-    ///       the stderr message and NO partial corrected output is emitted
-    ///       on stdout.
+    /// Exit codes (the constellation's bit sums; D26's meanings):
+    ///   0  -- nothing to correct
+    ///   16 -- a correction was applied and is verified by reassembly, or will
+    ///         be when the rest of an incomplete chunk set is reassembled
+    ///   20 -- a correction to a single string, which has no second check:
+    ///         verify the card before trusting it
+    ///   22 -- a corrected single string that still does not decode (for
+    ///         example a wire version this build cannot read); it is printed
+    ///   2  -- uncorrectable, or the strings are not a card; nothing is
+    ///         printed and the failing chunk is named on stderr
     #[command(
-        after_long_help = "ATOMIC SEMANTICS (multi-chunk):\n  When more than one md1 chunk is supplied, the call is atomic per plan\n  §1 D28: if ANY chunk fails BCH error-correction capacity (> 4 errors),\n  the WHOLE call exits 2 with the failing chunk index named on stderr.\n  NO partial corrected chunks are emitted on stdout.\n\nINPUT FORMAT:\n  Accepts BOTH chunked-form md1 strings (those bearing a chunk header, as\n  emitted by `md encode --force-chunked` or by automatic chunking when the\n  payload exceeds 320 bits) AND non-chunked single-string md1 (those\n  emitted by plain `md encode` for small payloads). Since md-codec v0.35.0,\n  single-string md1 are repaired directly — no need to fall back to\n  `md decode`.\n\nEXAMPLES:\n  $ md repair md1yq802ggqqpsqwgtua24e7ssf3\n  $ md repair md1fwkhxpqpqztvyyy4qqxqqks883w6pg25z9m5rru59s2su80aw2q4qg9e343jwu6tsn md1fwkhxpq0yxs7q5yl6smtcxjz9m806prlsm794tkxqs6806lhaeh6qwafumf4dq3lcd md1fwkhxpq3umfj075dhzfzvynh66n94j5lcxlmx9ayav9mj0jjqdxqaazpst259n\n  $ md repair --json md1yq802ggqqpsqwgtua24e7ssf3"
+        after_long_help = "ATOMIC SEMANTICS (multi-chunk):\n  When more than one md1 chunk is supplied, the call is atomic per plan\n  §1 D28: if ANY chunk fails BCH error-correction capacity (> 4 errors),\n  the WHOLE call exits 2 with the failing chunk index named on stderr.\n  NO partial corrected chunks are emitted on stdout.\n  An INCOMPLETE set (or one chunk of a larger set) is corrected chunk\n  by chunk and printed: exit 16 if a correction was applied, 0 if every\n  chunk was clean.\n\nINPUT FORMAT:\n  Accepts BOTH chunked-form md1 strings (those bearing a chunk header, as\n  emitted by `md encode --force-chunked` or by automatic chunking when the\n  payload exceeds 320 bits) AND non-chunked single-string md1 (those\n  emitted by plain `md encode` for small payloads). Since md-codec v0.35.0,\n  single-string md1 are repaired directly — no need to fall back to\n  `md decode`.\n\nEXAMPLES:\n  $ md repair md1yq802ggqqpsqwgtua24e7ssf3\n  $ md repair md1fwkhxpqpqztvyyy4qqxqqks883w6pg25z9m5rru59s2su80aw2q4qg9e343jwu6tsn md1fwkhxpq0yxs7q5yl6smtcxjz9m806prlsm794tkxqs6806lhaeh6qwafumf4dq3lcd md1fwkhxpq3umfj075dhzfzvynh66n94j5lcxlmx9ayav9mj0jjqdxqaazpst259n\n  $ md repair --json md1yq802ggqqpsqwgtua24e7ssf3"
     )]
     Repair(cmd::repair::RepairArgs),
     /// Generate roff man pages for the whole `md` CLI tree into a directory.
@@ -926,22 +925,31 @@ fn main() -> ExitCode {
                     }
                 }
             }
-            let code = u8::try_from(e.exit_code()).unwrap_or(2);
-            return ExitCode::from(out::exit_code(code));
+            return ExitCode::from(out::exit_code(clap_exit_code(&e)));
         }
     };
     let code = match dispatch(cli.command) {
         Ok(code) => code,
-        Err(CliError::BadArg(m)) => {
-            eprintln!("md: {m}");
-            2
-        }
         Err(e) => {
             eprintln!("md: {e}");
-            1
+            e.exit_code()
         }
     };
     ExitCode::from(out::exit_code(code))
+}
+
+/// The exit status of a clap outcome: 0 for `--help`/`--version`, else 64
+/// (USAGE, spec decision 2) for every parse error -- an unknown verb or flag,
+/// a missing argument, a conflict, a bad setting value, non-UTF-8 argv, and
+/// `md` with no verb. md's input values (keys, fingerprints, templates, md1
+/// strings) are free strings to clap and judged by the verbs, so no clap
+/// value error is about an input (those would be 2).
+fn clap_exit_code(e: &clap::Error) -> u8 {
+    if e.exit_code() == 0 {
+        exit::OK
+    } else {
+        exit::USAGE
+    }
 }
 
 /// v0.18 Item G — reject `--unspendable-key` values that aren't the BIP-341
@@ -951,7 +959,7 @@ fn main() -> ExitCode {
 fn validate_unspendable_key_nums_only(uk: Option<&str>) -> Result<(), CliError> {
     if let Some(v) = uk {
         if v != parse::template::NUMS_H_POINT_X_ONLY_HEX {
-            return Err(CliError::BadArg(
+            return Err(CliError::Input(
                 "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex \
                  (50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0) or omitted \
                  (auto-NUMS default). Other forms (xpub-style descriptor keys, arbitrary x-only \
@@ -995,18 +1003,18 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 #[cfg(feature = "cli-compiler")]
                 {
                     if unspendable_key.as_deref() == Some("") {
-                        return Err(CliError::BadArg(
+                        return Err(CliError::Input(
                             "--unspendable-key must not be empty (omit the flag for auto-NUMS default)".into()));
                     }
                     let ctx: compile::ScriptContext = context
                         .ok_or_else(|| {
-                            CliError::BadArg("--from-policy requires --context tap|segwitv0".into())
+                            CliError::Usage("--from-policy requires --context tap|segwitv0".into())
                         })?
                         .parse()
                         .map_err(|e: compile::CompileError| CliError::Compile(e.to_string()))?;
                     if matches!(ctx, compile::ScriptContext::SegwitV0) && unspendable_key.is_some()
                     {
-                        return Err(CliError::BadArg(
+                        return Err(CliError::Usage(
                             "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
                     }
                     validate_unspendable_key_nums_only(unspendable_key.as_deref())?;
@@ -1016,13 +1024,13 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                 #[cfg(not(feature = "cli-compiler"))]
                 {
                     let _ = (expr, context, unspendable_key);
-                    return Err(CliError::BadArg(
+                    return Err(CliError::Io(
                         "--from-policy requires the cli-compiler feature".into(),
                     ));
                 }
             } else {
                 if unspendable_key.is_some() {
-                    return Err(CliError::BadArg(
+                    return Err(CliError::Usage(
                         "--unspendable-key is only meaningful with --from-policy".into(),
                     ));
                 }
@@ -1033,7 +1041,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
                     (Some(t), _) => t,
                     (None, Some(p)) => cmd::read_template_file(p)?,
                     (None, None) => {
-                        return Err(CliError::BadArg(
+                        return Err(CliError::Usage(
                             "encode: TEMPLATE required (on argv, via --in FILE, or use \
                              --from-policy with cli-compiler)"
                                 .into(),
@@ -1134,13 +1142,13 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             #[cfg(feature = "cli-compiler")]
             {
                 if unspendable_key.as_deref() == Some("") {
-                    return Err(CliError::BadArg(
+                    return Err(CliError::Input(
                         "--unspendable-key must not be empty (omit the flag for auto-NUMS default)"
                             .into(),
                     ));
                 }
                 if context == "segwitv0" && unspendable_key.is_some() {
-                    return Err(CliError::BadArg(
+                    return Err(CliError::Usage(
                         "--unspendable-key is only valid for --context tap (segwitv0 has no internal key)".into()));
                 }
                 validate_unspendable_key_nums_only(unspendable_key.as_deref())?;
@@ -1149,7 +1157,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             #[cfg(not(feature = "cli-compiler"))]
             {
                 let _ = (expr, context, unspendable_key, json);
-                Err(CliError::BadArg(
+                Err(CliError::Io(
                 "compile requires the cli-compiler feature; rebuild with --features cli-compiler".into()))
             }
         }

@@ -41,16 +41,17 @@ fn md(args: &[&str]) -> (i32, String, String) {
     )
 }
 
-fn json(args: &[&str]) -> serde_json::Value {
+/// `code`: 20 for a single string (no second check), 16 for a chunk set.
+fn json(args: &[&str], code_want: i32) -> serde_json::Value {
     let (code, out, err) = md(args);
-    assert_eq!(code, 5, "stderr={err}");
+    assert_eq!(code, code_want, "stderr={err}");
     serde_json::from_str(out.trim()).expect("stdout parses as JSON")
 }
 
 #[test]
 fn i3_r1_repair_upper_digit_damage_text_emits_upper_card() {
     let (code, out, _) = md(&["repair", S_DAMAGED]);
-    assert_eq!(code, 5);
+    assert_eq!(code, 20);
     assert_eq!(
         out,
         format!(
@@ -64,7 +65,7 @@ fn i3_r1_repair_upper_digit_damage_text_emits_upper_card() {
 
 #[test]
 fn i3_r2_repair_upper_digit_damage_json_emits_upper_card() {
-    let v = json(&["repair", "--json", S_DAMAGED]);
+    let v = json(&["repair", "--json", S_DAMAGED], 20);
     assert_eq!(v["corrected_chunks"], serde_json::json!([S_CLEAN]));
     let r = &v["repairs"][0];
     assert_eq!(r["corrected_chunk"], S_CLEAN);
@@ -82,7 +83,7 @@ fn i3_r3_repair_upper_chunked_digit_damage_text_emits_upper_set() {
     assert_eq!(dc, 0, "fixture sanity: {de}");
     let d = c1_damaged();
     let (code, out, _) = md(&["repair", C0, &d]);
-    assert_eq!(code, 5);
+    assert_eq!(code, 16);
     assert_eq!(
         out,
         format!(
@@ -95,7 +96,7 @@ fn i3_r3_repair_upper_chunked_digit_damage_text_emits_upper_set() {
 #[test]
 fn i3_r4_repair_upper_chunked_digit_damage_json_emits_upper_set() {
     let d = c1_damaged();
-    let v = json(&["repair", "--json", C0, &d]);
+    let v = json(&["repair", "--json", C0, &d], 16);
     assert_eq!(v["corrected_chunks"], serde_json::json!([C0, C1_CLEAN]));
     let reps = v["repairs"].as_array().expect("repairs array");
     assert_eq!(reps.len(), 1);
@@ -108,7 +109,7 @@ fn i3_r5_repair_set_keeps_each_strings_case() {
     let c0_lower = C0.to_ascii_lowercase();
     let d = c1_damaged();
     let (code, out, _) = md(&["repair", &c0_lower, &d]);
-    assert_eq!(code, 5);
+    assert_eq!(code, 16);
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(&lines[2..], [c0_lower.as_str(), C1_CLEAN]);
     assert_eq!(md(&["decode", &c0_lower, C1_CLEAN]).0, 0);
@@ -117,7 +118,7 @@ fn i3_r5_repair_set_keeps_each_strings_case() {
 #[test]
 fn i3_r6_repair_upper_unsupported_version_emits_upper_card() {
     let (code, out, err) = md(&["repair", V12_DAMAGED]);
-    assert_eq!(code, 5);
+    assert_eq!(code, 22);
     assert_eq!(
         out,
         format!(
@@ -135,14 +136,14 @@ fn i3_r6_repair_upper_unsupported_version_emits_upper_card() {
 #[test]
 fn i3_c1_repair_upper_letter_damage_unchanged() {
     let (code, out, _) = md(&["repair", "MD1ZQPQQXQQ8XTWHW4XWN4QH"]);
-    assert_eq!(code, 5);
+    assert_eq!(code, 20);
     assert_eq!(out.lines().nth(2), Some(S_CLEAN));
 }
 
 #[test]
 fn i3_c2_repair_lower_digit_damage_unchanged() {
     let (code, out, _) = md(&["repair", "md12qpqqxqq8xtwhw4xwn4qh"]);
-    assert_eq!(code, 5);
+    assert_eq!(code, 20);
     assert_eq!(out.lines().nth(2), Some("md1yqpqqxqq8xtwhw4xwn4qh"));
 }
 

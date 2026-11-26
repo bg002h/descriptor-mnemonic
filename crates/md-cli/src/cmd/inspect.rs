@@ -90,7 +90,11 @@ pub fn run(
         if partial {
             emit_partial_stderr_note(&unres, &mut std::io::stderr());
         }
-        return Ok(if partial { 4 } else { 0 });
+        return Ok(if partial {
+            crate::exit::UNVERIFIED
+        } else {
+            crate::exit::OK
+        });
     }
     let _ = json;
 
@@ -157,7 +161,11 @@ pub fn run(
     if partial {
         emit_partial_stderr_note(&unres, &mut std::io::stderr());
     }
-    Ok(if partial { 4 } else { 0 })
+    Ok(if partial {
+        crate::exit::UNVERIFIED
+    } else {
+        crate::exit::OK
+    })
 }
 
 /// Render an `OriginPath` in `m/...` notation.

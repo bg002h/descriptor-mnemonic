@@ -108,8 +108,8 @@ fn run(verb: Verb, cards: &[&str], net: Option<&str>, tag: &str) -> Out {
 
 fn refused(o: &Out, what: &str, key_kind: &str, net: &str, remedy: &str) {
     assert_eq!(
-        o.code, 1,
-        "{what}: want exit 1, got {} / stdout {:?}",
+        o.code, 8,
+        "{what}: want exit 8, got {} / stdout {:?}",
         o.code, o.stdout
     );
     assert!(
@@ -266,7 +266,7 @@ Replace the card minted on the wrong network.\n";
                 Some("regtest"),
             ] {
                 let o = run(v, &mixed, net, "mix");
-                assert_eq!(o.code, 1, "{v:?} {net:?}: {}", o.stdout);
+                assert_eq!(o.code, 8, "{v:?} {net:?}: {}", o.stdout);
                 assert!(o.stdout.is_empty(), "{v:?} {net:?}: {}", o.stdout);
                 assert_eq!(o.stderr, MIX_LINE, "{v:?} {net:?}");
             }

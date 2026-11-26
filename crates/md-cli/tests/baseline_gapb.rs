@@ -72,7 +72,7 @@ fn compose_older_units_carries_the_typed_value() {
 fn compose_refuses_older_after_another_lock() {
     for second in ["1of1,older=10,older=20", "1of1,after=5,older=10"] {
         let (out, err, code) = compose_with(second);
-        assert_eq!(code, 1, "`{second}` must refuse; stdout: {out}");
+        assert_eq!(code, 2, "`{second}` must refuse; stdout: {out}");
         assert!(err.contains("at most one lock per path"), "{second}: {err}");
     }
 }
@@ -82,7 +82,7 @@ fn compose_refuses_older_after_another_lock() {
 fn compose_refuses_after_after_another_lock() {
     for second in ["1of1,after=5,after=7", "1of1,older=10,after=5"] {
         let (out, err, code) = compose_with(second);
-        assert_eq!(code, 1, "`{second}` must refuse; stdout: {out}");
+        assert_eq!(code, 2, "`{second}` must refuse; stdout: {out}");
         assert!(err.contains("at most one lock per path"), "{second}: {err}");
     }
 }
@@ -207,7 +207,7 @@ fn experimental_still_refuses_timelock_mixing_under_wsh_and_sh_wsh() {
     let body = "and_v(v:pk(@0/<0;1>/*),and_v(v:after(100),after(500000001)))";
     for tpl in [format!("wsh({body})"), format!("sh(wsh({body}))")] {
         let (out, err, code) = md(&["encode", "--experimental", "--path", "bip48", &tpl]);
-        assert_eq!(code, 1, "`{tpl}` must refuse; stdout: {out}");
+        assert_eq!(code, 2, "`{tpl}` must refuse; stdout: {out}");
         assert!(err.contains("heightlock and timelock"), "`{tpl}`: {err}");
     }
 }

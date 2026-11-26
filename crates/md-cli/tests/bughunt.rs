@@ -68,7 +68,7 @@ fn bughunt_md_01_json_encode_refuses_truncated_timelock() {
         String::from_utf8_lossy(&json.stdout)
     );
     // R-1: stderr and exit code byte-identical to the text path; no stdout.
-    assert_eq!(json.status.code(), Some(1));
+    assert_eq!(json.status.code(), Some(2));
     assert_eq!(json.status.code(), text.status.code());
     assert_eq!(json.stderr, text.stderr);
     assert!(json.stdout.is_empty());
@@ -113,7 +113,7 @@ fn bughunt_md_04_multipath_hardened_range_refused_as_hardened() {
         "refused, but not as hardened: {err}"
     );
     // R-4: the existing hardened-alt text, exit 1.
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(2));
     assert_eq!(err, HARDENED_2_31);
     // Architect ruling Q3: 2^32 is not a child index at all, so it keeps
     // today's "not a bare unsigned integer" text (pins against a u64 lexer).
@@ -121,7 +121,7 @@ fn bughunt_md_04_multipath_hardened_range_refused_as_hardened() {
         .args(["encode", "wpkh(@0/<4294967296;1>/*)"])
         .output()
         .unwrap();
-    assert_eq!(big.status.code(), Some(1));
+    assert_eq!(big.status.code(), Some(2));
     assert!(big.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&big.stderr),
@@ -147,7 +147,7 @@ fn bughunt_md_04b_address_multipath_hardened_range_refused_as_hardened() {
         .unwrap();
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "stdout={}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -171,7 +171,7 @@ fn bughunt_md_04c_descriptor_multipath_hardened_range_refused_as_hardened() {
         .unwrap();
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "stdout={}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -204,7 +204,7 @@ fn bughunt_md_04d_address_alt_above_2_29_refused_as_varint_overflow() {
     let out = run("536870912");
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "stdout={}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -237,7 +237,7 @@ fn bughunt_md_04e_descriptor_alt_above_2_29_refused_as_varint_overflow() {
     let out = run("536870912");
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "stdout={}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -316,7 +316,7 @@ fn bughunt_md_12_fingerprint_with_plus_signs_refused() {
         String::from_utf8_lossy(&out.stdout)
     );
     // R-12: the existing per-byte wording, exit 1.
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(2));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
         "md: --fingerprint @0: invalid hex byte: +f\n"

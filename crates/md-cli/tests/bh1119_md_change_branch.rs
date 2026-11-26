@@ -37,7 +37,7 @@ fn r1_descriptor_change_on_single_chain_wallet_refused() {
         KX,
         "--change",
     ]);
-    assert_eq!((code, out, err), (1, String::new(), oor(1, 1)));
+    assert_eq!((code, out, err), (2, String::new(), oor(1, 1)));
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn r2_descriptor_chain2_on_single_chain_wallet_refused() {
         "--chain",
         "2",
     ]);
-    assert_eq!((code, out, err), (1, String::new(), oor(2, 1)));
+    assert_eq!((code, out, err), (2, String::new(), oor(2, 1)));
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn r3_descriptor_change_json_on_single_chain_wallet_refused() {
         "--change",
         "--json",
     ]);
-    assert_eq!((code, out, err), (1, String::new(), oor(1, 1)));
+    assert_eq!((code, out, err), (2, String::new(), oor(1, 1)));
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn r5_descriptor_chain1_hardened_wildcard_single_chain_refused() {
         "--chain",
         "1",
     ]);
-    assert_eq!((code, out, err), (1, String::new(), oor(1, 1)));
+    assert_eq!((code, out, err), (2, String::new(), oor(1, 1)));
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn c4_address_change_on_single_chain_wallet_unchanged() {
         KX,
         "--change",
     ]);
-    assert_eq!((code, out, err), (1, String::new(), oor(1, 1)));
+    assert_eq!((code, out, err), (2, String::new(), oor(1, 1)));
 }
 
 #[test]
@@ -168,5 +168,5 @@ fn c5_descriptor_chain2_on_two_branch_wallet_unchanged() {
         "--chain",
         "2",
     ]);
-    assert_eq!((code, out, err), (1, String::new(), oor(2, 2)));
+    assert_eq!((code, out, err), (2, String::new(), oor(2, 2)));
 }

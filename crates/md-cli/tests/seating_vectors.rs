@@ -378,14 +378,14 @@ fn v_b1_warn_reaches_stderr_without_failing_the_command() {
 // ─── V-AMB / V-SEAT-OK, through the CLI ─────────────────────────────────
 
 #[test]
-fn v_amb_the_ambiguity_refusal_reaches_the_operator_with_exit_1() {
+fn v_amb_the_ambiguity_refusal_reaches_the_operator_with_exit_2() {
     let o = seat_cmd("descriptor", V_USP, &mk1(V_USP), &[])
         .output()
         .unwrap();
     assert_eq!(
         o.status.code(),
-        Some(1),
-        "a content refusal, not a usage one"
+        Some(2),
+        "an input refusal (2), not a usage one (64)"
     );
     let e = err_of(&o);
     assert!(e.contains("md: seating refused:"), "{e}");
@@ -483,7 +483,7 @@ fn v_seat_unk_an_unknown_id_refuses_by_name() {
     let o = seat_cmd("descriptor", V_USP, &mk1(V_USP), &["--seat", "@0=abcde"])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     assert!(
         err_of(&o).contains("no supplied card has chunk-set id abcde"),
         "{}",
@@ -500,7 +500,7 @@ fn v_seat_bad_seat_without_cards_says_what_it_needs() {
     }
     c.args(["--seat", "@0=abcde"]);
     let o = c.output().unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     assert!(
         err_of(&o).contains("it needs --from-mk1/--from-mk1-file cards to choose among"),
         "{}",
@@ -607,7 +607,7 @@ fn v_dup_from_mk1_file_refuses_a_line_it_cannot_read() {
     }
     c.args(["--from-mk1-file", path.to_str().unwrap()]);
     let o = c.output().unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     let e = err_of(&o);
     assert!(e.contains("is not an mk1 string"), "{e}");
     assert!(e.contains("line 31"), "names the line number: {e}");
@@ -631,7 +631,7 @@ fn v_msg_keyless_from_mk1_conflicts_with_template() {
             ])
             .output()
             .unwrap();
-        assert_eq!(o.status.code(), Some(2), "{verb}: {}", err_of(&o));
+        assert_eq!(o.status.code(), Some(64), "{verb}: {}", err_of(&o));
         assert!(err_of(&o).contains("cannot be used with"), "{}", err_of(&o));
     }
 }
@@ -644,7 +644,7 @@ fn v_msg_keyless_a_keyed_card_with_from_mk1_says_there_is_nothing_to_seat() {
     let o = seat_cmd("descriptor", keyed, &mk1(PATHOLOGICAL), &[])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     let e = err_of(&o);
     assert!(e.contains("already carry their keys"), "{e}");
     assert!(e.contains("Drop --from-mk1"), "{e}");
@@ -681,7 +681,7 @@ fn refusal_of(text: &str, extra_cards: &[String]) -> String {
     let o = seat_cmd("descriptor", text, &cards, &[]).output().unwrap();
     assert_eq!(
         o.status.code(),
-        Some(1),
+        Some(2),
         "this fixture must refuse; stderr was: {}",
         err_of(&o)
     );
@@ -963,7 +963,7 @@ fn arm1_merged_v_ap_incomplete_reaches_the_command() {
     let o = seat_cmd("descriptor", V_ARM_THROWAWAY_POLICY, &cards, &[])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
     let e = err_of(&o);
     assert!(e.contains("chunk-set a1006"), "{e}");
@@ -993,7 +993,7 @@ fn arm2_incomplete_reaches_the_command() {
     let o = seat_cmd("descriptor", V_ARM_THROWAWAY_POLICY, &[card], &[])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
     let e = err_of(&o);
     assert!(e.contains("chunk-set 33333"), "{e}");
@@ -1024,7 +1024,7 @@ fn arm3_terminal_reaches_the_command() {
     let o = seat_cmd("descriptor", V_ARM_THROWAWAY_POLICY, &cards, &[])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
     let e = err_of(&o);
     assert!(e.contains("chunk-set 22222"), "{e}");
@@ -1056,7 +1056,7 @@ fn v_collide_surplus_variant_b_seats_then_refuses_leftover_with_distinguishable_
     let o = seat_cmd("descriptor", V_AP_SURPLUS_B_POLICY, &mk1(V_COLLIDE), &[])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     let e = err_of(&o);
     assert!(e.contains("1 slot(s) unfilled"), "{e}");
     assert!(e.contains("2 card(s) left over"), "{e}");
@@ -1087,7 +1087,7 @@ const V_CSID_WARN: &str = include_str!("fixtures/seating/v-csid-warn.txt");
 /// from V-USP itself.
 ///
 /// V-USP/V-CSID-WARN are both the V-AMB fixture (same origin at both
-/// slots — see `v_amb_the_ambiguity_refusal_reaches_the_operator_with_exit_1`
+/// slots — see `v_amb_the_ambiguity_refusal_reaches_the_operator_with_exit_2`
 /// above): seating either needs `--seat '@0=<id>'` to disambiguate, which is
 /// orthogonal to contract 6 and asserted elsewhere; here it just needs to
 /// hold IDENTICALLY on both sides for the byte-identical-output comparison
@@ -1233,7 +1233,7 @@ fn assert_flag_first_trailing_md1_refuses(verb: &str) {
     let out = r9_cmd(verb, &[], &values).output().unwrap();
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "flag-first with a trailing md1 string did not refuse (or refused \
          with the wrong exit code -- possibly clap's own missing-required- \
          argument error rather than the named guard): {}",
@@ -1268,7 +1268,7 @@ fn assert_mk1_in_positional_refuses(verb: &str) {
     let out = r9_cmd(verb, &[cards[0].clone()], &[]).output().unwrap();
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "an mk1 string on the positional did not refuse: {}",
         err_of(&out)
     );
@@ -1299,7 +1299,7 @@ fn v_r9_mk1_string_in_the_positional_refuses_naming_from_mk1() {
 /// rather than falling through to `seat::run`'s `reassemble(&[])` -- a
 /// bare "chunk set is empty" codec error naming neither `--from-mk1` nor
 /// the missing policy card (the FOLLOWUPS class this phase exists to
-/// close). Exit 2 (BadArg), matching what clap's own group error would
+/// close). Exit 64 (Usage), matching what clap's own group error would
 /// have produced for the same shape.
 #[test]
 fn v_r9_from_mk1_with_no_policy_card_anywhere_refuses_naming_the_missing_policy() {
@@ -1307,7 +1307,7 @@ fn v_r9_from_mk1_with_no_policy_card_anywhere_refuses_naming_the_missing_policy(
     let out = r9_cmd("descriptor", &[], &cards).output().unwrap();
     assert_eq!(
         out.status.code(),
-        Some(2),
+        Some(64),
         "--from-mk1 with no policy card anywhere did not refuse as a usage \
          error, or fell through to seating with an empty policy: {}",
         err_of(&out)

@@ -152,7 +152,7 @@ fn x3(out: &str) -> String {
 
 /// A refusal: rc 2, nothing on a piped stdout, exactly `line` on stderr.
 fn refused(r: &Res, line: &str) {
-    assert_eq!(r.rc, 2, "stderr: {}", r.stderr);
+    assert_eq!(r.rc, 8, "stderr: {}", r.stderr);
     assert!(r.stdout.is_empty(), "stdout: {:?}", r.stdout);
     assert_eq!(r.stderr, line);
 }
@@ -311,7 +311,7 @@ fn n9_encode_out_dev_stdout_onto_in_refuses() {
         Out::Append("tpl.txt"),
         None,
     );
-    assert_eq!(r.rc, 2);
+    assert_eq!(r.rc, 8);
     assert_eq!(r.stderr, x1("/dev/stdout", "--in tpl.txt"));
     assert_eq!(w.get("tpl.txt"), before);
 }
@@ -320,7 +320,7 @@ fn n9_encode_out_dev_stdout_onto_in_refuses() {
 
 /// A redirect row: rc 2, exactly `line` on stderr, the file as `expect`.
 fn redirect_refused(w: &Row, r: &Res, line: &str, file: &str, expect: &[u8]) {
-    assert_eq!(r.rc, 2, "stderr: {}", r.stderr);
+    assert_eq!(r.rc, 8, "stderr: {}", r.stderr);
     assert_eq!(r.stderr, line);
     assert_eq!(w.get(file), expect);
 }
@@ -664,7 +664,7 @@ fn c5_verify_against_md1_string_is_not_an_input() {
         Out::Pipe,
         None,
     );
-    assert_eq!(r.rc, 5, "stderr: {}", r.stderr);
+    assert_eq!(r.rc, 1, "stderr: {}", r.stderr);
     assert_eq!(w.get(&m), w.get("V.txt"));
 }
 

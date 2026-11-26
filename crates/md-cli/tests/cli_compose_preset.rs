@@ -112,7 +112,7 @@ fn preset_and_path_are_mutually_exclusive() {
     ])
     .assert()
     .failure()
-    .code(2)
+    .code(64)
     .stderr(predicate::str::contains("cannot be used with"));
 }
 
@@ -121,7 +121,7 @@ fn compose_refuses_when_neither_path_nor_preset_given() {
     md().args(["compose", "--wrapper", "wsh"])
         .assert()
         .failure()
-        .code(2);
+        .code(64);
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn preset_refuses_an_unknown_name() {
     md().args(["compose", "--wrapper", "wsh", "--preset", "frobnicate,2of3"])
         .assert()
         .failure()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains(
             "expected one of plain-multisig, simple-timelocked-inheritance, kofn-recovery, tiered-recovery, hashlock-gated, decaying-multisig",
         ));
@@ -146,7 +146,7 @@ fn preset_refuses_a_missing_parameter() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset kofn-recovery needs older=<n>",
     ));
@@ -163,7 +163,7 @@ fn preset_refuses_an_extra_parameter() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset plain-multisig admits no older= parameter",
     ));
@@ -176,7 +176,7 @@ fn preset_refuses_an_extra_parameter() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset plain-multisig needs exactly 1 <k>of<n> parameter, got 2",
     ));
@@ -196,7 +196,7 @@ fn preset_names_an_unknown_parameter_before_counting_kofn() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset plain-multisig admits no 2of3= parameter",
     ));
@@ -209,7 +209,7 @@ fn preset_names_an_unknown_parameter_before_counting_kofn() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset plain-multisig admits no bogus= parameter",
     ));
@@ -229,7 +229,7 @@ fn preset_names_the_path_remedy_for_u_and_t_suffixes() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset simple-timelocked-inheritance older: `100u` is --path's `u` (older in 512-second units) spelling, which presets cannot express -- use --path with `older=100u` instead",
     ));
@@ -242,7 +242,7 @@ fn preset_names_the_path_remedy_for_u_and_t_suffixes() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset decaying-multisig after: `500000001t` is --path's `t` (after as a Unix time) spelling, which presets cannot express -- use --path with `after=500000001t` instead",
     ));
@@ -256,7 +256,7 @@ fn preset_names_the_path_remedy_for_u_and_t_suffixes() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset simple-timelocked-inheritance older: `xu` is not a number in 0..=4294967295",
     ));
@@ -276,7 +276,7 @@ fn preset_propagates_a_parameter_the_constructor_rejects() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "path 2: older in blocks needs 1..=65535",
     ));
@@ -307,7 +307,7 @@ fn preset_every_non_plain_archetype_refuses_under_both_legacy_wrappers_spec_4d_s
             md().args(["compose", "--wrapper", wrapper, "--preset", &format!("{name},{params}")])
                 .assert()
                 .failure()
-                .code(1)
+                .code(2)
                 .stderr(predicate::str::contains(
                     "legacy wrappers hold one plain sorted multisig only (n >= 2, no lock, no hash); use wsh or tr",
                 ));
@@ -335,7 +335,7 @@ fn preset_decaying_multisig_propagates_preset_shape_refusals() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset: decaying tiers must unlock progressively later (the second older must exceed the first)",
     ));
@@ -348,7 +348,7 @@ fn preset_decaying_multisig_propagates_preset_shape_refusals() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset: a decaying multisig decays: the recovery threshold cannot exceed the primary threshold",
     ));
@@ -363,7 +363,7 @@ fn preset_unknown_name_wins_over_a_malformed_token() {
     md().args(["compose", "--wrapper", "wsh", "--preset", "multisig,2/3"])
         .assert()
         .failure()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains(
             "expected one of plain-multisig, simple-timelocked-inheritance, kofn-recovery, tiered-recovery, hashlock-gated, decaying-multisig",
         ));
@@ -380,7 +380,7 @@ fn preset_refuses_a_duplicate_named_parameter() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset kofn-recovery: `older=` given twice",
     ));
@@ -397,7 +397,7 @@ fn preset_refuses_a_malformed_kofn_token() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset plain-multisig: `2/3` is not <k>of<n>",
     ));
@@ -419,7 +419,7 @@ fn preset_refuses_a_kofn_magnitude_that_does_not_fit_a_small_number() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset plain-multisig: k `300` is not a small number",
     ));
@@ -432,7 +432,7 @@ fn preset_refuses_a_kofn_magnitude_that_does_not_fit_a_small_number() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset plain-multisig: n `300` is not a small number",
     ));
@@ -445,7 +445,7 @@ fn preset_refuses_a_kofn_magnitude_that_does_not_fit_a_small_number() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "2-of-15 is not admitted (1 <= k <= n <= 9)",
     ));
@@ -462,7 +462,7 @@ fn preset_refuses_a_non_numeric_named_value() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "preset kofn-recovery older: `soon` is not a number in 0..=4294967295",
     ));
@@ -479,7 +479,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     // The preset takes FOUR sibling options now (SPEC_hashlock_kinds §9), so
     // the refusal names all four with their own widths -- naming only sha256
     // would send an operator holding a ripemd160 digest looking for a 64-hex
@@ -496,7 +496,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     // F-551: the refusal names the clause the input VIOLATED. A wrong WIDTH is
     // told the number it gave; a wrong CASE is told about case and not about a
     // length it already satisfied.
@@ -513,7 +513,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     // F-551, and this row is why it mattered: a 20-byte kind refused at ITS
     // width now says the number it counted, so the message cannot be read as
     // md being wrong about the length.
@@ -531,7 +531,7 @@ fn preset_refuses_a_missing_or_malformed_hash() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains("at most one hash per path"));
 }
 
@@ -551,7 +551,7 @@ fn preset_decaying_multisig_after_in_the_time_band_names_path_as_the_remedy() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(2)
     .stderr(predicate::str::contains(
         "after=1893456000 reads as a block height and is above the height band (1..=499999999); presets cannot express a Unix time -- use --path with `after=1893456000t` instead",
     ));

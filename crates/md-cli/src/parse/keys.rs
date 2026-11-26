@@ -66,7 +66,7 @@ pub fn parse_key(
 ) -> Result<ParsedKey, CliError> {
     let (i_str, xpub_str) = arg
         .split_once('=')
-        .ok_or_else(|| CliError::BadArg(format!("--key expects @i=XPUB, got: {arg}")))?;
+        .ok_or_else(|| CliError::Input(format!("--key expects @i=XPUB, got: {arg}")))?;
     let i = parse_index(i_str)?;
     let bytes = base58::decode_check(xpub_str).map_err(|e| CliError::BadXpub {
         i,
@@ -89,19 +89,27 @@ pub fn parse_key(
     // The network the user passed, not the version family (F-674 item 4).
     let network_label = network_name(network);
     if bytes[0..4] != expected_version {
-        return Err(CliError::BadXpub {
-            i,
-            why: format!(
-                "expected {network_label} xpub version {:02X}{:02X}{:02X}{:02X}, got {:02X}{:02X}{:02X}{:02X}",
-                expected_version[0],
-                expected_version[1],
-                expected_version[2],
-                expected_version[3],
-                bytes[0],
-                bytes[1],
-                bytes[2],
-                bytes[3]
-            ),
+        // An xpub of the OTHER network is a network mismatch (exit 8, the
+        // network rule); any other version (an xprv, garbage) is an invalid
+        // key (exit 2). The message is the same either way.
+        let other_network = [MAINNET_XPUB_VERSION, TESTNET_XPUB_VERSION]
+            .iter()
+            .any(|v| bytes[0..4] == *v);
+        let why = format!(
+            "expected {network_label} xpub version {:02X}{:02X}{:02X}{:02X}, got {:02X}{:02X}{:02X}{:02X}",
+            expected_version[0],
+            expected_version[1],
+            expected_version[2],
+            expected_version[3],
+            bytes[0],
+            bytes[1],
+            bytes[2],
+            bytes[3]
+        );
+        return Err(if other_network {
+            CliError::Network(format!("--key @{i}: {why}"))
+        } else {
+            CliError::BadXpub { i, why }
         });
     }
     // DEPTH ADMISSION — both account-level depths, either context.
@@ -170,7 +178,7 @@ fn parse_index(s: &str) -> Result<u8, CliError> {
     let stripped = s.strip_prefix('@').unwrap_or(s);
     stripped
         .parse::<u8>()
-        .map_err(|_| CliError::BadArg(format!("--key index must be 0..255, got: {s}")))
+        .map_err(|_| CliError::Input(format!("--key index must be 0..255, got: {s}")))
 }
 
 /// One `--key` value as the slot-binding check compares it (FIX bh1119 md-slot-bindings R2): the
@@ -180,8 +188,7 @@ pub(crate) type SlotKeyValue = (u8, Option<[u8; 4]>, DerivationPath, [u8; 65]);
 
 /// The slot-binding check (FIX bh1119 md-slot-bindings R1-R6): one `--key` and one `--fingerprint` per
 /// slot. Walks the `--key` values in argument order, then the `--fingerprint` values; the first repeat
-/// found refuses. A DIFFERENT value for the slot is `Mismatch` (exit 1); an EQUAL value is `BadArg`
-/// (exit 2). `{a}`/`{b}` are 1-based positions among the `--key` arguments.
+/// found refuses as an input refusal (`Input`, exit 2), whether the values differ or are equal. `{a}`/`{b}` are 1-based positions among the `--key` arguments.
 pub(crate) fn refuse_repeated_slot_bindings(
     keys: &[SlotKeyValue],
     fps: &[ParsedFingerprint],
@@ -195,12 +202,12 @@ pub(crate) fn refuse_repeated_slot_bindings(
             Some(&first) => {
                 let (a, b) = (first + 1, pos + 1);
                 return if keys[first] == *k {
-                    Err(CliError::BadArg(format!(
+                    Err(CliError::Input(format!(
                         "@{}: --key arguments {a} and {b} bind this slot to the same value; give each slot's --key once.",
                         k.0
                     )))
                 } else {
-                    Err(CliError::Mismatch(format!(
+                    Err(CliError::Input(format!(
                         "@{}: --key arguments {a} and {b} both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @{}=... you mean and remove the other.",
                         k.0, k.0
                     )))
@@ -216,14 +223,14 @@ pub(crate) fn refuse_repeated_slot_bindings(
                 first_fp.insert(f.i, f.fp);
             }
             Some(&x) if x == f.fp => {
-                return Err(CliError::BadArg(format!(
+                return Err(CliError::Input(format!(
                     "@{}: --fingerprint {} is given more than once for this slot; give each slot's --fingerprint once.",
                     f.i,
                     hex(x)
                 )));
             }
             Some(&x) => {
-                return Err(CliError::Mismatch(format!(
+                return Err(CliError::Input(format!(
                     "@{}: --fingerprint {} and --fingerprint {} both bind this slot; a slot takes exactly one master fingerprint, and md never picks one for you. Keep the one you mean and remove the other.",
                     f.i,
                     hex(x),
@@ -258,7 +265,7 @@ mod tests {
     fn rejects_no_equals() {
         let err =
             parse_key("@0xpub6...", ScriptCtx::MultiSig, bitcoin::Network::Bitcoin).unwrap_err();
-        assert!(matches!(err, CliError::BadArg(_)));
+        assert!(matches!(err, CliError::Input(_)));
     }
 
     #[test]
@@ -269,7 +276,7 @@ mod tests {
             bitcoin::Network::Bitcoin,
         )
         .unwrap_err();
-        assert!(matches!(err, CliError::BadArg(_)));
+        assert!(matches!(err, CliError::Input(_)));
     }
 
     #[test]
@@ -596,7 +603,7 @@ pub struct ParsedFingerprint {
 pub fn parse_fingerprint(arg: &str) -> Result<ParsedFingerprint, CliError> {
     let (i_str, hex_str) = arg
         .split_once('=')
-        .ok_or_else(|| CliError::BadArg(format!("--fingerprint expects @i=HEX, got: {arg}")))?;
+        .ok_or_else(|| CliError::Input(format!("--fingerprint expects @i=HEX, got: {arg}")))?;
     let i = parse_index(i_str)?;
     let hex = hex_str.strip_prefix("0x").unwrap_or(hex_str);
     if hex.len() != 8 {
@@ -703,7 +710,7 @@ pub fn parse_key_with_origin(
     network: bitcoin::Network,
 ) -> Result<OriginNotatedKey, CliError> {
     let (i_str, value) = arg.split_once('=').ok_or_else(|| {
-        CliError::BadArg(format!(
+        CliError::Input(format!(
             "--key expects @i=XPUB or @i=[fp/path]XPUB, got: {arg}"
         ))
     })?;

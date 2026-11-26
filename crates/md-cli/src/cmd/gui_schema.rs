@@ -334,7 +334,7 @@ mod tests {
     /// channel arriving rather than a requirement evaporating. The positional
     /// is now `required_unless_present = "in_file"`, which clap reports as not
     /// unconditionally required — so a GUI must offer BOTH inputs and refuse
-    /// only when neither is filled. `md decode` with neither still exits 2
+    /// only when neither is filled. `md decode` with neither still exits 64
     /// ("the following required arguments were not provided: <STRINGS>..."),
     /// asserted behaviourally in `tests/cli_channels.rs`.
     #[test]

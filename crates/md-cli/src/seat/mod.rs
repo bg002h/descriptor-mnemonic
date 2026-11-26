@@ -209,8 +209,8 @@ fn check_card_network_kinds(
         cards.iter().find(|c| !is_main(c)),
         cards.iter().find(is_main),
     ) {
-        return Err(CliError::Seat(format!(
-            "--from-mk1 card {} holds a testnet key but card {} holds a mainnet key, so no \
+        return Err(CliError::Network(format!(
+            "seating refused: --from-mk1 card {} holds a testnet key but card {} holds a mainnet key, so no \
              --network seats this set. Replace the card minted on the wrong network.",
             t.label(),
             m.label()
@@ -223,15 +223,15 @@ fn check_card_network_kinds(
             continue;
         }
         let net = crate::parse::keys::network_name(network);
-        return Err(CliError::Seat(if is_main {
+        return Err(CliError::Network(if is_main {
             format!(
-                "--from-mk1 card {}: its xpub is a mainnet key, but --network says {net}. \
+                "seating refused: --from-mk1 card {}: its xpub is a mainnet key, but --network says {net}. \
                  Re-run with `--network mainnet`.",
                 c.label()
             )
         } else {
             format!(
-                "--from-mk1 card {}: its xpub is a testnet key, but --network says {net}. \
+                "seating refused: --from-mk1 card {}: its xpub is a testnet key, but --network says {net}. \
                  Re-run with `--network testnet`, `--network signet` or `--network regtest`.",
                 c.label()
             )
@@ -248,8 +248,12 @@ fn check_card_network_kinds(
 /// a typo'd or truncated line is exactly the input a restore must not
 /// quietly ignore.
 pub fn read_mk1_file(path: &std::path::Path) -> Result<Vec<String>, CliError> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| CliError::Seat(format!("--from-mk1-file {}: {e}", path.display())))?;
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        CliError::read_failure(
+            format_args!("seating refused: --from-mk1-file {}", path.display()),
+            &e,
+        )
+    })?;
     let mut out = Vec::new();
     for (n, line) in text.lines().enumerate() {
         let trimmed = line.trim();

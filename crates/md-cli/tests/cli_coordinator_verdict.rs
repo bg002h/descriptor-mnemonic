@@ -181,7 +181,7 @@ fn compose_refuses_the_none_case_and_md_only_proceeds() {
         "--experimental",
     ];
     let (out, err, code) = md(&base);
-    assert_eq!(code, 1, "{err}");
+    assert_eq!(code, 8, "{err}");
     assert!(out.is_empty(), "a refusal printed a template: {out}");
     assert!(err.contains("--md-only"), "{err}");
 

@@ -95,7 +95,7 @@ fn encode_refuses_the_retired_separators() {
         let code = out.status.code();
         assert_eq!(
             code,
-            Some(2),
+            Some(64),
             "--separator {arg:?} must be refused at clap-usage exit 2; got {code:?}"
         );
         let stderr = String::from_utf8(out.stderr).unwrap();
@@ -149,7 +149,7 @@ fn encode_rejects_bad_separator() {
         .unwrap()
         .args(["encode", "wpkh(@0/<0;1>/*)", "--separator", "bogus"])
         .assert()
-        .code(2);
+        .code(64);
 }
 
 #[test]
@@ -423,7 +423,7 @@ fn encode_rejects_tpub_under_default_mainnet() {
             &format!("@0={TPUB_FIXTURE}"),
         ])
         .assert()
-        .code(1)
+        .code(8)
         .stderr(predicate::str::contains("expected mainnet"));
 }
 
@@ -1058,7 +1058,7 @@ fn experimental_does_not_admit_a_repeated_placeholder() {
         .unwrap();
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "a repeated placeholder was minted under --experimental: {}",
         String::from_utf8_lossy(&out.stdout)
     );

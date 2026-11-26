@@ -4,26 +4,26 @@
 //! `md_codec::decode_with_correction` (which performs full BCH correction
 //! up to t=4 per chunk) and renders a per-chunk repair report.
 //!
-//! Multi-chunk atomic semantics (plan §1 D28):
-//!   - If ANY chunk fails BCH capacity (> 4 errors), the WHOLE call fails
-//!     with exit 2 + the failing chunk index named on stderr.
-//!   - NO partial corrected chunks are emitted on stdout in the atomic-fail
-//!     case (md_codec::decode_with_correction is itself atomic; this CLI
-//!     does not emit until the call returns successfully).
+//! Exit codes (`SPEC_constellation_exit_codes.md` §3, decisions 6 and 7;
+//! D26's meanings with the new numbers):
+//!   - 0  -- nothing to correct (a complete card, or an incomplete chunk set
+//!     whose chunks are all clean).
+//!   - 16 -- REPAIRED: a correction was applied and is verified by
+//!     reassembly (a chunked set's content id), or will be when the rest of
+//!     an incomplete set is reassembled (a lone chunk counts as one).
+//!   - 20 -- REPAIRED + UNVERIFIED: a correction to a string that is not
+//!     chunked, which has no second check (it can alias to another card).
+//!   - 22 -- REPAIRED + UNVERIFIED + INVALID: a single corrected string that
+//!     then does not decode (decision 6), for example a wire version this
+//!     build cannot read. The corrected string is still printed.
+//!   - 2  -- INVALID, nothing printed: an uncorrectable string, a wrong
+//!     HRP, a clean string that does not decode, a complete set that does
+//!     not reassemble, several strings at an unsupported version (ruling 7).
 //!
-//! Exit codes (D26 cross-CLI parity with `mk repair` / `ms repair` /
-//! `mnemonic repair`):
-//!   - 0 — every input chunk was already valid (no corrections applied)
-//!   - 5 — at least one chunk had corrections applied (REPAIR_APPLIED)
-//!   - 2 — atomic-fail: BCH-uncorrectable / HRP-mismatch / parse-reject;
-//!     caller's named-chunk error surfaces on stderr
-//!
-//! DIVERGENCE, not parity (F-449 stage 2 Task 2c, SPEC §8.9): `md repair`
-//! exits 5 on a corrected SINGLE-STRING card whose wire version this build
-//! does not support (a multi-string set at such a version still exits 2,
-//! ruling 7), while `mnemonic repair` exits 2 on it until the toolkit adopts
-//! `md_codec::correct_chunks` (F-642, owned by the toolkit's post-stage-2
-//! pin bump). The code -> meaning mapping is unchanged.
+//! An incomplete chunk set (D28 kept its atomicity for UNCORRECTABLE chunks:
+//! any one of them fails the whole call) is corrected chunk by chunk and
+//! printed, so a partly damaged set can be repaired before every plate is
+//! found (decision 7).
 //!
 //! Text output mirrors `mnemonic repair`'s text-form report shape (see
 //! `mnemonic-toolkit/src/cmd/repair.rs::emit_repair_text`). JSON output
@@ -79,13 +79,9 @@ struct RepairDetail {
     corrected_positions: Vec<(usize, char, char)>,
 }
 
-/// Run `md repair`.
-///
-/// Returns an `Ok(u8)` exit code per D26. On atomic-fail (any md_codec
-/// error from `decode_with_correction`), prints the error message to
-/// stderr and returns `Ok(2)` — bypassing the `CliError::Codec → 1`
-/// default route so the repair exit-code contract is honored.
+/// Run `md repair`. Returns the exit status (module docs).
 pub fn run(args: RepairArgs) -> Result<u8, CliError> {
+    use crate::exit::{Bits, INVALID, OK, REPAIRED, UNVERIFIED};
     // FIX_bh1119_md_out_names_input S2: the guard is the first statement.
     crate::cmd::refuse_output_names_input(
         true,
@@ -95,44 +91,130 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
     )?;
     let strings = crate::cmd::read_md1_inputs(&args.md1_strings, args.in_file.as_deref(), "--in")?;
 
-    // Atomic per D28: decode_with_correction either succeeds for ALL
-    // chunks or returns Err naming the first failing chunk. We do NOT
-    // emit any partial output on stdout in the Err branch.
+    // BCH correction, chunk by chunk. An uncorrectable chunk fails the whole
+    // call (D28): the codec error on stderr, nothing on stdout.
     let str_refs: Vec<&str> = strings.iter().map(String::as_str).collect();
-    let (descriptor, details) = match md_codec::decode_with_correction(&str_refs) {
+    let (corrected, details) = match md_codec::correct_chunks(&str_refs) {
         Ok(t) => t,
-        Err(md_codec::Error::WireVersionMismatch { got }) => {
-            return corrected_but_unsupported(&strings, &str_refs, got, args.json);
-        }
         Err(e) => {
-            // Surface the codec error on stderr (with the chunk_index
-            // named when present). NO stdout output per D28.
             eprintln!("md: repair: {e}");
-            return Ok(2);
+            return Ok(INVALID);
         }
     };
-
+    let any_correction = !details.is_empty();
     let reports = build_reports(&strings, &details);
-    let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
     let corrected_chunks: Vec<String> = reports.iter().map(|r| r.corrected_chunk.clone()).collect();
+    let corrected_refs: Vec<&str> = corrected.iter().map(String::as_str).collect();
 
-    if args.json {
-        emit_json(&corrected_chunks, &reports)?;
+    // The decode check (decision 6). A single string that is not chunked
+    // decodes on its own; anything chunked reassembles.
+    let single_unchunked = corrected.len() == 1 && !is_chunked(&corrected[0]);
+    let decoded = if single_unchunked {
+        md_codec::decode::decode_md1_string(&corrected[0])
     } else {
-        emit_text(&corrected_chunks, &reports);
-    }
-
-    // L4 (cycle-9): branch the output class on whether the decoded md1 carries
-    // watch-only key material. A wallet-policy md1 (non-empty Pubkeys TLV) is
-    // WatchOnly; a keyless md1 is a Template. Previously labeled Template
-    // unconditionally, mislabeling watch-only cards.
-    let class = if descriptor.is_wallet_policy() {
-        crate::output_advisory::OutputClass::WatchOnly
-    } else {
-        crate::output_advisory::OutputClass::Template
+        md_codec::chunk::reassemble(&corrected_refs)
     };
-    crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
-    Ok(if any_correction { 5 } else { 0 })
+    match decoded {
+        Ok(descriptor) => {
+            emit(&corrected_chunks, &reports, args.json)?;
+            // L4 (cycle-9): a wallet-policy md1 (non-empty Pubkeys TLV) is
+            // WatchOnly; a keyless md1 is a Template.
+            let class = if descriptor.is_wallet_policy() {
+                crate::output_advisory::OutputClass::WatchOnly
+            } else {
+                crate::output_advisory::OutputClass::Template
+            };
+            crate::output_advisory::emit_output_class_advisory(class, &mut std::io::stderr());
+            if !any_correction {
+                Ok(OK)
+            } else if single_unchunked {
+                eprintln!(
+                    "md: repair: UNVERIFIED: this card is a single string, so nothing checks \
+                     the correction a second time, and it can alias to a different valid card. \
+                     Verify the corrected card (for example `md verify <card> --template \
+                     <TEMPLATE>`) before trusting it."
+                );
+                Ok((Bits::of(REPAIRED) | UNVERIFIED).to_exit_code())
+            } else {
+                Ok(REPAIRED)
+            }
+        }
+        // Decision 7: an incomplete set (or a lone chunk of a larger one) is
+        // printed chunk by chunk. Every chunk header parsed, so each string
+        // decodes as a chunk of its format; the content id checks the
+        // corrections when the rest of the set is reassembled.
+        Err(md_codec::Error::ChunkSetIncomplete { got, expected }) => {
+            emit(&corrected_chunks, &reports, args.json)?;
+            if any_correction {
+                eprintln!(
+                    "md: repair: the chunk set is incomplete ({got} of {expected} chunks): each \
+                     correction passed its chunk's checksum, and is verified when the rest of \
+                     the set is reassembled (`md decode` with every chunk)."
+                );
+                Ok(REPAIRED)
+            } else {
+                eprintln!(
+                    "md: repair: nothing to correct; the chunk set is incomplete ({got} of \
+                     {expected} chunks)."
+                );
+                Ok(OK)
+            }
+        }
+        // F-449 stage 2 Task 2c, ruling 7: a single string this build cannot
+        // read keeps its correction (BCH is version-agnostic); several
+        // strings at such a version fail whole, as no check across them can
+        // establish that the version is one card's own.
+        Err(md_codec::Error::WireVersionMismatch { got }) if corrected.len() == 1 => {
+            if !any_correction {
+                eprintln!(
+                    "md: repair: {}",
+                    md_codec::Error::WireVersionMismatch { got }
+                );
+                return Ok(INVALID);
+            }
+            emit(&corrected_chunks, &reports, args.json)?;
+            unsupported_version_notes(got);
+            Ok((Bits::of(REPAIRED) | UNVERIFIED | INVALID).to_exit_code())
+        }
+        // Decision 6: a corrected single string that is not a card. It is
+        // printed with its warning, since a person repairing by hand needs
+        // to see it.
+        Err(e) if single_unchunked && any_correction => {
+            emit(&corrected_chunks, &reports, args.json)?;
+            eprintln!(
+                "md: repair: the corrected string passed its checksum but is not a card md \
+                 can decode: {e}. Do not trust it."
+            );
+            Ok((Bits::of(REPAIRED) | UNVERIFIED | INVALID).to_exit_code())
+        }
+        // A clean string that does not decode, or a complete set that does
+        // not reassemble: nothing printed (D28).
+        Err(e) => {
+            eprintln!("md: repair: {e}");
+            Ok(INVALID)
+        }
+    }
+}
+
+/// The chunked flag: bit 0 of the first data symbol (after the 4-bit
+/// version). Only read on a string `correct_chunks` returned, which parsed.
+fn is_chunked(s: &str) -> bool {
+    const ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+    s.get(3..4)
+        .and_then(|c| {
+            let c = c.as_bytes()[0].to_ascii_lowercase();
+            ALPHABET.iter().position(|&b| b == c)
+        })
+        .is_none_or(|v| v & 1 == 1)
+}
+
+fn emit(corrected_chunks: &[String], reports: &[RepairDetail], json: bool) -> Result<(), CliError> {
+    if json {
+        emit_json(corrected_chunks, reports)
+    } else {
+        emit_text(corrected_chunks, reports);
+        Ok(())
+    }
 }
 
 /// Reconstruct per-chunk corrected output + the (was, now) char view.
@@ -157,58 +239,9 @@ fn build_reports(strings: &[String], details: &[md_codec::CorrectionDetail]) -> 
     reports
 }
 
-/// F-449 stage 2 Task 2c (SPEC §8.9's stage-2 row): the decode refused the
-/// card's WIRE VERSION, but BCH correction is version-agnostic and may have
-/// repaired it. Keep that correction rather than discard it.
-///
-/// - Corrections found → emit the ordinary text/JSON report (D27 shape; it
-///   needs no descriptor) and exit **5**: a correction WAS applied, 5 is
-///   already distinct from 2, and no code is minted. D28 holds: this is not
-///   the atomic-fail case, and stdout carries complete, BCH-valid strings.
-///   **No output-class advisory** -- there is no `Descriptor` to classify,
-///   and guessing is the L4 mislabel.
-/// - No corrections, or correction itself fails → today's behaviour exactly:
-///   the codec error on stderr, empty stdout, exit **2**. Never the success
-///   path's `any_correction ? 5 : 0` (R3 M-6): a CLEAN card at an
-///   unsupported version is not "already valid".
-fn corrected_but_unsupported(
-    strings: &[String],
-    str_refs: &[&str],
-    got: u8,
-    json: bool,
-) -> Result<u8, CliError> {
-    // RULING 7 (F-449 stage 2 re-review NEW-1): SINGLE-STRING input only.
-    // A build cannot know the chunk-header layout of a version it does not
-    // support, so nothing it checks across a multi-string set can establish
-    // that the mismatched version is one card's own: a single-string card in
-    // the set reads as a bit-shifted "version" (I-1), and two genuine chunks
-    // from UNRELATED wallets pass any per-string check (NEW-1). Any
-    // multi-string call that fails on the version exits 2 with empty
-    // stdout, exactly as 0.18.0 did.
-    if strings.len() != 1 {
-        eprintln!(
-            "md: repair: {}",
-            md_codec::Error::WireVersionMismatch { got }
-        );
-        return Ok(2);
-    }
-    let details = match md_codec::correct_chunks(str_refs) {
-        Ok((_, details)) if !details.is_empty() => details,
-        _ => {
-            eprintln!(
-                "md: repair: {}",
-                md_codec::Error::WireVersionMismatch { got }
-            );
-            return Ok(2);
-        }
-    };
-    let reports = build_reports(strings, &details);
-    let corrected_chunks: Vec<String> = reports.iter().map(|r| r.corrected_chunk.clone()).collect();
-    if json {
-        emit_json(&corrected_chunks, &reports)?;
-    } else {
-        emit_text(&corrected_chunks, &reports);
-    }
+/// F-449 stage 2 Task 2c (SPEC §8.9's stage-2 row): a corrected card whose
+/// wire version this build cannot read. The notes say where to take it.
+fn unsupported_version_notes(got: u8) {
     let accepted: Vec<String> = (0..=u8::MAX)
         .filter(|v| md_codec::header::Header::is_supported_version(*v))
         .map(|v| v.to_string())
@@ -231,7 +264,6 @@ fn corrected_but_unsupported(
              version {got}"
         );
     }
-    Ok(5)
 }
 
 /// Apply the (position, was, now) corrections to an md1 chunk string,
@@ -348,14 +380,14 @@ fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
             .collect(),
     };
     let body = serde_json::to_string(&envelope)
-        .map_err(|e| CliError::BadArg(format!("repair JSON serialize: {e}")))?;
+        .map_err(|e| CliError::Internal(format!("repair JSON serialize: {e}")))?;
     println!("{body}");
     Ok(())
 }
 
 #[cfg(not(feature = "json"))]
 fn emit_json(_corrected_chunks: &[String], _reports: &[RepairDetail]) -> Result<(), CliError> {
-    Err(CliError::BadArg(
+    Err(CliError::Io(
         "--json requires the `json` feature (rebuild with --features json)".into(),
     ))
 }

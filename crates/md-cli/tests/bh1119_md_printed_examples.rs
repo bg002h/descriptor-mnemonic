@@ -107,9 +107,16 @@ fn f1_repair_help_examples_run_as_printed() {
     );
     for (cmd, _) in &ex {
         let out = run_bash(cmd);
+        // A single string's correction has no second check (20); a chunk
+        // set's is verified by reassembly (16).
+        let want = if cmd.matches(" md1").count() > 1 {
+            16
+        } else {
+            20
+        };
         assert_eq!(
             out.status.code(),
-            Some(5),
+            Some(want),
             "help example failed as printed: {cmd}\n{}",
             String::from_utf8_lossy(&out.stderr)
         );

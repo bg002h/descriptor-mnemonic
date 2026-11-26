@@ -317,7 +317,7 @@ fn n2_emit_md1_with_a_template_refuses_naming_md_encode() {
         ])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(2), "{}", err_of(&o));
+    assert_eq!(o.status.code(), Some(64), "{}", err_of(&o));
     assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
     assert_one_rendered_line(
         &o,
@@ -339,7 +339,7 @@ fn n2_emit_md1_on_a_keyed_card_positional_refuses_as_a_re_emit() {
     }
     c.args(["--emit", "md1"]);
     let o = c.output().unwrap();
-    assert_eq!(o.status.code(), Some(2), "{}", err_of(&o));
+    assert_eq!(o.status.code(), Some(64), "{}", err_of(&o));
     assert!(out_of(&o).is_empty(), "nothing on stdout when refusing");
     assert_one_rendered_line(
         &o,
@@ -366,7 +366,7 @@ fn n2_emit_md1_and_json_are_declared_mutually_exclusive() {
     )
     .output()
     .unwrap();
-    assert_eq!(o.status.code(), Some(2), "{}", err_of(&o));
+    assert_eq!(o.status.code(), Some(64), "{}", err_of(&o));
     assert!(err_of(&o).contains("cannot be used with"), "{}", err_of(&o));
     assert!(
         !out_of(&o).contains("md1") && !out_of(&o).contains("wsh("),
@@ -463,7 +463,7 @@ fn n2_emit_md1_leaves_a_seating_refusal_exactly_as_it_was() {
     let emitted = seat_cmd("descriptor", V_USP, &mk1(V_USP), &["--emit", "md1"])
         .output()
         .unwrap();
-    assert_eq!(plain.status.code(), Some(1), "{}", err_of(&plain));
+    assert_eq!(plain.status.code(), Some(2), "{}", err_of(&plain));
     assert_eq!(emitted.status.code(), plain.status.code());
     assert!(
         out_of(&emitted).is_empty(),
@@ -661,7 +661,7 @@ fn n2_group_size_separator_and_out_require_emit() {
         let o = seat_cmd("descriptor", V_B1_WALLET, &mk1(V_B1_WALLET), &[flag, val])
             .output()
             .unwrap();
-        assert_eq!(o.status.code(), Some(2), "{flag}: {}", err_of(&o));
+        assert_eq!(o.status.code(), Some(64), "{flag}: {}", err_of(&o));
         assert!(out_of(&o).is_empty(), "{flag}: nothing minted on refusal");
     }
 }

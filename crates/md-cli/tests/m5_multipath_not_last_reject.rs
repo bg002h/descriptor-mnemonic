@@ -46,7 +46,7 @@ fn encode_post_multipath_fixed_step_rejects() {
         .unwrap()
         .args(["encode", "wpkh(@0/<2;3>/0'/*)"])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("template parse error"))
         .stderr(predicate::str::contains("final"))
         // Must NOT silently emit an md1 phrase on stdout.
@@ -66,7 +66,7 @@ fn encode_h_in_origin_residue_rejects() {
         .unwrap()
         .args(["encode", "wpkh(@0/48h/0h/0h/<0;1>/*)"])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("template parse error"))
         .stderr(predicate::str::contains("requires the `'` spelling"))
         .stderr(predicate::str::contains("multipath").not())
@@ -92,7 +92,7 @@ fn encode_fused_hardened_body_with_suffix_hits_h13_first() {
             "regtest",
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("template parse error"))
         // H13's message family (hardened / not-a-bare-unsigned-integer), NOT M5's.
         .stderr(

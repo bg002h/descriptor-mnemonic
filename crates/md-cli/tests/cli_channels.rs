@@ -59,7 +59,7 @@ fn encode_refuses_both_the_positional_and_in() {
     let tpl = dir.path().join("wallet.template");
     std::fs::write(&tpl, format!("{TEMPLATE}\n")).unwrap();
     let (code, _, err) = out_of(&["encode", TEMPLATE, "--in", tpl.to_str().unwrap()]);
-    assert_eq!(code, Some(2), "stderr={err}");
+    assert_eq!(code, Some(64), "stderr={err}");
     // The exit code ALONE is a false PASS before this entry lands: `--in` was an
     // unknown flag then, so clap already exited 2 with "unexpected argument".
     // The refusal must name the CONFLICT.
@@ -222,7 +222,7 @@ fn in_accepts_a_grouped_card() {
 #[test]
 fn in_refuses_a_missing_file() {
     let (code, _, err) = out_of(&["decode", "--in", "/nonexistent/nope.md1"]);
-    assert_eq!(code, Some(2), "stderr={err}");
+    assert_eq!(code, Some(32), "stderr={err}");
     assert!(err.contains("/nonexistent/nope.md1"), "stderr={err}");
 }
 
@@ -265,8 +265,8 @@ fn every_relaxed_verb_still_refuses_when_no_input_is_supplied() {
             .unwrap();
         assert_eq!(
             out.status.code(),
-            Some(2),
-            "`md {}` with no input must still refuse at 2; stderr={}",
+            Some(64),
+            "`md {}` with no input must still refuse at 64; stderr={}",
             args.join(" "),
             String::from_utf8_lossy(&out.stderr)
         );
@@ -288,7 +288,7 @@ fn encode_refuses_from_policy_together_with_in() {
         "--in",
         tpl.to_str().unwrap(),
     ]);
-    assert_eq!(code, Some(2), "stderr={err}");
+    assert_eq!(code, Some(64), "stderr={err}");
     assert!(err.contains("cannot be used with"), "stderr={err}");
 }
 

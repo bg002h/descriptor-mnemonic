@@ -152,12 +152,12 @@ fn address_phrase_mode_round_trips_through_encode() {
 }
 
 #[test]
-fn address_template_without_key_exits_2_with_helpful_message() {
+fn address_template_without_key_exits_64_with_helpful_message() {
     Command::cargo_bin("md")
         .unwrap()
         .args(["address", "--template", "wpkh(@0/<0;1>/*)"])
         .assert()
-        .code(2)
+        .code(64)
         .stderr(predicates::str::contains("--key @i=<XPUB> required"));
 }
 
@@ -183,12 +183,12 @@ fn address_phrase_template_only_exits_2_with_wallet_policy_message() {
 }
 
 #[test]
-fn address_no_input_exits_2() {
+fn address_no_input_exits_64() {
     Command::cargo_bin("md")
         .unwrap()
         .args(["address"])
         .assert()
-        .code(2);
+        .code(64);
 }
 
 #[test]
@@ -303,11 +303,11 @@ fn address_count_over_max_clap_rejects() {
             "1001",
         ])
         .assert()
-        .code(2);
+        .code(64);
 }
 
 #[test]
-fn address_chain_out_of_range_returns_1() {
+fn address_chain_out_of_range_returns_2() {
     let xpub = account_xpub("m/84'/0'/0'", Network::Bitcoin);
     let key_arg = format!("@0={xpub}");
     Command::cargo_bin("md")
@@ -322,7 +322,7 @@ fn address_chain_out_of_range_returns_1() {
             "5",
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicates::str::contains("out of range"));
 }
 
@@ -341,7 +341,7 @@ fn address_change_and_chain_together_rejected() {
             "1",
         ])
         .assert()
-        .code(2);
+        .code(64);
 }
 
 #[test]
@@ -511,7 +511,7 @@ fn address_hardened_wildcard_card_refuses_loudly() {
             &key_arg,
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicates::str::contains("hardened public-key derivation"));
 }
 
@@ -538,7 +538,7 @@ fn address_override_hardened_wildcard_card_refuses_loudly() {
             &key1,
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicates::str::contains("hardened public-key derivation"));
 }
 

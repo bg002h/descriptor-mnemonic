@@ -86,13 +86,13 @@ fn address(template: &str, keys: &[&str]) -> std::process::Output {
     c.output().unwrap()
 }
 
-/// A refusal must be exit 1 (a content refusal, not a usage error at 2), must
+/// A refusal must be exit 2 (an input md declines, not a usage error at 64), must
 /// print NOTHING on stdout, and must never call the operator's wallet invalid.
 fn assert_refused(out: &std::process::Output, expected_line: &str) {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "expected a content refusal at exit 1; stdout was:\n{stdout}\nstderr was:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );

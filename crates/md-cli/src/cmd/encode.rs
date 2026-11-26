@@ -93,7 +93,7 @@ pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // hard error rather than a silent no-op — a flag pointing at a nonexistent
     // mode must not exit 0.
     if args.force_long_code {
-        return Err(CliError::BadArg(
+        return Err(CliError::Usage(
             "the long BCH code was removed in v0.12.0; md1 is regular-code-only (payloads >400 bits are chunked)".into(),
         ));
     }

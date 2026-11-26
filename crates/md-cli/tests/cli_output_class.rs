@@ -324,8 +324,8 @@ fn repair_emits_template() {
         .expect("invoke md repair");
     assert_eq!(
         out.status.code(),
-        Some(5),
-        "expected exit 5 (REPAIR_APPLIED); stderr={}",
+        Some(16),
+        "expected exit 16 (REPAIRED); stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
@@ -364,7 +364,7 @@ fn repair_keyed_emits_watch_only() {
     let chunks = encode_keyed_chunked_for_repair("wpkh(@0/<0;1>/*)", &key_arg);
     assert!(!chunks.is_empty(), "expected >=1 chunk; got {chunks:?}");
     // Corrupt position 10 of the FIRST chunk; remaining chunks stay valid → the
-    // call is atomic and applies a correction → exit 5, advisory emitted.
+    // call is atomic and applies a correction → exit 16, advisory emitted.
     let mut corrupted = chunks.clone();
     corrupted[0] = corrupt_at_for_repair(&chunks[0], 10, 0b10110);
 
@@ -377,8 +377,8 @@ fn repair_keyed_emits_watch_only() {
         .expect("invoke md repair");
     assert_eq!(
         out.status.code(),
-        Some(5),
-        "expected exit 5 (REPAIR_APPLIED); stderr={}",
+        Some(16),
+        "expected exit 16 (REPAIRED); stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stderr = String::from_utf8(out.stderr).unwrap();

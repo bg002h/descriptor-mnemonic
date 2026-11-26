@@ -505,7 +505,7 @@ pub fn parse_preset(wrapper: Wrapper, s: &str) -> Result<(PresetParams, PathList
                 list,
             ))
         }
-        other => Err(CliError::Compose(format!(
+        other => Err(CliError::Internal(format!(
             "preset {other}: internal error -- PRESET_NAMES advertises this name but no lowering rule exists for it (this is a bug in md, not a mistake in your command)"
         ))),
     }
@@ -686,7 +686,7 @@ pub fn run(
             msg.push_str("\n  ");
             msg.push_str(&describe(e));
         }
-        return Err(CliError::Compose(msg));
+        return Err(CliError::Refused(msg));
     }
     for e in &composed.experimental {
         eprintln!("warning: EXPERIMENTAL: {}", describe(e));
@@ -795,7 +795,7 @@ pub fn run(
     let none = crate::cmd::verdict::notice(&composed.descriptor, None, "this template")
         .is_some_and(|vs| md_codec::coordinator::none_imports(&vs));
     if none && !md_only {
-        return Err(CliError::Compose(
+        return Err(CliError::Refused(
             "no wallet coordinator md knows imports this policy: every one refuses it at every \
              verified version (above). md can still rebuild it from the card -- but md cannot \
              sign. Pass --md-only to compose it anyway."

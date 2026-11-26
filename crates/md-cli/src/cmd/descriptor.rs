@@ -145,7 +145,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
     // something anyway would hand a coordinator a string that looks like a
     // wallet and is not one. `md decode` is the command for that card.
     if !descriptor.is_wallet_policy() {
-        return Err(CliError::BadArg(
+        return Err(CliError::Input(
             "descriptor requires wallet-policy mode (Pubkeys TLV): this card is a keyless \
              TEMPLATE, which has no concrete form. Supply the matching mk1 key cards with \
              --from-mk1 <STRING> (repeatable) or --from-mk1-file <FILE> and they will be \
@@ -155,15 +155,40 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         ));
     }
 
+    // G-1 caller (SPEC §4 / plan Step 4): `args.network` is already in
+    // scope for this command (`--network`), so this switches to the
+    // `_with_network` entry points rather than staying on the network-less
+    // ones that would otherwise REFUSE any kind-1 (Liana unspendable)
+    // wallet outright.
+    //
+    // Rendered BEFORE the `--verify-against` verdict (exit-code spec R2): a
+    // `--chain` this card does not have is an invalid input (2), and it must
+    // fail before a verdict is printed, never after it.
+    let rendered = if args.emit == Some(Emit::Md1) {
+        None
+    } else {
+        Some(match args.chain {
+            Some(chain) => {
+                md_codec::to_miniscript_descriptor_with_network(&descriptor, chain, args.network)?
+                    .to_string()
+            }
+            None => md_codec::to_miniscript_descriptor_multipath_with_network(
+                &descriptor,
+                args.network,
+            )?
+            .to_string(),
+        })
+    };
+
     // R3 — `--verify-against`, admissible on every input mode that reaches
     // here (positional card, --from-mk1 seating, --template): checked once
     // the composed descriptor is final and BEFORE the `--emit` dispatch, so
     // it applies uniformly regardless of what `--emit` does with stdout. The
     // verdict is a stderr note (Acceptance 4's rendered-line contract) plus
-    // an EXIT CODE override — 0 stays 0, a NOT-equal verdict becomes 5 (`md
-    // repair`'s reserved-5 precedent) — that wins over whatever the rest of
-    // this function would otherwise return, since it is a definitive answer
-    // a mistyped input must never be mistaken for.
+    // an EXIT CODE override — 0 stays 0, a NOT-equal verdict becomes 1 (NO,
+    // exit-code spec §3: a comparison that came out no) — that wins over
+    // whatever the rest of this function would otherwise return. A mistyped
+    // input is 2, so it is never mistaken for the verdict.
     let verify_exit: Option<u8> = match args.verify_against {
         Some(arg) => {
             let other = resolve_verify_against(arg)?;
@@ -177,7 +202,11 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
                 crate::seat::compose::spend_equal_verdict(&descriptor, &other)?
             };
             emit_verify_against_verdict(verdict);
-            Some(if equal { 0 } else { 5 })
+            Some(if equal {
+                crate::exit::OK
+            } else {
+                crate::exit::NO
+            })
         }
         None => None,
     };
@@ -196,21 +225,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         return Ok(verify_exit.unwrap_or(code));
     }
 
-    // G-1 caller (SPEC §4 / plan Step 4): `args.network` is already in
-    // scope for this command (`--network`), so this switches to the
-    // `_with_network` entry points rather than staying on the network-less
-    // ones that would otherwise REFUSE any kind-1 (Liana unspendable)
-    // wallet outright.
-    let rendered = match args.chain {
-        Some(chain) => {
-            md_codec::to_miniscript_descriptor_with_network(&descriptor, chain, args.network)?
-                .to_string()
-        }
-        None => {
-            md_codec::to_miniscript_descriptor_multipath_with_network(&descriptor, args.network)?
-                .to_string()
-        }
-    };
+    let rendered = rendered.expect("rendered above unless --emit md1");
 
     // F-601: `--help` promises "the CONCRETE output descriptor -- real xpubs,
     // key origins and the BIP-380 checksum -- for pasting into a coordinator".
@@ -300,7 +315,7 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
 /// convention `--in`/`--from-mk1-file` already use); anything else is a
 /// literal md1 string. A garbage value that is neither an existing file nor
 /// a valid md1 string hits a decode error — `CliError::VerifyAgainstUnreadable`,
-/// exit 1, never a spend-equality verdict (SPEC R3's garbage-argument row) —
+/// exit 2, never a spend-equality verdict (SPEC R3's garbage-argument row) —
 /// that NAMES which branch ran (whole-diff review r1 N4). The bare
 /// `CliError::Codec` passthrough this replaced said only "codec error:
 /// … does not start with HRP md1", so an operator whose cwd happened to hold
@@ -372,9 +387,9 @@ pub fn emit_seating_notes(notes: &[String]) {
 /// cards. The other two input modes each already have their own answer, and
 /// naming which one is the entire content of these refusals.
 ///
-/// **`BadArg` (exit 2), not a content refusal at exit 1.** Every flag here is
+/// **`Usage` (exit 64), not a content refusal.** Every flag here is
 /// spelled correctly and every value parses; what is wrong is the
-/// COMBINATION, which is the class clap reports at exit 2 through its own
+/// COMBINATION, which is the class clap reports at exit 64 through its own
 /// `conflicts_with`. Nothing is being said about the material.
 fn check_emit_md1_input_mode(
     template: Option<&str>,
@@ -385,7 +400,7 @@ fn check_emit_md1_input_mode(
                          keyless policy card together with its mk1 key cards (--from-mk1 \
                          <STRING>, repeatable, or --from-mk1-file <FILE>).";
     if template.is_some() {
-        return Err(CliError::BadArg(format!(
+        return Err(CliError::Usage(format!(
             "{NEEDS} Minting a card from a template plus keys is what `md encode <TEMPLATE> \
              --key @i=XPUB` does -- use that."
         )));
@@ -413,7 +428,7 @@ fn check_emit_md1_input_mode(
              would hand back what you pasted in. Drop --emit md1 to render this card as a \
              descriptor."
         };
-        return Err(CliError::BadArg(format!("{NEEDS} {tail}")));
+        return Err(CliError::Usage(format!("{NEEDS} {tail}")));
     }
     Ok(())
 }

@@ -98,7 +98,7 @@ fn compose_refuses_a_keyless_path_without_experimental_and_admits_it_with() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(8)
     .stderr(predicate::str::contains("--experimental"));
     md().args([
         "compose",

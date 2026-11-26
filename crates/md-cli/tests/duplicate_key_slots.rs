@@ -99,7 +99,7 @@ fn one_key_at_two_different_use_sites_refuses_as_the_r_n1d_delta() {
     let out = encode(SPLIT_SITE, K0, K0);
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "the R-N1d delta was minted: {}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -344,7 +344,7 @@ fn t_row_one_key_at_two_disjoint_use_sites_refuses_as_the_r_n1d_delta() {
     );
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "the R-N1d delta composed: {}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -379,12 +379,12 @@ fn t_row_the_same_slot_supplied_twice_is_refused() {
             &format!("@1={K1}"),
         ],
     );
-    assert_eq!(twice.status.code(), Some(1));
+    assert_eq!(twice.status.code(), Some(2));
     assert!(twice.stdout.is_empty());
     let err = String::from_utf8_lossy(&twice.stderr);
     assert_eq!(
         err,
-        "md: MISMATCH: @0: --key arguments 1 and 2 both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @0=... you mean and remove the other.\n"
+        "md: @0: --key arguments 1 and 2 both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @0=... you mean and remove the other.\n"
     );
     assert!(!err.contains("BIP 388"), "{err}");
 }
@@ -450,7 +450,7 @@ fn t_row_key_reuse_through_a_noncanonical_wrapper_sourced_solely_by_path_refuses
     );
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "one xpub filling two multi_a leaf slots was minted: {}",
         String::from_utf8_lossy(&out.stdout)
     );
@@ -480,7 +480,7 @@ fn t_row_key_reuse_through_a_noncanonical_wrapper_sourced_solely_by_path_refuses
     );
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(2),
         "one xpub filling two multi_a leaf slots derived an address: {}",
         String::from_utf8_lossy(&out.stdout)
     );

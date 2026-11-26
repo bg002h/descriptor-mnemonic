@@ -85,7 +85,7 @@ fn o1_failed_overwrite_keeps_previous_file() {
     mint(&f, T);
     assert_eq!(std::fs::read_to_string(&f).unwrap(), CARD);
     let o = run(fsize(md_cmd(&["encode", P, "--out", s(&f)]), 8));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 32);
     assert_eq!(se(&o), err27(&f));
     assert_eq!(so(&o), "");
     assert_eq!(std::fs::read_to_string(&f).unwrap(), CARD);
@@ -116,7 +116,7 @@ fn o2_failed_overwrite_keeps_previous_file_descriptor_emit_md1() {
     let before = std::fs::read(&dd).unwrap();
     assert!(before.len() > 8);
     let o = run(fsize(md_cmd(&args), 8));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 32);
     let want = format!("chunk-set-id: 0x7a2e1\n{}", err27(&dd));
     assert_eq!(se(&o), want);
     assert_eq!(std::fs::read(&dd).unwrap(), before);
@@ -127,7 +127,7 @@ fn o3_out_write_error_text_and_exit() {
     let d = tempfile::tempdir().unwrap();
     let x = d.path().join("nodir").join("x.md1");
     let o = run(md_cmd(&["encode", T, "--out", s(&x)]));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 32);
     assert_eq!(
         se(&o),
         format!(
@@ -229,7 +229,7 @@ fn o8_json_with_unwritable_out_fails() {
     let d = tempfile::tempdir().unwrap();
     let x = d.path().join("nodir").join("x.md1");
     let o = run(md_cmd(&["encode", T, "--json", "--out", s(&x)]));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 32);
     assert_eq!(so(&o), "");
     assert_eq!(
         se(&o),
@@ -254,7 +254,7 @@ fn o9_json_with_out_and_full_stdout_keeps_file() {
     let mut c = md_cmd(&["encode", T, "--json", "--out", s(&f)]);
     c.stdout(Stdio::from(full));
     let o = run(c);
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 32);
     assert_eq!(
         se(&o),
         format!("{NOTE}\nmd: cannot write the output: No space left on device (os error 28)\n")
@@ -274,7 +274,7 @@ fn o10_failed_policy_id_keeps_prior_file() {
         "--out",
         s(&f),
     ]));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 2);
     assert_eq!(se(&o), format!("{CODEC}\n"));
     assert_eq!(so(&o), "");
     assert_eq!(std::fs::read_to_string(&f).unwrap(), "PRIOR\n");
@@ -283,7 +283,7 @@ fn o10_failed_policy_id_keeps_prior_file() {
 #[test]
 fn o11_failed_policy_id_prints_nothing_on_stdout() {
     let o = run(md_cmd(&["encode", W, "--policy-id-fingerprint"]));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 2);
     assert_eq!(so(&o), "");
     assert_eq!(se(&o), format!("{CODEC}\n"));
 }
@@ -299,7 +299,7 @@ fn o12_failed_policy_id_absent_out_stays_absent() {
         "--out",
         s(&n),
     ]));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 2);
     assert_eq!(se(&o), format!("{CODEC}\n"));
     assert!(!n.exists());
 }
@@ -312,7 +312,7 @@ fn o13_failed_policy_id_force_chunked_prints_only_the_error() {
         "--policy-id-fingerprint",
         "--force-chunked",
     ]));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 2);
     assert_eq!(so(&o), "");
     assert_eq!(se(&o), format!("{CODEC}\n"));
 }
@@ -330,7 +330,7 @@ fn o14_failed_policy_id_json_out_keeps_prior_file() {
         "--out",
         s(&f),
     ]));
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 2);
     assert_eq!(se(&o), format!("{CODEC}\n"));
     assert_eq!(std::fs::read_to_string(&f).unwrap(), "PRIOR\n");
 }
@@ -352,7 +352,7 @@ fn alias_row(out_of: impl Fn(&Path) -> std::path::PathBuf) {
     let mut c = fsize(md_cmd(&["encode", T, "--out", s(&out)]), 0);
     c.stdout(Stdio::from(appended));
     let o = run(c);
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 32);
     assert_eq!(
         se(&o),
         format!(
@@ -414,7 +414,7 @@ fn o15_stdio_alias_onto_a_file_names_no_state() {
     let mut c = fsize(md_cmd(&["encode", T, "--out", "/dev/stdout"]), 0);
     c.stdout(Stdio::from(appended));
     let o = run(c);
-    assert_eq!(rc(&o), 1);
+    assert_eq!(rc(&o), 32);
     assert_eq!(
         se(&o),
         "md: cannot write the output: /dev/stdout: File too large (os error 27)\n"
