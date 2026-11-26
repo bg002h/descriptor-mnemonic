@@ -325,7 +325,8 @@ enum Command {
         experimental: bool,
         /// Emit JSON: the origin-less template, the inline-origin template, the
         /// slot map, the taproot internal-key path, the EXPERIMENTAL marks, and
-        /// (with --scheme) the resolved scheme name and parameters.
+        /// (with --scheme) the resolved scheme name and parameters (JSON key
+        /// `preset`, unchanged).
         #[arg(long)]
         json: bool,
         /// Which unspendable taproot internal key to use when no spend path supplies

@@ -98,7 +98,7 @@ fn compose_refusals_name_the_scheme_flag() {
     ]);
     let err = String::from_utf8_lossy(&err);
     assert_ne!(code, Some(0), "{err}");
-    assert!(err.contains("--scheme"), "{err}");
+    assert!(err.contains("'--scheme <SCHEME>'"), "{err}");
     assert!(!err.contains("--preset"), "{err}");
 }
 

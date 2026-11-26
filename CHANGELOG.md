@@ -155,6 +155,8 @@ Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, `Skele
 published.
 
 ### Changed
+- `ComposeError::PresetShape` now displays `scheme: <why>` instead of `preset: <why>`, matching `md compose --scheme`
+  (the variant name is unchanged).
 
 - **Without the `derive` feature, nothing gets a summary or a key (Fable review I-2).** The type rule needs
   `miniscript`, which only `derive` brings, so in a `default-features = false` build `policy_type_checks` returns

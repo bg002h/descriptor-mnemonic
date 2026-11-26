@@ -338,7 +338,7 @@ fn preset_decaying_multisig_propagates_preset_shape_refusals() {
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset: decaying tiers must unlock progressively later (the second older must exceed the first)",
+        "scheme: decaying tiers must unlock progressively later (the second older must exceed the first)",
     ));
     md().args([
         "compose",
@@ -351,7 +351,7 @@ fn preset_decaying_multisig_propagates_preset_shape_refusals() {
     .failure()
     .code(1)
     .stderr(predicate::str::contains(
-        "preset: a decaying multisig decays: the recovery threshold cannot exceed the primary threshold",
+        "scheme: a decaying multisig decays: the recovery threshold cannot exceed the primary threshold",
     ));
 }
 
