@@ -149,8 +149,8 @@ published.
 
 - **Without the `derive` feature, nothing gets a summary or a key (Fable review I-2).** The type rule needs
   `miniscript`, which only `derive` brings, so in a `default-features = false` build `policy_type_checks` returns
-  `false`, `policy_shape` is never `complete` and `skeleton` returns `NotMiniscript` with a sentence that names the
-  missing feature. The API is the same in both builds. A first cut of this release did not compile without
+  `false`, `policy_shape` is never `complete` and `skeleton` never returns a key: `KeysDoNotExpand` for a card whose
+  keys do not expand (checked first), otherwise `NotMiniscript` with a sentence that names the missing feature. The API is the same in both builds. A first cut of this release did not compile without
   `derive`; CI now checks that build.
 
 - **`policy_shape` summarises `thresh` honestly (md thresh / seedhammer I-1).** It walked every `thresh` as a

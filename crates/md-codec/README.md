@@ -127,9 +127,11 @@ md-codec = { version = "0.32", default-features = false }
 ```
 
 Without `derive`, `policy_shape` never reports `complete = true` and
-`skeleton` always returns `SkeletonError::NotMiniscript`: the miniscript
-type rule a summary depends on needs `miniscript`, so no policy gets a
-spend-path summary or a coordinator key in that build.
+`skeleton` never returns a key: it returns `SkeletonError::KeysDoNotExpand`
+for a card whose keys do not expand (that check runs first), and
+`SkeletonError::NotMiniscript` otherwise. The miniscript type rule a
+summary depends on needs `miniscript`, so no policy gets a spend-path
+summary or a coordinator key in that build.
 
 ## License
 
