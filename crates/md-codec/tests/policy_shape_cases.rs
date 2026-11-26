@@ -251,6 +251,24 @@ fn hand_built() -> Vec<(&'static str, Node)> {
             "thresh_neg_ori_two_zero",
             wsh(two_of(s(node2(Tag::OrI, f(), f())))),
         ),
+        // md review r4 m-1: rust-miniscript's satisfaction analysis gives the
+        // satisfying branch to k+1 children (`extra_props.rs`, `i <= k`), so
+        // a never-satisfiable child is "typed" when k+1 others are
+        // satisfiable and not otherwise. Both sides of that off-by-one.
+        (
+            "thresh_neg_ori_two_zero_2of4",
+            wsh(th(
+                2,
+                vec![pk(0), s(pk(1)), s(pk(2)), s(node2(Tag::OrI, f(), f()))],
+            )),
+        ),
+        (
+            "thresh_neg_ori_two_zero_3of4",
+            wsh(th(
+                3,
+                vec![pk(0), s(pk(1)), s(pk(2)), s(node2(Tag::OrI, f(), f()))],
+            )),
+        ),
         ("thresh_neg_hash_child_bare", wsh(two_of(a(sha)))),
         ("thresh_neg_root_alt", wsh(a(three()))),
         ("thresh_neg_root_verify", wsh(v(three()))),
@@ -394,7 +412,7 @@ fn policy_shape_cases_json_is_fresh() {
 fn every_design_case_is_present_with_its_verdict() {
     let v: Value = serde_json::from_str(&generate()).unwrap();
     let cases = v["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 30 + 37 + 3 + 29);
+    assert_eq!(cases.len(), 30 + 39 + 3 + 32);
     for c in cases {
         let name = c["name"].as_str().unwrap();
         let complete = c["shape"]["complete"].as_bool().unwrap();
@@ -404,6 +422,13 @@ fn every_design_case_is_present_with_its_verdict() {
             .iter()
             .any(|b| !b["any_of"].is_null());
         let typed = c["typed"].as_bool().unwrap();
+        match name {
+            "thresh_neg_ori_two_zero_2of4" => assert!(typed, "{name}"),
+            "thresh_neg_ori_two_zero" | "thresh_neg_ori_two_zero_3of4" => {
+                assert!(!typed, "{name}")
+            }
+            _ => {}
+        }
         assert!(typed || !complete, "{name}: complete but untyped");
         if name.starts_with("untyped_") {
             assert!(!typed && !complete, "{name}");

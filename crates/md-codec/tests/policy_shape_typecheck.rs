@@ -70,7 +70,7 @@ fn the_review_cards_decode_but_get_no_summary_and_no_key() {
 }
 
 #[test]
-fn an_untyped_tree_for_every_combinator_is_incomplete() {
+fn every_untyped_tree_is_incomplete_and_keyless() {
     let accepted: Vec<&str> = untyped_trees()
         .into_iter()
         .filter(|(_, tree)| policy_type_checks(&template(tree.clone())))

@@ -1661,6 +1661,13 @@ pub const UNTYPED_CARDS: [(&str, &str); 3] = [
 ];
 
 /// One untyped tree per combinator md decodes, with the rule it breaks.
+fn zero() -> Node {
+    Node {
+        tag: Tag::False,
+        body: Body::Empty,
+    }
+}
+
 fn tap(l: Node, r: Node) -> Node {
     Node {
         tag: Tag::TapTree,
@@ -1796,6 +1803,19 @@ pub fn untyped_trees() -> Vec<(&'static str, Node)> {
             "tr_liana_two_leaves_one_v",
             tr_with(InternalKey::LianaUnspendable, tap(pk(0), v(pk(1)))),
         ),
+        // md review r4 I-1: a tap leaf that can never be satisfied (rule 6
+        // checked per leaf, as for a wsh script). One such leaf among
+        // satisfiable ones is refused too, and so is `tr(@0,0)`, whose key
+        // path still spends.
+        (
+            "tap_leaf_unsatisfiable",
+            nums(node2(Tag::AndV, v(pk(0)), zero())),
+        ),
+        (
+            "tap_two_leaves_one_unsatisfiable",
+            nums(tap(pk(0), node2(Tag::AndV, v(pk(1)), zero()))),
+        ),
+        ("tr_slot_leaf_zero", tr_with(InternalKey::Slot(0), zero())),
         // md review r3 m-1: not a type rule, but refused the same way.
         (
             "older_zero",

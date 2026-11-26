@@ -10,6 +10,12 @@ Pins md-codec `=0.49.0`. Not tagged or published.
 
 ### Changed
 
+- **`md encode` refuses a taproot leaf that can never be satisfied (md review r4 I-1).** For example
+  `tr(NUMS,and_v(v:pk(@0/<0;1>/*),0))`, which it minted as a wallet no one can spend, and `tr(@0/<0;1>/*,0)`: "a
+  taproot leaf can never be satisfied (leaf 1 of 1): it is a spend path that does not exist, and a wallet with no
+  other path cannot be spent". rust-miniscript's sanity rules refuse the same shape in `wsh`/`sh` but miss it in
+  `tr`. Minting verbs only (`encode`, `compose`, and the `--template` forms of `address`/`descriptor`, which share
+  the minting parse); an existing card decodes and renders as before.
 - **A policy that is not valid miniscript gets no verdict and no shape key (md reviews r2 I-1, r3).** `md compose` and
   `md descriptor` print `note: coordinators: no verdict (this policy is not valid miniscript (it fails a miniscript
   type, timelock or script-limit rule), so md shows no spend-path summary for it; no key can be computed from it)`, and `md shape-key`
@@ -156,7 +162,8 @@ published.
   such as `tr(NUMS,v:pk(@0))` or one leaf of `tr(NUMS,{pk(@0),v:pk(@1)})`, was keyed although that leaf can never
   be spent. New `policy_shape::policy_type_checks` runs the `to_miniscript` conversion over synthetic keys and
   adds a B check on every script root (each tap leaf included) and rust-miniscript's satisfaction limits (at most
-  201 executed ops in `wsh`/`sh`). Its doc lists every rule it applies: types, B roots, timelock ranges, fragment
+  201 executed ops in `wsh`/`sh`, counted over the worst satisfaction), and requires every tap leaf to have some
+  satisfaction (`tr(NUMS,and_v(v:pk(@0),0))`, which `md encode` minted, was keyed: md review r4 I-1). Its doc lists every rule it applies: types, B roots, timelock ranges, fragment
   placement, script-size and satisfaction limits. `policy_shape` now returns `complete = walk && typed`, every
   other field as the walk leaves it, and `skeleton()` refuses such a tree with the new
   `SkeletonError::NotMiniscript`: "this policy is not valid miniscript (it fails a miniscript type, timelock or
@@ -172,14 +179,17 @@ published.
   now "unproven"). "A path with no key" (Liana, Nunchuk, Core) fires when an any-of entry's timelocks alone reach
   `k`. Liana's "one signer twice in a path", "two paths with one lock" and "a second unlocked k-of-n path" skip an
   any-of entry that has a timelock, and the as-built reading takes an all-keys any-of as its own k-of-n.
-- **New shape-vector file** `tests/fixtures/policy_shape/cases.json` (99 cases, generated and freshness-tested),
+- **New shape-vector file** `tests/fixtures/policy_shape/cases.json` (104 cases, generated and freshness-tested),
   for the seedhammer Go port to vendor and compare against. Each case records `typed` (whether the tree is valid
   miniscript in its context). The `untyped_*` cases need that check to get right: the r2 review's two cards and the r3 review's `tr(NUMS,v:pk(@0))` card; one
   untyped tree per combinator (`or_b`, `or_c`, `or_d`, `or_i`, `and_v`, `and_b`, `andor`, `thresh`, `multi`, the
   `v:`/`a:`/`s:`/`j:` wrappers), all in `wsh` but one `or_b` in a tap leaf; seven taproot trees with a non-B leaf
   root (NUMS, slot and Liana internal keys, one- and two-leaf); and one per non-type rule (timelock range,
-  placement, nested `Tag::Pkh`, script size, more than 201 ops). `shape` is Rust's own output, so the file is a
-  parity file.
+  placement, nested `Tag::Pkh`, script size, more than 201 ops, a never-satisfiable tap leaf). `shape` is Rust's
+  own output, so the file is a parity file. One case changed its `typed` value after the file was first shared:
+  `thresh_neg_ori_two_zero` is `typed: false` (was `true`; `complete` was and is `false`), because the rule now
+  includes rust-miniscript's satisfaction analysis, whose `thresh` rule needs `min(k+1, n)` satisfiable children
+  (an upstream off-by-one; `thresh_neg_ori_two_zero_2of4` and `_3of4` pin both sides).
 
 ### Fixed
 

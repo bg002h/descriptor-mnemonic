@@ -3063,6 +3063,30 @@ pub fn parse_template_ext(
         }
         d
     };
+    // md review r4 I-1, MINTING verbs only: a tap leaf with no satisfaction
+    // is a spend path that does not exist (with no other path, the wallet
+    // cannot be spent). rust-miniscript's sanity and `ext_check` rules miss
+    // it in `tr` (its `Tap` limits check reads `sat_data` only when present);
+    // they refuse the same shape in `wsh`/`sh`. Reading verbs and existing
+    // cards are unchanged.
+    if matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
+        if let MsDescriptor::Tr(inner) = &ms_desc {
+            use miniscript::ScriptContext as _;
+            let n = inner.leaves().count();
+            for (i, item) in inner.leaves().enumerate() {
+                if miniscript::Tap::max_satisfaction_size(item.miniscript()).is_none() {
+                    // The leaf's text would show the synthetic keys, so name
+                    // it by position (taptree order, left to right).
+                    return Err(CliError::TemplateParse(format!(
+                        "a taproot leaf can never be satisfied (leaf {} of {n}): it is a spend \
+                         path that does not exist, and a wallet with no other path cannot be \
+                         spent",
+                        i + 1
+                    )));
+                }
+            }
+        }
+    }
     let tree = walk_root(&ms_desc, &key_map)?;
 
     // M5 (cycle-9, D4) — lexer/substitution cross-validation belt. Edit-1's

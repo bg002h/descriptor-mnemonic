@@ -436,14 +436,30 @@ fn walk_shape(d: &crate::encode::Descriptor) -> PolicyShape {
 ///    fragment), and no raw `pk_h`.
 /// 5. **Script limits.** The standard `wsh` witness-script size (3600 bytes),
 ///    the 520-byte `sh` script limit, rust-miniscript's recursion depth.
-/// 6. **Satisfaction limits** (`within_resource_limits`, per script): some
-///    satisfaction exists; for `wsh`/`sh`, at most 201 executed non-push ops,
-///    at most 100 standard witness items (`wsh`) or a 1650-byte scriptSig
-///    (`sh`); for a tap leaf, the 1000-element stack limit. rust-miniscript's
-///    analysis counts a `thresh` with a never-satisfiable child (`0`,
-///    `or_i(0,0)`, `and_v(…,0)`) as never satisfiable, even when `k` other
-///    children could satisfy it (measured: `thresh(2,pk,s:pk,s:or_i(0,0))`
-///    fails), and a port follows that.
+/// 6. **Satisfaction limits, per script** (`wsh`, `sh(wsh)` and `sh` have one
+///    script; every tap leaf is one): the script has some satisfaction (a
+///    tap leaf too, r4 I-1, checked separately because rust-miniscript's
+///    `Tap` limits check does not ask); and, for `wsh`/`sh`, its WORST
+///    satisfaction (the maximum over all of them, not the cheapest) executes
+///    at most 201 non-push ops and needs at most 100 standard witness items
+///    (`wsh`) or a 1650-byte scriptSig (`sh`); for a tap leaf, the worst
+///    satisfaction stays within the 1000-element stack limit. A script with
+///    one path over a limit is refused whole, though another path is fine.
+///
+///    "Has some satisfaction" is rust-miniscript's (13.0.0) analysis, which
+///    a port reproduces exactly: `0` has none; `and_*`/`and_v` need both
+///    sides, `or_*`/`andor` either alternative; and a `thresh(k, …)` of `n`
+///    children has one only when at least `min(k + 1, n)` of its children
+///    have one. That `k + 1` is an upstream off-by-one
+///    (`miniscript/types/extra_props.rs`, the `if i <= k` in the threshold's
+///    fold): a true count would need `k`. So `thresh(2,pk,s:pk,s:pk,X)` with a
+///    never-satisfiable `X` (such as `s:or_i(0,0)`) passes, and
+///    `thresh(2,pk,s:pk,X)` and `thresh(3,pk,s:pk,s:pk,X)` fail although
+///    the latter is satisfiable; cases.json holds all three.
+///
+///    Only the WHOLE script is checked. A never-satisfiable alternative inside
+///    a satisfiable script (`wsh(or_d(pk(@0),0))`) still passes, and the walk
+///    shows it as a path (open FOLLOWUP `bh1125-r4-i1-dead-branch-shown`).
 ///
 /// Duplicate keys and malleability are NOT refused. A port without a
 /// miniscript library implements these rules for md's fragment set;

@@ -37,5 +37,5 @@ fn md_cli_reads_the_same_tree() {
         assert_eq!(j["descriptor"]["tree"], c["tree"], "{name}");
         checked += 1;
     }
-    assert_eq!(checked, 95, "every case with a card");
+    assert_eq!(checked, 100, "every case with a card");
 }

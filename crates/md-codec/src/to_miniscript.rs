@@ -126,8 +126,9 @@ pub fn to_miniscript_descriptor_with_network(
 ///   can never leave the single true element BIP-342 requires (r3 I-1);
 /// - each script is within its context's satisfaction limits
 ///   (`within_resource_limits`: at most 201 executed ops for `wsh`/`sh`,
-///   the standard witness-item and scriptSig limits, a satisfiable script;
-///   r3 m-3).
+///   the standard witness-item and scriptSig limits, each over the WORST
+///   satisfaction; r3 m-3), and each script, every tap leaf included, has
+///   some satisfaction (r4 I-1: `Tap`'s limits check does not ask).
 pub(crate) fn tree_type_checks(d: &Descriptor) -> bool {
     use bitcoin::bip32::{Xpriv, Xpub};
     use bitcoin::secp256k1::Secp256k1;
@@ -160,7 +161,14 @@ pub(crate) fn tree_type_checks(d: &Descriptor) -> bool {
             ShInner::Ms(ms) => script_ok(ms),
             ShInner::Wpkh(_) => true,
         },
-        miniscript::Descriptor::Tr(tr) => tr.leaves().all(|leaf| script_ok(leaf.miniscript())),
+        // md review r4 I-1: `Tap`'s `within_resource_limits` passes a leaf
+        // with no satisfaction at all (its consensus check reads `sat_data`
+        // only when present), so ask for one, per leaf: a leaf that can never
+        // be satisfied is a spend path that does not exist.
+        miniscript::Descriptor::Tr(tr) => tr.leaves().all(|leaf| {
+            let ms = leaf.miniscript();
+            script_ok(ms) && Tap::max_satisfaction_size(ms).is_some()
+        }),
         miniscript::Descriptor::Bare(b) => script_ok(b.as_inner()),
         miniscript::Descriptor::Pkh(_) | miniscript::Descriptor::Wpkh(_) => true,
     }

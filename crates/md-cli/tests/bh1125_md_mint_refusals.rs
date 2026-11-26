@@ -278,3 +278,32 @@ fn md6_inspect_and_decode_flag_fingerprints() {
         );
     }
 }
+
+// ─── md review r4 I-1: a tap leaf that can never be satisfied ───────────────
+
+const NUMS: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+
+#[test]
+fn r4_unsatisfiable_tap_leaf_refused_at_mint() {
+    for t in [
+        format!("tr({NUMS},and_v(v:pk(@0/<0;1>/*),0))"),
+        format!("tr({NUMS},{{pk(@0/<0;1>/*),and_v(v:pk(@1/<0;1>/*),0)}})"),
+        "tr(@0/<0;1>/*,0)".to_string(),
+    ] {
+        let (code, out, err) = run(&["encode", &t, "--path", "bip48"]);
+        assert_eq!(code, 1, "{t}: stderr: {err}");
+        assert_eq!(out, "", "{t}");
+        assert!(
+            err.contains("a taproot leaf can never be satisfied"),
+            "{t}: stderr: {err}"
+        );
+    }
+}
+
+/// The satisfiable control still mints.
+#[test]
+fn r4_satisfiable_tap_leaves_still_mint() {
+    let t = format!("tr({NUMS},{{pk(@0/<0;1>/*),and_v(v:pk(@1/<0;1>/*),older(10))}})");
+    let (code, _, err) = run(&["encode", &t, "--path", "bip48"]);
+    assert_eq!(code, 0, "stderr: {err}");
+}
