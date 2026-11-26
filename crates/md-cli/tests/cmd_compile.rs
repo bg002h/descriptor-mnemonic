@@ -26,7 +26,8 @@ fn compile_json() {
 
 #[test]
 fn compile_pk_tap_emits_keypath_only() {
-    // Single-key tap policy collapses to key-path-only `tr(@0)`. The auto-NUMS
+    // Single-key tap policy collapses to key-path-only `tr(@0)`, printed
+    // with BIP 388's canonical tail (Fable review I-1). The auto-NUMS
     // default in v0.17 does not change this — miniscript's compile_tr is
     // extract-first, so a key-extractable policy keeps the @N internal key.
     Command::cargo_bin("md")
@@ -34,7 +35,7 @@ fn compile_pk_tap_emits_keypath_only() {
         .args(["compile", "pk(@0)", "--context", "tap"])
         .assert()
         .success()
-        .stdout(predicates::str::starts_with("tr(@0)"));
+        .stdout(predicates::str::starts_with("tr(@0/<0;1>/*)"));
 }
 
 /// v0.17 — 2-of-3 hardware-wallet multisig (the headline use case).
@@ -45,7 +46,7 @@ fn compile_thresh_2_of_3_tap_auto_nums() {
         .args(["compile", "thresh(2,pk(@0),pk(@1),pk(@2))", "--context", "tap"])
         .assert().success()
         .stdout(predicates::str::contains(
-            "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,@0,@1,@2))",
+            "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))",
         ));
 }
 
@@ -64,7 +65,7 @@ fn compile_or_pk_and_pk_older_tap() {
         .assert()
         .success()
         .stdout(predicates::str::starts_with(
-            "tr(@0,and_v(v:pk(@1),older(144)))",
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))",
         ));
 }
 
@@ -131,7 +132,7 @@ fn compile_pk_tap_with_explicit_nums_unspendable_key() {
         ])
         .assert()
         .success()
-        .stdout(predicates::str::starts_with("tr(@0)"));
+        .stdout(predicates::str::starts_with("tr(@0/<0;1>/*)"));
 }
 
 /// v0.18 Item G — `--unspendable-key <xpub>` is rejected at dispatch.
