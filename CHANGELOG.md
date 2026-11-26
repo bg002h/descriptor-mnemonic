@@ -10,6 +10,17 @@ Pins md-codec `=0.49.0`. Not tagged or published.
 
 ### Changed
 
+- **`md address` and `md descriptor` refuse a card whose policy is not valid miniscript, and the new
+  `--allow-invalid-miniscript` flag renders it anyway (Brian's decision, 2026-11-26).** Such a card (an untyped
+  tree, a tap leaf whose root is not B, a tap leaf that can never be satisfied, a broken timelock or script limit;
+  md-codec `policy_type_checks`) may be unspendable, or spendable without a signature, and md shows no summary for
+  it. Both verbs now exit 1 with nothing on stdout: "md: unsupported: this card's policy is not valid miniscript
+  (...), so md address will not render it: funds sent to it may be unspendable, or spendable without a
+  signature. ... pass --allow-invalid-miniscript." With the flag they render it and print "WARNING:
+  --allow-invalid-miniscript: this policy is NOT valid miniscript. Funds sent to this wallet may be UNSPENDABLE,
+  or spendable WITHOUT A SIGNATURE by anyone. ..." on stderr. A valid policy, and `md decode`, `inspect`,
+  `bytecode` and `verify`, are unaffected. New flag: the toolkit manual and the mnemonic-gui md schema mirror
+  follow.
 - **`md encode` refuses a taproot leaf that can never be satisfied (md reviews r4 I-1, r5).** For example
   `tr(NUMS,and_v(v:pk(@0/<0;1>/*),0))`, which it minted as a wallet no one can spend, `tr(@0/<0;1>/*,0)`, and a
   dead leaf beside good ones: "a taproot leaf can never be satisfied (leaf 1 of 1): it is not a spend path, and md
@@ -20,7 +31,7 @@ Pins md-codec `=0.49.0`. Not tagged or published.
   and a no-key leaf: the probe behind that warning asks only about the signature rule and skips this one (r5 I-1;
   a first cut silenced it, and called such a wallet card watch-only). `md decompose` now also notes that `md
   encode` may not accept such a template, which is true. `md address`/`md descriptor` on an existing such card
-  still give an address; that waits on the owner.
+  now refuse it unless `--allow-invalid-miniscript` is given (above).
 - **A policy that is not valid miniscript gets no verdict and no shape key (md reviews r2 I-1, r3).** `md compose` and
   `md descriptor` print `note: coordinators: no verdict (this policy is not valid miniscript (it fails a miniscript
   type, timelock or script-limit rule), so md shows no spend-path summary for it; no key can be computed from it)`, and `md shape-key`

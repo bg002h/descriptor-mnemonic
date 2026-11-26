@@ -41,6 +41,39 @@ pub struct DescriptorInput<'a> {
     pub experimental: bool,
 }
 
+/// Brian's decision of 2026-11-26 (FOLLOWUPS `bh1125-r3-i1-address-for-unspendable-leaf`,
+/// `bh1125-r4-i1-address-for-existing-unspendable-tr`): `md address` and `md descriptor` refuse
+/// to render a wallet whose policy is not valid miniscript (md-codec `policy_type_checks`: an
+/// untyped tree, a non-B script root or tap leaf, a tap leaf that can never be satisfied, a
+/// timelock or script limit broken), unless `--allow-invalid-miniscript` is given, and then
+/// warn loudly. Such a wallet can be unspendable, or spendable with no signature, and md gives it
+/// no summary. Runs on every input (card, seating, template); a template that passed the minting
+/// parse is valid miniscript, so in practice it fires on cards. Reading verbs never call it.
+pub fn gate_invalid_miniscript(
+    descriptor: &Descriptor,
+    allow: bool,
+    cmd: &str,
+) -> Result<(), CliError> {
+    if md_codec::policy_shape::policy_type_checks(descriptor) {
+        return Ok(());
+    }
+    if !allow {
+        return Err(CliError::Unsupported(format!(
+            "this card's policy is not valid miniscript (it fails a miniscript type, timelock or \
+             script-limit rule, or has a taproot leaf that can never be satisfied), so `md {cmd}` \
+             will not render it: funds sent to it may be unspendable, or spendable without a \
+             signature. The card still decodes (`md decode`, `md inspect`). To render it anyway, \
+             pass --allow-invalid-miniscript."
+        )));
+    }
+    eprintln!(
+        "WARNING: --allow-invalid-miniscript: this policy is NOT valid miniscript. Funds sent to \
+         this wallet may be UNSPENDABLE, or spendable WITHOUT A SIGNATURE by anyone. md shows no \
+         spend-path summary for it. Do not fund it unless you have checked the script yourself."
+    );
+    Ok(())
+}
+
 pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliError> {
     // Defense in depth — clap's ArgGroup::required(true) is the primary guard;
     // this catches the case where it ever fails (clap regression, a custom

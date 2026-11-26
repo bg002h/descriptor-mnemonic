@@ -47,6 +47,9 @@ pub enum Emit {
 }
 
 pub struct DescriptorArgs<'a> {
+    /// Brian's decision of 2026-11-26: render a card whose policy is not
+    /// valid miniscript, with a loud warning (`build::gate_invalid_miniscript`).
+    pub allow_invalid_miniscript: bool,
     /// Mirrors `md encode --experimental` (F-547): without it a card
     /// authored with that flag can be verified but never rendered.
     pub experimental: bool,
@@ -139,6 +142,11 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         seating_notes = seating.notes;
         seating.descriptor
     };
+    crate::cmd::build::gate_invalid_miniscript(
+        &descriptor,
+        args.allow_invalid_miniscript,
+        "descriptor",
+    )?;
 
     // A TEMPLATE HAS NO CONCRETE FORM, and saying so is the whole point of the
     // check. Without keys there is nothing to substitute, and rendering
