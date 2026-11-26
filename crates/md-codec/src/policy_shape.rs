@@ -467,8 +467,22 @@ fn walk_shape(d: &crate::encode::Descriptor) -> PolicyShape {
 /// (`typed`, which means "valid miniscript" in this sense), with an
 /// `untyped_*` vector for each rule. Display and identity only: decode, ids,
 /// addresses and re-encoding never consult it.
+///
+/// Without the `derive` feature md-codec has no miniscript library, so the
+/// rules above cannot run and this returns `false` for every tree (Fable
+/// review I-2): no policy gets a summary or a key, rather than a summary
+/// earned on the walk alone (the r2 I-1 defect). The API is the same in both
+/// builds; [`crate::skeleton::SkeletonError::NotMiniscript`] then says why.
+#[cfg(feature = "derive")]
 pub fn policy_type_checks(d: &crate::encode::Descriptor) -> bool {
     crate::to_miniscript::tree_type_checks(d)
+}
+
+/// See the `derive` build's doc: without miniscript the type rule cannot
+/// run, so nothing type-checks (fail closed).
+#[cfg(not(feature = "derive"))]
+pub fn policy_type_checks(_d: &crate::encode::Descriptor) -> bool {
+    false
 }
 
 /// The zero-value `PolicyShape`: `complete = false` and nothing else filled
@@ -1198,4 +1212,37 @@ pub fn key_partition(d: &crate::encode::Descriptor) -> Vec<Vec<u8>> {
         },
         |(xpub, _origin): &([u8; 65], OriginPath)| *xpub == ABSENT_XPUB,
     )
+}
+
+#[cfg(test)]
+mod derive_feature_tests {
+    //! Fable review I-2: the type rule needs `miniscript`, which only the
+    //! `derive` feature brings. Run with and without it:
+    //! `cargo test -p md-codec --lib derive_feature_tests` and the same with
+    //! `--no-default-features`.
+
+    /// `wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))` at `--path bip48`: valid
+    /// miniscript with a complete walk.
+    const MULTI_2_OF_2: &str = "md1ypfdsssj5qqcyxppggah9rg9v9gjh4";
+
+    #[test]
+    fn a_typed_card_is_summarised_only_when_the_type_rule_can_run() {
+        let d = crate::decode::decode_md1_string(MULTI_2_OF_2).expect("decodes");
+        let shape = super::policy_shape(&d);
+        let key = crate::skeleton::skeleton(&d);
+        if cfg!(feature = "derive") {
+            assert!(super::policy_type_checks(&d));
+            assert!(shape.complete);
+            assert!(key.is_ok(), "{key:?}");
+        } else {
+            assert!(!super::policy_type_checks(&d));
+            assert!(!shape.complete, "no summary on the walk alone");
+            let e = key.expect_err("no key without the type rule");
+            assert_eq!(e, crate::skeleton::SkeletonError::NotMiniscript);
+            assert!(
+                e.to_string().contains("without its `derive` feature"),
+                "{e}"
+            );
+        }
+    }
 }

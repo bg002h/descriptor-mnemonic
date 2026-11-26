@@ -126,6 +126,11 @@ don't need address derivation can opt out with `default-features = false`:
 md-codec = { version = "0.32", default-features = false }
 ```
 
+Without `derive`, `policy_shape` never reports `complete = true` and
+`skeleton` always returns `SkeletonError::NotMiniscript`: the miniscript
+type rule a summary depends on needs `miniscript`, so no policy gets a
+spend-path summary or a coordinator key in that build.
+
 ## License
 
 MIT License — see [`../../LICENSE`](../../LICENSE).

@@ -108,7 +108,9 @@ pub enum SkeletonError {
     /// context ([`crate::policy_shape::policy_type_checks`]). Its script can
     /// do something no summary of its fragments describes (an `or_b` over two
     /// B children spends with no signature), so it has neither a summary nor
-    /// a key. Checked before [`SkeletonError::IncompleteShape`].
+    /// a key. Checked before [`SkeletonError::IncompleteShape`]. In a build
+    /// without the `derive` feature every tree gets this error, since the
+    /// type rule cannot run there (Fable review I-2).
     NotMiniscript,
     /// [`expand_per_at_n`] failed — at least one `@N`'s origin cannot be
     /// resolved. No partition is computable, so no key exists (design §1A
@@ -134,9 +136,15 @@ impl std::fmt::Display for SkeletonError {
                 f,
                 "md cannot break this policy into spend paths: it has a threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a partial decomposition"
             ),
+            #[cfg(feature = "derive")]
             SkeletonError::NotMiniscript => write!(
                 f,
                 "this policy is not valid miniscript (it fails a miniscript type, timelock or script-limit rule), so md shows no spend-path summary for it; no key can be computed from it"
+            ),
+            #[cfg(not(feature = "derive"))]
+            SkeletonError::NotMiniscript => write!(
+                f,
+                "md-codec was built without its `derive` feature, so it cannot check the miniscript type rule; md shows no spend-path summary for this policy and no key can be computed from it"
             ),
             SkeletonError::KeysDoNotExpand(e) => write!(f, "keys will not expand: {e}"),
             SkeletonError::Render(e) => write!(f, "abstract-template render failed: {e}"),

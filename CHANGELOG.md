@@ -10,6 +10,10 @@ Pins md-codec `=0.49.0`. Not tagged or published.
 
 ### Changed
 
+- **`md compile` and `md encode --from-policy` write BIP 388's canonical tail on a bare placeholder (Fable review
+  I-1).** `pk(@0)` compiles to `tr(@0/<0;1>/*)`, so the printed template mints; before, the bare-`@N` mint refusal
+  refused the compiler's own output. A placeholder that already has a tail keeps it, and a hand-typed bare `@N`
+  given to `md encode` is still refused.
 - **`md address` and `md descriptor` refuse a card whose policy is not valid miniscript, and the new
   `--allow-invalid-miniscript` flag renders it anyway (Brian's decision, 2026-11-26).** Such a card (an untyped
   tree, a tap leaf whose root is not B, a tap leaf that can never be satisfied, a broken timelock or script limit;
@@ -142,6 +146,12 @@ Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, `Skele
 published.
 
 ### Changed
+
+- **Without the `derive` feature, nothing gets a summary or a key (Fable review I-2).** The type rule needs
+  `miniscript`, which only `derive` brings, so in a `default-features = false` build `policy_type_checks` returns
+  `false`, `policy_shape` is never `complete` and `skeleton` returns `NotMiniscript` with a sentence that names the
+  missing feature. The API is the same in both builds. A first cut of this release did not compile without
+  `derive`; CI now checks that build.
 
 - **`policy_shape` summarises `thresh` honestly (md thresh / seedhammer I-1).** It walked every `thresh` as a
   conjunction: a `thresh(2,…)` over three keys read as "3 keys", and BIP-388's decaying multisig
