@@ -175,7 +175,7 @@ fn separator_refusal_remedies_run_as_printed() {
         ])
         .output()
         .unwrap();
-    assert_eq!(refused.status.code(), Some(2));
+    assert_eq!(refused.status.code(), Some(64));
     let se = text(&refused.stderr);
     assert!(
         se.contains(
@@ -212,7 +212,7 @@ fn separator_refusal_remedies_run_as_printed() {
         .args(["encode", WPKH, "--network", "signet", "--separator", "x"])
         .output()
         .unwrap();
-    assert_eq!(other.status.code(), Some(2));
+    assert_eq!(other.status.code(), Some(64));
     let se = text(&other.stderr);
     assert!(
         se.contains(

@@ -6,7 +6,62 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## md-cli [Unreleased]
 
+### Changed
+
+- **BREAKING: exit codes follow the constellation exit-code spec**
+  (mnemonic-engrave `design/SPEC_constellation_exit_codes.md`, revision 5, all
+  eleven decisions as recommended). 0 is success; 64 a bad command line (nothing
+  ran); 101 an internal error; otherwise the status is a SUM of 1 (a check said
+  no), 2 (an input is invalid), 4 (verify before trusting), 8 (refused), 16 (a
+  correction was applied) and 32 (a file or stdout failed). `md --help` ends with
+  the legend. What moved:
+  - every clap error (no verb, an unknown flag, a bad setting value, a
+    conflict, non-UTF-8 argv) and md's own command-line refusals (`encode` with
+    no TEMPLATE, `--force-long-code`, `--from-policy` without `--context`,
+    `--from-mk1` with no policy card): 2 -> **64**. They are checked before any
+    input file is read, so a missing file does not turn them into 32;
+  - `descriptor --verify-against` NOT spend-equal: 5 -> **1** (`verify`
+    MISMATCH stays 1);
+  - an input that is wrong: 1 -> **2**. That covers a card or template that
+    does not decode, a bad key, fingerprint or path, a chain index the card does
+    not have (checked before any `--verify-against` verdict), `compile` with too
+    many nested `or`s, compose values, seating and decompose refusals, an xprv
+    given as a key, and a second `--key` or `--fingerprint` for one slot (whose
+    text no longer starts `MISMATCH:`). Empty input, and input that is not UTF-8
+    on stdin or in a file, are 2;
+  - refusals a flag or a fix of the setup can lift: **8**. A key or mk1 card of
+    the other network (1 -> 8); a template refused only for having a path with no
+    signature, and compose shapes that need `--experimental` (1 -> 8); compose
+    without `--md-only` (1 -> 8); an output that is one of the inputs (2 -> 8);
+  - an input file that cannot be read (2, or 1 for `--from-mk1-file`), a failed
+    `--out` write (1), `gen-man` and `vectors` output errors (2), and a feature
+    this build lacks (2): -> **32**. A stdout that cannot take the output ADDS 32
+    to the verb's code (it used to turn 0, 4 or 5 into 1);
+  - states only an md bug reaches: **101**;
+  - `repair` (decisions 6 and 7):
+    - a chunk set that reassembles: 5 -> **16**;
+    - a correction to a single (not chunked) string: 5 -> **20** (16 + 4), with
+      an UNVERIFIED note, since nothing checks it a second time;
+    - a corrected single string that still does not decode (for example a wire
+      version this build cannot read): printed at **22** (16 + 4 + 2);
+    - an incomplete set, or a lone chunk of a larger set: 2 with nothing printed
+      -> printed, **16** if corrected, **0** if clean. A set with a repeated,
+      stray or extra chunk stays 2 with nothing printed;
+    - uncorrectable input, a clean string that does not decode and a complete
+      set that does not reassemble stay 2, nothing printed.
+- **`md repair --json` says what its exit code says.** Two additive fields, after
+  `kind` and absent unless they apply: `"not_a_card": {"kind", "message"}` at exit
+  22 (the name and shape ms uses) and `"incomplete": true` for an incomplete set or
+  a lone chunk. A complete card's envelope is unchanged.
+
 ### Fixed
+
+- **A closed stdout is an error.** `md … >&-` lost its output and exited 0,
+  because the Rust runtime puts `/dev/null` on a closed fd 1 before `main`. md
+  now detects the closed stream at load time and exits 32 with the EBADF line (a
+  verb that prints nothing keeps its code). This works on Linux, Android, macOS,
+  iOS and the BSDs. On Windows and other platforms a closed stdout is still not
+  seen: the output is lost and the verb's own code is returned.
 
 - **`md decode --json` and `md bytecode` call a keyed card watch-only.** On a card that carries public keys they
   printed them (the JSON `tlv.pubkeys` entries; the payload hex) under `note: stdout is a keyless descriptor
@@ -22,19 +77,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **The `md encode`, `md decompose`, `md descriptor`, `md address` and `md repair` help examples run as printed.** Two had unquoted templates (a shell syntax error) and three used elided `md1qq...` cards; they are now quoted and use real cards (bh-md-I10, bh-md-F1).
 - **A failed `--out` write no longer destroys the existing file.** `md encode --out` and `md descriptor --emit md1 --out` now write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.3), so a full disk or quota leaves the old file byte-identical. FILE's directory must now be writable (bh-md-C4).
 - **`md encode --json --out FILE` writes FILE.** The md1 string(s) go to FILE and the JSON to stdout; before, FILE was silently not written at exit 0 (bh-md-I1).
-- **A failing `md encode` writes nothing.** `--policy-id-fingerprint` on a template with no origin path used to write the card to `--out` (or stdout) and then fail; the policy id is now computed first. A `--out` write error now prints `md: cannot write the output: <FILE>: <error>` and says whether FILE is unchanged and exits 1 (was `md: --out FILE: <error>`, exit 2) (bh-md-I7).
+- **A failing `md encode` writes nothing.** `--policy-id-fingerprint` on a template with no origin path used to write the card to `--out` (or stdout) and then fail; the policy id is now computed first. A `--out` write error now prints `md: cannot write the output: <FILE>: <error>` and says whether FILE is unchanged and exits 32 (was `md: --out FILE: <error>`, exit 2) (bh-md-I7).
 - **`md repair` keeps an uppercase card uppercase.** When a letter on an all-uppercase md1 card (the QR form) was
   misread as a digit, the corrected card was printed with that one letter in lowercase (for example
   `MD1yQPQQXQQ8XTWHW4XWN4QH`), a mixed-case string `md decode` refuses. Each corrected card is now printed in the
   case of the string it corrects (`MD1YQPQQXQQ8XTWHW4XWN4QH`), in text and `--json` output and for chunked sets
   (bh-md-I3).
-- **An output that is one of md's inputs is refused.** `md encode --in F --out F` replaced the template with the card, `md descriptor --from-mk1-file K --emit md1 --out K` replaced the mk1 key cards, and `md decode --in F >>F` (and every reading verb) appended to its input, all at exit 0. md now refuses these before reading anything, names both, and exits 2; so does `md encode --json --out F` with stdout redirected to F ([md-out-names-input]).
+- **An output that is one of md's inputs is refused.** `md encode --in F --out F` replaced the template with the card, `md descriptor --from-mk1-file K --emit md1 --out K` replaced the mk1 key cards, and `md decode --in F >>F` (and every reading verb) appended to its input, all at exit 0. md now refuses these before reading anything, names both, and exits 8; so does `md encode --json --out F` with stdout redirected to F ([md-out-names-input]).
 
 ## md-cli [0.21.1] — 2026-11-22
 
 ### Fixed
 
-- **`md encode`, `verify`, `descriptor` and `address` refuse a second `--key`, or a second `--fingerprint`, for one `@i`.** Two different values exit 1 (`descriptor` and `address` used to compose the first key or the last fingerprint; `encode` and `verify` failed with an ordering error, exit 1). The same value given twice exits 2 (`descriptor` and `address` used to accept it; `encode` and `verify` failed with the ordering error, exit 1) (bh-md-C3).
+- **`md encode`, `verify`, `descriptor` and `address` refuse a second `--key`, or a second `--fingerprint`, for one `@i`.** Two different values exit 1 (2 since the Unreleased exit-code change, without the `MISMATCH:` prefix) (`descriptor` and `address` used to compose the first key or the last fingerprint; `encode` and `verify` failed with an ordering error, exit 1). The same value given twice exits 2 (`descriptor` and `address` used to accept it; `encode` and `verify` failed with the ordering error, exit 1) (bh-md-C3).
 - **`md encode` refuses a template it cannot decode back.** A tree nested deeper than the decoder's limit, such
   as `wsh(` followed by 127 `n` wrappers and `:pk(@0/<0;1>/*))`, minted three chunks at exit 0 that `md decode`
   refused; it now prints `md: codec error: decode recursion depth 128 exceeded maximum 128` and exits 1 with

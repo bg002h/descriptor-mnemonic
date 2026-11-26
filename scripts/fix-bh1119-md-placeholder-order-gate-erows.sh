@@ -54,10 +54,10 @@ rm -f own.md1
 "$MD" encode 'wsh(sortedmulti(2,@0/<0;1>/*,@1/<0;1>/*))' --key "@0=$KA" --key "@1=$KB" --network signet --out own.md1 > /dev/null 2>&1 || fail e16_i2_sortedmulti_respelled_same_wallet "fixture encode failed"
 "$MD" descriptor --template 'wsh(sortedmulti(2,@1/<0;1>/*,@0/<0;1>/*))' --key "@0=$KA" --key "@1=$KB" --network signet --verify-against own.md1 > /dev/null 2> v.err; rc=$?
 [ $rc -eq 0 ] && pass e16_i2_sortedmulti_respelled_same_wallet || fail e16_i2_sortedmulti_respelled_same_wallet "rc=$rc"
-# E17: non-canonical template, one key replaced: NOT spend-equal (rc 5).
+# E17: non-canonical template, one key replaced: NOT spend-equal (rc 1, NO; was 5 before the exit-code cutover).
 rm -f own.md1
 "$MD" encode 'wsh(multi(2,@1/<0;1>/*,@0/<0;1>/*))' --key "@0=$KA" --key "@1=$KB" --network signet --out own.md1 > /dev/null 2>&1 || fail e17_i2_noncanonical_replaced_key "fixture encode failed"
 "$MD" descriptor --template 'wsh(multi(2,@1/<0;1>/*,@0/<0;1>/*))' --key "@0=$KA" --key "@1=$KC" --network signet --verify-against own.md1 > /dev/null 2> v.err; rc=$?
-[ $rc -eq 5 ] && pass e17_i2_noncanonical_replaced_key || fail e17_i2_noncanonical_replaced_key "rc=$rc"
+[ $rc -eq 1 ] && pass e17_i2_noncanonical_replaced_key || fail e17_i2_noncanonical_replaced_key "rc=$rc"
 echo "rows failed: $fails (workdir $W)"
 [ $fails -eq 0 ]

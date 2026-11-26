@@ -53,7 +53,11 @@
 //! `design/agent-reports/impl-seat-ap-p0.md`.
 
 // The crate's one stdout path (src/out.rs): its print macros shadow std's, so a
-// full stdout exits 1 with a line instead of panicking.
+// full stdout exits 32 (IO) with a line instead of panicking. `out` reads the
+// exit-code constants.
+#[path = "../exit.rs"]
+#[allow(dead_code)]
+mod exit;
 #[path = "../out.rs"]
 #[macro_use]
 mod out;

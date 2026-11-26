@@ -86,6 +86,57 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-json-error-envelope` — `md … --json` prints no error envelope on stdout when it fails; mk and ms do
+- **Surfaced:** final exit-code review, mnemonic-engrave `design/agent-reports/exit-codes-2026-11-26/final-review-md-mk-ms.md` M-3.
+- **Where:** `crates/md-cli/src/main.rs` (`main` prints `md: {e}` on stderr and exits `e.exit_code()`). Each verb's `--json` flag is local to its arm, so `main` cannot tell that `--json` was given.
+- **What:** under `--json`, a failing `md` verb (exit 2, 8, 32, 64 or 101) leaves stdout empty and puts the text on stderr. `mk` and `ms` print a JSON error envelope (`kind`, `message`, `exit_code`) on stdout. A consumer that reads only stdout therefore handles md differently.
+- **Why deferred:** this is not small. It needs `--json` threaded to `main` for every verb, a `kind` word per `CliError` class, and the kind names settled across the three CLIs. Those names already differ between mk and ms (review N-3). `md repair --json` did gain `not_a_card` and `incomplete` in this cycle.
+- **Status:** `open`
+- **Tier:** `cross-repo`
+
+### `closed-stdout-windows-gap` — a stdout closed at start is not detected on Windows (md, mk, ms)
+- **Surfaced:** final exit-code review M-8.
+- **Where:** `crates/md-cli/src/out.rs` `fd_probe`, which is built only for Linux, Android, macOS, iOS and the BSDs. mk and ms carry the same probe.
+- **What:** on Windows and the platforms not listed, `md … >&-` still loses its output and returns the verb's own code (0 for a clean run). The README and CHANGELOG say so.
+- **Why deferred:** Windows needs a different probe (`GetStdHandle` returning a null or invalid handle). It has not been designed or tested there.
+- **Status:** `open`
+- **Tier:** `cross-repo`
+- **Companion:** the same gap is documented in mnemonic-secret (CHANGELOG, `SPEC_ms_cli_v0_1.md`) and mnemonic-key (to be documented in its CHANGELOG).
+
+### `md-exit-codes-manual-lockstep` — the toolkit's user manual and GUI manual still state md's pre-cutover exit codes (companion to toolkit)
+- **Surfaced:** independent review of the exit-code cutover, `design/agent-reports/exit-codes-impl-review-2026-11-26.md` M-7.
+- **Where:** mnemonic-toolkit `docs/manual/src/40-cli-reference/42-md.md` and `docs/manual-gui/src/50-md/`; mnemonic-engrave `demo/sh2/rehearse.sh:60`; mnemonic-gui's exit badge (spec §7j).
+- **What:** md-cli moved to the constellation exit codes (mnemonic-engrave `design/SPEC_constellation_exit_codes.md` rev 5, §7a). These lines must follow:
+  - `42-md.md`:
+    - :205: a chain index out of range is 2, checked before any `--verify-against` verdict.
+    - :228: `--verify-against` is 0 spend-equal, 1 NOT spend-equal, 2 an input that does not decode, 32 a file that cannot be read.
+    - :399: `compile` with too many nested `or`s is 2.
+    - :523 and :560: the `--md-only` refusal is 8.
+    - :683-721 and :741: repair is 0, 16, 20, 22, 2, 32 or 64.
+      - An incomplete set (fewer chunks than the set holds, each once) is printed with 16 or 0.
+      - A set with a repeated, stray or extra chunk is 2 with nothing printed.
+      - "md1 always 5" and the divergence note go.
+    - :799-805: a `gen-man` I/O error is 32.
+    - :810-812: a stdout failure adds 32 to the verb's code.
+    - The appendix legend changes, and every usage error is 64.
+  - `manual-gui/src/50-md/`:
+    - Every clap usage line becomes 64: 53-encode:294, 59-address:224, 5C-compose:22/173/174, 5D-shape-key:60/61, 5E-descriptor:19/152/238-240, 5F-decompose:150/151.
+    - 5A-repair takes the repair codes above.
+    - 5C-compose:
+      - `--unspendable` with a non-tr wrapper is 2.
+      - Needs `--experimental` is 8.
+      - `--md-only` is 8.
+    - 5E-descriptor:
+      - :197 is 0/1.
+      - :241 is 2 for an xprv and 8 for a key of the other network.
+    - 5F-decompose:116/152-154 is 2.
+  - `rehearse.sh:60` expects 5 from `md repair` of a single string; it now gets 20.
+  - `md repair --json` gains `not_a_card` (at 22) and `incomplete: true` (an incomplete set or lone chunk). The JSON schema in `42-md.md` and in the GUI's repair page should list both.
+- **Why deferred:** these are cross-repo changes, made by the toolkit, engrave and GUI changes that pair with this cutover.
+- **Status:** `open`
+- **Tier:** `cross-repo`
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md` (to be filed with the manual change; the primary entry lives there under `manual-cli-surface-mirror`).
+
 ### `md-chunk-set-id-bundle-stamped` — `md descriptor` / `md address` warn about the chunk-set id of every card `mnemonic bundle` makes (companion of mk `mk-chunk-set-id-bundle-stamped`)
 - **Surfaced:** toolkit `design/agent-reports/architect-pins-md-0.20.6-mk-0.15.0-stops.md` S4/FU1; graded 2026-11-14, coordinator `agent-reports/grade-mk-chunk-set-id-bundle.md` (Q1, Q2, "md companion"); Brian chose Option A (silent) 2026-11-14.
 - **Where:** `crates/md-cli/src/seat/input.rs` (`seat_notes`, the `declared != derived` test; new private `is_bundle_stamped`).
@@ -2278,7 +2329,7 @@ The descriptor→`@N`-template renderer lived only in `md-cli` (`format/text.rs:
 - **Surfaced:** 2026-07-11, `mnemonic-toolkit`'s `toolkit-v0860-demote` (v0.86.0) I3. That cycle demoted `mnemonic repair --md1 <non-chunked>` — a touched correction on the single-string (non-chunked, chunked-flag bit clear) md1 form — from exit `5` to exit `4`, because that shape's `md_codec::decode_with_correction` delegate bypasses `reassemble`'s content-id check entirely (`vendor/md-codec/src/chunk.rs:615-631` upstream in THIS repo), leaving no cross-chunk/content-id oracle to trust a >4-error correction with. The toolkit fix touches ONLY toolkit code (`crates/mnemonic-toolkit/src/repair.rs`) — this repo's `md-cli`'s own `repair` command was deliberately left UNCHANGED and still reports exit `5` unconditionally for every md1 correction (D26 "md1 always exit 5" prose in `md-cli/src/main.rs`'s `after_long_help`). The two CLIs now disagree on the exit code for the identical non-chunked md1 correction.
 - **Why filed here too:** the toolkit's `docs/manual/src/40-cli-reference/42-md.md` (this repo's md-cli chapter, hosted in the toolkit's manual) now carries a qualification note pointing at this divergence; this companion entry lets a future md-cli release-cutter see the pending parity gap.
 - **Fix (if pursued, this repo):** port the same demote predicate into `md-cli`'s `repair` command — read the corrected single string's chunked-flag bit (bit 0 of the first data-part 5-bit symbol, `chunk.rs:622`); demote to a new VERIFY-ME exit code iff the bit is clear AND the correction touched the card. Needs a rewrite of the D26 "md1 always exit 5" prose + exit-code table + `crates/md-cli/tests/cli_repair.rs` goldens, and a decision on whether `md repair --json`'s `RepairJson` gains a `verdict` field to match the toolkit's superset shape (`42-md.md` notes `mnemonic`'s envelope is already a strict superset for this exact reason). Own R0-gated cycle, not a quick patch.
-- **Status:** OPEN. **Tier:** `cross-repo` funds-adjacent / md-cli.
+- **Status:** resolved 1a7063c (2026-11-26, the constellation exit-code cutover, mnemonic-engrave `design/SPEC_constellation_exit_codes.md` §7a): `md repair` exits 20 (REPAIRED + UNVERIFIED) on a non-chunked single-string correction, 16 on a chunk set verified by reassembly. `RepairJson` gained no `verdict` field. **Tier:** `cross-repo` funds-adjacent / md-cli.
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` → `md-cli-non-chunked-single-string-repair-demote` (canonical/full entry — the actual v0.86.0 toolkit-side fix + rationale).
 
 ### `sibling-gui-schema-v5-default-value-emission` — `md gui-schema` emits version-1 JSON (no `default_value`), so mnemonic-gui cannot two-side its `md` defaults drift gate (companion)

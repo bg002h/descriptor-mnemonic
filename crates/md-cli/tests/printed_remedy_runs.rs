@@ -31,7 +31,7 @@ fn c1_follow(fixture: &str) {
             .args(&phrases)
             .args(["--emit", "md1"]),
     );
-    assert_eq!(rc, 2, "{se}");
+    assert_eq!(rc, 64, "{se}");
     let mut c = md();
     c.arg("descriptor").args(&phrases);
     if se.contains("Drop --emit md1") {
@@ -65,7 +65,7 @@ const MAINNET: &str = "wsh(sortedmulti(2,[73c5da0a/48'/0'/0']xpub6BmeGmRo4LosAcU
 /// <DESCRIPTOR> filled with the same descriptor, a `<a|b|c>` placeholder filled with `signet`.
 fn c2_run(desc: &str) -> usize {
     let (rc, _, se) = out_of(md().args(["encode", desc]));
-    assert_eq!(rc, 1);
+    assert_eq!(rc, 2);
     let mut n = 0;
     for l in se.lines() {
         let l = l.trim().split("   #").next().unwrap().trim();
@@ -115,7 +115,7 @@ fn c3_every_printed_branch_runs() {
         "--unspendable",
         "liana",
     ]));
-    assert_eq!(rc, 1);
+    assert_eq!(rc, 2);
     let mut branches: Vec<Vec<&str>> = vec![];
     if let Some(i) = se.find("Use --wrapper ") {
         let w = se[i + 14..]
@@ -153,7 +153,7 @@ fn c3_every_printed_branch_runs() {
 fn c4_printed_flag_runs() {
     let hx = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
     let (rc, _, se) = out_of(md().args(["encode", &format!("tr({hx},pk(@0/<0;1>/*))")]));
-    assert_eq!(rc, 1);
+    assert_eq!(rc, 2);
     let i = se.find("via ").unwrap();
     let flag = se[i + 4..]
         .split(|c: char| c == ')' || c.is_whitespace())

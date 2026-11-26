@@ -29,7 +29,7 @@ fn bh_md_row10_cli_depth_127_encode_refused() {
     assert_eq!(
         got,
         (
-            1,
+            2,
             String::new(),
             "md: codec error: decode recursion depth 128 exceeded maximum 128\n".to_string()
         )

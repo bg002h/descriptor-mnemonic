@@ -42,7 +42,7 @@ cargo install --path crates/md-cli --no-default-features
 |---|---|
 | `md encode <TEMPLATE>` | Encode a BIP 388 wallet policy template into one or more MD backup strings. |
 | `md decode <STRING>...` | Decode one or more MD strings back to the template. |
-| `md verify <STRING>... --template <T>` | Re-encode the template and assert it matches the strings. Exit 0 on match, 1 on mismatch. |
+| `md verify <STRING>... --template <T>` | Re-encode the template and assert it matches the strings. Exit 0 on match, 1 on mismatch, 2 when an input is invalid. |
 | `md inspect <STRING>...` | Pretty-print everything the codec sees: template, identity hashes, TLV blocks. |
 | `md bytecode <STRING>...` | Annotated dump of the raw payload bytes. |
 | `md address <STRING>...` (or `--template <T> --key @i=<XPUB>`, or keyless md1 phrases + `--from-mk1`/`--from-mk1-file`/`--seat`) | Derive bitcoin addresses from a wallet-policy-mode descriptor. `--key` also takes the origin-notated `@i=[fp/path]XPUB` form. `--chain N` / `--change`, `--index N`, `--count K`, `--network mainnet\|testnet\|signet\|regtest`, `--json`. |
@@ -51,7 +51,7 @@ cargo install --path crates/md-cli --no-default-features
 | `md compose --wrapper <W> (--path <SPEC>... \| --preset <NAME[,...]>)` | Lower an ordered list of spend paths, or one of six named presets, under `tr`/`wsh`/`sh-wsh`/`sh` into a keyed wallet-policy template with default origins. `--json` for the machine-readable form (with the preset's parameters). `--unspendable liana\|nums` (`tr` only; omitted = `nums`, byte-identical to earlier releases) picks the unspendable internal key when no path supplies a real one: `liana` is Liana's own derived key, which Liana needs to import the wallet. Prints a coordinator verdict on stderr (Liana, Nunchuk, Bitcoin Core, verified versions only); when every coordinator refuses, compose refuses and names `--md-only`. |
 | `md shape-key (<MD1>... \| --descriptor <MULTIPATH-DESCRIPTOR>)` | Print the policy's shape key, the coordinator-independent summary the verdict table is keyed by. |
 | `md vectors [--out DIR]` | Regenerate the project's deterministic test-vector corpus (maintainer tool). |
-| `md repair <STRING>...` | BCH error-correct one or more chunked-form md1 strings (up to 4 substitution errors per chunk via `BCH(93,80,8)` `t=4` capacity). Atomic per-chunk semantics per plan §1 D28: ANY chunk failing capacity aborts the whole call. Exit 5 (`REPAIR_APPLIED`) on success — and, since md-cli 0.19.0, when a SINGLE corrected card (one string) carries a wire version this build cannot read (stdout = the corrected card, stderr names the version; `mnemonic repair` exits 2 there; several strings at such a version still exit 2) — exit 0 if all inputs already valid, exit 2 on unrepairable input. `--json` emits a `RepairJson` envelope byte-matching `mnemonic repair --json`. **Chunked-form only** at md-cli v0.6.0; non-chunked single-string md1 input is rejected with a wire-format error (tracked at `design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`). |
+| `md repair <STRING>...` | BCH error-correct one or more md1 strings (up to 4 substitution errors per chunk via `BCH(93,80,8)` `t=4` capacity). Atomic per-chunk semantics per plan §1 D28: ANY chunk failing capacity aborts the whole call. Exits 0 when nothing needed correcting, 16 for a correction verified by reassembly (or by it later, for an incomplete set), 20 for a single string's correction (no second check), 22 when a corrected single string still does not decode, and 2 on unrepairable input or a chunk set with a repeated, stray or extra chunk; see the exit table below. `--json` emits a `RepairJson` envelope byte-matching `mnemonic repair --json`. Takes chunked-form and single-string md1 alike (single strings since md-codec v0.35.0). |
 | `md compile <EXPR> --context tap\|segwitv0 [--unspendable-key <KEY>]` | Compile a sub-Miniscript-Policy expression into a BIP 388 template. Requires `cli-compiler` feature. `--unspendable-key` is a tap-context-only fallback hint; defaults to BIP-341 NUMS H-point when omitted. |
 
 ### Compile examples
@@ -89,6 +89,25 @@ md compile 'thresh(2,pk(@0),pk(@1),pk(@2))' --context segwitv0
 reports match/mismatch via exit code (0 = match, 1 = mismatch). Each
 subcommand's `--help` shows a worked example.
 
+### Exit status
+
+`md` follows the constellation's exit codes (mnemonic-engrave
+`design/SPEC_constellation_exit_codes.md`), and `md --help` ends with the same
+legend: 0 = done, every check passed; 64 = a bad command line, nothing ran;
+101 = an internal error; otherwise the sum (1 to 63) of 1 a check said no
+(`verify` MISMATCH, `descriptor --verify-against` NOT spend-equal), 2 an
+input is invalid (a card that does not decode, a bad key or template, empty
+input), 4 verify before trusting (a partial decode; a single-string repair),
+8 refused (a key of the other network, a shape that needs `--experimental`
+or `--md-only`, an output that is one of the inputs), 16 a correction was
+applied (`repair`), 32 a file or stdout failed, or this build lacks a
+feature the command needs.
+
+A stdout that cannot take the output adds 32 to the verb's code. A stdout
+closed at start (`md … >&-`) is detected on Linux, Android, macOS, iOS and the
+BSDs. On Windows and other platforms the closed stream is not seen: the
+output is lost and the verb's own code is returned (0 for a clean run).
+
 ### Network selection
 
 `md encode`, `md verify`, and `md address` accept
@@ -112,7 +131,7 @@ md repair md1q...
 # encoding in a single call.
 md repair md1q... md1q... md1q...
 
-# JSON envelope (cross-CLI parser reuse: byte-matches
+# JSON envelope (cross-CLI parser reuse: the D27 `RepairJson` shape of
 # `mnemonic repair --json` / `ms repair --json` / `mk repair --json`):
 md repair --json md1q...
 
@@ -122,10 +141,13 @@ printf '%s\n%s\n' "$BAD_C0" "$BAD_C1" | md repair -
 
 | Exit | Meaning |
 |---|---|
-| `0` | every chunk already valid; no correction applied; inputs echoed unchanged. |
-| `5` | `REPAIR_APPLIED` — at least one chunk corrected; stdout = repair report + corrected chunks. Consistent across all four CLIs per plan D26 (`mnemonic` / `mk` / `ms` / `md`). **Since md-cli 0.19.0, `md repair` also exits 5 when a single corrected card (one string) carries a wire version this build cannot read** (stderr names the version and the accepted set; a multi-string set at such a version still exits 2); `mnemonic repair` still exits 2 on such a card until it adopts `md_codec::correct_chunks` (F-642). |
-| `2` | atomic-fail (plan §1 D28): ANY chunk exceeding BCH `t=4` capacity (or with a structural wire-format error) aborts the whole call; the failing chunk index is named on stderr; NO partial corrected output. |
-| `1` | I/O error or other generic failure. |
+| `0` | nothing to correct; inputs echoed unchanged (a complete card, or an incomplete chunk set whose chunks are all clean). |
+| `16` | REPAIRED: a correction was applied and is verified by reassembly (a chunk set's content id), or will be when the rest of an incomplete set is reassembled. An incomplete set, or one chunk of a larger set, is corrected chunk by chunk and printed. |
+| `20` | REPAIRED + UNVERIFIED (16 + 4): a correction to a single string that is not chunked; nothing checks it a second time, so verify the card before trusting it. |
+| `22` | REPAIRED + UNVERIFIED + INVALID (16 + 4 + 2): a corrected single string that still does not decode, for example a wire version this build cannot read (stderr names the version and the accepted set). The corrected string is printed. |
+| `2` | INVALID, nothing printed: ANY chunk exceeding BCH `t=4` capacity aborts the whole call (plan §1 D28; the failing chunk index is named on stderr), and so do a wrong HRP, a clean string that does not decode, a complete set that does not reassemble, a chunk set with a repeated, stray or extra chunk, and several strings at an unsupported wire version. |
+| `32` | IO: an input file that cannot be read, or stdout that cannot take the output (added to the code above). |
+| `64` | a bad command line. |
 
 JSON envelope schema (`schema_version: "1"`, `kind: "md1"`):
 
@@ -145,20 +167,30 @@ JSON envelope schema (`schema_version: "1"`, `kind: "md1"`):
 }
 ```
 
+Two fields are added only when they apply, after `kind` and before
+`corrected_chunks`; a complete card's 0, 16 and 20 envelopes do not carry
+them:
+
+- `"not_a_card": {"kind": "<md-codec error>", "message": "..."}` at exit 22:
+  why the corrected string is not a card (the name and shape `ms repair
+  --json` uses).
+- `"incomplete": true` for an incomplete chunk set or a lone chunk (exit 0
+  or 16): the corrections are verified only when the rest of the set is
+  reassembled.
+
+On a failure (exit 2, 32 or 64) `md repair --json` prints nothing on stdout;
+the error is on stderr.
+
 `md repair` is the per-codec sibling of toolkit's `mnemonic repair`
 (see `mnemonic-toolkit/docs/manual/src/40-cli-reference/41-mnemonic.md`
 `## mnemonic repair`). It wraps `md_codec::decode_with_correction` from
-md-codec v0.34.0+ and shares the `RepairJson` envelope schema byte-exact
-with the other three CLIs (cross-CLI parser reuse per plan D27).
+md-codec v0.34.0+ and shares the D27 `RepairJson` envelope schema with the
+other three CLIs (cross-CLI parser reuse); the two fields above are md's and
+ms's additions to it.
 
-**v0.6.0 limitation — chunked-form only:** `md repair` requires
-chunked-form md1 input (chunks bearing a chunk header, as emitted by
-`md encode --force-chunked` or by automatic chunking when the payload
-exceeds 320 bits). Non-chunked single-string md1 (the form emitted by
-plain `md encode` for small payloads) is rejected with a wire-format
-error. For non-chunked-form input, use `md decode` for read-only
-inspection. Tracked for resolution at
-`design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`.
+`md repair` takes chunked-form md1 and non-chunked single-string md1 alike
+(single strings since md-codec v0.35.0). A single string has no second
+check, so its correction exits 20 and should be verified before use.
 
 ## Cargo features
 

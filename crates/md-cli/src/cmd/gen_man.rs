@@ -20,11 +20,11 @@ use std::path::PathBuf;
 use crate::Cli;
 
 pub fn run(out: PathBuf) -> Result<u8, CliError> {
-    fs::create_dir_all(&out).map_err(|e| CliError::BadArg(format!("mkdir {out:?}: {e}")))?;
+    fs::create_dir_all(&out).map_err(|e| CliError::Io(format!("mkdir {out:?}: {e}")))?;
     // Naive call: Cli::command() is UNBUILT; generate_to builds internally and
     // suppresses the auto `help` subcommand (C-1). Do NOT pre-`.build()`.
     clap_mangen::generate_to(Cli::command(), &out)
-        .map_err(|e| CliError::BadArg(format!("gen-man write to {out:?}: {e}")))?;
+        .map_err(|e| CliError::Io(format!("gen-man write to {out:?}: {e}")))?;
     Ok(0)
 }
 

@@ -16,7 +16,7 @@ use md_codec::skeleton::{skeleton, skeleton_key};
 pub fn run(phrases: &[String], descriptor: Option<&str>) -> Result<u8, CliError> {
     let key = match descriptor {
         Some(text) => md_codec::descriptor_route::skeleton_key_of_text(text)
-            .map_err(|e| CliError::BadArg(format!("shape-key: {e}")))?,
+            .map_err(|e| CliError::Input(format!("shape-key: {e}")))?,
         None => {
             let strings = crate::cmd::strip_md1_inputs(phrases);
             let d = if strings.len() == 1 {
@@ -26,7 +26,7 @@ pub fn run(phrases: &[String], descriptor: Option<&str>) -> Result<u8, CliError>
                 reassemble(&refs)?
             };
             // Design §1A (a3): a card whose keys will not expand has no key.
-            let s = skeleton(&d).map_err(|e| CliError::BadArg(format!("shape-key: {e}")))?;
+            let s = skeleton(&d).map_err(|e| CliError::Input(format!("shape-key: {e}")))?;
             skeleton_key(&s)
         }
     };

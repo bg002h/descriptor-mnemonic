@@ -27,7 +27,7 @@ fn encode_refuses_a_sigless_wsh_path_unkeyed_unless_experimental() {
     md().args(["encode", &sigless_wsh()])
         .assert()
         .failure()
-        .code(1)
+        .code(8)
         .stderr(predicate::str::contains("must require a signature"));
     md().args(["encode", "--experimental", &sigless_wsh()])
         .assert()
@@ -51,7 +51,7 @@ fn encode_refuses_a_sigless_wsh_path_keyed_unless_experimental() {
     };
     keyed(&[])
         .failure()
-        .code(1)
+        .code(8)
         .stderr(predicate::str::contains("must require a signature"));
     keyed(&["--experimental"])
         .success()

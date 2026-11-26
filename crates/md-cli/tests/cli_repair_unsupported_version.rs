@@ -1,7 +1,8 @@
 //! F-449 stage 2 Task 2c (SPEC §8.9's stage-2 row): `md repair` KEEPS a
 //! correction on a card whose wire version this build does not support, and
-//! reports it distinctly from the atomic-fail exit -- exit 5
-//! (REPAIR_APPLIED), never 2, and never 0.
+//! reports it distinctly from the atomic-fail exit -- exit 22 (REPAIRED +
+//! UNVERIFIED + INVALID: a correction with no second check, to a string this
+//! build cannot decode; exit-code spec decision 6), never 2, and never 0.
 //!
 //! Before this task (measured at 25acb33c) the v12 card below exited 2 with
 //! nothing on stdout: the correction was computed and discarded.
@@ -58,7 +59,7 @@ fn legacy_one_error() -> String {
 }
 
 #[test]
-fn a_correction_on_an_unsupported_version_is_kept_and_exits_5() {
+fn a_correction_on_an_unsupported_version_is_kept_and_exits_22() {
     let (out, err, code) = md(&["repair", V12_ONE_ERROR]);
     // 1. stdout carries the corrected string.
     assert!(
@@ -66,8 +67,9 @@ fn a_correction_on_an_unsupported_version_is_kept_and_exits_5() {
         "the corrected card must reach stdout: {out}"
     );
     assert!(out.contains("position 0: 'q' -> 'u'"), "the report: {out}");
-    // 2. exit 5 (REPAIR_APPLIED), distinct from the atomic-fail 2.
-    assert_eq!(code, 5, "stderr: {err}");
+    // 2. exit 22 (REPAIRED + UNVERIFIED + INVALID), distinct from the
+    //    atomic-fail 2.
+    assert_eq!(code, 22, "stderr: {err}");
     // 3. stderr names the version AND the accepted set.
     assert!(
         err.contains("wire version 12") && err.contains("accepted: 4, 8"),
@@ -81,11 +83,18 @@ fn a_correction_on_an_unsupported_version_is_kept_and_exits_5() {
 #[test]
 fn the_json_report_keeps_the_d27_shape() {
     let (out, err, code) = md(&["repair", "--json", V12_ONE_ERROR]);
-    assert_eq!(code, 5, "{err}");
+    assert_eq!(code, 22, "{err}");
     let v: serde_json::Value =
         serde_json::from_str(&out).unwrap_or_else(|e| panic!("not JSON ({e}): {out}"));
     assert_eq!(v["corrected_chunks"][0], V12_CLEAN, "{v}");
     assert_eq!(v["repairs"].as_array().map(Vec::len), Some(1), "{v}");
+    assert_eq!(v["not_a_card"]["kind"], "WireVersionMismatch", "{v}");
+    assert!(
+        v["not_a_card"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("12")),
+        "{v}"
+    );
 }
 
 #[test]
@@ -116,7 +125,7 @@ fn a_legacy_card_is_corrected_without_the_newer_md_advice() {
     // 6. (R4 M-1): pre-v0.30 cards pass BCH and reach this branch, and no
     // newer md reads version 0.
     let (out, err, code) = md(&["repair", &legacy_one_error()]);
-    assert_eq!(code, 5, "{err}");
+    assert_eq!(code, 22, "{err}");
     assert!(out.contains("position 7: 'q' -> 'x'"), "{out}");
     assert!(out.lines().any(|l| l == LEGACY_CLEAN), "{out}");
     assert!(err.contains("wire version 0"), "{err}");
@@ -213,7 +222,7 @@ fn a_multi_chunk_set_at_an_unsupported_version_exits_2() {
 /// header version rewritten to 12 and one error added; and `md encode
 /// --force-chunked "wsh(pk(@0/48'/1'/9'/2'/<0;1>/*))"`, a different chunk
 /// set at v4). Every string is individually chunked, so the first guard let
-/// it through to exit 5 and "take the corrected card to a newer md". No md
+/// it through to a correction exit and "take the corrected card to a newer md". No md
 /// will ever reassemble these two strings.
 #[test]
 fn two_unrelated_chunks_are_not_an_unsupported_version() {
@@ -233,7 +242,7 @@ fn two_unrelated_chunks_are_not_an_unsupported_version() {
 #[test]
 fn an_odd_version_above_8_is_not_sent_to_a_newer_md() {
     let (out, err, code) = md(&["repair", "md1q4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5"]);
-    assert_eq!(code, 5, "{err}");
+    assert_eq!(code, 22, "{err}");
     assert!(
         out.lines()
             .any(|l| l == "md1n4frpqq9q2tvyyy5jmpprj5qqcyxppgqwcudeey7atgd5"),
@@ -251,13 +260,13 @@ fn an_odd_version_above_8_is_not_sent_to_a_newer_md() {
 #[test]
 fn an_uppercase_card_is_corrected_in_uppercase_and_still_reads() {
     let (out, err, code) = md(&["repair", "MD15PFDSSSJJVVYYW2SQRQSCY9ZSN0MKDW0FZR7"]);
-    assert_eq!(code, 5, "{err}");
+    assert_eq!(code, 20, "{err}");
     let fixed = out.lines().last().expect("corrected card");
     assert_eq!(fixed, "MD15PFDSSSJJTVYYW2SQRQSCY9ZSN0MKDW0FZR7");
     let (_, err, code) = md(&["decode", fixed]);
     assert_eq!(code, 0, "the corrected card must decode: {err}");
 
     let (out, err, code) = md(&["repair", &V12_ONE_ERROR.to_uppercase()]);
-    assert_eq!(code, 5, "{err}");
+    assert_eq!(code, 22, "{err}");
     assert!(out.lines().any(|l| l == V12_CLEAN.to_uppercase()), "{out}");
 }

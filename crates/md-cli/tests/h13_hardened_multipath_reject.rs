@@ -48,7 +48,7 @@ fn encode_hardened_multipath_apostrophe_rejects() {
             "regtest",
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("template parse error"))
         .stderr(predicate::str::contains("hardened"))
         // Must NOT silently collapse and emit an md1 phrase on stdout.
@@ -71,7 +71,7 @@ fn encode_hardened_multipath_h_form_rejects() {
             "regtest",
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("template parse error"))
         .stderr(predicate::str::contains("hardened"))
         .stdout(predicate::str::contains("md1").not());
@@ -94,7 +94,7 @@ fn encode_hardened_multipath_mixed_rejects() {
             "regtest",
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("template parse error"))
         .stdout(predicate::str::contains("md1").not());
 }
@@ -125,7 +125,7 @@ fn encode_malformed_hardened_multipath_rejects() {
                 "regtest",
             ])
             .assert()
-            .failure() // non-zero exit — NEVER exit 0 / silent collapse
+            .code(2) // non-zero exit — NEVER exit 0 / silent collapse
             // Must NOT silently emit a (collapsed) md1 phrase on stdout.
             .stdout(predicate::str::contains("md1").not())
             .get_output()
@@ -133,8 +133,8 @@ fn encode_malformed_hardened_multipath_rejects() {
         let code = out.status.code().unwrap_or(-1);
         assert_eq!(
             code,
-            1,
-            "malformed double-marker body `{body}` must reject with exit 1 \
+            2,
+            "malformed double-marker body `{body}` must reject with exit 2 \
              (typed TemplateParse), got exit {code}; stderr: {}",
             String::from_utf8_lossy(&out.stderr)
         );

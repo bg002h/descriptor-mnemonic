@@ -135,7 +135,7 @@ pub fn parse_path(arg: &str) -> Result<DerivationPath, CliError> {
         return Ok(p);
     }
     DerivationPath::from_str(arg).map_err(|e| {
-        CliError::BadArg(format!(
+        CliError::Input(format!(
             "--path could not parse `{arg}` as name, hex, or literal path: {e}"
         ))
     })
@@ -157,10 +157,10 @@ fn parse_path_hex(s: &str) -> Result<Option<DerivationPath>, CliError> {
         return Ok(None);
     };
     let n = u32::from_str_radix(rest, 16)
-        .map_err(|_| CliError::BadArg(format!("--path hex value invalid: {s}")))?;
+        .map_err(|_| CliError::Input(format!("--path hex value invalid: {s}")))?;
     // Hex indicator selects a single hardened account-level path m/n'.
     let path = DerivationPath::from_str(&format!("m/{n}'"))
-        .map_err(|e| CliError::BadArg(format!("--path hex {s} → m/{n}': {e}")))?;
+        .map_err(|e| CliError::Input(format!("--path hex {s} → m/{n}': {e}")))?;
     Ok(Some(path))
 }
 

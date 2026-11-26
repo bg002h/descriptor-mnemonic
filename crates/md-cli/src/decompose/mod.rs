@@ -120,7 +120,7 @@ pub fn resolve_input(raw: &[String]) -> Result<String, CliError> {
         return Err(json_refusal());
     }
     match raw.len() {
-        0 => Err(CliError::BadArg(
+        0 => Err(CliError::Usage(
             "decompose: DESCRIPTOR required (on argv or via --in FILE)".into(),
         )),
         1 => Ok(raw[0].trim().to_string()),
@@ -146,13 +146,13 @@ fn parse_descriptor_lines(buf: &str) -> Vec<String> {
 /// as two entries and draws the pair guidance.
 pub fn read_descriptor_file(path: &std::path::Path) -> Result<Vec<String>, CliError> {
     let buf = std::fs::read_to_string(path)
-        .map_err(|e| CliError::BadArg(format!("--in {}: {e}", path.display())))?;
+        .map_err(|e| CliError::read_failure(format_args!("--in {}", path.display()), &e))?;
     if looks_like_json(&buf) {
         return Err(json_refusal());
     }
     let out = parse_descriptor_lines(&buf);
     if out.is_empty() {
-        return Err(CliError::BadArg(format!(
+        return Err(CliError::Input(format!(
             "--in {}: no descriptor in this file (it is empty, blank, or all comments). \
              An EMPTY file is what a FAILED upstream command leaves behind — check the \
              command that wrote it.",
@@ -171,13 +171,13 @@ pub fn read_descriptor_file(path: &std::path::Path) -> Result<Vec<String>, CliEr
 pub fn read_descriptor_stdin() -> Result<Vec<String>, CliError> {
     let mut buf = String::new();
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-        .map_err(|e| CliError::BadArg(format!("stdin read: {e}")))?;
+        .map_err(|e| CliError::read_failure(format_args!("stdin read"), &e))?;
     if looks_like_json(&buf) {
         return Err(json_refusal());
     }
     let out = parse_descriptor_lines(&buf);
     if out.is_empty() {
-        return Err(CliError::BadArg(
+        return Err(CliError::Input(
             "-: no descriptor on stdin (it is empty, blank, or all comments). An EMPTY \
              stream is what a FAILED upstream command leaves behind — check the command \
              that wrote it."
@@ -476,8 +476,8 @@ fn check_network(occ: &[Occurrence], network: Network) -> Result<(), CliError> {
             };
             // Name the network the user PASSED, not `want`: NetworkKind::Test
             // is testnet, signet and regtest alike (F-674 item 4).
-            return Err(CliError::Decompose(format!(
-                "key @{i} is a {have} extended key, but --network says {}. The emitted \
+            return Err(CliError::Network(format!(
+                "decompose: key @{i} is a {have} extended key, but --network says {}. The emitted \
                  `md encode --key` commands would be refused by md's own version-byte check, \
                  so decompose stops here instead. Re-run with {flag}.",
                 crate::parse::keys::network_name(network)

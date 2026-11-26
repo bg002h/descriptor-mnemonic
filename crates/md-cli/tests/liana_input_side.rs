@@ -359,7 +359,7 @@ fn decompose_does_not_recognise_a_non_canonical_internal_key_use_site() {
         // hold (`/0/*`, `/0`, `/<0;1>/5/*`) now refuses at the template check.
         if label.starts_with("/0/*") || label.starts_with("/0 ") || label.starts_with("/<0;1>/5/*")
         {
-            assert_eq!(code, 1, "[{label}] must refuse: {out} {err}");
+            assert_eq!(code, 2, "[{label}] must refuse: {out} {err}");
             assert_eq!(out, "", "[{label}] stdout must be empty");
             continue;
         }
@@ -504,7 +504,7 @@ fn a_misplaced_marker_after_a_multibyte_char_refuses_cleanly_and_does_not_panic(
     ] {
         let (out, err, code) = md(&["encode", probe, "--path", "bip48"]);
         assert_ne!(code, 101, "PANICKED on {probe:?}: {err}");
-        assert_eq!(code, 1, "must be a clean parse refusal on {probe:?}: {err}");
+        assert_eq!(code, 2, "must be a clean parse refusal on {probe:?}: {err}");
         assert!(
             !err.contains("panicked") && !err.contains("src/parse/template.rs"),
             "leaked a panic or an internal source path on {probe:?}: {err}"

@@ -9,6 +9,9 @@
 #   protected file's state) with design/FIX_bh1119_md_out_names_input/expected.txt, which is the
 #   FIX section 4 "fixed" column; 2 the repo CI set (ci.yml); 3 the vendor-freshness gate (network for
 #   its check 4).
+# Exit codes (2026-11-26): expected.txt's n rows now expect 8 (refused) and c5 expects 1 (NOT
+#   spend-equal), after the constellation exit-code cutover (mnemonic-engrave
+#   design/SPEC_constellation_exit_codes.md); they were 2 and 5 when this fix landed.
 # Does NOT cover: the toolkit manual edit (M3; separate toolkit change), the man-pages and release
 #   workflows, the macOS/Windows/FreeBSD legs (io-lib's same_file limits off Unix), the
 #   WORDING_REVIEW rows.

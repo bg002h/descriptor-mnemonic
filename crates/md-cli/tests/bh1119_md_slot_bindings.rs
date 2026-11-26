@@ -28,13 +28,13 @@ fn run(args: &[&str]) -> (String, String, i32) {
 
 fn k_line(i: u8, a: usize, b: usize) -> String {
     format!(
-        "md: MISMATCH: @{i}: --key arguments {a} and {b} both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @{i}=... you mean and remove the other.\n"
+        "md: @{i}: --key arguments {a} and {b} both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @{i}=... you mean and remove the other.\n"
     )
 }
 
 fn f_line(i: u8, x: &str, y: &str) -> String {
     format!(
-        "md: MISMATCH: @{i}: --fingerprint {x} and --fingerprint {y} both bind this slot; a slot takes exactly one master fingerprint, and md never picks one for you. Keep the one you mean and remove the other.\n"
+        "md: @{i}: --fingerprint {x} and --fingerprint {y} both bind this slot; a slot takes exactly one master fingerprint, and md never picks one for you. Keep the one you mean and remove the other.\n"
     )
 }
 
@@ -75,7 +75,7 @@ fn kb() -> String {
 fn s1_address_two_keys_one_slot() {
     refused(
         &["address", "--template", T, "--key", &ka(), "--key", &kb()],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -84,7 +84,7 @@ fn s1_address_two_keys_one_slot() {
 fn s2_address_two_keys_one_slot_reversed() {
     refused(
         &["address", "--template", T, "--key", &kb(), "--key", &ka()],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -101,7 +101,7 @@ fn s3_descriptor_two_keys_one_slot() {
             "--key",
             &kb(),
         ],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -118,7 +118,7 @@ fn s4_descriptor_two_keys_one_slot_reversed() {
             "--key",
             &ka(),
         ],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -137,7 +137,7 @@ fn s5_descriptor_two_fingerprints_one_slot() {
             "--fingerprint",
             "@0=aabbccdd",
         ],
-        1,
+        2,
         &f_line(0, "11223344", "aabbccdd"),
     );
 }
@@ -156,7 +156,7 @@ fn s6_descriptor_two_fingerprints_one_slot_reversed() {
             "--fingerprint",
             "@0=11223344",
         ],
-        1,
+        2,
         &f_line(0, "aabbccdd", "11223344"),
     );
 }
@@ -175,7 +175,7 @@ fn s7_address_two_fingerprints_one_slot() {
             "--fingerprint",
             "@0=aabbccdd",
         ],
-        1,
+        2,
         &f_line(0, "11223344", "aabbccdd"),
     );
 }
@@ -192,7 +192,7 @@ fn s8_descriptor_two_bracket_paths_one_slot() {
             "--key",
             &format!("@0=[73c5da0a/84'/1'/1']{KA}"),
         ],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -209,7 +209,7 @@ fn s9_descriptor_two_bracket_fingerprints_one_slot() {
             "--key",
             &format!("@0=[aabbccdd/84'/1'/0']{KA}"),
         ],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -226,7 +226,7 @@ fn s10_descriptor_bare_and_bracketed_one_slot() {
             "--key",
             &format!("@0=[73c5da0a/84'/1'/0']{KA}"),
         ],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -235,7 +235,7 @@ fn s10_descriptor_bare_and_bracketed_one_slot() {
 fn s11_encode_two_keys_one_slot() {
     refused(
         &["encode", T, "--key", &ka(), "--key", &kb()],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }
@@ -253,7 +253,7 @@ fn s12_encode_two_fingerprints_one_slot() {
             "--fingerprint",
             "@0=aabbccdd",
         ],
-        1,
+        2,
         &f_line(0, "11223344", "aabbccdd"),
     );
 }
@@ -265,7 +265,7 @@ fn s13_verify_two_keys_one_slot() {
     let mut a: Vec<&str> = vec!["verify"];
     a.extend(c.iter().map(String::as_str));
     a.extend(["--template", T, "--key", &ka, "--key", &kb]);
-    refused(&a, 1, &k_line(0, 1, 2));
+    refused(&a, 2, &k_line(0, 1, 2));
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn s14_verify_two_fingerprints_one_slot() {
         "--fingerprint",
         "@0=aabbccdd",
     ]);
-    refused(&a, 1, &f_line(0, "11223344", "aabbccdd"));
+    refused(&a, 2, &f_line(0, "11223344", "aabbccdd"));
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn s15_first_conflict_in_argument_order() {
             "--key",
             &kb(),
         ],
-        1,
+        2,
         &k_line(1, 2, 3),
     );
 }
@@ -325,7 +325,7 @@ fn s16_keys_before_fingerprints() {
             "--fingerprint",
             "@0=aabbccdd",
         ],
-        1,
+        2,
         &k_line(0, 1, 2),
     );
 }

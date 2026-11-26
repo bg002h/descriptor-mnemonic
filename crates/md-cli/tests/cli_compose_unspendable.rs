@@ -194,7 +194,7 @@ fn unspendable_is_refused_under_every_non_tr_wrapper_and_only_there() {
                 continue;
             }
             assert_eq!(
-                code, 1,
+                code, 2,
                 "--wrapper {wrapper} --unspendable {value} must be refused"
             );
             assert!(out.is_empty(), "a refusal printed a template: {out}");
@@ -220,7 +220,7 @@ fn unspendable_value_is_matched_exactly() {
             "--unspendable",
             bad,
         ]);
-        assert_eq!(code, 1, "--unspendable {bad:?} must be refused: {out}");
+        assert_eq!(code, 2, "--unspendable {bad:?} must be refused: {out}");
         assert!(out.is_empty(), "refusal printed: {out}");
         assert!(
             err.contains("expected nums or liana"),
@@ -313,7 +313,7 @@ fn liana_refuses_a_sortedmulti_a_leaf_and_the_default_still_composes() {
         args.extend_from_slice(&["--unspendable", "liana"]);
         let (out, err, code) = compose_tr(&args);
         assert_eq!(
-            code, 1,
+            code, 2,
             "{spelling:?} --unspendable liana must be refused: {out}"
         );
         assert!(out.is_empty(), "a refusal printed a template: {out}");

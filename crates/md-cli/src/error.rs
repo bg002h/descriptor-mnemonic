@@ -37,12 +37,32 @@ pub enum CliError {
     /// `#[allow(dead_code)]` keeps default-features clippy clean.
     #[allow(dead_code)]
     Compile(String),
+    /// A comparison came out no: `md verify`'s MISMATCH (exit 1, NO).
     Mismatch(String),
-    BadArg(String),
-    /// `md compose` refusals: structural (§4e), lock band (§4c), DSL, or an
-    /// EXPERIMENTAL shape without `--experimental`. The message is complete in
-    /// itself; `main`'s generic arm prefixes `md: ` and exits 1 (`BadArg`,
-    /// above, is the one variant with its own arm, exiting 2).
+    /// The command line alone is wrong, judged without reading any input:
+    /// a missing argument, flags that cannot go together, a bad setting.
+    /// Exit 64 (USAGE). A malformed INPUT value on argv is [`CliError::Input`].
+    Usage(String),
+    /// An input is wrong or insufficient for this verb: empty input, a
+    /// malformed input value, a file that is not text. Exit 2 (INVALID).
+    Input(String),
+    /// Something needed from the system failed: an input file that cannot be
+    /// read, an output that cannot be written, a feature this build lacks.
+    /// Exit 32 (IO).
+    Io(String),
+    /// A refusal a flag or a different destination waives (`--experimental`,
+    /// `--md-only`, an output that is one of the inputs). Exit 8 (REFUSED).
+    Refused(String),
+    /// A key or card on another network than `--network` says, or a set that
+    /// holds both kinds. Exit 8 (REFUSED; the network rule's bit).
+    Network(String),
+    /// A bug: a failure no class covers. Exit 101 (INTERNAL).
+    Internal(String),
+    /// `md compose` refusals: structural (§4e), lock band (§4c), or the
+    /// DSL. The message is complete in itself; `main` prefixes `md: `. Exit 2:
+    /// the wrapper, paths and preset are the wallet's shape, an input. (An
+    /// EXPERIMENTAL shape without `--experimental`, and `--md-only`'s refusal,
+    /// are [`CliError::Refused`], 8: a flag waives them.)
     Compose(String),
     /// A refusal from the seating engine (SPEC "NORMATIVE — the seating
     /// engine": A1-A5, B1-B2), including its input pipeline.
@@ -54,8 +74,11 @@ pub enum CliError {
     /// pin. Splitting the taxonomy across variants would move it into the
     /// type, where the rows would stop checking it.
     ///
-    /// Exit code 1 (a content refusal), not 2 (a usage error): the flags
-    /// were spelled correctly; it is the material the engine declines.
+    /// Exit code 2 (an input the engine declines), not 64 (a usage error):
+    /// the flags were spelled correctly; it is the material the engine
+    /// declines. Two exceptions are built as other variants: a card of the
+    /// wrong network ([`CliError::Network`], 8) and a `--from-mk1-file` that
+    /// cannot be read ([`CliError::Io`], 32).
     Seat(String),
     /// BIP 388's pairwise-distinctness rule refused on the COMPOSE side of the template row:
     /// `--template` + `--key` handed one extended key to two distinct `@N`
@@ -65,9 +88,9 @@ pub enum CliError {
     /// SPEC A3's diagnostic contract — cite BIP 388, say UNSUPPORTED, never
     /// call the input invalid — which `md_codec::Error::DuplicateKeySlots`
     /// (the same defect, worded for the wire layer) does not carry, and
-    /// because it must not be [`CliError::BadArg`]: the flags were spelled
-    /// correctly, so this is a content refusal at exit 1 like its `Seat` and
-    /// `Decompose` siblings, not a usage error at exit 2.
+    /// because it must not be [`CliError::Usage`]: the flags were spelled
+    /// correctly, so this is an input refusal at exit 2 like its `Seat` and
+    /// `Decompose` siblings, not a usage error at exit 64.
     KeyReuse(String),
     /// N1's placeholder/key-reuse admission taxonomy
     /// (`design/SPEC_mdcli_mini.md` §N1, [`crate::parse::reuse`]).
@@ -86,7 +109,7 @@ pub enum CliError {
     /// Principle's word: a BIP-forbidden or wire-inexpressible shape is
     /// UNSUPPORTED, never "invalid".
     ///
-    /// Exit code 1, like its `Seat`/`Decompose`/`KeyReuse` siblings: the flags
+    /// Exit code 2, like its `Seat`/`Decompose`/`KeyReuse` siblings: the flags
     /// were spelled correctly; it is the material md declines.
     Unsupported(String),
     /// A refusal from `md decompose` (SPEC "P3 — the concrete descriptor
@@ -99,8 +122,9 @@ pub enum CliError {
     /// V-D-* rows pin. A taxonomy in the type would move that contract
     /// somewhere the rows stop checking it.
     ///
-    /// Exit code 1 (a content refusal), not 2: the flags were spelled
-    /// correctly; it is the material decompose declines.
+    /// Exit code 2 (an input refusal), not 64: the flags were spelled
+    /// correctly; it is the material decompose declines. A key of the wrong
+    /// network is [`CliError::Network`] (8).
     Decompose(String),
     /// `--verify-against`'s argument did not decode, NAMING which branch of
     /// `resolve_verify_against`'s existence check ran (whole-diff review r1
@@ -111,7 +135,7 @@ pub enum CliError {
     /// string they typed, and an operator with a mistyped path sees md
     /// reject it as a string rather than say no such file exists.
     ///
-    /// Exit code 1, same as the decode error it wraps: the message is
+    /// Exit code 2, same as the decode error it wraps: the message is
     /// enriched, the disposition (a decode failure, never a spend-equality
     /// verdict) is unchanged.
     VerifyAgainstUnreadable(String),
@@ -128,7 +152,12 @@ impl fmt::Display for CliError {
             CliError::BadOrigin { i, why } => write!(f, "--key @{i}: origin notation {why}"),
             CliError::Compile(m) => write!(f, "compile error: {m}"),
             CliError::Mismatch(m) => write!(f, "MISMATCH: {m}"),
-            CliError::BadArg(m) => write!(f, "{m}"),
+            CliError::Usage(m)
+            | CliError::Input(m)
+            | CliError::Io(m)
+            | CliError::Refused(m)
+            | CliError::Network(m)
+            | CliError::Internal(m) => write!(f, "{m}"),
             CliError::Compose(m) => write!(f, "{m}"),
             CliError::Seat(m) => write!(f, "seating refused: {m}"),
             CliError::KeyReuse(m) => write!(f, "key reuse refused: {m}"),
@@ -139,7 +168,123 @@ impl fmt::Display for CliError {
     }
 }
 
+impl CliError {
+    /// The exit status (`SPEC_constellation_exit_codes.md` §3), by the
+    /// variant alone. Exhaustive on purpose (spec R13): a new variant must be
+    /// given its class here, and `every_variant_maps_to_its_class` pins it.
+    pub fn exit_code(&self) -> u8 {
+        use crate::exit;
+        match self {
+            CliError::Mismatch(_) => exit::NO,
+            CliError::Codec(e) => codec_class(e),
+            CliError::Render(_)
+            | CliError::TemplateParse(_)
+            | CliError::BadXpub { .. }
+            | CliError::BadFingerprint { .. }
+            | CliError::BadOrigin { .. }
+            | CliError::Compile(_)
+            | CliError::Compose(_)
+            | CliError::Seat(_)
+            | CliError::KeyReuse(_)
+            | CliError::Unsupported(_)
+            | CliError::Decompose(_)
+            | CliError::VerifyAgainstUnreadable(_)
+            | CliError::Input(_) => exit::INVALID,
+            CliError::Refused(_) | CliError::Network(_) => exit::REFUSED,
+            CliError::Io(_) => exit::IO,
+            CliError::Usage(_) => exit::USAGE,
+            CliError::Internal(_) => exit::INTERNAL,
+        }
+    }
+
+    /// An input file that could not be read: a file that is not UTF-8 text is
+    /// an invalid input (2); any other failure (missing, unreadable, a
+    /// directory) is the system's (32). `what` names the flag and path.
+    pub fn read_failure(what: std::fmt::Arguments<'_>, e: &std::io::Error) -> CliError {
+        if e.kind() == std::io::ErrorKind::InvalidData {
+            CliError::Input(format!("{what}: {e}"))
+        } else {
+            CliError::Io(format!("{what}: {e}"))
+        }
+    }
+}
+
 impl std::error::Error for CliError {}
+
+/// The §3 class of a codec error (spec R13). Every variant is named, with no
+/// wildcard, so a new `md_codec::Error` fails to compile until it is placed.
+/// Most are a card or template that is wrong (2). Three are reachable only
+/// through an md bug (101): md calls the `_with_network` entry points
+/// (`NetworkRequiredForUnspendable`), checks its input is non-empty before
+/// reassembly (`ChunkSetEmpty`), and the codec never builds
+/// `Codex32EncodeError`. `AddressDerivationFailed` stays 2: a card whose
+/// miniscript does not type-check, or an index the derivation refuses,
+/// reaches it from user input.
+pub(crate) fn codec_class(e: &md_codec::Error) -> u8 {
+    use md_codec::Error as E;
+    match e {
+        E::NetworkRequiredForUnspendable | E::ChunkSetEmpty | E::Codex32EncodeError(_) => {
+            crate::exit::INTERNAL
+        }
+        E::BitStreamTruncated { .. }
+        | E::WireVersionMismatch { .. }
+        | E::MalformedHeader { .. }
+        | E::PathDepthExceeded { .. }
+        | E::KeyCountOutOfRange { .. }
+        | E::DivergentPathCountMismatch { .. }
+        | E::AltCountOutOfRange { .. }
+        | E::TagOutOfRange { .. }
+        | E::ThresholdOutOfRange { .. }
+        | E::ChildCountOutOfRange { .. }
+        | E::KGreaterThanN { .. }
+        | E::TlvUnknownTagOutOfRange { .. }
+        | E::TlvOrderingViolation { .. }
+        | E::PlaceholderIndexOutOfRange { .. }
+        | E::OverrideOrderViolation { .. }
+        | E::EmptyTlvEntry { .. }
+        | E::TlvLengthExceedsRemaining { .. }
+        | E::PlaceholderNotReferenced { .. }
+        | E::PlaceholderFirstOccurrenceOutOfOrder { .. }
+        | E::MultipathAltCountMismatch { .. }
+        | E::BaselineUseSiteOverride { .. }
+        | E::RedundantUseSiteOverride { .. }
+        | E::ForbiddenTapTreeLeaf { .. }
+        | E::OperatorContextViolation { .. }
+        | E::ChunkCountOutOfRange { .. }
+        | E::ChunkIndexOutOfRange { .. }
+        | E::ChunkSetIdOutOfRange { .. }
+        | E::ChunkHeaderChunkedFlagMissing
+        | E::ChunkCountExceedsMax { .. }
+        | E::Codex32DecodeError(_)
+        | E::ChunkSetInconsistent
+        | E::ChunkSetIncomplete { .. }
+        | E::ChunkIndexGap { .. }
+        | E::ChunkSetIdMismatch { .. }
+        | E::VarintOverflow { .. }
+        | E::MissingExplicitOrigin { .. }
+        | E::EmptyOriginOverride { .. }
+        | E::InvalidPresenceByte { .. }
+        | E::DuplicateKeySlots { .. }
+        | E::OriginKeyContradiction { .. }
+        | E::InvalidXpubBytes { .. }
+        | E::MissingPubkey { .. }
+        | E::ChainIndexOutOfRange { .. }
+        | E::HardenedPublicDerivation
+        | E::AddressDerivationFailed { .. }
+        | E::NUMSSentinelConflict
+        | E::DecodeRecursionDepthExceeded { .. }
+        | E::TooManyErrors { .. }
+        | E::RelativeTimelockTruncated { .. }
+        | E::PayloadTooLongForSingleString { .. }
+        | E::ChunkSymbolCountOutOfRange { .. }
+        | E::StringSymbolCountOutOfRange { .. }
+        | E::MalformedPayloadPadding { .. }
+        | E::UnspendableWithSortedMultiA
+        | E::UnspendableUseSiteNotCanonical { .. }
+        | E::UnspendableNotRootTr
+        | E::NonMinimalWireVersion { .. } => crate::exit::INVALID,
+    }
+}
 
 impl From<md_codec::Error> for CliError {
     fn from(e: md_codec::Error) -> Self {
@@ -182,6 +327,93 @@ mod tests {
     fn display_mismatch() {
         let e = CliError::Mismatch("policy id differs".into());
         assert_eq!(format!("{e}"), "MISMATCH: policy id differs");
+    }
+
+    /// Spec R13: each variant's §3 class, stated here row by row rather
+    /// than copied from `exit_code`. `exit_code` and `codec_class` have no
+    /// wildcard, so a new variant fails to compile until it is classed
+    /// there; the last assertion reads the `CliError` enum's source and
+    /// fails until every variant also has a row here.
+    #[test]
+    fn every_variant_maps_to_its_class() {
+        use md_codec::Error as E;
+        let s = || String::from("x");
+        let rows: Vec<(CliError, u8)> = vec![
+            (CliError::Mismatch(s()), 1),
+            (CliError::Codec(E::ChunkSetInconsistent), 2),
+            (CliError::Codec(E::Codex32DecodeError(s())), 2),
+            (CliError::Codec(E::WireVersionMismatch { got: 1 }), 2),
+            (
+                CliError::Codec(E::AddressDerivationFailed { detail: s() }),
+                2,
+            ),
+            (CliError::Codec(E::NetworkRequiredForUnspendable), 101),
+            (CliError::Codec(E::ChunkSetEmpty), 101),
+            (CliError::Codec(E::Codex32EncodeError(s())), 101),
+            (
+                CliError::Render(md_codec::RenderError::MalformedTree(s())),
+                2,
+            ),
+            (CliError::TemplateParse(s()), 2),
+            (CliError::BadXpub { i: 0, why: s() }, 2),
+            (CliError::BadFingerprint { i: 0, why: s() }, 2),
+            (CliError::BadOrigin { i: 0, why: s() }, 2),
+            (CliError::Compile(s()), 2),
+            (CliError::Input(s()), 2),
+            (CliError::Compose(s()), 2),
+            (CliError::Seat(s()), 2),
+            (CliError::KeyReuse(s()), 2),
+            (CliError::Unsupported(s()), 2),
+            (CliError::Decompose(s()), 2),
+            (CliError::VerifyAgainstUnreadable(s()), 2),
+            (CliError::Refused(s()), 8),
+            (CliError::Network(s()), 8),
+            (CliError::Io(s()), 32),
+            (CliError::Usage(s()), 64),
+            (CliError::Internal(s()), 101),
+        ];
+        for (e, want) in &rows {
+            assert_eq!(e.exit_code(), *want, "{e:?}");
+        }
+        let name = |d: &str| -> String {
+            d.split(|c: char| !c.is_ascii_alphanumeric())
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        };
+        let with_row: std::collections::BTreeSet<String> =
+            rows.iter().map(|(e, _)| name(&format!("{e:?}"))).collect();
+        let src = include_str!("error.rs");
+        let body = &src[src.find("pub enum CliError {").unwrap()..];
+        let body = &body[..body.find("\n}").unwrap()];
+        let declared: std::collections::BTreeSet<String> = body
+            .lines()
+            .skip(1)
+            .filter(|l| l.starts_with("    ") && !l.starts_with("     "))
+            .map(str::trim)
+            .filter(|l| l.starts_with(|c: char| c.is_ascii_uppercase()))
+            .map(name)
+            .collect();
+        assert!(
+            declared.len() >= 20,
+            "the enum parser found too few: {declared:?}"
+        );
+        let missing: Vec<_> = declared.difference(&with_row).collect();
+        assert!(missing.is_empty(), "variants with no row: {missing:?}");
+    }
+
+    #[test]
+    fn a_file_that_is_not_text_is_invalid_and_a_missing_one_is_io() {
+        let bad = std::io::Error::from(std::io::ErrorKind::InvalidData);
+        let gone = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert_eq!(
+            CliError::read_failure(format_args!("--in f"), &bad).exit_code(),
+            2
+        );
+        assert_eq!(
+            CliError::read_failure(format_args!("--in f"), &gone).exit_code(),
+            32
+        );
     }
 
     #[test]

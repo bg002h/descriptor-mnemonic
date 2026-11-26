@@ -59,7 +59,7 @@ pub fn read_md1_inputs(
     // of a pipeline that built the path itself is the one message an operator
     // cannot act on.
     let buf = std::fs::read_to_string(path)
-        .map_err(|e| CliError::BadArg(format!("{flag} {}: {e}", path.display())))?;
+        .map_err(|e| CliError::read_failure(format_args!("{flag} {}", path.display()), &e))?;
     let mut out = Vec::new();
     for line in buf.lines() {
         let s = strip_display_separators(line);
@@ -68,7 +68,7 @@ pub fn read_md1_inputs(
         }
     }
     if out.is_empty() {
-        return Err(CliError::BadArg(format!(
+        return Err(CliError::Input(format!(
             "{flag} {}: no md1 strings in this file. An EMPTY file is what a FAILED \
              upstream command leaves behind -- check the command that wrote it.",
             path.display()
@@ -85,10 +85,10 @@ pub fn read_md1_inputs(
 /// made an earlier acceptance criterion unsatisfiable.
 pub fn read_template_file(path: &std::path::Path) -> Result<String, CliError> {
     let buf = std::fs::read_to_string(path)
-        .map_err(|e| CliError::BadArg(format!("--in {}: {e}", path.display())))?;
+        .map_err(|e| CliError::read_failure(format_args!("--in {}", path.display()), &e))?;
     let t = buf.trim();
     if t.is_empty() {
-        return Err(CliError::BadArg(format!(
+        return Err(CliError::Input(format!(
             "--in {}: no BIP-388 template in this file (it is empty or blank)",
             path.display()
         )));
@@ -108,7 +108,7 @@ pub fn read_template_file(path: &std::path::Path) -> Result<String, CliError> {
 /// is the case a re-run actually hits.
 ///
 /// mnemonic-io-lib 0.1.3 writes a temporary beside FILE and renames it over FILE, so a
-/// failed write leaves an existing FILE unchanged. A write error exits 1 with
+/// failed write leaves an existing FILE unchanged. A write error exits 32 with
 /// `md: cannot write the output: <FILE>: <error>` plus a state sentence only when a second
 /// look at FILE confirms it (bh-md-C4, R2); a standard-stream name says nothing about the disk.
 pub fn write_artifact(path: &std::path::Path, body: &str) -> Result<(), CliError> {
@@ -117,13 +117,13 @@ pub fn write_artifact(path: &std::path::Path, body: &str) -> Result<(), CliError
     match mnemonic_io_lib::write::write_private(path, body.as_bytes()) {
         Ok(()) => Ok(()),
         Err(e) => {
-            // R2 (T6): one line, exit 1. The state sentence is said only when a
+            // R2 (T6): one line, exit 32. The state sentence is said only when a
             // second look confirms it; a standard-stream alias is written into
             // the open stream, so nothing is said about the disk.
             let f = path.display();
             let after = if stdio { Snap::Other } else { Snap::take(path) };
             let tail = state_tail(&f.to_string(), &before, &after);
-            Err(CliError::Compose(format!(
+            Err(CliError::Io(format!(
                 "cannot write the output: {f}: {e}{tail}"
             )))
         }
@@ -177,7 +177,8 @@ impl<'a> InputName<'a> {
 /// `--out` (X3: stdout and FILE one file). Identity is the shared crate's
 /// `same_file` (symlinks followed, hard links equal, pipes and terminals never
 /// match). The checks run in order X2 (stdout), X1 (`--out`), X3; the first
-/// match refuses with exit 2 and names the first matching input.
+/// match refuses with exit 8 (REFUSED: a different destination waives it)
+/// and names the first matching input.
 pub fn refuse_output_names_input(
     stdout: bool,
     out: Option<&std::path::Path>,
@@ -190,7 +191,7 @@ pub fn refuse_output_names_input(
         if let Some(i) =
             mnemonic_io_lib::write::same_file(mnemonic_io_lib::write::Endpoint::Stdout, &eps)
         {
-            return Err(CliError::BadArg(format!(
+            return Err(CliError::Refused(format!(
                 "standard output is the same file as {}, so the output would go into the file md reads its input from. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.",
                 inputs[i].label
             )));
@@ -200,7 +201,7 @@ pub fn refuse_output_names_input(
         if let Some(i) =
             mnemonic_io_lib::write::same_file(mnemonic_io_lib::write::Endpoint::Path(o), &eps)
         {
-            return Err(CliError::BadArg(format!(
+            return Err(CliError::Refused(format!(
                 "--out {} is the same file as {} (the same path, a symlink, a hard link or a standard-stream name), and md does not write into a file it reads its input from. Write to a new name.",
                 o.display(),
                 inputs[i].label
@@ -213,7 +214,7 @@ pub fn refuse_output_names_input(
             )
             .is_some()
         {
-            return Err(CliError::BadArg(format!(
+            return Err(CliError::Refused(format!(
                 "--out {} and standard output are the same file (the same path, a symlink or a hard link), so what md prints on stdout would go into the file it writes. A > redirect empties that file before md starts, so check that it still holds what you expect. Write to a new name.",
                 o.display()
             )));
@@ -305,7 +306,7 @@ pub fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {
             consumed_stdin = true;
             let mut buf = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-                .map_err(|e| CliError::BadArg(format!("stdin read: {e}")))?;
+                .map_err(|e| CliError::read_failure(format_args!("stdin read"), &e))?;
             for line in buf.lines() {
                 // mstring display-grouping (SPEC §3.2): strip separators so a
                 // grouped or unbroken card both re-ingest. (repair OUTPUT stays
@@ -322,7 +323,7 @@ pub fn read_md1_strings(args: &[String]) -> Result<Vec<String>, CliError> {
         }
     }
     if out.is_empty() {
-        return Err(CliError::BadArg(
+        return Err(CliError::Input(
             "expected at least one md1 string (positional or via stdin with '-')".into(),
         ));
     }

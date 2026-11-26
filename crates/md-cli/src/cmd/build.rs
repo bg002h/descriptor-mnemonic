@@ -44,10 +44,10 @@ pub struct DescriptorInput<'a> {
 pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliError> {
     // Defense in depth — clap's ArgGroup::required(true) is the primary guard;
     // this catches the case where it ever fails (clap regression, a custom
-    // invocation bypassing the parser) and routes to a clean exit-2 BadArg
-    // instead of a confusing exit-1 from reassemble(&[]).
+    // invocation bypassing the parser) and routes to a clean exit-64 Usage
+    // instead of a confusing codec error from reassemble(&[]).
     if args.phrases.is_empty() && args.template.is_none() {
-        return Err(CliError::BadArg(format!(
+        return Err(CliError::Usage(format!(
             "{} requires either positional <STRING>... or --template <T> --key @i=<XPUB>; \
              clap should have caught this — please report a bug",
             args.cmd
@@ -55,7 +55,7 @@ pub fn build_descriptor(args: &DescriptorInput<'_>) -> Result<Descriptor, CliErr
     }
     if let Some(template) = args.template {
         if args.keys.is_empty() {
-            return Err(CliError::BadArg(
+            return Err(CliError::Usage(
                 "--key @i=<XPUB> required when --template is supplied".into(),
             ));
         }
@@ -238,7 +238,7 @@ fn resolve_keys_fingerprints_and_precedence(
         }
         if let Some(inline) = inline_paths.get(&ok.i) {
             if &ok.path != inline {
-                return Err(CliError::Mismatch(format!(
+                return Err(CliError::Input(format!(
                     "@{}: origin-notated --key path `{}` disagrees with the \
                      template's inline origin path `{}` for this slot (agreement \
                      is required; the --key path never overrides the template)",
@@ -251,7 +251,7 @@ fn resolve_keys_fingerprints_and_precedence(
             // Agreement is not an override, exactly as for the inline pair.
             Some(shared) if &ok.path == shared => {}
             Some(shared) => {
-                return Err(CliError::Mismatch(format!(
+                return Err(CliError::Input(format!(
                     "@{i}: origin-notated --key path `{bracket}` disagrees with \
                      --path `{shared}`. The template declares no inline origin for \
                      @{i}, so --path is the source that WINS for this slot and the \
@@ -289,7 +289,7 @@ fn resolve_keys_fingerprints_and_precedence(
         };
         match fp_map.get(&ok.i) {
             Some(existing) if *existing != fp => {
-                return Err(CliError::Mismatch(format!(
+                return Err(CliError::Input(format!(
                     "@{}: --fingerprint {} disagrees with the origin-notated --key \
                      fingerprint {} for this slot (agreement is required; neither \
                      side silently overrides the other)",
@@ -427,9 +427,15 @@ fn fp_hex(fp: [u8; 4]) -> String {
 /// before `strip_md1_inputs`' dedupe or `seat::run`'s own pipeline -- so a
 /// grouped/copy-pasted card is recognised by prefix the same way the read
 /// verbs already do.
+///
+/// `file_given` is true when `--from-mk1-file` is set and its lines are not
+/// yet in `from_mk1`: `main` runs this check before reading that file (R2:
+/// a usage error is 64 before any input is read), then the verb runs it
+/// again on the merged list with `file_given` false.
 pub fn check_from_mk1_arity(
     phrases: &[String],
     from_mk1: &[String],
+    file_given: bool,
     template: Option<&str>,
     cmd: &'static str,
 ) -> Result<(), CliError> {
@@ -456,8 +462,8 @@ pub fn check_from_mk1_arity(
              {cmd}'s positional instead, where the policy phrase belongs."
         )));
     }
-    if phrases.is_empty() && template.is_none() && !from_mk1.is_empty() {
-        return Err(CliError::BadArg(format!(
+    if phrases.is_empty() && template.is_none() && (file_given || !from_mk1.is_empty()) {
+        return Err(CliError::Usage(format!(
             "{cmd} --from-mk1 supplies key cards, not the policy: no md1 policy phrase is on \
              the positional and no --template was given. Supply the keyless md1 policy \
              card(s) these keys seat into."

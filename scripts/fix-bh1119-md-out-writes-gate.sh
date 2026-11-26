@@ -7,6 +7,9 @@
 # Steps: 1 build md-cli, then rows o1 o3 o4 o6 o8 o10 o11 o13 o15 as printed commands against the built
 #   md (exit code, stdout, exact stderr, file bytes; FSIZE rows by prlimit); 2 the repo CI set (ci.yml);
 #   3 the vendor-freshness gate (network for its check 4).
+# Exit codes (2026-11-26): an --out write failure now expects 32 and a codec error 2, after the
+#   constellation exit-code cutover (mnemonic-engrave design/SPEC_constellation_exit_codes.md);
+#   both were 1 when this fix landed.
 # Does NOT cover: the toolkit manual edit (M1, M2; separate toolkit change), the man-pages and release
 #   workflows, the macOS/Windows/FreeBSD/musl legs, the WORDING_REVIEW rows for H1, M1, M2.
 set -u
@@ -46,13 +49,13 @@ rows() {
   F="$D/o1"; "$MD" encode "$T" --out "$F" 2>/dev/null
   run fs 8 encode "$P" --out "$F"
   exp="md: cannot write the output: $F: File too large (os error 27). $F is unchanged."
-  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && cmp -s "$F" <(printf '%s\n' "$CARD") && ok=1
+  ok=0; [ "$code" = 32 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && cmp -s "$F" <(printf '%s\n' "$CARD") && ok=1
   chk o1 $ok
   # o3
   F="$D/nodir/x.md1"
   run "$MD" encode "$T" --out "$F"
   exp="md: cannot write the output: $F: No such file or directory (os error 2). Nothing was written."
-  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && ok=1
+  ok=0; [ "$code" = 32 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && ok=1
   chk o3 $ok
   # o4 (skipped for root)
   if [ "$(id -u)" = 0 ]; then echo "SKIP o4 (euid 0)"; else
@@ -60,7 +63,7 @@ rows() {
     run "$MD" encode "$P" --out "$F"
     chmod 0700 "$D/ro"
     exp="md: cannot write the output: $F: Permission denied (os error 13). $F is unchanged."
-    ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && cmp -s "$F" <(printf '%s\n' "$CARD") && ok=1
+    ok=0; [ "$code" = 32 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && cmp -s "$F" <(printf '%s\n' "$CARD") && ok=1
     chk o4 $ok
   fi
   # o6
@@ -74,26 +77,26 @@ rows() {
   F="$D/nodir/x.md1"
   run "$MD" encode "$T" --json --out "$F"
   exp="md: cannot write the output: $F: No such file or directory (os error 2). Nothing was written."
-  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && ok=1
+  ok=0; [ "$code" = 32 ] && [ -z "$out" ] && [ "$err" = "$exp" ] && ok=1
   chk o8 $ok
   # o10
   F="$D/o10"; printf 'PRIOR\n' > "$F"
   run "$MD" encode "$W" --policy-id-fingerprint --out "$F"
-  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$CODEC" ] && [ "$(cat "$F")" = PRIOR ] && ok=1
+  ok=0; [ "$code" = 2 ] && [ -z "$out" ] && [ "$err" = "$CODEC" ] && [ "$(cat "$F")" = PRIOR ] && ok=1
   chk o10 $ok
   # o11
   run "$MD" encode "$W" --policy-id-fingerprint
-  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$CODEC" ] && ok=1
+  ok=0; [ "$code" = 2 ] && [ -z "$out" ] && [ "$err" = "$CODEC" ] && ok=1
   chk o11 $ok
   # o13
   run "$MD" encode "$W" --policy-id-fingerprint --force-chunked
-  ok=0; [ "$code" = 1 ] && [ -z "$out" ] && [ "$err" = "$CODEC" ] && ok=1
+  ok=0; [ "$code" = 2 ] && [ -z "$out" ] && [ "$err" = "$CODEC" ] && ok=1
   chk o13 $ok
   # o15 (Linux: /dev/stdout appended onto a file, RLIMIT_FSIZE 0)
   F="$D/s.txt"; printf 'OLD BACKUP\n' > "$F"
   err=$(bash -c "trap '' XFSZ; exec prlimit --fsize=0 \"\$0\" encode \"\$1\" --out /dev/stdout" "$MD" "$T" 2>&1 >>"$F"); code=$?; out=""
   exp="md: cannot write the output: /dev/stdout: File too large (os error 27)"
-  ok=0; [ "$code" = 1 ] && [ "$err" = "$exp" ] && [ "$(cat "$F")" = "OLD BACKUP" ] && ok=1
+  ok=0; [ "$code" = 32 ] && [ "$err" = "$exp" ] && [ "$(cat "$F")" = "OLD BACKUP" ] && ok=1
   chk o15 $ok
   rm -r "$D"
   return $bad

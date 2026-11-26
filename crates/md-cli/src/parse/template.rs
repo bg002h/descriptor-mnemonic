@@ -1614,13 +1614,13 @@ fn walk_miniscript_node<C: miniscript::ScriptContext>(
         // itself will now parse, because #915 left its recursive parser without
         // a depth guard. `walk_script_root` accepts them at the positions that
         // are legal.
-        Terminal::SortedMulti(_) => Err(CliError::BadArg(
+        Terminal::SortedMulti(_) => Err(CliError::Input(
             "sortedmulti() is valid only as the sole child of sh() or wsh() \
              (BIP-388 §Descriptor Templates, BIP-383); it cannot be nested \
              inside a miniscript fragment"
                 .into(),
         )),
-        Terminal::SortedMultiA(_) => Err(CliError::BadArg(
+        Terminal::SortedMultiA(_) => Err(CliError::Input(
             "sortedmulti_a() is valid only as a taproot leaf (BIP-386/387); it \
              cannot be nested inside a miniscript fragment"
                 .into(),
@@ -2846,7 +2846,7 @@ fn reject_unreferenced_bindings(
     let listed = named.join(", ");
     for k in keys {
         if !present.contains(&k.i) {
-            return Err(CliError::BadArg(format!(
+            return Err(CliError::Input(format!(
                 "--key @{} does not appear in this template (it uses {}); a key bound to no \
                  placeholder cannot be encoded, and a card carrying one is rejected on decode",
                 k.i, listed
@@ -2855,7 +2855,7 @@ fn reject_unreferenced_bindings(
     }
     for f in fingerprints {
         if !present.contains(&f.i) {
-            return Err(CliError::BadArg(format!(
+            return Err(CliError::Input(format!(
                 "--fingerprint @{} does not appear in this template (it uses {})",
                 f.i, listed
             )));
@@ -2994,7 +2994,7 @@ pub fn parse_template_ext(
         d
     } else {
         let d = MsDescriptor::<DescriptorPublicKey>::from_str(&substituted)
-            .map_err(|e| CliError::TemplateParse(format!("miniscript parse failed: {e}")))?;
+            .map_err(|e| unsafe_or_parse(format!("miniscript parse failed: {e}")))?;
         // `from_str` runs the sanity gate for `tr` only; `md compose` refuses a
         // signature-free path under every wrapper, and `encode` must agree
         // (follow-up md-encode-keyless-template-sigless-path-not-gated). MINTING
@@ -3011,7 +3011,7 @@ pub fn parse_template_ext(
                 } else {
                     ""
                 };
-                CliError::TemplateParse(format!("miniscript parse failed: {e}{hint}"))
+                unsafe_or_parse(format!("miniscript parse failed: {e}{hint}"))
             })?;
         }
         d
@@ -3353,5 +3353,17 @@ mod gapb_resolve_tests {
                 "{what}: {err:?}"
             );
         }
+    }
+}
+
+/// A template refused only by the signature rule (a spend path that needs no
+/// key) is a refusal `--experimental` waives: exit 8 (REFUSED), with the
+/// message it had as a parse error. Any other miniscript failure is the
+/// template's own: exit 2.
+fn unsafe_or_parse(msg: String) -> CliError {
+    if msg.contains("require a signature") {
+        CliError::Refused(format!("template parse error: {msg}"))
+    } else {
+        CliError::TemplateParse(msg)
     }
 }

@@ -370,7 +370,7 @@ pub(crate) const ESCAPE: &str = "me sysw pack --as descriptor --in <your export 
 ///
 /// `Warn` writes to stderr and returns `Ok(())`; the caller proceeds. `Refuse`
 /// returns [`CliError::Unsupported`], which renders as
-/// `md: unsupported: <body>` at exit 1.
+/// `md: unsupported: <body>` at exit 2.
 pub fn check(
     occs: &[PlaceholderOccurrence],
     keys: &[ParsedKey],

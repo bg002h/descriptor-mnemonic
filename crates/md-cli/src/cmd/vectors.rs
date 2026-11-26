@@ -22,8 +22,7 @@ pub fn run(out: Option<String>) -> Result<u8, CliError> {
         // default to `./vectors` (current dir).
         None => PathBuf::from("./vectors"),
     };
-    fs::create_dir_all(&out_dir)
-        .map_err(|e| CliError::BadArg(format!("mkdir {out_dir:?}: {e}")))?;
+    fs::create_dir_all(&out_dir).map_err(|e| CliError::Io(format!("mkdir {out_dir:?}: {e}")))?;
 
     let mut entries: Vec<&Vector> = MANIFEST.iter().collect();
     entries.sort_by_key(|v| v.name);
@@ -132,7 +131,7 @@ fn conformance_json(v: &Vector, d: &md_codec::encode::Descriptor) -> Result<Stri
         }
         s
     };
-    let err = |e: md_codec::Error| CliError::BadArg(format!("{}: {e}", v.name));
+    let err = |e: md_codec::Error| CliError::Internal(format!("{}: {e}", v.name));
 
     // Both ids, always, and NAMED. They differ for the same wallet -- the
     // template id is key-stable, the policy id is not -- so a consumer that
@@ -225,7 +224,7 @@ fn write_lf(path: &std::path::Path, contents: &str) -> Result<(), CliError> {
     if !s.ends_with('\n') {
         s.push('\n');
     }
-    fs::write(path, s.as_bytes()).map_err(|e| CliError::BadArg(format!("write {path:?}: {e}")))
+    fs::write(path, s.as_bytes()).map_err(|e| CliError::Io(format!("write {path:?}: {e}")))
 }
 
 #[cfg(test)]

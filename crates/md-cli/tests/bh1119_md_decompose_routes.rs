@@ -52,7 +52,7 @@ fn template_refusal(i: usize, use_site: Option<&str>) -> String {
 
 fn assert_template_refused(desc: &str, emit: &str, i: usize, use_site: Option<&str>) {
     let (rc, out, err) = decompose(desc, emit);
-    assert_eq!(rc, 1, "stdout: {out} stderr: {err}");
+    assert_eq!(rc, 2, "stdout: {out} stderr: {err}");
     assert_eq!(out, "", "stdout must be empty");
     assert_eq!(err, template_refusal(i, use_site));
 }
@@ -140,7 +140,7 @@ fn d1a_c1_fixed_step_all() {
 #[test]
 fn d4_i9_master_key() {
     let (rc, out, err) = decompose(&format!("wpkh([73c5da0a]{M0}/<0;1>/*)"), "commands");
-    assert_eq!(rc, 1, "stderr: {err}");
+    assert_eq!(rc, 2, "stderr: {err}");
     assert_eq!(out, "");
     assert_eq!(
         err,
@@ -174,7 +174,7 @@ fn d5_depth2_route1_withheld() {
 #[test]
 fn d10_depth1_wrong_fingerprint() {
     let (rc, out, err) = decompose(&format!("wpkh([deadbeef/84']{K1}/<0;1>/*)"), "commands");
-    assert_eq!(rc, 1, "stderr: {err}");
+    assert_eq!(rc, 2, "stderr: {err}");
     assert_eq!(out, "");
     assert_eq!(
         err,
@@ -207,7 +207,7 @@ fn d10b_depth1_right_fingerprint() {
 fn d11_origin_less_fixed_step() {
     let d = format!("wpkh({KA}/0/*)");
     let (rc, out, err) = decompose(&d, "commands");
-    assert_eq!(rc, 1);
+    assert_eq!(rc, 2);
     assert_eq!(out, "");
     assert!(
         err.contains("`--emit keys`, `--emit descriptor`. To mint"),
@@ -229,7 +229,7 @@ fn d11_origin_less_fixed_step() {
 #[test]
 fn d9_origin_less_unchanged() {
     let (rc, out, err) = decompose(&format!("wpkh({KA}/<0;1>/*)"), "commands");
-    assert_eq!(rc, 1);
+    assert_eq!(rc, 2);
     assert_eq!(out, "");
     assert!(
         err.contains("`--emit template`, `--emit keys`, `--emit descriptor`. To mint"),

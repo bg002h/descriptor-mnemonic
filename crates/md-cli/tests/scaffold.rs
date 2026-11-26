@@ -17,5 +17,5 @@ fn md_encode_help_runs() {
 #[test]
 fn md_no_args_fails_with_usage_error() {
     let mut cmd = Command::cargo_bin("md").unwrap();
-    cmd.assert().code(2);
+    cmd.assert().code(64);
 }

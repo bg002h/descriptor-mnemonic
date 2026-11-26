@@ -86,17 +86,24 @@ pub(crate) fn descriptor_for_mint(
     Ok((descriptor, parsed_keys, parsed_fps))
 }
 
+/// `--force-long-code` names a mode md no longer has: a usage error (64).
+/// `main` checks it before `--in` is read (R2).
+pub fn refuse_force_long_code(force_long_code: bool) -> Result<(), CliError> {
+    if force_long_code {
+        return Err(CliError::Usage(
+            "the long BCH code was removed in v0.12.0; md1 is regular-code-only (payloads >400 bits are chunked)".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn run(args: EncodeArgs<'_>) -> Result<u8, CliError> {
     // F-A3: the long BCH code was removed in v0.12.0; md1 is regular-code-only
     // (payloads that don't fit a single string are chunked). The flag is kept
     // in the clap surface (no flag-NAME removal) but referencing it is now a
     // hard error rather than a silent no-op — a flag pointing at a nonexistent
     // mode must not exit 0.
-    if args.force_long_code {
-        return Err(CliError::BadArg(
-            "the long BCH code was removed in v0.12.0; md1 is regular-code-only (payloads >400 bits are chunked)".into(),
-        ));
-    }
+    refuse_force_long_code(args.force_long_code)?;
     let (mut descriptor, parsed_keys, parsed_fps) = descriptor_for_mint(
         args.template,
         args.keys,

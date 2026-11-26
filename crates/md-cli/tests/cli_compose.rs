@@ -98,7 +98,7 @@ fn compose_refuses_a_keyless_path_without_experimental_and_admits_it_with() {
     ])
     .assert()
     .failure()
-    .code(1)
+    .code(8)
     .stderr(predicate::str::contains("--experimental"));
     md().args([
         "compose",
@@ -134,7 +134,7 @@ fn compose_refuses_structural_defects_with_the_spec_wording() {
         "--experimental",
     ])
     .assert()
-    .failure()
+    .code(2)
     // F-551: "needs exactly N ... got M". The old wording ended ", lowercase",
     // which named a second rule the input might already satisfy -- and did, for
     // an uppercase digest of the right length.
@@ -143,13 +143,13 @@ fn compose_refuses_structural_defects_with_the_spec_wording() {
     ));
     md().args(["compose", "--wrapper", "sh", "--path", "1of1"])
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicate::str::contains(
             "legacy wrappers hold one plain sorted multisig only",
         ));
     md().args(["compose", "--wrapper", "wsh", "--path", "1of1,older=65536"])
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicate::str::contains("older in blocks needs 1..=65535"));
     md().args([
         "compose",
@@ -159,7 +159,7 @@ fn compose_refuses_structural_defects_with_the_spec_wording() {
         "1of1,older=4194305",
     ])
     .assert()
-    .failure()
+    .code(2)
     .stderr(predicate::str::contains("older in blocks needs 1..=65535"));
     // A Unix time typed without its suffix is refused WITH the suffix named.
     md().args([
@@ -170,7 +170,7 @@ fn compose_refuses_structural_defects_with_the_spec_wording() {
         "1of1,after=1893456000",
     ])
     .assert()
-    .failure()
+    .code(2)
     .stderr(predicate::str::contains("after=1893456000t"));
 }
 

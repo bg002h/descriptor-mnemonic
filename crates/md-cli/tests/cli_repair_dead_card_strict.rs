@@ -3,7 +3,7 @@
 //!   1. An untouched dead card (`canonical_origin == None`, no explicit
 //!      origin) is UN-repairable via `md repair` — exit 2 (unchanged).
 //!   2. A BCH correction that resolves to a dead card is PRUNED — exit 2
-//!      (never `Ok`/exit 5, i.e. never treated as a successful repair of a
+//!      (never `Ok`/exit 16, i.e. never treated as a successful repair of a
 //!      dead card).
 //!
 //! `md_codec::decode_with_correction` was NOT given a partial variant (see
@@ -94,12 +94,12 @@ fn untouched_dead_card_is_unrepairable_exit_2() {
 }
 
 #[test]
-fn correction_resolving_to_dead_card_is_pruned_exit_2_never_ok_or_5() {
+fn correction_resolving_to_dead_card_is_pruned_exit_2_never_ok_or_16() {
     let chunks = encode_chunked(DEAD_TEMPLATE);
     assert_eq!(chunks.len(), 1);
     // A small, correctable (<=4 symbol errors) corruption. If
     // `decode_with_correction` were to opt into partial decode, this would
-    // succeed (exit 5, REPAIR_APPLIED) since the corrected bytes decode to
+    // succeed (exit 16, REPAIRED) since the corrected bytes decode to
     // the same dead-shape descriptor. Per P1.3 (repair stays strict), the
     // correction candidate is PRUNED (the origin gate rejects it) — exit 2.
     let corrupted = corrupt_at(&chunks[0], 10, 0b10110);
@@ -114,8 +114,8 @@ fn correction_resolving_to_dead_card_is_pruned_exit_2_never_ok_or_5() {
         "a correction resolving to a dead card must NOT silently pass as exit 0"
     );
     assert_ne!(
-        code, 5,
-        "a correction resolving to a dead card must NEVER be reported as REPAIR_APPLIED (exit 5) \
+        code, 16,
+        "a correction resolving to a dead card must NEVER be reported as REPAIRED (exit 16) \
          — repair does not opt into partial-decode (P1.3)"
     );
     assert_eq!(

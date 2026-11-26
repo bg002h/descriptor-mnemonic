@@ -309,7 +309,7 @@ fn a_master_xpub_cannot_be_seated_at_all() {
     // pins WHY the CLI cannot exercise the guard; `emit_unhardened_origin_note`'s
     // own unit test reaches depth 0 directly.
     let (stdout, stderr, code) = encode_keyed("wpkh(@0/0/*)", &[&format!("@0={MASTER}")]);
-    assert_eq!(code, 1, "a master xpub must be refused: {stderr}");
+    assert_eq!(code, 2, "a master xpub must be refused: {stderr}");
     assert!(
         stderr.contains("account-level xpub at depth 3 or 4") && stderr.contains("got 0"),
         "the refusal must name the depth: {stderr}"

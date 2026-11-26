@@ -249,7 +249,7 @@ fn r3_one_xpub_off_is_not_spend_equal_and_names_the_values_half() {
     }
     c.args(["--verify-against", target.to_str().unwrap()]);
     let o = c.output().unwrap();
-    assert_eq!(o.status.code(), Some(5), "{}", err_of(&o));
+    assert_eq!(o.status.code(), Some(1), "{}", err_of(&o));
     assert_one_rendered_line(&o, &not_equal_line("VALUES"));
     // stdout still carries the PRIMARY composition -- a NOT-equal verdict
     // is not an error, and every A2/A3/A4 rule ran exactly as it does
@@ -310,7 +310,7 @@ fn r3_garbage_verify_against_argument_is_a_decode_error_never_a_verdict() {
     }
     c.args(["--verify-against", "not-a-real-md1-or-file-r3-garbage-row"]);
     let o = c.output().unwrap();
-    assert_eq!(o.status.code(), Some(1), "{}", err_of(&o));
+    assert_eq!(o.status.code(), Some(2), "{}", err_of(&o));
     let stderr = err_of(&o);
     assert!(
         stderr.starts_with("md: --verify-against not-a-real-md1-or-file-r3-garbage-row:"),
@@ -362,7 +362,7 @@ fn r3_verify_against_argument_colliding_with_a_real_filename_says_a_file_was_rea
     }
     c.args(["--verify-against", colliding_name]);
     let o = c.output().unwrap();
-    assert_eq!(o.status.code(), Some(1), "{}", err_of(&o));
+    assert_eq!(o.status.code(), Some(2), "{}", err_of(&o));
     let stderr = err_of(&o);
     assert!(
         stderr.starts_with(&format!("md: --verify-against {colliding_name}:")),
@@ -420,7 +420,7 @@ fn r3_an_empty_verify_against_file_names_verify_against_not_in() {
 /// line on stderr is still printed.
 #[cfg(target_os = "linux")]
 #[test]
-fn r3_a_not_equal_verdict_whose_stdout_is_lost_exits_1_and_keeps_the_verdict_line() {
+fn r3_a_not_equal_verdict_whose_stdout_is_lost_exits_33_and_keeps_the_verdict_line() {
     let (_, x1) = key_record(1);
     let (_, x2) = key_record(2);
     let (_, x3) = key_record(3);
@@ -441,7 +441,7 @@ fn r3_a_not_equal_verdict_whose_stdout_is_lost_exits_1_and_keeps_the_verdict_lin
         .output()
         .unwrap();
     let err = err_of(&o);
-    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert_eq!(o.status.code(), Some(33), "{err}");
     assert!(err.contains(&not_equal_line("VALUES")), "{err}");
     assert_eq!(
         err.lines().last(),

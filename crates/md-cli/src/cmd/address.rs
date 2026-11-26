@@ -25,7 +25,13 @@ pub struct AddressArgs<'a> {
 pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
     // R9 — checked before either branch below decides what to build; see
     // its own doc comment in cmd::build for why it must run first.
-    crate::cmd::build::check_from_mk1_arity(args.phrases, args.from_mk1, args.template, "address")?;
+    crate::cmd::build::check_from_mk1_arity(
+        args.phrases,
+        args.from_mk1,
+        false,
+        args.template,
+        "address",
+    )?;
 
     // P2 — the S row, exactly as on `md descriptor`: the two commands must
     // seat identically or one of them derives a different wallet.
@@ -60,7 +66,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
         seating.descriptor
     };
     if !descriptor.is_wallet_policy() {
-        return Err(CliError::BadArg(
+        return Err(CliError::Input(
             "address requires wallet-policy mode (Pubkeys TLV): this card is a keyless \
              TEMPLATE. Supply the matching mk1 key cards with --from-mk1 <STRING> \
              (repeatable) or --from-mk1-file <FILE>, or rebuild the policy with \
@@ -73,7 +79,7 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
     let mut rows: Vec<(u32, u32, String)> = Vec::with_capacity(args.count as usize);
     for k in 0..args.count {
         let i = args.index.checked_add(k).ok_or_else(|| {
-            CliError::BadArg(format!(
+            CliError::Usage(format!(
                 "--index + --count overflows u32: {} + {}",
                 args.index, args.count
             ))

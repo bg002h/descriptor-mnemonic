@@ -171,7 +171,7 @@ fn repair_accepts_grouped_stdin_chunk() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Cell 1: single-chunk happy path — 1 char corruption, exit 5, correction
+// Cell 1: single-chunk happy path — 1 char corruption, exit 16, correction
 // restores original chunk. Fixture is a small wpkh template encoded with
 // --force-chunked to produce 1 chunked-form chunk (decode_with_correction
 // requires chunked-form input; non-chunked single-string md1 fails the
@@ -199,8 +199,8 @@ fn repair_single_chunk_happy_path() {
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
-        5,
-        "expected exit 5 (REPAIR_APPLIED); stderr={}",
+        16,
+        "expected exit 16 (REPAIRED); stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8(out.stdout).expect("stdout utf-8");
@@ -255,7 +255,7 @@ fn repair_multi_chunk_all_valid_passthrough() {
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cell 3: multi-chunk one-corrupted — 3+ chunks, 1 corrupted by 1 char,
-// exit 5, exactly 1 correction with the correct chunk_index.
+// exit 16, exactly 1 correction with the correct chunk_index.
 // ──────────────────────────────────────────────────────────────────────────
 #[test]
 fn repair_multi_chunk_one_corrupted() {
@@ -273,8 +273,8 @@ fn repair_multi_chunk_one_corrupted() {
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
-        5,
-        "expected exit 5 (REPAIR_APPLIED); stderr={}",
+        16,
+        "expected exit 16 (REPAIRED); stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8(out.stdout).expect("stdout utf-8");
@@ -374,8 +374,8 @@ fn repair_json_multi_chunk_envelope_shape() {
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
-        5,
-        "expected exit 5 for JSON-mode multi-chunk repair; stderr={}",
+        16,
+        "expected exit 16 for JSON-mode multi-chunk repair; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
 

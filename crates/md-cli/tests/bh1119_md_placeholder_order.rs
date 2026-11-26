@@ -242,6 +242,6 @@ fn e16_i2_sortedmulti_respelled_same_wallet() {
 fn e17_i2_noncanonical_replaced_key() {
     let t = "wsh(multi(2,@1/<0;1>/*,@0/<0;1>/*))";
     let (rc, err) = verify(t, t, KC);
-    assert_eq!(rc, 5, "{err}");
+    assert_eq!(rc, 1, "{err}");
     assert!(err.contains("NOT spend-equal"), "{err}");
 }
