@@ -88,6 +88,13 @@ fn the_json_report_keeps_the_d27_shape() {
         serde_json::from_str(&out).unwrap_or_else(|e| panic!("not JSON ({e}): {out}"));
     assert_eq!(v["corrected_chunks"][0], V12_CLEAN, "{v}");
     assert_eq!(v["repairs"].as_array().map(Vec::len), Some(1), "{v}");
+    assert_eq!(v["not_a_card"]["kind"], "WireVersionMismatch", "{v}");
+    assert!(
+        v["not_a_card"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("12")),
+        "{v}"
+    );
 }
 
 #[test]

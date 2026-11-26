@@ -83,7 +83,7 @@ fn compile_segwitv0_rejects_unspendable_key() {
             "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
         ])
         .assert()
-        .failure()
+        .code(64)
         .stderr(predicates::str::contains(
             "--unspendable-key is only valid for --context tap",
         ));
@@ -106,7 +106,7 @@ fn compile_empty_unspendable_key_rejected() {
             "",
         ])
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicates::str::contains(
             "--unspendable-key must not be empty",
         ));
@@ -152,7 +152,7 @@ fn compile_unspendable_key_rejects_xpub_form() {
             "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz",
         ])
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicates::str::contains(
             "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex",
         ))
@@ -175,7 +175,7 @@ fn compile_unspendable_key_rejects_non_nums_x_only_hex() {
             "0000000000000000000000000000000000000000000000000000000000000001",
         ])
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicates::str::contains(
             "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex",
         ));
@@ -198,7 +198,7 @@ fn encode_from_policy_unspendable_key_rejects_xpub_form() {
             "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz",
         ])
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicates::str::contains(
             "--unspendable-key currently only accepts the BIP-341 NUMS H-point literal hex",
         ));

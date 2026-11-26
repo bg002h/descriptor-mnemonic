@@ -321,7 +321,7 @@ fn the_reading_verbs_render_in_and_argv_as_alternatives() {
         let err = String::from_utf8(
             cmd.args(["--in", "/dev/null", "md1yqpqqxqq8xtwhw4xwn4qh"])
                 .assert()
-                .failure()
+                .code(64)
                 .get_output()
                 .stderr
                 .clone(),

@@ -274,3 +274,70 @@ fn with_chunk_index(chunk: &str, index: u64) -> String {
     }
     md_codec::codex32::wrap_payload(&w.into_bytes(), bits).unwrap()
 }
+
+/// A non-chunked version-4 string that passes its checksum but is not a card,
+/// with one substitution, so `repair` corrects it to a string that does not
+/// decode (decision 6, 22).
+fn damaged_non_card() -> String {
+    let clean = md_codec::codex32::wrap_payload(&[0x40, 0xff, 0xff, 0xff, 0xff], 40).unwrap();
+    assert_eq!(run(&["decode", &clean]).0, 2, "the fixture must not decode");
+    let mut s: Vec<char> = clean.chars().collect();
+    s[6] = if s[6] == 'q' { 'p' } else { 'q' };
+    s.into_iter().collect()
+}
+
+/// M-3 (final review): `repair --json` says what its exit code says. At 22
+/// it carries `not_a_card: {kind, message}`; for an incomplete set or a lone
+/// chunk it carries `incomplete: true`. Both are absent otherwise, and both
+/// sit after `kind`, before `corrected_chunks`.
+#[test]
+fn repair_json_carries_not_a_card_and_incomplete() {
+    let json = |args: &[&str]| -> (i32, String, serde_json::Value) {
+        let (code, out, err) = run(args);
+        let v = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{e}: {out} {err}"));
+        (code, out, v)
+    };
+    let bad = damaged_non_card();
+    let (code, out, v) = json(&["repair", "--json", &bad]);
+    assert_eq!(code, 22, "{out}");
+    assert!(v["not_a_card"]["kind"].is_string(), "{v}");
+    assert!(v["not_a_card"]["message"].is_string(), "{v}");
+    assert!(v.get("incomplete").is_none(), "{v}");
+    assert!(
+        out.starts_with(r#"{"schema_version":"1","kind":"md1","not_a_card":{"kind":"#),
+        "{out}"
+    );
+
+    for (args, want) in [
+        (&["repair", "--json", C2_BAD][..], 16),
+        (&["repair", "--json", C1][..], 0),
+        (&["repair", "--json", C1, C2_BAD][..], 16),
+    ] {
+        let (code, out, v) = json(args);
+        assert_eq!(code, want, "{args:?}");
+        assert_eq!(v["incomplete"], true, "{v}");
+        assert!(v.get("not_a_card").is_none(), "{v}");
+        assert!(
+            out.starts_with(
+                r#"{"schema_version":"1","kind":"md1","incomplete":true,"corrected_chunks""#
+            ),
+            "{out}"
+        );
+    }
+    for (args, want) in [
+        (&["repair", "--json", C1, C2_BAD, C3][..], 16),
+        (&["repair", "--json", "md1yqpqqxqq8xtwhw4xwn4qq"][..], 20),
+        (&["repair", "--json", OK][..], 0),
+    ] {
+        let (code, out, v) = json(args);
+        assert_eq!(code, want, "{args:?}");
+        assert!(
+            v.get("incomplete").is_none() && v.get("not_a_card").is_none(),
+            "{v}"
+        );
+        assert!(
+            out.starts_with(r#"{"schema_version":"1","kind":"md1","corrected_chunks""#),
+            "{out}"
+        );
+    }
+}

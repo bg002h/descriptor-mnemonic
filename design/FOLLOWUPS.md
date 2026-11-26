@@ -86,6 +86,23 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
 
 ## Open items
 
+### `md-json-error-envelope` — `md … --json` prints no error envelope on stdout when it fails; mk and ms do
+- **Surfaced:** final exit-code review, mnemonic-engrave `design/agent-reports/exit-codes-2026-11-26/final-review-md-mk-ms.md` M-3.
+- **Where:** `crates/md-cli/src/main.rs` (`main` prints `md: {e}` on stderr and exits `e.exit_code()`). Each verb's `--json` flag is local to its arm, so `main` cannot tell that `--json` was given.
+- **What:** under `--json`, a failing `md` verb (exit 2, 8, 32, 64 or 101) leaves stdout empty and puts the text on stderr. `mk` and `ms` print a JSON error envelope (`kind`, `message`, `exit_code`) on stdout. A consumer that reads only stdout therefore handles md differently.
+- **Why deferred:** this is not small. It needs `--json` threaded to `main` for every verb, a `kind` word per `CliError` class, and the kind names settled across the three CLIs. Those names already differ between mk and ms (review N-3). `md repair --json` did gain `not_a_card` and `incomplete` in this cycle.
+- **Status:** `open`
+- **Tier:** `cross-repo`
+
+### `closed-stdout-windows-gap` — a stdout closed at start is not detected on Windows (md, mk, ms)
+- **Surfaced:** final exit-code review M-8.
+- **Where:** `crates/md-cli/src/out.rs` `fd_probe`, which is built only for Linux, Android, macOS, iOS and the BSDs. mk and ms carry the same probe.
+- **What:** on Windows and the platforms not listed, `md … >&-` still loses its output and returns the verb's own code (0 for a clean run). The README and CHANGELOG say so.
+- **Why deferred:** Windows needs a different probe (`GetStdHandle` returning a null or invalid handle). It has not been designed or tested there.
+- **Status:** `open`
+- **Tier:** `cross-repo`
+- **Companion:** the same gap is documented in mnemonic-secret (CHANGELOG, `SPEC_ms_cli_v0_1.md`) and mnemonic-key (to be documented in its CHANGELOG).
+
 ### `md-exit-codes-manual-lockstep` — the toolkit's user manual and GUI manual still state md's pre-cutover exit codes (companion to toolkit)
 - **Surfaced:** independent review of the exit-code cutover, `design/agent-reports/exit-codes-impl-review-2026-11-26.md` M-7.
 - **Where:** mnemonic-toolkit `docs/manual/src/40-cli-reference/42-md.md` and `docs/manual-gui/src/50-md/`; mnemonic-engrave `demo/sh2/rehearse.sh:60`; mnemonic-gui's exit badge (spec §7j).
@@ -114,6 +131,7 @@ The `<short-id>` is a stable handle (e.g., `5d-from-impl`, `5e-checksum-correcti
       - :241 is 2 for an xprv and 8 for a key of the other network.
     - 5F-decompose:116/152-154 is 2.
   - `rehearse.sh:60` expects 5 from `md repair` of a single string; it now gets 20.
+  - `md repair --json` gains `not_a_card` (at 22) and `incomplete: true` (an incomplete set or lone chunk). The JSON schema in `42-md.md` and in the GUI's repair page should list both.
 - **Why deferred:** these are cross-repo changes, made by the toolkit, engrave and GUI changes that pair with this cutover.
 - **Status:** `open`
 - **Tier:** `cross-repo`

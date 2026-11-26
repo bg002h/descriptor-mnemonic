@@ -27,9 +27,10 @@
 //!
 //! Text output mirrors `mnemonic repair`'s text-form report shape (see
 //! `mnemonic-toolkit/src/cmd/repair.rs::emit_repair_text`). JSON output
-//! byte-matches the toolkit's standalone `RepairJson` schema (D27 — fields
+//! follows the toolkit's standalone `RepairJson` schema (D27 — fields
 //! `schema_version`, `kind`, `corrected_chunks`, `repairs`) so cross-CLI
-//! parsers reuse the same struct.
+//! parsers reuse the same struct. Two fields are added only when they
+//! apply: `not_a_card` at 22 and `incomplete` for decision 7's set.
 
 use clap::Args;
 
@@ -56,8 +57,8 @@ pub struct RepairArgs {
     pub in_file: Option<std::path::PathBuf>,
 
     /// Emit a single JSON envelope on stdout instead of the text-form
-    /// report. Schema byte-matches `mnemonic repair --json`'s
-    /// `RepairJson` shape (cross-CLI parser reuse).
+    /// report: `mnemonic repair --json`'s `RepairJson` shape, plus
+    /// `not_a_card` at exit 22 and `incomplete: true` for an incomplete set.
     #[arg(long)]
     pub json: bool,
 }
@@ -116,7 +117,12 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
     };
     match decoded {
         Ok(descriptor) => {
-            emit(&corrected_chunks, &reports, args.json)?;
+            emit(
+                &corrected_chunks,
+                &reports,
+                args.json,
+                &JsonExtra::default(),
+            )?;
             // L4 (cycle-9): a wallet-policy md1 (non-empty Pubkeys TLV) is
             // WatchOnly; a keyless md1 is a Template.
             let class = if descriptor.is_wallet_policy() {
@@ -151,7 +157,12 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
                 eprintln!("md: repair: {why}");
                 return Ok(INVALID);
             }
-            emit(&corrected_chunks, &reports, args.json)?;
+            emit(
+                &corrected_chunks,
+                &reports,
+                args.json,
+                &JsonExtra::incomplete(),
+            )?;
             if any_correction {
                 eprintln!(
                     "md: repair: the chunk set is incomplete ({got} of {expected} chunks): each \
@@ -179,7 +190,12 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
                 );
                 return Ok(INVALID);
             }
-            emit(&corrected_chunks, &reports, args.json)?;
+            emit(
+                &corrected_chunks,
+                &reports,
+                args.json,
+                &JsonExtra::not_a_card(&md_codec::Error::WireVersionMismatch { got }),
+            )?;
             unsupported_version_notes(got);
             Ok((Bits::of(REPAIRED) | UNVERIFIED | INVALID).to_exit_code())
         }
@@ -187,7 +203,12 @@ pub fn run(args: RepairArgs) -> Result<u8, CliError> {
         // printed with its warning, since a person repairing by hand needs
         // to see it.
         Err(e) if single_unchunked && any_correction => {
-            emit(&corrected_chunks, &reports, args.json)?;
+            emit(
+                &corrected_chunks,
+                &reports,
+                args.json,
+                &JsonExtra::not_a_card(&e),
+            )?;
             eprintln!(
                 "md: repair: the corrected string passed its checksum but is not a card md \
                  can decode: {e}. Do not trust it."
@@ -254,9 +275,49 @@ fn is_chunked(s: &str) -> bool {
         .is_none_or(|v| v & 1 == 1)
 }
 
-fn emit(corrected_chunks: &[String], reports: &[RepairDetail], json: bool) -> Result<(), CliError> {
+/// What `--json` adds to the D27 envelope so stdout says what the exit code
+/// says (final review M-3). Both fields are absent from the 0, 16 and 20
+/// envelopes of a complete card, which therefore keep their old bytes.
+#[derive(Default)]
+struct JsonExtra {
+    /// Decision 6's 22: why the corrected string is not a card.
+    not_a_card: Option<(String, String)>,
+    /// Decision 7: an incomplete set or a lone chunk, verified only when the
+    /// rest of the set is reassembled.
+    incomplete: bool,
+}
+
+impl JsonExtra {
+    fn incomplete() -> Self {
+        JsonExtra {
+            incomplete: true,
+            ..JsonExtra::default()
+        }
+    }
+
+    /// `kind` is the codec error's variant name, as ms names its own.
+    fn not_a_card(e: &md_codec::Error) -> Self {
+        let debug = format!("{e:?}");
+        let kind = debug
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        JsonExtra {
+            not_a_card: Some((kind, e.to_string())),
+            incomplete: false,
+        }
+    }
+}
+
+fn emit(
+    corrected_chunks: &[String],
+    reports: &[RepairDetail],
+    json: bool,
+    extra: &JsonExtra,
+) -> Result<(), CliError> {
     if json {
-        emit_json(corrected_chunks, reports)
+        emit_json(corrected_chunks, reports, extra)
     } else {
         emit_text(corrected_chunks, reports);
         Ok(())
@@ -368,17 +429,33 @@ fn emit_text(corrected_chunks: &[String], reports: &[RepairDetail]) {
     let _ = CODEX32_ALPHABET;
 }
 
-// JSON envelope — schema MUST byte-match toolkit's standalone `RepairJson`
-// at `mnemonic-toolkit/src/cmd/repair.rs:162-183` (D27 cross-CLI parser
-// reuse). Field order is part of the schema (serde preserves struct field
-// order in the default JSON serializer).
+// JSON envelope — toolkit's standalone `RepairJson` at
+// `mnemonic-toolkit/src/cmd/repair.rs:162-183` (D27 cross-CLI parser reuse),
+// byte for byte when neither optional field applies. Field order is part of
+// the schema (serde preserves struct field order in the default JSON
+// serializer).
 #[cfg(feature = "json")]
 #[derive(serde::Serialize)]
 struct RepairJson<'a> {
     schema_version: &'static str,
     kind: &'static str,
+    /// Present only at exit 22 (decision 6): why the corrected string is not
+    /// a card. Named and shaped as ms's field; md has no `verdict`, so it
+    /// follows `kind`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    not_a_card: Option<NotACardJson<'a>>,
+    /// `true` only for an incomplete set or a lone chunk (decision 7).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    incomplete: bool,
     corrected_chunks: &'a [String],
     repairs: Vec<RepairJsonDetail<'a>>,
+}
+
+#[cfg(feature = "json")]
+#[derive(serde::Serialize)]
+struct NotACardJson<'a> {
+    kind: &'a str,
+    message: &'a str,
 }
 
 #[cfg(feature = "json")]
@@ -399,10 +476,19 @@ struct RepairJsonPosition {
 }
 
 #[cfg(feature = "json")]
-fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<(), CliError> {
+fn emit_json(
+    corrected_chunks: &[String],
+    reports: &[RepairDetail],
+    extra: &JsonExtra,
+) -> Result<(), CliError> {
     let envelope = RepairJson {
         schema_version: "1",
         kind: "md1",
+        not_a_card: extra
+            .not_a_card
+            .as_ref()
+            .map(|(kind, message)| NotACardJson { kind, message }),
+        incomplete: extra.incomplete,
         corrected_chunks,
         repairs: reports
             .iter()
@@ -432,7 +518,11 @@ fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
 }
 
 #[cfg(not(feature = "json"))]
-fn emit_json(_corrected_chunks: &[String], _reports: &[RepairDetail]) -> Result<(), CliError> {
+fn emit_json(
+    _corrected_chunks: &[String],
+    _reports: &[RepairDetail],
+    _extra: &JsonExtra,
+) -> Result<(), CliError> {
     Err(CliError::Io(
         "--json requires the `json` feature (rebuild with --features json)".into(),
     ))

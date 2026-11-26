@@ -66,7 +66,7 @@ fn a_keyless_hashlock_reaches_a_descriptor_and_an_address_at_every_kind() {
         let r = md()
             .args(["descriptor", "--template", &t, "--key", K0, "--key", K1])
             .assert()
-            .failure();
+            .code(8);
         let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
         assert!(
             err.contains("require a signature"),
@@ -152,7 +152,7 @@ fn compose_hash_refusals_name_the_clause_that_was_violated() {
             "--experimental",
         ])
         .assert()
-        .failure();
+        .code(2);
     let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
     assert!(
         e.contains("LOWERCASE") && e.contains("never folded"),
@@ -176,7 +176,7 @@ fn compose_hash_refusals_name_the_clause_that_was_violated() {
             "--experimental",
         ])
         .assert()
-        .failure();
+        .code(2);
     let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
     assert!(
         e.contains("needs exactly 64") && e.contains("got 3"),
@@ -196,7 +196,7 @@ fn compose_hash_refusals_name_the_clause_that_was_violated() {
             "--experimental",
         ])
         .assert()
-        .failure();
+        .code(2);
     let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
     assert!(
         e.contains("This md supports all four"),
@@ -250,7 +250,7 @@ fn the_keyless_signature_rule_is_what_decompose_keys_on() {
     let r = md()
         .args(["descriptor", "--template", &t, "--key", K0, "--key", K1])
         .assert()
-        .failure();
+        .code(8);
     let e = String::from_utf8_lossy(&r.get_output().stderr).to_string();
     assert!(
         e.contains("require a signature"),

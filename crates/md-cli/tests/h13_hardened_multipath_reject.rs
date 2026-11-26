@@ -125,7 +125,7 @@ fn encode_malformed_hardened_multipath_rejects() {
                 "regtest",
             ])
             .assert()
-            .failure() // non-zero exit — NEVER exit 0 / silent collapse
+            .code(2) // non-zero exit — NEVER exit 0 / silent collapse
             // Must NOT silently emit a (collapsed) md1 phrase on stdout.
             .stdout(predicate::str::contains("md1").not())
             .get_output()

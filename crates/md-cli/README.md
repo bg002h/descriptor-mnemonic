@@ -103,6 +103,11 @@ or `--md-only`, an output that is one of the inputs), 16 a correction was
 applied (`repair`), 32 a file or stdout failed, or this build lacks a
 feature the command needs.
 
+A stdout that cannot take the output adds 32 to the verb's code. A stdout
+closed at start (`md … >&-`) is detected on Linux, Android, macOS, iOS and the
+BSDs. On Windows and other platforms the closed stream is not seen: the
+output is lost and the verb's own code is returned (0 for a clean run).
+
 ### Network selection
 
 `md encode`, `md verify`, and `md address` accept
@@ -126,7 +131,7 @@ md repair md1q...
 # encoding in a single call.
 md repair md1q... md1q... md1q...
 
-# JSON envelope (cross-CLI parser reuse: byte-matches
+# JSON envelope (cross-CLI parser reuse: the D27 `RepairJson` shape of
 # `mnemonic repair --json` / `ms repair --json` / `mk repair --json`):
 md repair --json md1q...
 
@@ -140,7 +145,7 @@ printf '%s\n%s\n' "$BAD_C0" "$BAD_C1" | md repair -
 | `16` | REPAIRED: a correction was applied and is verified by reassembly (a chunk set's content id), or will be when the rest of an incomplete set is reassembled. An incomplete set, or one chunk of a larger set, is corrected chunk by chunk and printed. |
 | `20` | REPAIRED + UNVERIFIED (16 + 4): a correction to a single string that is not chunked; nothing checks it a second time, so verify the card before trusting it. |
 | `22` | REPAIRED + UNVERIFIED + INVALID (16 + 4 + 2): a corrected single string that still does not decode, for example a wire version this build cannot read (stderr names the version and the accepted set). The corrected string is printed. |
-| `2` | INVALID, nothing printed: ANY chunk exceeding BCH `t=4` capacity aborts the whole call (plan §1 D28; the failing chunk index is named on stderr), and so do a wrong HRP, a clean string that does not decode, a complete set that does not reassemble, and several strings at an unsupported wire version. |
+| `2` | INVALID, nothing printed: ANY chunk exceeding BCH `t=4` capacity aborts the whole call (plan §1 D28; the failing chunk index is named on stderr), and so do a wrong HRP, a clean string that does not decode, a complete set that does not reassemble, a chunk set with a repeated, stray or extra chunk, and several strings at an unsupported wire version. |
 | `32` | IO: an input file that cannot be read, or stdout that cannot take the output (added to the code above). |
 | `64` | a bad command line. |
 
@@ -162,20 +167,30 @@ JSON envelope schema (`schema_version: "1"`, `kind: "md1"`):
 }
 ```
 
+Two fields are added only when they apply, after `kind` and before
+`corrected_chunks`; a complete card's 0, 16 and 20 envelopes do not carry
+them:
+
+- `"not_a_card": {"kind": "<md-codec error>", "message": "..."}` at exit 22:
+  why the corrected string is not a card (the name and shape `ms repair
+  --json` uses).
+- `"incomplete": true` for an incomplete chunk set or a lone chunk (exit 0
+  or 16): the corrections are verified only when the rest of the set is
+  reassembled.
+
+On a failure (exit 2, 32 or 64) `md repair --json` prints nothing on stdout;
+the error is on stderr.
+
 `md repair` is the per-codec sibling of toolkit's `mnemonic repair`
 (see `mnemonic-toolkit/docs/manual/src/40-cli-reference/41-mnemonic.md`
 `## mnemonic repair`). It wraps `md_codec::decode_with_correction` from
-md-codec v0.34.0+ and shares the `RepairJson` envelope schema byte-exact
-with the other three CLIs (cross-CLI parser reuse per plan D27).
+md-codec v0.34.0+ and shares the D27 `RepairJson` envelope schema with the
+other three CLIs (cross-CLI parser reuse); the two fields above are md's and
+ms's additions to it.
 
-**v0.6.0 limitation — chunked-form only:** `md repair` requires
-chunked-form md1 input (chunks bearing a chunk header, as emitted by
-`md encode --force-chunked` or by automatic chunking when the payload
-exceeds 320 bits). Non-chunked single-string md1 (the form emitted by
-plain `md encode` for small payloads) is rejected with a wire-format
-error. For non-chunked-form input, use `md decode` for read-only
-inspection. Tracked for resolution at
-`design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`.
+`md repair` takes chunked-form md1 and non-chunked single-string md1 alike
+(single strings since md-codec v0.35.0). A single string has no second
+check, so its correction exits 20 and should be verified before use.
 
 ## Cargo features
 

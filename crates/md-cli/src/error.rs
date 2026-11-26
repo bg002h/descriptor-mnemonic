@@ -332,7 +332,8 @@ mod tests {
     /// Spec R13: each variant's §3 class, stated here row by row rather
     /// than copied from `exit_code`. `exit_code` and `codec_class` have no
     /// wildcard, so a new variant fails to compile until it is classed
-    /// there; a row for it is added here by hand.
+    /// there; the last assertion reads the `CliError` enum's source and
+    /// fails until every variant also has a row here.
     #[test]
     fn every_variant_maps_to_its_class() {
         use md_codec::Error as E;
@@ -374,6 +375,31 @@ mod tests {
         for (e, want) in &rows {
             assert_eq!(e.exit_code(), *want, "{e:?}");
         }
+        let name = |d: &str| -> String {
+            d.split(|c: char| !c.is_ascii_alphanumeric())
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        };
+        let with_row: std::collections::BTreeSet<String> =
+            rows.iter().map(|(e, _)| name(&format!("{e:?}"))).collect();
+        let src = include_str!("error.rs");
+        let body = &src[src.find("pub enum CliError {").unwrap()..];
+        let body = &body[..body.find("\n}").unwrap()];
+        let declared: std::collections::BTreeSet<String> = body
+            .lines()
+            .skip(1)
+            .filter(|l| l.starts_with("    ") && !l.starts_with("     "))
+            .map(str::trim)
+            .filter(|l| l.starts_with(|c: char| c.is_ascii_uppercase()))
+            .map(name)
+            .collect();
+        assert!(
+            declared.len() >= 20,
+            "the enum parser found too few: {declared:?}"
+        );
+        let missing: Vec<_> = declared.difference(&with_row).collect();
+        assert!(missing.is_empty(), "variants with no row: {missing:?}");
     }
 
     #[test]
