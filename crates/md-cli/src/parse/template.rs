@@ -143,13 +143,11 @@ fn rewrite_double_wildcard<'a>(text: &'a str, re: &Regex) -> std::borrow::Cow<'a
     std::borrow::Cow::Owned(out)
 }
 
-/// Pass A: extract every `@i/...` placeholder from the raw template string.
-pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, CliError> {
-    // BIP-388 `/**` sugar, resolved before ANY other pass reads the template.
-    let desugared = desugar_double_wildcard(template);
-    let template: &str = &desugared;
+/// The placeholder lexer regex [`lex_placeholders`] uses (shared with the
+/// bug hunt 2026-11-25 md#3 wildcard checks so the two cannot disagree).
+fn placeholder_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
+    RE.get_or_init(|| {
         // Captures:
         //   1: @i index digits
         //   2: optional origin path (e.g. "/48'/0'/0'/2'")
@@ -182,7 +180,53 @@ pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, Cl
         // requirement, instead of misdirecting through M5.
         Regex::new(r"@(\d+)((?:/\d+(?:'|h)?)*)(?:/<([^>]*)>)?(/\*(?:'|h)?)?")
             .expect("static regex compiles")
-    });
+    })
+}
+
+/// Bug hunt 2026-11-25 md#3 and r1 A2 (owner ruling 2026-11-25): REFUSE,
+/// when minting, a placeholder with no trailing wildcard. With a multipath
+/// group (`@0/<0;1>`) that is two FIXED keys; with no use-site tail at all
+/// (`@0`, `@0/84'/0'/0'`) it is one fixed key. Either way it is a different
+/// wallet from the ranged form an md1 card records (`@0/<0;1>/*`, `@0/*`): the
+/// use-site block cannot hold a fixed key (see `md_codec::use_site_path`), and
+/// `md decompose` refuses the same shape on a concrete descriptor. Called
+/// only under the minting disposition, so reading verbs and existing cards
+/// (including bare-`@N` cards minted before A2 as `/*`) are unaffected.
+pub(crate) fn refuse_placeholder_without_wildcard(template: &str) -> Result<(), CliError> {
+    let desugared = desugar_double_wildcard(template);
+    for c in placeholder_regex().captures_iter(&desugared) {
+        if c.get(4).is_some() {
+            continue;
+        }
+        let i = &c[1];
+        return Err(CliError::Unsupported(match c.get(3) {
+            Some(m) => {
+                let alts = m.as_str();
+                format!(
+                    "@{i} has use-site `/<{alts}>` with no trailing `/*`, which an md1 card \
+                     cannot hold: the card records every key as ranged, so a card minted from \
+                     this template would describe `@{i}/<{alts}>/*`, a different wallet. Write \
+                     `@{i}/<{alts}>/*` if that is the wallet you mean."
+                )
+            }
+            None => format!(
+                "@{i} has no use-site tail, which an md1 card cannot hold: the card records \
+                 every key as ranged, so a card minted from this template would describe \
+                 `@{i}/*`, a different wallet from the single key `@{i}` names. Write \
+                 `@{i}/<0;1>/*` for a receive and change pair, or `@{i}/*` for one ranged \
+                 chain."
+            ),
+        }));
+    }
+    Ok(())
+}
+
+/// Pass A: extract every `@i/...` placeholder from the raw template string.
+pub fn lex_placeholders(template: &str) -> Result<Vec<PlaceholderOccurrence>, CliError> {
+    // BIP-388 `/**` sugar, resolved before ANY other pass reads the template.
+    let desugared = desugar_double_wildcard(template);
+    let template: &str = &desugared;
+    let re = placeholder_regex();
 
     // REFUSE a descriptor-style origin PREFIX before it can confuse anyone.
     //
@@ -2919,6 +2963,36 @@ pub fn parse_template_ext(
     experimental: bool,
     reuse: crate::parse::reuse::Disposition,
 ) -> Result<Descriptor, CliError> {
+    parse_template_impl(template, keys, fingerprints, experimental, reuse, true)
+}
+
+/// The minting parse WITHOUT the dead-leaf rule (md review r4 I-1), for
+/// `keyless_advisory::needs_no_key`, which runs it on the template of a card
+/// that already exists and asks only whether the SIGNATURE rule is what
+/// refuses it (md review r5 I-1: with the dead-leaf rule in, a card with a
+/// dead leaf and a no-key leaf lost its "spend with NO key" warning).
+pub(crate) fn parse_template_signature_probe(
+    template: &str,
+    experimental: bool,
+) -> Result<Descriptor, CliError> {
+    parse_template_impl(
+        template,
+        &[],
+        &[],
+        experimental,
+        crate::parse::reuse::Disposition::Refuse,
+        false,
+    )
+}
+
+fn parse_template_impl(
+    template: &str,
+    keys: &[ParsedKey],
+    fingerprints: &[ParsedFingerprint],
+    experimental: bool,
+    reuse: crate::parse::reuse::Disposition,
+    dead_leaf_rule: bool,
+) -> Result<Descriptor, CliError> {
     // I-1 fix (whole-branch review, Important): checked FIRST, before
     // `lex_placeholders` below — which refuses ANY template carrying no `@i`
     // placeholder outright, so a template whose only `UNSPENDABLE(liana)`
@@ -2930,6 +3004,9 @@ pub fn parse_template_ext(
     validate_marker_position(template)?;
     let ctx = ctx_for_template(template);
     let occs = lex_placeholders(template)?;
+    if matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
+        refuse_placeholder_without_wildcard(template)?;
+    }
     reject_unreferenced_bindings(&occs, keys, fingerprints)?;
     // N1 (SPEC_mdcli_mini.md §N1) runs on the OCCURRENCE LIST, so it must sit
     // ahead of `resolve_placeholders` — which collapses same-`@i` occurrences
@@ -3016,6 +3093,31 @@ pub fn parse_template_ext(
         }
         d
     };
+    // md review r4 I-1, MINTING verbs only: a tap leaf with no satisfaction
+    // is a spend path that does not exist (with no other path, the wallet
+    // cannot be spent). rust-miniscript's sanity and `ext_check` rules miss
+    // it in `tr` (its `Tap` limits check reads `sat_data` only when present);
+    // they refuse the same shape in `wsh`/`sh`. Reading verbs and existing
+    // cards are unchanged, and so is the signature probe the read verbs run
+    // on an existing card's template (`dead_leaf_rule` false).
+    if dead_leaf_rule && matches!(reuse, crate::parse::reuse::Disposition::Refuse) {
+        if let MsDescriptor::Tr(inner) = &ms_desc {
+            use miniscript::ScriptContext as _;
+            let n = inner.leaves().count();
+            for (i, item) in inner.leaves().enumerate() {
+                if miniscript::Tap::max_satisfaction_size(item.miniscript()).is_none() {
+                    // The leaf's text would show the synthetic keys, so name
+                    // it by position (taptree order, left to right).
+                    return Err(CliError::TemplateParse(format!(
+                        "a taproot leaf can never be satisfied (leaf {} of {n}): it is not a \
+                         spend path, and md refuses a taproot wallet with any such leaf; remove \
+                         it",
+                        i + 1
+                    )));
+                }
+            }
+        }
+    }
     let tree = walk_root(&ms_desc, &key_map)?;
 
     // M5 (cycle-9, D4) — lexer/substitution cross-validation belt. Edit-1's

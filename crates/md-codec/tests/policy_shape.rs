@@ -12,7 +12,7 @@ fn kofn_recovery() -> md_codec::encode::Descriptor {
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let tree = wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery));
@@ -41,14 +41,12 @@ fn branch_retains_its_slot_set_not_just_a_count() {
 /// of a partial (and therefore misleading) decomposition.
 ///
 /// DEVIATION FROM THE BRIEF'S DRAFT: the brief proposed a bare `thresh` over
-/// keys at the wsh root. Traced against the Go original (`md/policy_shape.go`
-/// `collect`'s `tagThresh` arm, `splitBranches`'s `default` arm calling
-/// `branchOf`), that shape does NOT refuse -- `thresh(2,pk_k(@0),pk_k(@1),
-/// pk_k(@2))` is exactly the "combinatorial-but-still-one-branch" case the
-/// Go doc comment on `splitBranches` describes, and it decodes to one
-/// Complete=true branch with Keys=3, K=0/N=0. The brief's own step 6 text
-/// anticipated this ("If the Go original DOES classify this shape, pick
-/// whatever node it refuses").
+/// keys at the wsh root. That shape does not refuse: since md thresh /
+/// seedhammer I-1 a `thresh` with `k < n` at a path root and every child on
+/// the allowlist is one complete ANY-OF entry (`Branch::any_of`), and
+/// `thresh(2,pk_k(@0),pk_k(@1),pk_k(@2))` (a bare key as a later child) is
+/// refused for its spelling, not as an unknown node. See
+/// `tests/policy_shape_thresh.rs`.
 ///
 /// The fork's OWN test, `TestPolicyShapeRefusesAnUnknownTag`
 /// (md/policy_shape_test.go:175-189), pins the actual refusing shape: a
@@ -518,7 +516,7 @@ fn sh_wsh_unwraps_to_the_same_shape_as_bare_wsh() {
 /// single-`multi` script decomposes identically with or without it --
 /// `plain_multi` fails on `Tag::Wsh` either way, then `sole_multi` finds the
 /// same one multi under the (still-present, one-level-shallower) `Wsh`
-/// wrapper regardless. `sh(wsh(or_d(sortedmulti(2,@0,@1,@2),
+/// wrapper regardless. `sh(wsh(or_d(multi(2,@0,@1,@2),
 /// and_v(v:pkh(@3),older(26280)))))` is wire-reachable (18 bytes / 139 bits,
 /// strict-decodes byte-identical -- reviewer-measured) and MULTI-branch: with
 /// the unwrap disabled, `inner` stays the still-wrapped `Wsh` node, and
@@ -531,7 +529,7 @@ fn sh_wsh_unwraps_to_the_same_shape_as_bare_wsh() {
 /// changing every slot set involved.
 #[test]
 fn sh_wsh_with_multiple_branches_unwraps_correctly() {
-    let d = common::sh_wsh_or_d_sortedmulti_and_recovery();
+    let d = common::sh_wsh_or_d_multi_and_recovery();
     let shape = policy_shape(&d);
     assert!(shape.complete);
     assert_eq!(
@@ -548,8 +546,8 @@ fn sh_wsh_with_multiple_branches_unwraps_correctly() {
             shape.branches[0].n,
             shape.branches[0].sorted
         ),
-        (2, 3, true),
-        "the primary leg is sortedmulti(2,@0,@1,@2)"
+        (2, 3, false),
+        "the primary leg is multi(2,@0,@1,@2)"
     );
 }
 
@@ -602,7 +600,11 @@ fn a_duplicate_index_multi_reports_no_threshold_in_either_spelling() {
 
 /// `sln:older(N)` = `s:or_i(0,n:older(N))` and `and_n(X,Y)` =
 /// `andor(X,Y,0)`: one alternative is `0`, so neither is a disjunction and
-/// the branch stays complete (whole-diff s1 I-1).
+/// the branch stays complete (whole-diff s1 I-1). The `sln` child is
+/// `s:or_i(0,n:older)`: `n:` is `Tag::ZeroNotEqual`. It was built with
+/// `Tag::NonZero` (`j:`), the untypable `s:l:j:older`, which md thresh /
+/// seedhammer I-1 now refuses (`thresh_neg_slj_older`). The `thresh` is
+/// 2-of-3 at the path root, so it is one any-of entry.
 #[test]
 fn zero_alternative_or_i_and_andor_stay_complete() {
     let sln = wrap(
@@ -613,7 +615,7 @@ fn zero_alternative_or_i_and_andor_stay_complete() {
                 tag: Tag::False,
                 body: Body::Empty,
             },
-            wrap(Tag::NonZero, timelock(Tag::Older, 144)),
+            wrap(Tag::ZeroNotEqual, timelock(Tag::Older, 144)),
         ),
     );
     let thresh = common::thresh_node(
@@ -631,6 +633,10 @@ fn zero_alternative_or_i_and_andor_stay_complete() {
     );
     assert_eq!(shape.branches.len(), 1);
     assert_eq!(shape.branches[0].slots, vec![0, 1]);
+    assert_eq!(
+        shape.branches[0].any_of,
+        Some(md_codec::policy_shape::AnyOf { k: 2, n: 3 })
+    );
     let and_n = node3(
         Tag::AndOr,
         wrap(Tag::Check, keyarg(Tag::PkK, 1)),

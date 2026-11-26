@@ -16,6 +16,8 @@ const TPUB: &str = "tpubDC9Go1KDateW3gS8VXZ6DD1Xu7PgoTdPcf1MX9Z6qVLiHbaeDJ78swPy
 const WATCH_NOTE: &str = "note: stdout is watch-only \u{2014} public keys only, cannot spend\n";
 const TEMPLATE_NOTE: &str = "note: stdout is a keyless descriptor template (no keys)\n";
 const CSID: &str = "chunk-set-id: 0x9c25f\n";
+/// md#6 (bug hunt 2026-11-25): `encode()` below passes `--fingerprint`.
+const FP_WARN: &str = "warning: this card will carry master-key fingerprints. A fingerprint identifies the seed behind a key and links the card to that seed's other wallets: anyone who reads the card learns it. Leave the fingerprints out if you do not need them to tell slots apart.\n";
 const V_B1_WALLET: &str = include_str!("fixtures/seating/v-b1-wallet.txt");
 
 fn md() -> Command {
@@ -91,7 +93,7 @@ fn encode_prints_each_chunk_once() {
             "ungrouped; got {l:?}"
         );
     }
-    assert_eq!(text(&o.stderr), format!("{CSID}{WATCH_NOTE}"));
+    assert_eq!(text(&o.stderr), format!("{CSID}{WATCH_NOTE}{FP_WARN}"));
 }
 
 #[test]
@@ -100,7 +102,7 @@ fn encode_group_size_groups_stdout() {
     let o = encode(&["--group-size", "5"]);
     assert_eq!(o.status.code(), Some(0));
     assert_eq!(text(&o.stdout), regroup5(&plain));
-    assert_eq!(text(&o.stderr), format!("{CSID}{WATCH_NOTE}"));
+    assert_eq!(text(&o.stderr), format!("{CSID}{WATCH_NOTE}{FP_WARN}"));
 }
 
 #[test]
@@ -112,7 +114,7 @@ fn encode_out_writes_the_stdout_bytes() {
     assert_eq!(o.status.code(), Some(0));
     assert_eq!(text(&o.stdout), "");
     assert_eq!(std::fs::read_to_string(&f).unwrap(), grouped);
-    assert_eq!(text(&o.stderr), format!("{CSID}{WATCH_NOTE}"));
+    assert_eq!(text(&o.stderr), format!("{CSID}{WATCH_NOTE}{FP_WARN}"));
 }
 
 #[test]

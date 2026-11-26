@@ -184,9 +184,14 @@ pub fn prove_route1(
     experimental: bool,
     network: Network,
 ) -> Result<(), String> {
-    let (descriptor, _, _) =
+    let (mut descriptor, parsed_keys, _) =
         descriptor_for_mint(&d.template, keys, fingerprints, experimental, network)
             .map_err(md_encode_refuses)?;
+    // Route 1 prints no --path, so `md encode` fills a keyed card's missing
+    // canonical origins and then checks the keys against them (md#1, md#2).
+    let filled = crate::cmd::encode::fill_canonical_origins(&mut descriptor, network);
+    crate::cmd::encode::refuse_key_origin_contradiction(&descriptor, &parsed_keys, &filled)
+        .map_err(md_encode_refuses)?;
     md_codec::validate::validate_relative_timelocks(&descriptor.tree)
         .map_err(|e| md_encode_refuses(CliError::from(e)))?;
     let (cards, _) = mint_md1_cards(&descriptor, false).map_err(md_encode_refuses)?;

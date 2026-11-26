@@ -630,6 +630,14 @@ enum Command {
         /// authoring it.
         #[arg(long)]
         experimental: bool,
+        /// Render a CARD whose policy is not valid miniscript (an untyped
+        /// tree, a tap leaf whose root is not B, or a tap leaf that can never
+        /// be satisfied), which is refused without it. Prints a loud warning:
+        /// funds sent to such a wallet may be unspendable or spendable
+        /// without a signature. Has no effect on a valid policy or on
+        /// --template, whose parse refuses such policies outright.
+        #[arg(long = "allow-invalid-miniscript")]
+        allow_invalid_miniscript: bool,
     },
 
     /// Derive bitcoin addresses from a wallet-policy-mode descriptor.
@@ -820,6 +828,14 @@ enum Command {
         /// authoring it.
         #[arg(long)]
         experimental: bool,
+        /// Render a CARD whose policy is not valid miniscript (an untyped
+        /// tree, a tap leaf whose root is not B, or a tap leaf that can never
+        /// be satisfied), which is refused without it. Prints a loud warning:
+        /// funds sent to such a wallet may be unspendable or spendable
+        /// without a signature. Has no effect on a valid policy or on
+        /// --template, whose parse refuses such policies outright.
+        #[arg(long = "allow-invalid-miniscript")]
+        allow_invalid_miniscript: bool,
     },
     /// Turn a CONCRETE output descriptor back into the pieces md engraves:
     /// the keyless BIP-388 template, one origin-notated key line per slot, and
@@ -1193,6 +1209,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             json,
             verify_against,
             experimental,
+            allow_invalid_miniscript,
         } => {
             // FIX_bh1119_md_out_names_input S2/S3: first statement. Inputs in
             // order: --from-mk1-file, then --verify-against when it is a file
@@ -1217,6 +1234,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::descriptor::run(cmd::descriptor::DescriptorArgs {
                 experimental,
+                allow_invalid_miniscript,
                 phrases: &phrases,
                 template: template.as_deref(),
                 keys: &keys,
@@ -1251,6 +1269,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             count,
             json,
             experimental,
+            allow_invalid_miniscript,
         } => {
             // FIX_bh1119_md_out_names_input S2/S3: first statement.
             let inputs: Vec<cmd::InputName<'_>> = from_mk1_file
@@ -1263,6 +1282,7 @@ fn dispatch(c: Command) -> Result<u8, CliError> {
             let from_mk1 = collect_mk1(&from_mk1, from_mk1_file.as_deref())?;
             cmd::address::run(cmd::address::AddressArgs {
                 experimental,
+                allow_invalid_miniscript,
                 phrases: &phrases,
                 template: template.as_deref(),
                 keys: &keys,

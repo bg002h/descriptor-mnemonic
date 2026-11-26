@@ -88,8 +88,33 @@ fn check_or_depth(depth: usize, what: &str) -> Result<(), CompileError> {
     Ok(())
 }
 
+/// Fable review I-1: write BIP-388's canonical receive/change tail on every
+/// bare placeholder of a policy, `@N` -> `@N/<0;1>/*`. BIP-388: "The `/**` in
+/// the placeholder template represents commonly used paths for receive/change
+/// addresses, and is equivalent to `/<0;1>/*`." A placeholder that already has
+/// a tail (`@N/...`) is left as written.
+///
+/// Why here and not in the minting parse: md refuses a hand-typed bare `@N`
+/// (r1 A2, owner ruling: `@0` names one fixed key, a different wallet from
+/// `@0/*`), and that refusal stands. A POLICY carries no derivation at all --
+/// `pk(@0)` in a policy means "key 0", not "a fixed key" -- so the compiler
+/// gives each key the form BIP-388 calls standard, and its output mints.
+fn canonical_tails(expr: &str) -> String {
+    static BARE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = BARE.get_or_init(|| regex::Regex::new(r"@([0-9]+)(/)?").expect("static regex"));
+    re.replace_all(expr, |c: &regex::Captures<'_>| {
+        if c.get(2).is_some() {
+            c[0].to_string()
+        } else {
+            format!("@{}/<0;1>/*", &c[1])
+        }
+    })
+    .into_owned()
+}
+
 /// Compile a high-level Concrete-Policy expression to a BIP-388 wallet-policy
-/// template string.
+/// template string. A bare `@N` is compiled as `@N/<0;1>/*`
+/// ([`canonical_tails`]).
 ///
 /// `expr` is a Concrete-Policy expression with `@N` placeholders (e.g.
 /// `or(pk(@0), and(pk(@1), older(144)))`, `thresh(2,pk(@0),pk(@1),pk(@2))`).
@@ -112,6 +137,7 @@ pub fn compile_policy_to_template(
     unspendable_key: Option<&str>,
 ) -> Result<String, CompileError> {
     use miniscript::policy::concrete::Policy;
+    let expr = canonical_tails(expr);
     let policy: Policy<String> = expr
         .parse()
         .map_err(|e| CompileError::Parse(format!("{e}")))?;
@@ -167,11 +193,42 @@ mod tests {
     use super::*;
     use crate::parse::template::NUMS_H_POINT_X_ONLY_HEX;
 
+    /// The expected templates below are written with bare `@N` for
+    /// readability; the compiler emits each with BIP-388's canonical tail
+    /// (`compile_writes_the_canonical_tail_on_a_bare_placeholder` pins that
+    /// literally).
+    fn tailed(t: &str) -> String {
+        canonical_tails(t)
+    }
+
     #[test]
     fn compile_segwitv0_pk() {
         let s = compile_policy_to_template("pk(@0)", ScriptContext::SegwitV0, None).unwrap();
         assert!(s.starts_with("wsh("));
         assert!(s.contains("@0"));
+    }
+
+    /// Fable review I-1: a bare `@N` in the policy is emitted in BIP-388's
+    /// canonical receive/change form, `@N/<0;1>/*` ("The `/**` in the
+    /// placeholder template ... is equivalent to `/<0;1>/*`"), so the
+    /// output mints. A placeholder that already has a tail is untouched.
+    #[test]
+    fn compile_writes_the_canonical_tail_on_a_bare_placeholder() {
+        let s = compile_policy_to_template("or(pk(@0),pk(@1/<2;3>/*))", ScriptContext::Tap, None)
+            .unwrap();
+        assert!(s.contains("@0/<0;1>/*"), "{s}");
+        assert!(s.contains("@1/<2;3>/*"), "{s}");
+        assert!(!s.contains("@1/<0;1>/*"), "{s}");
+        let s = compile_policy_to_template("pk(@10)", ScriptContext::SegwitV0, None).unwrap();
+        assert_eq!(s, "wsh(pk(@10/<0;1>/*))");
+    }
+
+    /// The hand-typed bare `@N` is still refused at mint (r1 A2): only the
+    /// compiler's own output is normalised.
+    #[test]
+    fn a_hand_typed_bare_placeholder_is_still_refused() {
+        let err = crate::parse::template::parse_template("wsh(pk(@0))", &[], &[]).unwrap_err();
+        assert!(err.to_string().contains("@0 has no use-site tail"), "{err}");
     }
 
     #[test]
@@ -219,7 +276,10 @@ mod tests {
     /// formatter happened to render correctly.
     #[test]
     fn compile_caterpillar_shapes_still_reparse() {
-        assert_eq!(compiles_and_reparses("or(pk(@0),pk(@1))"), "tr(@1,pk(@0))");
+        assert_eq!(
+            compiles_and_reparses("or(pk(@0),pk(@1))"),
+            tailed("tr(@1,pk(@0))")
+        );
         compiles_and_reparses("thresh(1,pk(@0),pk(@1),pk(@2))");
         compiles_and_reparses("or(4@pk(@0),1@or(pk(@1),pk(@2)))");
         compiles_and_reparses("or(1@or(pk(@0),pk(@1)),1@or(pk(@2),pk(@3)))");
@@ -261,7 +321,11 @@ mod tests {
         for (policy, expected) in cases {
             let got = compile_policy_to_template(policy, ScriptContext::Tap, None)
                 .unwrap_or_else(|e| panic!("compile failed for {policy}: {e}"));
-            assert_eq!(got, expected, "wrong taptree rendering for {policy}");
+            assert_eq!(
+                got,
+                tailed(expected),
+                "wrong taptree rendering for {policy}"
+            );
         }
     }
 
@@ -270,7 +334,8 @@ mod tests {
     fn compile_pk_tap_keypath_only() {
         let s = compile_policy_to_template("pk(@0)", ScriptContext::Tap, None).unwrap();
         assert_eq!(
-            s, "tr(@0)",
+            s,
+            tailed("tr(@0)"),
             "single-key tap should extract @0 as internal key"
         );
     }
@@ -280,7 +345,7 @@ mod tests {
     #[test]
     fn compile_or_two_keys_tap() {
         let s = compile_policy_to_template("or(pk(@0),pk(@1))", ScriptContext::Tap, None).unwrap();
-        assert_eq!(s, "tr(@1,pk(@0))");
+        assert_eq!(s, tailed("tr(@1,pk(@0))"));
     }
 
     /// Spike-verified: `or(pk(@0),and(pk(@1),older(144)))` → inheritance pattern.
@@ -293,7 +358,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(s, "tr(@0,and_v(v:pk(@1),older(144)))");
+        assert_eq!(s, tailed("tr(@0,and_v(v:pk(@1),older(144)))"));
     }
 
     /// Spike-verified: `thresh(2,pk(@0),pk(@1),pk(@2))` → no key extractable;
@@ -305,7 +370,9 @@ mod tests {
                 .unwrap();
         assert_eq!(
             s,
-            format!("tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0,@1,@2))")
+            tailed(&format!(
+                "tr({NUMS_H_POINT_X_ONLY_HEX},multi_a(2,@0,@1,@2))"
+            ))
         );
     }
 
@@ -316,7 +383,9 @@ mod tests {
         let s = compile_policy_to_template("and(pk(@0),pk(@1))", ScriptContext::Tap, None).unwrap();
         assert_eq!(
             s,
-            format!("tr({NUMS_H_POINT_X_ONLY_HEX},and_v(v:pk(@0),pk(@1)))")
+            tailed(&format!(
+                "tr({NUMS_H_POINT_X_ONLY_HEX},and_v(v:pk(@0),pk(@1)))"
+            ))
         );
     }
 
@@ -331,7 +400,7 @@ mod tests {
             compile_policy_to_template("pk(@0)", ScriptContext::Tap, Some(NUMS_H_POINT_X_ONLY_HEX))
                 .unwrap();
         // Same as auto-NUMS default — extract-first behavior holds.
-        assert_eq!(s, "tr(@0)");
+        assert_eq!(s, tailed("tr(@0)"));
     }
 
     /// No `#<8-char-checksum>` may reach md1's encode pipeline.

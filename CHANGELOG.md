@@ -4,7 +4,48 @@ All notable changes to `md-codec` and `md-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## md-cli [Unreleased]
+## md-cli [0.21.2] — unreleased
+
+Pins md-codec `=0.49.0`. Not tagged or published.
+
+### Changed
+
+- **`md compile` and `md encode --from-policy` write BIP 388's canonical tail on a bare placeholder (Fable review
+  I-1).** `pk(@0)` compiles to `tr(@0/<0;1>/*)`, so the printed template mints; before, the bare-`@N` mint refusal
+  refused the compiler's own output. A placeholder that already has a tail keeps it, and a hand-typed bare `@N`
+  given to `md encode` is still refused.
+- **`md address` and `md descriptor` refuse a card whose policy is not valid miniscript, and the new
+  `--allow-invalid-miniscript` flag renders it anyway (Brian's decision, 2026-11-26).** Such a card (an untyped
+  tree, a tap leaf whose root is not B, a tap leaf that can never be satisfied, a broken timelock or script limit;
+  md-codec `policy_type_checks`) may be unspendable, or spendable without a signature, and md shows no summary for
+  it. Both verbs now exit 1 with nothing on stdout: "md: unsupported: this card's policy is not valid miniscript
+  (...), so md address will not render it: funds sent to it may be unspendable, or spendable without a
+  signature. ... pass --allow-invalid-miniscript." With the flag they render it and print "WARNING:
+  --allow-invalid-miniscript: this policy is NOT valid miniscript. Funds sent to this wallet may be UNSPENDABLE,
+  or spendable WITHOUT A SIGNATURE by anyone. ..." on stderr. A valid policy, and `md decode`, `inspect`,
+  `bytecode` and `verify`, are unaffected. New flag: the toolkit manual and the mnemonic-gui md schema mirror
+  follow.
+- **`md encode` refuses a taproot leaf that can never be satisfied (md reviews r4 I-1, r5).** For example
+  `tr(NUMS,and_v(v:pk(@0/<0;1>/*),0))`, which it minted as a wallet no one can spend, `tr(@0/<0;1>/*,0)`, and a
+  dead leaf beside good ones: "a taproot leaf can never be satisfied (leaf 1 of 1): it is not a spend path, and md
+  refuses a taproot wallet with any such leaf; remove it". rust-miniscript's sanity rules refuse the same shape in
+  `wsh`/`sh` but miss it in `tr`. Minting verbs only: `encode`, `compose`, and the `--template` forms of
+  `address`/`descriptor`, which share the minting parse. An existing card decodes as before, and `md decode`,
+  `decode --json` and `bytecode` still print the "spend with NO key" warning for a card that has both a dead leaf
+  and a no-key leaf: the probe behind that warning asks only about the signature rule and skips this one (r5 I-1;
+  a first cut silenced it, and called such a wallet card watch-only). `md decompose` now also notes that `md
+  encode` may not accept such a template, which is true. `md address`/`md descriptor` on an existing such card
+  now refuse it unless `--allow-invalid-miniscript` is given (above).
+- **A policy that is not valid miniscript gets no verdict and no shape key (md reviews r2 I-1, r3).** `md compose` and
+  `md descriptor` print `note: coordinators: no verdict (this policy is not valid miniscript (it fails a miniscript
+  type, timelock or script-limit rule), so md shows no spend-path summary for it; no key can be computed from it)`, and `md shape-key`
+  refuses with that sentence. `md decode`, `inspect`, `bytecode` and the ids are unchanged for such a card.
+- **The coordinator note follows md-codec 0.49.0's `thresh` summary (md thresh / seedhammer I-1).** `md compose`
+  and `md descriptor` print `note: coordinators: no verdict (md cannot break this policy into spend paths: it has a
+  threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a
+  partial decomposition)` for a policy md-codec no longer summarises, and `md shape-key` refuses it with the same
+  sentence. For BIP-388's decaying multisig the Liana line reads "unproven" instead of the false "refuses (no
+  unlocked path)". Exit status is unchanged.
 
 ### Fixed
 
@@ -29,16 +70,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   case of the string it corrects (`MD1YQPQQXQQ8XTWHW4XWN4QH`), in text and `--json` output and for chunked sets
   (bh-md-I3).
 - **An output that is one of md's inputs is refused.** `md encode --in F --out F` replaced the template with the card, `md descriptor --from-mk1-file K --emit md1 --out K` replaced the mk1 key cards, and `md decode --in F >>F` (and every reading verb) appended to its input, all at exit 0. md now refuses these before reading anything, names both, and exits 2; so does `md encode --json --out F` with stdout redirected to F ([md-out-names-input]).
-
-## md-cli [0.21.1] — 2026-11-22
-
-### Fixed
-
+- **A keyed card always carries each key's origin (Brian's ruling of 2026-11-25).** `md encode` with keys and no
+  origin on a canonical wrapper (`wpkh`, `pkh`, `sh(wpkh)`, key-path `tr`, `wsh(multi/sortedmulti)`,
+  `sh(wsh(multi/sortedmulti))`) used to elide the origin, and `md descriptor`, `md inspect` and `md decode` then read
+  it as the master node (`[fp]xpub661...`, `[fp/m]`, `--path m`). It now writes the shape's canonical origin on the
+  card (coin type `1'` off mainnet), the same card `--path bip84` (etc.) mints, and refuses with a request for
+  `--path` when the key's header contradicts that origin. A keyed card with no origin (`--path m`, or a
+  non-canonical wrapper with none) is refused. `md verify` expands the template the same way, so a new card verifies
+  against the template and keys it was minted from. Reading a keyed card that has no origin, md no longer shows `m`,
+  never advises `--path m`, and warns that the path is not on the card. Keyless templates still elide. The
+  wallet-policy id is unchanged on mainnet; off mainnet a keyed card minted with no origin now records coin `1'`,
+  so its wallet-policy id changes (testnet: `52bcbf43…` becomes `8ff60878…`) (bug hunt 2026-11-25 md#1, r1 m3).
+- **`md encode` refuses a key whose header contradicts its declared origin.** A depth-4 key under a 3-level
+  origin, a key whose child number is not the origin's step at the key's depth, or a 4-level origin with a
+  hardened step past a depth-3 key minted at exit 0; a restore rebuilt the xpub header from the origin and printed
+  a different xpub under an origin the key was not derived at. These now exit 1 (`md: --key @N: the extended key
+  states depth ...`). An origin longer than the key whose extra steps are all unhardened keeps its F-411 note
+  (bug hunt 2026-11-25 md#2).
+- **A placeholder with a multipath and no wildcard is refused at mint.** `md encode "wpkh(@0/<0;1>)"` minted the
+  ranged `@0/<0;1>/*`; minting verbs (`encode`, `descriptor`, `address`, `compose`) now refuse it at exit 1.
+  A placeholder with neither (`@0`, `@0/84'/0'/0'`) is now refused the same way, asking for `/<0;1>/*` (or `/*`):
+  it named one fixed key but minted the ranged `@0/*`, a different wallet. Cards already minted that way still
+  decode and re-emit unchanged (md#3; owner ruling 2026-11-25, bug hunt r1 A2).
+- **`md encode` refuses a `c:` over anything but a single key.** `wsh(c:or_i(pk_k(@0/..),pk_k(@1/..)))` and
+  similar minted a card that `md address` and `md descriptor` could never render. Existing cards still decode
+  (md#4).
+- **A keyed card with a hardened wildcard (`/*h`) is refused at mint.** It could never derive an address from its
+  own xpubs. Keyless templates with `/*h` still mint (md#5).
+- **A key with an all-zero chain code is refused at mint.** That is how a WIF slot is written as an xpub; its
+  children are keys no wallet watches (X4).
+- **Fingerprints are flagged as privacy-sensitive.** `md encode` and `md descriptor --emit md1` warn on stderr when
+  the card will carry fingerprints, and `md decode` and `md inspect` note that the fingerprints they show are
+  privacy-sensitive, as the BIP requires (md#6).
 - **`md encode`, `verify`, `descriptor` and `address` refuse a second `--key`, or a second `--fingerprint`, for one `@i`.** Two different values exit 1 (`descriptor` and `address` used to compose the first key or the last fingerprint; `encode` and `verify` failed with an ordering error, exit 1). The same value given twice exits 2 (`descriptor` and `address` used to accept it; `encode` and `verify` failed with the ordering error, exit 1) (bh-md-C3).
-- **`md encode` refuses a template it cannot decode back.** A tree nested deeper than the decoder's limit, such
-  as `wsh(` followed by 127 `n` wrappers and `:pk(@0/<0;1>/*))`, minted three chunks at exit 0 that `md decode`
-  refused; it now prints `md: codec error: decode recursion depth 128 exceeded maximum 128` and exits 1 with
-  nothing on stdout. 126 wrappers still mint and decode.
 - **`md descriptor --change` refuses a wallet with no change branch.** On a wallet where no key has a multipath
   (for example `wpkh(@0/*)`), `--change` and `--chain N` (N > 0) printed the receive descriptor at exit 0. They now
   print `md: codec error: chain index 1 out of range; use-site multipath alt-count is 1` (with N and the widest
@@ -48,6 +112,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Bitcoin Core 24.2-28.4 refuses "the <0;1> multipath spelling (use --chain 0 and --chain 1)", although the printed
   descriptor has no `<0;1>` and `--chain 1` is refused there. The note now names no form, as it does for a
   template, and Core reads `unproven`; `--chain 0` prints the same note, since it prints the same descriptor.
+- _Moved here from the 0.21.1 entry (bug hunt 2026-11-25 X2): the three bullets above (bh-md-C3, `--change`, the verdict form) landed after the 0.21.1
+  release commit `e11b4ce` and are not in the released 0.21.1._
+
+## md-cli [0.21.1] — 2026-11-22
+
+### Fixed
+
+- **`md encode` refuses a template it cannot decode back.** A tree nested deeper than the decoder's limit, such
+  as `wsh(` followed by 127 `n` wrappers and `:pk(@0/<0;1>/*))`, minted three chunks at exit 0 that `md decode`
+  refused; it now prints `md: codec error: decode recursion depth 128 exceeded maximum 128` and exits 1 with
+  nothing on stdout. 126 wrappers still mint and decode.
 
 ## md-cli [0.21.0] — 2026-11-22
 
@@ -64,7 +139,84 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`md decompose --emit commands` prints a mint route only after proving it.** md now mints each route's card in memory and compares the wallet it describes with the input descriptor. A route that would mint a different wallet (a use-site md1 cannot hold, such as `/0/*` or none) or that `md encode`/`mk encode` would refuse (such as a depth-0 key) is withheld with one line; when no route reproduces the descriptor the command refuses (exit 1). `--emit template` and `--emit all` (and `--emit commands`) now refuse a descriptor whose key use-site md1 cannot hold (a fixed step such as `/0/*`, or none), since the template they printed minted a different wallet.
 - **`md encode`, given a concrete descriptor with a key that has no origin path, no longer prints the `--emit commands` line that refuses.** A key with a fingerprint-only origin (such as a master key, `[fingerprint]xpub...`) now gets the `--emit template` line alone, like a key with no origin. In that case the explanation reads: `Its mint commands (--emit commands) also need each key at account level with its origin, [fingerprint/path] before the key; this descriptor has a key without one.` It replaces the sentence ending "the wallet that produced it knows the path." More generally, `md encode` now runs that decomposition itself and prints a `md decompose` line only when it runs: when `md decompose` refuses the descriptor, or prints no template for it (a fixed use-site such as `/0/*`), no line is printed and the referral quotes decompose's refusal; when only `--emit commands` refuses, the template line is printed with decompose's reason.
 
-## md-codec [Unreleased]
+## md-codec [0.49.0] — unreleased
+
+Minor bump: `Branch` gains a public field and is now `#[non_exhaustive]`, `SkeletonError` gains the variant
+`NotMiniscript`, and `policy_shape` returns `complete == false` for some shapes it summarised before. Not tagged or
+published.
+
+### Changed
+
+- **Without the `derive` feature, nothing gets a summary or a key (Fable review I-2).** The type rule needs
+  `miniscript`, which only `derive` brings, so in a `default-features = false` build `policy_type_checks` returns
+  `false`, `policy_shape` is never `complete` and `skeleton` never returns a key: `KeysDoNotExpand` for a card whose
+  keys do not expand (checked first), otherwise `NotMiniscript` with a sentence that names the missing feature. The API is the same in both builds. A first cut of this release did not compile without
+  `derive`; CI now checks that build.
+
+- **`policy_shape` summarises `thresh` honestly (md thresh / seedhammer I-1).** It walked every `thresh` as a
+  conjunction: a `thresh(2,…)` over three keys read as "3 keys", and BIP-388's decaying multisig
+  `wsh(thresh(3,pk,s:pk,s:pk,sln:older(12960)))` as needing all three keys and the lock. Now a `thresh` with
+  `1 <= k < n` at a spend-path root (or `a:thresh` as `or_b`'s second child) whose every child is on a fixed list of
+  key and timelock spellings is ONE entry with `Branch::any_of = Some(AnyOf { k, n })`: any `k` of its `n`
+  conditions satisfy it, and `Branch::any_of_min_keys()` gives the fewest keys that can spend. The list (`pk`,
+  `pkh`, under at most one `c:`; `ln:`/`un:`/`nl:`/`nu:` over `after`/`older` with `1 <= v < 2^31`; later children
+  as `s:pk`, `a:pk`, `a:pkh`, `s:`/`a:` over a lock) is the spellings BIP-379's type rules make leave exactly 0 or 1
+  on the stack, so the count is exact. A `thresh` with `k == n` is still a conjunction, but only when every child is
+  on the same list: `thresh(3,pk,s:pk,av:pk)` was summarised as three required keys while the holder of the third
+  spends alone.
+- **No card, id, address or SkeletonKey text changes** for any policy that keeps a key: the 20 minted vectors keep
+  the exact key `md shape-key` printed before, and two policies' bytes, ids and first address are pinned.
+- **These policies lose their SkeletonKey and their on-device summary** (`complete == false`; `skeleton()` returns
+  `IncompleteShape`):
+  - a `thresh` with `k < n` under `and_v`/`and_b`, or as `X`/`Y` of `andor`, such as the policy compiler's
+    `and(pk,thresh(…))` output `and_v(v:pk,thresh(…))`. Only the key is a real loss: the summary it had was false,
+    a conjunction shown for a threshold;
+  - a `thresh` inside another `thresh`;
+  - a `thresh` (any `k`) with a `multi`/`sortedmulti`/`multi_a` child, a compound child (`and_*`, `or_*`,
+    `andor`), or a hashlock child, including the compiler's `sjtv:sha256(H)`;
+  - a `thresh` (any `k`) with a key or timelock child in a spelling outside the list (`sn:pk`, `sndv:older`, …);
+  - a `thresh` with two key children on one placeholder;
+  - a `thresh(1,…)` written to follow `md compile`'s own printed remedy ("Write the alternatives as one
+    thresh(1,...)") when the compiled `thresh` has a compound alternative, such as `and(pk,older(n))`.
+  No vendored evidence row or verdict-table cell holds a `thresh`, so no measured verdict moves; `cargo xtask
+  verdicts` regenerates the table unchanged. This closes the defect for `thresh` only, not for other shapes.
+- **A policy that is not valid miniscript has no summary and no SkeletonKey (md reviews r2 I-1, r3).** The shape
+  walk checked each fragment, never its context, so a hand-built card such as
+  `wsh(or_b(pk(@0),thresh(2,pk(@1),s:pk(@2),s:pk(@3))))` (and plain `wsh(or_b(pk(@0),pk(@1)))`) was summarised
+  as "1 key / any 2 of 3" and keyed, although it spends with no signature: `or_b` needs a W second child, the bare
+  `thresh` is B, and its first `CHECKSIG` consumes the 0 `pk(@0)` left. Likewise a tap leaf whose root is not B,
+  such as `tr(NUMS,v:pk(@0))` or one leaf of `tr(NUMS,{pk(@0),v:pk(@1)})`, was keyed although that leaf can never
+  be spent. New `policy_shape::policy_type_checks` runs the `to_miniscript` conversion over synthetic keys and
+  adds a B check on every script root (each tap leaf included) and rust-miniscript's satisfaction limits (at most
+  201 executed ops in `wsh`/`sh`, counted over the worst satisfaction), and requires every tap leaf to have some
+  satisfaction (`tr(NUMS,and_v(v:pk(@0),0))`, which `md encode` minted, was keyed: md review r4 I-1). Its doc lists every rule it applies: types, B roots, timelock ranges, fragment
+  placement, script-size and satisfaction limits. `policy_shape` now returns `complete = walk && typed`, every
+  other field as the walk leaves it, and `skeleton()` refuses such a tree with the new
+  `SkeletonError::NotMiniscript`: "this policy is not valid miniscript (it fails a miniscript type, timelock or
+  script-limit rule), so md shows no spend-path summary for it; no key can be computed from it". Display and
+  identity only: these cards still decode, re-encode to the same bytes and keep their ids and addresses. No minted
+  vector, evidence row or verdict-table cell changes (`cargo xtask verdicts` regenerates the table unchanged). The
+  rule is normative for ports.
+- **`SkeletonError::IncompleteShape` names every cause:** "md cannot break this policy into spend paths: it has a
+  threshold or an or that md does not summarise, or a fragment md does not know; no key can be computed from a
+  partial decomposition" (was "the policy walk met a node it does not understand; …").
+- **Coordinator rules read an any-of entry.** Liana's "no unlocked path" no longer fires on an any-of entry with
+  enough keys to spend without its lock (it printed a false refusal for BIP-388's decaying multisig; that line is
+  now "unproven"). "A path with no key" (Liana, Nunchuk, Core) fires when an any-of entry's timelocks alone reach
+  `k`. Liana's "one signer twice in a path", "two paths with one lock" and "a second unlocked k-of-n path" skip an
+  any-of entry that has a timelock, and the as-built reading takes an all-keys any-of as its own k-of-n.
+- **New shape-vector file** `tests/fixtures/policy_shape/cases.json` (106 cases, generated and freshness-tested),
+  for the seedhammer Go port to vendor and compare against. Each case records `typed` (whether the tree is valid
+  miniscript in its context). The `untyped_*` cases need that check to get right: the r2 review's two cards and the r3 review's `tr(NUMS,v:pk(@0))` card; one
+  untyped tree per combinator (`or_b`, `or_c`, `or_d`, `or_i`, `and_v`, `and_b`, `andor`, `thresh`, `multi`, the
+  `v:`/`a:`/`s:`/`j:` wrappers), all in `wsh` but one `or_b` in a tap leaf; seven taproot trees with a non-B leaf
+  root (NUMS, slot and Liana internal keys, one- and two-leaf); and one per non-type rule (timelock range,
+  placement, nested `Tag::Pkh`, script size, more than 201 ops, more than 100 witness items, a never-satisfiable
+  tap leaf; `typed_witness_items_84` is the accepted side of the witness-item limit). `shape` is Rust's
+  own output, so the file is a parity file. One case changed its `typed` value after the file was first shared:
+  `thresh_neg_ori_two_zero` is `typed: false` (was `true`; `complete` was and is `false`), because the rule now
+  includes rust-miniscript's satisfaction analysis, whose `thresh` rule needs `min(k+1, n)` satisfiable children
+  (an upstream off-by-one; `thresh_neg_ori_two_zero_2of4` and `_3of4` pin both sides).
 
 ### Fixed
 
@@ -72,6 +224,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   it now decodes a card and re-encodes it with the current API and pins 0.48. The error-correction example uses a
   real damaged card instead of placeholders, and the stale "chunked-form only" note is gone. Both README blocks now
   run as doctests, and a test keeps the version pin in step with the crate (bh-md-I11).
+- **`to_miniscript_descriptor` / `to_miniscript_descriptor_with_network` refuse a chain no key has.** They now return
+  `Error::ChainIndexOutOfRange` when `chain` is at or beyond the widest use-site multipath alt-count across all keys
+  (the check `Descriptor::derive_address` already made, now shared); before, a key with no multipath ignored `chain`
+  and every chain returned the chain-0 descriptor.
+- _Moved here from the 0.48.7 entry (bug hunt 2026-11-25 X2): this fix landed in `4b763d7`, after the 0.48.7
+  release commit `e11b4ce` (tag `md-codec-v0.48.7`), so the released 0.48.7 does not have it. It needs a release
+  under a new version number._
 
 ## md-codec [0.48.7] — 2026-11-22
 
@@ -83,10 +242,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   origin override, an `@0` or redundant use-site override) or a `wsh` over 127 nested single-child wrappers
   encoded at `Ok` and the card could not be decoded. Bytes of every accepted payload are unchanged;
   `encode_payload_unadmitted` and hashing do not run the check. Costs one decode per mint.
-- **`to_miniscript_descriptor` / `to_miniscript_descriptor_with_network` refuse a chain no key has.** They now return
-  `Error::ChainIndexOutOfRange` when `chain` is at or beyond the widest use-site multipath alt-count across all keys
-  (the check `Descriptor::derive_address` already made, now shared); before, a key with no multipath ignored `chain`
-  and every chain returned the chain-0 descriptor.
 
 ## md-codec [0.48.6] — 2026-11-22
 

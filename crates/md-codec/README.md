@@ -50,7 +50,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-md-codec = "0.48"
+md-codec = "0.49"
 ```
 
 Decode an engraved md1 card and encode it back:
@@ -125,6 +125,13 @@ don't need address derivation can opt out with `default-features = false`:
 [dependencies]
 md-codec = { version = "0.32", default-features = false }
 ```
+
+Without `derive`, `policy_shape` never reports `complete = true` and
+`skeleton` never returns a key: it returns `SkeletonError::KeysDoNotExpand`
+for a card whose keys do not expand (that check runs first), and
+`SkeletonError::NotMiniscript` otherwise. The miniscript type rule a
+summary depends on needs `miniscript`, so no policy gets a spend-path
+summary or a coordinator key in that build.
 
 ## License
 

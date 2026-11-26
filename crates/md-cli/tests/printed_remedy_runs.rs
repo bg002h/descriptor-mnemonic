@@ -164,7 +164,8 @@ fn c4_printed_flag_runs() {
     let k1 = B0.split(']').nth(1).unwrap();
     let (rc, _, e) = out_of(md().args([
         "encode",
-        "tr(@1/<0;1>/*,pk(@0/<0;1>/*))",
+        // Keyed cards carry each key's origin (bug hunt 2026-11-25 md#1).
+        "tr(@1/48'/1'/0'/3'/<0;1>/*,pk(@0/48'/1'/0'/3'/<0;1>/*))",
         "--key",
         &format!("@0={k0}"),
         &flag,

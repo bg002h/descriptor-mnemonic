@@ -56,20 +56,23 @@ cargo install --path crates/md-cli --no-default-features
 
 ### Compile examples
 
+A bare `@N` in the policy compiles to BIP 388's canonical `@N/<0;1>/*`, so the
+printed template mints as it stands; an `@N` that already has a tail keeps it.
+
 ```text
 # Single-key tap (key-path-only):
 md compile 'pk(@0)' --context tap
-# → tr(@0)
+# → tr(@0/<0;1>/*)
 
 # Inheritance / timelock pattern (extract wins; @0 is internal key,
 # the timelocked branch becomes the script-path leaf):
 md compile 'or(pk(@0),and(pk(@1),older(144)))' --context tap
-# → tr(@0,and_v(v:pk(@1),older(144)))
+# → tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))
 
 # 2-of-3 hardware-wallet multisig (auto-NUMS internal key —
 # script-path-only spending via multi_a):
 md compile 'thresh(2,pk(@0),pk(@1),pk(@2))' --context tap
-# → tr(50929b74...ce803ac0,multi_a(2,@0,@1,@2))
+# → tr(50929b74...ce803ac0,multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))
 
 # Force script-path-only with explicit NUMS (rare; for
 # extractable-key policies the auto-NUMS default already kicks in
@@ -77,11 +80,11 @@ md compile 'thresh(2,pk(@0),pk(@1),pk(@2))' --context tap
 # extractable policies):
 md compile 'and(pk(@0),pk(@1))' --context tap \
     --unspendable-key 50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0
-# → tr(50929b74...ce803ac0,and_v(v:pk(@0),pk(@1)))
+# → tr(50929b74...ce803ac0,and_v(v:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))
 
 # Segwitv0 wsh (policy `thresh` compiles to miniscript `multi`):
 md compile 'thresh(2,pk(@0),pk(@1),pk(@2))' --context segwitv0
-# → wsh(multi(2,@0,@1,@2))
+# → wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))
 ```
 
 `encode`, `decode`, `inspect`, `bytecode`, `address`, and `compile` accept

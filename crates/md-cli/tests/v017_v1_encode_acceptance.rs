@@ -16,11 +16,13 @@ use predicates::prelude::*;
 /// V1.a — control: single-leaf bare-pk tap template encodes cleanly today.
 /// Phase 4 must keep this passing (no regression on the existing supported shape).
 /// No `--keys` is passed; encode uses synthetic placeholder keys when none supplied.
+/// Placeholders carry `/<0;1>/*`: a bare `@N` is refused at mint (bug hunt
+/// 2026-11-25 r1 A2).
 #[test]
 fn v017_v1_a_single_leaf_bare_pk_encodes() {
     Command::cargo_bin("md")
         .unwrap()
-        .args(["encode", "tr(@0,pk(@1))"])
+        .args(["encode", "tr(@0/<0;1>/*,pk(@1/<0;1>/*))"])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("md1"));
@@ -38,7 +40,10 @@ fn v017_v1_a_single_leaf_bare_pk_encodes() {
 fn v017_v1_b_and_v_inheritance_pattern_encodes() {
     Command::cargo_bin("md")
         .unwrap()
-        .args(["encode", "tr(@0,and_v(v:pk(@1),older(144)))"])
+        .args([
+            "encode",
+            "tr(@0/<0;1>/*,and_v(v:pk(@1/<0;1>/*),older(144)))",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("md1"));
@@ -60,7 +65,7 @@ fn v017_v1_b_and_v_inheritance_pattern_encodes() {
 #[test]
 fn v018_v1_c_nums_internal_key_encodes_via_sentinel() {
     Command::cargo_bin("md").unwrap()
-        .args(["encode", "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,@0,@1,@2))"])
+        .args(["encode", "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,@0/<0;1>/*,@1/<0;1>/*,@2/<0;1>/*))"])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("md1"));

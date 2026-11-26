@@ -167,21 +167,17 @@ fn inspect_prints_the_three_ids_in_full() {
 
 // ─── parse/template.rs: tag mapping on the encode path ──────────────────
 
-/// Kills template.rs:1542:9 (delete `Terminal::PkK`), 1548:9 (`PkH`),
-/// 1731:9 (`DupIf`) and 1752:9 (`False`): each fragment encodes and decodes
-/// back to the same template (bare `pk_k` / `pk_h` render under `c:` as
-/// `pk` / `pkh`).
+/// Kills template.rs:1731:9 (`DupIf`) and 1752:9 (`False`): each fragment
+/// encodes and decodes back to the same template.
+///
+/// The bare `pk_k` / `pk_h` arms (template.rs 1542:9 / 1548:9) are reached
+/// only under a `c:` over a non-key fragment, which md now refuses at mint
+/// (bug hunt 2026-11-25 md#4): the card decoded to `c:and_v(v:pk(..),pk(..))`,
+/// which no miniscript parser accepts. They are killed by
+/// [`check_over_non_key_reaches_the_mint_refusal`] below instead.
 #[test]
 fn encode_decode_round_trips_pk_k_pk_h_dupif_and_false() {
     for (tpl, expect) in [
-        (
-            "wsh(c:and_v(v:pk(@0/<0;1>/*),pk_k(@1/<0;1>/*)))",
-            "wsh(c:and_v(v:pk(@0/<0;1>/*),pk(@1/<0;1>/*)))",
-        ),
-        (
-            "wsh(c:and_v(v:pk(@0/<0;1>/*),pk_h(@1/<0;1>/*)))",
-            "wsh(c:and_v(v:pk(@0/<0;1>/*),pkh(@1/<0;1>/*)))",
-        ),
         (
             "wsh(and_v(v:pk(@0/<0;1>/*),dv:older(10)))",
             "wsh(and_v(v:pk(@0/<0;1>/*),dv:older(10)))",
@@ -209,5 +205,25 @@ fn experimental_still_refuses_timelock_mixing_under_wsh_and_sh_wsh() {
         let (out, err, code) = md(&["encode", "--experimental", "--path", "bip48", &tpl]);
         assert_eq!(code, 1, "`{tpl}` must refuse; stdout: {out}");
         assert!(err.contains("heightlock and timelock"), "`{tpl}`: {err}");
+    }
+}
+
+/// Kills template.rs:1542:9 (delete `Terminal::PkK`) and 1548:9 (`PkH`):
+/// with either arm gone the walker fails first with a different error, so
+/// these templates must reach md#4's mint refusal by name.
+#[test]
+fn check_over_non_key_reaches_the_mint_refusal() {
+    for tpl in [
+        "wsh(c:and_v(v:pk(@0/<0;1>/*),pk_k(@1/<0;1>/*)))",
+        "wsh(c:and_v(v:pk(@0/<0;1>/*),pk_h(@1/<0;1>/*)))",
+    ] {
+        let (enc, err, code) = md(&["encode", "--path", "bip48", tpl]);
+        assert_eq!((code, enc.as_str()), (1, ""), "{tpl}: {err}");
+        assert!(
+            err.starts_with(
+                "md: unsupported: this template wraps a fragment other than a single key in `c:`"
+            ),
+            "{tpl}: {err}"
+        );
     }
 }

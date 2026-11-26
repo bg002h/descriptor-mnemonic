@@ -1,6 +1,9 @@
 use crate::error::CliError;
 
 pub struct AddressArgs<'a> {
+    /// Brian's decision of 2026-11-26: render a card whose policy is not
+    /// valid miniscript, with a loud warning (`build::gate_invalid_miniscript`).
+    pub allow_invalid_miniscript: bool,
     /// Mirrors `md encode --experimental` (F-547): without it a card
     /// authored with that flag can be verified but never rendered.
     pub experimental: bool,
@@ -59,6 +62,11 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
         seating_notes = seating.notes;
         seating.descriptor
     };
+    crate::cmd::build::gate_invalid_miniscript(
+        &descriptor,
+        args.allow_invalid_miniscript,
+        "address",
+    )?;
     if !descriptor.is_wallet_policy() {
         return Err(CliError::BadArg(
             "address requires wallet-policy mode (Pubkeys TLV): this card is a keyless \
@@ -67,6 +75,11 @@ pub fn run(args: AddressArgs<'_>) -> Result<u8, CliError> {
              --template <T> --key @i=XPUB."
                 .into(),
         ));
+    }
+    // md#1 (bug hunt 2026-11-25): addresses do not depend on the origin, but
+    // a keyed CARD with none is said so loudly here too (not `--template`).
+    if args.template.is_none() {
+        crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
     }
 
     // Collect (chain, index, address) tuples first; then emit text or JSON.

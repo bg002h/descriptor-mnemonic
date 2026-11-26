@@ -113,6 +113,67 @@ pub fn to_miniscript_descriptor_with_network(
     node_to_descriptor(&d.tree, &keys, network, Some(chain))
 }
 
+/// md review r2 I-1 / r3: does `d`'s tree convert to valid miniscript in its
+/// own context? Runs the SAME conversion [`to_miniscript_descriptor`] runs,
+/// over synthetic keys (`@i` is the master xpub of the seed `[i; 32]`), so it
+/// answers for a template-only card and for a card whose origins do not
+/// resolve, and never reads key material. The conversion checks every
+/// combinator's child types, timelock ranges, fragment placement and the
+/// standard script size; two checks it does not make are added here:
+///
+/// - every script root is type B. `Wsh::new` checks that for `wsh`/`sh`, but
+///   a tap leaf is wrapped with no top-level check, and a `v:`/`a:`/`s:` leaf
+///   can never leave the single true element BIP-342 requires (r3 I-1);
+/// - each script is within its context's satisfaction limits
+///   (`within_resource_limits`: at most 201 executed ops for `wsh`/`sh`,
+///   the standard witness-item and scriptSig limits, each over the WORST
+///   satisfaction; r3 m-3), and each script, every tap leaf included, has
+///   some satisfaction (r4 I-1: `Tap`'s limits check does not ask).
+pub(crate) fn tree_type_checks(d: &Descriptor) -> bool {
+    use bitcoin::bip32::{Xpriv, Xpub};
+    use bitcoin::secp256k1::Secp256k1;
+    let secp = Secp256k1::signing_only();
+    let mut keys = Vec::with_capacity(usize::from(d.n));
+    for i in 0..d.n {
+        // A distinct master xpub per slot: the Liana unspendable recipe
+        // needs xpub leaf keys, and an xpub works in every context.
+        let Ok(master) = Xpriv::new_master(Network::Bitcoin, &[i; 32]) else {
+            return false;
+        };
+        keys.push(DescriptorPublicKey::XPub(DescriptorXKey {
+            origin: None,
+            xkey: Xpub::from_priv(&secp, &master),
+            derivation_path: DerivationPath::master(),
+            wildcard: Wildcard::None,
+        }));
+    }
+    let Ok(desc) = node_to_descriptor(&d.tree, &keys, Network::Bitcoin, Some(0)) else {
+        return false;
+    };
+    fn script_ok<Ctx: ScriptContext>(ms: &Miniscript<DescriptorPublicKey, Ctx>) -> bool {
+        Ctx::top_level_type_check(ms).is_ok() && ms.within_resource_limits()
+    }
+    use miniscript::descriptor::ShInner;
+    match &desc {
+        miniscript::Descriptor::Wsh(w) => script_ok(w.as_inner()),
+        miniscript::Descriptor::Sh(sh) => match sh.as_inner() {
+            ShInner::Wsh(w) => script_ok(w.as_inner()),
+            ShInner::Ms(ms) => script_ok(ms),
+            ShInner::Wpkh(_) => true,
+        },
+        // md review r4 I-1: `Tap`'s `within_resource_limits` passes a leaf
+        // with no satisfaction at all (its consensus check reads `sat_data`
+        // only when present), so ask for one, per leaf: a leaf that can never
+        // be satisfied is a spend path that does not exist.
+        miniscript::Descriptor::Tr(tr) => tr.leaves().all(|leaf| {
+            let ms = leaf.miniscript();
+            script_ok(ms) && Tap::max_satisfaction_size(ms).is_some()
+        }),
+        miniscript::Descriptor::Bare(b) => script_ok(b.as_inner()),
+        miniscript::Descriptor::Pkh(_) | miniscript::Descriptor::Wpkh(_) => true,
+    }
+}
+
 /// Descriptor-wide chain pre-flight shared by [`to_miniscript_descriptor_with_network`]
 /// and `Descriptor::derive_address`: `chain` is bound by the MAX alt-count
 /// across the baseline use-site path AND every per-`@N` override (`None` →

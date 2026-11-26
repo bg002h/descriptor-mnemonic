@@ -47,6 +47,9 @@ pub enum Emit {
 }
 
 pub struct DescriptorArgs<'a> {
+    /// Brian's decision of 2026-11-26: render a card whose policy is not
+    /// valid miniscript, with a loud warning (`build::gate_invalid_miniscript`).
+    pub allow_invalid_miniscript: bool,
     /// Mirrors `md encode --experimental` (F-547): without it a card
     /// authored with that flag can be verified but never rendered.
     pub experimental: bool,
@@ -139,6 +142,11 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
         seating_notes = seating.notes;
         seating.descriptor
     };
+    crate::cmd::build::gate_invalid_miniscript(
+        &descriptor,
+        args.allow_invalid_miniscript,
+        "descriptor",
+    )?;
 
     // A TEMPLATE HAS NO CONCRETE FORM, and saying so is the whole point of the
     // check. Without keys there is nothing to substitute, and rendering
@@ -194,6 +202,12 @@ pub fn run(args: DescriptorArgs<'_>) -> Result<u8, CliError> {
             args.separator,
         )?;
         return Ok(verify_exit.unwrap_or(code));
+    }
+    // md#1 (bug hunt 2026-11-25): a keyed CARD with no origin path is
+    // rendered without guessing one, and said so loudly. (`--template` input
+    // is not a card; its origin is whatever the template and --path give.)
+    if args.template.is_none() {
+        crate::output_advisory::emit_missing_origin_warning(&descriptor, &mut std::io::stderr());
     }
 
     // G-1 caller (SPEC §4 / plan Step 4): `args.network` is already in
@@ -488,5 +502,6 @@ fn emit_md1_card(
         crate::output_advisory::OutputClass::WatchOnly,
         &mut std::io::stderr(),
     );
+    crate::output_advisory::emit_fingerprint_privacy_note(descriptor, true, &mut std::io::stderr());
     Ok(0)
 }

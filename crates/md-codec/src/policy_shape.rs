@@ -203,10 +203,29 @@ pub enum LockKind {
     OlderUnits,
 }
 
+/// A `thresh(k, c_1..c_n)` with `1 <= k < n` at a path root, where every
+/// child is spelled as ONE allowlisted key check or ONE allowlisted timelock
+/// (see [`Branch::any_of`]). md thresh / seedhammer I-1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnyOf {
+    /// How many of the conditions must be met. `1 <= k < n`.
+    pub k: u8,
+    /// How many conditions there are. Always `slots.len() + locks.len()` of
+    /// the entry that carries it.
+    pub n: u8,
+}
+
 /// One independently satisfiable spend path: a tapscript leaf, or the whole
 /// script for `wsh`/`sh`. Mirrors the fork's `Branch` (`md/policy_shape.go`
 /// `Branch`), with `slots` in place of the discarded key-count-only field.
+///
+/// **Read [`Branch::any_of`] first.** When it is `Some`, the entry is a
+/// threshold over its conditions, NOT a conjunction: no listed key or lock is
+/// individually required. A reader that ignores it repeats the defect it
+/// fixes (a 2-of-3 shown as needing all three). `#[non_exhaustive]` so a new
+/// field of this kind can never be skipped by a struct literal elsewhere.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Branch {
     /// The threshold of the ONE `multi`/`sortedmulti`/`multi_a`/
     /// `sortedmulti_a` node this branch contains, at any depth, and only
@@ -225,14 +244,36 @@ pub struct Branch {
     /// (`sortedmulti`/`sortedmulti_a`) rather than `multi`/`multi_a`.
     /// Meaningless when `k == 0`.
     pub sorted: bool,
-    /// Every timelock this branch requires, in wire order. Empty means no
-    /// timelock anywhere in the branch.
+    /// Every timelock in this branch, in wire order. For a conjunction
+    /// (`any_of == None`) each is REQUIRED; for an any-of entry they are
+    /// conditions, any `k` of which (with the keys) satisfy it. Empty means
+    /// no timelock anywhere in the branch.
     pub locks: Vec<Lock>,
     /// Every hashlock this branch requires, in wire order, whatever its
-    /// kind. Empty means no hashlock anywhere in the branch.
+    /// kind. Empty means no hashlock anywhere in the branch. Always empty
+    /// for an any-of entry.
     pub hashlocks: Vec<HashLock>,
     /// Taptree depth of this leaf; 0 for wsh/sh.
     pub depth: u8,
+    /// `None`: every key, lock and hashlock listed is REQUIRED (a
+    /// conjunction; `k`/`n` describe its one multi, if any). `Some`: `slots`
+    /// and `locks` are the `n` CONDITIONS of a `thresh(k, ...)` with
+    /// `1 <= k < n`, of which any `k` satisfy the entry, and `k`/`n`/`sorted`
+    /// above are zero. None of the conditions is individually required.
+    pub any_of: Option<AnyOf>,
+}
+
+impl Branch {
+    /// For an any-of entry: the fewest keys any satisfying choice needs,
+    /// `k - min(k, locks.len())`. It assumes every lock can be met, so where
+    /// two locks cannot both be (a height and a time) it errs toward FEWER
+    /// keys, a warning rather than an overstatement. `None` for a
+    /// conjunction.
+    pub fn any_of_min_keys(&self) -> Option<u8> {
+        let a = self.any_of?;
+        let locks = u8::try_from(self.locks.len()).unwrap_or(u8::MAX);
+        Some(a.k - a.k.min(locks))
+    }
 }
 
 /// Structural summary of one decoded policy. Mirrors the fork's
@@ -241,7 +282,10 @@ pub struct Branch {
 pub struct PolicyShape {
     /// The honesty contract, ported verbatim in meaning from the Go: FALSE
     /// means the walk met a node it could not classify, and NO part of this
-    /// summary may be presented or keyed on.
+    /// summary may be presented or keyed on. It is also FALSE for any
+    /// `thresh` whose children are not all on the allowlist, and for a
+    /// `thresh` with `k != n` that is not at a path root (md thresh /
+    /// seedhammer I-1).
     pub complete: bool,
     /// The taproot internal key's classification; [`KeyPathKind::NotTaproot`]
     /// for every non-`tr` root.
@@ -257,12 +301,24 @@ pub struct PolicyShape {
 /// Walk a decoded descriptor's tree and summarize its structure. Never
 /// panics on an unrecognized shape: that is reported as `complete = false`,
 /// because "I do not understand this" is a result the caller must act on,
-/// not an exception to swallow.
+/// not an exception to swallow. A tree that is not typed miniscript
+/// ([`policy_type_checks`]) is also `complete = false`.
 ///
 /// NOTE: `crate::`, never `md_codec::` — this crate does not self-alias
 /// (`lib.rs` has no `extern crate self as md_codec`). Integration tests
 /// under `tests/` are a separate crate and correctly say `md_codec::`.
 pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
+    let mut s = walk_shape(d);
+    // md review r2 I-1: an untyped tree has no summary. Only `complete`
+    // moves, so a port computes its walk as before and ANDs the type rule in.
+    if !policy_type_checks(d) {
+        s.complete = false;
+    }
+    s
+}
+
+/// The structural walk behind [`policy_shape`], before the type rule.
+fn walk_shape(d: &crate::encode::Descriptor) -> PolicyShape {
     let tree = &d.tree;
     let mut s = PolicyShape {
         complete: true,
@@ -311,6 +367,7 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
                     locks: Vec::new(),
                     hashlocks: Vec::new(),
                     depth: 0,
+                    any_of: None,
                 });
             }
             if let Some(t) = inner_tree {
@@ -336,20 +393,96 @@ pub fn policy_shape(d: &crate::encode::Descriptor) -> PolicyShape {
                 }
                 inner = &inner_children[0];
             }
-            match split_branches(inner, 0) {
+            match split_branches(inner, 0, false) {
                 Some(mut brs) => s.branches.append(&mut brs),
                 None => return incomplete(),
             }
         }
         _ => {
             // wpkh/pkh and anything else: a single-key or unclassifiable root.
-            match split_branches(tree, 0) {
+            match split_branches(tree, 0, false) {
                 Some(mut brs) => s.branches.append(&mut brs),
                 None => return incomplete(),
             }
         }
     }
     s
+}
+
+/// md review r2 I-1 / r3: whether `d`'s tree is valid miniscript in its
+/// script context. THE RULE of this summary, normative for every port: a
+/// tree that fails it has NO summary (`complete == false`) and no key,
+/// whatever the walk would say; `policy_shape` sets `complete = walk &&
+/// typed` and leaves every other field as the walk left it. The walk's
+/// allowlist vouches for a `thresh` node alone; this vouches for the context
+/// around it (`or_b(pk, thresh(…))` spends with no signature, because the
+/// `thresh` is B where `or_b` needs a W).
+///
+/// Exactly what Rust refuses (rust-miniscript's checks, run by
+/// `to_miniscript`'s conversion over synthetic keys, plus two added there):
+///
+/// 1. **Types.** BIP-379's B/V/K/W base types and z/o/n/d/u properties for
+///    every combinator and wrapper, including `thresh`'s first child B and
+///    later children W.
+/// 2. **Script roots are B.** The `wsh`, `sh(wsh)`, `sh` script and EVERY
+///    tap leaf: a `v:`/`a:`/`s:`/`and_v(…,v:…)` root is refused.
+/// 3. **Timelock ranges.** `older(v)` needs `1 <= v` and a valid BIP-68
+///    value (`older(0)` and `older(0x80000001)` are refused); `after(v)`
+///    needs `1 <= v <= 0x7fffffff`.
+/// 4. **Fragment placement.** `multi`/`sortedmulti` only in `wsh`/`sh`
+///    (`multi` in a tap leaf is refused), `multi_a`/`sortedmulti_a` only in
+///    a tap leaf, `sortedmulti` only as the whole script, the descriptor
+///    wrapper `pkh` (`Tag::Pkh`) never inside miniscript (`Tag::PkH` is the
+///    fragment), and no raw `pk_h`.
+/// 5. **Script limits.** The standard `wsh` witness-script size (3600 bytes),
+///    the 520-byte `sh` script limit, rust-miniscript's recursion depth.
+/// 6. **Satisfaction limits, per script** (`wsh`, `sh(wsh)` and `sh` have one
+///    script; every tap leaf is one): the script has some satisfaction (a
+///    tap leaf too, r4 I-1, checked separately because rust-miniscript's
+///    `Tap` limits check does not ask); and, for `wsh`/`sh`, its WORST
+///    satisfaction (the maximum over all of them, not the cheapest) executes
+///    at most 201 non-push ops and needs at most 100 standard witness items
+///    (`wsh`) or a 1650-byte scriptSig (`sh`); for a tap leaf, the worst
+///    satisfaction stays within the 1000-element stack limit. A script with
+///    one path over a limit is refused whole, though another path is fine.
+///
+///    "Has some satisfaction" is rust-miniscript's (13.0.0) analysis, which
+///    a port reproduces exactly: `0` has none; `and_*`/`and_v` need both
+///    sides, `or_*`/`andor` either alternative; and a `thresh(k, …)` of `n`
+///    children has one only when at least `min(k + 1, n)` of its children
+///    have one. That `k + 1` is an upstream off-by-one
+///    (`miniscript/types/extra_props.rs`, the `if i <= k` in the threshold's
+///    fold): a true count would need `k`. So `thresh(2,pk,s:pk,s:pk,X)` with a
+///    never-satisfiable `X` (such as `s:or_i(0,0)`) passes, and
+///    `thresh(2,pk,s:pk,X)` and `thresh(3,pk,s:pk,s:pk,X)` fail although
+///    the latter is satisfiable; cases.json holds all three.
+///
+///    Only the WHOLE script is checked. A never-satisfiable alternative inside
+///    a satisfiable script (`wsh(or_d(pk(@0),0))`) still passes, and the walk
+///    shows it as a path (open FOLLOWUP `bh1125-r4-i1-dead-branch-shown`).
+///
+/// Duplicate keys and malleability are NOT refused. A port without a
+/// miniscript library implements these rules for md's fragment set;
+/// `tests/fixtures/policy_shape/cases.json` records each case's answer
+/// (`typed`, which means "valid miniscript" in this sense), with an
+/// `untyped_*` vector for each rule. Display and identity only: decode, ids,
+/// addresses and re-encoding never consult it.
+///
+/// Without the `derive` feature md-codec has no miniscript library, so the
+/// rules above cannot run and this returns `false` for every tree (Fable
+/// review I-2): no policy gets a summary or a key, rather than a summary
+/// earned on the walk alone (the r2 I-1 defect). The API is the same in both
+/// builds; [`crate::skeleton::SkeletonError::NotMiniscript`] then says why.
+#[cfg(feature = "derive")]
+pub fn policy_type_checks(d: &crate::encode::Descriptor) -> bool {
+    crate::to_miniscript::tree_type_checks(d)
+}
+
+/// See the `derive` build's doc: without miniscript the type rule cannot
+/// run, so nothing type-checks (fail closed).
+#[cfg(not(feature = "derive"))]
+pub fn policy_type_checks(_d: &crate::encode::Descriptor) -> bool {
+    false
 }
 
 /// The zero-value `PolicyShape`: `complete = false` and nothing else filled
@@ -382,7 +515,7 @@ fn walk_tap_tree(n: &Node, depth: u8, s: &mut PolicyShape) {
     if depth - 1 > s.tap_depth {
         s.tap_depth = depth - 1;
     }
-    match split_branches(n, depth - 1) {
+    match split_branches(n, depth - 1, false) {
         Some(mut brs) => s.branches.append(&mut brs),
         None => s.complete = false,
     }
@@ -391,10 +524,14 @@ fn walk_tap_tree(n: &Node, depth: u8, s: &mut PolicyShape) {
 /// Turn a node into one [`Branch`] per ALTERNATIVE: `or_b`/`or_c`/`or_d`/
 /// `or_i` are two alternatives each (recursively), `andor(X,Y,Z)` is `(X and
 /// Y) or Z`, and anything else is one branch. `thresh(k,...)` with `k < n` is
-/// also a set of alternatives but a combinatorial one; it stays one branch,
-/// honestly described by [`collect`]. `None` propagates an unknown tag
-/// exactly as the Go `branchOf` does.
-fn split_branches(n: &Node, depth: u8) -> Option<Vec<Branch>> {
+/// also a set of alternatives but a combinatorial one; at a path root with
+/// every child on the allowlist it is ONE any-of entry ([`branch_of`]),
+/// anywhere else it is refused. `None` propagates an unknown tag exactly as
+/// the Go `branchOf` does.
+///
+/// `or_b_second` is true only for the second child of an `or_b`: the one
+/// place the type system puts a wrapped (`a:`) `thresh` at a path root.
+fn split_branches(n: &Node, depth: u8, or_b_second: bool) -> Option<Vec<Branch>> {
     match n.tag {
         Tag::OrB | Tag::OrC | Tag::OrD | Tag::OrI => {
             let Body::Children(children) = &n.body else {
@@ -403,8 +540,8 @@ fn split_branches(n: &Node, depth: u8) -> Option<Vec<Branch>> {
             if children.len() != 2 {
                 return None;
             }
-            let mut left = split_branches(&children[0], depth)?;
-            let mut right = split_branches(&children[1], depth)?;
+            let mut left = split_branches(&children[0], depth, false)?;
+            let mut right = split_branches(&children[1], depth, n.tag == Tag::OrB)?;
             left.append(&mut right);
             Some(left)
         }
@@ -421,21 +558,21 @@ fn split_branches(n: &Node, depth: u8) -> Option<Vec<Branch>> {
                 tag: Tag::AndV,
                 body: Body::Children(vec![children[0].clone(), children[1].clone()]),
             };
-            let mut left = split_branches(&xy, depth)?;
-            let mut right = split_branches(&children[2], depth)?;
+            let mut left = split_branches(&xy, depth, false)?;
+            let mut right = split_branches(&children[2], depth, false)?;
             left.append(&mut right);
             Some(left)
         }
         _ => {
-            let br = branch_of(n, depth)?;
+            let br = branch_of(n, depth, or_b_second)?;
             Some(vec![br])
         }
     }
 }
 
-/// Summarize ONE spend path. `None` means an unrecognised tag, which forces
-/// `complete = false` upstream.
-fn branch_of(n: &Node, depth: u8) -> Option<Branch> {
+/// Summarize ONE spend path. `None` means an unrecognised tag, or a `thresh`
+/// this summary refuses, which forces `complete = false` upstream.
+fn branch_of(n: &Node, depth: u8, or_b_second: bool) -> Option<Branch> {
     let mut br = Branch {
         k: 0,
         n: 0,
@@ -444,7 +581,33 @@ fn branch_of(n: &Node, depth: u8) -> Option<Branch> {
         locks: Vec::new(),
         hashlocks: Vec::new(),
         depth,
+        any_of: None,
     };
+    if let Some(root) = any_of_root(n, or_b_second) {
+        let Body::Variable { k, children } = &root.body else {
+            return None;
+        };
+        if usize::from(*k) != children.len() {
+            // md thresh / seedhammer I-1: `k < n` is a disjunction. One
+            // any-of entry when every child is on the allowlist and the key
+            // slots are distinct; otherwise refused.
+            if *k == 0 || usize::from(*k) > children.len() {
+                return None;
+            }
+            let (slots, locks) = thresh_conditions(children)?;
+            let distinct: BTreeSet<u8> = slots.iter().copied().collect();
+            if distinct.len() != slots.len() {
+                return None;
+            }
+            br.slots = distinct.into_iter().collect();
+            br.locks = locks;
+            br.any_of = Some(AnyOf {
+                k: *k,
+                n: u8::try_from(children.len()).ok()?,
+            });
+            return Some(br);
+        }
+    }
     let mut keys = BTreeSet::new();
     if !collect(n, &mut br, &mut keys) {
         return None;
@@ -635,11 +798,24 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
             true
         }
         Tag::True | Tag::False => true,
+        // md thresh / seedhammer I-1: inside a path only `k == n` is a
+        // conjunction, and only when every child is on the allowlist (a child
+        // outside it can feed the ADD chain a number other than 0 or 1). A
+        // `k < n` `thresh` that is not a path root has no single-entry
+        // summary. Children are not walked with `collect`.
         Tag::Thresh => {
-            let Body::Variable { children, .. } = &n.body else {
+            let Body::Variable { k, children } = &n.body else {
                 return false;
             };
-            children.iter().all(|c| collect(c, br, keys))
+            if usize::from(*k) != children.len() {
+                return false;
+            }
+            let Some((slots, locks)) = thresh_conditions(children) else {
+                return false;
+            };
+            keys.extend(slots);
+            br.locks.extend(locks);
+            true
         }
         // `l:X` = or_i(0,X), `u:X` = or_i(X,0) and `and_n(X,Y)` =
         // andor(X,Y,0): the `0` alternative is never satisfiable, so these
@@ -676,6 +852,121 @@ fn collect(n: &Node, br: &mut Branch, keys: &mut BTreeSet<u8>) -> bool {
         // tagTr and tagTapTree cannot appear inside a branch; anything else
         // is a tag this walk has not been taught. Refuse rather than guess.
         Tag::Tr | Tag::TapTree => false,
+    }
+}
+
+/// The `thresh` an any-of entry is rooted at: `n` itself, or, only as the
+/// second child of an `or_b`, the `thresh` under an `a:`. No other wrapper is
+/// looked through.
+fn any_of_root(n: &Node, or_b_second: bool) -> Option<&Node> {
+    match (n.tag, &n.body) {
+        (Tag::Thresh, _) => Some(n),
+        (Tag::Alt, Body::Children(c)) if or_b_second && c.len() == 1 && c[0].tag == Tag::Thresh => {
+            Some(&c[0])
+        }
+        _ => None,
+    }
+}
+
+/// md thresh / seedhammer I-1: the `thresh` child ALLOWLIST (design section
+/// 1). `Some((key slots in wire order, locks in wire order))` when EVERY
+/// child is spelled exactly as one listed form, `None` otherwise. Each listed
+/// spelling is one the miniscript type rules make leave exactly 0 or 1 on the
+/// stack (BIP-379: X_1 is Bdu, others are Wdu), so "k of n" is exact. Nothing
+/// that is not on the list is looked through; the list IS the type check,
+/// because decoded trees are not type-checked.
+///
+/// - X_1: KEY, or LOCK.
+/// - later: `s:` over a `pk` KEY (never `pkh`: not "o"), `a:` over any KEY,
+///   `s:` or `a:` over a LOCK.
+fn thresh_conditions(children: &[Node]) -> Option<(Vec<u8>, Vec<Lock>)> {
+    let (first, rest) = children.split_first()?;
+    let mut slots = Vec::new();
+    let mut locks = Vec::new();
+    let mut take = |c: &Node, allow_pkh: bool| -> Option<()> {
+        if let Some((slot, is_pkh)) = key_b(c) {
+            if is_pkh && !allow_pkh {
+                return None;
+            }
+            slots.push(slot);
+        } else {
+            locks.push(lock_b(c)?);
+        }
+        Some(())
+    };
+    take(first, true)?;
+    for c in rest {
+        let inner = sole_child(c)?;
+        match c.tag {
+            Tag::Swap => take(inner, false)?,
+            Tag::Alt => take(inner, true)?,
+            _ => return None,
+        }
+    }
+    Some((slots, locks))
+}
+
+/// The one child of a one-child node.
+fn sole_child(n: &Node) -> Option<&Node> {
+    match &n.body {
+        Body::Children(c) if c.len() == 1 => Some(&c[0]),
+        _ => None,
+    }
+}
+
+/// KEY: `pk_k`/`pk_h` over a placeholder, bare (the wire's spelling of
+/// `pk`/`pkh`) or under exactly one `c:`. `(slot, is pkh)`.
+fn key_b(n: &Node) -> Option<(u8, bool)> {
+    let k = if n.tag == Tag::Check {
+        sole_child(n)?
+    } else {
+        n
+    };
+    match (k.tag, &k.body) {
+        (Tag::PkK, Body::KeyArg { index }) => Some((*index, false)),
+        (Tag::PkH, Body::KeyArg { index }) => Some((*index, true)),
+        _ => None,
+    }
+}
+
+/// T: `after`/`older` with an operand `1 <= v < 2^31` (BIP-379).
+fn timelock_t(n: &Node) -> Option<Lock> {
+    match (n.tag, &n.body) {
+        (Tag::After | Tag::Older, Body::Timelock(v)) if (1..1u32 << 31).contains(v) => {
+            Some(lock_from_wire(n.tag, *v))
+        }
+        _ => None,
+    }
+}
+
+/// The non-`0` child of an `or_i` with exactly two children, exactly one of
+/// them `0`.
+fn zero_arm_other(n: &Node) -> Option<&Node> {
+    match (n.tag, &n.body) {
+        (Tag::OrI, Body::Children(c)) if c.len() == 2 => {
+            match (c[0].tag == Tag::False, c[1].tag == Tag::False) {
+                (true, false) => Some(&c[1]),
+                (false, true) => Some(&c[0]),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// LOCK: `ln:T` / `un:T` (`or_i` with `0`, over `n:T`) or `nl:T` / `nu:T`
+/// (`n:` over `or_i` with `0`, over T).
+fn lock_b(n: &Node) -> Option<Lock> {
+    match n.tag {
+        Tag::OrI => {
+            let other = zero_arm_other(n)?;
+            if other.tag != Tag::ZeroNotEqual {
+                return None;
+            }
+            timelock_t(sole_child(other)?)
+        }
+        Tag::ZeroNotEqual => timelock_t(zero_arm_other(sole_child(n)?)?),
+        _ => None,
     }
 }
 
@@ -921,4 +1212,37 @@ pub fn key_partition(d: &crate::encode::Descriptor) -> Vec<Vec<u8>> {
         },
         |(xpub, _origin): &([u8; 65], OriginPath)| *xpub == ABSENT_XPUB,
     )
+}
+
+#[cfg(test)]
+mod derive_feature_tests {
+    //! Fable review I-2: the type rule needs `miniscript`, which only the
+    //! `derive` feature brings. Run with and without it:
+    //! `cargo test -p md-codec --lib derive_feature_tests` and the same with
+    //! `--no-default-features`.
+
+    /// `wsh(multi(2,@0/<0;1>/*,@1/<0;1>/*))` at `--path bip48`: valid
+    /// miniscript with a complete walk.
+    const MULTI_2_OF_2: &str = "md1ypfdsssj5qqcyxppggah9rg9v9gjh4";
+
+    #[test]
+    fn a_typed_card_is_summarised_only_when_the_type_rule_can_run() {
+        let d = crate::decode::decode_md1_string(MULTI_2_OF_2).expect("decodes");
+        let shape = super::policy_shape(&d);
+        let key = crate::skeleton::skeleton(&d);
+        if cfg!(feature = "derive") {
+            assert!(super::policy_type_checks(&d));
+            assert!(shape.complete);
+            assert!(key.is_ok(), "{key:?}");
+        } else {
+            assert!(!super::policy_type_checks(&d));
+            assert!(!shape.complete, "no summary on the walk alone");
+            let e = key.expect_err("no key without the type rule");
+            assert_eq!(e, crate::skeleton::SkeletonError::NotMiniscript);
+            assert!(
+                e.to_string().contains("without its `derive` feature"),
+                "{e}"
+            );
+        }
+    }
 }

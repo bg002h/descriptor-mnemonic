@@ -483,6 +483,7 @@ fn card_key_bindings(d: &Descriptor) -> Vec<ParsedKey> {
         .map(|(i, payload)| ParsedKey {
             i: *i,
             depth: 0,
+            child_number: 0,
             payload: *payload,
         })
         .collect()
@@ -545,6 +546,7 @@ mod tests {
         ParsedKey {
             i,
             depth: 4,
+            child_number: 0,
             payload: [seed; 65],
         }
     }

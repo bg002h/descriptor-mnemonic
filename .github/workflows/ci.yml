@@ -145,6 +145,12 @@ jobs:
       - name: md-cli builds without default features (the serde-free install the md-cli readme gives)
         run: cargo build --locked -p md-cli --no-default-features
         if: steps.docs.outputs.docs_only != 'true'
+      - name: md-codec builds without default features (the pure-codec configuration the md-codec readme gives)
+        run: cargo check --locked -p md-codec --no-default-features
+        if: steps.docs.outputs.docs_only != 'true'
+      - name: md-codec's type rule fails closed without derive
+        run: cargo test --locked -p md-codec --no-default-features --lib derive_feature_tests
+        if: steps.docs.outputs.docs_only != 'true'
 
   fmt:
     name: cargo fmt

@@ -33,7 +33,10 @@ const TPUB48: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGf
 /// assert needs the two slots to hold the same key; the duplication was
 /// incidental filler, and it made the fixtures describe a wallet nobody would
 /// want.
-const TPUB48_B: &str = "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M";
+/// Its header is set to depth 4, child 2' (the chain code and point of an
+/// earlier depth-3 fixture), so it agrees with the canonical `m/48'/1'/0'/2'`
+/// md encode writes for these shapes (bug hunt 2026-11-25 md#1/md#2).
+const TPUB48_B: &str = "tpubDE1uj2nfVDcnG8Rtvb69gEVKuJTqrYzNWYirVqW6f3PxfRqNgDAHeasKLaUXJqCMNUNVncVi4rspXiYYo8RKrop2xS4H9Ej9ezRnTECBJoF";
 
 /// (a) THE FUNDS CASE: a post-multipath fixed step `@0/<2;3>/0'/*` must reject
 /// with exit 1 and a typed template-parse error naming the multipath-not-final

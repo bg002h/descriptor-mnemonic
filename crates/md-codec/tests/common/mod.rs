@@ -131,7 +131,7 @@ pub fn three_older_descriptor(a: u32, b: u32, c: u32) -> md_codec::encode::Descr
     let branch = |i: u8, v: u32| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             timelock(Tag::Older, v),
         )
     };
@@ -155,7 +155,7 @@ pub fn two_after_descriptor(height: u32, time: u32) -> md_codec::encode::Descrip
     let branch = |i: u8, v: u32| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             timelock(Tag::After, v),
         )
     };
@@ -177,7 +177,7 @@ pub fn two_older_descriptor(blocks: u32, units: u32) -> md_codec::encode::Descri
     let branch = |i: u8, v: u32| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             timelock(Tag::Older, v),
         )
     };
@@ -195,7 +195,7 @@ pub fn two_sha256_descriptor(a: [u8; 32], b: [u8; 32]) -> md_codec::encode::Desc
     let branch = |i: u8, h: [u8; 32]| {
         node2(
             Tag::AndV,
-            wrap(Tag::Verify, keyarg(Tag::Pkh, i)),
+            wrap(Tag::Verify, keyarg(Tag::PkH, i)),
             hash32(Tag::Sha256, h),
         )
     };
@@ -211,7 +211,7 @@ pub fn kofn_recovery_with_use_site() -> md_codec::encode::Descriptor {
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let tree = wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery));
@@ -236,7 +236,7 @@ fn kofn_recovery_tree() -> Node {
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     wrap(Tag::Wsh, node2(Tag::OrD, primary, recovery))
@@ -373,9 +373,10 @@ pub fn seated_same_key_with_overrides(
 // Task 4 (Skeleton / SkeletonKey) fixtures.
 // ─────────────────────────────────────────────────────────────────────────
 
-/// `wsh(or_d(and_v(v:pkh(@3), older(26280)), multi(2,@0,@1,@2)))` — the
-/// `kofn_recovery` shape with its two `or_d` operands SWAPPED (recovery leg
-/// first, the multi second), so branch 0 is the HIGH-numbered slot [3] and
+/// `wsh(or_i(and_v(v:pkh(@3), older(26280)), multi(2,@0,@1,@2)))` — the
+/// `kofn_recovery` shape with its two operands SWAPPED (recovery leg
+/// first, the multi second; `or_i`, because `or_d` with an `and_v` first is
+/// not typed miniscript and md r2 I-1 gives such a tree no key), so branch 0 is the HIGH-numbered slot [3] and
 /// branch 1 is the LOW-numbered slots [0,1,2]. This is deliberate, not a
 /// typo: with the un-swapped order, branch 0's rendered group list always
 /// starts with a lower digit than branch 1's (branch 0 always holds the
@@ -389,11 +390,11 @@ pub fn seated_same_key_with_overrides(
 fn kofn_recovery_first_tree() -> Node {
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
-    wrap(Tag::Wsh, node2(Tag::OrD, recovery, primary))
+    wrap(Tag::Wsh, node2(Tag::OrI, recovery, primary))
 }
 
 /// The [`kofn_recovery_first_tree`] shape with BOTH a `Fingerprints` TLV
@@ -518,7 +519,9 @@ pub fn sh_wsh_2of3() -> md_codec::encode::Descriptor {
     descriptor_of(tree, 3)
 }
 
-/// `sh(wsh(or_d(sortedmulti(2,@0,@1,@2), and_v(v:pkh(@3),older(26280)))))` —
+/// `sh(wsh(or_d(multi(2,@0,@1,@2), and_v(v:pkh(@3),older(26280)))))` —
+/// (`multi`, not `sortedmulti`: `sortedmulti` is no miniscript fragment, so
+/// inside `or_d` it does not type-check and md r2 I-1 gives no summary) —
 /// final whole-branch review, I-1: `sh_wsh_2of3`'s single-`multi` shape
 /// cannot tell whether the `sh(wsh(...))` unwrap in `policy_shape` actually
 /// runs (a bare threshold decomposes identically either way). This shape is
@@ -530,11 +533,11 @@ pub fn sh_wsh_2of3() -> md_codec::encode::Descriptor {
 /// (`is_wsh_inner_multi`); this fixture's inner is `or_d(...)`, the same
 /// non-canonical shape `kofn_recovery_tree`'s bare `wsh(or_d(...))` is, so it
 /// needs the same explicit non-empty shared origin path.
-pub fn sh_wsh_or_d_sortedmulti_and_recovery() -> md_codec::encode::Descriptor {
-    let primary = multikeys(Tag::SortedMulti, 2, vec![0, 1, 2]);
+pub fn sh_wsh_or_d_multi_and_recovery() -> md_codec::encode::Descriptor {
+    let primary = multikeys(Tag::Multi, 2, vec![0, 1, 2]);
     let recovery = node2(
         Tag::AndV,
-        wrap(Tag::Verify, keyarg(Tag::Pkh, 3)),
+        wrap(Tag::Verify, keyarg(Tag::PkH, 3)),
         timelock(Tag::Older, 26280),
     );
     let inner = node2(Tag::OrD, primary, recovery);
@@ -1631,4 +1634,232 @@ pub fn corrupt_chunk_at(chunk: &str, pos: usize, xor_mask: u8) -> String {
         .unwrap() as u8;
     chars[idx] = A[((sym ^ (xor_mask & 0x1F)) & 0x1F) as usize] as char;
     chars.into_iter().collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// md review r2 I-1: trees that are not typed miniscript (no summary, no key).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The review's two cards, hand-built (the encoder does not type-check):
+/// `wsh(or_b(pk(@0),thresh(2,pk(@1),s:pk(@2),s:pk(@3))))` and
+/// `wsh(or_b(pk(@0),pk(@1)))`. Both spend with no signature. And the r3
+/// review's `tr(NUMS,v:pk(@0))`, which can never be spent (its only leaf
+/// leaves an empty stack).
+pub const UNTYPED_CARDS: [(&str, &str); 3] = [
+    (
+        "untyped_review_or_b_thresh",
+        "md1f7xrgqq9qeuedejan9uuw2jemuklxheeuvn3jkxtsqrqjc5xsg3f8z5w9vqqw5d36huyrgmg",
+    ),
+    (
+        "untyped_review_or_b_pk_pk",
+        "md1fa7e5qq9qfcu49nhed7d0ncqpsfv2z5qd7jmntp59fk69",
+    ),
+    (
+        "untyped_review_r3_tap_leaf_v",
+        "md1fajunqq9qpcu49cqps8xjsgqjcysy6hxsr3",
+    ),
+];
+
+/// `count` 20-of-20 `multi`s over `@0..@19`, chained by `and_v` (all but the
+/// last under `v:`). Each needs 21 witness items (20 signatures and the
+/// CHECKMULTISIG dummy) and runs 21 ops in 683 script bytes, so 5 of them
+/// break ONLY the 100-standard-witness-item limit (105 items, 105 ops, 3415
+/// bytes), and 4 break nothing (84 items).
+pub fn chained_multis(count: usize) -> Node {
+    let multi = || multikeys(Tag::Multi, 20, (0..20).collect());
+    let mut x = multi();
+    for _ in 1..count {
+        x = node2(Tag::AndV, wrap(Tag::Verify, multi()), x);
+    }
+    x
+}
+
+/// The miniscript `0`.
+fn zero() -> Node {
+    Node {
+        tag: Tag::False,
+        body: Body::Empty,
+    }
+}
+
+fn tap(l: Node, r: Node) -> Node {
+    Node {
+        tag: Tag::TapTree,
+        body: Body::Children(vec![l, r]),
+    }
+}
+
+fn tr_with(internal_key: InternalKey, x: Node) -> Node {
+    Node {
+        tag: Tag::Tr,
+        body: Body::Tr {
+            internal_key,
+            tree: Some(Box::new(x)),
+        },
+    }
+}
+
+/// `and_v(v:pkh(@0),pk(@1))` spelled with the top-level `Tag::Pkh`.
+fn v_pkh_then_pk() -> Node {
+    node2(
+        Tag::AndV,
+        wrap(Tag::Verify, keyarg(Tag::Pkh, 0)),
+        keyarg(Tag::PkK, 1),
+    )
+}
+
+/// A balanced binary tree of `n >= 1` leaves joined by `tag`, so it stays
+/// shallow (JSON readers limit nesting depth; serde_json's is 128).
+fn balanced(tag: Tag, leaves: Vec<Node>) -> Node {
+    let mut layer = leaves;
+    while layer.len() > 1 {
+        let mut next = Vec::with_capacity(layer.len().div_ceil(2));
+        let mut it = layer.into_iter();
+        while let Some(l) = it.next() {
+            next.push(match it.next() {
+                Some(r) => node2(tag, l, r),
+                None => l,
+            });
+        }
+        layer = next;
+    }
+    layer.pop().expect("n >= 1")
+}
+
+/// `pk(@0)` joined by `or_i` `n` times over (a balanced tree): typed, but a
+/// witness script over the 3600-byte standard limit for `n = 128`.
+fn or_i_chain(n: usize) -> Node {
+    balanced(Tag::OrI, (0..n).map(|_| keyarg(Tag::PkK, 0)).collect())
+}
+
+/// `and_v(<v:older(1) and_v … v:older(n)>, pk(@0))`, the locks a balanced
+/// `and_v` tree of V nodes: typed, but every satisfaction executes `2n + 1`
+/// ops (`CSV VERIFY` per lock, one `CHECKSIG`), over 201 for `n = 101`.
+fn v_older_chain(n: u32) -> Node {
+    let locks = (1..=n)
+        .map(|i| wrap(Tag::Verify, timelock(Tag::Older, i)))
+        .collect();
+    node2(Tag::AndV, balanced(Tag::AndV, locks), keyarg(Tag::PkK, 0))
+}
+
+/// Trees that are not valid miniscript in their context, each with the rule
+/// it breaks: one per combinator md decodes, then the tap-leaf, timelock,
+/// placement and limit rules (`policy_type_checks`'s doc lists them).
+pub fn untyped_trees() -> Vec<(&'static str, Node)> {
+    let pk = |i: u8| keyarg(Tag::PkK, i);
+    let s = |x: Node| wrap(Tag::Swap, x);
+    let a = |x: Node| wrap(Tag::Alt, x);
+    let v = |x: Node| wrap(Tag::Verify, x);
+    let wsh = |x: Node| wrap(Tag::Wsh, x);
+    let three = |first: u8| thresh_node(2, vec![pk(first), s(pk(first + 1)), s(pk(first + 2))]);
+    let nums = |x: Node| Node {
+        tag: Tag::Tr,
+        body: Body::Tr {
+            internal_key: InternalKey::NumsPoint,
+            tree: Some(Box::new(x)),
+        },
+    };
+    vec![
+        ("or_b_second_not_w", wsh(node2(Tag::OrB, pk(0), three(1)))),
+        ("or_b_pk_pk", wsh(node2(Tag::OrB, pk(0), pk(1)))),
+        ("or_d_z_not_b", wsh(node2(Tag::OrD, pk(0), s(pk(1))))),
+        (
+            "or_c_z_not_v",
+            wsh(wrap(Tag::Verify, node2(Tag::OrC, pk(0), pk(1)))),
+        ),
+        ("or_i_mixed_types", wsh(node2(Tag::OrI, pk(0), s(pk(1))))),
+        ("and_v_x_not_v", wsh(node2(Tag::AndV, pk(0), pk(1)))),
+        ("and_b_y_not_w", wsh(node2(Tag::AndB, pk(0), pk(1)))),
+        (
+            "andor_z_not_b",
+            wsh(node3(Tag::AndOr, pk(0), pk(1), s(pk(2)))),
+        ),
+        (
+            "thresh_later_not_w",
+            wsh(thresh_node(3, vec![pk(0), pk(1), pk(2)])),
+        ),
+        (
+            "multi_under_and_v_x",
+            wsh(node2(
+                Tag::AndV,
+                multikeys(Tag::Multi, 1, vec![0, 1]),
+                pk(2),
+            )),
+        ),
+        (
+            "s_over_multi",
+            wsh(node2(
+                Tag::AndB,
+                pk(0),
+                s(multikeys(Tag::Multi, 1, vec![1, 2])),
+            )),
+        ),
+        ("top_level_v", wsh(v(pk(0)))),
+        ("top_level_a", wsh(a(pk(0)))),
+        (
+            "j_over_older",
+            wsh(node2(
+                Tag::AndV,
+                v(pk(0)),
+                wrap(Tag::NonZero, timelock(Tag::Older, 10)),
+            )),
+        ),
+        ("tr_leaf_or_b_pk_pk", nums(node2(Tag::OrB, pk(0), pk(1)))),
+        // md review r3 I-1: a tap leaf's root must be B, as wsh's is (BIP-342
+        // needs one true element left; v: leaves none, a:/s: leave two).
+        ("tap_leaf_v", nums(v(pk(0)))),
+        ("tap_leaf_a", nums(a(pk(0)))),
+        ("tap_leaf_s", nums(s(pk(0)))),
+        (
+            "tap_leaf_and_v_v_v",
+            nums(node2(Tag::AndV, v(pk(0)), v(pk(1)))),
+        ),
+        ("tap_two_leaves_one_v", nums(tap(pk(0), v(pk(1))))),
+        ("tr_slot_leaf_v", tr_with(InternalKey::Slot(0), v(pk(1)))),
+        (
+            "tr_liana_two_leaves_one_v",
+            tr_with(InternalKey::LianaUnspendable, tap(pk(0), v(pk(1)))),
+        ),
+        // md review r4 I-1: a tap leaf that can never be satisfied (rule 6
+        // checked per leaf, as for a wsh script). One such leaf among
+        // satisfiable ones is refused too, and so is `tr(@0,0)`, whose key
+        // path still spends.
+        (
+            "tap_leaf_unsatisfiable",
+            nums(node2(Tag::AndV, v(pk(0)), zero())),
+        ),
+        (
+            "tap_two_leaves_one_unsatisfiable",
+            nums(tap(pk(0), node2(Tag::AndV, v(pk(1)), zero()))),
+        ),
+        ("tr_slot_leaf_zero", tr_with(InternalKey::Slot(0), zero())),
+        // md review r3 m-1: not a type rule, but refused the same way.
+        (
+            "older_zero",
+            wsh(node2(Tag::AndV, v(pk(0)), timelock(Tag::Older, 0))),
+        ),
+        (
+            "after_above_i32",
+            wsh(node2(Tag::AndV, v(pk(0)), timelock(Tag::After, u32::MAX))),
+        ),
+        (
+            "multi_in_tap_leaf",
+            nums(multikeys(Tag::Multi, 1, vec![0, 1])),
+        ),
+        (
+            "nested_sortedmulti",
+            wsh(node2(
+                Tag::OrD,
+                multikeys(Tag::SortedMulti, 1, vec![0, 1]),
+                pk(2),
+            )),
+        ),
+        ("nested_pkh_wrapper", wsh(v_pkh_then_pk())),
+        ("script_over_3600_bytes", wsh(or_i_chain(128))),
+        // seedhammer review: the 100-witness-item limit alone (see
+        // `chained_multis`; four of them are typed).
+        ("witness_items_over_100", wsh(chained_multis(5))),
+        // md review r3 m-3: every satisfaction runs more than 201 ops.
+        ("ops_over_201", wsh(v_older_chain(101))),
+    ]
 }

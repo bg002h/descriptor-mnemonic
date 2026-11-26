@@ -160,8 +160,13 @@ fn three_colliding_slots_are_all_named() {
 /// case above — only the presence of keys differs.
 #[test]
 fn a_keyed_card_is_not_warned() {
-    const X0: &str = "xpub6E6MpT6SMBy1Ti3KJ9heS5M4vZnunHCZSrhWXa5YTn2psXd7RiWrafZ9aDAuaLQZRoLvJJLSr2SPi4tSoKvp6tdk15kMu7UPRHygVgz7aHz";
-    const X1: &str = "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj";
+    // Both keys are depth 4 with child number 2', so their headers agree with
+    // `P` (bug hunt 2026-11-25 md#2 refuses a key whose header contradicts its
+    // origin; the earlier fixtures were a depth-4 `1'` key and a depth-3 key).
+    // X0 is the earlier depth-4 `1'` key's chain code and point, with its
+    // header's child number set to 2'.
+    const X0: &str = "xpub6E6MpT6SMBy1WFsHq7TjScR2sKMSXB3HPPxQ26t3F8WCTbr1mSW1xUGLrT2VZXvV4hj1quWxm15Bkfr1GF47JBnT7WEBMHGSFrQv1Gr6hq2";
+    const X1: &str = "xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf";
     let (stdout, stderr, code) = encode(&[
         "encode",
         "--group-size",
