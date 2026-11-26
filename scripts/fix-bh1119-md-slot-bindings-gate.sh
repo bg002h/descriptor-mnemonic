@@ -6,6 +6,9 @@
 # Steps: 1 build md-cli, then every row s1-s17, e1-e6 as a printed command against the built binary
 #   (exit code, empty stdout and the exact one-line stderr); 2 the repo CI set (ci.yml).
 # On the base (before the fix) step 1 fails 22 of 23 rows (s17 passes).
+# Exit codes (2026-11-26): rows s1-s16 now expect 2 without the `MISMATCH:` prefix, after the
+#   constellation exit-code cutover (mnemonic-engrave design/SPEC_constellation_exit_codes.md);
+#   they were 1 with `md: MISMATCH: ...` when this fix landed.
 # Does NOT cover: the toolkit manual edit (separate toolkit change), the mnemonic-gui schema mirror,
 #   the macOS/Windows/FreeBSD/musl legs, the WORDING_REVIEW row for texts K, F, E-K, E-F.
 set -u
@@ -20,8 +23,8 @@ T='wpkh(@0/<0;1>/*)'
 T2='wsh(sortedmulti(1,@0/<0;1>/*,@1/<0;1>/*))'
 MD="${CARGO_TARGET_DIR:-target}/debug/md"
 
-kl() { echo "md: MISMATCH: @$1: --key arguments $2 and $3 both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @$1=... you mean and remove the other."; }
-fl() { echo "md: MISMATCH: @$1: --fingerprint $2 and --fingerprint $3 both bind this slot; a slot takes exactly one master fingerprint, and md never picks one for you. Keep the one you mean and remove the other."; }
+kl() { echo "md: @$1: --key arguments $2 and $3 both bind this slot, with different values; a slot takes exactly one key, and md never picks one for you. Keep the --key @$1=... you mean and remove the other."; }
+fl() { echo "md: @$1: --fingerprint $2 and --fingerprint $3 both bind this slot; a slot takes exactly one master fingerprint, and md never picks one for you. Keep the one you mean and remove the other."; }
 ekl() { echo "md: @$1: --key arguments $2 and $3 bind this slot to the same value; give each slot's --key once."; }
 efl() { echo "md: @$1: --fingerprint $2 is given more than once for this slot; give each slot's --fingerprint once."; }
 
@@ -37,22 +40,22 @@ rows() {
     else echo "FAIL $name (rc $code, stdout [$out], stderr [$err])"; bad=1; fi
   }
   mapfile -t CARD < <("$MD" encode "$T" --key "@0=$KA" --network signet)
-  row s1 1 "$(kl 0 1 2)" address --template "$T" --key "@0=$KA" --key "@0=$KB"
-  row s2 1 "$(kl 0 1 2)" address --template "$T" --key "@0=$KB" --key "@0=$KA"
-  row s3 1 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KA" --key "@0=$KB"
-  row s4 1 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KB" --key "@0=$KA"
-  row s5 1 "$(fl 0 11223344 aabbccdd)" descriptor --template "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
-  row s6 1 "$(fl 0 aabbccdd 11223344)" descriptor --template "$T" --key "@0=$KA" --fingerprint @0=aabbccdd --fingerprint @0=11223344
-  row s7 1 "$(fl 0 11223344 aabbccdd)" address --template "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
-  row s8 1 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=[73c5da0a/84'/1'/0']$KA" --key "@0=[73c5da0a/84'/1'/1']$KA"
-  row s9 1 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=[73c5da0a/84'/1'/0']$KA" --key "@0=[aabbccdd/84'/1'/0']$KA"
-  row s10 1 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KA" --key "@0=[73c5da0a/84'/1'/0']$KA"
-  row s11 1 "$(kl 0 1 2)" encode "$T" --key "@0=$KA" --key "@0=$KB"
-  row s12 1 "$(fl 0 11223344 aabbccdd)" encode "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
-  row s13 1 "$(kl 0 1 2)" verify "${CARD[@]}" --template "$T" --key "@0=$KA" --key "@0=$KB"
-  row s14 1 "$(fl 0 11223344 aabbccdd)" verify "${CARD[@]}" --template "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
-  row s15 1 "$(kl 1 2 3)" descriptor --template "$T2" --key "@0=$KA" --key "@1=$KB" --key "@1=$KA" --key "@0=$KB"
-  row s16 1 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KA" --key "@0=$KB" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
+  row s1 2 "$(kl 0 1 2)" address --template "$T" --key "@0=$KA" --key "@0=$KB"
+  row s2 2 "$(kl 0 1 2)" address --template "$T" --key "@0=$KB" --key "@0=$KA"
+  row s3 2 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KA" --key "@0=$KB"
+  row s4 2 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KB" --key "@0=$KA"
+  row s5 2 "$(fl 0 11223344 aabbccdd)" descriptor --template "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
+  row s6 2 "$(fl 0 aabbccdd 11223344)" descriptor --template "$T" --key "@0=$KA" --fingerprint @0=aabbccdd --fingerprint @0=11223344
+  row s7 2 "$(fl 0 11223344 aabbccdd)" address --template "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
+  row s8 2 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=[73c5da0a/84'/1'/0']$KA" --key "@0=[73c5da0a/84'/1'/1']$KA"
+  row s9 2 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=[73c5da0a/84'/1'/0']$KA" --key "@0=[aabbccdd/84'/1'/0']$KA"
+  row s10 2 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KA" --key "@0=[73c5da0a/84'/1'/0']$KA"
+  row s11 2 "$(kl 0 1 2)" encode "$T" --key "@0=$KA" --key "@0=$KB"
+  row s12 2 "$(fl 0 11223344 aabbccdd)" encode "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
+  row s13 2 "$(kl 0 1 2)" verify "${CARD[@]}" --template "$T" --key "@0=$KA" --key "@0=$KB"
+  row s14 2 "$(fl 0 11223344 aabbccdd)" verify "${CARD[@]}" --template "$T" --key "@0=$KA" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
+  row s15 2 "$(kl 1 2 3)" descriptor --template "$T2" --key "@0=$KA" --key "@1=$KB" --key "@1=$KA" --key "@0=$KB"
+  row s16 2 "$(kl 0 1 2)" descriptor --template "$T" --key "@0=$KA" --key "@0=$KB" --fingerprint @0=11223344 --fingerprint @0=aabbccdd
   local o
   o=$("$MD" descriptor --template "$T2" --key "@0=$KA" --key "@1=$KB" --network signet 2>&1); rc=$?
   if [ "$rc" = 0 ] && [[ "$o" == *'#5zanlgag'* ]]; then echo "PASS s17"; else echo "FAIL s17 ($rc: $o)"; bad=1; fi
